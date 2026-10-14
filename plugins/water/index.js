@@ -23,6 +23,7 @@ export const meta = Object.freeze({
   title: 'Water',
   description: 'Ripples that follow the pointer; clicks and typing are remapped through the displacement.',
   defaults: Object.freeze({ intensity: 0.28 }),
+  reducedMotion: 'No reduced-motion mode of its own: ripples appear only where the pointer moves or presses.',
 });
 
 export const RIPPLE_COUNT = 4;

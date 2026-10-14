@@ -24,9 +24,22 @@ const LIMITS = {
   'hic-live-engines.iife.min.js': { target: 40 * KB, ceiling: 40 * KB }, // the Gecko / WebKit painters, outside the core
   'hic-live-gpu.iife.min.js': { target: 16 * KB, ceiling: 16 * KB }, // WebGL / WebGPU element textures, outside the core
 };
-/** Every plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling unless PLUGIN_LIMITS gives it a tighter one: plugins are small add-ons. */
+/** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
-const PLUGIN_LIMITS = { water: 10.5 * KB };
+/**
+ * Per plugin: the measured minified size (2026-10-14) plus a small margin, so that growth is a decision, not an accident. shatter is above
+ * the 16 KB default (15,911 bytes: the Voronoi shard geometry and physics of shards.js run on the CPU).
+ */
+const PLUGIN_LIMITS = {
+  crt: 10.5 * KB, // 10,119
+  disintegrate: 15.25 * KB, // 14,940
+  glitch: 13.5 * KB, // 13,269
+  'holo-card': 12.75 * KB, // 12,358
+  'liquid-glass': 12.25 * KB, // 11,810
+  'page-curl': 13.75 * KB, // 13,373
+  shatter: 16.25 * KB, // 15,911
+  water: 10.75 * KB, // 10,479; 10.5 -> 10.75 KB: meta.reducedMotion
+};
 const problems = [];
 const known = [];
 
