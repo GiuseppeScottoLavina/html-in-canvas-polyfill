@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>smoke: the ESM quick start of README.md</title>
+<style> canvas { width: 300px; height: 120px; } </style>
+</head>
+<body>
+<canvas id="c" content="drawable"><form id="f" drawable><label>name <input id="name" value="esm"></label></form></canvas>
+<script type="module">
+  // README "ESM path": a bundler would resolve 'hic-live-polyfill'; here the same file is imported by path.
+  import { install } from '/dist/esm/index.js';
+
+  window.__state = { ready: false };
+  try {
+    const hic = install();   // synchronous; throws HicUnsupportedError in Firefox, Safari, mobile
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(document.getElementById('f'), 0, 0); };
+    new ResizeObserver((entries) => {
+      const box = entries[0].devicePixelContentBoxSize[0];
+      canvas.width = box.inlineSize; canvas.height = box.blockSize;
+    }).observe(canvas, { box: 'device-pixel-content-box' });
+    window.__state = { ready: true, mode: hic.mode };
+  } catch (error) {
+    window.__state = { ready: false, error: String(error && error.message || error) };
+  }
+</script>
+</body>
+</html>

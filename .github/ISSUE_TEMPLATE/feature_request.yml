@@ -1,0 +1,26 @@
+name: Feature request
+description: Support for content, an API part or a browser that is missing.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The polyfill follows the proposed HTML-in-Canvas standard. Requests to diverge from it belong in the WICG explainer repository; requests to cover more of it, or to support more content, belong here. Check docs/SUPPORT-MATRIX.md first: some content is refused on purpose.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The use case, not only the API you would like.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: If it is part of the standard, link the explainer, spec text or WPT test.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

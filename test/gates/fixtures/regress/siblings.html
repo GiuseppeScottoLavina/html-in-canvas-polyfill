@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: structural pseudo-classes and the layer sibling (browser M3)</title>
+<script>var q = new URLSearchParams(location.search); window.__q = q; if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<script>
+  window.__cases = [
+    { name: ':last-child margin reset', css: '.p>:last-child{margin-bottom:0}.p>*{margin-bottom:30px}', html: (cv) => '<div class="p" id="P"><span>x</span>' + cv + '</div><div id="after">after</div>' },
+    { name: ':only-child', css: '.p>:only-child{margin:0}.p>*{margin:25px}', html: (cv) => '<div class="p" id="P">' + cv + '</div><div id="after">after</div>' },
+    { name: ':nth-last-child(1)', css: '.p>:nth-last-child(1){display:block;margin-top:40px}', html: (cv) => '<div class="p" id="P"><span>x</span>' + cv + '</div><div id="after">after</div>' },
+    { name: 'flex margin-left:auto on :last-child', css: '.p{display:flex;width:500px}.p>:last-child{margin-left:auto}', html: (cv) => '<div class="p" id="P"><span>x</span>' + cv + '</div><div id="after">after</div>' },
+    { name: 'canvas:last-child padding', css: '.p>canvas:last-child,.p>div:last-child{padding-top:20px}', html: (cv) => '<div class="p" id="P">' + cv + '</div><div id="after">after</div>' },
+  ];
+  window.__case = window.__cases[+(window.__q.get('case') || 0)];
+</script>
+<style>*{box-sizing:border-box}body{margin:8px;font:14px sans-serif}</style></head><body>
+<script>
+  const poly = window.__q.get('mode') !== 'ref';
+  const cs = window.__case;
+  const cv = poly ? '<canvas id="cv" content="drawable" style="display:block;width:100px;height:50px"><span drawable></span></canvas>' : '<div id="cv" style="display:block;width:100px;height:50px"><span></span></div>';
+  const st = document.createElement('style'); st.textContent = cs.css; document.head.appendChild(st);
+  document.body.insertAdjacentHTML('beforeend', cs.html(cv));
+  window.__ready = true;
+</script></body></html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>unsupported content</title>
+<style>body{margin:8px;font:15px sans-serif;background:#111;color:#eee} #c{display:block;width:520px;height:240px;background:#223} #box{padding:10px;background:#345} input{font:inherit}</style>
+<script>
+  var q = new URLSearchParams(location.search);
+  for (const src of (q.get('bundle') || '').split(',')) document.write('<script src="' + src + '"><\/script>');
+</script></head><body>
+<canvas id="c" content="drawable" width="520" height="240">
+  <div id="box" drawable>
+    <h3>Supported UI next to unsupported content</h3>
+    <label>Name <input id="name" value="abc"></label>
+    <div id="slot"></div>
+  </div>
+</canvas>
+<script>
+  var kind = q.get('case');
+  var slot = document.getElementById('slot');
+  var other = q.get('other');
+  if (kind === 'iframe') slot.innerHTML = '<iframe srcdoc="<p>framed</p>" width="200" height="60"></iframe>';
+  else if (kind === 'xorigin') slot.innerHTML = '<img id="img" src="' + other + '/test/fixtures/unsupported/pixel.png" width="40" height="40" alt="x">';
+  else if (kind === 'supported') slot.innerHTML = '<div style="width:200px;height:60px;background:#585"></div><img src="/test/fixtures/unsupported/pixel.png?iso=0" width="40" height="40" alt="ok">';
+  var c = document.getElementById('c'); var ctx = c.getContext('2d'); var box = document.getElementById('box');
+  window.__paints = 0;
+  c.onpaint = function () { ctx.reset(); ctx.drawElementImage(box, 0, 0); window.__paints++; };
+  window.__events = [];
+  c.addEventListener('hicunsupported', function (e) { window.__events.push(e.detail && e.detail.feature); });
+  c.requestPaint();
+</script>
+</body></html>

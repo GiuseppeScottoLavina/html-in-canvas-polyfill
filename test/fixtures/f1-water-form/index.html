@@ -1,0 +1,273 @@
+<!doctype html>
+<!-- F1 fixture: the water-form demo page of an earlier prototype, kept frozen so that gate numbers stay comparable over time. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>F1 water form (static markup)</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #eefaff;
+      background: #020a13;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; background: #020a13; }
+    /* The page itself is intentionally fixed for this demo. On narrow screens
+       the real HTML form below is the scroll container, so wheel/touch move
+       form.scrollTop while window.scrollY stays at zero. */
+    body { overflow: hidden; overscroll-behavior: none; }
+    button, input, textarea { font: inherit; }
+
+    .viewport {
+      width: 100vw;
+      height: 100svh;
+      padding: clamp(8px, 1.6vw, 20px);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(68, 135, 255, .10), transparent 36%),
+        radial-gradient(circle at 84% 78%, rgba(149, 92, 255, .09), transparent 38%),
+        #020a13;
+    }
+    .surface-frame {
+      width: min(1180px, 100%);
+      height: min(760px, 100%);
+      min-height: 0;
+      border-radius: clamp(20px, 3vw, 34px);
+      overflow: hidden;
+      border: 1px solid rgba(190, 237, 255, .14);
+      box-shadow: 0 30px 100px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.04);
+      background: #03101c;
+    }
+    #hic-surface {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #03101c;
+      touch-action: auto;
+      outline: none;
+    }
+
+    /* This form is the direct layoutSubtree child. It is not an overlay: the
+       polyfill snapshots it and WebGPU samples that snapshot on this canvas. */
+    #demo-form {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: clamp(18px, 3vw, 38px);
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+      color: #edfaff;
+      display: grid;
+      grid-template-columns: minmax(0, .88fr) minmax(360px, 1.12fr);
+      gap: clamp(16px, 2.5vw, 30px);
+      align-items: stretch;
+      background: transparent;
+    }
+    .hero, .form-card { min-width: 0; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(178, 230, 255, .14);
+      border-radius: clamp(20px, 2.8vw, 30px);
+      padding: clamp(22px, 3.2vw, 38px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: linear-gradient(145deg, rgba(7, 28, 53, .76), rgba(4, 15, 31, .58));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 24px 60px rgba(0,0,0,.22);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      right: -120px;
+      top: -140px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(102, 240, 255, .26), rgba(117, 116, 255, .05) 58%, transparent 70%);
+      pointer-events: none;
+    }
+    .brandline { display: flex; align-items: center; gap: 11px; font-size: 12px; font-weight: 760; letter-spacing: .01em; }
+    .mark { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #03121d; background: linear-gradient(135deg,#78f7ff,#d4fbff 54%,#bda5ff); font-weight: 950; }
+    .live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; color: rgba(220,246,255,.64); font-size: 10px; font-weight: 650; }
+    .live::before { content:""; width: 6px; height: 6px; border-radius: 50%; background: #77ffc1; box-shadow: 0 0 14px #77ffc1; }
+    .eyebrow { margin: 0 0 12px; color: #76f5ff; font-size: 10px; font-weight: 850; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 8ch; font-size: clamp(38px, 5.1vw, 70px); line-height: .91; letter-spacing: -.062em; }
+    .lede { max-width: 42ch; margin: 18px 0 0; color: rgba(225,246,255,.65); font-size: clamp(12px, 1.25vw, 14px); line-height: 1.58; }
+    .proof { display: grid; gap: 10px; margin-top: 22px; }
+    .proof-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid rgba(181,231,255,.11); color: rgba(224,246,255,.58); font-size: 10px; }
+    .proof-row strong { color: #ddfaff; font-size: 11px; font-weight: 720; }
+
+    .form-card {
+      border: 1px solid rgba(187, 232, 255, .14);
+      border-radius: clamp(20px, 2.8vw, 30px);
+      padding: clamp(20px, 3vw, 36px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      background: linear-gradient(150deg, rgba(8, 25, 48, .82), rgba(4, 13, 28, .66));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 24px 60px rgba(0,0,0,.22);
+    }
+    .form-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-end; margin-bottom: clamp(14px, 2.3vw, 24px); }
+    .form-head h2 { margin:0; font-size: clamp(22px, 2.6vw, 34px); letter-spacing:-.045em; }
+    .form-head p { margin: 5px 0 0; color: rgba(220,244,255,.56); font-size: 10px; line-height: 1.4; }
+    /* Runtime messages vary by design. Reserve their inline slot so ordinary
+       status updates do not relayout the form header or manufacture a wider
+       paint-program grammar; the percentage cap keeps the slot responsive. */
+    #runtime-status { flex: 0 0 auto; width:155px; max-width:42%; min-width:0; text-align:right; color:#8ef4ff; font-size:9px; line-height:1.35; }
+    .fields { display: grid; gap: clamp(10px, 1.45vw, 14px); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(9px, 1.3vw, 12px); }
+    label.field { display: grid; gap: 6px; min-width:0; color: rgba(232,249,255,.74); font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+    input, textarea {
+      width: 100%;
+      min-width: 0;
+      color: #effcff;
+      caret-color: #83f6ff;
+      border: 1px solid rgba(173,226,255,.15);
+      border-radius: 13px;
+      outline: 0;
+      padding: 11px 12px;
+      background: rgba(1, 10, 23, .55);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    input:focus, textarea:focus { border-color: rgba(112,244,255,.72); box-shadow: 0 0 0 3px rgba(85,232,255,.09), inset 0 1px 0 rgba(255,255,255,.035); }
+    textarea { min-height: 76px; max-height: 96px; resize: none; line-height: 1.45; }
+    .consent { display:flex; align-items:flex-start; gap:9px; color:rgba(220,244,255,.55); font-size:9px; line-height:1.4; cursor:pointer; }
+    .consent input { width: 15px; height: 15px; margin: 0; padding:0; accent-color:#79efff; flex:0 0 auto; }
+    .consent.invalid { color:#ffb6c2; }
+    .runtime-control { display:grid; grid-template-columns:1fr auto; gap:6px 10px; align-items:center; padding-top:2px; color:rgba(224,247,255,.62); font-size:9px; font-weight:700; }
+    .runtime-control > span { grid-column:1; }
+    .runtime-control output { grid-column:2; inline-size:6ch; block-size:1lh; contain:size; white-space:nowrap; color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; }
+    .runtime-control input[type=range] { grid-column:1 / -1; width:100%; height:28px; margin:0; padding:3px 0; border:0; border-radius:0; background:transparent; box-shadow:none; accent-color:#79efff; cursor:ew-resize; }
+    #effect-controls { display:grid; gap:8px; min-width:0; }
+    #paint-counter { display:block; margin-top:2px; color:rgba(220,244,255,.44); font-size:9px; text-align:right; }
+    .submit-row { display:grid; grid-template-columns:1fr; gap:5px; align-items:start; margin-top:2px; }
+    .submit-button { appearance:none; -webkit-appearance:none; width:min(180px,100%); min-height:40px; border:1px solid rgba(139,240,255,.46); border-radius:13px; padding:9px 14px; color:#03131e; font-weight:850; font-size:10px; letter-spacing:.02em; cursor:pointer; background:linear-gradient(135deg,#78f7ff,#c5fbff 55%,#bba8ff); box-shadow:0 10px 24px rgba(57,204,255,.13); }
+    .submit-button:focus { outline:2px solid rgba(142,244,255,.9); outline-offset:2px; }
+    #form-feedback { min-height:20px; display:flex; align-items:center; contain:layout; color:rgba(222,246,255,.56); font-size:9px; line-height:1.35; }
+    #form-feedback::before { content:"●"; margin-right:7px; color:rgba(142,244,255,.55); font-size:7px; }
+    #form-feedback[data-state="error"] { color:#ffc0c9; }
+    #form-feedback[data-state="error"]::before { color:#ff7890; }
+    #form-feedback[data-state="success"] { color:#a8ffd7; }
+    #form-feedback[data-state="success"]::before { color:#72ffc0; }
+    .field.invalid > input, .field.invalid > textarea { border-color:rgba(255,111,138,.72); box-shadow:0 0 0 3px rgba(255,92,124,.08); }
+    .tech { display:flex; flex-wrap:wrap; gap:6px; margin-top: clamp(10px, 1.5vw, 15px); }
+    .chip { padding:6px 8px; border-radius:999px; border:1px solid rgba(181,230,255,.11); background:rgba(2,11,24,.35); color:rgba(225,246,255,.52); font-size:8px; font-weight:650; }
+
+    @media (max-width: 760px) {
+      /* Keep the canvas viewport fixed. Responsive overflow belongs to the
+         authored HTML form itself, exactly like an ordinary overflow:auto
+         container; the polyfill routes wheel/touch and renders that state. */
+      .viewport { width:100vw; height:100svh; min-height:0; place-items:center; overflow:hidden; }
+      .surface-frame { height:100%; min-height:0; }
+      #hic-surface { height:100%; touch-action:auto; }
+      #demo-form { grid-template-columns: 1fr; grid-auto-rows:max-content; align-content:start; gap: 12px; padding: 12px; overflow-y:auto; overscroll-behavior-y:contain; touch-action:pan-y; }
+      .hero { min-height: 280px; padding: 18px; }
+      .form-card { min-height: 640px; }
+      .hero .hero-copy { display: grid; grid-template-columns: 1fr 1fr; align-items:end; gap:12px; }
+      h1 { font-size: clamp(32px, 10vw, 48px); }
+      .lede { margin-top: 0; font-size: 11px; }
+      .proof { display:none; }
+      .form-card { padding: 18px; }
+      .form-head { margin-bottom: 12px; }
+      .form-head h2 { font-size: 24px; }
+      .tech { display:none; }
+    }
+    @media (max-width: 520px) {
+      .viewport { padding: 6px; }
+      #hic-surface { height:100%; }
+      .surface-frame { border-radius: 20px; }
+      #demo-form { gap: 8px; padding: 8px; }
+      .hero { padding: 14px; border-radius: 17px; }
+      .brandline { font-size: 10px; }
+      .mark { width: 29px; height: 29px; border-radius: 9px; }
+      .hero .hero-copy { display:block; }
+      .eyebrow { margin-bottom:8px; }
+      h1 { font-size: 36px; max-width:none; }
+      .lede { margin-top: 8px; line-height:1.42; }
+      .form-card { padding: 14px; border-radius:17px; }
+      .row { grid-template-columns:1fr; gap:8px; }
+      .fields { gap:8px; }
+      input, textarea { padding: 9px 10px; }
+      textarea { min-height:58px; height:58px; }
+      .consent { font-size:8px; line-height:1.3; }
+      .submit-row { grid-template-columns:1fr; gap:6px; }
+      #form-feedback { min-height:26px; }
+    }
+    @media (max-height: 610px) and (min-width: 761px) {
+      #demo-form { padding: 14px; gap:14px; }
+      .hero, .form-card { padding: 18px; }
+      h1 { font-size: 43px; }
+      .lede { margin-top:10px; }
+      .proof { margin-top:12px; gap:5px; }
+      .proof-row { padding-top:6px; }
+      .form-head { margin-bottom:10px; }
+      .fields { gap:8px; }
+      input, textarea { padding:8px 10px; }
+      textarea { min-height:56px; height:56px; }
+      .tech { margin-top:8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="viewport">
+    <div class="surface-frame">
+      <canvas id="hic-surface" width="1100" height="720" content="drawable" aria-label="Interactive HTML-in-Canvas WebGPU plugin form">
+        <form id="demo-form" autocomplete="off" drawable>
+          <section class="hero">
+            <div class="brandline">
+              <span class="mark">H</span>
+              <span>HTML-in-Canvas</span>
+              <span class="live">same surface</span>
+            </div>
+            <div class="hero-copy">
+              <div>
+                <p class="eyebrow">Real DOM → polyfill → WebGPU</p>
+                <h1>Touch the interface.</h1>
+              </div>
+              <p class="lede">Every field you see is ordinary HTML inside this canvas. The polyfill keeps layout, input and scrolling transparent; the water shader is only an optional demo plugin layered on the rendered result.</p>
+            </div>
+            <div class="proof">
+              <div class="proof-row"><span>HTML source</span><strong>&lt;form&gt; direct canvas child</strong></div>
+              <div class="proof-row"><span>GPU source</span><strong>copyElementImageToTexture()</strong></div>
+              <div class="proof-row"><span>Output</span><strong>one canvas · ordered plugin chain</strong></div>
+            </div>
+          </section>
+
+          <section class="form-card">
+            <div class="form-head">
+              <div><h2>Fluid contact</h2><p>Click a field and type. Move the pointer to bend the pixels.</p></div>
+              <span id="runtime-status">Booting polyfill + WebGPU…</span>
+            </div>
+            <div class="fields">
+              <div class="row">
+                <label class="field">Name<input id="name" name="name" value="Giuseppe" placeholder="Your name" required></label>
+                <label class="field">Email<input id="email" name="email" type="email" value="hello@example.com" placeholder="you@example.com" required></label>
+              </div>
+              <label class="field">Project<input id="project" name="project" value="WebGPU interface" placeholder="What are you building?" required></label>
+              <label class="field">Message<textarea id="message" name="message" required>The water is refracting this actual form after the polyfill renders it.</textarea></label>
+              <label class="consent" id="consent-label"><input id="consent" name="consent" type="checkbox" checked required><span>Keep the HTML snapshot reactive while I edit the controls.</span></label>
+              <label class="runtime-control" for="fps-cap"><span>Frame cap · main + plugins</span><input id="fps-cap" type="range" min="15" max="120" step="5" value="60"><output id="fps-cap-value" for="fps-cap">60 fps</output></label>
+              <div id="effect-controls" aria-label="Effect plugin controls"></div>
+              <div class="submit-row">
+                <button class="submit-button" id="submit-button" type="submit">Submit form</button>
+                <div id="form-feedback" role="status" aria-live="polite" data-state="success">Ready · validation and submit run through the real form.</div>
+              </div>
+              <span id="paint-counter">waiting for first HTML paint…</span>
+            </div>
+            <div class="tech"><span class="chip">layoutSubtree</span><span class="chip">native DOM state</span><span class="chip">internal overflow:auto</span><span class="chip">transparent polyfill</span><span class="chip">optional effect plugin</span><span class="chip">no overlay canvas</span></div>
+          </section>
+        </form>
+      </canvas>
+    </div>
+  </main>
+  <script src="/test/fixtures/shared/boot.js"></script>
+</body>
+</html>

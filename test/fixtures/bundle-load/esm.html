@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>esm bundle load check</title>
+<!-- G-bundle (scripts/check-bundle.mjs): loads the ESM builds from dist/esm exactly like a page that imports them without a bundler. -->
+<canvas id="c" content="drawable" width="200" height="100"><div drawable id="d" style="width:100px;height:40px">bundle check</div></canvas>
+<script type="module">
+  const out = { bad: [] };
+  window.__esm = out;
+  try {
+    const core = await import('/dist/esm/index.js');
+    const effects = await import('/dist/esm/effects.js');
+    const water = await import('/dist/esm/effects-water.js');
+    const bridge = await import('/dist/esm/native-bridge.js');
+    const installed = core.install();
+    if (installed.mode !== 'polyfill') out.bad.push('mode ' + installed.mode);
+    if (!core.FEATURES.every((f) => typeof f.summary === 'string' && f.summary && typeof f.reason === 'string' && f.reason)) out.bad.push('the ESM core must carry the full FEATURES table');
+    if ('HTMLInCanvasEffects' in window) out.bad.push('importing effects.js must not define the global by itself');
+    const api = effects.installEffects(window);
+    if (window.HTMLInCanvasEffects !== api || api.version !== 2) out.bad.push('installEffects did not define window.HTMLInCanvasEffects');
+    if (water.WaterEffectPlugin.type !== 'water') out.bad.push('WaterEffectPlugin missing');
+    if (effects.definePlugin(water.WaterEffectPlugin) !== water.WaterEffectPlugin && effects.definePlugin(water.WaterEffectPlugin).type !== 'water') out.bad.push('definePlugin does not accept the water plugin (separate copies of the ABI?)');
+    let code = null;
+    const device = { createShaderModule: (d) => { code = d.code; return {}; }, createRenderPipeline: () => { throw new Error('stop after the shader'); } };
+    await water.WaterEffectPlugin.create({ device, format: 'bgra8unorm', canvas: document.getElementById('c'), listen() {} }, {}).catch(() => {});
+    if (typeof code !== 'string' || !code.includes('@fragment')) out.bad.push('the water plugin did not compile an inlined WGSL string');
+    if (typeof globalThis[Symbol.for('hic.native-bridge')]?.install !== 'function' || typeof bridge.installNativeBridge !== 'function') out.bad.push('the native bridge entry did not register itself');
+    installed.uninstall();
+  } catch (e) { out.bad.push('threw ' + (e && e.stack || e)); }
+  out.done = true;
+</script>

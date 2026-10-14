@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F3 resize fixture</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #14110f; color: #f2ebe3; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  /* canvas width = 100% of the window; height fixed so wrapped content overflows into #root's own scroller */
+  #hic-surface { display: block; width: 100%; height: 560px; background: #241d19; }
+  #root { width: 100%; height: 100%; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #241d19; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 22px; }
+  header nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  header nav span { padding: 4px 10px; border-radius: 999px; background: #5b3a2a; font-size: 12px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; }
+  .card { flex: 1 1 220px; min-width: 0; padding: 12px 14px; border-radius: 12px; background: #3a2c24; border: 1px solid #6b4b3a; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; } .card p { margin: 0 0 10px; color: #d6c6b8; }
+  .card:nth-child(3n) { background: #2f3a2d; border-color: #577a52; } .card:nth-child(3n+1) { background: #2c3446; border-color: #4f6da3; }
+  .card button { padding: 6px 12px; border: 0; border-radius: 8px; background: #e0a458; color: #1a120b; font: inherit; font-weight: 700; }
+  .wrap { max-width: 72ch; margin: 0; color: #e7dccf; }
+  .inputs { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .inputs input[type=text], .inputs input[type=email] { flex: 1 1 180px; min-width: 0; padding: 8px 10px; border: 1px solid #8a6a55; border-radius: 8px; background: #17110d; color: inherit; font: inherit; }
+  .inputs button { padding: 8px 14px; border: 0; border-radius: 8px; background: #6fa8dc; color: #0b1620; font: inherit; font-weight: 700; }
+  @media (max-width: 800px) {
+    #root { padding: 10px; gap: 10px; font-size: 14px; }
+    header h1 { font-size: 18px; }
+    .card { flex-basis: 100%; }
+    .wrap { max-width: none; }
+    .inputs input[type=text], .inputs input[type=email] { flex-basis: 100%; }
+  }
+  @media (max-width: 520px) { header nav { display: none; } .card { background: #4a2f3a !important; } }
+</style></head>
+<body>
+<canvas id="hic-surface" width="1280" height="560" content="drawable" aria-label="F3 resize fixture surface">
+  <div id="root" drawable>
+    <header><h1>F3 · responsive layout</h1><nav><span>flex-wrap</span><span>media query</span><span>wrapping text</span></nav></header>
+    <div class="cards"><section class="card c0"><h3>Card 1</h3><p>onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor.</p><button type="button">Action 1</button></section><section class="card c1"><h3>Card 2</h3><p>velvet amber fjord kelp prairie umber zephyr ember juniper onyx.</p><button type="button">Action 2</button></section><section class="card c2"><h3>Card 3</h3><p>cobalt harbor meadow reef willow basalt glacier lagoon quartz velvet.</p><button type="button">Action 3</button></section><section class="card c3"><h3>Card 4</h3><p>juniper onyx tundra yarrow dune indigo nectar summit xenon cobalt.</p><button type="button">Action 4</button></section><section class="card c4"><h3>Card 5</h3><p>quartz velvet amber fjord kelp prairie umber zephyr ember juniper.</p><button type="button">Action 5</button></section><section class="card c5"><h3>Card 6</h3><p>xenon cobalt harbor meadow reef willow basalt glacier lagoon quartz.</p><button type="button">Action 6</button></section></div>
+    <p class="wrap" id="wrapping">Paragraph 1: amber fjord kelp prairie umber zephyr ember juniper onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor meadow reef willow basalt glacier lagoon quartz velvet amber fjord. Paragraph 2: harbor meadow reef willow basalt glacier lagoon quartz velvet amber fjord kelp prairie umber zephyr ember juniper onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor meadow. Paragraph 3: onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor meadow reef willow basalt glacier lagoon quartz velvet amber fjord kelp prairie umber zephyr ember juniper onyx tundra. Paragraph 4: velvet amber fjord kelp prairie umber zephyr ember juniper onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor meadow reef willow basalt glacier lagoon quartz velvet amber. Paragraph 5: cobalt harbor meadow reef willow basalt glacier lagoon quartz velvet amber fjord kelp prairie umber zephyr ember juniper onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor. Paragraph 6: juniper onyx tundra yarrow dune indigo nectar summit xenon cobalt harbor meadow reef willow basalt glacier lagoon quartz velvet amber fjord kelp prairie umber zephyr ember juniper onyx.</p>
+    <div class="inputs"><input type="text" id="t1" value="Hello resize" aria-label="text"><input type="email" id="t2" value="a@b.example" aria-label="email"><button type="button" id="go">Go</button></div>
+  </div>
+</canvas>
+<script src="/test/fixtures/shared/boot.js"></script>
+</body></html>

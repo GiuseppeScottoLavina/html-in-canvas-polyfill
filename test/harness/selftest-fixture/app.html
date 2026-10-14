@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>harness interaction fixture</title>
+<style>
+  html, body { margin: 0; background: #fff; font: 14px system-ui, sans-serif; }
+  #inp { position: absolute; left: 20px; top: 20px; width: 260px; height: 28px; }
+  #scroller { position: absolute; left: 20px; top: 70px; width: 300px; height: 150px; overflow: auto; border: 1px solid #888; }
+  #scroller div { height: 30px; line-height: 30px; padding: 0 8px; border-bottom: 1px solid #ddd; }
+  #lat { position: absolute; left: 360px; top: 20px; width: 320px; height: 60px; background: #eee; }
+  #bd { position: absolute; left: 360px; top: 110px; width: 320px; height: 160px; }
+  #pad { position: absolute; left: 20px; top: 260px; width: 300px; height: 200px; background: #cde; }
+</style></head>
+<body>
+<input id="inp" aria-label="typing target" autocomplete="off">
+<div id="scroller"></div>
+<canvas id="lat"></canvas>
+<canvas id="bd"></canvas>
+<div id="pad"></div>
+<script>
+  // ?latdelay=MS delays the canvas update after a key/pointer event (the latency probe must report >= MS).
+  const q = new URLSearchParams(location.search); const latDelay = Number(q.get('latdelay') || 0);
+  const dpr = devicePixelRatio;
+  const sc = document.getElementById('scroller'); for (let i = 0; i < 100; i++) { const d = document.createElement('div'); d.textContent = 'Row ' + i; sc.appendChild(d); }
+  const lat = document.getElementById('lat'); lat.width = 320 * dpr; lat.height = 60 * dpr; const lctx = lat.getContext('2d');
+  let keys = 0, downs = 0, wheels = 0;
+  function drawLat() {
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0); lctx.fillStyle = '#eee'; lctx.fillRect(0, 0, 320, 60);
+    lctx.fillStyle = '#c0392b'; for (let i = 0; i < keys; i++) lctx.fillRect(4 + i * 10, 8, 8, 20);
+    lctx.fillStyle = downs % 2 ? '#2980b9' : '#eee'; lctx.fillRect(4, 36, 40, 16);
+    lctx.fillStyle = wheels % 2 ? '#27ae60' : '#eee'; lctx.fillRect(60, 36, 40, 16);
+  }
+  const later = f => setTimeout(() => requestAnimationFrame(f), latDelay);
+  document.getElementById('inp').addEventListener('keydown', () => { keys = (keys + 1) % 30; later(drawLat); });
+  lat.addEventListener('pointerdown', () => { downs++; later(drawLat); });
+  lat.addEventListener('wheel', () => { wheels++; later(drawLat); }, { passive: true });
+  drawLat();
+  // blank-detector target: drawn once, then only redrawn on request (a continuously redrawing app would heal an injected blank)
+  const bd = document.getElementById('bd'); bd.width = 320 * dpr; bd.height = 160 * dpr; const bctx = bd.getContext('2d');
+  function drawBd() {
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0); bctx.fillStyle = '#fafafa'; bctx.fillRect(0, 0, 320, 160);
+    for (let i = 0; i < 24; i++) { bctx.fillStyle = `hsl(${i * 15} 70% 45%)`; bctx.fillRect(8 + (i % 8) * 38, 8 + Math.floor(i / 8) * 50, 30, 40); }
+  }
+  drawBd();
+  window.__fx = { drawBd, drawLat, clearViaWidth: () => { bd.width = bd.width; }, keys: () => keys, downs: () => downs, wheels: () => wheels };
+  window.__APP_READY = true;
+</script>
+</body></html>

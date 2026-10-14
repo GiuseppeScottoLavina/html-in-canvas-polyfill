@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>regress: ancestor-scoped CSS (browser M1, snippet 14)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1f2430;background:#e9ebf0}
+.page{padding:24px}
+#hic-surface{display:block;width:600px;height:300px;background:#1e1e2e;}
+.s{width:100%;height:100%;}
+:root{--brand:#f38ba8;--radius:10px}
+html[data-theme=dark]{--surface:#1e1e2e;--fg:#cdd6f4}
+body.dark{--muted:#a6adc8}
+.app{display:flex;font-family:Georgia,serif;color:var(--fg);--accent:#89b4fa;--pad:18px}
+.sidebar{width:0}
+.app .content{padding:0}
+.app.theme-dark .card{background:#313244;border:1px solid #45475a}
+.app > .content #hic-surface .note{border-left:4px solid var(--accent)}
+body.has-sidebar .card h3{color:var(--brand)}
+html[data-theme=dark] .card p{color:var(--muted)}
+main .btn{background:var(--accent);color:#11111b;border:0;border-radius:var(--radius);padding:6px 12px;font:600 13px system-ui}
+.theme-dark .s{padding:var(--pad)}
+.s{display:grid;gap:12px}
+.card{padding:14px;border-radius:var(--radius)}
+.note{padding:8px 12px;background:#181825}
+</style></head>
+<body class="has-sidebar dark"><div class="page"><main class="app theme-dark" id="app"><div class="sidebar"></div><section class="content">
+<canvas id="hic-surface" width="600" height="300" content="drawable"><div class="s mc" drawable><div class="card"><h3 style="margin:0 0 4px">Ancestor-dependent card</h3><p style="margin:0 0 8px">Rules depend on html[data-theme], body.dark, .app.theme-dark, main .btn.</p><button class="btn">Action</button></div><div class="note">Note with accent border from a canvas-ancestor selector</div></div></canvas>
+</section></main></div>
+<script src="/test/fixtures/shared/boot.js"></script></body></html>

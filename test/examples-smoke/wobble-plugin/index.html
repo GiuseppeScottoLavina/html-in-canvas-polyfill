@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>smoke: the wobble plugin of docs/guides/EFFECTS-PLUGINS.md</title>
+<script src="/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="/dist/hic-live-effects.iife.min.js"></script>
+<script src="/test/examples-smoke/wobble-plugin/wobble-plugin.js"></script>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  #stage { display: block; width: 600px; height: 320px; }
+  #src { box-sizing: border-box; width: 600px; height: 320px; background: #f4f4f0; }
+  #bar { position: absolute; left: 300px; top: 0; width: 14px; height: 320px; background: #d00000; }
+  #name { position: absolute; left: 40px; top: 40px; width: 180px; padding: 6px; font: inherit; }
+  #state { margin: 8px; }
+</style>
+</head>
+<body>
+<canvas id="stage" content="drawable">
+  <div id="src" drawable>
+    <div id="bar"></div>
+    <input id="name" value="wobble" autocomplete="off">
+  </div>
+</canvas>
+<div id="state">starting</div>
+<script>
+  (async () => {
+    const canvas = document.getElementById('stage');
+    window.__state = { ready: false };
+    try {
+      const host = await HTMLInCanvasEffects.createHost(canvas, document.getElementById('src'), { interposer: true });
+      // keep a handle on the plugin instance so the test can call captureInputMapper itself (same call the host makes)
+      const def = window.WobblePlugin;
+      const wrapped = HTMLInCanvasEffects.definePlugin({ type: def.type, apiVersion: def.apiVersion, version: def.version, outputCapabilities: def.outputCapabilities,
+        async create(context, options) { const inst = await def.create(context, options); window.__instance = inst; return inst; } });
+      window.__handle = await host.addPlugin(wrapped, { amplitude: 24 });
+      window.__state = { ready: true };
+      document.getElementById('state').textContent = 'wobble plugin running';
+    } catch (error) {
+      window.__state = { ready: false, error: String(error && error.message || error) };
+      document.getElementById('state').textContent = 'failed: ' + window.__state.error;
+    }
+  })();
+</script>
+</body>
+</html>

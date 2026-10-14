@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: drawable appended after mount (M1)</title>
+<script>var q = new URLSearchParams(location.search); window.__q = q; if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<style>body{margin:8px;background:#fff;font:14px sans-serif} #c{display:block;width:300px;height:160px;background:#fff}</style></head><body>
+<canvas id="c" width="300" height="160" content="drawable"><div id="a" drawable style="width:100px;height:40px;background:#c33;color:#fff">A</div></canvas>
+<script>
+  const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d');
+  window.__paints = 0; window.__errors = [];
+  canvas.addEventListener('paint', () => { window.__paints++; });
+  canvas.onpaint = () => {
+    ctx.reset(); let i = 0;
+    for (const el of canvas.children) if (el.hasAttribute('drawable')) { try { ctx.drawElementImage(el, 10, 10 + 50 * i); } catch (e) { window.__errors.push(el.id + ':' + e.name); } i++; }
+  };
+  // the drawable is appended AFTER the first paint; withAttr=false appends a plain element (control)
+  window.__append = (withAttr) => { const d = document.createElement('div'); d.id = 'b'; if (withAttr) d.setAttribute('drawable', ''); d.style.cssText = 'width:100px;height:40px;background:#36c;color:#fff'; d.textContent = 'B'; canvas.append(d); };
+</script></body></html>

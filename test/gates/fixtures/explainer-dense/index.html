@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- A denser sibling of the explainer "Basic Example" for the pixel gate: same pattern (content=drawable, ResizeObserver on devicePixelContentBoxSize,
+     onpaint -> ctx.reset(); ctx.drawElementImage(form, X, Y)), but a 900x520 canvas with many small elements, flat colour regions, small text, borders and
+     a table, so a 1-6 px shift or a 10 % tint changes thousands of pixels instead of a handful.
+     ?mode=poly&bundle=...  canvas + polyfill      ?mode=ref  plain-DOM twin (#twin) laid out at the same device pixels -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>explainer dense variant</title>
+<style>
+  body { margin: 8px; background: #fff; font: 14px system-ui, sans-serif; }
+  #dense { width: 840px; margin: 0; padding: 12px; box-sizing: border-box; background: #f4f6fb; color: #1b2330; }
+  #dense h2 { margin: 0 0 6px; font: 700 22px system-ui, sans-serif; }
+  #dense p { margin: 0 0 10px; font: 11px/1.4 system-ui, sans-serif; color: #4a5568; }
+  #dense .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  #dense input[type=text], #dense select { font: 13px system-ui, sans-serif; padding: 4px 6px; }
+  #dense .sw { width: 96px; height: 34px; display: grid; place-items: center; color: #fff; font: 700 12px system-ui, sans-serif; }
+  #dense table { border-collapse: collapse; margin-top: 8px; font: 12px system-ui, sans-serif; }
+  #dense td, #dense th { border: 1px solid #8893a6; padding: 3px 10px; }
+  #dense th { background: #dde3ee; }
+  #dense button { font: 13px system-ui, sans-serif; padding: 5px 14px; }
+  #dense textarea { width: 420px; font: 12px/16px system-ui, sans-serif; }
+</style>
+<script>
+  var q = new URLSearchParams(location.search);
+  window.__mode = q.get('mode') || 'poly';
+  if (window.__mode === 'poly' && q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
+  window.__FORM = '<form id="dense" ' + (window.__mode === 'poly' ? 'drawable' : '') + '>'
+    + '<h2 id="title">Account settings</h2>'
+    + '<p id="note">Small print: changes are saved when you press Save. Fields marked with a star are required. Contact support if the page does not reflect your last change within a minute.</p>'
+    + '<div class="row"><label for="first">First</label><input type="text" id="first" value="Ada" size="10"><label for="last">Last</label><input type="text" id="last" value="Lovelace" size="12">'
+    + '<select id="role"><option>Admin</option><option>Editor</option><option>Viewer</option></select></div>'
+    + '<div class="row"><span class="sw" id="sw1" style="background:#d33">red</span><span class="sw" id="sw2" style="background:#2a7">green</span><span class="sw" id="sw3" style="background:#36c">blue</span><span class="sw" id="sw4" style="background:#c80">amber</span></div>'
+    + '<div class="row"><textarea id="bio" rows="4">Analytical engine notes.\nSecond line of the biography text.</textarea>'
+    + '<div><label><input type="checkbox" id="news" checked> Newsletter</label><br><label><input type="radio" name="plan" id="plan-a" checked> Basic</label> <label><input type="radio" name="plan" id="plan-b"> Pro</label><br><input type="range" id="vol" min="0" max="100" value="35" style="width:180px"></div></div>'
+    + '<table id="tbl"><tr><th>Item</th><th>Qty</th><th>Price</th></tr><tr><td>Gear</td><td>12</td><td>3.40</td></tr><tr><td>Lever</td><td>3</td><td>11.00</td></tr><tr><td>Spring</td><td>40</td><td>0.25</td></tr></table>'
+    + '<div class="row" style="margin-top:12px"><button type="button" id="save">Save</button><button type="button" id="cancel">Cancel</button></div>'
+    + '</form>';
+</script>
+</head>
+<body>
+<script>
+  if (window.__mode === 'poly') document.write('<canvas id="hic-surface" style="width: 900px; height: 520px; display:block" content="drawable">' + window.__FORM + '</canvas>');
+  else document.write('<div id="hic-surface" style="position:relative;width:900px;height:520px;overflow:hidden;display:block"><div id="twinwrap" style="position:absolute;top:0;left:0">' + window.__FORM + '</div></div>');
+</script>
+<script>
+  // GRID pixel offset of the drawn form (device pixels of the canvas grid)
+  var DX = 60, DY = 30;
+  if (window.__mode === 'poly') {
+    const canvas = document.querySelector('canvas');
+    const form = document.querySelector('canvas form');
+    const ctx = canvas.getContext('2d');
+    canvas.onpaint = () => {
+      ctx.reset();
+      ctx.drawElementImage(form, DX, DY);
+    };
+    new ResizeObserver((entries) => {
+      canvas.width = entries[0].devicePixelContentBoxSize[0].inlineSize;
+      canvas.height = entries[0].devicePixelContentBoxSize[0].blockSize;
+    }).observe(canvas, { box: 'device-pixel-content-box' });
+    canvas.addEventListener('paint', () => { window.__paints = (window.__paints || 0) + 1; });
+  } else {
+    // drawElementImage(form, DX, DY) places the form at DX/dpr, DY/dpr css px
+    const w = document.getElementById('twinwrap');
+    w.style.left = (DX / devicePixelRatio) + 'px'; w.style.top = (DY / devicePixelRatio) + 'px';
+    window.__ready = true;
+  }
+</script>
+</body>
+</html>

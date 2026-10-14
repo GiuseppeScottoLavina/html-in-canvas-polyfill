@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: two drawables drawn in one task stay hit-testable (M2)</title>
+<script>var q = new URLSearchParams(location.search); window.__q = q; if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<style>body{margin:8px;background:#fff;font:14px sans-serif} #c{display:block;width:300px;height:160px;background:#eee} button{width:90px;height:34px;margin:0;padding:0}</style></head><body>
+<canvas id="c" width="300" height="160" content="drawable"><button id="b1" drawable>one</button><button id="b2" drawable>two</button><button id="b3" drawable>three</button></canvas>
+<script>
+  const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d');
+  window.__paints = 0; window.__clicks = { b1: 0, b2: 0, b3: 0 };
+  for (const id of ['b1', 'b2', 'b3']) document.getElementById(id).addEventListener('click', () => { window.__clicks[id]++; });
+  window.__pos = { b1: [10, 10], b2: [120, 10], b3: [10, 90] };
+  canvas.addEventListener('paint', () => { window.__paints++; });
+  canvas.onpaint = () => { ctx.reset(); for (const id of ['b1', 'b2', 'b3']) ctx.drawElementImage(document.getElementById(id), ...window.__pos[id]); }; // all three in ONE task
+</script></body></html>

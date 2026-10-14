@@ -1,0 +1,154 @@
+# html-in-canvas-polyfill
+
+[![CI](https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/actions/workflows/ci.yml/badge.svg)](https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@giuseppescottolavina/html-in-canvas-polyfill/next?label=npm%40next)](https://www.npmjs.com/package/@giuseppescottolavina/html-in-canvas-polyfill)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in-canvas): put real, interactive HTML inside `<canvas content="drawable">` and draw it with `ctx.drawElementImage()`, in today's desktop Chrome, Firefox and Safari.
+
+**Live demo:** [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/)
+
+[![A live HTML form drawn into a canvas under a WebGPU water effect; the name field is clicked and typed into through the effect](docs/media/water-form.webp)](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/water-form/)
+
+*The [water-form](examples/water-form/) example: an ordinary HTML form inside a canvas, drawn through a WebGPU ripple plugin. The click and the typing go to the real `<input>`. Recorded in headless Chrome.*
+
+## Why
+
+HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome has it behind the `CanvasDrawElement` flag and is expected to ship it in Chrome 157. This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: where a complete native implementation exists, it patches nothing of the standard surface and steps aside.
+
+## Quick start
+
+```sh
+npm install @giuseppescottolavina/html-in-canvas-polyfill@next
+```
+
+```js
+import { install } from '@giuseppescottolavina/html-in-canvas-polyfill';
+install(); // synchronous; throws HicUnsupportedError in a browser it refuses
+```
+
+Or with a script tag (load it before your own scripts; it installs while the tag runs):
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@giuseppescottolavina/html-in-canvas-polyfill@0.1.0-preview.1/dist/hic-live-polyfill.iife.min.js"></script>
+```
+
+Then use the standard API. This is the explainer's own example, unchanged:
+
+```html
+<canvas style="width: 400px; height: 200px;" content="drawable">
+  <form drawable>
+    <label for="name">name:</label>
+    <input id="name">
+  </form>
+</canvas>
+
+<script>
+  const canvas = document.querySelector('canvas');
+  const form = document.querySelector('canvas form');
+  const ctx = canvas.getContext('2d');
+
+  canvas.onpaint = () => {
+    ctx.reset();
+    ctx.drawElementImage(form, 100, 0);
+  };
+
+  // Size the canvas grid to match the device scale factor.
+  new ResizeObserver((entries) => {
+    canvas.width = entries[0].devicePixelContentBoxSize[0].inlineSize;
+    canvas.height = entries[0].devicePixelContentBoxSize[0].blockSize;
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+</script>
+```
+
+Click the drawn field and type: the text goes into the real input, and the canvas shows it. On Firefox and Safari, also load `dist/hic-live-engines.iife.min.js` (it draws form controls in those engines' look). Bundles, load order and the optional effect plugins: [docs/BUNDLES.md](docs/BUNDLES.md). Step by step: [docs/guides/GETTING-STARTED.md](docs/guides/GETTING-STARTED.md).
+
+## Compared with the alternatives
+
+Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages, harness and input for all three. The other polyfill on npm implements the older `layoutsubtree` name, so it ran through a small attribute adapter ([included](test/bench/compare/competitor/)).
+
+| | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Canary 157, flag) |
+|---|---|---|---|
+| official WPT HTML-in-Canvas files passing (of 230) | 139 | 66 | 202 |
+| keydown to canvas pixel, p50 / p95 | 6.3 / 10.0 ms | 14.4 / 135.6 ms, final text wrong | 5.2 / 10.3 ms |
+| wheel scroll inside the canvas, p50 to pixel | 28.1 ms | never drawn | 36.5 ms |
+| blank frames during real window resizes | 0 of 3132 | 537 of 3132 | 0 of 3129 |
+| one update in a 1000-element drawable, main thread | 18.3 ms | 41.5 ms | 6.5 ms |
+| first paint of a form page (new tab), p50 | 120 ms | 69 ms | 71 ms |
+| core bundle, minified / gzipped | 254 KB / 88 KB | 30 KB / 10 KB | none |
+| browsers | desktop Chrome, Firefox 155+, Safari 27+ | claims all, including mobile (not verified here) | Chrome with the flag |
+
+The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
+
+## Browser support
+
+| browser | status |
+|---|---|
+| Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 |
+| Chrome with a complete native implementation (expected from 157) | polyfill steps aside; only the two extensions stay |
+| Chrome 154-156 with the `CanvasDrawElement` flag | needs `hic-live-native-bridge.iife.min.js` before the core |
+| Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
+| Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
+| Safari 27+ desktop | polyfill runs; measured on 27.0.1 (macOS) |
+| older Firefox and Safari, mobile browsers, WebViews | refused with one console warning |
+
+Nothing was measured on Windows or Linux. Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
+
+## Known limitations
+
+- **The picture lags the DOM by about 2 frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
+- **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
+- **Size.** The core is about 88 KB gzipped (254 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
+- **Not supported:** mobile browsers, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). Only DPR 2 on macOS has gates on this implementation.
+- **Preview.** `0.1.0-preview.1` follows a proposed standard that may still change. The two extensions below may change between previews.
+
+## How it works
+
+```
+<canvas content="drawable">        <hic-layer> next to the canvas, opacity 0, over its content box
+  <form drawable> ...    ──moved──▶  the same live elements: layout, focus, typing, IME, scrolling, hit testing
+                                       │ mutation / input / scroll / resize observers report damage
+                                       ▼
+                                     clone of the changed region ──▶ SVG foreignObject ──▶ data: URL ──▶ decode
+                                       │
+                                       ▼
+                                     retained 2D surface per drawable (the old picture stays until the new one lands)
+                                       │
+canvas.onpaint ──▶ ctx.drawElementImage(form, x, y)   (also WebGL / WebGPU uploads and effect plugins)
+```
+
+The browser itself lays out and paints the HTML; the polyfill only takes pictures of it, so text, CSS and form controls look like the plain page. The main design choices and why they were made: [docs/DESIGN-DECISIONS.md](docs/DESIGN-DECISIONS.md). Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Two extensions
+
+- **Frame cap:** `<canvas content="drawable" framecap="30">` or `canvas.frameCap = 60` bounds `paint` events, effect frames and snapshot builds for that canvas (0 = display rate).
+- **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. The water ripple of the demo is one plugin; [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) builds another one step by step.
+
+## Testing and conformance
+
+- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 140 files (242 of 375 subtests); native Chrome passes 208 (354) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
+- **Unit tests:** 368 in Node and 595 in headless Chrome, run in CI with type checks, module-boundary checks and a bundle check.
+- **Browser gates:** 11 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page (pixels, hit testing, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 35 seeded bugs are caught.
+- **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine.
+- **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
+
+The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless on Linux; the headed browser gates need a real screen and run locally on macOS ([CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Documentation
+
+- Guides: [getting started](docs/guides/GETTING-STARTED.md), [frameworks](docs/guides/FRAMEWORKS.md), [effect plugins](docs/guides/EFFECTS-PLUGINS.md), [performance](docs/guides/PERFORMANCE.md), [troubleshooting](docs/guides/TROUBLESHOOTING.md)
+- Reference: [API contract](docs/API-CONTRACT.md), [support matrix](docs/SUPPORT-MATRIX.md), [bundles](docs/BUNDLES.md), [conformance](docs/CONFORMANCE.md)
+- Design: [design decisions](docs/DESIGN-DECISIONS.md), [architecture](docs/ARCHITECTURE.md), [test plan](docs/TEST-PLAN.md)
+- Comparisons: [with html-in-canvas-polyfill](docs/COMPARISON.md), [performance](docs/PERFORMANCE-COMPARISON.md)
+- Examples: [examples/](examples/) (`npm ci && npm run build && npm run demo`)
+
+The bundle files and console messages use the short name `hic-live` (HTML-in-canvas, live DOM).
+
+## Contributing
+
+Issues and pull requests are welcome; please read [CONTRIBUTING.md](CONTRIBUTING.md) first. For a bug, include the output of `JSON.stringify(__HIC__.installed.report(), null, 1)` from the page console ([troubleshooting](docs/guides/TROUBLESHOOTING.md)). Security problems: [SECURITY.md](SECURITY.md). This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Giuseppe Scotto Lavina

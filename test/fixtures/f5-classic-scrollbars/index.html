@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F5 classic scrollbars</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #12161c; color: #e6e9ef; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #hic-surface { display: block; width: 960px; max-width: 100%; height: 640px; margin: 0 auto; background: #1a2029; }
+  #root { width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; padding: 12px; background: #1a2029; }
+  .panel { min-height: 0; min-width: 0; border: 1px solid #3a4658; border-radius: 8px; background: #11161d; }
+  .scroll { height: 100%; overflow: auto; }
+  /* ::-webkit-scrollbar switches the element from overlay to CLASSIC scrollbars with a layout gutter, on every platform.
+     The gutter (15 px) is the point of this fixture: it changes the content box and is painted by the browser, not by CSS boxes. */
+  .classic::-webkit-scrollbar { width: 15px; height: 15px; background: #222a36; }
+  .classic::-webkit-scrollbar-track { background: #222a36; border-left: 1px solid #3a4658; }
+  .classic::-webkit-scrollbar-thumb { background: #6d83a8; border-radius: 8px; border: 3px solid #222a36; }
+  .classic::-webkit-scrollbar-thumb:hover { background: #8aa2cc; }
+  .classic::-webkit-scrollbar-corner { background: #222a36; }
+  .row { display: flex; gap: 10px; align-items: center; height: 30px; padding: 0 10px; border-bottom: 1px solid #1f2733; white-space: nowrap; }
+  .badge { min-width: 30px; text-align: center; border-radius: 6px; background: #3b5b94; font-size: 12px; font-weight: 700; }
+  pre { margin: 0; padding: 10px; font: 12px/1.4 ui-monospace, Menlo, monospace; color: #cfe0ff; }
+  textarea { display: block; width: 100%; height: 100%; resize: none; border: 0; padding: 10px; background: #11161d; color: inherit; font: inherit; }
+  h2 { margin: 0; padding: 6px 10px; font-size: 13px; background: #232c3a; border-bottom: 1px solid #3a4658; position: sticky; top: 0; }
+  .plain { height: 100%; overflow: auto; }
+</style></head>
+<body>
+<canvas id="hic-surface" width="960" height="640" content="drawable" aria-label="F5 classic scrollbars surface">
+  <div id="root" drawable>
+    <div class="panel"><div class="scroll classic" id="sc-v"><h2>Vertical, classic bar</h2>
+<div class="row"><span class="badge">0</span><span>Row 0 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">1</span><span>Row 1 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">2</span><span>Row 2 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">3</span><span>Row 3 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">4</span><span>Row 4 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">5</span><span>Row 5 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">6</span><span>Row 6 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">7</span><span>Row 7 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">8</span><span>Row 8 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">9</span><span>Row 9 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">10</span><span>Row 10 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">11</span><span>Row 11 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">12</span><span>Row 12 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">13</span><span>Row 13 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">14</span><span>Row 14 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">15</span><span>Row 15 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">16</span><span>Row 16 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">17</span><span>Row 17 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">18</span><span>Row 18 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">19</span><span>Row 19 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">20</span><span>Row 20 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">21</span><span>Row 21 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">22</span><span>Row 22 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">23</span><span>Row 23 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">24</span><span>Row 24 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">25</span><span>Row 25 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">26</span><span>Row 26 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">27</span><span>Row 27 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">28</span><span>Row 28 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">29</span><span>Row 29 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">30</span><span>Row 30 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">31</span><span>Row 31 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">32</span><span>Row 32 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">33</span><span>Row 33 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">34</span><span>Row 34 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">35</span><span>Row 35 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">36</span><span>Row 36 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">37</span><span>Row 37 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">38</span><span>Row 38 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">39</span><span>Row 39 · amber fjord kelp prairie umber zephyr</span></div>
+    </div></div>
+    <div class="panel"><div class="scroll classic" id="sc-h"><h2>Horizontal, classic bar</h2><pre>line 00: const veryLongIdentifier0 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 01: const veryLongIdentifier1 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 02: const veryLongIdentifier2 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 03: const veryLongIdentifier3 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 04: const veryLongIdentifier4 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 05: const veryLongIdentifier5 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 06: const veryLongIdentifier6 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 07: const veryLongIdentifier7 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 08: const veryLongIdentifier8 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 09: const veryLongIdentifier9 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 10: const veryLongIdentifier10 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 11: const veryLongIdentifier11 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 12: const veryLongIdentifier12 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);
+line 13: const veryLongIdentifier13 = computeSomething(argumentNumberOne, argumentNumberTwo, argumentNumberThree, argumentNumberFour);</pre></div></div>
+    <div class="panel"><div class="scroll classic" id="sc-both"><h2>Both axes + corner</h2><div style="width:1200px">
+<div class="row"><span class="badge">0</span><span>Row 0 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">1</span><span>Row 1 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">2</span><span>Row 2 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">3</span><span>Row 3 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">4</span><span>Row 4 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">5</span><span>Row 5 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">6</span><span>Row 6 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">7</span><span>Row 7 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">8</span><span>Row 8 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">9</span><span>Row 9 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">10</span><span>Row 10 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">11</span><span>Row 11 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">12</span><span>Row 12 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">13</span><span>Row 13 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">14</span><span>Row 14 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">15</span><span>Row 15 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">16</span><span>Row 16 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">17</span><span>Row 17 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">18</span><span>Row 18 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">19</span><span>Row 19 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">20</span><span>Row 20 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">21</span><span>Row 21 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">22</span><span>Row 22 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">23</span><span>Row 23 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">24</span><span>Row 24 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">25</span><span>Row 25 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">26</span><span>Row 26 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">27</span><span>Row 27 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">28</span><span>Row 28 · amber fjord kelp prairie umber zephyr</span></div>
+<div class="row"><span class="badge">29</span><span>Row 29 · amber fjord kelp prairie umber zephyr</span></div>
+    </div></div></div>
+    <div class="panel"><textarea class="classic" id="sc-text" aria-label="notes">Textarea line 0 with some text to overflow the box
+Textarea line 1 with some text to overflow the box
+Textarea line 2 with some text to overflow the box
+Textarea line 3 with some text to overflow the box
+Textarea line 4 with some text to overflow the box
+Textarea line 5 with some text to overflow the box
+Textarea line 6 with some text to overflow the box
+Textarea line 7 with some text to overflow the box
+Textarea line 8 with some text to overflow the box
+Textarea line 9 with some text to overflow the box
+Textarea line 10 with some text to overflow the box
+Textarea line 11 with some text to overflow the box
+Textarea line 12 with some text to overflow the box
+Textarea line 13 with some text to overflow the box
+Textarea line 14 with some text to overflow the box
+Textarea line 15 with some text to overflow the box
+Textarea line 16 with some text to overflow the box
+Textarea line 17 with some text to overflow the box
+Textarea line 18 with some text to overflow the box
+Textarea line 19 with some text to overflow the box
+Textarea line 20 with some text to overflow the box
+Textarea line 21 with some text to overflow the box
+Textarea line 22 with some text to overflow the box
+Textarea line 23 with some text to overflow the box
+Textarea line 24 with some text to overflow the box
+Textarea line 25 with some text to overflow the box
+Textarea line 26 with some text to overflow the box
+Textarea line 27 with some text to overflow the box
+Textarea line 28 with some text to overflow the box
+Textarea line 29 with some text to overflow the box</textarea></div>
+  </div>
+</canvas>
+<script src="/test/fixtures/shared/boot.js"></script>
+</body></html>

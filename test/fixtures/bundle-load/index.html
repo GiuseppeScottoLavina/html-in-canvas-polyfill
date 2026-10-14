@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>bundle load check</title>
+<!-- G-bundle (scripts/check-bundle.mjs): ?scripts=/dist/a.js,/dist/b.js loads the classic scripts in that order, exactly like a page author would. -->
+<script>
+  new URLSearchParams(location.search).get('scripts').split(',').forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
+</script>
+<canvas id="c" content="drawable" width="200" height="100"><div drawable id="d" style="width:100px;height:40px">bundle check</div></canvas>

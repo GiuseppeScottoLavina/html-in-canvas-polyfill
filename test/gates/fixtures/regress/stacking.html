@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: stacking-overlap is reported (browser M2)</title>
+<script>var q = new URLSearchParams(location.search); window.__q = q; if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<style>body{margin:20px;background:#fff;font:14px sans-serif}</style></head><body>
+<script>if (window.__q.get('overlay') === '1') document.write('<div id="menu" style="position:absolute;left:150px;top:30px;width:120px;height:140px;background:#fa0">menu</div>');</script>
+<canvas id="cv" width="300" height="160" content="drawable" style="display:block;width:300px;height:160px"><div id="d" drawable style="width:100%;height:100%;background:#cfe"><button id="kid" style="position:absolute;left:100px;top:60px;width:100px;height:40px">kid</button></div></canvas>
+<script>
+  const canvas = document.getElementById('cv'); const ctx = canvas.getContext('2d');
+  window.__paints = 0; canvas.addEventListener('paint', () => { window.__paints++; });
+  canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(document.getElementById('d'), 0, 0); };
+</script></body></html>

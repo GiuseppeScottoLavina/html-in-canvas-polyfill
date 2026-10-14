@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scroll-and-resize: a scroller and a responsive layout in a canvas</title>
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 1.5rem; background: #eef1f6; color: #1b2330; }
+  h1 { margin: 0 0 .25rem; }
+  p.note { margin: 0 0 1rem; max-width: 60rem; }
+  #stage { display: block; width: 100%; height: 520px; border: 1px solid #b9c2d2; border-radius: 12px; background: #fff; }
+  #readout { margin-top: .75rem; font: 13px/1.4 ui-monospace, monospace; color: #44506a; }
+
+  /* ---- inside the canvas ---- */
+  #app { box-sizing: border-box; width: 100%; height: 100%; display: grid; grid-template-columns: minmax(260px, 1fr) 1.4fr; gap: 16px; padding: 16px; font: 14px/1.4 system-ui, sans-serif; color: #1b2330; background: #fff; }
+  #inbox { min-height: 0; overflow-y: auto; border: 1px solid #c9d1de; border-radius: 10px; background: #fbfcfe; }
+  #inbox header { position: sticky; top: 0; z-index: 1; padding: 10px 12px; font-weight: 700; background: #e6ecf7; border-bottom: 1px solid #c9d1de; }
+  #inbox ol { margin: 0; padding: 0; list-style: none; }
+  #inbox li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #e6eaf2; }
+  #inbox li:hover { background: #e9f1ff; }
+  #inbox li .who { font-weight: 600; }
+  #inbox li .what { color: #5a667a; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #panel { min-height: 0; overflow: hidden; }
+  #panel h2 { margin: 0 0 8px; font-size: 18px; }
+  #panel .layout-name::after { content: 'wide layout (two columns)'; color: #2f6df6; font-weight: 600; }
+  #cards { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .card { flex: 1 1 150px; min-height: 84px; padding: 10px 12px; border-radius: 10px; color: #fff; background: linear-gradient(135deg, #2f6df6, #7a4ff0); }
+  .card:nth-child(2n) { background: linear-gradient(135deg, #12a879, #0d7ea8); }
+  .card b { display: block; font-size: 22px; }
+  #panel input[type=text] { box-sizing: border-box; width: 100%; margin-top: 12px; padding: 8px 10px; font: inherit; border: 1px solid #aeb8c8; border-radius: 8px; }
+  #panel input[type=text]:focus { outline: 2px solid #2f6df6; border-color: #2f6df6; }
+
+  @media (max-width: 760px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+    #panel .layout-name::after { content: 'narrow layout (one column)'; }
+    #cards .card:nth-child(n+3) { display: none; }
+  }
+</style>
+</head>
+<body>
+<h1>Scroll and resize</h1>
+<p class="note">Everything inside the box is HTML drawn into one canvas: a scrolling list with a sticky header, hover colours, and a layout that switches at 760 px. Scroll the list with the wheel, hover a row, type in the field, then drag the window narrower. The canvas follows each resize without going blank.</p>
+
+<canvas id="stage" content="drawable">
+  <div id="app" drawable>
+    <section id="inbox" aria-label="Inbox">
+      <header>Inbox (<span id="count">0</span> messages)</header>
+      <ol id="rows"></ol>
+    </section>
+    <section id="panel">
+      <h2>Responsive panel: <span class="layout-name"></span></h2>
+      <div id="cards">
+        <div class="card"><b>12</b>open items</div>
+        <div class="card"><b>3.4k</b>visitors</div>
+        <div class="card"><b>98%</b>on time</div>
+        <div class="card"><b>7</b>reviews</div>
+      </div>
+      <input id="note" type="text" placeholder="Type a note here" autocomplete="off">
+    </section>
+  </div>
+</canvas>
+<div id="readout">waiting for the first paint</div>
+
+<script>
+  const canvas = document.getElementById('stage');
+  const app = document.getElementById('app');
+  const inbox = document.getElementById('inbox');
+  const readout = document.getElementById('readout');
+  const ctx = canvas.getContext('2d');
+  let paints = 0;
+
+  // The list is generated before the first paint, as an app would render it.
+  const names = ['Ada', 'Grace', 'Alan', 'Edsger', 'Barbara', 'Donald', 'Margaret', 'Linus'];
+  const subjects = ['Quarterly numbers', 'Lunch on Friday?', 'Re: build is red', 'Invoice 2041', 'Welcome aboard', 'Weekly notes', 'Photos from the trip', 'Can you review this?'];
+  const rows = document.getElementById('rows');
+  for (let i = 0; i < 60; i++) {
+    const li = document.createElement('li');
+    li.innerHTML = '<input type="checkbox" aria-label="select"><span class="who"></span><span class="what"></span>';
+    li.querySelector('.who').textContent = names[i % names.length];
+    li.querySelector('.what').textContent = '#' + (i + 1) + ' ' + subjects[(i * 3) % subjects.length];
+    rows.appendChild(li);
+  }
+  document.getElementById('count').textContent = String(rows.children.length);
+
+  canvas.onpaint = () => {
+    ctx.reset();
+    ctx.drawElementImage(app, 0, 0);
+    paints += 1;
+  };
+
+  new ResizeObserver((entries) => {
+    const box = entries[0].devicePixelContentBoxSize[0];
+    canvas.width = box.inlineSize;
+    canvas.height = box.blockSize;
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+
+  function report() {
+    readout.textContent = 'window ' + innerWidth + ' px, canvas bitmap ' + canvas.width + 'x' + canvas.height + ', list scrollTop ' + Math.round(inbox.scrollTop) + ', paints ' + paints;
+  }
+  inbox.addEventListener('scroll', report, { passive: true });
+  addEventListener('resize', report);
+  canvas.addEventListener('paint', report);
+  if (window.__HIC__ && window.__HIC__.error) readout.textContent = 'hic-live-polyfill not installed: ' + window.__HIC__.error.message.replace(/^\[hic-live-polyfill\] /, '');
+</script>
+</body>
+</html>

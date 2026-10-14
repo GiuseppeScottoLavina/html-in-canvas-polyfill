@@ -1,0 +1,13 @@
+{
+  "name": "hic-live-polyfill-framework-tests",
+  "private": true,
+  "description": "Framework fixtures for hic-live-polyfill (test only; the root package keeps zero runtime deps). Install with `npm install` in this folder.",
+  "type": "module",
+  "dependencies": {
+    "lit": "3.3.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "svelte": "5.57.2",
+    "vue": "3.5.43"
+  }
+}

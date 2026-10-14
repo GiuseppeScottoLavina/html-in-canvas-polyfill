@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>regress: wrapper custom properties (browser M1, snippet 29)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1f2430;background:#e9ebf0}
+.page{padding:24px}
+#hic-surface{display:block;width:560px;height:220px;background:#fff;}
+.s{width:100%;height:100%;}
+.x1{color:var(--wrap-color)}.x2{padding:var(--wrap-pad);background:#ecfdf5}.x3{font-size:20px}
+</style></head>
+<body class=""><div class="page"><div class="outer" style="--wrap-color:#be123c;--wrap-pad:20px;font-family:Georgia,serif;color:#064e3b;letter-spacing:.03em;text-transform:capitalize;line-height:1.8">
+<canvas id="hic-surface" width="560" height="220" content="drawable"><div class="s mc" drawable><div class="x1">custom property from a wrapper outside the canvas</div><div class="x2">padding via wrapper var, inherited font/color/letter-spacing/transform/line-height</div><div class="x3">inherited text properties</div></div></canvas>
+</div></div>
+<script src="/test/fixtures/shared/boot.js"></script></body></html>

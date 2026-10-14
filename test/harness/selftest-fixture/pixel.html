@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>harness pixel-oracle fixture</title>
+<style>
+  html, body { margin: 0; background: #fff; }
+  #surface { position: absolute; left: 20px; top: 20px; width: 400px; height: 300px; background: #f4f4f4; overflow: hidden; }
+  #surface .r { position: absolute; }
+</style></head>
+<body>
+<!-- Integer CSS coordinates and even sizes, so DOM edges and canvas edges both land on whole device pixels at DPR 1 and 2.
+     ?view=ref        plain DOM divs (the reference)
+     ?view=canvas     the same rectangles drawn with fillRect into a canvas
+       &variant=same|pixel|missing|blank   pixel: one extra DEVICE pixel;  missing: rectangle #5 left out;  blank: nothing drawn -->
+<script>
+  const RECTS = [];
+  for (let i = 0; i < 12; i++) RECTS.push({ x: 10 + (i % 4) * 96, y: 10 + Math.floor(i / 4) * 90, w: 80, h: 70, c: `rgb(${30 + i * 17},${200 - i * 13},${60 + (i * 41) % 190})` });
+  const q = new URLSearchParams(location.search), view = q.get('view') || 'ref', variant = q.get('variant') || 'same';
+  window.__PIXEL = { view, variant, rects: RECTS, ready: false };
+  if (view === 'ref') {
+    const s = document.createElement('div'); s.id = 'surface';
+    for (const r of RECTS) { const d = document.createElement('div'); d.className = 'r'; d.style.cssText = `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;background:${r.c}`; s.appendChild(d); }
+    document.body.appendChild(s); __PIXEL.ready = true;
+  } else {
+    const c = document.createElement('canvas'); c.id = 'surface';
+    const dpr = devicePixelRatio; c.width = 400 * dpr; c.height = 300 * dpr; document.body.appendChild(c);
+    const ctx = c.getContext('2d');
+    // the canvas has no CSS background in the reference; paint the same #f4f4f4 so equal-size comparison is exact
+    c.style.background = '#f4f4f4';
+    if (variant !== 'blank') {
+      RECTS.forEach((r, i) => { if (variant === 'missing' && i === 5) return; ctx.fillStyle = r.c; ctx.fillRect(r.x * dpr, r.y * dpr, r.w * dpr, r.h * dpr); });
+      if (variant === 'pixel') { ctx.fillStyle = 'rgb(255,0,0)'; ctx.fillRect(7, 5, 1, 1); } // exactly one device pixel
+    }
+    __PIXEL.ready = true;
+  }
+</script>
+</body></html>

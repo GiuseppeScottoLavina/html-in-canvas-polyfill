@@ -1,0 +1,34 @@
+// Page-side sabotage of the renderer for CONTROL runs. A control is a deliberately broken variant of the polyfill: the gate must turn red for it.
+//
+// Sabotage code is APPENDED to a copy of the bundle (`controlBundleText`), so it runs right after the polyfill installed and BEFORE the first paint: the
+// broken behaviour is present from the first frame (a sabotage applied after the first paint would let geometry/first-draw state already be good).
+//   blank   drawElementImage draws, then overwrites the canvas with black (every draw is a black frame)
+//   stale   only the first drawElementImage of the page draws; later paints leave the old bitmap
+//   nogeom  hit-test geometry is never applied (updateElementGeometry is a no-op and every draw preserves the layout position)
+//   nowheel every wheel event is cancelled (native scrolling of the live list never happens)
+//   freezelayer the live layer keeps a stale width (the live layout never converges to the new window size)
+//   nohit   same as nogeom, kept as a name for gates that only care about the hit test
+export const SABOTAGE_JS = {
+  blank: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (...a) { try { o.apply(this, a); } finally { this.save(); this.setTransform(1,0,0,1,0,0); this.globalCompositeOperation='copy'; this.fillStyle='#000'; this.fillRect(0,0,this.canvas.width,this.canvas.height); this.restore(); } }; return 'blank'; })()`,
+  stale: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; let n = 0; p.drawElementImage = function (...a) { if (n++ === 0) return o.apply(this, a); }; window.__sabotageStale = () => n; return 'stale'; })()`,
+  nogeom: `(() => { const p = HTMLCanvasElement.prototype; p.updateElementGeometry = function () {}; const c = CanvasRenderingContext2D.prototype; const o = c.drawElementImage; c.drawElementImage = function (el, ...a) { const last = a[a.length - 1]; if (last && typeof last === 'object') return o.call(this, el, ...a.slice(0, -1), { ...last, preserveElementGeometry: true }); return o.call(this, el, ...a, { preserveElementGeometry: true }); }; return 'nogeom'; })()`,
+};
+SABOTAGE_JS.nowheel = `(() => { addEventListener('wheel', (e) => e.preventDefault(), { capture: true, passive: false }); return 'nowheel'; })()`;
+SABOTAGE_JS.freezelayer = `(() => { setInterval(() => { const l = document.querySelector('hic-layer'); if (l) l.style.setProperty('width', '1400px', 'important'); }, 16); return 'freezelayer'; })()`;
+SABOTAGE_JS.nohit = SABOTAGE_JS.nogeom;
+
+/** The bundle text with the sabotage of every kind in `kinds` appended (each wrapped so a failure is visible, not silent). */
+export function controlBundleText(bundleText, kinds) {
+  const tail = kinds.map((k) => {
+    if (!SABOTAGE_JS[k]) throw new Error('unknown sabotage ' + k);
+    return `;try { ${SABOTAGE_JS[k]}; } catch (e) { console.error('[gate control] sabotage ${k} failed: ' + e); }`;
+  });
+  return bundleText + '\n' + tail.join('\n') + '\n';
+}
+
+/** Apply a sabotage after load (for gates whose control is about LATER behaviour, e.g. a renderer that dies after the first frame). */
+export async function sabotage(page, kind) {
+  const js = SABOTAGE_JS[kind];
+  if (!js) throw new Error('unknown sabotage ' + kind);
+  return page.evaluate(js);
+}

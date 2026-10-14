@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>html-in-canvas-polyfill examples</title>
+<style>
+  :root { color-scheme: light dark; --code: #eef0f4; }
+  @media (prefers-color-scheme: dark) { :root { --code: #2a2d33; } }
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; padding: 0 1rem; max-width: 44rem; }
+  li { margin-bottom: .6rem; }
+  code { background: var(--code); padding: 0 .25em; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>html-in-canvas-polyfill examples</h1>
+<p>A polyfill for the proposed HTML-in-Canvas API (<code>&lt;canvas content="drawable"&gt;</code>, <code>drawElementImage</code>, the <code>paint</code> event).
+  Each page below draws live HTML into a canvas: click and type into what you see.</p>
+<ul>
+  <li><a href="water-form/">water-form</a>: a form under a WebGPU water effect, with a frame cap slider (falls back to 2D without WebGPU).</li>
+  <li><a href="basic/">basic</a>: the WICG explainer example, unchanged.</li>
+  <li><a href="form/">form</a>: a contact form drawn with <code>drawElementImage</code> from <code>onpaint</code>.</li>
+  <li><a href="scroll-and-resize/">scroll-and-resize</a>: a scrolling list and a responsive layout inside one canvas.</li>
+  <li><a href="webgl-texture/">webgl-texture</a>: a spinning cube textured with a live form (<code>texElementSubImage2D</code>).</li>
+</ul>
+<p>Tested: desktop Chrome, Firefox 155+ and Safari 27+ (other desktop Chromium browsers are expected to work, unverified). In a browser with a complete native implementation the polyfill steps aside.
+  Elsewhere (older Firefox and Safari, mobile browsers) it refuses with one console warning and the examples say so on the page.</p>
+<p>Source, documentation and known limitations: <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">github.com/GiuseppeScottoLavina/html-in-canvas-polyfill</a>.</p>
+</body>
+</html>

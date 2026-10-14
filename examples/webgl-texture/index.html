@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>webgl-texture: an HTML form as a WebGL texture</title>
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<!-- texElementSubImage2D / texElementImage2D come with the GPU bundle (docs/BUNDLES.md); without it they throw a NotSupportedError that names it -->
+<script src="../../dist/hic-live-gpu.iife.min.js"></script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 52rem; background: #0e1420; color: #dfe7f5; }
+  h1 { margin-top: 0; }
+  a { color: #8fb4ff; }
+  /* A WebGL canvas that is also a drawable host. */
+  #gl { display: block; width: 100%; height: 420px; border: 1px solid #33415c; border-radius: 12px; background: #0b101a; }
+  #status { margin-top: 0.75rem; font: 13px/1.4 ui-monospace, monospace; color: #9fb0cc; }
+
+  /* The form: fixed size, so the HUD quad and the texture have a stable size. */
+  #card { box-sizing: border-box; width: 300px; padding: 16px 18px; font: 14px/1.4 system-ui, sans-serif; color: #1b2330; background: #ffffff; border-radius: 0; }
+  #card h2 { margin: 0 0 10px; font-size: 18px; }
+  #card label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: #3a4659; }
+  #card input[type=text] { display: block; box-sizing: border-box; width: 100%; margin-top: 4px; padding: 7px 9px; font: inherit; color: #1b2330; border: 1px solid #aeb8c8; border-radius: 6px; }
+  #card input[type=text]:focus { outline: 2px solid #2f6df6; border-color: #2f6df6; }
+  #card input[type=range] { display: block; width: 100%; margin: 6px 0 0; }
+  #card .big { display: block; margin-top: 12px; padding: 8px 10px; font-size: 22px; font-weight: 700; color: #fff; background: #2f6df6; border-radius: 6px; min-height: 1.4em; word-break: break-word; }
+</style>
+</head>
+<body>
+<h1>HTML form as a WebGL texture</h1>
+<p>The cube is textured with a live HTML form, uploaded with <code>gl.texElementSubImage2D</code>. The flat copy in the top-left corner is the same texture; the real form sits exactly under it, so you can click it, type, and drag the slider. Typing changes the cube.</p>
+
+<canvas id="gl" content="drawable">
+  <div id="card" drawable>
+    <h2>Texture source</h2>
+    <label>Your name<input id="name" type="text" value="cube" autocomplete="off"></label>
+    <label>Spin speed<input id="speed" type="range" min="0" max="100" value="35"></label>
+    <span class="big" id="big">cube</span>
+  </div>
+</canvas>
+<p id="status">starting...</p>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gl');
+  const card = document.getElementById('card');
+  const status = document.getElementById('status');
+  const fail = (message) => { status.textContent = message; console.warn('[webgl-texture example] ' + message); };
+
+  const gl = canvas.getContext('webgl2');
+  if (!gl) return fail('WebGL2 is not available in this browser.');
+  if (typeof gl.texElementSubImage2D !== 'function' || typeof canvas.captureElementImage !== 'function') {
+    return fail('HTML-in-Canvas is not available: is dist/ built (npm run build) and are you in desktop Chrome?');
+  }
+
+  // ---- shaders ------------------------------------------------------------------------------------------------------------------
+  const VS = `#version 300 es
+    in vec3 aPos; in vec3 aNormal; in vec2 aUv;
+    uniform mat4 uMvp; uniform mat4 uModel;
+    out vec2 vUv; out float vLight;
+    void main() {
+      vUv = aUv;
+      vec3 n = normalize(mat3(uModel) * aNormal);
+      vLight = 0.55 + 0.45 * max(dot(n, normalize(vec3(0.4, 0.7, 0.6))), 0.0);
+      gl_Position = uMvp * vec4(aPos, 1.0);
+    }`;
+  const FS = `#version 300 es
+    precision mediump float;
+    in vec2 vUv; in float vLight;
+    uniform sampler2D uTex; uniform float uFlat;
+    out vec4 outColor;
+    void main() { vec4 c = texture(uTex, vUv); outColor = vec4(c.rgb * mix(vLight, 1.0, uFlat), c.a); }`;
+  const program = gl.createProgram();
+  for (const [type, source] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, FS]]) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return fail('shader: ' + gl.getShaderInfoLog(shader));
+    gl.attachShader(program, shader);
+  }
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return fail('link: ' + gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  const loc = { pos: gl.getAttribLocation(program, 'aPos'), normal: gl.getAttribLocation(program, 'aNormal'), uv: gl.getAttribLocation(program, 'aUv'),
+    mvp: gl.getUniformLocation(program, 'uMvp'), model: gl.getUniformLocation(program, 'uModel'), flat: gl.getUniformLocation(program, 'uFlat') };
+
+  // ---- geometry: a cube (6 faces, each mapped 0..1) and a screen-space quad ------------------------------------------------------
+  function buildCube() {
+    const data = []; const index = [];
+    const faces = [ // normal, u axis, v axis
+      [[0, 0, 1], [1, 0, 0], [0, 1, 0]], [[0, 0, -1], [-1, 0, 0], [0, 1, 0]], [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
+      [[-1, 0, 0], [0, 0, 1], [0, 1, 0]], [[0, 1, 0], [1, 0, 0], [0, 0, -1]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+    ];
+    for (const [n, u, v] of faces) {
+      const base = data.length / 8;
+      for (const [su, sv] of [[-1, 1], [1, 1], [1, -1], [-1, -1]]) { // texture v = 0 is the TOP of the element
+        data.push(n[0] + u[0] * su + v[0] * sv, n[1] + u[1] * su + v[1] * sv, n[2] + u[2] * su + v[2] * sv, n[0], n[1], n[2], (su + 1) / 2, (1 - sv) / 2);
+      }
+      index.push(base, base + 2, base + 1, base, base + 3, base + 2); // counter-clockwise seen from outside
+    }
+    return { data: new Float32Array(data), index: new Uint16Array(index) };
+  }
+  function makeVao(data, index) {
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, index, gl.STATIC_DRAW);
+    for (const [l, size, offset] of [[loc.pos, 3, 0], [loc.normal, 3, 12], [loc.uv, 2, 24]]) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 32, offset); }
+    return { vao, buffer };
+  }
+  const cube = buildCube();
+  const cubeVao = makeVao(cube.data, cube.index).vao;
+  const hudIndex = new Uint16Array([0, 1, 2, 0, 2, 3]);
+  const hudData = new Float32Array(32);
+  const { vao: hudVao, buffer: hudBuffer } = makeVao(hudData, hudIndex);
+
+  // ---- the texture --------------------------------------------------------------------------------------------------------------
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let texW = 0, texH = 0, uploads = 0, haveTexture = false;
+
+  /** Upload the newest snapshot of the form. Like texSubImage2D, texElementSubImage2D needs storage that already exists. */
+  function uploadForm() {
+    const image = canvas.captureElementImage(card); // throws InvalidStateError before the first snapshot exists
+    const w = Math.ceil(image.width), h = Math.ceil(image.height); // the natural size: ceil(ElementImage size), in canvas bitmap pixels
+    image.close();
+    if (!(w > 0 && h > 0)) return;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    if (w !== texW || h !== texH) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      texW = w; texH = h;
+    }
+    gl.texElementSubImage2D(gl.TEXTURE_2D, 0, 0, 0, card);
+    haveTexture = true; uploads += 1;
+  }
+
+  // ---- paint event: a new snapshot of the form exists ----------------------------------------------------------------------------
+  canvas.addEventListener('paint', () => {
+    try { uploadForm(); } catch (error) { fail('texture upload failed: ' + error.message); }
+    // 3D contexts must call updateElementGeometry themselves: it makes the live form hit-testable where the flat copy is drawn (identity = the canvas top-left).
+    if (!canvas.__geometrySet) { canvas.updateElementGeometry(card); canvas.__geometrySet = true; }
+  });
+
+  // ---- size the drawing buffer to device pixels (the standard pattern) ------------------------------------------------------------
+  new ResizeObserver((entries) => {
+    const box = entries[0].devicePixelContentBoxSize[0];
+    canvas.width = box.inlineSize; canvas.height = box.blockSize;
+    canvas.requestPaint();
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+
+  // ---- tiny matrix helpers (column-major) -----------------------------------------------------------------------------------------
+  const mul = (a, b) => { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; };
+  const perspective = (fov, aspect, n, f) => { const t = 1 / Math.tan(fov / 2); return new Float32Array([t / aspect, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) / (n - f), -1, 0, 0, 2 * f * n / (n - f), 0]); };
+  const translate = (x, y, z) => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
+  const rotY = (a) => new Float32Array([Math.cos(a), 0, -Math.sin(a), 0, 0, 1, 0, 0, Math.sin(a), 0, Math.cos(a), 0, 0, 0, 0, 1]);
+  const rotX = (a) => new Float32Array([1, 0, 0, 0, 0, Math.cos(a), Math.sin(a), 0, 0, -Math.sin(a), Math.cos(a), 0, 0, 0, 0, 1]);
+  const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+  // ---- render loop --------------------------------------------------------------------------------------------------------------
+  let angle = 0, last = performance.now(), frames = 0;
+  const speed = document.getElementById('speed');
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    angle += dt * (Number(speed.value) / 100) * 2.2;
+    if (haveTexture && canvas.width > 0 && canvas.height > 0) {
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0.043, 0.063, 0.102, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      // the cube
+      gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
+      const model = mul(rotY(angle), rotX(0.45));
+      const view = translate(0.9, 0.0, -5.2);
+      const mvp = mul(perspective(0.9, canvas.width / canvas.height, 0.1, 50), mul(view, model));
+      gl.bindVertexArray(cubeVao);
+      gl.uniformMatrix4fv(loc.mvp, false, mvp); gl.uniformMatrix4fv(loc.model, false, model); gl.uniform1f(loc.flat, 0);
+      gl.drawElements(gl.TRIANGLES, cube.index.length, gl.UNSIGNED_SHORT, 0);
+      // the flat copy, in canvas CSS pixels from the top-left corner (where the live form is)
+      gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+      const sx = canvas.width / canvas.clientWidth, sy = canvas.height / canvas.clientHeight;
+      const x0 = 0, y0 = 0, x1 = card.offsetWidth * sx, y1 = card.offsetHeight * sy;
+      const ndc = (x, y) => [x / canvas.width * 2 - 1, 1 - y / canvas.height * 2];
+      const quad = [ndc(x0, y0), ndc(x1, y0), ndc(x1, y1), ndc(x0, y1)];
+      const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      quad.forEach(([x, y], i) => hudData.set([x, y, 0, 0, 0, 1, uv[i][0], uv[i][1]], i * 8));
+      gl.bindVertexArray(hudVao); gl.bindBuffer(gl.ARRAY_BUFFER, hudBuffer); gl.bufferSubData(gl.ARRAY_BUFFER, 0, hudData);
+      gl.uniformMatrix4fv(loc.mvp, false, identity); gl.uniformMatrix4fv(loc.model, false, identity); gl.uniform1f(loc.flat, 1);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      frames += 1;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---- the form is plain DOM: its own listeners ---------------------------------------------------------------------------------
+  document.getElementById('name').addEventListener('input', (event) => { document.getElementById('big').textContent = event.target.value || '(empty)'; });
+  setInterval(() => { status.textContent = 'texture ' + texW + 'x' + texH + ' px, uploads: ' + uploads + ', frames drawn: ' + frames; }, 250);
+  canvas.requestPaint();
+})();
+</script>
+</body>
+</html>

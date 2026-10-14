@@ -1,0 +1,19 @@
+# dependencies and build output (dist/ is built by `npm run build`, by `npm pack` through prepack, and in CI)
+node_modules/
+dist/
+_site/
+*.tgz
+
+# local test output and throwaway browser profiles written by the test harness
+.scratch/
+.profiles/
+*.trace.json
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
+.env
+.env.*

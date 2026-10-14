@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- The WICG HTML-in-Canvas explainer "Basic Example" (https://github.com/WICG/html-in-canvas), markup and script verbatim.
+     Additions that are not part of the example: this loader (?mode=poly&bundle=... | ?mode=ref), a paint counter, and the plain-DOM twin for the pixel oracle. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>explainer basic example</title>
+<script>
+  var q = new URLSearchParams(location.search);
+  window.__mode = q.get('mode') || 'poly';
+  if (window.__mode === 'poly' && q.get('bundle')) for (const src of q.get('bundle').split(',')) document.write('<script src="' + src + '"><\/script>');
+</script>
+</head>
+<body>
+<script>if (window.__mode === 'ref') document.write('<!--');</script>
+<canvas style="width: 400px; height: 200px;" content="drawable">
+  <form drawable>
+    <label for="name">name:</label>
+    <input id="name">
+  </form>
+</canvas>
+
+<script>
+  const canvas = document.querySelector('canvas');
+  const form = document.querySelector('canvas form');
+  const ctx = canvas.getContext('2d');
+
+  canvas.onpaint = () => {
+    ctx.reset();
+    ctx.drawElementImage(form, 100, 0);
+  };
+
+  // Size the canvas grid to match the device scale factor.=
+  new ResizeObserver((entries) => {
+    canvas.width = entries[0].devicePixelContentBoxSize[0].inlineSize;
+    canvas.height = entries[0].devicePixelContentBoxSize[0].blockSize;
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+</script>
+<!-- end of the example -->
+<script>
+  // not part of the example: observation only
+  canvas.addEventListener('paint', () => { window.__paints = (window.__paints || 0) + 1; });
+</script>
+<!-- --><script>if (window.__mode === 'ref') document.write('<div id="twin" style="position:relative;width:400px;height:200px;overflow:hidden;display:inline-block;vertical-align:top"><form id="twinform" style="position:absolute;top:0;margin:0"><label for="name">name:</label> <input id="name"></form></div>');</script>
+<script>
+  if (window.__mode === 'ref') {
+    // drawElementImage(form, 100, 0) places the form at x=100 GRID pixels = 100/dpr css px
+    document.getElementById('twinform').style.left = (100 / devicePixelRatio) + 'px';
+    window.__ready = true;
+  }
+</script>
+</body>
+</html>

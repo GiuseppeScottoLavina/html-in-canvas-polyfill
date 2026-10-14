@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>form: a contact form drawn into a canvas</title>
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<style>
+  :root { color-scheme: light; }
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 46rem; background: #f4f6fa; color: #1b2330; }
+  h1 { margin-top: 0; }
+  /* The canvas is sized by CSS. Its children are the live form; the canvas bitmap shows their snapshot. */
+  #stage { display: block; width: 100%; height: 440px; border: 1px solid #c3cad6; border-radius: 12px; background: #fff; }
+
+  /* The form is ordinary HTML and CSS. Everything it needs is inside the canvas (no outside selectors). */
+  #contact { box-sizing: border-box; width: 100%; padding: 24px 28px; font: 15px/1.4 system-ui, sans-serif; color: #1b2330; background: #fff; }
+  #contact h2 { margin: 0 0 4px; font-size: 22px; }
+  #contact p.hint { margin: 0 0 16px; color: #5a667a; font-size: 13px; }
+  #contact .row { display: flex; gap: 12px; }
+  #contact label.field { display: block; flex: 1; margin-bottom: 12px; font-size: 12px; font-weight: 600; color: #3a4659; }
+  #contact input[type=text], #contact input[type=email], #contact textarea {
+    display: block; box-sizing: border-box; width: 100%; margin-top: 4px; padding: 9px 10px; font: inherit; color: #1b2330;
+    border: 1px solid #aeb8c8; border-radius: 8px; background: #fbfcfe;
+  }
+  #contact input:focus, #contact textarea:focus { outline: 2px solid #2f6df6; outline-offset: 0; border-color: #2f6df6; }
+  #contact textarea { height: 76px; resize: none; }
+  #contact .consent { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; }
+  #contact button { padding: 10px 18px; font: inherit; font-weight: 600; color: #fff; background: #2f6df6; border: 0; border-radius: 8px; cursor: pointer; }
+  #contact button:hover { background: #1f58d6; }
+  #contact #result { margin-left: 12px; font-size: 13px; color: #1d7a4a; }
+  #contact .invalid { border-color: #c7283f !important; }
+  #contact #result.error { color: #c7283f; }
+
+  #log { margin-top: 1rem; padding: 10px 12px; font: 12px/1.5 ui-monospace, monospace; background: #fff; border: 1px solid #c3cad6; border-radius: 8px; min-height: 3em; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Contact form</h1>
+<p>The box below is a <code>&lt;canvas&gt;</code>. The form is real HTML that the polyfill draws into it with <code>drawElementImage</code> from the <code>paint</code> event. Click, type, tick the box, press Send.</p>
+
+<canvas id="stage" content="drawable">
+  <form id="contact" drawable autocomplete="off" novalidate>
+    <h2>Say hello</h2>
+    <p class="hint">Nothing is sent anywhere: the submit handler only writes a line below the canvas.</p>
+    <div class="row">
+      <label class="field">Name<input id="name" name="name" type="text" placeholder="Ada Lovelace"></label>
+      <label class="field">Email<input id="email" name="email" type="email" placeholder="ada@example.com"></label>
+    </div>
+    <label class="field">Message<textarea id="message" name="message" placeholder="What would you like to say?"></textarea></label>
+    <label class="consent"><input id="consent" name="consent" type="checkbox"> I agree to be contacted about this message</label>
+    <div><button id="send" type="submit">Send</button><span id="result" role="status"></span></div>
+  </form>
+</canvas>
+
+<div id="log" aria-live="polite">log: waiting for the first paint</div>
+
+<script>
+  const canvas = document.getElementById('stage');
+  const form = document.getElementById('contact');
+  const log = document.getElementById('log');
+  const ctx = canvas.getContext('2d');
+  let paints = 0;
+
+  // 1. Draw the form from the paint event. The polyfill fires it once every drawable has a snapshot, so this never throws for lack of one.
+  canvas.onpaint = () => {
+    ctx.reset();
+    ctx.drawElementImage(form, 0, 0);
+    paints += 1;
+  };
+
+  // 2. Keep the canvas bitmap at device-pixel size (the standard pattern). Writing width/height clears the bitmap; the polyfill repaints in the same frame.
+  new ResizeObserver((entries) => {
+    const box = entries[0].devicePixelContentBoxSize[0];
+    canvas.width = box.inlineSize;
+    canvas.height = box.blockSize;
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+
+  // 3. The form is live: validation and submit are the browser's own, plain DOM code.
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const result = document.getElementById('result');
+    const name = form.elements.name.value.trim();
+    const email = form.elements.email.value.trim();
+    let problem = '';
+    for (const id of ['name', 'email']) form.elements[id].classList.remove('invalid');
+    if (!name) { problem = 'Please enter your name.'; form.elements.name.classList.add('invalid'); }
+    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { problem = 'That email does not look right.'; form.elements.email.classList.add('invalid'); }
+    else if (!form.elements.consent.checked) problem = 'Please tick the box.';
+    result.className = problem ? 'error' : '';
+    result.textContent = problem || ('Thanks, ' + name + '. (not sent)');
+    log.textContent = 'submit handled: ' + (problem || 'valid') + '\nname=' + JSON.stringify(name) + ' email=' + JSON.stringify(email) + ' message length=' + form.elements.message.value.length;
+  });
+  form.addEventListener('input', () => { log.textContent = 'input event: name=' + JSON.stringify(form.elements.name.value) + ' (paints so far: ' + paints + ')'; });
+  canvas.addEventListener('paint', () => { if (paints === 1) log.textContent = 'first paint done'; });
+
+  // Not part of the pattern: a visible message when the polyfill could not install (Firefox, Safari, ...).
+  if (window.__HIC__ && window.__HIC__.error) log.textContent = 'hic-live-polyfill not installed: ' + window.__HIC__.error.message.replace(/^\[hic-live-polyfill\] /, '');
+</script>
+</body>
+</html>

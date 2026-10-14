@@ -1,0 +1,801 @@
+{
+ "note": "Reasons for every subtest that passes natively and fails in the polyfill (category: deviation | impossible | flaky | bug; reason: the feature id of docs/SUPPORT-MATRIX.md or a bug id). `pass`, `partial` and `stable` are rewritten by `npm run test:wpt -- --update-expectations`.",
+ "tests": {
+  "animated-gif-pinned-to-element-image.tentative.html": {
+   "category": "impossible",
+   "reason": "animated-images",
+   "note": "no signal when an animated image advances a frame, and an SVG image does not animate its nested images"
+  },
+  "animated-gif.tentative.html": {
+   "category": "impossible",
+   "reason": "animated-images",
+   "note": "no signal when an animated image advances a frame, and an SVG image does not animate its nested images"
+  },
+  "backdrop-filter-nested.tentative.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+  },
+  "backdrop-filter-rounded-bounds.tentative.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+  },
+  "canvas-transform-get-bounding-client-rect.tentative.html": {
+   "subtests": {
+    "updateElementGeometry() affects getBoundingClientRect() on an inline": {
+     "category": "deviation",
+     "reason": "inline-drawable-geometry",
+     "note": "inline drawable"
+    },
+    "updateElementGeometry() affects getBoundingClientRect() on a fragmented": {
+     "category": "deviation",
+     "reason": "inline-drawable-geometry",
+     "note": "fragmented inline drawable"
+    },
+    "updateElementGeometry() on ancestor and nested drawable": {
+     "category": "deviation",
+     "reason": "nested-geometry",
+     "note": "a nested drawable without its own canvas transform moves with its ancestor"
+    },
+    "updateElementGeometry() affects getBoundingClientRect() on a block nested": {
+     "category": "deviation",
+     "reason": "nested-geometry",
+     "note": "follows the ancestor test above in the same page"
+    },
+    "A non-drawable descendant inherits": {
+     "category": "deviation",
+     "reason": "nested-geometry",
+     "note": "follows the ancestor tests above in the same page"
+    }
+   }
+  },
+  "canvas-transform-get-set.tentative.html": {
+   "subtests": {
+    "getElementTransform() and updateElementGeometry() on SVG element": {
+     "category": "deviation",
+     "reason": "svg-drawable",
+     "note": "the <rect drawable> cases"
+    }
+   }
+  },
+  "css-backdrop-filter-image.tentative.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+  },
+  "css-backdrop-filter.tentative.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+  },
+  "css-blend-mode-over-both.tentative.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+  },
+  "css-blend-mode-over-content.tentative.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+  },
+  "display-contents.tentative.html": {
+   "category": "deviation",
+   "reason": "children-layout",
+   "note": "children of a display:contents child of the canvas keep their own position (native forces them static): CSS cannot select by computed display"
+  },
+  "draw-element-image-different-canvas.tentative.html": {
+   "subtests": {
+    "Prevent drawing ElementImage into a different canvas in a worker": {
+     "category": "impossible",
+     "reason": "worker-element-image",
+     "note": "needs an ElementImage in a worker"
+    }
+   }
+  },
+  "draw-element-image-get-image-data.tentative.html": {
+   "category": "deviation",
+   "reason": "color-space",
+   "note": "display-p3 element in a display-p3 canvas: snapshots are sRGB"
+  },
+  "element-image-fractional-size.tentative.html": {
+   "category": "deviation",
+   "reason": "resize-stale-first",
+   "note": "the canvas.width write repaints at once with the previous snapshot, which the awaited paint then presents. Not in `stable` (2026-10-14): the second subtest passes when the snapshot of the new child size lands before the single awaited paint and fails (the deviation) when the awaited paint presents the stale-first tile; since the in-frame resize re-raster (DECISIONS P-09) the fresh tile often wins (B, 3 reps: 1 / 1 / 2 of 2; earlier runs 2 / 2 / 2 / 2 / 1 and 1 / 1 / 1), never below the partial floor of 1; native at the pinned Canary fails both subtests (ElementImage.width undefined): a frame-timing race of the test against an asynchronous snapshot"
+  },
+  "iframe-local.tentative.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "a child browsing context cannot be serialised into foreignObject: hatched placeholder + report"
+  },
+  "iframe.tentative.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "a child browsing context cannot be serialised into foreignObject: hatched placeholder + report"
+  },
+  "ink-overflow.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
+  },
+  "invalidation-during-onpaint.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-dom-write-timing",
+   "note": "DOM written in the handler is snapshotted by a later build (>= 2 frames)"
+  },
+  "nested-canvas-scale.tentative.html": {
+   "category": "deviation",
+   "reason": "drawable-canvas-element",
+   "note": "the nested canvas is drawn into and drawn from in the same task: the snapshot still holds the previous bitmap"
+  },
+  "onpaint-changedElements.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+  },
+  "onpaint-css-animation.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+  },
+  "onpaint-fires-post-intersection-observation-steps.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+  },
+  "onpaint-iframe-nested-invalidation.tentative.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "canvases inside iframes need the polyfill in each frame and paint ordering across frames; iframes inside drawables are refused"
+  },
+  "onpaint-iframe-post-tree-order.tentative.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "canvases inside iframes need the polyfill in each frame and paint ordering across frames; iframes inside drawables are refused"
+  },
+  "onpaint-iframe.tentative.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "canvases inside iframes need the polyfill in each frame and paint ordering across frames; iframes inside drawables are refused"
+  },
+  "onpaint-post-tree-order-shadow-dom.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-order",
+   "note": "paint events of canvases in different shadow trees fire in the polyfill commit order, not in reverse shadow-including tree order"
+  },
+  "onpaint-post-tree-order.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "canvases paint when their own first snapshot lands, not all in one rendering update, so the reverse tree order across independent branches is not guaranteed"
+  },
+  "onpaint-remove-drawable-element.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "one-frame wait, see above",
+   "subtests": {
+    "onpaint should fire when a nested element with the drawable": {
+     "category": "deviation",
+     "reason": "paint-spurious",
+     "note": "the removed nested drawable is reported although the drawable ancestor is what changed"
+    }
+   }
+  },
+  "onpaint-remove-non-drawable-element.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+  },
+  "onpaint.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest. Not in `stable` (2026-10-14): whether the first two subtests pass depends on whether the initial snapshot has landed before the test's first one-frame wait (strict, 5 reps: 8 / 6 / 6 / 6 / 6 of 12, never below the partial floor of 3); relaxed (300 ms waits), 5 reps: the same 10 subtests pass in every rep (the last one times out under the relaxed waits), native 12 / 12 in every rep: a frame-timing property of the test against an asynchronous snapshot"
+  },
+  "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "backdrop-isolation",
+   "note": "backdrop-filter with a same-origin feImage: backdrop is not available in the isolated clone"
+  },
+  "privacy/background-image-in-iframe-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/background-image-in-iframe-moved-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/background-image-on-body-in-iframe-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/background-image-on-body-in-iframe-moved-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/background-image-on-html-in-iframe-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/background-image-on-html-in-iframe-moved-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/embed-image-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "cross-origin-resource",
+   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
+  },
+  "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "cross-origin-resource",
+   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
+  },
+  "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "cross-origin-resource",
+   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
+  },
+  "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "svg-drawable",
+   "note": "outermost <svg drawable> is drawn since X-13; the same-origin feImage of the referenced filter does not draw in the clone (cause not traced yet)"
+  },
+  "privacy/iframe-sandbox-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/iframes-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/object-image-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/picture-images-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "cross-origin-resource",
+   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
+  },
+  "privacy/pseudos/before-background-image-iframe-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/pseudos/before-background-image-iframe-modified-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/pseudos/before-background-image-iframe-moved-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/pseudos/before-images-iframe-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/pseudos/before-images-iframe-moved-ignored.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/selection-alone-with-decorations-painted.tentative.html": {
+   "category": "deviation",
+   "reason": "caret-selection",
+   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+  },
+  "privacy/selection-colors-default.tentative.html": {
+   "category": "deviation",
+   "reason": "caret-selection",
+   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+  },
+  "privacy/selection-painted-overlay-path.tentative.html": {
+   "category": "deviation",
+   "reason": "caret-selection",
+   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+  },
+  "privacy/subframe-cross-origin-frame.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "iframe",
+   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+  },
+  "privacy/svg/svg-mask-filter.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "svg-drawable",
+   "note": "outermost <svg drawable> is drawn since X-13; the canvas pixel under the mask differs from native (native drops the external mask; the clone result was 30-40,140,240; cause not traced yet)"
+  },
+  "privacy/svg/svg-mask-nested-filter.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "svg-drawable",
+   "note": "outermost <svg drawable> is drawn since X-13; the canvas pixel under the mask differs from native (native drops the external mask; the clone result was 30-40,140,240; cause not traced yet)"
+  },
+  "privacy/svg/svg-mask-visited.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "svg-drawable",
+   "note": "outermost <svg drawable> is drawn since X-13; the canvas pixel under the mask differs from native (native drops the external mask; the clone result was 30-40,140,240; cause not traced yet)"
+  },
+  "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html": {
+   "category": "deviation",
+   "reason": "svg-drawable",
+   "note": "outermost <svg drawable> is drawn since X-13; the same-origin feImage pattern does not draw in the clone (cause not traced yet)"
+  },
+  "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html": {
+   "category": "deviation",
+   "reason": "caret-selection",
+   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+  },
+  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html": {
+   "category": "deviation",
+   "reason": "caret-selection",
+   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+  },
+  "scale.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
+  },
+  "shadow-dom-slot-canvas-child.tentative.html": {
+   "category": "deviation",
+   "reason": "shadow-dom",
+   "note": "a drawable child slotted into a shadow tree of the canvas is not a logical child of the layer: drawElementImage throws InvalidStateError"
+  },
+  "video.tentative.html": {
+   "category": "deviation",
+   "reason": "video",
+   "note": "video frames are re-encoded per snapshot; the test needs a paint for every frame"
+  },
+  "offscreen/animated-gif-worker.tentative.html": {
+   "category": "impossible",
+   "reason": "worker-element-image",
+   "note": "a worker cannot rasterise the DOM and there is no signal for animated image or video frames: no worker-side source (E4)"
+  },
+  "offscreen/canvas-transform-update-worker.tentative.html": {
+   "category": "impossible",
+   "reason": "worker-element-image",
+   "note": "an ElementImage cannot be posted to a worker (not Transferable in userland); the polyfill throws HicUnsupportedError with a toImageBitmap() hint"
+  },
+  "offscreen/getElementTransform-worker.tentative.html": {
+   "category": "impossible",
+   "reason": "worker-element-image",
+   "note": "an ElementImage cannot be posted to a worker (not Transferable in userland); the polyfill throws HicUnsupportedError with a toImageBitmap() hint"
+  },
+  "offscreen/ink-overflow-worker.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
+  },
+  "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html": {
+   "category": "impossible",
+   "reason": "worker-element-image",
+   "note": "an ElementImage cannot be posted to a worker (not Transferable in userland); the polyfill throws HicUnsupportedError with a toImageBitmap() hint"
+  },
+  "offscreen/scale-worker.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
+  },
+  "offscreen/video-worker.tentative.html": {
+   "category": "impossible",
+   "reason": "worker-element-image",
+   "note": "a worker cannot rasterise the DOM and there is no signal for animated image or video frames: no worker-side source (E4)"
+  },
+  "requestPaint.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the first snapshot (and so the first paint of a mounted canvas) lands 2-3 frames after load, the test attaches its handler after one frame and counts that initial paint; stable in 7 of 8 warm repetitions, passes when the page is cold"
+  },
+  "onpaint-fires-post-resize-observer.tentative.html": {
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "the first snapshot (and so the first paint of a mounted canvas) lands 2-3 frames after load, the test attaches its handler after one frame and counts that initial paint; stable in 7 of 8 warm repetitions, passes when the page is cold"
+  }
+ },
+ "controlPass": {
+  "animated-clip-path.tentative.html": "reftest whose reference is blank (the transition ends fully clipped): empty equals empty without the feature",
+  "compositing-descendant-filter.tentative.html": "reftest whose reference is blank: empty equals empty without the feature",
+  "nested-canvas-not-rendered.tentative.html": "reftest of content that must NOT be rendered: the reference is blank",
+  "content-drawable-no-hit-test.tentative.html": "asserts that canvas children are NOT hit testable: true without the feature",
+  "hit-test/elementsFromPoint-no-content-drawable.tentative.html": "asserts that children are excluded from elementsFromPoint: true without the feature",
+  "onpaint-zindex.tentative.html": "asserts that no paint event fires after a z-index change: true without the feature",
+  "fullscreen-crash.tentative.html": "crash test: passes when the page does not crash",
+  "fullscreen-child-crash.tentative.html": "crash test: passes when the page does not crash",
+  "position-anchor-crash.tentative.html": "crash test: passes when the page does not crash",
+  "ruby-canvas-crash.tentative.html": "crash test: passes when the page does not crash",
+  "date-input-slot-assignment-crash.tentative.html": "crash test: passes when the page does not crash (Chrome 155 no longer crashes without the polyfill)"
+ },
+ "pass": [
+  "anchor-positioning.tentative.html",
+  "animated-clip-path.tentative.html",
+  "backdrop-filter-bounds-expansion.tentative.html",
+  "basic-rect-zoom.tentative.html",
+  "basic-rect.tentative.html",
+  "broken-image.tentative.html",
+  "canvas-in-custom-element-multiple.tentative.html",
+  "canvas-in-custom-element.tentative.html",
+  "canvas-transform-update-element-image.tentative.html",
+  "canvas-transform-update.tentative.html",
+  "captureElementImage.tentative.html",
+  "changes-in-paint-event.tentative.html",
+  "changing-size-in-paint-event.tentative.html",
+  "child-overflow.tentative.html",
+  "compositing-descendant-filter.tentative.html",
+  "compositing-op-basic.tentative.html",
+  "compositing-op-non-opaque-element.tentative.html",
+  "containment.tentative.html",
+  "content-drawable-no-hit-test.tentative.html",
+  "css-backdrop-filter-and-mask.tentative.html",
+  "css-backdrop-filter-on-div.tentative.html",
+  "css-backdrop-filter-with-sibling.tentative.html",
+  "css-blend-mode.tentative.html",
+  "css-clip-path-on-div.tentative.html",
+  "css-filter-image.tentative.html",
+  "css-filter-on-div.tentative.html",
+  "css-filter-reference-on-div.tentative.html",
+  "css-mask-on-div.tentative.html",
+  "css-opacity-on-div.tentative.html",
+  "css-transform-on-div.tentative.html",
+  "date-input-slot-assignment-crash.tentative.html",
+  "dialog-paints-in-top-layer.tentative.html",
+  "draw-element-different-canvas.tentative.html",
+  "draw-element-image-detached.tentative.html",
+  "draw-element-image-display-none.tentative.html",
+  "draw-element-image-empty.tentative.html",
+  "draw-element-image-scale-variant.tentative.html",
+  "drawElementImage-dest-rect.tentative.html",
+  "drawElementImage-src-rect.tentative.html",
+  "drawElementImage-zero-size.tentative.html",
+  "drawing-display-none-fails.tentative.html",
+  "element-shadow.tentative.html",
+  "error-conditions.tentative.html",
+  "filtered-basic.tentative.html",
+  "fullscreen-canvas.tentative.html",
+  "fullscreen-child-crash.tentative.html",
+  "fullscreen-crash.tentative.html",
+  "get-element-transform.tentative.html",
+  "global-alpha-basic.tentative.html",
+  "hit-test/elementsFromPoint-no-content-drawable.tentative.html",
+  "hit-test/elementsFromPoint-update-element-geometry-offscreen.tentative.html",
+  "hit-test/elementsFromPoint-update-element-geometry.tentative.html",
+  "hit-test/elementsFromPoint.tentative.html",
+  "hit-test/low-dpi-hit-test.tentative.html",
+  "hit-test/selection.tentative.html",
+  "hit-test/z-index.tentative.html",
+  "intersection-observer-visibility.tentative.html",
+  "layout-canvas-children.tentative.html",
+  "moved-nested-content-drawable-canvas.tentative.html",
+  "moved-webgl-canvas.tentative.html",
+  "nested-canvas-invalidation.tentative.html",
+  "nested-canvas-not-rendered.tentative.html",
+  "nested-canvas-reset.tentative.html",
+  "nested-content-drawable-canvas.tentative.html",
+  "nested-div-content-drawable-canvas.tentative.html",
+  "nested-drawable.tentative.html",
+  "non-opaque-element.tentative.html",
+  "offscreen/offscreenCanvas-drawElementImage.tentative.html",
+  "onpaint-display-none.tentative.html",
+  "onpaint-invalidation-crash.tentative.html",
+  "onpaint-outside-invalidation-crash.tentative.html",
+  "onpaint-scroll-crash.tentative.html",
+  "onpaint-zindex.tentative.html",
+  "percent-sizing.tentative.html",
+  "position-anchor-crash.tentative.html",
+  "privacy/background-png-images-ignored.tentative.https.sub.html",
+  "privacy/border-png-images-ignored.tentative.https.sub.html",
+  "privacy/border-svg-images-ignored.tentative.https.sub.html",
+  "privacy/box-reflect-images-ignored.tentative.https.sub.html",
+  "privacy/canvas-in-custom-element-images-ignored.tentative.html",
+  "privacy/filtered-div-ref-external-svg-ignored.tentative.https.sub.html",
+  "privacy/html-images-ignored.tentative.https.sub.html",
+  "privacy/nested-tainted-canvas-ignored.tentative.https.sub.html",
+  "privacy/nested-tainted-html-in-canvas-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-after-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-after-images-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-after-visited-color-ignored.tentative.html",
+  "privacy/pseudos/details-content-after-image-ignored.tentative.https.sub.html",
+  "privacy/pseudos/details-content-background-image-ignored.tentative.https.sub.html",
+  "privacy/pseudos/details-content-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/pseudos/details-content-visited-link-ignored.tentative.html",
+  "privacy/pseudos/first-letter-background-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/first-letter-visited-link-color-ignored.tentative.html",
+  "privacy/pseudos/first-letter-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/pseudos/first-line-background-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/first-line-background-images-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/first-line-visited-link-color-ignored.tentative.html",
+  "privacy/pseudos/first-line-visited-link-color-moved-ignored.tentative.html",
+  "privacy/pseudos/first-line-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/pseudos/marker-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/marker-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/shape-image-png-ignored.tentative.https.sub.html",
+  "privacy/shape-image-svg-ignored.tentative.https.sub.html",
+  "privacy/subframe-cross-origin-background-image.tentative.https.sub.html",
+  "privacy/subframe-cross-origin-html-images.tentative.https.sub.html",
+  "privacy/svg/svg-images-ignored.tentative.https.sub.html",
+  "privacy/svg/svg-linear-gradient-href-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-linear-gradient-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-marker-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-pattern-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-href-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-pattern-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-radial-gradient-href-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-radial-gradient-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-use-chained-outside-subtree-images-ignored.tentative.https.sub.html",
+  "privacy/svg/svg-use-outside-subtree-images-ignored.tentative.https.sub.html",
+  "privacy/target-text-ignored-overlay-path.tentative.html",
+  "privacy/video-ignored.tentative.https.sub.html",
+  "privacy/visited-link/visited-link-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-currentcolor-ignored.tentative.html",
+  "privacy/visited-link/visited-link-decoration-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-slotted-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-fill-stroke-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-linear-gradiant-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-pattern-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-radiant-gradiant-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-use-chained-outside-subtree-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-use-outside-subtree-ignored.tentative.html",
+  "ruby-canvas-crash.tentative.html",
+  "scroller-crash.tentative.html",
+  "shadow-basic.tentative.html",
+  "shadow-dom-slotted-moveBefore.tentative.html",
+  "shadow-dom-slotted.tentative.html",
+  "shadow-non-opaque-element.tentative.html",
+  "svg-foreign-object.tentative.html",
+  "svg-rect.tentative.html",
+  "top-layer-not-painted-in-canvas.tentative.html",
+  "triple-nested-content-drawable-canvas.tentative.html",
+  "update-element-geometry-get-bounding-client-rect.tentative.html"
+ ],
+ "partial": {
+  "canvas-transform-get-bounding-client-rect.tentative.html": 2,
+  "canvas-transform-get-set.tentative.html": 12,
+  "display-contents.tentative.html": 1,
+  "draw-element-image-different-canvas.tentative.html": 1,
+  "draw-element-image-get-image-data.tentative.html": 1,
+  "element-image-fractional-size.tentative.html": 1,
+  "onpaint-post-tree-order.tentative.html": 2,
+  "onpaint-remove-drawable-element.tentative.html": 2,
+  "onpaint.tentative.html": 3,
+  "requestPaint.tentative.html": 2
+ },
+ "stable": [
+  "anchor-positioning.tentative.html",
+  "animated-clip-path.tentative.html",
+  "animated-gif-pinned-to-element-image.tentative.html",
+  "animated-gif.tentative.html",
+  "backdrop-filter-bounds-expansion.tentative.html",
+  "backdrop-filter-nested.tentative.html",
+  "backdrop-filter-rounded-bounds.tentative.html",
+  "basic-rect-zoom.tentative.html",
+  "basic-rect.tentative.html",
+  "broken-image.tentative.html",
+  "canvas-in-custom-element-multiple.tentative.html",
+  "canvas-in-custom-element.tentative.html",
+  "canvas-transform-get-bounding-client-rect.tentative.html",
+  "canvas-transform-get-set.tentative.html",
+  "canvas-transform-update-element-image.tentative.html",
+  "canvas-transform-update.tentative.html",
+  "captureElementImage.tentative.html",
+  "changes-in-paint-event.tentative.html",
+  "changing-size-in-paint-event.tentative.html",
+  "child-overflow.tentative.html",
+  "compositing-descendant-filter.tentative.html",
+  "compositing-op-basic.tentative.html",
+  "compositing-op-non-opaque-element.tentative.html",
+  "containment.tentative.html",
+  "content-drawable-no-hit-test.tentative.html",
+  "css-backdrop-filter-and-mask.tentative.html",
+  "css-backdrop-filter-image.tentative.html",
+  "css-backdrop-filter-on-div.tentative.html",
+  "css-backdrop-filter-with-sibling.tentative.html",
+  "css-backdrop-filter.tentative.html",
+  "css-blend-mode-over-both.tentative.html",
+  "css-blend-mode-over-content.tentative.html",
+  "css-blend-mode.tentative.html",
+  "css-blur-filter-on-div.tentative.html",
+  "css-clip-path-on-div.tentative.html",
+  "css-filter-image.tentative.html",
+  "css-filter-on-div.tentative.html",
+  "css-filter-reference-on-div.tentative.html",
+  "css-mask-on-div.tentative.html",
+  "css-opacity-on-div.tentative.html",
+  "css-transform-on-div.tentative.html",
+  "date-input-slot-assignment-crash.tentative.html",
+  "dialog-paints-in-top-layer.tentative.html",
+  "display-contents.tentative.html",
+  "draw-element-different-canvas.tentative.html",
+  "draw-element-image-detached.tentative.html",
+  "draw-element-image-different-canvas.tentative.html",
+  "draw-element-image-display-none.tentative.html",
+  "draw-element-image-empty.tentative.html",
+  "draw-element-image-get-image-data.tentative.html",
+  "draw-element-image-scale-variant.tentative.html",
+  "drawElementImage-dest-rect.tentative.html",
+  "drawElementImage-src-rect.tentative.html",
+  "drawElementImage-zero-size.tentative.html",
+  "drawing-display-none-fails.tentative.html",
+  "element-shadow.tentative.html",
+  "error-conditions.tentative.html",
+  "filtered-basic.tentative.html",
+  "fullscreen-canvas.tentative.html",
+  "fullscreen-child-crash.tentative.html",
+  "fullscreen-crash.tentative.html",
+  "get-element-transform.tentative.html",
+  "global-alpha-basic.tentative.html",
+  "hit-test/elementsFromPoint-no-content-drawable.tentative.html",
+  "hit-test/elementsFromPoint-update-element-geometry-offscreen.tentative.html",
+  "hit-test/elementsFromPoint-update-element-geometry.tentative.html",
+  "hit-test/elementsFromPoint.tentative.html",
+  "hit-test/low-dpi-hit-test.tentative.html",
+  "hit-test/selection.tentative.html",
+  "hit-test/z-index.tentative.html",
+  "iframe-local.tentative.html",
+  "iframe.tentative.html",
+  "ink-overflow.tentative.html",
+  "inline-drawable.tentative.html",
+  "inline-fixed-containment.tentative.html",
+  "inline-fragments-drawable.tentative.html",
+  "inline-size-change.tentative.html",
+  "intersection-observer-visibility.tentative.html",
+  "invalidation-during-onpaint.tentative.html",
+  "layout-canvas-children.tentative.html",
+  "moved-nested-content-drawable-canvas.tentative.html",
+  "moved-webgl-canvas.tentative.html",
+  "nested-canvas-invalidation.tentative.html",
+  "nested-canvas-not-rendered.tentative.html",
+  "nested-canvas-reset.tentative.html",
+  "nested-canvas-scale.tentative.html",
+  "nested-content-drawable-canvas.tentative.html",
+  "nested-div-content-drawable-canvas.tentative.html",
+  "nested-drawable.tentative.html",
+  "non-opaque-element.tentative.html",
+  "offscreen/animated-gif-worker.tentative.html",
+  "offscreen/canvas-transform-update-worker.tentative.html",
+  "offscreen/getElementTransform-worker.tentative.html",
+  "offscreen/ink-overflow-worker.tentative.html",
+  "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html",
+  "offscreen/offscreenCanvas-drawElementImage.tentative.html",
+  "offscreen/scale-worker.tentative.html",
+  "offscreen/video-worker.tentative.html",
+  "onpaint-after-scroll-2.tentative.html",
+  "onpaint-after-scroll.tentative.html",
+  "onpaint-changedElements.tentative.html",
+  "onpaint-css-animation.tentative.html",
+  "onpaint-display-none.tentative.html",
+  "onpaint-fires-post-intersection-observation-steps.tentative.html",
+  "onpaint-iframe-nested-invalidation.tentative.html",
+  "onpaint-iframe.tentative.html",
+  "onpaint-invalidation-crash.tentative.html",
+  "onpaint-outside-invalidation-crash.tentative.html",
+  "onpaint-post-tree-order-shadow-dom.tentative.html",
+  "onpaint-post-tree-order.tentative.html",
+  "onpaint-remove-non-drawable-element.tentative.html",
+  "onpaint-scroll-crash.tentative.html",
+  "onpaint-zindex.tentative.html",
+  "opacity-animation.tentative.html",
+  "percent-sizing.tentative.html",
+  "position-anchor-crash.tentative.html",
+  "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html",
+  "privacy/background-image-in-iframe-ignored.tentative.https.sub.html",
+  "privacy/background-image-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-body-in-iframe-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-body-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-html-in-iframe-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-html-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/background-png-images-ignored.tentative.https.sub.html",
+  "privacy/background-svg-images-ignored.tentative.https.sub.html",
+  "privacy/border-png-images-ignored.tentative.https.sub.html",
+  "privacy/border-svg-images-ignored.tentative.https.sub.html",
+  "privacy/box-mask-png-ignored.tentative.https.sub.html",
+  "privacy/box-mask-svg-ignored.tentative.https.sub.html",
+  "privacy/box-reflect-images-ignored.tentative.https.sub.html",
+  "privacy/canvas-in-custom-element-images-ignored.tentative.html",
+  "privacy/embed-image-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-ref-external-svg-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html",
+  "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html",
+  "privacy/filtered-svg-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
+  "privacy/fragment-mask-png-ignored.tentative.https.sub.html",
+  "privacy/fragment-mask-svg-ignored.tentative.https.sub.html",
+  "privacy/html-images-cors-allowed.tentative.https.sub.html",
+  "privacy/html-images-ignored.tentative.https.sub.html",
+  "privacy/iframe-sandbox-ignored.tentative.https.sub.html",
+  "privacy/iframes-ignored.tentative.https.sub.html",
+  "privacy/nested-tainted-canvas-ignored.tentative.https.sub.html",
+  "privacy/nested-tainted-html-in-canvas-ignored.tentative.https.sub.html",
+  "privacy/object-image-ignored.tentative.https.sub.html",
+  "privacy/picture-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-after-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-after-images-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-after-visited-color-ignored.tentative.html",
+  "privacy/pseudos/before-background-image-iframe-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-background-image-iframe-modified-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-background-image-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-images-iframe-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-images-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/details-content-after-image-ignored.tentative.https.sub.html",
+  "privacy/pseudos/details-content-background-image-ignored.tentative.https.sub.html",
+  "privacy/pseudos/details-content-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/pseudos/details-content-visited-link-ignored.tentative.html",
+  "privacy/pseudos/first-letter-background-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/first-letter-visited-link-color-ignored.tentative.html",
+  "privacy/pseudos/first-letter-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/pseudos/first-line-background-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/first-line-background-images-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/first-line-visited-link-color-ignored.tentative.html",
+  "privacy/pseudos/first-line-visited-link-color-moved-ignored.tentative.html",
+  "privacy/pseudos/first-line-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/pseudos/marker-images-ignored.tentative.https.sub.html",
+  "privacy/pseudos/marker-visited-link-currentcolor-ignored.tentative.html",
+  "privacy/scrollbar-thumb-images-ignored.tentative.https.sub.html",
+  "privacy/selection-alone-with-decorations-painted.tentative.html",
+  "privacy/selection-colors-default.tentative.html",
+  "privacy/selection-painted-overlay-path.tentative.html",
+  "privacy/shape-image-png-ignored.tentative.https.sub.html",
+  "privacy/shape-image-svg-ignored.tentative.https.sub.html",
+  "privacy/subframe-cross-origin-background-image.tentative.https.sub.html",
+  "privacy/subframe-cross-origin-frame.tentative.https.sub.html",
+  "privacy/subframe-cross-origin-html-images.tentative.https.sub.html",
+  "privacy/svg/svg-images-ignored.tentative.https.sub.html",
+  "privacy/svg/svg-linear-gradient-href-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-linear-gradient-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-marker-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-mask-filter.tentative.https.sub.html",
+  "privacy/svg/svg-mask-nested-filter.tentative.https.sub.html",
+  "privacy/svg/svg-mask-visited.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-href-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-pattern-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-radial-gradient-href-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-radial-gradient-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-use-chained-outside-subtree-images-ignored.tentative.https.sub.html",
+  "privacy/svg/svg-use-ignored.tentative.https.sub.html",
+  "privacy/svg/svg-use-outside-subtree-images-ignored.tentative.https.sub.html",
+  "privacy/target-text-ignored-overlay-path.tentative.html",
+  "privacy/video-ignored.tentative.https.sub.html",
+  "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-currentcolor-ignored.tentative.html",
+  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-decoration-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-slotted-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-fill-stroke-color-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-linear-gradiant-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-pattern-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-radiant-gradiant-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-use-chained-outside-subtree-ignored.tentative.html",
+  "privacy/visited-link/visited-link-svg-use-outside-subtree-ignored.tentative.html",
+  "ruby-canvas-crash.tentative.html",
+  "scale.tentative.html",
+  "scroller-crash.tentative.html",
+  "shadow-basic.tentative.html",
+  "shadow-dom-slot-canvas-child.tentative.html",
+  "shadow-dom-slotted-moveBefore.tentative.html",
+  "shadow-dom-slotted.tentative.html",
+  "shadow-non-opaque-element.tentative.html",
+  "svg-foreign-object.tentative.html",
+  "svg-rect.tentative.html",
+  "top-layer-not-painted-in-canvas.tentative.html",
+  "triple-nested-content-drawable-canvas.tentative.html",
+  "update-element-geometry-get-bounding-client-rect.tentative.html",
+  "video.tentative.html"
+ ]
+}

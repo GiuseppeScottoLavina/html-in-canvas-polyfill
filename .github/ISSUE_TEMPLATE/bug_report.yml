@@ -1,0 +1,60 @@
+name: Bug report
+description: Something is drawn wrong, input misses, the polyfill refuses or throws.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please check docs/guides/TROUBLESHOOTING.md and the "Known limitations" in the README first: many refusals and placeholders are documented behaviour.
+        Security problems: do not file them here, see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Polyfill version
+      description: The npm version, or the commit if you built from source (`HicLivePolyfill.VERSION` or `__HIC__.installed.report()`).
+      placeholder: 0.1.0-preview.1
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      description: Exact version from the browser's About page, plus any flags (for example `--enable-blink-features=CanvasDrawElement`).
+      placeholder: Chrome 154.0.8037.98
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS, display and device pixel ratio
+      placeholder: macOS 26.1, 120 Hz, devicePixelRatio 2
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Install report
+      description: Run `JSON.stringify(__HIC__.installed.report(), null, 1)` in the page console (or `__HIC__.error` if the polyfill refused) and paste the output.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest page that shows the problem (inline HTML, a gist, or a CodePen/StackBlitz link). Say how you load the polyfill (script tag, CDN URL, bundler).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+      description: What the plain DOM (or the native implementation) shows, and what the canvas shows. Screenshots of both help.
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Every `[hic-live-polyfill]` message and any error.
+      render: text

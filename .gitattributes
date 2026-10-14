@@ -1,0 +1,17 @@
+* text=auto eol=lf
+
+*.png binary
+*.webp binary
+*.jpg binary
+*.gif binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.mp4 binary
+*.webm binary
+
+# vendored third-party tests (BSD-3-Clause, test/vendor/wpt/LICENSE.md)
+test/vendor/** linguist-vendored
+# generated documentation tables
+docs/CONFORMANCE.md linguist-generated

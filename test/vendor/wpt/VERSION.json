@@ -1,0 +1,25 @@
+{
+  "source": "https://github.com/web-platform-tests/wpt",
+  "sha": "d9b949e562d5064aa1cab263dcfb678139646766",
+  "commit": "[html-in-canvas] Privacy preserving paint -> read-back allowed rendering (2026-10-07T05:45:45Z)",
+  "chromium": {
+    "tag": "157.0.8091.0",
+    "commit": "6532fdea9c01b64cea9c3d3d9f10c241bc3dfb42",
+    "note": "third_party/blink/web_tests/external/wpt/html/canvas/element/manual/draw-element-image at this tag has the git tree id 56dcb6eb7b44390b6cf245af4043a948da0c71ec, identical to the same directory of the pinned WPT commit; every one of the 308 test blobs was verified byte for byte (git blob sha1) against the Chromium copy"
+  },
+  "paths": [
+    "html/canvas/element/manual/draw-element-image/**",
+    "html/canvas/offscreen/manual/draw-element-image/**",
+    "html/canvas/resources/{draw-element-image-utils.js,wait-for-canvas-paint.js,draw-element-image-styles.css,color-grid-component.js,canvas-tests.js}",
+    "resources/{testharness.js,testharnessreport.js,testdriver.js,testdriver-actions.js,testdriver-vendor.js}",
+    "common/reftest-wait.js, dom/events/scrolling/scroll_support.js, fonts/{ahem.css,Ahem.ttf}, images/*, media/rgb100.webm"
+  ],
+  "licence": "BSD-3-Clause (web-platform-tests contributors), see LICENSE.md",
+  "use": "test time only; never shipped and never imported by src/",
+  "serverSideSubstitution": "`.sub.` files are served with {{location[host]}}, {{ports[https][0]}}, {{hosts[alt][www]}} substituted by test/wpt/server.mjs",
+  "overridden": [
+    "resources/testharnessreport.js is served as the upstream stub plus test/wpt/lib/report.js",
+    "resources/testdriver-vendor.js is served as test/wpt/lib/testdriver-vendor.js (CDP input)"
+  ],
+  "fetchedOn": "2026-10-09"
+}

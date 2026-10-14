@@ -1,0 +1,134 @@
+{
+  "name": "@giuseppescottolavina/html-in-canvas-polyfill",
+  "version": "0.1.0-preview.1",
+  "description": "Polyfill for the proposed HTML-in-Canvas API (content=\"drawable\", drawElementImage, the paint event) over a live DOM, for desktop Chrome, Firefox 155+ and Safari 27+. Native-first: steps aside where the browser implements it.",
+  "keywords": [
+    "html-in-canvas",
+    "canvas",
+    "drawElementImage",
+    "drawable",
+    "paint-event",
+    "polyfill",
+    "wicg",
+    "whatwg",
+    "webgpu",
+    "webgl",
+    "foreignObject"
+  ],
+  "author": "Giuseppe Scotto Lavina <giuseppe.sc8.lavina@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#readme",
+  "bugs": {
+    "url": "https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill.git"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./src/iife.js",
+    "./src/effects-iife.js",
+    "./src/effects-water-iife.js",
+    "./src/native-bridge.js",
+    "./dist/*.iife.js",
+    "./dist/*.iife.min.js",
+    "./dist/esm/native-bridge.js",
+    "./src/engines.js",
+    "./src/engines-iife.js",
+    "./dist/esm/index.js",
+    "./src/gpu.js",
+    "./src/gpu-iife.js"
+  ],
+  "main": "./dist/esm/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/esm/index.js"
+    },
+    "./effects": {
+      "types": "./dist/types/effects.d.ts",
+      "default": "./dist/esm/effects.js"
+    },
+    "./effects/water": {
+      "types": "./dist/types/effects-water.d.ts",
+      "default": "./dist/esm/effects-water.js"
+    },
+    "./native-bridge": {
+      "types": "./dist/types/native-bridge.d.ts",
+      "default": "./dist/esm/native-bridge.js"
+    },
+    "./iife": "./dist/hic-live-polyfill.iife.js",
+    "./iife/min": "./dist/hic-live-polyfill.iife.min.js",
+    "./iife/effects": "./dist/hic-live-effects.iife.js",
+    "./iife/effects/min": "./dist/hic-live-effects.iife.min.js",
+    "./iife/effects-water": "./dist/hic-live-effects-water.iife.js",
+    "./iife/effects-water/min": "./dist/hic-live-effects-water.iife.min.js",
+    "./iife/native-bridge": "./dist/hic-live-native-bridge.iife.js",
+    "./iife/native-bridge/min": "./dist/hic-live-native-bridge.iife.min.js",
+    "./iife/engines": "./dist/hic-live-engines.iife.js",
+    "./iife/engines/min": "./dist/hic-live-engines.iife.min.js",
+    "./iife/gpu": "./dist/hic-live-gpu.iife.js",
+    "./iife/gpu/min": "./dist/hic-live-gpu.iife.min.js",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "dist",
+    "!dist/sizes.json",
+    "docs/API-CONTRACT.md",
+    "docs/BUNDLES.md",
+    "docs/CONFORMANCE.md",
+    "docs/COMPARISON.md",
+    "docs/DESIGN-DECISIONS.md",
+    "docs/SUPPORT-MATRIX.md",
+    "docs/guides",
+    "examples/index.html",
+    "examples/serve.mjs",
+    "examples/README.md",
+    "examples/basic",
+    "examples/form",
+    "examples/water-form",
+    "examples/scroll-and-resize",
+    "examples/webgl-texture",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "scripts": {
+    "check": "tsc -p jsconfig.json --noEmit",
+    "lint": "node scripts/check-repo.mjs",
+    "build": "node scripts/build.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "docs:sync": "node scripts/gen-support-matrix.mjs && node scripts/check-repo.mjs --docs",
+    "test": "node scripts/check-repo.mjs --allow-size && npm run check && npm run test:unit && node scripts/check-bundle.mjs --allow-size",
+    "test:gates": "node test/gates/run-all.mjs",
+    "test:unit:browser": "node test/unit/run.mjs",
+    "test:unit": "node test/unit/lib/run-node-tests.mjs && node test/unit/run.mjs",
+    "test:unit:selftest": "node test/unit/run.mjs --module runner-selftest && node test/unit/run.mjs --module runner-selftest --expect-fail",
+    "test:harness": "node test/harness/selftest.mjs",
+    "test:mutants": "node test/gates/mutants/run.mjs",
+    "test:gates:all": "node scripts/test-all.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "demo": "node examples/serve.mjs",
+    "test:examples": "node scripts/check-examples.mjs",
+    "test:stress": "node scripts/check-hang-stress.mjs",
+    "bench:compare": "node test/bench/compare/run.mjs",
+    "test:wpt": "node test/wpt/gate.mjs",
+    "test:frameworks": "node test/frameworks/run.mjs",
+    "test:xbrowser": "node test/xbrowser/run.mjs",
+    "prepack": "node scripts/build.mjs --quiet"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

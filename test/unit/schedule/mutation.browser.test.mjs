@@ -1,0 +1,224 @@
+import { test, assert, frames, microtasks } from '/test/unit/lib/t.js';
+import { createRig } from './_dom.js';
+import { observeMutations } from '/src/schedule/observers/mutation-observer.js';
+import { BUS } from '/src/contracts/events.js';
+
+const PAGE = '<div drawable id="d1" style="width:200px"><p id="p1">hello</p><div id="box" style="width:50px;height:20px;background:#eee"></div></div><div drawable id="d2"><span id="s">x</span></div>';
+
+test('childList change is structural: whole drawable, cause mutation', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  rig.layerEl.querySelector('#d1').append(document.createElement('i'));
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1);
+  assert.equal(rig.sink.damage[0].cause, 'mutation');
+  assert.equal(rig.sink.damage[0].drawable.id, 'd1');
+  assert.equal(rig.sink.damage[0].rect, null);
+});
+
+test('attribute change: first sight is whole-drawable, then a same-size element gets a local rect', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const box = rig.layerEl.querySelector('#box');
+  box.setAttribute('data-x', '1');
+  await microtasks();
+  assert.equal(rig.sink.damage[0].rect, null, 'first sighting cannot know what moved');
+  rig.sink.clear();
+  box.style.background = '#f00';
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1);
+  const r = rig.sink.damage[0].rect;
+  assert.ok(r && r.width >= 50 && r.width <= 50 + 48 && r.height >= 20, `local rect ${JSON.stringify(r)}`);
+  assert.equal(rig.sink.damage[0].drawable.id, 'd1');
+});
+
+test('a box that changes size is whole-drawable again (siblings may have moved)', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const box = rig.layerEl.querySelector('#box');
+  box.style.color = 'red';
+  await microtasks();
+  rig.sink.clear();
+  box.style.height = '60px';
+  await microtasks();
+  assert.equal(rig.sink.damage[0].rect, null);
+});
+
+test('text change maps to the parent element and its drawable', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  rig.layerEl.querySelector('#s').firstChild.data = 'changed';
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1);
+  assert.equal(rig.sink.damage[0].drawable.id, 'd2');
+});
+
+test('polyfill writes are ignored: data-hic-*, aria-owns, generated owns ids, managed nodes; real changes in the same batch still count', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const d1 = rig.layerEl.querySelector('#d1');
+  d1.setAttribute('data-hic-hit', 'k1');
+  d1.setAttribute('aria-owns', 'x');
+  rig.layerEl.setAttribute('style', 'position:relative;width:200px;opacity:0');
+  const node = document.createElement('div');
+  node.setAttribute('data-hic-node', '');
+  d1.append(node);
+  d1.querySelector('#p1').id = 'hic-o-1';
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 0, 'nothing from the polyfill');
+  d1.querySelector('#hic-o-1').setAttribute('title', 'real');
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1, 'positive control: a real attribute change is seen');
+});
+
+test('adding and removing drawables emits DRAWABLES_CHANGED with the diff; the nested parent is damaged', async t => {
+  const rig = createRig({ html: PAGE });
+  const events = [];
+  rig.bus.on(BUS.DRAWABLES_CHANGED, e => events.push(e));
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const added = document.createElement('div');
+  added.setAttribute('drawable', '');
+  rig.layerEl.append(added);
+  await microtasks();
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].added, [added]);
+  assert.deepEqual(events[0].removed, []);
+  const nested = document.createElement('div');
+  nested.setAttribute('drawable', '');
+  rig.layerEl.querySelector('#d1').append(nested);
+  await microtasks();
+  rig.sink.clear();
+  nested.remove();
+  await microtasks();
+  assert.deepEqual(events.at(-1).removed, [nested]);
+  assert.equal(rig.sink.damage.some(d => d.drawable.id === 'd1' && d.rect === null), true, 'the ancestor drawable is damaged so changedElements can list it');
+});
+
+test('the drawable attribute toggled on an element recomputes the set', async t => {
+  const rig = createRig({ html: '<div id="a"><b id="b">x</b></div>' });
+  const events = [];
+  rig.bus.on(BUS.DRAWABLES_CHANGED, e => events.push(e));
+  t.cleanup(observeMutations(rig.env, rig.record));
+  rig.layerEl.querySelector('#a').setAttribute('drawable', '');
+  await microtasks();
+  assert.equal(events.length, 1);
+  assert.equal(events[0].added[0].id, 'a');
+});
+
+test('disposer disconnects', async t => {
+  const rig = createRig({ html: PAGE });
+  const stop = observeMutations(rig.env, rig.record);
+  stop();
+  rig.layerEl.querySelector('#d1').append(document.createElement('i'));
+  await frames(1);
+  assert.equal(rig.sink.damage.length, 0);
+});
+
+test('a mutation outside every drawable can move a drawable: the geometry offsets are re-measured once per batch; changes inside a drawable do not touch layout', async t => {
+  const rig = createRig({ html: '<div id="gap" style="height:0"></div><div drawable id="only"><p id="p1">hello</p><div id="box" style="width:50px;height:20px"></div></div>' });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  rig.layerEl.querySelector('#p1').textContent = 'typing';
+  rig.layerEl.querySelector('#p1').firstChild.data = 'typing more';
+  rig.layerEl.querySelector('#box').style.background = '#f00';
+  await microtasks();
+  assert.equal(rig.layer.revalidations, 0, 'text and style inside the only drawable: no re-measure (typing must stay cheap)');
+  const gap = rig.layerEl.querySelector('#gap');
+  gap.style.height = '40px';
+  gap.setAttribute('data-x', '1');
+  await microtasks();
+  assert.equal(rig.layer.revalidations, 1, 'a sibling of the drawables changed size: one re-measure for the whole batch');
+  rig.layerEl.insertBefore(document.createElement('div'), rig.layerEl.firstChild);
+  await microtasks();
+  assert.equal(rig.layer.revalidations, 2, 'content inserted before the drawables');
+});
+
+test('a drawable that restyles ITSELF (margin, position) can move: re-measured', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  rig.layerEl.querySelector('#d1').style.marginLeft = '30px';
+  await microtasks();
+  assert.equal(rig.layer.revalidations, 1);
+});
+
+test('a structural change inside one of SEVERAL drawables can move the next one: re-measured; a text edit is not structural', async t => {
+  const rig = createRig({ html: PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  rig.layerEl.querySelector('#p1').firstChild.data = 'edited';
+  await microtasks();
+  assert.equal(rig.layer.revalidations, 0);
+  rig.layerEl.querySelector('#d1').append(document.createElement('i'));
+  await microtasks();
+  assert.equal(rig.layer.revalidations, 1);
+});
+
+test('mutations inside an open shadow root of a drawable (also one attached later) damage the whole drawable (X-13)', async t => {
+  const rig = createRig({ html: PAGE });
+  const sr = rig.layerEl.querySelector('#box').attachShadow({ mode: 'open' });
+  sr.innerHTML = '<b id="in">a</b>';
+  t.cleanup(observeMutations(rig.env, rig.record));
+  sr.querySelector('#in').textContent = 'b';
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1, 'a MutationObserver does not cross the shadow boundary by itself');
+  assert.equal(rig.sink.damage[0].drawable.id, 'd1');
+  assert.equal(rig.sink.damage[0].rect, null);
+  rig.sink.clear();
+  const host2 = document.createElement('span');
+  rig.layerEl.querySelector('#s').append(host2);
+  const sr2 = host2.attachShadow({ mode: 'open' });
+  await microtasks();
+  rig.sink.clear();
+  sr2.append(document.createElement('i'));
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1);
+  assert.equal(rig.sink.damage[0].drawable.id, 'd2');
+});
+
+// optimization 4 (docs/PERFORMANCE-COMPARISON.md): a resize is bounded by the nearest unchanged ancestor, and text replaced through textContent is not structural
+const APP = '<div drawable id="app" style="width:400px"><header id="hd" style="display:flex;justify-content:space-between;align-items:center;height:40px"><h1 id="t" style="margin:0;font:20px Arial">Title</h1><nav>menu</nav></header>'
+  + '<main id="mn" style="height:600px;background:#eee"></main></div>';
+
+test('a heading that changes width inside a fixed-size header damages the header, not the drawable (after the chain was seen once)', async t => {
+  const rig = createRig({ html: APP });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const h1 = rig.layerEl.querySelector('#t');
+  h1.textContent = 'Title one';
+  await microtasks();
+  assert.equal(rig.sink.damage[0].rect, null, 'first sighting: nothing recorded yet, whole drawable');
+  rig.sink.clear();
+  h1.textContent = 'A much longer title now';
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1);
+  const r = rig.sink.damage[0].rect;
+  const hd = rig.layerEl.querySelector('#hd').getBoundingClientRect();
+  assert.ok(r, 'bounded by the header');
+  assert.ok(r.height <= hd.height + 2 * 24 + 1 && r.width <= hd.width + 2 * 24 + 1, `header-sized rect ${JSON.stringify(r)}`);
+  assert.ok(r.y + r.height < 200, 'the main area below is not damaged');
+});
+
+test('when the header itself grows, the damage climbs to the drawable (whole), since everything below may have moved', async t => {
+  const rig = createRig({ html: APP.replace('height:40px', 'min-height:40px') });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const h1 = rig.layerEl.querySelector('#t');
+  h1.textContent = 'Title one';
+  await microtasks();
+  rig.sink.clear();
+  h1.style.fontSize = '60px';
+  await microtasks();
+  assert.equal(rig.sink.damage[0].rect, null);
+});
+
+test('textContent of a text-only element is a local change (no drawable can appear); an element child is still structural', async t => {
+  const rig = createRig({ html: APP });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const nav = rig.layerEl.querySelector('nav');
+  nav.textContent = 'menu!';
+  await microtasks();
+  rig.sink.clear();
+  nav.textContent = 'menu?';
+  await microtasks();
+  assert.ok(rig.sink.damage[0].rect, `local: ${JSON.stringify(rig.sink.damage[0].rect)}`);
+  rig.sink.clear();
+  nav.append(document.createElement('b'));
+  await microtasks();
+  assert.equal(rig.sink.damage[0].rect, null, 'an element was added: structural, whole drawable');
+});

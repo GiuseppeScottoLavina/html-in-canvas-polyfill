@@ -1,0 +1,786 @@
+{
+ "note": "Per-subtest passes of the oracle build that matches the pinned WPT revision (test/vendor/wpt/VERSION.json chromium.tag), intersection of its full runs (every repetition passing in every run). Used by test/wpt/triage.mjs only when the installed Canary is a different build (oracle drift: Canary auto-updates and implements post-pin API changes). Regenerate only from runs of the pinned build.",
+ "build": "Chrome/157.0.8091.0",
+ "wptSha": "d9b949e562d5064aa1cab263dcfb678139646766",
+ "runs": [
+  "2026-10-09T08:39:08.505Z",
+  "2026-10-09T09:03:01.616Z",
+  "2026-10-09T13:39:58.100Z",
+  "2026-10-09T18:31:33.415Z"
+ ],
+ "pass": {
+  "anchor-positioning.tentative.html": [
+   "reftest"
+  ],
+  "animated-clip-path.tentative.html": [
+   "reftest"
+  ],
+  "animated-gif-pinned-to-element-image.tentative.html": [
+   "Canvas.drawElementImage: animated gif advances and repaints the canvas"
+  ],
+  "animated-gif.tentative.html": [
+   "Canvas.drawElementImage: animated gif advances and repaints the canvas"
+  ],
+  "backdrop-filter-bounds-expansion.tentative.html": [
+   "drawElementImage applies backdrop-filter bounds beyond child drawable bounds"
+  ],
+  "backdrop-filter-nested.tentative.html": [
+   "reftest"
+  ],
+  "backdrop-filter-rounded-bounds.tentative.html": [
+   "reftest"
+  ],
+  "basic-rect-zoom.tentative.html": [
+   "reftest"
+  ],
+  "basic-rect.tentative.html": [
+   "reftest"
+  ],
+  "broken-image.tentative.html": [
+   "reftest"
+  ],
+  "canvas-in-custom-element-multiple.tentative.html": [
+   "reftest"
+  ],
+  "canvas-in-custom-element.tentative.html": [
+   "reftest"
+  ],
+  "canvas-transform-get-bounding-client-rect.tentative.html": [
+   "A non-drawable descendant inherits its ancestor's canvas transform",
+   "updateElementGeometry() affects getBoundingClientRect() on a block nested drawable",
+   "updateElementGeometry() affects getBoundingClientRect() on a fragmented inline nested drawable",
+   "updateElementGeometry() affects getBoundingClientRect() on an inline nested drawable",
+   "updateElementGeometry() affects getBoundingClientRect() on canvas child",
+   "updateElementGeometry() does not affect getBoundingClientRect() outside canvas subtree",
+   "updateElementGeometry() on ancestor and nested drawable"
+  ],
+  "canvas-transform-get-set.tentative.html": [
+   "clearElementGeometry() and updateElementGeometry() resetting matrix to identity",
+   "getElementTransform() and updateElementGeometry() on SVG element",
+   "getElementTransform() and updateElementGeometry() on canvas without content=drawable throw InvalidStateError",
+   "getElementTransform() and updateElementGeometry() on disconnected elements throw InvalidStateError",
+   "getElementTransform() and updateElementGeometry() on drawable nested descendants",
+   "getElementTransform() and updateElementGeometry() on elements inside different <canvas> throw InvalidStateError",
+   "getElementTransform() and updateElementGeometry() on elements outside <canvas> throw InvalidStateError",
+   "getElementTransform() and updateElementGeometry() on non-drawable nested descendants throw InvalidStateError",
+   "getElementTransform() defaults to identity DOMMatrix",
+   "getElementTransform() returns a new DOMMatrix object each time",
+   "updateElementGeometry() with 2D DOMMatrix and reading back",
+   "updateElementGeometry() with 3D DOMMatrix and reading back",
+   "updateElementGeometry() with invalid DOMMatrixInit throws TypeError"
+  ],
+  "canvas-transform-update-element-image.tentative.html": [
+   "OffscreenCanvas clear and redraw in same turn processes updates in order",
+   "OffscreenCanvas draw and clear in the same turn processes updates in order and de-duplicates event.elements",
+   "OffscreenCanvas drawElementImage(ElementImage) automatically updates element canvas transform by default",
+   "OffscreenCanvas drawElementImage(ElementImage) does not update element canvas transform with {preserveElementGeometry: true}",
+   "OffscreenCanvas drawElementImage(ElementImage) updates element canvas transform with explicit {preserveElementGeometry: false}",
+   "OffscreenCanvas multiple clearElementGeometry calls in same turn batch and de-duplicate event.elements",
+   "OffscreenCanvas.clearElementGeometry(Element) on main thread clears element canvas transform and dispatches elementgeometryupdate",
+   "OffscreenCanvas.clearElementGeometry(ElementImage) on main thread clears element canvas transform and dispatches elementgeometryupdate"
+  ],
+  "canvas-transform-update.tentative.html": [
+   "drawElementImage() automatically updates element canvas transform by default",
+   "drawElementImage() does not update element canvas transform with {preserveElementGeometry: true}",
+   "drawElementImage() updates element canvas transform with explicit {preserveElementGeometry: false}",
+   "drawElementImage() with destination size overload (4 arguments)",
+   "drawElementImage() with source and destination rect overload (8 arguments)",
+   "drawElementImage() with source rect overload (6 arguments)"
+  ],
+  "captureElementImage.tentative.html": [
+   "ElementImage width and height should be in canvas pixel grid coordinate space",
+   "ElementImage width and height update when canvas pixel grid size changes",
+   "ElementImage.close() invalidates the image for drawing",
+   "captureElementImage on a nested canvas should succeed",
+   "captureElementImage should return an object that can be drawn",
+   "captureElementImage size should be the most recently painted size"
+  ],
+  "changes-in-paint-event.tentative.html": [
+   "reftest"
+  ],
+  "changing-size-in-paint-event.tentative.html": [
+   "reftest"
+  ],
+  "child-overflow.tentative.html": [
+   "reftest"
+  ],
+  "compositing-descendant-filter.tentative.html": [
+   "reftest"
+  ],
+  "compositing-op-basic.tentative.html": [
+   "reftest"
+  ],
+  "compositing-op-non-opaque-element.tentative.html": [
+   "reftest"
+  ],
+  "containment.tentative.html": [
+   "canvas child containment"
+  ],
+  "content-drawable-no-hit-test.tentative.html": [
+   "canvas click",
+   "canvas elementFromPoint",
+   "canvas mouseenter"
+  ],
+  "css-backdrop-filter-and-mask.tentative.html": [
+   "reftest"
+  ],
+  "css-backdrop-filter-image.tentative.html": [
+   "reftest"
+  ],
+  "css-backdrop-filter-on-div.tentative.html": [
+   "reftest"
+  ],
+  "css-backdrop-filter-with-sibling.tentative.html": [
+   "reftest"
+  ],
+  "css-backdrop-filter.tentative.html": [
+   "reftest"
+  ],
+  "css-blend-mode-over-both.tentative.html": [
+   "reftest"
+  ],
+  "css-blend-mode-over-content.tentative.html": [
+   "reftest"
+  ],
+  "css-blend-mode.tentative.html": [
+   "reftest"
+  ],
+  "css-clip-path-on-div.tentative.html": [
+   "reftest"
+  ],
+  "css-filter-image.tentative.html": [
+   "reftest"
+  ],
+  "css-filter-on-div.tentative.html": [
+   "reftest"
+  ],
+  "css-filter-reference-on-div.tentative.html": [
+   "reftest"
+  ],
+  "css-mask-on-div.tentative.html": [
+   "reftest"
+  ],
+  "css-opacity-on-div.tentative.html": [
+   "reftest"
+  ],
+  "css-transform-on-div.tentative.html": [
+   "reftest"
+  ],
+  "date-input-slot-assignment-crash.tentative.html": [
+   "crashtest"
+  ],
+  "dialog-paints-in-top-layer.tentative.html": [
+   "reftest"
+  ],
+  "display-contents.tentative.html": [
+   "Dynamic display changes between flex and contents update child styles and draw correctly",
+   "display:contents element throws InvalidStateError while its child element can be drawn"
+  ],
+  "draw-element-different-canvas.tentative.html": [
+   "Prevent drawing Element into a different canvas"
+  ],
+  "draw-element-image-detached.tentative.html": [
+   "canvas drawElementImage throws for a detached canvas due to lack of layout"
+  ],
+  "draw-element-image-different-canvas.tentative.html": [
+   "Prevent drawing ElementImage into a different canvas in a worker thread",
+   "Prevent drawing ElementImage into a different canvas on main thread"
+  ],
+  "draw-element-image-display-none.tentative.html": [
+   "Canvas drawElementImage() should throw when drawn child is not laid out."
+  ],
+  "draw-element-image-empty.tentative.html": [
+   "canvas drawElementImage should not throw on empty elements."
+  ],
+  "draw-element-image-get-image-data.tentative.html": [
+   "drawElementImage pixel readback",
+   "drawElementImage pixel readback 1"
+  ],
+  "draw-element-image-scale-variant.tentative.html": [
+   "reftest"
+  ],
+  "drawElementImage-dest-rect.tentative.html": [
+   "drawElementImage handles negative dest width and height"
+  ],
+  "drawElementImage-src-rect.tentative.html": [
+   "drawElementImage handles negative source width and height"
+  ],
+  "drawElementImage-zero-size.tentative.html": [
+   "drawElementImage with zero size does nothing"
+  ],
+  "drawing-display-none-fails.tentative.html": [
+   "drawElementImage with display:none element"
+  ],
+  "element-image-fractional-size.tentative.html": [
+   "ElementImage width and height should support fractional values",
+   "ElementImage width and height should support fractional values in canvas pixel grid coordinate space"
+  ],
+  "element-shadow.tentative.html": [
+   "reftest"
+  ],
+  "error-conditions.tentative.html": [
+   "Tests that error conditions cause exceptions"
+  ],
+  "filtered-basic.tentative.html": [
+   "reftest"
+  ],
+  "fullscreen-canvas.tentative.html": [
+   "reftest"
+  ],
+  "fullscreen-child-crash.tentative.html": [
+   "crashtest"
+  ],
+  "fullscreen-crash.tentative.html": [
+   "crashtest"
+  ],
+  "get-element-transform.tentative.html": [
+   "Element transform for identity draw transform should be an identity matrix",
+   "Element transform should account for canvas css pixel scale",
+   "Element transform should account for canvas grid pixel scale",
+   "Element transform should account for canvas pixel scale, and a complex draw transform",
+   "Element transform should account for scale in the input transform",
+   "Element transform should account for translation in the input transform",
+   "Element transform should not account for transform-origin",
+   "Element transform should not automatically include the current transform matrix, but should pass it through",
+   "Element transform should not be affected by zoom on the canvas",
+   "Element transform should not include transform on the element",
+   "getElementTransform should preserve is2D.",
+   "getElementTransform should throw when called prior to paint."
+  ],
+  "global-alpha-basic.tentative.html": [
+   "reftest"
+  ],
+  "hit-test/elementsFromPoint-no-content-drawable.tentative.html": [
+   "Child elements should be excluded from elementsFromPoint"
+  ],
+  "hit-test/elementsFromPoint-update-element-geometry-offscreen.tentative.html": [
+   "Canvas descendants are hit in reverse update order.",
+   "Canvas descendants are hittable after OffscreenCanvas.updateElementGeometry.",
+   "Re-updating an element moves it to the top of the hit testing list.",
+   "preserveHitTestOrder works when updating via ElementImage on OffscreenCanvas.",
+   "preserveHitTestOrder: false moves element to top of the hit testing list.",
+   "preserveHitTestOrder: true adds element to hit testing stack if not already present.",
+   "preserveHitTestOrder: true preserves existing hit testing order.",
+   "preserveHitTestOrder: true preserves order when another element is on top.",
+   "updateElementGeometry clip restricts hit testing on OffscreenCanvas."
+  ],
+  "hit-test/elementsFromPoint-update-element-geometry.tentative.html": [
+   "Canvas descendants are hit in reverse update order.",
+   "Canvas descendants are hittable after updateElementGeometry.",
+   "Canvas descendants are not hit-testable before updateElementGeometry.",
+   "Canvas transform set via updateElementGeometry should be used for hit testing",
+   "Elements with pointer-events: none are not hit-testable until pointer-events is removed.",
+   "Hit test clip rect does not clip element rendering in drawElementImage.",
+   "Inline canvas transform set via updateElementGeometry should be used for hit testing",
+   "Re-updating an element moves it to the top of the hit testing list.",
+   "Setting or clearing hit test clip rect does not trigger canvas paint events.",
+   "clearElementGeometry clears canvasTransform.",
+   "clearElementGeometry removes element from hit testing stack.",
+   "drawElementImage with source and destination offsets clips hit-testing identically to manual updateElementGeometry.",
+   "preserveHitTestOrder: false moves element to top of the hit testing list.",
+   "preserveHitTestOrder: true adds element to hit testing stack if not already present.",
+   "preserveHitTestOrder: true preserves existing hit testing order.",
+   "updateElementGeometry and clearElementGeometry accept ElementImage.",
+   "updateElementGeometry clip is evaluated in the coordinate space of canvasTransform.",
+   "updateElementGeometry clip restricts hit testing and is cleared by clearElementGeometry.",
+   "updateElementGeometry interoperates with drawElementImage hit testing order",
+   "updateElementGeometry preserves canvasTransform when omitted and respects preserveHitTestOrder",
+   "updateElementGeometry supports clip with ElementImage."
+  ],
+  "hit-test/elementsFromPoint.tentative.html": [
+   "CSS transform should be used for hit testing",
+   "Canvas descendants are hit in reverse drawing order.",
+   "Canvas descendants are hittable after being drawn.",
+   "Canvas descendants are not hit-testable before they are drawn.",
+   "Canvas transform should be used for hit testing",
+   "Pointer-events: none and inert should be excluded from elementsFromPoint",
+   "Re-drawing an element moves it to the top of the hit testing list."
+  ],
+  "hit-test/low-dpi-hit-test.tentative.html": [
+   "multiple targets, should only hit first",
+   "single target",
+   "single target miss"
+  ],
+  "hit-test/selection.tentative.html": [
+   "Double-clicking on canvas should be able to modify selection."
+  ],
+  "hit-test/z-index.tentative.html": [
+   "Draw order trumps z-index in hit testing."
+  ],
+  "iframe-local.tentative.html": [
+   "reftest"
+  ],
+  "iframe.tentative.html": [
+   "reftest"
+  ],
+  "ink-overflow.tentative.html": [
+   "reftest"
+  ],
+  "intersection-observer-visibility.tentative.html": [
+   "Elements under canvas should report intersections, but not visibility"
+  ],
+  "invalidation-during-onpaint.tentative.html": [
+   "reftest"
+  ],
+  "layout-canvas-children.tentative.html": [
+   "canvas children have layout"
+  ],
+  "moved-nested-content-drawable-canvas.tentative.html": [
+   "drawElementImage should succeed if a canvas is moved to be nested"
+  ],
+  "moved-webgl-canvas.tentative.html": [
+   "WebGL canvas moved into a content=drawable canvas after first paint should reflect subsequent updates"
+  ],
+  "nested-canvas-invalidation.tentative.html": [
+   "reftest"
+  ],
+  "nested-canvas-not-rendered.tentative.html": [
+   "reftest"
+  ],
+  "nested-canvas-reset.tentative.html": [
+   "reftest"
+  ],
+  "nested-canvas-scale.tentative.html": [
+   "reftest"
+  ],
+  "nested-content-drawable-canvas.tentative.html": [
+   "Nested content=drawable canvas should draw"
+  ],
+  "nested-div-content-drawable-canvas.tentative.html": [
+   "drawElementImage should succeed if called on a nested canvas in a div"
+  ],
+  "nested-drawable.tentative.html": [
+   "reftest"
+  ],
+  "non-opaque-element.tentative.html": [
+   "reftest"
+  ],
+  "onpaint-changedElements.tentative.html": [
+   "onpaint event should have a list of changed elements"
+  ],
+  "onpaint-css-animation.tentative.html": [
+   "onpaint should fire for ticking CSS animations"
+  ],
+  "onpaint-display-none.tentative.html": [
+   "Canvas paint events on display:none canvas fire in reverse shadow-including tree order"
+  ],
+  "onpaint-fires-post-intersection-observation-steps.tentative.html": [
+   "intersection observations should be calculated before onpaint, but should be delivered after onpaint"
+  ],
+  "onpaint-fires-post-resize-observer.tentative.html": [
+   "onpaint should fire after resize observer"
+  ],
+  "onpaint-iframe-nested-invalidation.tentative.html": [
+   "calling requestPaint on d1 outside of paint should cause canvas a, b, and c to fire paint",
+   "drawing into d1 from canvas a onpaint should cause canvas a, b, and c to fire paint the next frame",
+   "drawing into d1 from its own onpaint should not cause canvas a, b, or c to fire paint the next frame",
+   "drawing into d1 outside of paint should cause canvas a, b, and c to fire paint",
+   "drawing into d2 from canvas a onpaint should cause canvas a, b, and c to fire paint the next frame",
+   "drawing into d2 outside of paint should cause canvas a, b, and c to fire paint",
+   "modifying d3 from canvas a onpaint should cause canvas a, b, and c to fire paint the next frame",
+   "modifying d3 outside of paint should cause canvas a, b, and c to fire paint"
+  ],
+  "onpaint-iframe-post-tree-order.tentative.html": [
+   "Paint events fire in reverse shadow-including tree order across frames",
+   "Paint events fire in reverse shadow-including tree order across frames on content invalidation"
+  ],
+  "onpaint-iframe.tentative.html": [
+   "onpaint should fire after iframe changes."
+  ],
+  "onpaint-invalidation-crash.tentative.html": [
+   "crashtest"
+  ],
+  "onpaint-outside-invalidation-crash.tentative.html": [
+   "crashtest"
+  ],
+  "onpaint-post-tree-order-shadow-dom.tentative.html": [
+   "Canvas paint events fire in reverse shadow-including tree order across shadow DOM, slots, and fallback content"
+  ],
+  "onpaint-post-tree-order.tentative.html": [
+   "Initial paint of all canvases across multiple branches and sibling inner canvases runs in reverse shadow-including tree order",
+   "Repainting inner_b_1 fires paint events in reverse shadow-including tree order (inner_b_1 before outer_b)",
+   "Repainting sibling inner canvases in outer_b fires in reverse shadow-including tree order",
+   "Simultaneous repaints across disjoint branches fire in reverse shadow-including tree order"
+  ],
+  "onpaint-remove-drawable-element.tentative.html": [
+   "onpaint should fire and report drawable ancestor when a nested drawable element is removed",
+   "onpaint should fire when a direct child with the drawable attribute is removed",
+   "onpaint should fire when a drawable element becomes display:none",
+   "onpaint should fire when a nested element with the drawable attribute is removed",
+   "onpaint should fire when a non-drawable ancestor of an element with the drawable attribute is removed",
+   "onpaint should fire when an inline element with the drawable attribute is removed"
+  ],
+  "onpaint-remove-non-drawable-element.tentative.html": [
+   "onpaint should fire when a deep non-drawable descendant of a drawable element is removed",
+   "onpaint should fire when a non-drawable child is removed from a drawable element with mixed children",
+   "onpaint should fire when a non-drawable child of a drawable element is removed",
+   "onpaint should fire when a non-drawable inline child of a drawable element is removed"
+  ],
+  "onpaint-scroll-crash.tentative.html": [
+   "crashtest"
+  ],
+  "onpaint.tentative.html": [
+   "onpaint should fire if a canvas child is added or removed",
+   "onpaint should fire once if a canvas child CSS transform changes",
+   "onpaint should fire once if a canvas child changes",
+   "onpaint should fire once if a canvas grandchild changes",
+   "onpaint should not fire after canvas drawing operations",
+   "onpaint should not fire if a canvas ancestor changes",
+   "onpaint should not fire if a canvas child transform changes",
+   "onpaint should not fire if a canvas sibling changes",
+   "onpaint should not fire if the canvas itself changes",
+   "onpaint should not fire without changes",
+   "onpaint should respect content=drawable attribute mutation",
+   "onpaint should work with addEventListener"
+  ],
+  "percent-sizing.tentative.html": [
+   "reftest"
+  ],
+  "position-anchor-crash.tentative.html": [
+   "crashtest"
+  ],
+  "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin feimage content via CSS backdrop-filter"
+  ],
+  "privacy/background-image-in-iframe-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images"
+  ],
+  "privacy/background-image-in-iframe-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images when moved under canvas"
+  ],
+  "privacy/background-image-on-body-in-iframe-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images on the body"
+  ],
+  "privacy/background-image-on-body-in-iframe-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images on the body when moved under canvas"
+  ],
+  "privacy/background-image-on-html-in-iframe-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images on the body"
+  ],
+  "privacy/background-image-on-html-in-iframe-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images on the body"
+  ],
+  "privacy/background-png-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images"
+  ],
+  "privacy/border-png-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin border images"
+  ],
+  "privacy/border-svg-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin border images"
+  ],
+  "privacy/box-reflect-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin box-reflect images"
+  ],
+  "privacy/canvas-in-custom-element-images-ignored.tentative.html": [
+   "Canvas in a custom element image privacy test"
+  ],
+  "privacy/embed-image-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin embed element content"
+  ],
+  "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin filter content via CSS"
+  ],
+  "privacy/filtered-div-ref-external-svg-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use external cross-origin SVG via CSS"
+  ],
+  "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin feimage content via CSS"
+  ],
+  "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin SVG filter content via CSS"
+  ],
+  "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin feimage content in SVG"
+  ],
+  "privacy/html-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin HTML images"
+  ],
+  "privacy/iframe-sandbox-ignored.tentative.https.sub.html": [
+   "drawElementImage should ignore sandboxed same-origin iframes"
+  ],
+  "privacy/iframes-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin iframes"
+  ],
+  "privacy/nested-tainted-canvas-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw nested tainted canvases"
+  ],
+  "privacy/nested-tainted-html-in-canvas-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw nested tainted html-in-canvas canvases"
+  ],
+  "privacy/object-image-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin object element content"
+  ],
+  "privacy/picture-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin picture element images"
+  ],
+  "privacy/pseudos/before-after-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin images for before/after"
+  ],
+  "privacy/pseudos/before-after-images-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin images for before/after"
+  ],
+  "privacy/pseudos/before-after-visited-color-ignored.tentative.html": [
+   "drawElementImage does not draw visited colors for before/after"
+  ],
+  "privacy/pseudos/before-background-image-iframe-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images for before/after"
+  ],
+  "privacy/pseudos/before-background-image-iframe-modified-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images for before/after when modified"
+  ],
+  "privacy/pseudos/before-background-image-iframe-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images for before/after"
+  ],
+  "privacy/pseudos/before-images-iframe-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin images for before/after"
+  ],
+  "privacy/pseudos/before-images-iframe-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin images for before/after"
+  ],
+  "privacy/pseudos/details-content-after-image-ignored.tentative.https.sub.html": [
+   "drawElementImage does not paint corss-origin ::after image in ::details-content"
+  ],
+  "privacy/pseudos/details-content-background-image-ignored.tentative.https.sub.html": [
+   "drawElementImage does not paint corss-origin background in ::details-content"
+  ],
+  "privacy/pseudos/details-content-visited-link-currentcolor-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors in ::details-content"
+  ],
+  "privacy/pseudos/details-content-visited-link-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors in ::details-content"
+  ],
+  "privacy/pseudos/first-letter-background-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images for first-letter"
+  ],
+  "privacy/pseudos/first-letter-visited-link-color-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors in first-letter"
+  ],
+  "privacy/pseudos/first-letter-visited-link-currentcolor-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors first first-letter"
+  ],
+  "privacy/pseudos/first-line-background-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images for first-line"
+  ],
+  "privacy/pseudos/first-line-background-images-moved-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin background images for first-line"
+  ],
+  "privacy/pseudos/first-line-visited-link-color-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors in first-line"
+  ],
+  "privacy/pseudos/first-line-visited-link-color-moved-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors in first-line"
+  ],
+  "privacy/pseudos/first-line-visited-link-currentcolor-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors first-line"
+  ],
+  "privacy/pseudos/marker-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin images for ::marker"
+  ],
+  "privacy/pseudos/marker-visited-link-currentcolor-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors in ::marker"
+  ],
+  "privacy/selection-alone-with-decorations-painted.tentative.html": [
+   "reftest"
+  ],
+  "privacy/selection-colors-default.tentative.html": [
+   "reftest"
+  ],
+  "privacy/selection-painted-overlay-path.tentative.html": [
+   "reftest"
+  ],
+  "privacy/shape-image-png-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin png image for shape-outside"
+  ],
+  "privacy/shape-image-svg-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin svg image for shape-outside"
+  ],
+  "privacy/subframe-cross-origin-background-image.tentative.https.sub.html": [
+   "subframe loading background images"
+  ],
+  "privacy/subframe-cross-origin-frame.tentative.https.sub.html": [
+   "subframe loaded cross-origin that itself loads iframes"
+  ],
+  "privacy/subframe-cross-origin-html-images.tentative.https.sub.html": [
+   "subframe that draws HTML images"
+  ],
+  "privacy/svg/svg-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin SVG images"
+  ],
+  "privacy/svg/svg-linear-gradient-href-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG resources from outside the subtree"
+  ],
+  "privacy/svg/svg-linear-gradient-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG resources from outside the subtree"
+  ],
+  "privacy/svg/svg-marker-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG markers outside the subtree"
+  ],
+  "privacy/svg/svg-mask-filter.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin feImages on filtered SVG text inside masks"
+  ],
+  "privacy/svg/svg-mask-nested-filter.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin feImages on nested filtered SVG content inside masks"
+  ],
+  "privacy/svg/svg-mask-visited.tentative.https.sub.html": [
+   "drawElementImage does not reveal visited links in external SVG masks"
+  ],
+  "privacy/svg/svg-pattern-cross-origin-image.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin images in SVG patterns"
+  ],
+  "privacy/svg/svg-pattern-href-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG patterns outside the subtree"
+  ],
+  "privacy/svg/svg-pattern-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG patterns outside the subtree"
+  ],
+  "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin feImages in SVG patterns"
+  ],
+  "privacy/svg/svg-radial-gradient-href-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG resources from outside the subtree"
+  ],
+  "privacy/svg/svg-radial-gradient-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not use SVG resources from outside the subtree"
+  ],
+  "privacy/svg/svg-use-chained-outside-subtree-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin SVG use content from outside the subtree"
+  ],
+  "privacy/svg/svg-use-outside-subtree-images-ignored.tentative.https.sub.html": [
+   "drawElementImage does not use cross-origin SVG use content from outside the subtree"
+  ],
+  "privacy/target-text-ignored-overlay-path.tentative.html": [
+   "reftest"
+  ],
+  "privacy/video-ignored.tentative.https.sub.html": [
+   "drawElementImage does not draw cross-origin images"
+  ],
+  "privacy/visited-link/visited-link-color-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-currentcolor-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors through currentColor"
+  ],
+  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html": [
+   "drawElementImage uses unvisited link colors in custom selection"
+  ],
+  "privacy/visited-link/visited-link-decoration-color-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-slotted-color-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-svg-fill-stroke-color-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-svg-linear-gradiant-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-svg-pattern-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-svg-radiant-gradiant-ignored.tentative.html": [
+   "drawElementImage does not reveal visited link colors"
+  ],
+  "privacy/visited-link/visited-link-svg-use-chained-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not leak visited colors in SVG use content from outside the subtree"
+  ],
+  "privacy/visited-link/visited-link-svg-use-outside-subtree-ignored.tentative.html": [
+   "drawElementImage does not leak visited colors in SVG use content from outside the subtree"
+  ],
+  "requestPaint.tentative.html": [
+   "requestPaint can be called in onpaint",
+   "requestPaint should cause onpaint to fire without changes",
+   "requestPaint should cause onpaint to fire without changes, with two canvases"
+  ],
+  "ruby-canvas-crash.tentative.html": [
+   "crashtest"
+  ],
+  "scale.tentative.html": [
+   "reftest"
+  ],
+  "scroller-crash.tentative.html": [
+   "crashtest"
+  ],
+  "shadow-basic.tentative.html": [
+   "reftest"
+  ],
+  "shadow-dom-slot-canvas-child.tentative.html": [
+   "reftest"
+  ],
+  "shadow-dom-slotted-moveBefore.tentative.html": [
+   "reftest"
+  ],
+  "shadow-dom-slotted.tentative.html": [
+   "reftest"
+  ],
+  "shadow-non-opaque-element.tentative.html": [
+   "reftest"
+  ],
+  "svg-foreign-object.tentative.html": [
+   "reftest"
+  ],
+  "svg-rect.tentative.html": [
+   "reftest"
+  ],
+  "top-layer-not-painted-in-canvas.tentative.html": [
+   "reftest"
+  ],
+  "triple-nested-content-drawable-canvas.tentative.html": [
+   "Triple-nested content=drawable canvas fires onpaint on all canvases when innermost child changes"
+  ],
+  "update-element-geometry-get-bounding-client-rect.tentative.html": [
+   "canvas.updateElementGeometry and clearElementGeometry are defined",
+   "clearElementGeometry() unsets canvas transform on canvas child",
+   "updateElementGeometry and clearElementGeometry accept ElementImage",
+   "updateElementGeometry throws InvalidStateError for ineligible elements",
+   "updateElementGeometry() with canvasTransform affects getBoundingClientRect() on canvas child",
+   "updateElementGeometry() with clip does not affect getBoundingClientRect()"
+  ],
+  "video.tentative.html": [
+   "drawElementImage repaints video frames"
+  ],
+  "offscreen/animated-gif-worker.tentative.html": [
+   "Canvas.drawElementImage: animated gif in worker"
+  ],
+  "offscreen/canvas-transform-update-worker.tentative.html": [
+   "Multiple drawElementImage calls in same worker turn batch into a single elementgeometryupdate event",
+   "clearElementGeometry on worker clears geometry and dispatches elementgeometryupdate event",
+   "drawElementImage on worker dispatches elementgeometryupdate and updates element transform by default",
+   "drawElementImage on worker does not update element transform with {preserveElementGeometry: true}",
+   "drawElementImage on worker updates element transform with explicit {preserveElementGeometry: false}"
+  ],
+  "offscreen/getElementTransform-worker.tentative.html": [
+   "Draw/Element transform should preserve is2D for 2D matrices",
+   "Draw/Element transform should preserve is2D for 3D matrices",
+   "Element transform at the origin should be an identity matrix",
+   "Element transform should account for canvas css pixel scale",
+   "Element transform should account for canvas grid pixel scale",
+   "Element transform should account for canvas pixel scale, zoom, CTM, and x and y",
+   "Element transform should account for sx and sy offset",
+   "Element transform should account for the current transform matrix with rotation",
+   "Element transform should account for the current transform matrix with translation",
+   "Element transform should account for width and height scale",
+   "Element transform should account for x and y",
+   "Element transform should not account for transform-origin",
+   "Element transform should not be affected by zoom on the canvas",
+   "Element transform should not include transform on the element"
+  ],
+  "offscreen/ink-overflow-worker.tentative.html": [
+   "reftest"
+  ],
+  "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html": [
+   "OffscreenCanvas.drawElementImage should work in a worker thread"
+  ],
+  "offscreen/offscreenCanvas-drawElementImage.tentative.html": [
+   "OffscreenCanvas.drawElementImage should draw an ElementImage",
+   "Passing an Element to OffscreenCanvas methods on the main thread throws InvalidStateError"
+  ],
+  "offscreen/scale-worker.tentative.html": [
+   "reftest"
+  ],
+  "offscreen/video-worker.tentative.html": [
+   "captureElementImage repaints video frames in worker"
+  ]
+ }
+}

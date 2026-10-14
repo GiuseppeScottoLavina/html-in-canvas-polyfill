@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>basic: the WICG explainer example</title>
+<!-- The polyfill must load BEFORE the scripts that read the API. It installs itself while this tag runs. -->
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 40rem; }
+  canvas { border: 1px solid #888; }
+  #status { margin-top: 1rem; font: 13px/1.4 ui-monospace, monospace; color: #444; }
+</style>
+</head>
+<body>
+<h1>Basic example</h1>
+<p>The drawing below is a canvas. The form is real HTML, drawn into it. Click the field and type.</p>
+
+<!-- ===== the WICG HTML-in-Canvas explainer "Basic Example", markup and script as published ===== -->
+<canvas style="width: 400px; height: 200px;" content="drawable">
+  <form drawable>
+    <label for="name">name:</label>
+    <input id="name">
+  </form>
+</canvas>
+
+<script>
+  const canvas = document.querySelector('canvas');
+  const form = document.querySelector('canvas form');
+  const ctx = canvas.getContext('2d');
+
+  canvas.onpaint = () => {
+    ctx.reset();
+    ctx.drawElementImage(form, 100, 0);
+  };
+
+  // Size the canvas grid to match the device scale factor.
+  new ResizeObserver((entries) => {
+    canvas.width = entries[0].devicePixelContentBoxSize[0].inlineSize;
+    canvas.height = entries[0].devicePixelContentBoxSize[0].blockSize;
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+</script>
+<!-- ===== end of the explainer example ===== -->
+
+<p id="status">checking...</p>
+<script>
+  // Not part of the example: say which implementation is running.
+  // window.__HIC__ exists only when the polyfill's script ran; on Chrome with a complete native implementation the polyfill steps aside.
+  const status = document.getElementById('status');
+  const hic = window.__HIC__;
+  if (hic && hic.installed) status.textContent = 'hic-live-polyfill mode: ' + hic.installed.mode + ' (drawElementImage is the polyfill\'s)';
+  else if (hic && hic.error) status.textContent = 'hic-live-polyfill refused to install: ' + hic.error.message.replace(/^\[hic-live-polyfill\] /, '');
+  else status.textContent = 'hic-live-polyfill did not run (is dist/ built? run: npm run build)';
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>identity</title>
+<style>body{margin:8px;font:14px sans-serif}canvas{display:block;width:300px;height:120px;background:#223}</style>
+<script>for (const src of (new URLSearchParams(location.search).get('bundle') || '').split(',')) document.write('<script data-hic-manual src="' + src + '"><\/script>');</script>
+</head><body>
+<p id="before">text before</p>
+<canvas id="c" content="drawable" width="300" height="120">
+  <div id="a" drawable style="width:140px;height:50px;background:#456;color:#fff">A <input id="in" value="x"></div>
+  <div id="b" drawable>B</div>
+  <span id="plain">not drawable</span>
+</canvas>
+<p id="after">text after</p>
+<script>
+  const PROTOS = ['HTMLCanvasElement', 'CanvasRenderingContext2D', 'OffscreenCanvas', 'OffscreenCanvasRenderingContext2D', 'WebGLRenderingContext', 'WebGL2RenderingContext',
+    'GPUQueue', 'Element', 'Document', 'DocumentFragment', 'Node', 'EventTarget', 'HTMLElement', 'CSSStyleSheet', 'CSSStyleDeclaration', 'CSSGroupingRule', 'CSSStyleRule', 'StyleSheet',
+    'Worker', 'MessagePort', 'DedicatedWorkerGlobalScope', 'Window', 'ShadowRoot', 'MutationObserver', 'ResizeObserver'];
+  const ids = new Map(); let next = 1;
+  const idOf = (f) => (typeof f === 'function' || (f && typeof f === 'object') ? (ids.get(f) ?? (ids.set(f, next++), ids.get(f))) : f === undefined ? 'u' : String(f));
+  function table() {
+    const out = {};
+    const targets = PROTOS.map((n) => [n, window[n] && window[n].prototype]).filter(([, p]) => p);
+    targets.push(['window', window], ['document', document]);
+    for (const [name, p] of targets) {
+      const t = out[name] = {};
+      for (const k of Reflect.ownKeys(p)) {
+        let d; try { d = Object.getOwnPropertyDescriptor(p, k); } catch { continue; }
+        t[String(k)] = [idOf(d.value), idOf(d.get), idOf(d.set), d.writable, d.enumerable, d.configurable].join('|');
+      }
+    }
+    return out;
+  }
+  window.__id = {
+    snapshot: () => ({ html: document.documentElement.outerHTML, table: table() }),
+    install: () => { window.__inst = HicLivePolyfill.install(); return window.__inst.mode; },
+    uninstall: () => { window.__inst.uninstall(); delete window.__inst; },
+  };
+</script>
+</body></html>

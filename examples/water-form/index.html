@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>water-form: a live form under a WebGPU water effect</title>
+<!-- Load order matters: the core first (it installs synchronously), then the optional effects bundle, then the water plugin. -->
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<script src="../../dist/hic-live-effects.iife.min.js"></script>
+<script src="../../dist/hic-live-effects-water.iife.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 1.25rem; font: 16px/1.5 system-ui, sans-serif; background: #020a13; color: #dff3ff; }
+  h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+  p.note { margin: 0 0 1rem; max-width: 56rem; color: #a9c4d6; }
+  #stage { display: block; width: min(1100px, 100%); height: 620px; border: 1px solid rgba(190, 237, 255, .18); border-radius: 22px; background: #03101c; }
+  #meta { margin-top: .75rem; font: 13px/1.5 ui-monospace, monospace; color: #8fb4c8; }
+  #meta b { color: #dff3ff; font-weight: 600; }
+
+  /* ---- inside the canvas: ordinary HTML ---- */
+  #demo-form { box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 26px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, .9fr) minmax(300px, 1.1fr); gap: 22px;
+    font: 14px/1.45 system-ui, sans-serif; color: #edfaff; background: radial-gradient(circle at 18% 18%, rgba(68, 135, 255, .16), transparent 40%), radial-gradient(circle at 84% 78%, rgba(149, 92, 255, .14), transparent 42%), #03101c; }
+  .hero, .card { box-sizing: border-box; min-width: 0; padding: 26px; border: 1px solid rgba(178, 230, 255, .14); border-radius: 22px; background: linear-gradient(150deg, rgba(8, 25, 48, .8), rgba(4, 13, 28, .6)); }
+  .hero { display: flex; flex-direction: column; justify-content: space-between; }
+  .eyebrow { margin: 0 0 10px; color: #76f5ff; font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+  .hero h1 { margin: 0; max-width: 9ch; font-size: 56px; line-height: .95; letter-spacing: -.05em; }
+  .lede { margin: 16px 0 0; max-width: 40ch; color: rgba(225, 246, 255, .7); font-size: 13px; }
+  .card h2 { margin: 0 0 14px; font-size: 24px; letter-spacing: -.03em; }
+  .fields { display: grid; gap: 11px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label.field { display: grid; gap: 5px; min-width: 0; color: rgba(232, 249, 255, .78); font-size: 11px; font-weight: 700; }
+  input[type=text], input[type=email], textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 11px; font: inherit; font-weight: 400; color: #effcff; caret-color: #83f6ff;
+    border: 1px solid rgba(173, 226, 255, .18); border-radius: 12px; outline: 0; background: rgba(1, 10, 23, .55); }
+  input:focus, textarea:focus { border-color: rgba(112, 244, 255, .75); box-shadow: 0 0 0 3px rgba(85, 232, 255, .1); }
+  textarea { height: 70px; resize: none; line-height: 1.4; }
+  .consent { display: flex; align-items: center; gap: 8px; color: rgba(220, 244, 255, .7); font-size: 12px; }
+  .consent input { width: 15px; height: 15px; margin: 0; accent-color: #79efff; }
+  .control { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; color: rgba(224, 247, 255, .72); font-size: 11px; font-weight: 700; }
+  .control output { color: #9cf5ff; text-align: right; font-variant-numeric: tabular-nums; min-width: 6ch; }
+  .control input[type=range] { grid-column: 1 / -1; width: 100%; height: 26px; margin: 0; accent-color: #79efff; cursor: ew-resize; }
+  #effect-controls { display: grid; gap: 6px; }
+  .actions { display: flex; align-items: center; gap: 12px; }
+  button.submit { padding: 10px 18px; font: inherit; font-weight: 800; color: #03131e; border: 1px solid rgba(139, 240, 255, .5); border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, #78f7ff, #c5fbff 55%, #bba8ff); }
+  #form-feedback { min-height: 1.4em; color: rgba(222, 246, 255, .65); font-size: 12px; }
+  #form-feedback[data-state="error"] { color: #ffc0c9; }
+  #form-feedback[data-state="success"] { color: #a8ffd7; }
+  .invalid { border-color: rgba(255, 111, 138, .8) !important; }
+
+  @media (max-width: 760px) {
+    #stage { height: 760px; }
+    #demo-form { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
+    .hero h1 { font-size: 38px; max-width: none; }
+    .row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Water form</h1>
+<p class="note">A real HTML form drawn into a canvas by hic-live-polyfill, then presented through a WebGPU water-ripple plugin. Move the pointer over it to make ripples. The fields stay live: click one, type, press Submit. Drag the frame cap slider (15 to 120 fps) to limit how often the effect renders.</p>
+
+<canvas id="stage" content="drawable" aria-label="Interactive water form">
+  <form id="demo-form" drawable autocomplete="off" novalidate>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Real DOM, drawn by a polyfill</p>
+        <h1>Touch the interface.</h1>
+        <p class="lede">Every field you see is ordinary HTML inside this canvas. The water shader is an optional plugin applied to the rendered result; the form keeps its layout, focus, typing and scrolling.</p>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Fluid contact</h2>
+      <div class="fields">
+        <div class="row">
+          <label class="field">Name<input id="name" name="name" type="text" value="Ada" placeholder="Your name"></label>
+          <label class="field">Email<input id="email" name="email" type="email" value="ada@example.com" placeholder="you@example.com"></label>
+        </div>
+        <label class="field">Message<textarea id="message" name="message">The water is refracting this actual form.</textarea></label>
+        <label class="consent"><input id="consent" name="consent" type="checkbox" checked> Keep me posted</label>
+        <label class="control" for="fps-cap"><span>Frame cap (canvas.frameCap)</span><output id="fps-cap-value" for="fps-cap">60 fps</output>
+          <input id="fps-cap" type="range" min="15" max="120" step="5" value="60"></label>
+        <div id="effect-controls" aria-label="Effect plugin controls"></div>
+        <div class="actions"><button class="submit" id="submit" type="submit">Submit</button><span id="form-feedback" role="status" aria-live="polite" data-state="idle">Nothing is sent anywhere.</span></div>
+      </div>
+    </section>
+  </form>
+</canvas>
+
+<div id="meta">mode: <b id="m-mode">starting</b> &nbsp; effect: <b id="m-effect">starting</b> &nbsp; cap: <b id="m-cap">-</b> &nbsp; effect frames/s (page-side count of effectframe events): <b id="m-fps">-</b></div>
+
+<script>
+(async () => {
+  const canvas = document.getElementById('stage');
+  const form = document.getElementById('demo-form');
+  const $ = (id) => document.getElementById(id);
+  const hic = window.__HIC__;
+
+  $('m-mode').textContent = hic && hic.installed ? hic.installed.mode : 'polyfill not installed';
+  if (!hic || !hic.installed) {
+    $('m-effect').textContent = hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'run `npm run build` first';
+    return;
+  }
+
+  // ---- the frame cap: the canvas.frameCap property reflects the framecap attribute (0 = uncapped = display rate) ------------------------
+  const range = $('fps-cap'), output = $('fps-cap-value');
+  function applyCap() {
+    const value = Math.min(120, Math.max(15, Number(range.value) || 60));
+    canvas.frameCap = value;
+    output.textContent = value + ' fps';
+    $('m-cap').textContent = value + ' fps';
+  }
+  range.addEventListener('input', applyCap);
+  applyCap();
+
+  // ---- the form is live: ordinary listeners -----------------------------------------------------------------------------------------
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const feedback = $('form-feedback');
+    const bad = !form.elements.name.value.trim() ? 'name' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.elements.email.value) ? 'email' : '';
+    for (const id of ['name', 'email']) form.elements[id].classList.toggle('invalid', id === bad);
+    feedback.dataset.state = bad ? 'error' : 'success';
+    feedback.textContent = bad ? 'Please check the ' + bad + ' field.' : 'Thanks, ' + form.elements.name.value.trim() + '. (not sent)';
+  });
+
+  // ---- choose the presentation path BEFORE any getContext: a canvas has one context type for life -----------------------------------
+  let effect = null;
+  const canUseEffect = !!navigator.gpu && !!window.HTMLInCanvasEffects && !!window.HicLiveEffectsWater;
+  if (canUseEffect) {
+    try {
+      // The host owns the canvas bitmap and the 'webgpu' context: it samples the polyfill's snapshot of `form`, runs the plugin chain, presents.
+      const host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true });
+      const water = await host.addPlugin(HicLiveEffectsWater.WaterEffectPlugin, { intensity: 0.28 });
+      water.mountUI($('effect-controls')); // the plugin's own intensity slider, as ordinary HTML inside the form
+      canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
+      let frames = 0, t0 = performance.now();
+      canvas.addEventListener('effectframe', () => { frames += 1; });
+      setInterval(() => { const now = performance.now(); $('m-fps').textContent = (frames * 1000 / (now - t0)).toFixed(1); frames = 0; t0 = now; }, 1000);
+      effect = { host, water };
+      $('m-effect').textContent = 'WebGPU water plugin running';
+    } catch (error) {
+      console.warn('effects unavailable, using the 2D path:', error.message);
+      $('m-effect').textContent = '2D fallback (' + error.message + ')';
+    }
+  } else {
+    $('m-effect').textContent = '2D fallback (' + (navigator.gpu ? 'effects bundles not loaded' : 'no WebGPU in this browser') + ')';
+  }
+
+  // ---- the plain 2D path: the standard pattern. Same page, no effect. -------------------------------------------------------------
+  if (!effect) {
+    const ctx = canvas.getContext('2d');
+    canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(form, 0, 0); };
+    new ResizeObserver((entries) => {
+      const box = entries[0].devicePixelContentBoxSize[0];
+      canvas.width = box.inlineSize; canvas.height = box.blockSize;
+    }).observe(canvas, { box: 'device-pixel-content-box' });
+    $('m-fps').textContent = 'n/a (no effect)';
+  }
+  window.__waterForm = { mode: effect ? 'effect' : '2d' };
+})();
+</script>
+</body>
+</html>
