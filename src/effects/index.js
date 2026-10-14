@@ -6,6 +6,7 @@
 import { EXT } from '../contracts/events.js';
 import { invalidState, typeError } from '../contracts/errors.js';
 import { createEffectHost } from './effect-host.js';
+import { NO_TARGET, isNoTarget } from './no-target.js';
 import { definePlugin } from './plugin-abi.js';
 
 /** @typedef {import('../contracts/types.js').EffectHost} EffectHost */
@@ -30,6 +31,8 @@ export function createEffects(env, deps) {
   return Object.freeze({
     version: /** @type {const} */ (2),
     definePlugin,
+    NO_TARGET,
+    isNoTarget,
     async createHost(canvas, source, options) {
       if (!(canvas instanceof win.HTMLCanvasElement)) throw typeError('createHost: `canvas` must be an HTMLCanvasElement');
       if (!(source instanceof win.Element)) throw typeError('createHost: `source` must be an Element');
@@ -61,6 +64,8 @@ export function createLateEffects(win) {
   return Object.freeze({
     version: /** @type {const} */ (2),
     definePlugin,
+    NO_TARGET,
+    isNoTarget,
     async createHost(canvas, source, options) {
       const seam = seamOf();
       if (!seam) throw invalidState('HTMLInCanvasEffects needs the installed polyfill: load the core bundle first and let it install (or call install())');

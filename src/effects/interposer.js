@@ -5,10 +5,13 @@
  * Verified fact (Chrome 154): preventDefault on pointerdown suppresses mousedown, focus and caret placement on the natively hit element
  * but `click` still fires and a checkbox still toggles, so a re-targeted gesture must also swallow the click that follows its pointerup.
  * Pointer events themselves are NOT stopped: plugin listeners (water ripples) and page code keep seeing them, with the native target.
+ * A mapper that returns NO_TARGET (no element is shown at that point) gets a swallowed gesture: no focus change, no activation, no click,
+ * and nothing of the page is hovered.
  */
 
 import { invalidState } from '../contracts/errors.js';
 import { activate, controlOf, focusControl, isActivatable, isRange, startRangeDrag } from './interposer-controls.js';
+import { isNoTarget } from './no-target.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../contracts/types.js').HicEnv} HicEnv */
@@ -54,21 +57,27 @@ export function createInterposer(env, record, chain, tracker) {
   /**
    * @param {PointerEvent} e
    * @param {Mapper} map
-   * @returns {{point: {x: number, y: number}, element: Element|null}}  `point` in viewport css px
+   * @returns {{point: {x: number, y: number}|null, element: Element|null}}  `point` in viewport css px; null when the mapper returned NO_TARGET
    */
   function resolve(e, map) {
     const f = frameOf();
     const m = map({ x: (e.clientX - f.left) * f.sx, y: (e.clientY - f.top) * f.sy, width: f.width, height: f.height });
+    if (isNoTarget(m)) return { point: null, element: null };
     const point = { x: f.left + m.x / f.sx, y: f.top + m.y / f.sy };
     return { point, element: layer?.elementAtPoint(point) ?? null };
   }
 
-  /** Hover/:active chains and the layer cursor follow `el` (null = the native pointer again). @param {Element|null} el */
-  function follow(el) {
-    if (el === shown) return;
-    shown = el;
-    tracker.setMappedTarget(record, el);
-    setCursor(el ? win.getComputedStyle(el).cursor : '');
+  /**
+   * Hover/:active chains and the layer cursor follow `el` (null = the native pointer again). For NO_TARGET they follow the layer itself:
+   * no element of the page is hovered.
+   * @param {Element|null} el  @param {boolean} [none]  the mapper returned NO_TARGET
+   */
+  function follow(el, none = false) {
+    const next = none ? layerEl : el;
+    if (next === shown) return;
+    shown = next;
+    tracker.setMappedTarget(record, next);
+    setCursor(none ? 'default' : el ? win.getComputedStyle(el).cursor : '');
   }
 
   /** @param {string} value */
@@ -84,8 +93,8 @@ export function createInterposer(env, record, chain, tracker) {
     const g = gesture && gesture.pointerId === e.pointerId ? gesture : null;
     if (!g && !chain.active()) { counts.passedThrough += 1; follow(null); return; }
     const { point, element } = resolve(e, g ? g.map : (p) => chain.map(p));
-    follow(element);
-    if (g?.drag) g.drag.move(point.x);
+    follow(element, !point);
+    if (g?.drag && point) g.drag.move(point.x);
     counts.remapped += 1;
   }
 
@@ -96,7 +105,15 @@ export function createInterposer(env, record, chain, tracker) {
     if (!chain.active()) { counts.passedThrough += 1; follow(null); return; }
     const map = chain.captureGesture();
     const { point, element } = resolve(e, map);
-    follow(element);
+    follow(element, !point);
+    if (!point) {
+      // NO_TARGET: what the user sees there is not an element of the page. Swallow the gesture: no mousedown, focus change or text
+      // selection on the natively hit element, no activation on pointerup, no click; the focused element keeps the focus.
+      counts.remapped += 1;
+      e.preventDefault();
+      gesture = { pointerId: e.pointerId, map, retargeted: true, control: null, drag: null };
+      return;
+    }
     const intended = controlOf(layerEl, element);
     const first = e.composedPath()[0];
     const range = isRange(intended);
@@ -126,7 +143,7 @@ export function createInterposer(env, record, chain, tracker) {
     if (!g.retargeted) return;
     const { point, element } = resolve(e, g.map);
     if (g.drag) {
-      g.drag.move(point.x);
+      if (point) g.drag.move(point.x);
       g.drag.end();
       try { layerEl.releasePointerCapture(e.pointerId); } catch { /* capture already released */ }
     }

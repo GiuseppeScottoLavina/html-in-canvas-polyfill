@@ -612,7 +612,8 @@ export {};
  */
 /**
  * @typedef {((p: InputPoint) => {x:number, y:number}) & {captureGestureSnapshot?: () => InputMapper}} InputMapper
- *   output -> source map for exactly the pixels of one presentation. Pure. See API-CONTRACT 7.4.
+ *   output -> source map for exactly the pixels of one presentation. Pure. Returns NO_TARGET (effects/no-target.js) where the presented
+ *   pixel shows no element of the source. See API-CONTRACT 7.4.
  */
 /**
  * @typedef {Object} EffectViewport
@@ -694,6 +695,8 @@ export {};
  * @typedef {Object} EffectsApi  What window.HTMLInCanvasEffects exposes (effects/index.js).
  * @property {2} version
  * @property {(def: EffectPluginDefinition) => EffectPluginDefinition} definePlugin  validates; adapts ABI v1 definitions to v2
+ * @property {Readonly<{x: number, y: number}>} NO_TARGET  what an input mapper returns where no element is shown (effects/no-target.js)
+ * @property {(point: unknown) => boolean} isNoTarget
  * @property {(canvas: HTMLCanvasElement, source: Element, options?: EffectHostOptions) => Promise<EffectHost>} createHost
  * @property {() => void} dispose
  */

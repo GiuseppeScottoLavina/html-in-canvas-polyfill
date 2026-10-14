@@ -5,6 +5,7 @@
 import { createLateEffects, installEffectsGlobal } from './effects/index.js';
 
 export { definePlugin } from './effects/plugin-abi.js';
+export { NO_TARGET, isNoTarget } from './effects/no-target.js';
 export { createLateEffects, installEffectsGlobal };
 
 /** @param {Window} [win] @returns {import('./contracts/types.js').EffectsApi} the window's EffectsApi; defines window.HTMLInCanvasEffects unless it exists */

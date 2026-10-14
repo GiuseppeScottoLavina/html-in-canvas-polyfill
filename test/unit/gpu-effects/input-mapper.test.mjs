@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMapperChain } from '../../../src/effects/input-mapper.js';
+import { NO_TARGET, isNoTarget } from '../../../src/effects/no-target.js';
 
 const P = (x, y) => ({ x, y, width: 100, height: 50 });
 /** x -> x*k, y unchanged */
@@ -82,4 +83,28 @@ test('push copies the mapper list', () => {
   c.push(1, list);
   list.push(shiftX(100));
   assert.equal(c.map(P(0, 0)).x, 1);
+});
+
+test('NO_TARGET stops the chain: the mappers of earlier plugins never see it, so none of them can clamp it back onto the canvas', () => {
+  const c = createMapperChain();
+  const seen = [];
+  // plugin 1 clamps every point into the canvas (as the water and wobble mappers do); plugin 2 shows nothing at x < 50
+  const clamp = (p) => { seen.push(p); return { x: Math.min(p.width, Math.max(0, p.x)), y: Math.min(p.height, Math.max(0, p.y)) }; };
+  const hole = (p) => (p.x < 50 ? NO_TARGET : { x: p.x, y: p.y });
+  c.push(1, [clamp, hole]);
+  assert.equal(c.map(P(10, 10)), NO_TARGET);
+  assert.deepEqual(seen, [], 'the clamping mapper was not called');
+  assert.deepEqual(c.map(P(60, 10)), { x: 60, y: 10 });
+  assert.equal(seen.length, 1);
+  assert.ok(isNoTarget(c.captureGesture()(P(10, 10))), 'the gesture mapper stops at it too');
+});
+
+test('NO_TARGET is recognised by its brand: a copy made by another bundle is the same answer, a plain far-away point is not', () => {
+  const copy = Object.freeze({ x: -1e5, y: -1e5, [Symbol.for('html-in-canvas-polyfill.effects.no-target')]: true });
+  const c = createMapperChain();
+  c.push(1, [() => ({ x: 5, y: 5 }), () => copy]);
+  assert.equal(c.map(P(1, 1)), NO_TARGET);
+  assert.equal(isNoTarget({ x: -1e5, y: -1e5 }), false);
+  assert.equal(isNoTarget(null), false);
+  assert.ok(Object.isFrozen(NO_TARGET) && Number.isFinite(NO_TARGET.x) && Number.isFinite(NO_TARGET.y), 'frozen, with finite coordinates far outside any viewport');
 });

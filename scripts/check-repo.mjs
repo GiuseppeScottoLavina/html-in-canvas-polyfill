@@ -64,9 +64,11 @@ if (!docsOnly) {
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
-  const { checkPluginFolder } = await import(pathToFileURL(join(root, 'plugins/_shared/contract.mjs')).href);
-  const folders = readdirSync(join(root, 'plugins')).filter((n) => n !== '_shared' && !n.startsWith('.') && statSync(join(root, 'plugins', n)).isDirectory());
+  // (plugins/_lib/, runtime code shared by plugins, is held to the same import rules)
+  const { LIB_DIR, checkPluginFolder, checkSharedLib } = await import(pathToFileURL(join(root, 'plugins/_shared/contract.mjs')).href);
+  const folders = readdirSync(join(root, 'plugins')).filter((n) => n !== '_shared' && n !== LIB_DIR && !n.startsWith('.') && statSync(join(root, 'plugins', n)).isDirectory());
   for (const n of folders) problems.push(...(await checkPluginFolder(join(root, 'plugins', n))).map((/** @type {string} */ m) => `G-plugins: ${m}`));
+  problems.push(...checkSharedLib(join(root, 'plugins', LIB_DIR)).map((/** @type {string} */ m) => `G-plugins: ${m}`));
   const pluginsReadme = readFileSync(join(root, 'plugins/README.md'), 'utf8');
   for (const n of folders.filter((x) => !x.startsWith('_'))) if (!pluginsReadme.includes(`| [\`${n}\`](${n}/) |`)) problems.push(`G-plugins: plugins/README.md has no row for ${n}`);
   console.log(`checked ${folders.length} plugin folders`);

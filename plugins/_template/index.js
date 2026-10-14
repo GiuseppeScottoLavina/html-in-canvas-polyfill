@@ -2,7 +2,8 @@
  * PLUGIN TEMPLATE (plugins/README.md): the smallest complete spatial effect plugin. It shifts the picture right by `offset` CSS pixels.
  * Copy this folder to plugins/<name>/, rename `meta.name` and `plugin.type` to <name>, and replace the shader and the mapper.
  *
- * Contract of a plugin folder: index.js exports `meta` and `plugin`; it imports only files of its own folder; .wgsl files are loaded
+ * Contract of a plugin folder: index.js exports `meta` and `plugin`; it imports only files of its own folder, plugins/_lib/ and
+ * src/effects/no-target.js (NO_TARGET, the mapper's answer for "no element here"); .wgsl files are loaded
  * through ./wgsl.js (the build inlines them); README.md; test/*.test.mjs. Folders whose name starts with '_' are not built.
  */
 
@@ -17,6 +18,7 @@ export const meta = Object.freeze({
   title: 'Offset (template)',
   description: 'Shifts the picture sideways; the smallest complete spatial plugin, with an input mapper.',
   defaults: Object.freeze({ offset: 24 }),
+  reducedMotion: 'Nothing moves on its own: the picture is shifted, not animated.',
 });
 
 /** floats in the uniform block: resolution (2), css_width, offset_px */

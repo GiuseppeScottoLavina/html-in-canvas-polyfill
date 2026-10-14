@@ -10,18 +10,19 @@
 //   effect plugins, discovered by convention (every plugins/<name>/ with an index.js, <name> not starting with '_'; plugins/README.md):
 //     dist/plugins/<name>.iife.js, .iife.min.js   classic; registers window.HicLivePlugins.<name> = {meta, plugin, ...the other exports}
 //     dist/plugins/<name>.esm.js                  the module, for bundlers
-//     dist/plugins/manifest.json                  name, title, description and files of every plugin (the plugin gallery reads it)
+//     dist/plugins/manifest.json                  name, title, description, reducedMotion, defaults and files of every plugin (the gallery reads it)
 //     dist/types/plugins/<name>/index.d.ts
-//   The .wgsl files of a plugin are inlined: its wgsl.js loader is replaced by a module that returns them as strings.
+//   The .wgsl files of a plugin are inlined: its wgsl.js loader is replaced by a module that returns them as strings. What a plugin imports
+//   from plugins/_lib/ and src/effects/no-target.js is bundled into it.
 //
 //   node scripts/build.mjs [--no-esm] [--quiet]     writes dist/ and dist/sizes.json
 import { build } from 'esbuild';
-import { cpSync, readFileSync, readdirSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { checkPluginFolder, discoverPlugins } from '../plugins/_shared/contract.mjs';
+import { LIB_DIR, checkPluginFolder, discoverPlugins } from '../plugins/_shared/contract.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const quiet = process.argv.includes('--quiet');
@@ -127,7 +128,7 @@ for (const p of plugins) {
     Object.assign(files, { esm: `${p.name}.esm.js` });
   }
   const { meta, plugin } = await import(pathToFileURL(join(p.dir, 'index.js')).href);
-  manifest.push({ name: meta.name, title: meta.title, description: meta.description, version: plugin.version, defaults: meta.defaults ?? {}, files });
+  manifest.push({ name: meta.name, title: meta.title, description: meta.description, ...(meta.reducedMotion ? { reducedMotion: meta.reducedMotion } : {}), version: plugin.version, defaults: meta.defaults ?? {}, files });
 }
 writeFileSync(join(pluginDist, 'manifest.json'), JSON.stringify({ plugins: manifest }, null, 1) + '\n');
 
@@ -141,9 +142,11 @@ if (!process.argv.includes('--no-esm') && !process.argv.includes('--no-types')) 
   execFileSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '-p', join(root, 'jsconfig.json'), '--noEmit', 'false', '--declaration', '--emitDeclarationOnly',
     '--rootDir', root, '--outDir', tmp], { stdio: 'inherit' });
   cpSync(join(tmp, 'src'), join(root, 'dist/types'), { recursive: true });
-  for (const p of plugins) {
-    const to = join(root, 'dist/types/plugins', p.name);
-    cpSync(join(tmp, relative(root, p.dir)), to, { recursive: true });
+  // plugins/_lib/ (runtime code shared by plugins) goes next to them, so that their `../_lib/` type imports resolve
+  const libDir = join(root, 'plugins', LIB_DIR);
+  for (const dir of [...plugins.map((p) => p.dir), ...(existsSync(libDir) ? [libDir] : [])]) {
+    const to = join(root, 'dist/types/plugins', basename(dir));
+    cpSync(join(tmp, relative(root, dir)), to, { recursive: true });
     for (const f of readdirSync(to)) if (f.endsWith('.d.ts')) writeFileSync(join(to, f), readFileSync(join(to, f), 'utf8').replaceAll('../../src/', '../../'));
   }
   rmSync(tmp, { recursive: true, force: true });

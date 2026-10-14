@@ -4,6 +4,7 @@
  */
 
 import { typeError } from '../contracts/errors.js';
+import { NO_TARGET, isNoTarget } from './no-target.js';
 
 /** @typedef {import('../contracts/types.js').InputMapper} InputMapper */
 /** @typedef {import('../contracts/types.js').InputPoint} InputPoint */
@@ -14,7 +15,7 @@ const RING_SIZE = 3;
 /**
  * @typedef {Object} MapperChain
  * @property {(serial: number, mappers: InputMapper[]) => void} push  mappers captured for the frame just presented (ring of the last 3)
- * @property {(p: InputPoint, age?: number) => {x: number, y: number}} map  through the newest presented frame (`age` 1..2 = older presentations)
+ * @property {(p: InputPoint, age?: number) => {x: number, y: number}} map  through the newest presented frame (`age` 1..2 = older presentations); NO_TARGET when a mapper says no element is shown there
  * @property {(age?: number) => ((p: InputPoint) => {x: number, y: number})} captureGesture  frozen mapper for one pointer gesture (captureGestureSnapshot when offered)
  * @property {() => boolean} active  the newest presented frame had at least one spatial mapper
  * @property {() => number} depth  presented frames currently kept
@@ -23,7 +24,8 @@ const RING_SIZE = 3;
 
 /**
  * @param {InputMapper[]} mappers in plugin order (first plugin first)
- * @returns {(p: InputPoint) => {x: number, y: number}}
+ * @returns {(p: InputPoint) => {x: number, y: number}}  NO_TARGET as soon as one mapper returns it: the mappers of earlier plugins never see it
+ *   (one of them could clamp the far-away point back onto the canvas, onto an element)
  */
 function compose(mappers) {
   const list = mappers.slice();
@@ -32,6 +34,7 @@ function compose(mappers) {
     let y = p.y;
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const q = list[i]({ x, y, width: p.width, height: p.height });
+      if (isNoTarget(q)) return NO_TARGET;
       if (!q || !Number.isFinite(q.x) || !Number.isFinite(q.y)) throw typeError('an input mapper returned a non-finite point');
       x = q.x;
       y = q.y;

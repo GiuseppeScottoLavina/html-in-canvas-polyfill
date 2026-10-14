@@ -45,7 +45,8 @@ export function markerScene({ w = 480, h = 320, step = 60, size = 10, first = { 
 }
 
 /**
- * Wrap a definition so that every mapper the host asks for is kept, newest last.
+ * Wrap a definition so that every mapper the host asks for is kept, newest last. The instance is wrapped in a Proxy, not copied: getters
+ * (an instance whose `continuous` changes at runtime) and later property writes stay live, and methods run with the instance as `this`.
  * @param {any} plugin
  */
 export function spyMappers(plugin) {
@@ -54,7 +55,15 @@ export function spyMappers(plugin) {
     ...plugin,
     async create(/** @type {any} */ ctx, /** @type {any} */ options) {
       const inst = await plugin.create(ctx, options);
-      return { ...inst, captureInputMapper(/** @type {any} */ frame) { const m = inst.captureInputMapper(frame); mappers.push(m); return m; } };
+      if (!inst || typeof inst.captureInputMapper !== 'function') return inst;
+      const capture = (/** @type {any} */ frame) => { const m = inst.captureInputMapper(frame); mappers.push(m); return m; };
+      return new Proxy(inst, {
+        get(target, key) {
+          if (key === 'captureInputMapper') return capture;
+          const value = Reflect.get(target, key, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
     },
   });
   return { def, mappers };
@@ -104,19 +113,21 @@ export function agreement(img, map, scene, band = 1.25) {
 
 /**
  * The standard check of a spatial plugin: its mapper agrees with the GPU pixels (at most `maxWrong` pixels), and the identity mapper is
- * measurably wrong on the same frame (at least `minIdentityWrong` pixels), so the check could have failed.
+ * measurably wrong on the same frame (at least `minIdentityWrong` pixels), so the check could have failed. The markers must also be
+ * visible: at least `minBrightShare` of the painted marker area is bright. The default 0.8 suits effects that keep the scale; an effect
+ * that draws the whole source smaller (a CRT screen inside its bezel, a card at 0.86 of the canvas) passes its own lower share.
  * @param {any} t
  * @param {any} plugin
  * @param {Record<string, unknown>} options  options under which the plugin really displaces pixels
- * @param {{scene?: ReturnType<typeof markerScene>, offsetMs?: number, before?: (rig: any) => void, maxWrong?: number, minIdentityWrong?: number}} [o]
+ * @param {{scene?: ReturnType<typeof markerScene>, offsetMs?: number, before?: (rig: any) => void, maxWrong?: number, minIdentityWrong?: number, minBrightShare?: number}} [o]
  */
-export async function checkMapperAgainstGpu(t, plugin, options, { maxWrong = 5, minIdentityWrong = 200, ...present } = {}) {
+export async function checkMapperAgainstGpu(t, plugin, options, { maxWrong = 5, minIdentityWrong = 200, minBrightShare = 0.8, ...present } = {}) {
   const scene = present.scene ?? markerScene();
   const { img, mapper } = await presentOnce(t, plugin, options, { ...present, scene });
   if (typeof mapper !== 'function') throw new Error('the host never asked the plugin for a mapper: is the instance `spatial: true`?');
   const real = agreement(img, /** @type {any} */ (mapper), scene);
   const flat = agreement(img, identity, scene);
-  const minBright = scene.centres.length * scene.size * scene.size * 0.8;
+  const minBright = scene.centres.length * scene.size * scene.size * minBrightShare;
   const verdict = {
     real, identity: flat,
     ok: real.bright >= minBright && real.wrong <= maxWrong && flat.wrong >= minIdentityWrong,

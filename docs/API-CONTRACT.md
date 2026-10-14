@@ -304,10 +304,11 @@ The frame cap and the effects host are extensions of this library. They are not 
 - In mode `native` the `frameCap` property is not defined; the `framecap` attribute bounds effect frames only (feature row `frame-cap`, section 7.6).
 
 ### 7.2 Effect plugins: ABI v2 (v1 adapted)
-Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
+Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options), NO_TARGET, isNoTarget(point)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
 `definePlugin` validates and freezes a definition: `{type: string, apiVersion: 1|2, version: number, outputCapabilities?:
 {directCanvasRenderAttachment?: true}, create(context, options)}`. `create` may be async and returns an `EffectPluginInstance`:
-`render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `destroy?`, `spatial?`, `continuous?`.
+`render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `destroy?`, `spatial?`, `continuous?`
+(`continuous` is read after every frame and may change at runtime; an idle host needs `context.requestRender()` to see it turn true).
 v1 -> v2 adapter (`effects/plugin-abi.js`): a v1 definition is accepted unchanged; the frame it receives additionally carries the
 v1 field `sourceSnapshotSerial` (= v2 `sourceVersion`), and `context.apiVersion` equals the DECLARED version. v2 renames are
 `sourceSnapshotSerial -> sourceVersion` and snapshot-vocabulary alignment with the standard (`SnapshotVersion.id`). A `spatial`
@@ -335,6 +336,10 @@ the mapper of the last few presented frames. `InputMapper = (p: InputPoint) => {
 output (canvas-relative css px of the content box, plus the presented `width`/`height` in css px) to the SOURCE point it shows, in the same
 coordinate system. The optional method `mapper.captureGestureSnapshot(): InputMapper` returns a mapper frozen at the call (the host calls it
 at `pointerdown` so a drag keeps one mapping). The host composes the mappers of all spatial plugins (last plugin first).
+`NO_TARGET` (`effects/no-target.js`; exported by the effects module and as `HTMLInCanvasEffects.NO_TARGET`, tested with `isNoTarget`, which
+recognises a registered-symbol brand so that copies from other bundles count) is what a mapper returns where the presented pixel shows no
+element of the source. The composition stops at it (earlier mappers never see it), and the interposer swallows that gesture: `pointerdown`
+default prevented, no focus change, no activation, the following `click` swallowed, hover on no element of the page.
 Interposer (`options.interposer`, default true): capture-phase listeners on the live layer. For `pointermove/down/up/click`, it maps the
 pointer through the gesture mapper and, because live elements sit where the source pixels are drawn, finds the intended element with the
 layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `pointerdown`, if the mapped element's control differs from

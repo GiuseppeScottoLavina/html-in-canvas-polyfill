@@ -55,7 +55,7 @@ When the drawn source and the canvas differ by more than 1 CSS pixel at the firs
 |---|---|
 | `render(frame)` | required. Encode your pass into `frame.encoder`. `frame` has `now` (ms), `delta`, `frameIndex`, `frameCap`, `sourceVersion`, `sourceReady`, `encoder`, `sourceView`/`sourceTexture`, `destinationView`/`destinationTexture`, and `width`, `height` (backing pixels), `cssWidth`, `cssHeight`, `dpr`. When `sourceReady` is false no snapshot has been uploaded yet: write something harmless. |
 | `spatial` | `true` when your output moves pixels. Then `captureInputMapper` is REQUIRED: `addPlugin` rejects with a `TypeError` when the created instance is `spatial` without it (`src/effects/plugin-abi.js`, `validateInstance`). |
-| `continuous` | `true` to be rendered on every capped frame even when the source did not change (animations). Otherwise the host renders when the source changed or you call `context.requestRender()`. |
+| `continuous` | `true` to be rendered on every capped frame even when the source did not change (animations). Otherwise the host renders when the source changed or you call `context.requestRender()`. It may change at runtime (a getter, or a property you assign): the host reads it after every frame, so a plugin that animates only now and then is `continuous` only while it animates. A host with nothing to render is idle and reads it again only at its next frame: after switching it to `true`, call `context.requestRender()`. |
 | `captureInputMapper(frame)` | see section 4 |
 | `setOptions(options)`, `resize(viewport)`, `mountUI(root, ui)`, `destroy()` | optional functions |
 
@@ -68,11 +68,23 @@ When a plugin moves pixels, the element under the pointer is not the element the
 - Signature: `mapper(point) => {x, y}` with `point = {x, y, width, height}`. `x`, `y` are canvas-relative CSS pixels of the content box; `width`, `height` are the presented size in CSS pixels. The result is in the same coordinate system, in the SOURCE.
 - PURE: no reads of the DOM, no state that changes afterwards. Freeze what that frame used (time, options) when `captureInputMapper` is called; a later `render` must not change an earlier mapper. The water plugin (`plugins/water/`) copies its uniform block into one of 4 slots per presented frame; the example below stores `{t, a}` at render time.
 - Finite: a mapper that returns a non-finite number makes the host throw a `TypeError` (`an input mapper returned a non-finite point`).
+- No element: where the presented pixel shows nothing of the source (a monitor bezel, the space beside a tilted card, a fragment in flight), return `NO_TARGET` (below), not a made-up far-away point.
 - Optional `mapper.captureGestureSnapshot()` returns a mapper frozen at that moment. The host calls it at `pointerdown` so a drag keeps one mapping while the picture keeps moving.
 - Several spatial plugins: the host composes their mappers, last plugin first.
 - Not every plugin moves pixels. A plugin that only tints or blurs is not `spatial` and has no mapper.
 
-What the host does with it (the interposer, on by default): for `pointermove`, `pointerdown`, `pointerup` and `click` on the live layer it maps the pointer, finds the element at the mapped point, and when the native hit control differs it re-implements the activation (focus, button, link, checkbox, radio and label click on `pointerup`, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). The interposer under a strong displacement is UNVERIFIED end to end (only the mapper against GPU pixels is covered, section 6).
+What the host does with a mapper (the interposer, on by default): for `pointermove`, `pointerdown`, `pointerup` and `click` on the live layer it maps the pointer, finds the element at the mapped point, and when the native hit control differs it re-implements the activation (focus, button, link, checkbox, radio and label click on `pointerup`, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). End to end with trusted input, the interposer is checked through the example plugins in the gallery (`npm run test:plugins`: clicks on controls drawn away from their DOM position by the CRT, holo-card and liquid-glass plugins, and presses swallowed while the disintegrate and shatter transitions play); for other plugins only the mapper against the GPU pixels is checked (section 6).
+
+### `NO_TARGET`: no element here
+
+`NO_TARGET` is the value a mapper returns for "the user sees no element of the source at this point". It is exported by the effects module (`import { NO_TARGET, isNoTarget } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'`) and by the classic bundle (`HTMLInCanvasEffects.NO_TARGET`, `HTMLInCanvasEffects.isNoTarget(point)`). A plugin that is built as its own bundle may also import `src/effects/no-target.js`, a module without dependencies (the plugins of this repository do).
+
+What the host does with it:
+- The mapper chain stops at it. The mappers of the plugins before this one never see the point, so none of them can clamp it back onto the canvas, onto an element (a mapper that clamps to the canvas is common: the water plugin and the wobble example below do it).
+- The interposer swallows the gesture: at `pointerdown` it prevents the native handling (no `mousedown`, no focus change, no text selection on the element natively under the pointer), activates nothing at `pointerup`, swallows the `click` that follows, and the focused element keeps the focus. Hover and `:active` show no element of the page, and the cursor is the default arrow.
+- Keyboard input is not mapped and still reaches the focused element.
+
+`NO_TARGET` is recognised by a registered symbol (`isNoTarget`), not by identity, so the copy that each plugin bundle carries is the same answer for the host. Its `x` and `y` are finite and far outside any viewport, so code that does not know the value hit-tests nothing there; do not rely on them, test with `isNoTarget`. Pointer events themselves still reach plugin listeners and page code with their native target.
 
 ## 5. A complete plugin: horizontal wobble
 
@@ -247,6 +259,7 @@ A definition with `apiVersion: 1` is accepted unchanged. Its frame also carries 
 ## 9. Checklist
 
 - `spatial: true` has a `captureInputMapper` and it is pure and frozen per frame.
+- Where the presented pixel shows no element of the source, the mapper returns `NO_TARGET`.
 - The mapper formula is the shader formula (test it against pixels, as `check-examples` does, or with `checkMapperAgainstGpu` of `plugins/_shared/gpu-check.mjs`).
 - You did not call `getContext` on the canvas.
 - A 2D fallback exists for browsers without WebGPU, and for a browser whose own native implementation is in use (the extensions are not available there, see the top of this guide).

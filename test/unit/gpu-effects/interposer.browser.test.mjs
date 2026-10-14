@@ -3,6 +3,7 @@ import { test, assert } from '/test/unit/lib/t.js';
 import { makeRig } from './lib/rig.mjs';
 import { createInterposer } from '/src/effects/interposer.js';
 import { createMapperChain } from '/src/effects/input-mapper.js';
+import { NO_TARGET } from '/src/effects/no-target.js';
 
 const HTML = `<button data-id="a" style="position:absolute;left:10px;top:10px;width:80px;height:30px;margin:0">A</button>
 <button data-id="b" style="position:absolute;left:200px;top:10px;width:80px;height:30px;margin:0">B</button>
@@ -11,7 +12,7 @@ const HTML = `<button data-id="a" style="position:absolute;left:10px;top:10px;wi
 function setup(t, mapper, { w = 480, h = 320 } = {}) {
   const rig = makeRig({ w, h, html: HTML });
   const chain = createMapperChain();
-  if (mapper) chain.push(1, [mapper]);
+  if (mapper) chain.push(1, Array.isArray(mapper) ? mapper : [mapper]);
   const ip = createInterposer(rig.env, rig.record, chain, rig.tracker);
   t.cleanup(() => ip.dispose());
   const clicks = [];
@@ -168,4 +169,46 @@ test('dispose removes listeners, hover and cursor', (t) => {
   assert.equal(d.ev.defaultPrevented, false);
   assert.equal(s.rig.tracker.mapped.length, n);
   assert.equal(s.rig.layerEl.style.cursor, '');
+});
+
+test('NO_TARGET: the press is swallowed (no activation, no click, no focus change) and nothing of the page is hovered', (t) => {
+  const s = setup(t, () => NO_TARGET);
+  s.el('t').focus();
+  s.fire('pointermove', 20, 20);
+  assert.equal(s.rig.tracker.mapped.at(-1), s.rig.layerEl, 'hover follows the layer itself: no element of the page');
+  assert.equal(s.rig.layerEl.style.cursor, 'default');
+  const d = s.press(20, 20); // natively on A
+  assert.equal(d.target.dataset.id, 'a');
+  assert.equal(d.ev.defaultPrevented, true, 'pointerdown default prevented: no mousedown, focus or selection on A');
+  assert.deepEqual(s.clicks, [], 'A was not activated and the native click was swallowed');
+  assert.equal(document.activeElement, s.el('t'), 'the focused field keeps the focus');
+  s.fire('click', 300, 200);
+  assert.equal(s.clicks.length, 1, 'only the click of that gesture was swallowed');
+});
+
+test('NO_TARGET with a clamping plugin before it in the chain: never clamped back onto an element', (t) => {
+  // plugin 1 clamps into [15, w] x [15, h]: a far-away point becomes (15, 15), which is button A
+  const clamp = (p) => ({ x: Math.min(p.width, Math.max(15, p.x)), y: Math.min(p.height, Math.max(15, p.y)) });
+  const s = setup(t, [clamp, () => NO_TARGET]);
+  const d = s.press(220, 20); // natively on B
+  assert.equal(d.ev.defaultPrevented, true);
+  assert.deepEqual(s.clicks, [], 'neither A (the clamped point) nor B (the native hit) was activated');
+});
+
+test('control of the test above: an unbranded far-away point IS clamped onto A by the plugin before it', (t) => {
+  const clamp = (p) => ({ x: Math.min(p.width, Math.max(15, p.x)), y: Math.min(p.height, Math.max(15, p.y)) });
+  const s = setup(t, [clamp, () => ({ x: -1e5, y: -1e5 })]);
+  s.press(220, 20);
+  assert.deepEqual(s.clicks, ['a']);
+});
+
+test('a press on a control released where a mapper returns NO_TARGET activates nothing', (t) => {
+  let none = false;
+  const m = (p) => (none ? NO_TARGET : { x: p.x + 190, y: p.y });
+  const s = setup(t, m);
+  s.fire('pointerdown', 20, 20); // mapped to B; the gesture keeps this mapper (no captureGestureSnapshot), so flip it before the release
+  none = true;
+  s.fire('pointerup', 20, 20);
+  s.fire('click', 20, 20);
+  assert.deepEqual(s.clicks, []);
 });
