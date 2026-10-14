@@ -87,7 +87,7 @@ function createRectMemory(ink) {
 
   /**
    * `el` resized (or is seen for the first time): what moved is bounded by the nearest ancestor inside the drawable whose box neither moved nor resized since it was last
-   * measured; its old and new reach are the damage (optimization 4: a text change that resizes a heading repaints the header, not a 1,000-node drawable). An ancestor never
+   * measured; its old and new reach are the damage (a text change that resizes a heading repaints the header, not a 1,000-node drawable). An ancestor never
    * measured before cannot vouch for anything (recorded now, the next change can use it); reaching the drawable answers null (whole drawable), as before.
    * @param {LiveLayer} layer @param {Element} el @param {Rect|null} own  old and new reach of `el` (null = its old reach is unknown)
    * @returns {Rect|null}

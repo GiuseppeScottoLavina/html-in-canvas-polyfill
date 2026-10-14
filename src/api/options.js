@@ -1,6 +1,6 @@
 /**
  * Option resolution and defaults.
- * Module: api-core. Implemented. Pure (no DOM): unit-tested under node.
+ * Module: api-core. Pure (no DOM): unit-tested under node.
  */
 
 import { EXT } from '../contracts/events.js';

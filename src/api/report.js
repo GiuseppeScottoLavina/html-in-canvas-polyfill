@@ -1,6 +1,6 @@
 /**
  * Reporter (loud-failure sink), HicReport builder and the CSP violation watcher.
- * Module: api-core. Implemented.
+ * Module: api-core.
  */
 
 import { EVENTS } from '../contracts/events.js';

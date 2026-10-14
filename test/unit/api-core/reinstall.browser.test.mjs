@@ -1,7 +1,7 @@
 import { test, assert, sleep } from '/test/unit/lib/t.js';
 import { install } from '/src/index.js';
 
-/** N-05: what a re-install does to a managed canvas (docs/API-CONTRACT.md section 3, GETTING-STARTED "Uninstall and reinstall") */
+/** What a re-install does to a managed canvas (docs/API-CONTRACT.md section 3, GETTING-STARTED "Uninstall and reinstall") */
 test('after uninstall() + install() the canvas gets its first paint on its own; addEventListener listeners survive, onpaint is forgotten', async t => {
   const first = install();
   t.cleanup(() => { first.uninstall(); });

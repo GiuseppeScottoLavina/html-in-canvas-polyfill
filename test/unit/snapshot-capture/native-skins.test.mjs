@@ -90,7 +90,7 @@ test('checkbox/radio baseline: appearance:none moves the baseline to the margin 
   assert.equal(toggleBaseline({ verticalAlign: 'middle', marginBottom: '3px' }, 1), '');
 });
 
-// ---- ADR X-12: Firefox listbox bar, hover / pressed / focus states, Safari inactive window and pressed looks
+// ---- Firefox listbox bar, hover / pressed / focus states, Safari inactive window and pressed looks
 import { geckoBoxSkin, geckoListboxBar, geckoListboxThumb } from '../../../src/snapshot/capture/gecko-skins.js';
 import { inactiveTints, pressedShade } from '../../../src/snapshot/capture/webkit-skins.js';
 import { notePress, pressOnThumb, themedStateChange } from '../../../src/util/native-states.js';

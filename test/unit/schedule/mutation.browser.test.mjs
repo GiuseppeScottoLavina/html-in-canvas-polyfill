@@ -174,7 +174,7 @@ test('mutations inside an open shadow root of a drawable (also one attached late
   assert.equal(rig.sink.damage[0].drawable.id, 'd2');
 });
 
-// optimization 4 (docs/PERFORMANCE-COMPARISON.md): a resize is bounded by the nearest unchanged ancestor, and text replaced through textContent is not structural
+// a resize is bounded by the nearest unchanged ancestor, and text replaced through textContent is not structural
 const APP = '<div drawable id="app" style="width:400px"><header id="hd" style="display:flex;justify-content:space-between;align-items:center;height:40px"><h1 id="t" style="margin:0;font:20px Arial">Title</h1><nav>menu</nav></header>'
   + '<main id="mn" style="height:600px;background:#eee"></main></div>';
 

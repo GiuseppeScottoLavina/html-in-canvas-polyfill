@@ -259,7 +259,7 @@ gtest('resize: the backing store follows the content box, plugins get resize(), 
   assert.ok(Math.abs(update[1].canvasTransform.a - 0.5) < 1e-6 && Math.abs(update[1].canvasTransform.d - 0.5) < 1e-6);
 });
 
-/** N-02: console.warn once per host when the drawn source and the canvas differ by more than 1 css px; silent when they match */
+/** console.warn once per host when the drawn source and the canvas differ by more than 1 css px; silent when they match */
 async function sizeWarnings(t, canvasCss) {
   const warns = [];
   const original = console.warn;
@@ -274,13 +274,13 @@ async function sizeWarnings(t, canvasCss) {
   return warns;
 }
 
-gtest('N-02: a source of another size than the canvas warns once per host, with both sizes', async (t) => {
+gtest('a source of another size than the canvas warns once per host, with both sizes', async (t) => {
   const warns = await sizeWarnings(t, [240, 160]);
   assert.equal(warns.length, 1, `one warning: ${warns.join(' | ')}`);
   assert.ok(/source is 480x320 CSS px but the canvas is 240x160/.test(warns[0]) && /EFFECTS-PLUGINS/.test(warns[0]));
 });
 
-gtest('N-02: no warning when the source has the canvas size (also within 1 px)', async (t) => {
+gtest('no warning when the source has the canvas size (also within 1 px)', async (t) => {
   assert.deepEqual(await sizeWarnings(t, null), []);
   assert.deepEqual(await sizeWarnings(t, [480.8, 319.4]), []);
 });

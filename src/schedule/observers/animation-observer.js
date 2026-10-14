@@ -26,7 +26,7 @@ export function onScriptAnimation(env, fn) {
 
 /**
  * Wrap Element.prototype.animate and Animation.prototype.play (through the install's ledger, restored on uninstall) to report the animated element to onScriptAnimation
- * listeners. Replaces the 1 s getAnimations() poll (optimization 6): no idle cost, no delay.
+ * listeners. No getAnimations() poll: no idle cost, no delay.
  * @param {HicEnv} env @param {PatchLedger} ledger @returns {() => void}
  */
 export function installAnimationHooks(env, ledger) {

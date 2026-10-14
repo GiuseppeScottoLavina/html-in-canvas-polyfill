@@ -1,6 +1,6 @@
 /**
  * Which live elements an engine draws DIFFERENTLY in an interaction state without any page rule asking for it (the widget theme's own hover / pressed look), so a change of
- * that state must repaint them even when no author rule uses :hover / :active (ADR X-12). PURE apart from reading the element's tag and type.
+ * that state must repaint them even when no author rule uses :hover / :active. PURE apart from reading the element's tag and type.
  * Measured (Firefox 157.0.1, macOS): hover changes the border of every themed field and toggle and the face of buttons, selects, colour wells and the range; pressed changes
  * buttons, colour wells, the range and the checked accent of checkbox and radio. Safari 27: see WEBKIT_PRESS_TYPES.
  * Module: util.

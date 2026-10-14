@@ -317,7 +317,7 @@ const SCENARIOS = {
         return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && st.active === 'off', ...st };
       });
     }
-    // owner report: a double click on a word of the static text showed no selection on the canvas until the effect changed; nor did the deselection
+    // bug report: a double click on a word of the static text showed no selection on the canvas until the effect changed; nor did the deselection
     const selectionCases = mode === 'effect' ? [manifest.some((p) => p.name === 'glitch') ? 'glitch' : manifest[0].name, 'off'] : ['off'];
     for (const name of selectionCases) {
       await run.step('interact', `a trusted double click on a word of the static text shows the selection on the canvas, a click elsewhere removes it (${mode === 'effect' ? (name === 'off' ? 'effects host, "Effect off"' : `effect ${name}`) : '2D, no effect'})`, async () => {

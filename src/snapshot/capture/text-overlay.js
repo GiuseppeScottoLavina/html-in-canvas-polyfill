@@ -1,5 +1,5 @@
 /**
- * Optimistic text overlay of a focused single-line text field (docs/PERFORMANCE-COMPARISON.md, optimization 1).
+ * Optimistic text overlay of a focused single-line text field: typed text is drawn at once, the snapshot follows at the typing pause.
  * Module: snapshot-capture (src/snapshot/capture/*).
  *
  * While a key is typed the snapshot of the drawable is one or two frames away (build + async decode). The overlay paints the field's LIVE value into the retained surface in the

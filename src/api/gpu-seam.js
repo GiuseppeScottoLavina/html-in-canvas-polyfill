@@ -1,5 +1,5 @@
 /**
- * Seam to the GPU bundle (optimization 7): the WebGL / WebGPU element-texture upload (texture-patch.js) lives in `hic-live-gpu.iife.js` (ESM: imported by the package entry),
+ * Seam to the GPU bundle: the WebGL / WebGPU element-texture upload (texture-patch.js) lives in `hic-live-gpu.iife.js` (ESM: imported by the package entry),
  * outside the Chrome core. That bundle registers its installer on a global symbol; install() uses it. Without it the four methods still exist (feature detection keeps
  * working) and throw a loud NotSupportedError that names the missing bundle. Loaded after the core, the bundle replaces the stubs through the installed core's hook.
  * Module: api-surface (src/api/*).

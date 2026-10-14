@@ -449,7 +449,7 @@ export {};
  * @property {(absUrl: string) => string|null} peek  data: URL or null if not cached (sync, hot path)
  * @property {(absUrl: string, kind: 'image'|'font'|'css'|'svg') => Promise<string>} load  fetch + encode; rejects with HicUnsupportedError
  * @property {(cb: (absUrl: string) => void) => () => void} onReady  fires when a previously missing resource settled: it became available or its load FAILED (-> 'resource' damage; the next capture then uses it or reports the failure)
- * @property {(what: string) => void} [settle]  announce that something a capture left out outside this cache became ready (a pre-decoded control skin, ADR X-10): fires onReady listeners
+ * @property {(what: string) => void} [settle]  announce that something a capture left out outside this cache became ready (a pre-decoded control skin): fires onReady listeners
  * @property {() => {entries:number, bytes:number}} stats
  * @property {() => void} clear
  */
@@ -589,7 +589,7 @@ export {};
  * @property {(record: CanvasRecord) => boolean} paintNow  fire the paint of this canvas immediately (called from a microtask queued by the canvas width/height setters, so a ResizeObserver-driven resize redraws in the SAME frame). At most once per frame, never re-entrant (inside a dispatch it falls back to requestPaint); returns whether it fired
  * @property {(record: CanvasRecord, fps: number) => void} setFrameCap
  * @property {(record: CanvasRecord, hook: FrameHook) => () => void} addFrameHook  returns remove()
- * @property {(record: CanvasRecord, cause: DamageCause, drawable?: Element|null, rect?: Rect|null, urgent?: boolean) => void} damage  sink for observers; `urgent` (and every focus/active damage): a discrete user action whose tile is built at once, in the input task (optimization 5)
+ * @property {(record: CanvasRecord, cause: DamageCause, drawable?: Element|null, rect?: Rect|null, urgent?: boolean) => void} damage  sink for observers; `urgent` (and every focus/active damage): a discrete user action whose tile is built at once, in the input task
  * @property {() => {frames:number, paintsFired:number, lateFrames:number, phaseFallbacks:number, gateTimeouts:number}} stats
  * @property {() => void} dispose
  */

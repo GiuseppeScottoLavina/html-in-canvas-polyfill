@@ -41,7 +41,7 @@ import { createPaintGate } from './paint-gate.js';
 /** Damage that comes from the user's hands: it may use options.interactionFloorFps. */
 const INTERACTION_CAUSES = new Set(['input', 'selection', 'focus', 'hover', 'active', 'scroll']);
 /**
- * Discrete user actions whose tile is built at once, in a microtask of the input task itself (optimization 5): after discrete input Chrome runs the rendering update before
+ * Discrete user actions whose tile is built at once, in a microtask of the input task itself: after discrete input Chrome runs the rendering update before
  * any ordinary or user-blocking task, so only work done inside the input task can land before that frame. Damage published with `urgent` (a value change of a non-text control) too.
  */
 const URGENT_CAUSES = new Set(['focus', 'active']);
@@ -73,7 +73,7 @@ function createEntry(record) {
 /**
  * Implements Scheduler (docs/ARCHITECTURE.md ADR-C). TWO phases per frame through frame-phase.js: the rAF ARM callback (arms the sentinel observer) and the frame-end RUN in a fresh ResizeObserver callback
  * (after app rAF callbacks, style/layout and earlier ResizeObservers). RUN, per canvas in reverse tree order: cap gate, paint gate (paint-gate.js), commitLanded, paint dispatch; then the frame hooks. ONE store pump for all canvases runs in a task posted after the rendering update (queuePump).
- * paintNow(record) is the same dispatch from a microtask (canvas width/height setters), at most one per frame. Zero rAF and zero ResizeObserver when idle; the only timer is the caret blink while a text control is focused (observers/; no idle poll since optimization 6).
+ * paintNow(record) is the same dispatch from a microtask (canvas width/height setters), at most one per frame. Zero rAF and zero ResizeObserver when idle; the only timer is the caret blink while a text control is focused (observers/; no idle poll).
  *
  * Cap semantics: the cap bounds paint events AND frame hooks (one cap gate per canvas, advanced only on ticks that have work). requestPaint() honours the cap too; paintNow() does not (the app just cleared the bitmap: skipping a frame would show it blank).
  * `interactionFloorFps` (default 0 = strict) raises a finite cap for user-driven damage only; it never lifts options.maxSnapshotFps, which the store applies to build starts.
@@ -98,7 +98,7 @@ export function createScheduler(env, store, hooks) {
   let framePeriod = Infinity;
   let chained = false;
   let auditQueued = false;
-  // Builds run in a task AFTER the rendering update (optimization 2): a build costs clone + CSS + serialise and forced style/layout, which inside the frame-end tick
+  // Builds run in a task AFTER the rendering update: a build costs clone + CSS + serialise and forced style/layout, which inside the frame-end tick
   // delayed the frame itself (every long task of a wheel stream or a large-DOM update was BeginMainFrame). The commit and the paint dispatch stay in the tick.
   let pumpQueued = false;
   let pumpInteraction = false;
@@ -515,8 +515,8 @@ export function createScheduler(env, store, hooks) {
       }
     }
     // a resize frame is long (the page relayouts) and the browser runs the NEXT rendering update before a task posted from it, so a post-frame build would land a frame later
-    // (measured: resize convergence p95 17 -> 25 ms); resize / DPR damage is built inside the tick, as before optimization 2. Everything else builds after the frame.
-    // ... and so is the FIRST snapshot of a canvas (its first paint lands one frame earlier, as before P-02: WPT onpaint-zindex expects the initial paint within the first frame)
+    // (measured: resize convergence p95 17 -> 25 ms); resize / DPR damage is built inside the tick. Everything else builds after the frame.
+    // ... and so is the FIRST snapshot of a canvas (so its first paint is not a frame late: WPT onpaint-zindex expects the initial paint within the first frame)
     const resized = now < resizingUntil || work.some((entry) => entry.resized || !entry.record.paint.everFired);
     const pumped = resized ? pump(now, interaction, true) : null;
     if (resized) for (const entry of work) entry.resized = false;
@@ -633,7 +633,7 @@ export function createScheduler(env, store, hooks) {
       entry.dirty = true;
       if (INTERACTION_CAUSES.has(cause)) entry.interaction = true;
       // and the FIRST scroll step of a stream: during a wheel scroll animation the browser runs rendering updates back to back and starves posted tasks, so a post-frame
-      // build of that step was drawn 70-80 ms late (later steps are composed, P-03; their fallback builds stay after the frame, where they cost no frame time)
+      // build of that step was drawn 70-80 ms late (later steps are composed from cached pages; their fallback builds stay after the frame, where they cost no frame time)
       const streamStart = cause === 'scroll' && env.now() - lastScrollAt > SCROLL_STREAM_GAP_MS;
       if (cause === 'scroll') lastScrollAt = env.now();
       if (cause === 'resize' || cause === 'dpr' || streamStart) entry.resized = true;

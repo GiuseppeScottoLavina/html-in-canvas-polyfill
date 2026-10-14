@@ -52,7 +52,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 |---|---|---|
 | `hic-live-polyfill.iife.js` | 503,332 | 125,241 |
 | `hic-live-polyfill.iife.min.js` | 256,362 | 89,044 |
-| `hic-live-effects.iife.js` | 55,553 | 15,856 |
+| `hic-live-effects.iife.js` | 55,547 | 15,849 |
 | `hic-live-effects.iife.min.js` | 27,000 | 10,520 |
 | `hic-live-native-bridge.iife.js` | 25,076 | 7,093 |
 | `hic-live-native-bridge.iife.min.js` | 11,107 | 4,287 |
@@ -61,7 +61,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-gpu.iife.js` | 20,067 | 5,539 |
 | `hic-live-gpu.iife.min.js` | 10,469 | 4,015 |
 | `esm/index.js` | 558,691 | 148,529 |
-| `esm/effects.js` | 47,406 | 13,592 |
+| `esm/effects.js` | 47,400 | 13,585 |
 | `esm/native-bridge.js` | 15,865 | 4,359 |
 | `plugins/crt.iife.js` | 19,529 | 7,150 |
 | `plugins/crt.iife.min.js` | 13,669 | 6,099 |
@@ -132,6 +132,6 @@ Native bridge, with the evidence for "separate script, not lazy":
 ## Checks
 
 - `npm run build`: the artifacts above plus `dist/sizes.json`; it fails when a plugin folder breaks the contract of `plugins/README.md`.
-- `npm run check:bundle` (`npm test` runs it with `--allow-size`): sizes against the ceilings (min files; core 257 KB, effects 27.5 KB, bridge 11.5 KB, engines 40 KB, GPU 16 KB, each plugin its measured size plus a small margin (`PLUGIN_LIMITS`: crt 14, disintegrate 26.5, glitch 13.5, holo-card 12.75, liquid-glass 12.25, page-curl 33.5, shatter 16.25, water 10.75 KB) and 16 KB for a plugin not listed there; 1 KB = 1000 bytes, as in the target) and the 150 KB target; each IIFE parses as a classic script and has no dynamic `import()`; in headless Chrome, for the readable and the minified files: core alone, core + effects (including `createHost` rejecting after `uninstall()`), core + effects + each plugin of `dist/plugins/manifest.json` (it registers, `definePlugin` accepts it, its shader modules receive inlined WGSL strings), bridge + core, each with ZERO requests beyond the declared scripts (server log and Resource Timing) and no page error; the ESM build as native modules. Its controls: a module is not a classic script, a dynamic import and an oversize bundle are seen, an undeclared script is an unexpected request, a missing global is reported.
+- `npm run check:bundle` (`npm test` runs it with `--allow-size`): sizes against the ceilings (min files; core 256.5 KB, effects 27.25 KB, bridge 11.5 KB, engines 40 KB, GPU 16 KB, each plugin its measured size plus a small margin (`PLUGIN_LIMITS`: crt 14, disintegrate 26.5, glitch 13.5, holo-card 12.75, liquid-glass 12.25, page-curl 33.5, shatter 29, water 10.75 KB) and 16 KB for a plugin not listed there; 1 KB = 1000 bytes, as in the target) and the 150 KB target; each IIFE parses as a classic script and has no dynamic `import()`; in headless Chrome, for the readable and the minified files: core alone, core + effects (including `createHost` rejecting after `uninstall()`), core + effects + each plugin of `dist/plugins/manifest.json` (it registers, `definePlugin` accepts it, its shader modules receive inlined WGSL strings), bridge + core, each with ZERO requests beyond the declared scripts (server log and Resource Timing) and no page error; the ESM build as native modules. Its controls: a module is not a classic script, a dynamic import and an oversize bundle are seen, an undeclared script is an unexpected request, a missing global is reported.
 - `npm run test:examples` (`scripts/check-examples.mjs`) loads the minified bundles from `dist/` in the six pages of `examples/` (the plugin gallery included) and in the two smoke pages of `test/examples-smoke/` (the ESM entry `dist/esm/index.js` and a plugin written against `hic-live-effects.iife.min.js`), in headless Chrome, with a control that breaks the `dist/` path.
 - The browser gates (`test/gates/`) load the core, and the effects bundle and `dist/plugins/water.iife.js` for the effect gates, from `dist/` through `--bundle-file`, `--effects-file` and `--water-file`; the mutant suite mutates the core or the effects file (`bundle: 'effects'`) and runs the gates on it.

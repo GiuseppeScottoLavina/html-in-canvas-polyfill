@@ -527,7 +527,7 @@ test('dispose removes the visibility listener, the pending frame and all state',
   assert.equal(t.fired.length, 0);
 });
 
-test('optimization 2: the build pump runs in a task AFTER the rendering update, never inside the frame-end tick (commit and paint stay in the tick)', () => {
+test('the build pump runs in a task AFTER the rendering update, never inside the frame-end tick (commit and paint stay in the tick)', () => {
   const t = setup();
   const el = fakeElement();
   const record = mounted(t, [el]);
@@ -541,7 +541,7 @@ test('optimization 2: the build pump runs in a task AFTER the rendering update, 
   assert.equal(t.store.pumps, before + 1, 'the pump ran right after the frame');
 });
 
-test('release-candidate fix: while the window is being resized every build runs inside the tick (a post-frame build lands a frame late); after a pause, after the frame again', () => {
+test('while the window is being resized every build runs inside the tick (a post-frame build lands a frame late); after a pause, after the frame again', () => {
   const t = setup();
   const el = fakeElement();
   const record = mounted(t, [el]);
@@ -565,7 +565,7 @@ test('release-candidate fix: while the window is being resized every build runs 
   assert.equal(t.fw.win.listenerCount('resize'), 0, 'dispose removes the window listener');
 });
 
-test('optimization 5: focus / active (and urgent value changes) are built in a microtask of the input task itself; other damage waits for the frame', async () => {
+test('focus / active (and urgent value changes) are built in a microtask of the input task itself; other damage waits for the frame', async () => {
   const t = setup();
   const el = fakeElement();
   const record = mounted(t, [el]);

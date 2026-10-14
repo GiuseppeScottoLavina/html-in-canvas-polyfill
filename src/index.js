@@ -1,8 +1,8 @@
 /**
  * Public ES-module entry of hic-live-polyfill. The classic IIFE bundle (src/iife.js) wraps the same exports.
- * Module: api-core. Implemented (re-exports only).
+ * Module: api-core (re-exports only).
  */
-// the Gecko / WebKit painters (engines bundle): the package entry carries every engine, the classic core IIFE does not (optimization 7)
+// the Gecko / WebKit painters (engines bundle): the package entry carries every engine, the classic core IIFE does not
 import './engines.js';
 // the WebGL / WebGPU element textures (GPU bundle): also carried by the package entry only
 import './gpu.js';

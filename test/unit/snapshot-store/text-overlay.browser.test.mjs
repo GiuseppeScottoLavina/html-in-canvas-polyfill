@@ -1,4 +1,4 @@
-// Optimistic text overlay (store.overlayText, docs/PERFORMANCE-COMPARISON.md optimization 1): painted at the next commit, painted AGAIN after a tile that was built before the
+// Optimistic text overlay (store.overlayText): painted at the next commit, painted AGAIN after a tile that was built before the
 // request (an older value must not come back for a frame), retired by the first tile built after it.
 import { test, assert } from '/test/unit/lib/t.js';
 import { RGBA, makeRig } from './helpers.mjs';
@@ -75,7 +75,7 @@ test('a pinned surface is never written by the overlay (copy-on-write)', async (
   assert.deepEqual([...ctx.getImageData(24, 19, 1, 1).data], RGBA.red);
 });
 
-test('optimization 5: the caret follows the focus at the next commit (measured from the live field), moves, and goes on blur', async (t) => {
+test('the caret follows the focus at the next commit (measured from the live field), moves, and goes on blur', async (t) => {
   let at = { x: 20, y: 12, width: 1, height: 16 };
   const control = document.createElement('input');
   document.body.append(control);

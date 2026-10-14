@@ -26,7 +26,7 @@ function sameBox(a, b) {
 
 /**
  * Also re-checks the presentation (layer.syncPresentation: border/padding/inherited/custom properties, cheap when nothing changed) on the events of presentation-watch.js
- * (no idle timer since optimization 6) and on canvas attribute changes; patches nothing.
+ * (no idle timer) and on canvas attribute changes; patches nothing.
  * On a content-box change it updates record.contentBox SYNCHRONOUSLY in its callback; the width/height setter path reads the box from the layer directly (record.layer.syncPresentation) instead of waiting for this observer, because the app's own observer may run first.
  * It never runs the clone: it publishes BUS.RESIZE (unless the layer already did during syncPresentation) and 'resize' damage when the css size changed, and the pump does the work in a later tick (measured: 3-11 ms clones in this callback were the only over-budget tasks of a drag).
  * @param {HicEnv} env

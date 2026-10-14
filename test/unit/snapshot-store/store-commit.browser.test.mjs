@@ -415,7 +415,7 @@ test('a full tile on a pinned surface costs one draw (the new surface), not a fo
   rig.store.unpin(p);
 });
 
-test('optimization 8: a build whose synchronous part is long starts its decode in the next task (no task carries clone + SVG document); a short or urgent one at once', async (t) => {
+test('a build whose synchronous part is long starts its decode in the next task (no task carries clone + SVG document); a short or urgent one at once', async (t) => {
   const tasks = [];
   const rig = await makeRig(t, { nextTask: (fn) => tasks.push(fn) });
   const a = rig.add('a', 100, 60);
@@ -442,7 +442,7 @@ test('optimization 8: a build whose synchronous part is long starts its decode i
   assert.equal(tasks.length, 0);
 });
 
-test('release-candidate fix (P-09): an in-frame (urgent) resize / DPR re-raster is not held by the snapshot-rate cap; everything else still is', async (t) => {
+test('an in-frame (urgent) resize / DPR re-raster is not held by the snapshot-rate cap; everything else still is', async (t) => {
   const rig = await makeRig(t, { options: { maxSnapshotFps: 60 } });
   const a = rig.add('a', 100, 60);
   const t0 = performance.now();
@@ -462,7 +462,7 @@ test('release-candidate fix (P-09): an in-frame (urgent) resize / DPR re-raster 
   assert.equal(rig.decodes, 2, 'the in-frame resize re-raster starts at once: the retained tile has the wrong geometry');
 });
 
-test('P-09: the canvas framecap still holds an in-frame resize re-raster (only maxSnapshotFps is lifted)', async (t) => {
+test('the canvas framecap still holds an in-frame resize re-raster (only maxSnapshotFps is lifted)', async (t) => {
   const rig = await makeRig(t, { options: { maxSnapshotFps: 60 } });
   rig.record.frameCap = 30;
   const a = rig.add('a', 100, 60);

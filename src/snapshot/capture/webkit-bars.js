@@ -1,5 +1,5 @@
 /**
- * WebKit (Safari) classic scrollbars of a clone scroller, measured on Safari 27 (engines bundle, src/engines.js; moved out of scroll-emulation.js by optimization 7).
+ * WebKit (Safari) classic scrollbars of a clone scroller, measured on Safari 27 (engines bundle, src/engines.js).
  * Module: snapshot-capture (src/snapshot/capture/*).
  */
 

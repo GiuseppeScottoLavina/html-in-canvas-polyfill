@@ -42,13 +42,13 @@ export function observeScroll(env, record) {
     const target = /** @type {Element|null} */ (ev.target);
     if (!target || target.nodeType !== 1) return;
     const drawable = layer.nearestDrawable(target);
-    // a text field scrolled by its own typing while the text overlay shows that typing (optimization 1 draws the live scrollLeft): the overlay is painted again at the new
-    // offset and the snapshot keeps waiting for the typing pause, instead of one build per key (release-candidate fix; a field whose overlay fails is damaged by the store)
+    // a text field scrolled by its own typing while the text overlay shows that typing (the overlay draws the live scrollLeft): the overlay is painted again at the new
+    // offset and the snapshot keeps waiting for the typing pause, instead of one build per key (a field whose overlay fails is damaged by the store)
     if (drawable && typingDeferred(record, target) && env.store.overlayText?.(drawable, target)) {
       env.scheduler.wake(record);
       return;
     }
-    // scroll compositor (store.scrollCompose, optimization 3): the next frame shows the new offset from cached pages; the exact tile follows when the scrolling stops
+    // scroll compositor (store.scrollCompose): the next frame shows the new offset from cached pages; the exact tile follows when the scrolling stops
     if (drawable && env.store.scrollCompose?.(drawable, target)) {
       env.scheduler.wake(record);
       later(target, drawable, true);

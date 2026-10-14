@@ -88,8 +88,8 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   const dist = await stat(resolve(PACKAGE_ROOT, 'dist/hic-live-polyfill.iife.min.js')).catch(() => null);
   if (!dist) console.warn('warning: dist/ is missing. Run `npm run build` first, or every example will fail to load the polyfill.');
   console.log(`hic-live-polyfill examples: ${server.url}/examples/`);
-  for (const name of ['basic', 'form', 'water-form', 'scroll-and-resize', 'webgl-texture']) console.log(`  ${server.url}/examples/${name}/`);
-  console.log('Open them in desktop Chrome (the first release refuses other browsers). Ctrl+C stops the server.');
+  for (const name of ['basic', 'form', 'water-form', 'plugins', 'scroll-and-resize', 'webgl-texture']) console.log(`  ${server.url}/examples/${name}/`);
+  console.log('Open them in desktop Chrome, Firefox 155+ or Safari 27+. Ctrl+C stops the server.');
   const stop = async () => { await server.close(); process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
 }

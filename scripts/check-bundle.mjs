@@ -18,10 +18,12 @@ const KB = 1000; // decimal, as in the 150 KB target
 /** target = the gate threshold; ceiling = the recorded size the bundle may not exceed (regression guard). Raise a ceiling only with a measured reason, lower it when the bundle shrinks. */
 const LIMITS = {
   // raised deliberately, one measured reason at a time; 254 -> 257 KB (+2,893 bytes, 2026-10-14): the core-only native probe that never refuses a usable native, and getElementImageDefaultSize
-  // 257 -> 257.5 KB (+493 bytes, 2026-10-14): a selection of the static text inside the canvas repaints when it changes (owner bug report)
-  // 257.5 -> 257.6 KB (+78 bytes, 2026-10-14): a whole tile overtaken by a DOM mutation is committed, so a counter in proportional digits is not starved (owner bug report)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 257.6 * KB },
-  'hic-live-effects.iife.min.js': { target: 27.5 * KB, ceiling: 27.5 * KB }, // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer)
+  // 257 -> 257.5 KB (+493 bytes, 2026-10-14): a selection of the static text inside the canvas repaints when it changes (bug report)
+  // 257.5 -> 257.6 KB (+78 bytes, 2026-10-14): a whole tile overtaken by a DOM mutation is committed, so a counter in proportional digits is not starved (bug report)
+  // 257.6 -> 256.5 KB (-1,181 bytes, 2026-10-14): dead bus topics, test-only methods and plugin ABI 1 removed
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 256.5 * KB },
+  // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed
+  'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB },
   'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB }, // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height
   'hic-live-engines.iife.min.js': { target: 40 * KB, ceiling: 40 * KB }, // the Gecko / WebKit painters, outside the core
   'hic-live-gpu.iife.min.js': { target: 16 * KB, ceiling: 16 * KB }, // WebGL / WebGPU element textures, outside the core

@@ -1,7 +1,7 @@
 /**
  * Composition root: builds every module through the Services factories and wires the BUS topics between them.
  * The only place that constructs the other modules' objects.
- * Module: api-core. Implemented.
+ * Module: api-core.
  */
 
 /** @typedef {import('../contracts/types.js').CanvasRegistryView} CanvasRegistryView */

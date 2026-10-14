@@ -255,7 +255,7 @@ class HostRuntime {
   }
 
   /**
-   * N-02: the stretch maps drawn pixels to live pixels; a source of another size than the canvas is stretched, so input (and the picture) are off. One console.warn per host, at its first frame.
+   * The stretch maps drawn pixels to live pixels; a source of another size than the canvas is stretched, so input (and the picture) are off. One console.warn per host, at its first frame.
    * @param {EffectViewport} vp
    * @param {{cssWidth: number, cssHeight: number}} size
    */

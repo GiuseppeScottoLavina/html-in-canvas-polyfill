@@ -271,7 +271,7 @@ test('canvas attribute and style changes that do not change the box still re-syn
   assert.ok(rig.layer.syncCalls > base);
 });
 
-test('optimization 6: no idle timer; a window resize, a class change outside the layer, a stylesheet epoch and hover / focus-within on an ancestor each re-sync the presentation (next frame); changes inside the layer and an unmounted layer do not', async t => {
+test('no idle timer; a window resize, a class change outside the layer, a stylesheet epoch and hover / focus-within on an ancestor each re-sync the presentation (next frame); changes inside the layer and an unmounted layer do not', async t => {
   const rig = createRig({ html: FORM });
   t.cleanup(observeCanvasResize(rig.env, rig.record));
   await frames(2);
@@ -363,7 +363,7 @@ test('DPR change: zoom (window resize) and monitor move (media query) update rec
   assert.deepEqual(events, [1.5, 1], 'the resize that follows the same change is not a second change');
 });
 
-test('optimization 1: while the overlay serves a field, its edits wait for a typing pause (one damage after 150 ms, not one per key); caret keys and real selections stay immediate', async t => {
+test('while the overlay serves a field, its edits wait for a typing pause (one damage after 150 ms, not one per key); caret keys and real selections stay immediate', async t => {
   const rig = createRig({ html: FORM });
   let ok = false;
   rig.env.store.overlayText = () => ok;
@@ -388,7 +388,7 @@ test('optimization 1: while the overlay serves a field, its edits wait for a typ
   assert.equal(rig.sink.damage.length, 1, 'one damage once the typing paused');
   rig.sink.clear();
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }));
-  assert.equal(rig.sink.damage.length, 0, 'release-candidate fix: the first key after a pause is served by its input event (the overlay worked), no build of its own');
+  assert.equal(rig.sink.damage.length, 0, 'the first key after a pause is served by its input event (the overlay worked), no build of its own');
   ok = false;
   input.dispatchEvent(new InputEvent('input', { bubbles: true }));
   rig.sink.clear();
@@ -396,7 +396,7 @@ test('optimization 1: while the overlay serves a field, its edits wait for a typ
   assert.equal(rig.sink.damage.length, 1, 'once the overlay was refused, keys are damaged again');
 });
 
-test('release-candidate fix: a field scrolled by its own deferred typing is re-drawn by the overlay (no scroll build per key); other scrolls of it are damaged', async t => {
+test('a field scrolled by its own deferred typing is re-drawn by the overlay (no scroll build per key); other scrolls of it are damaged', async t => {
   const rig = createRig({ html: FORM });
   let asked = 0;
   rig.env.store.overlayText = () => { asked++; return true; };

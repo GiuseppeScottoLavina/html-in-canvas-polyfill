@@ -36,7 +36,7 @@ const DEFAULT_TILE_COST_MS = 3;
 /** Drawables above nodeBudget.hard build at most this often, ms (4 fps). */
 const DEGRADED_INTERVAL_MS = 250;
 /**
- * A build whose synchronous part took at least this long starts its decode in the NEXT task (optimization 8): `img.src = url` makes the engine create the isolated SVG
+ * A build whose synchronous part took at least this long starts its decode in the NEXT task: `img.src = url` makes the engine create the isolated SVG
  * document (XML parse, stylesheet parse, style) in the same task, and the two together were the remaining tasks > 8.33 ms of typing (measured 3-4 per 20 keys, ~10 ms each).
  * Not for urgent builds (focus / active in the input task, resize inside the frame): a task posted from either runs only after the next frame.
  */

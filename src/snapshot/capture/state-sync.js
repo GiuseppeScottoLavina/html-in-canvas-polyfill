@@ -393,7 +393,7 @@ export function syncNodeState(env, src, clone, req, unsupported) {
   return true;
 }
 
-/** WebKit 'transform' mode: outer box-shadows are mispainted under the scale, the clone carries them as outline / drop-shadow (webkit-shadow.js, ADR X-09). @param {Element} src @param {Element} clone */
+/** WebKit 'transform' mode: outer box-shadows are mispainted under the scale, the clone carries them as outline / drop-shadow (webkit-shadow.js). @param {Element} src @param {Element} clone */
 function webkitShadows(src, clone) {
   const cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src);
   if (cs.boxShadow === 'none' || !cs.boxShadow) return;

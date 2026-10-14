@@ -1,7 +1,7 @@
 /**
  * Behavioural native probe and browser gate (side-effect free; never trusts `in` alone: members are read as descriptors, content reflection and
  * drawElementImage are exercised on a detached canvas).
- * Module: api-core. Implemented.
+ * Module: api-core.
  *
  * Policy: the decision rests on the CORE behaviour only (the `content` / legacy `layoutSubtree` markup, the `paint` event handler, a 2D
  * `drawElementImage` that behaves like a platform method). Every other member of the specification is recorded when missing, but a missing,

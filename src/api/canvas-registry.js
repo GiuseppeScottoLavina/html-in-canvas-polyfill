@@ -1,7 +1,7 @@
 /**
  * Canvas registry: one record per managed canvas, one MutationObserver per tree scope (dynamic canvases) and the per-canvas
  * lifecycle state machine (docs/ARCHITECTURE.md section 4.2).
- * Module: api-core. Implemented.
+ * Module: api-core.
  *
  * The observers only NOMINATE canvases; every decision is taken by `reconcile` from the END state of the DOM, so a removal followed by an
  * insertion in one task is a move by construction, and the order of mutation records never matters.
@@ -244,7 +244,7 @@ export function createCanvasRegistry(env, createLiveLayer) {
     }
     const rec = record ?? create(canvas);
     rec.legacy = activation(env, canvas) === 'legacy';
-    if (rec.legacy) warnLegacyOnce(env); // N-06: also for the attribute in the markup (the DOM-API paths warn in canvas-patch.js; once per install)
+    if (rec.legacy) warnLegacyOnce(env); // also for the attribute in the markup (the DOM-API paths warn in canvas-patch.js; once per install)
     switch (rec.state) {
       case 'detached': return !failed.has(canvas) && mount(rec);
       case 'suspended':

@@ -1,5 +1,5 @@
 /**
- * Scroll compositor, store side (docs/PERFORMANCE-COMPARISON.md optimization 3). A scroll step of an eligible scroller (snapshot/capture/scroll-pages.js) is shown in the
+ * Scroll compositor, store side. A scroll step of an eligible scroller (snapshot/capture/scroll-pages.js) is shown in the
  * very next rendering update without a build: the scrollport of the retained surface is composed from cached PAGES (the port rendered at other offsets, pinned sticky
  * elements hidden) shifted by whole surface pixels, then every pinned element is drawn from its own tile at its live position. Pages are built ahead in the post-frame
  * pump (side builds). The snapshot stays the authority: a tile always lands when the scrolling stops, and any damage other than this scroller's own scrolling drops the

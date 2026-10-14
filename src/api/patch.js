@@ -1,6 +1,6 @@
 /**
  * Patch ledger: every prototype/instance patch is recorded with its original descriptor so uninstall restores it exactly.
- * Module: api-core. Implemented.
+ * Module: api-core.
  */
 
 import { MARK } from '../contracts/events.js';

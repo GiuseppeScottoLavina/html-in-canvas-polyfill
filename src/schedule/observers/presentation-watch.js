@@ -1,5 +1,5 @@
 /**
- * Event-driven presentation sync (docs/PERFORMANCE-COMPARISON.md optimization 6): what the 1 s idle poll used to catch, from events only, so an idle page costs nothing.
+ * Event-driven presentation sync: presentation changes are caught from events only, never by an idle poll, so an idle page costs nothing.
  * Module: schedule (src/schedule/observers/*).
  *
  * The layer copies the canvas's box, its inherited text properties and the custom properties computed above it (live/presentation.js). They change when the canvas or an

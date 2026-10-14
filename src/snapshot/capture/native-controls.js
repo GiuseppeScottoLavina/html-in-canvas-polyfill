@@ -1,5 +1,5 @@
 /**
- * WebKit form controls in the clone (ADR X-10). Module: snapshot-capture (src/snapshot/capture/*).
+ * WebKit form controls in the clone. Module: snapshot-capture (src/snapshot/capture/*).
  *
  * Safari draws native controls inside an SVG image with the LEGACY macOS look (grey square checkbox, gradient slider, colour input as text, square text fields) and ignores
  * accent-color there: the image document does not inherit the page's `formControlRefreshEnabled` setting, and no markup or CSS turns it on. A control the live page draws
@@ -379,7 +379,7 @@ function paintWebkit(src, clone, cs, kind, box) {
   const dark = isDark(doc, cs);
   const p = paletteOf(doc, dark);
   const authored = cs.accentColor !== 'auto';
-  // macOS draws no accent while the window is not key (repainted on window focus / blur by the interaction tracker, ADR X-12)
+  // macOS draws no accent while the window is not key (repainted on window focus / blur by the interaction tracker)
   const inactive = !doc.hasFocus() ? inactiveTints(p) : null;
   const tint = tintWithContrast(authored ? rgbaOf(doc, cs.accentColor) : p.accent, dark, authored);
   const el = /** @type {HTMLInputElement} */ (src);

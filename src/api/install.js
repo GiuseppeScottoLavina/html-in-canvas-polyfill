@@ -1,6 +1,6 @@
 /**
  * install() / getInstalled(): the public entry (docs/API-CONTRACT.md section 2).
- * Module: api-core. Implemented.
+ * Module: api-core.
  *
  * The install is transactional: every step registers its inverse, a failing step undoes the ones before it and rethrows, and uninstall() runs the same
  * inverses in reverse order. All prototype patches go through the ledger, so uninstall restores every descriptor by identity.

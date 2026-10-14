@@ -75,7 +75,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | blank frames during real window resizes | 0 of 3132 | 537 of 3132 | 0 of 3129 |
 | one update in a 1000-element drawable, main thread | 18.3 ms | 41.5 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 120 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 257 KB / 89 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 256 KB / 89 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+ | claims all, including mobile (not verified here) | Chrome with the flag |
 
 The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -98,7 +98,7 @@ Nothing was measured on Windows or Linux. Row-by-row evidence: [docs/SUPPORT-MAT
 
 - **The picture lags the DOM by about 2 frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 89 KB gzipped (257 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 89 KB gzipped (256 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
 - **Not supported:** mobile browsers, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). Only DPR 2 on macOS has gates on this implementation.
 - **Preview.** `0.1.0-preview.1` follows a proposed standard that may still change. The two extensions below may change between previews.
@@ -152,7 +152,7 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 
 ## Testing and conformance
 
-- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 140 files (242 of 375 subtests); native Chrome passes 208 (354) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
+- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 137 files (233 of 375 subtests); native Chrome passes 208 (354) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
 - **Unit tests:** 471 in Node and 658 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
 - **Browser gates:** 11 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page (pixels, hit testing, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 35 seeded bugs are caught.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine.

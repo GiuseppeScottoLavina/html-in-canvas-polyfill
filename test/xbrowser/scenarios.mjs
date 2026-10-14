@@ -347,9 +347,9 @@ export async function clickEffect(ctx) {
 }
 
 /**
- * Form controls (ADR X-10): every control of f6-controls (light, dark, accent-color, disabled, indeterminate, classic scroller bars) judged in its OWN region against the plain-DOM
+ * Form controls: every control of f6-controls (light, dark, accent-color, disabled, indeterminate, classic scroller bars) judged in its OWN region against the plain-DOM
  * twin in the same engine (WebKit draws controls in an SVG image in the legacy look and ignores accent-color; Gecko draws none or a CSS fallback: the clone paints them).
- * Per control: shift-tolerant <= 15 % at delta > 16 (glyph edges of the engine's image text in small text-dense regions, ADR X-08: Firefox date fields 9-13 %) and <= 1.5 % at delta > 100 (the legacy look measured
+ * Per control: shift-tolerant <= 15 % at delta > 16 (glyph edges of the engine's image text in small text-dense regions: Firefox date fields 9-13 %) and <= 1.5 % at delta > 100 (the legacy look measured
  * 1.6-22 % over 100 on every control whose look differs). Control: the live controls get a red accent and a
  * 6 px border after the capture page loads, so their regions must differ from the twin.
  */
@@ -405,7 +405,7 @@ const mv = (p) => ({ type: 'pointerMove', duration: 0, origin: 'viewport', x: Ma
 
 /**
  * The interaction states of the f6 controls, per region vs the twin driven by the SAME trusted input: hover (pointer over the control), pressed (button held down, read while
- * held, released away from the control so nothing toggles) and focus (a click into a text field). Firefox draws hover/pressed in its widget colours (measured live, ADR X-12);
+ * held, released away from the control so nothing toggles) and focus (a click into a text field). Firefox draws hover/pressed in its widget colours (measured live);
  * Safari draws its pressed look. Control: the pointer/focus events never reach the polyfill (xbblock), so the snapshot keeps the idle look while the live control changes.
  */
 const STATES = { 'L-btn': ['hover', 'press'], 'L-cb-off': ['hover', 'press'], 'L-cb-on': ['hover', 'press'], 'L-rd-off': ['hover', 'press'], 'L-rg': ['hover', 'press'], 'L-sel': ['hover'],
@@ -449,7 +449,7 @@ export async function interaction(ctx) {
 
 /**
  * The window loses activation (a popup window of the same browser becomes key; the test window stays visible): macOS WebKit draws its controls in the inactive look, and the
- * snapshot must follow (window blur/focus, ADR X-12); when the window is key again the active look comes back. Every f6 region vs the twin in the same window state.
+ * snapshot must follow (window blur/focus); when the window is key again the active look comes back. Every f6 region vs the twin in the same window state.
  * Control: blur/focus never reach the polyfill (xbblock), so the snapshot keeps the active look (Safari); Firefox has no inactive look, so its control also gives the live
  * controls a red accent once the window is inactive.
  */

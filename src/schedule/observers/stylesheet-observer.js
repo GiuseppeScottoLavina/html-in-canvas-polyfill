@@ -17,7 +17,7 @@ const DARK_QUERY = '(prefers-color-scheme: dark)';
  * A change -> store.invalidateAll("stylesheet") and whole-canvas 'stylesheet' damage; wrappers go through the ledger of api/patch.js. Sheets, rules and style declarations that belong to the polyfill
  * (RootScope style handles, GeometryRules.owns) are IGNORED: geometry rule updates never invalidate the CSS bundle. Observes the document and every shadow root of env.roots (per-root adoptedStyleSheets,
  * <style>/<link> mutations and load events). Changes are coalesced per microtask: a CSS-in-JS burst of 500 insertRule calls invalidates once.
- * `adoptedStyleSheets.push()` / splice on the live ObservableArray call no setter: the getter returns a cached proxy of the live array that reports every write (optimization 6, no poll).
+ * `adoptedStyleSheets.push()` / splice on the live ObservableArray call no setter: the getter returns a cached proxy of the live array that reports every write (no poll).
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
  * @returns {() => void}
@@ -154,7 +154,7 @@ export function observeStylesheets(env, ledger) {
 
   /**
    * The adoptedStyleSheets array is mutable in place (push/splice, no setter call): the getter returns a proxy of the live array that reports every write of its owner
-   * (replaces the 1 s compare poll, optimization 6). Reads, iteration and the native setter see the live array through the proxy.
+   * (no compare poll). Reads, iteration and the native setter see the live array through the proxy.
    * @param {any} p
    */
   function watchAdoptedInPlace(p) {

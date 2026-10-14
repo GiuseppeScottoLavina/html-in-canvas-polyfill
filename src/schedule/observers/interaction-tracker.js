@@ -220,7 +220,7 @@ export function createInteractionTracker(env, capture) {
     const controls = /** @type {Element[]} */ ([prev, next].filter((el) => !!el));
     const ancestors = pseudoUsage(record).focusWithin ? [...chainOf(record, prev), ...chainOf(record, next)].filter((el) => !controls.includes(el)) : [];
     syncBlink();
-    // the caret shows (or goes) with the focus, before the tile with the focus styles lands (store.caretNow, optimization 5)
+    // the caret shows (or goes) with the focus, before the tile with the focus styles lands (store.caretNow)
     const layer = record.layer;
     if (prev && layer) { const d = layer.nearestDrawable(prev); if (d) env.store.caretNow?.(d, null); }
     if (next && layer && isTextEditing(next)) { const d = layer.nearestDrawable(next); if (d) env.store.caretNow?.(d, next); }
@@ -282,7 +282,7 @@ export function createInteractionTracker(env, capture) {
   let windowActive = true;
   /**
    * WebKit (macOS) draws the accent-tinted parts of its controls in grey while the window is not key: a window focus change repaints the controls of every attached canvas
-   * (two event listeners, no polling, nothing runs while the window state is unchanged; ADR X-12).
+   * (two event listeners, no polling, nothing runs while the window state is unchanged).
    */
   const onWindowFocus = () => {
     if (currentEngine().engine !== 'webkit') return;

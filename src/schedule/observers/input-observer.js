@@ -18,7 +18,7 @@ const VALUE_EVENTS = ['input', 'change', 'compositionstart', 'compositionupdate'
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph', 'Dead']);
 /** keys that edit the value (an input event follows): while the field's overlay works they need no damage of their own */
 const EDIT_KEYS = new Set(['Backspace', 'Delete']);
-/** ms without an edit after which a field whose overlay shows the typing gets its snapshot (optimization 1: one build per typing pause, not per key) */
+/** ms without an edit after which a field whose overlay shows the typing gets its snapshot (one build per typing pause, not per key) */
 const TYPING_SETTLE_MS = 150;
 /** @type {WeakMap<CanvasRecord, Map<Element, number>>} per canvas: the fields whose snapshot waits for the typing to pause */
 const DEFERRED = new WeakMap();
@@ -82,7 +82,7 @@ export function observeInput(env, record) {
       }
       overlaid.delete(target);
     }
-    // a value change of a control that has no caret (checkbox, radio, select, color...) is a discrete action: built at once (optimization 5). Not a range: its drag is a
+    // a value change of a control that has no caret (checkbox, radio, select, color...) is a discrete action: built at once, in the input task. Not a range: its drag is a
     // stream of rAF-aligned input events, so an in-task build would land inside the rendering update (measured: a task > 8.33 ms in the slider drag, no latency gain)
     const discrete = target.nodeType === 1 && !isTextEditing(target) && /** @type {HTMLInputElement} */ (target).type !== 'range';
     damageControl(target, 'input', (ev.type === 'input' || ev.type === 'change') && discrete);
@@ -92,7 +92,7 @@ export function observeInput(env, record) {
     const target = /** @type {Element} */ (ev.target);
     if (MODIFIER_KEYS.has(ev.key) || target.nodeType !== 1 || !isTextEditing(target)) return;
     // a key that edits the value is followed by an input event, which serves it (overlay, or damage when the overlay does not work): no build of its own while the
-    // typing is deferred, nor for the first key after a pause when the field's overlay worked (release-candidate fix: that key cost one build per pause)
+    // typing is deferred, nor for the first key after a pause when the field's overlay worked (otherwise that key would cost one build per pause)
     if ((deferred.has(target) || overlaid.has(target)) && (ev.key.length === 1 || EDIT_KEYS.has(ev.key))) return;
     damageControl(target, 'input');
   };

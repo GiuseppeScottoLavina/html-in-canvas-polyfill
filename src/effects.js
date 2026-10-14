@@ -1,6 +1,6 @@
 /**
  * Optional ESM entry: the effect host and plugin ABI (needs the installed core). Side-effect free; `installEffects()` defines window.HTMLInCanvasEffects.
- * Module: gpu-effects. Implemented.
+ * Module: gpu-effects.
  */
 import { createLateEffects, installEffectsGlobal } from './effects/index.js';
 

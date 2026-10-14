@@ -1,6 +1,6 @@
 /**
  * PURE geometry and colour of Firefox's form controls (the non-native widget theme, widget/Theme.cpp, which Firefox uses for content on macOS too), as SVG skins.
- * Module: snapshot-capture (src/snapshot/capture/*). ADR X-10.
+ * Module: snapshot-capture (src/snapshot/capture/*).
  *
  * Why: Gecko does not theme widgets inside an SVG image at all (a checkbox or radio is simply absent, a text field falls back to the UA's 2 px inset border, a range shows
  * only its thumb). Every number below is ported from Theme.cpp / ThemeDrawing.cpp / ThemeColors.cpp (mozilla-central 2026-10) and checked against the live page pixels.

@@ -1,6 +1,6 @@
 /**
  * PURE geometry and colour of the macOS WebKit form controls (the "form control refresh" look of Safari 26/27), as SVG skins the clone paints instead of the native control.
- * Module: snapshot-capture (src/snapshot/capture/*). ADR X-10.
+ * Module: snapshot-capture (src/snapshot/capture/*).
  *
  * Why: WebKit draws native controls inside an SVG image with the LEGACY look (the image document does not get the `formControlRefreshEnabled` setting of the page) and ignores
  * accent-color there. Every number below is ported from WebKit's own painter (Source/WebCore/rendering/cocoa/RenderThemeCocoa.mm, the *ForVectorBasedControls functions) and

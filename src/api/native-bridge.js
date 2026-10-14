@@ -1,7 +1,7 @@
 /**
  * Mode native-bridged: aliases over a LEGACY or nearly complete native implementation (never replaces the native renderer). Optional: without
  * this bundle such an implementation is used as found (mode native, report().deviations native-step-aside).
- * Module: api-core. Implemented.
+ * Module: api-core.
  *
  *  - legacy shape (no `content`): `content` IDL + attribute mirroring to `layoutsubtree`, and the translations of native-geometry.js;
  *  - every shape: gap-fill of the ADDITIVE names that are missing (NativeState.gaps), each one built from public native API only.

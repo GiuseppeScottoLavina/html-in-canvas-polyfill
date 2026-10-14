@@ -1,5 +1,5 @@
 /**
- * Seam to the ENGINES bundle (optimization 7): the form-control skins, the WebKit scrollbars and the WebKit shadow rewrite are drawn by the polyfill only on Gecko and
+ * Seam to the ENGINES bundle: the form-control skins, the WebKit scrollbars and the WebKit shadow rewrite are drawn by the polyfill only on Gecko and
  * WebKit, so they live outside the Chrome core in `hic-live-engines.iife.js` (ESM: imported by the package entry). That bundle registers its painter on a global symbol,
  * in any order relative to the core; the capture looks it up when it needs it. On Gecko / WebKit without it, form controls are drawn by the engine's image renderer and the
  * capture reports it loudly once (feature engine-gecko / engine-webkit).

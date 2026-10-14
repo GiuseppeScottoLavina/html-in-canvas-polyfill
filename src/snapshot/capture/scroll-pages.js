@@ -1,5 +1,5 @@
 /**
- * Scroll compositor, capture side (docs/PERFORMANCE-COMPARISON.md optimization 3): may a scroller be shown by composing cached PAGES (its scrollport rendered at other
+ * Scroll compositor, capture side: may a scroller be shown by composing cached PAGES (its scrollport rendered at other
  * offsets, CaptureRequest.scroll) plus its pinned sticky elements, and with what geometry. Answers null for everything the composition could not reproduce exactly; that
  * scroller keeps the plain snapshot path (a whole-scroller tile per scroll step), which is exact by construction.
  * Module: snapshot-capture (src/snapshot/capture/*).

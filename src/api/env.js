@@ -1,6 +1,6 @@
 /**
  * HicEnv factory (dependency-injection root).
- * Module: api-core. Implemented.
+ * Module: api-core.
  */
 
 import { MARK } from '../contracts/events.js';

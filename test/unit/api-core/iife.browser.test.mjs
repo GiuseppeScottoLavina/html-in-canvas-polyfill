@@ -41,7 +41,7 @@ test('auto-install on a refused browser: one console.warn, __HIC__.error set, no
   assert.equal(thrown?.feature, 'browser', 'an explicit install() keeps the loud throw');
 });
 
-test('N-04: after uninstall() + install(), __HIC__.installed and report() follow the live instance', async t => {
+test('after uninstall() + install(), __HIC__.installed and report() follow the live instance', async t => {
   const w = await loadEntry(t, '');
   const doc = w.document;
   doc.body.insertAdjacentHTML('beforeend', '<canvas id="c" content="drawable" width="50" height="30"><div drawable id="d">x</div></canvas>');
@@ -57,7 +57,7 @@ test('N-04: after uninstall() + install(), __HIC__.installed and report() follow
   second.uninstall();
 });
 
-test('N-06: a layoutsubtree attribute that is in the markup at install time warns once too', async t => {
+test('a layoutsubtree attribute that is in the markup at install time warns once too', async t => {
   const w = await loadEntry(t, `document.body.insertAdjacentHTML('beforeend','<canvas layoutsubtree width="40" height="20"><div id="x">a</div></canvas><canvas layoutsubtree width="40" height="20"></canvas>');`);
   const legacy = w.__warnings.filter((/** @type {string} */ m) => /layoutsubtree/.test(m));
   assert.equal(legacy.length, 1, `exactly one deprecation warning: ${w.__warnings.join(' | ')}`);

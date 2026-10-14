@@ -81,7 +81,7 @@ owner's interface.
 | geometry rules, `aria-owns`, layer clip | live | polyfill-owned sheets per root; never the author's `style` attribute (ADR-F, ADR-L, ADR-M) |
 | `offscreen` | api-surface `offscreen-patch.js` | |
 
-Cross-module events go through `BUS.*` (`contracts/events.js`); each topic has ONE emitter named in its comment.
+Cross-module events go through `BUS.*` (`contracts/events.js`); the comment of each topic names its payload and, where it matters, its single emitter. Two topics have two emitters: `DRAWABLES_CHANGED` (the layer's own drawable scan and the mutation observer) and `RESIZE` (the presentation sync and the canvas ResizeObserver, which skips a change the sync already announced).
 
 ## 4. Lifecycle
 
@@ -375,7 +375,7 @@ Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/2
 
 ### ADR-K: tree scopes (canvases in shadow roots)
 
-The spec iterates shadow-including descendants and flat-tree eligibility; web components are the usual packaging of a canvas widget. Anchor names and adopted stylesheets are tree-scoped: a document sheet does not style a layer inside an open root (reviewer B measured a `position:static`, in-flow, 1000x0 layer) while the same CSS inside the root positions it exactly (30/30).
+The spec iterates shadow-including descendants and flat-tree eligibility; web components are the usual packaging of a canvas widget. Anchor names and adopted stylesheets are tree-scoped: a document sheet does not style a layer inside an open root (measured: a `position:static`, in-flow, 1000x0 layer) while the same CSS inside the root positions it exactly (30/30).
 - `live/root-scope.js` (`RootScope`): patches `Element.prototype.attachShadow` through the ledger (the returned root is recorded even when closed, as long as it is created after install), walks existing open roots once, emits `BUS.ROOT_ADDED`, and hands out one reference-counted `LayerStyleHandle` per root (layer sheet, anchor rules, geometry rules).
 - The registry observes every scope, `CanvasRecord.root` is the canvas's scope (moves between scopes swap the style handle), the layer lives in the same root as its canvas, `env.roots.rootOf(node)` resolves scopes for the observers and the stylesheet observer; the CSS collector adds the root's own sheets and maps `:host` to the canvas shell.
 - A canvas in a closed root created BEFORE install cannot be seen: it is refused with `shadow-canvas` and the hint `installed.adoptRoot(root)`. Document-level selectors and the selector bridge do not cross the boundary (limit). Shadow DOM INSIDE a drawable (open roots) is captured in flat-tree order with computed styles inlined, and its mutations are observed (`shadow-dom` limited). Gate G-shadow-canvas (positive control: document-only styling gives a mispositioned layer).

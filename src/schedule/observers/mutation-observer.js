@@ -82,7 +82,7 @@ export function observeMutations(env, record) {
       const drawable = layer.nearestDrawable(element);
       moved ||= movesDrawables(m, element, drawable);
       if (m.type === 'childList' && textOnly(m)) {
-        // text replaced in place (textContent / innerText / a text node added or removed): local like characterData, bounded by damage-rect.js (optimization 4)
+        // text replaced in place (textContent / innerText / a text node added or removed): local like characterData, bounded by damage-rect.js
         if (drawable) attrOwners.add(element);
       } else if (m.type === 'childList') {
         structural = true;

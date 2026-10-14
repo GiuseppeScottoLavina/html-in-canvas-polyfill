@@ -16,7 +16,7 @@ export function anchorRule(id) {
 }
 
 /** Static rules (ADR-A / ADR-F / ADR-L). The anchor() fallbacks (0px) matter on WebKit: a layout forced while the anchor is momentarily unresolved (a style write in a ResizeObserver
- * callback) placed the layer at its static position below the canvas, which grew the page by a classic scrollbar and raised 'ResizeObserver loop completed' in the app (ADR X-11). Per-layer inline custom values (position-anchor, copied presentation, fixed, clip-path) are written by presentation.js and ancestor-clip.js with setProperty(..., 'important'). The ::after rule generates no box: it is the unitless line-height probe of capture/clone.js on engines without computedStyleMap. */
+ * callback) placed the layer at its static position below the canvas, which grew the page by a classic scrollbar and raised 'ResizeObserver loop completed' in the app. Per-layer inline custom values (position-anchor, copied presentation, fixed, clip-path) are written by presentation.js and ancestor-clip.js with setProperty(..., 'important'). The ::after rule generates no box: it is the unitless line-height probe of capture/clone.js on engines without computedStyleMap. */
 export const LAYER_CSS = `
 hic-layer[data-hic-layer]{position:absolute !important;box-sizing:border-box !important;margin:0 !important;border:0 solid transparent;display:grid !important;grid-template:100% / 100% !important;align-items:start !important;opacity:0 !important;
   pointer-events:none !important;overflow:clip !important;contain:layout !important;overflow-anchor:none !important;isolation:isolate !important;

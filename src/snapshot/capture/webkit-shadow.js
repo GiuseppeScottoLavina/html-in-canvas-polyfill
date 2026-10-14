@@ -1,11 +1,11 @@
 /**
- * WebKit box-shadow fallback for the 'transform' scale mode (ADR X-09).
+ * WebKit box-shadow fallback for the 'transform' scale mode.
  * Module: snapshot-capture (src/snapshot/capture/*).
  *
  * Measured in WebKit (Safari 27 lineage, Playwright WebKit 26.5): inside an SVG image, an OUTER box-shadow under a CSS `transform: scale(s)` is painted clipped and
  * shifted (WebKit draws the shape off-clip and brings the shadow back with a device-space offset that ignores the scale): a focus ring `0 0 0 3px` came out as a box
  * over the right half of the field and beyond it. A blurred box-shadow is not painted at all, even at scale 1. `zoom` paints shadows right but sets text 7 % narrower
- * (ADR X-02). `outline` and `filter: drop-shadow()` paint right under the scale, so the clone carries the outer shadows as those:
+ * `outline` and `filter: drop-shadow()` paint right under the scale, so the clone carries the outer shadows as those:
  * - a single spread-only ring (no offset, no blur) becomes an outline of the same width and colour (the outline follows border-radius like the spread does);
  * - other outer shadows become drop-shadow(x y blur/2 color) when the element has no filter and is positioned (a filter makes a containing block for absolute
  *   descendants: never on a static element), else they are dropped (they were mispainted, never right);

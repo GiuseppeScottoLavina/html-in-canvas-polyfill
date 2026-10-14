@@ -173,7 +173,7 @@ test('after the disposer nothing is invalidated any more', async t => {
   assert.equal(rig.store.invalidated.length, 0);
 });
 
-test('optimization 6: adoptedStyleSheets mutated IN PLACE (push / splice, no setter) invalidates without a poll; identity and the native setter are kept', async t => {
+test('adoptedStyleSheets mutated IN PLACE (push / splice, no setter) invalidates without a poll; identity and the native setter are kept', async t => {
   const s = setup(t);
   const a = new CSSStyleSheet();
   const list = document.adoptedStyleSheets;
