@@ -10,7 +10,7 @@ A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in
 
 [![A live HTML form drawn into a canvas under a WebGPU water effect; the name field is clicked and typed into through the effect](docs/media/water-form.webp)](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/water-form/)
 
-*The [water-form](examples/water-form/) example: an ordinary HTML form inside a canvas, drawn through a WebGPU ripple plugin. The click and the typing go to the real `<input>`. Recorded in headless Chrome.*
+*The [water-form](examples/water-form/) example: an ordinary HTML form inside a canvas, drawn through a WebGPU ripple plugin. The click and the typing go to the real `<input>`. Recorded in headless Chrome. More effects over the same form: the [plugin gallery](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/).*
 
 ## Why
 
@@ -85,7 +85,8 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | browser | status |
 |---|---|
 | Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 |
-| Chrome with a complete native implementation (expected from 157) | polyfill steps aside; only the two extensions stay |
+| Chrome with a complete native implementation (expected from 157) | polyfill steps aside; the two extensions are not available there |
+| Chrome Canary 157.0.8103.0 with the `CanvasDrawElement` flag | refused as a partial native (its `ElementImage` has no `width` / `height`); pages keep the browser's own API, without the polyfill |
 | Chrome 154-156 with the `CanvasDrawElement` flag | needs `hic-live-native-bridge.iife.min.js` before the core |
 | Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
@@ -120,15 +121,17 @@ canvas.onpaint ──▶ ctx.drawElementImage(form, x, y)   (also WebGL / WebGPU
 
 The browser itself lays out and paints the HTML; the polyfill only takes pictures of it, so text, CSS and form controls look like the plain page. The main design choices and why they were made: [docs/DESIGN-DECISIONS.md](docs/DESIGN-DECISIONS.md). Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Two extensions
+## Two extensions (not part of the standard)
+
+> **Note.** The frame cap and the effect plugins are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them. They work only while this polyfill provides the API; on top of a native implementation they are not supported ([what was checked](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 - **Frame cap:** `<canvas content="drawable" framecap="30">` or `canvas.frameCap = 60` bounds `paint` events, effect frames and snapshot builds for that canvas (0 = display rate).
-- **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. The water ripple of the demo is one plugin; [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) builds another one step by step.
+- **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. The plugins are not part of the polyfill: the water ripple of the demo is one example plugin in [plugins/](plugins/), with a template for new ones and a [gallery](examples/plugins/) that applies each to one live form. [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) builds another one step by step.
 
 ## Testing and conformance
 
 - **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 140 files (242 of 375 subtests); native Chrome passes 208 (354) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 368 in Node and 595 in headless Chrome, run in CI with type checks, module-boundary checks and a bundle check.
+- **Unit tests:** 373 in Node and 597 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
 - **Browser gates:** 11 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page (pixels, hit testing, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 35 seeded bugs are caught.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
@@ -141,7 +144,7 @@ The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.
 - Reference: [API contract](docs/API-CONTRACT.md), [support matrix](docs/SUPPORT-MATRIX.md), [bundles](docs/BUNDLES.md), [conformance](docs/CONFORMANCE.md)
 - Design: [design decisions](docs/DESIGN-DECISIONS.md), [architecture](docs/ARCHITECTURE.md), [test plan](docs/TEST-PLAN.md)
 - Comparisons: [with html-in-canvas-polyfill](docs/COMPARISON.md), [performance](docs/PERFORMANCE-COMPARISON.md)
-- Examples: [examples/](examples/) (`npm ci && npm run build && npm run demo`)
+- Examples: [examples/](examples/) (`npm ci && npm run build && npm run demo`); effect plugins: [plugins/](plugins/)
 
 The bundle files and console messages use the short name `hic-live` (HTML-in-canvas, live DOM).
 

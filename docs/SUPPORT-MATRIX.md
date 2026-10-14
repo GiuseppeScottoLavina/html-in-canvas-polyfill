@@ -14,10 +14,10 @@ on the prototype that preceded this implementation and say so. Layout, hit-test,
 | browser | behaviour | evidence |
 |---|---|---|
 | Chrome desktop 154 | polyfill (`absent`) or native-bridged (flag `CanvasDrawElement`: legacy names `layoutSubtree`, `copyElementImageToTexture`, no `content`, no `onelementgeometryupdate`) | measured: browser gates (fidelity, resize, scroll, typing); native probe |
-| Chrome Canary 157 | native expected complete (`content=drawable`); polyfill steps aside | measured: the WPT oracle runs on Canary 157 (`docs/CONFORMANCE.md`) |
+| Chrome Canary 157 | native expected complete (`content=drawable`); polyfill steps aside | measured: the WPT oracle runs on Canary 157 (`docs/CONFORMANCE.md`). Build 157.0.8103.0 with the flag (2026-10-14): its `ElementImage` has no `width` / `height`, so the probe classifies the native API as `partial` and `install()` refuses (`partial-native`); pages keep the browser's own API, without the polyfill and its extensions |
 | Chrome 155 | polyfill | measured: WPT subject runs and the performance comparison |
 | Chrome 156 and Chrome 130-153 | polyfill expected (anchor positioning needs >= 125) | expected, unverified |
-| Chrome >= 157 stable with the feature shipped | native complete: polyfill patches nothing of the standard surface; extensions only | expected; web evidence of shipping is contradictory (see API-CONTRACT) |
+| Chrome >= 157 stable with the feature shipped | native complete: polyfill patches nothing of the standard surface; the extensions are not supported there (`docs/guides/EFFECTS-PLUGINS.md`) | expected; web evidence of shipping is contradictory (see API-CONTRACT) |
 | Edge, Opera, Brave, other Chromium desktop >= 130 | same engine as Chrome | expected, unverified |
 | Firefox >= 155 desktop | polyfill (row `engine-gecko`) | measured: Firefox 155.0.1 and 157.0.1 (macOS), G-xbrowser scenarios PASS with their controls red (table below) |
 | Safari >= 27 desktop | polyfill (row `engine-webkit`) | measured: Safari 27.0.1 (macOS), G-xbrowser 11 scenarios PASS with their controls red, incl. `controls` (56/56 regions), classic scrollbars, `interaction` and `inactive`; needs an unlocked screen (Safari suspends rendering behind the lock screen) |
@@ -61,13 +61,13 @@ What differs and why (classification):
   `scroll-initial-target` (scroll snap); no `computedStyleMap` on Gecko; opacity:0 subtree not wheel-scrollable on Gecko; no `device-pixel-content-box` in WebKit
   (`resize-observer-dpcb`); `isContextLost` absent on Safari's OffscreenCanvas 2D (already optional-chained, no change); Gecko dark classic scrollbars.
 - **engine bug**: none found that blocks a scenario. Safari stops rendering updates behind a locked screen (test environment limit, not user-visible).
-- Not measured: WebGPU effect host (water plugin) on Firefox/Safari, DPR 1, Linux/Windows, trace-based timing (no trace API outside Chromium).
+- Not measured: WebGPU effect host (water example plugin) on Firefox/Safari, DPR 1, Linux/Windows, trace-based timing (no trace API outside Chromium).
 
 ## Native-first behaviour
 
 | native state (behavioural probe) | mode | polyfill does |
 |---|---|---|
-| complete | native | extensions only: effects global; frame cap bounds effect frames |
+| complete | native | nothing of the standard surface. The effects global stays defined, but the extensions are not supported in this mode: no `frameCap` property, no input remapping (observed with a test stub, `docs/guides/EFFECTS-PLUGINS.md`) |
 | legacy (pre-2026-09 names) | native-bridged | attribute aliasing + missing method aliases; native renderer untouched |
 | partial (a CORE name missing / unknown shape) | refused | `install()` throws unless `forcePolyfill` (tests); the IIFE auto-install warns once instead of throwing |
 | partial, only additive names missing | native-bridged | gap-fill only; native renderer untouched |
@@ -131,8 +131,8 @@ What differs and why (classification):
 | `draw-element-image-2d` | ctx.drawElementImage 4 overloads, negative rects, preserveElementGeometry; 2D and main-thread Offscreen2D | Draws from a retained 2D surface; pixels are those of the browser rasteriser (SVG foreignObject), not of the live page. |
 | `capture-element-image` | captureElementImage + ElementImage (immutable, close(), width/height in grid px) | A capture pins the current surface; the store forks it on the next commit (copy-on-write). |
 | `elementgeometryupdate` | main-thread OffscreenCanvas updateElementGeometry batching + elementgeometryupdate event | Main thread only; there is no worker support (worker-element-image). |
-| `frame-cap` | framecap attribute / frameCap property (fps upper bound for snapshot commits, paint events and effect frames) | With a complete native implementation the cap only bounds effect frames (native paint events cannot be throttled). |
-| `effect-plugins` | HTMLInCanvasEffects: effect host, plugin ABI v2 (v1 adapted), input mapper, interposer, water plugin | Optional bundles (docs/BUNDLES.md): hic-live-effects.iife.js after the core, hic-live-effects-water.iife.js for the water plugin. Needs WebGPU; without it createHost rejects loudly and the page keeps the 2D path. |
+| `frame-cap` | framecap attribute / frameCap property (fps upper bound for snapshot commits, paint events and effect frames) | An extension, not part of the standard. In mode native the frameCap property is not defined; the framecap attribute bounds effect frames only (native paint events are not throttled; observed with a test stub, docs/guides/EFFECTS-PLUGINS.md). |
+| `effect-plugins` | HTMLInCanvasEffects: effect host, plugin ABI v2 (v1 adapted), input mapper, interposer (an extension, not part of the standard) | Optional bundle (docs/BUNDLES.md): hic-live-effects.iife.js after the core; example plugins in plugins/, built to dist/plugins/. Works only while the polyfill provides the API (mode polyfill). Needs WebGPU; without it createHost rejects loudly and the page keeps the 2D path. |
 | `top-layer` | top-layer content inside a drawable (modal <dialog>, open popover, fullscreen element) is not painted into the canvas; the live element shows in the page top layer | Same behaviour as native (WPT top-layer-not-painted-in-canvas, dialog-paints-in-top-layer). |
 
 ### Limited (works, with documented deviations)

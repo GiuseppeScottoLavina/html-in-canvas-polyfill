@@ -20,7 +20,7 @@ Each drawable has a retained 2D canvas with immutable versions; a new picture is
 
 ### 5. Native first
 
-`install()` detects the native API by behaviour, not by browser name or version. With a complete native implementation it patches nothing of the standard surface and only the two extensions remain. A legacy native (Chrome 154 to 156 behind a flag) needs the separate native-bridge bundle; a partial native without it is refused rather than mixed. Install is synchronous, so the API exists before any page script reads it.
+`install()` detects the native API by behaviour, not by browser name or version. With a complete native implementation it patches nothing of the standard surface; the two extensions (decision 11) are not supported there. A legacy native (Chrome 154 to 156 behind a flag) needs the separate native-bridge bundle; a partial native without it is refused rather than mixed. Install is synchronous, so the API exists before any page script reads it.
 
 ### 6. Paint is asynchronous: about two frames behind the DOM
 
@@ -44,7 +44,7 @@ Gecko does not theme form controls inside an SVG image, and WebKit draws them in
 
 ### 11. Frame cap and effect plugins are extensions
 
-`framecap` / `frameCap` bounds `paint` events, effect frames and snapshot builds per canvas, paced by a phase accumulator and judged by an independent clock in the gates. The effect host runs WebGPU plugins over the drawn source; a plugin that moves pixels supplies a pure input mapper, so clicks reach the element the user sees. Both are outside the standard and may change between previews.
+`framecap` / `frameCap` bounds `paint` events, effect frames and snapshot builds per canvas, paced by a phase accumulator and judged by an independent clock in the gates. The effect host runs WebGPU plugins over the drawn source; a plugin that moves pixels supplies a pure input mapper, so clicks reach the element the user sees. Both are extensions of this library: they are not part of the HTML-in-Canvas proposal, native implementations do not provide them, and they are supported only while the polyfill provides the API (mode `polyfill`). On top of a native implementation the frame cap property is absent and input is not remapped (`docs/guides/EFFECTS-PLUGINS.md`). They may change between previews. The plugins themselves are not part of the library: the example plugins live in `plugins/`, one self-contained folder each, built into their own bundles.
 
 ### 12. What is refused, and why
 

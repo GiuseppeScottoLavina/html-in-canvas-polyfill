@@ -1,6 +1,17 @@
 # Writing an effect plugin (ABI v2)
 
-An effect plugin is a small GPU pass that runs after the polyfill has produced the snapshot of your HTML. The optional effects bundle hosts it: it uploads the snapshot into a WebGPU texture, runs the chain of plugins, presents the result on the canvas, and keeps pointer input pointing at the right element. The water ripple in `examples/water-form/` is a plugin.
+An effect plugin is a small GPU pass that runs after the polyfill has produced the snapshot of your HTML. The optional effects bundle hosts it: it uploads the snapshot into a WebGPU texture, runs the chain of plugins, presents the result on the canvas, and keeps pointer input pointing at the right element. The water ripple of `examples/water-form/` is a plugin; it lives with the other example plugins in [`plugins/`](../../plugins/), outside the polyfill, and the [plugin gallery](../../examples/plugins/) applies each of them to one live form.
+
+## Extensions, not the standard
+
+The effects host (`HTMLInCanvasEffects`, this plugin interface, the input remapping) and the frame cap (`framecap`, `canvas.frameCap`) are **extensions of this library**. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them: they are this library's own API. Code that uses them depends on this library, not on the standard.
+
+They work only while this polyfill provides the API (mode `polyfill`, see `__HIC__.installed.mode`). On top of a native implementation they are not supported. What was checked on 2026-10-14 (macOS, Apple M1 Max, 120 Hz display, headed and headless Chrome), with the built core and effects bundles in `examples/plugins/` and `examples/water-form/`:
+
+- **Chrome Canary 157.0.8103.0 with `--enable-blink-features=CanvasDrawElement`: not available.** The polyfill does not install: that build's `ElementImage` has no `width` / `height`, so the native probe classifies the native API as partial and `install()` refuses it (`partial-native`, one console warning). Nothing of this library is active: `canvas.frameCap` is not defined, `HTMLInCanvasEffects.createHost` rejects ("needs the installed polyfill") and no effect runs. Both examples detect this and draw the form through the browser's own `drawElementImage`, without an effect; clicking and typing work natively.
+- **The same build with a test-only stub that adds `ElementImage.prototype.width` and `height`** (so that the probe reports a complete native and the library runs in mode `native`; no user gets this configuration): **partially.** The effects host started and the water plugin rendered over the native `GPUQueue.drawElementImageToTexture` (frames presented, ripples visible). But `canvas.frameCap` is not defined in this mode (assigning it creates a plain property: 120 effect frames per second whatever the value; the `framecap` attribute did bound the effect frames, 15 and 30.5 per second at 15 and 30), and pointer input was not remapped: a trusted click on the drawn name field hit the canvas, the field did not get the focus and the typing was lost. The input interposer needs the polyfill's live layer, which does not exist in mode `native`.
+
+So with a native implementation the drawing of an effect may work, the interaction through it does not, and the frame cap property is absent. The examples turn the effects and the frame cap off unless the mode is `polyfill`, and keep the form usable.
 
 Sources of truth: `docs/API-CONTRACT.md` sections 7.2 to 7.4, the typedefs `EffectPluginDefinition`, `EffectPluginInstance`, `EffectPluginContext`, `EffectRenderFrame`, `InputMapper` in `src/contracts/types.js`, and the validation in `src/effects/plugin-abi.js`. The example below is `test/examples-smoke/wobble-plugin/wobble-plugin.js`, run by `npm run test:examples` (section 6).
 
@@ -13,7 +24,7 @@ live HTML  --snapshot-->  source texture  --plugin 1-->  --plugin 2-->  canvas (
 pointer events on the live layer --interposer--> mapped through the mappers of the PRESENTED frame --> the element the user sees
 ```
 
-- `HTMLInCanvasEffects` is defined by `dist/hic-live-effects.iife.min.js` (load it after the core). `createHost(canvas, source, options)` takes a canvas with `content="drawable"` and one drawable element as the source. It owns the canvas bitmap and its `webgpu` context: do not call `getContext` on that canvas yourself.
+- `HTMLInCanvasEffects` is defined by `dist/hic-live-effects.iife.min.js` (load it after the core). The plugins of this repository are separate bundles, `dist/plugins/<name>.iife.min.js`, which register `window.HicLivePlugins.<name>` (`plugins/README.md`). `createHost(canvas, source, options)` takes a canvas with `content="drawable"` and one drawable element as the source. It owns the canvas bitmap and its `webgpu` context: do not call `getContext` on that canvas yourself.
 - Each plugin reads `frame.sourceView` (the source for the first plugin, the previous plugin's output after that) and writes `frame.destinationView`.
 - `host.addPlugin(definition, options)` returns a handle: `{id, type, options, enabled, setOptions(patch), setEnabled(bool), mountUI(root), remove()}`.
 - Without WebGPU `createHost` rejects with `HicUnsupportedError('effect-plugins')`. Keep a 2D `drawElementImage` fallback (decide before any `getContext`).
@@ -55,7 +66,7 @@ Frame pacing: the host renders at most at the canvas frame cap (`framecap` attri
 When a plugin moves pixels, the element under the pointer is not the element the user sees. The host calls `captureInputMapper(frame)` each time a frame is PRESENTED and keeps the mappers of the last 3 presented frames. A mapper answers: "the pixel the user sees at output point P shows the source at which point?"
 
 - Signature: `mapper(point) => {x, y}` with `point = {x, y, width, height}`. `x`, `y` are canvas-relative CSS pixels of the content box; `width`, `height` are the presented size in CSS pixels. The result is in the same coordinate system, in the SOURCE.
-- PURE: no reads of the DOM, no state that changes afterwards. Freeze what that frame used (time, options) when `captureInputMapper` is called; a later `render` must not change an earlier mapper. The water plugin copies its uniform block into one of 4 slots per presented frame; the example below stores `{t, a}` at render time.
+- PURE: no reads of the DOM, no state that changes afterwards. Freeze what that frame used (time, options) when `captureInputMapper` is called; a later `render` must not change an earlier mapper. The water plugin (`plugins/water/`) copies its uniform block into one of 4 slots per presented frame; the example below stores `{t, a}` at render time.
 - Finite: a mapper that returns a non-finite number makes the host throw a `TypeError` (`an input mapper returned a non-finite point`).
 - Optional `mapper.captureGestureSnapshot()` returns a mapper frozen at that moment. The host calls it at `pointerdown` so a drag keeps one mapping while the picture keeps moving.
 - Several spatial plugins: the host composes their mappers, last plugin first.
@@ -64,6 +75,8 @@ When a plugin moves pixels, the element under the pointer is not the element the
 What the host does with it (the interposer, on by default): for `pointermove`, `pointerdown`, `pointerup` and `click` on the live layer it maps the pointer, finds the element at the mapped point, and when the native hit control differs it re-implements the activation (focus, button, link, checkbox, radio and label click on `pointerup`, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). The interposer under a strong displacement is UNVERIFIED end to end (only the mapper against GPU pixels is covered, section 6).
 
 ## 5. A complete plugin: horizontal wobble
+
+To add a plugin to this repository, start from [`plugins/_template/`](../../plugins/_template/): the build discovers the folder, inlines its WGSL, writes its bundles and lists it in the gallery; `plugins/README.md` has the folder contract and the shared test kit that checks a mapper against the GPU pixels. The example below is the same kind of plugin written as one classic script for your own page.
 
 Load order in the page: core, effects bundle, this file. The page then calls `createHost` and `addPlugin(WobblePlugin, { amplitude: 8 })` (section 7).
 
@@ -234,7 +247,7 @@ A definition with `apiVersion: 1` is accepted unchanged. Its frame also carries 
 ## 9. Checklist
 
 - `spatial: true` has a `captureInputMapper` and it is pure and frozen per frame.
-- The mapper formula is the shader formula (test it against pixels, as `check-examples` does).
+- The mapper formula is the shader formula (test it against pixels, as `check-examples` does, or with `checkMapperAgainstGpu` of `plugins/_shared/gpu-check.mjs`).
 - You did not call `getContext` on the canvas.
-- A 2D fallback exists for browsers without WebGPU.
+- A 2D fallback exists for browsers without WebGPU, and for a browser whose own native implementation is in use (the extensions are not available there, see the top of this guide).
 - You measured the cost on your own page: `docs/guides/PERFORMANCE.md` says which numbers exist and which do not.

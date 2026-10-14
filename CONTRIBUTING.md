@@ -35,6 +35,7 @@ If you cannot run them, say so in the pull request. The harness launches its own
 - A gate that cannot fail is worth nothing: every gate has a positive control, a deliberately broken variant that must turn it red. Never weaken a gate to get green (no raised threshold, widened band, dropped check or swallowed error).
 - Assert a non-blank surface before looking at a number, and measure main-thread cost from traces (`RunTask` against 8.33 ms), not the Long Tasks API.
 - Label every number with machine, browser version, DPR, refresh rate and headed or headless. A number taken with machine load above threshold is reported, never used as a threshold.
+- Effect plugins are not part of the polyfill: each lives in its own `plugins/<name>/` folder, imports nothing outside it, and follows the contract of [plugins/README.md](plugins/README.md) (start from `plugins/_template/`; the build and `npm run lint` check it). Nothing in `src/` imports a plugin.
 - `src/` modules import each other only through `src/contracts/`; at most 1000 code lines per file; no runtime dependency; no network request on load; never `blob:` URLs (`npm run lint` checks these).
 - Unsupported content fails loudly: a placeholder, one console message and a `report()` entry.
 - The feature tables of `docs/SUPPORT-MATRIX.md` are generated from `src/contracts/features.js` (`npm run docs:sync`).

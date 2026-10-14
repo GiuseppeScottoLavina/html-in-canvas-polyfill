@@ -33,7 +33,7 @@ Anything unlabeled is a design decision, not a measurement.
 +-------------+          | frame hooks           +-------------------+
       ^                  v                              | rasterSource / SOURCE_VERSION
       |           +----------------------------------+  v
-      |           | gpu-effects: effect host, plugin ABI v2, input interposer, water      |
+      |           | gpu-effects: effect host, plugin ABI v2, input interposer             |
       +-----------+ reads sources through a SourceProvider; sets geometry via GeometryApi |
                   +----------------------------------------------------------------------+
 ```
@@ -343,7 +343,7 @@ Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/2
   VALIDATION AGAINST THE REAL DISPLACEMENT (not only against its own mapper): gate G-interposer-gpu renders a known marker in the source, reads the presented frame from the GPU (screenshot), finds where the control's pixels really are, clicks there with a trusted
   event and asserts the intended control activated; positive control: interposer off -> a measurable fraction of those clicks hits the wrong control.
 - **Device loss.** The host handles `GPUDevice.lost`: it keeps presenting the last frame, recreates the device, the source/destination textures and the pipelines (each plugin is re-`create`d with its options) and reports once (gate G-device-lost, non-blank within 3 frames after recovery).
-- **Water plugin** (`effects/water/`): port of the prototype's water effect + `water.wgsl` (ABI v1 there), unchanged shader, `spatial:true`, `continuous:true`, double-buffered mapper state.
+- **Example plugins** live outside `src/`, in `plugins/<name>/` (`plugins/README.md`): the water plugin (`plugins/water/`) is the prototype's water effect + `water.wgsl` (ABI v1 there), unchanged shader, `spatial:true`, `continuous:true`, mapper state per presented frame. The build discovers plugin folders by convention and inlines their WGSL.
 
 ### ADR-H: WebGL / WebGPU texture variants, OffscreenCanvas, workers
 
@@ -415,7 +415,7 @@ Seven modules on disjoint file sets that talk only through the typed interfaces 
 | snapshot-capture | `src/snapshot/capture/*` (adds `css-shake`, `shells`; `caret-overlay` now measures) | contracts, util |
 | snapshot-store | `src/snapshot/store/*` (adds `caret-patch`; `decode` has the atomic commit, `surfaces` the loss watcher, `damage` the reclaim) | contracts, util, `CaptureFn` |
 | schedule | `src/schedule/**` (adds `paint-gate`, `frame-phase`) | contracts, util, `SnapshotStore`, `LiveLayer` (via `record.layer`) |
-| gpu-effects | `src/effects/**`, `src/effects.js`, `src/effects-iife.js`, `src/effects-water.js`, `src/effects-water-iife.js` | contracts, util, `SourceProvider`, `GeometryApi`, `InteractionTracker`, `Scheduler.addFrameHook`, `LiveLayer.elementAtPoint` |
+| gpu-effects | `src/effects/**`, `src/effects.js`, `src/effects-iife.js` (the example plugins are in `plugins/`, outside the module graph) | contracts, util, `SourceProvider`, `GeometryApi`, `InteractionTracker`, `Scheduler.addFrameHook`, `LiveLayer.elementAtPoint` |
 
 Shared leaves: `src/contracts/*` and `src/util/*`. A contract change (a new field, topic or option) edits `contracts/` and this document together.
 Size budget: at most 1000 code lines per file, and a total ceiling for the core (gate G-size, `scripts/check-repo.mjs`).
@@ -424,7 +424,7 @@ Size budget: at most 1000 code lines per file, and a total ceiling for the core 
 
 Budgets (verified by trace, `RunTask` on `CrRendererMain`): no task > 16.7 ms in any interaction gate; > 8.33 ms tasks tolerated at <= 1 % of frames in typing/resize on F1. The cost of one tile is the SUM of its synchronous build, its decode (main-thread, not free: ADR-D.8) and its commit draw:
 the pump caps the synchronous build part at <= 4 ms per pump (<= 8 ms at DPR 2 with > soft nodes) AND the EMA of the whole sum over all drawables at `mainThreadShare` (35 %) of the frame period. Measured ratios ([review-b]): RunTask per tile 4.2-9.4 ms against 0.1-0.9 ms for the build alone; the thresholds of G-throughput and G-typing are set only from a run without machine load above threshold (G-decode-main).
-Bundle <= 150 KB minified for the core (target, gate G-bundle; NOT met, see docs/BUNDLES.md for the split into core / effects / water / native bridge and where the bytes are). Non-goals: 120 Hz source updates (the promise is a 120 Hz effect over 30-60 Hz source), CSS-breadth work for its own sake, WPT percentage.
+Bundle <= 150 KB minified for the core (target, gate G-bundle; NOT met, see docs/BUNDLES.md for the split into core / effects / plugins / native bridge and where the bytes are). Non-goals: 120 Hz source updates (the promise is a 120 Hz effect over 30-60 Hz source), CSS-breadth work for its own sake, WPT percentage.
 
 ## 8. Risks and open questions (not decided here)
 

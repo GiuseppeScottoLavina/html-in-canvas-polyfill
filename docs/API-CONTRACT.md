@@ -23,7 +23,7 @@ Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" 
 | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `ElementGeometryUpdateEvent` | a managed canvas in a closed shadow root created before install (`adoptRoot` hook) |
 | WebGL and WebGL2 `texElementSubImage2D` (+ legacy `texElementImage2D`); WebGPU `GPUQueue.drawElementImageToTexture` (+ legacy `copyElementImageToTexture`) | zero-copy texture paths |
 | canvases in open shadow roots (limited), nested `<canvas content=drawable>` managed independently (limited) | |
-| Extensions: `framecap` / `frameCap`; `HTMLInCanvasEffects` (effect host, plugin ABI v2, input remap, water plugin) | any other CSS/DOM breadth work for its own sake |
+| Extensions of this library, not of the standard (section 7): `framecap` / `frameCap`; `HTMLInCanvasEffects` (effect host, plugin ABI v2, input remap); example plugins in `plugins/` | any other CSS/DOM breadth work for its own sake |
 
 Interfaces defined by the polyfill only when the platform lacks them: `window.ElementImage`, `window.CanvasPaintEvent`,
 `window.ElementGeometryUpdateEvent`. They are ordinary classes (`instanceof` works; `Symbol.toStringTag` set); they are NOT
@@ -40,7 +40,7 @@ the names of the CURRENT spec: `content` IDL reflecting only `fallback|drawable`
 
 | kind | meaning | `HicMode` | what install does |
 |---|---|---|---|
-| `complete` | every current name is present and `content` reflects | `native` | patches NOTHING of the standard surface. Only extensions are attached (effects global; `frameCap` bounds effect frames only). |
+| `complete` | every current name is present and `content` reflects | `native` | patches NOTHING of the standard surface. The extensions are not supported in this mode (section 7.6): no `frameCap` property, no input remapping. |
 | `legacy` | pre-2026-09 names only (`layoutSubtree` IDL, no `content`, `copyElementImageToTexture`/`texElementImage2D`), as in Chrome 154 behind `--enable-blink-features=CanvasDrawElement` | `native-bridged` | adds only what the public API can express: `content` IDL + attribute mirroring to `layoutsubtree`, missing method aliases (`drawElementImageToTexture`, `texElementSubImage2D`), `ElementGeometryUpdateEvent`. The native renderer is never replaced. Row `legacy-native-bridge`. |
 | `partial` | a CORE name is missing (`content` reflection, `onpaint`, `requestPaint`, `captureElementImage`, `drawElementImage`, `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`) or the shape is unknown | `refused` | throws `HicUnsupportedError('partial-native')` unless `options.forcePolyfill` (test only). |
 | `partial`, `fillable` | every CORE name present, only ADDITIVE names missing (`NativeState.gaps`: `onelementgeometryupdate`, `ElementGeometryUpdateEvent`, texture/WebGPU aliases, `ElementImage.toImageBitmap`, `frameCap`) | `native-bridged` | gap-fill only, the native renderer is untouched (a 155-156-like build missing one name is not refused). |
@@ -248,6 +248,8 @@ After mounting, the first snapshot is committed one or more frames later (async 
 
 ## 7. Extensions
 
+The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal, native implementations do not provide them, and they are supported only while the polyfill provides the API (mode `polyfill`); section 7.6 has what was observed on top of a native implementation.
+
 ### 7.1 Frame cap
 - Attribute `framecap` on the canvas: a non-negative integer, `0..240` (`EXT.FRAME_CAP_MAX`). Missing/invalid -> `options.defaultFrameCap`
   (default 0). `0` = uncapped = display refresh rate. IDL property `canvas.frameCap` (unsigned long), reflecting the attribute; the
@@ -266,10 +268,10 @@ After mounting, the first snapshot is committed one or more frames later (async 
   (default 0 = strict cap, input latency can then be up to one cap period). Measured by gate G-f1-form-effect (page-side `effectframe` stamps at 30 / 60 / 120).
 - The promise is "an effect at the cap, over a source updated at most that fast", not a stable 120 Hz source. A 120 Hz effect over
   30-60 Hz source updates is `framecap=120` with source builds limited by `maxSnapshotFps`/pipeline throughput.
-- With a complete native implementation the cap only bounds effect frames (feature row `frame-cap`).
+- In mode `native` the `frameCap` property is not defined; the `framecap` attribute bounds effect frames only (feature row `frame-cap`, section 7.6).
 
 ### 7.2 Effect plugins: ABI v2 (v1 adapted)
-Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The water plugin is the optional `dist/hic-live-effects-water.iife.js` (`window.HicLiveEffectsWater.WaterEffectPlugin`, WGSL inlined).
+Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
 `definePlugin` validates and freezes a definition: `{type: string, apiVersion: 1|2, version: number, outputCapabilities?:
 {directCanvasRenderAttachment?: true}, create(context, options)}`. `create` may be async and returns an `EffectPluginInstance`:
 `render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `destroy?`, `spatial?`, `continuous?`.
@@ -285,7 +287,7 @@ plugin MUST provide `captureInputMapper` (definePlugin throws `TypeError` otherw
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the
-  `SnapshotStore` in polyfill mode, the public native API in native mode), uploads only when `version()` advanced, renders the
+  `SnapshotStore` in polyfill mode, the public native API in native mode, which is not supported: section 7.6), uploads only when `version()` advanced, renders the
   plugin chain each due frame (`continuous` plugins) or on change, and keeps the source geometry in sync so the live element sits
   under the presented pixels (`GeometryApi.update(source, fill transform)`).
 - Presented-frame events on the canvas: `effectframe` (CustomEvent, detail `EffectPresentationFrame`) and `effecterror` (CustomEvent,
@@ -311,6 +313,11 @@ popups, drag selection, contenteditable (row `interposer-retarget`). Validated a
 ### 7.5 Polyfill events and handles
 `hicunsupported` (CustomEvent<UnsupportedEntry> on the canvas), `effectframe`, `effecterror` (above). `window.__HIC__` = debug handle
 `{installed, report(), error?}`; `installed` is a getter that follows the live install (`getInstalled() ?? the first install`), so it stays right after `uninstall()` + `install()`.
+
+### 7.6 On top of a native implementation (not supported)
+Checked on 2026-10-14 with the built core and effects bundles (macOS, Apple M1 Max, 120 Hz, headed and headless; details in `docs/guides/EFFECTS-PLUGINS.md`):
+- Chrome Canary 157.0.8103.0 with `--enable-blink-features=CanvasDrawElement`: `install()` refuses (`partial-native`: that build's `ElementImage` has no `width` / `height`), so no extension exists: no `frameCap` property, `createHost` rejects with `InvalidStateError`.
+- The same build with a test-only stub that completes `ElementImage` (mode `native`): `createHost` and the water plugin rendered over `GPUQueue.drawElementImageToTexture`; the `frameCap` property is not defined (the `framecap` attribute paced effect frames: 15 and 30.5 per second at 15 and 30); pointer input is not remapped (the interposer needs the polyfill's live layer), so a click on the drawn field reached the canvas, not the field.
 
 ## 8. Timing model (summary; full detail in ARCHITECTURE ADR-C)
 - DOM change -> mutation/input/focus/hover observers publish `Damage` -> (next tick, under the cap) clone + serialise + data: URL (main

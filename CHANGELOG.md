@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [0.1.0-preview.1] - unreleased
 
-First preview, published under the npm dist-tag `next`.
+First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` under the npm dist-tag `next`.
 
 ### Added
 
@@ -13,9 +13,10 @@ First preview, published under the npm dist-tag `next`.
 - Native-first install: a behavioural probe chooses between running the polyfill, stepping aside for a complete native implementation, bridging a legacy native (`hic-live-native-bridge`), or refusing loudly (`HicUnsupportedError`, `installed.report()`).
 - Desktop Chrome, Firefox 155+ and Safari 27+. On Firefox and Safari the opt-in `hic-live-engines` bundle draws form controls, classic scrollbars and shadows in each engine's look.
 - Typed text in single-line fields is drawn at once, inner scrolling is composed from cached pages, and snapshot builds run after the frame, so typing and wheel scrolling are close to native latency (`docs/PERFORMANCE-COMPARISON.md`).
-- Extensions outside the standard: a frame cap (`framecap` attribute, `canvas.frameCap`) and a WebGPU effect-plugin host with input remapping (`HTMLInCanvasEffects`, plugin ABI v2), plus the water-ripple plugin of the demo.
+- Extensions of this library, not part of the standard and not provided by native implementations: a frame cap (`framecap` attribute, `canvas.frameCap`) and a WebGPU effect-plugin host with input remapping (`HTMLInCanvasEffects`, plugin ABI v2). They work only while the polyfill provides the API (mode `polyfill`).
+- Example effect plugins outside the polyfill, in `plugins/` (one folder each, found by the build by convention; first: `water`): bundles `dist/plugins/<name>.iife(.min).js` and `.esm.js`, package subpaths `./plugins/<name>`, a manifest, a plugin template and a test kit that checks a plugin's input mapper against the GPU pixels.
 - Classic `<script>` bundles (readable and minified) and an ES module build with `exports` and TypeScript declarations; no runtime dependencies and no network request on load.
-- Five examples and a zero-dependency demo server (`npm run demo`); guides for getting started, frameworks (React, Vue, Svelte, Lit), effect plugins, performance and troubleshooting.
+- Six examples, among them a gallery of the effect plugins over one live form, and a zero-dependency demo server (`npm run demo`); guides for getting started, frameworks (React, Vue, Svelte, Lit), effect plugins, performance and troubleshooting.
 - Tests: unit tests in Node and headless Chrome, browser gates with positive controls and a mutation suite, the official WPT HTML-in-Canvas tests at a pinned commit (`docs/CONFORMANCE.md`), Firefox and Safari through WebDriver, and framework apps.
 
 ### Known limitations
