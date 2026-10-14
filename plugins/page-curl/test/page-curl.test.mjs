@@ -4,17 +4,14 @@
 // frame cap); the rest pose (dog-ear, hover lift, auto-peek, grab cursor); reduced motion; and the render path (no allocation per frame).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
 import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
 import { NO_TARGET, PEEK_MS, UNIFORM_FLOATS, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, plugin, poseState } from '../index.js';
 
 const W = 480;
 const H = 320;
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 test('meta and the definition agree; the defaults are valid options', () => {
   assert.equal(plugin.type, meta.name);

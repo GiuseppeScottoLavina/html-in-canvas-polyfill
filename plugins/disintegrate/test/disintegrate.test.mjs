@@ -4,16 +4,13 @@
 // (the page, then one grain per dust cell), the mappers, triggers, submit wiring, reduced motion, destroy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
 import { readFileSync } from 'node:fs';
 import { BG_CELL, HOLD_MS, LIFE, MAX_GRAINS, NO_TARGET, SWEEP_END, UNIFORM_FLOATS, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf, trigger } from '../index.js';
 import { findInvalid, sourcePointOnCanvas } from '../../_lib/transition.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 test('meta and the definition agree; the gallery defaults are valid options', () => {
   assert.equal(plugin.type, meta.name);

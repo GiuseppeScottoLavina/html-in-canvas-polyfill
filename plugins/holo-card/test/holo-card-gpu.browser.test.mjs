@@ -1,7 +1,7 @@
 // The holo-card input mapper against the pixels the GPU really produced (plugins/_shared/gpu-check.mjs), a card tilting on its spring,
 // device loss, and the GPU time of the pass.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
 import { definePlugin } from '/src/effects/plugin-abi.js';
 import { UNIFORM_FLOATS, mapCardPoint, plugin, writeCardPose } from '/plugins/holo-card/index.js';
 import { measureGpuTime } from '/plugins/_shared/gpu-time.mjs';
@@ -52,8 +52,7 @@ gpuTest('device loss: the host re-creates the plugin on a new device and the car
   const { rig, mappers } = await presentOnce(t, def, GEOMETRY, { scene });
   const before = mappers.length;
   devices[0].destroy();
-  const until = performance.now() + 5000;
-  while (devices.length < 2 && performance.now() < until) await new Promise((ok) => setTimeout(ok, 20));
+  await until(() => devices.length >= 2);
   assert.equal(devices.length, 2, 'create() ran again on a new device');
   await new Promise((ok) => setTimeout(ok, 50));
   rig.tick(performance.now() + 50);

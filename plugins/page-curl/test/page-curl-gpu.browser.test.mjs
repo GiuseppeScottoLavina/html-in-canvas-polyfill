@@ -2,7 +2,7 @@
 // (plugins/_shared/gpu-check.mjs) with the identity and a pose 20 px away as controls, the back of the sheet (paper with the source showing
 // through, mirrored), the dog-ear at rest, the spring back to the plain source, a device loss mid-drag, and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, markerScene, presentOnce } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
 import { UNIFORM_FLOATS, isNoTarget, mapCurlPoint, meta, plugin, poseState, stateOf, unproject } from '/plugins/page-curl/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -122,26 +122,13 @@ gpuTest('released: the sheet springs back and the presented frame is the plain s
   assert.deepEqual(flat({ x: 478, y: 318, width: W, height: H }), { x: 478, y: 318 });
 });
 
-/** Wraps a definition: records every created instance's device and counts destroy() calls (device-loss tests). @param {any} def */
-function lossSpy(def) {
-  const log = { devices: /** @type {any[]} */ ([]), destroyed: 0 };
-  const spy = Object.freeze({
-    ...def,
-    async create(/** @type {any} */ ctx, /** @type {any} */ o) {
-      log.devices.push(ctx.device);
-      const inst = await def.create(ctx, o);
-      return { ...inst, destroy() { log.destroyed += 1; inst.destroy?.(); } };
-    },
-  });
-  return { spy, log };
-}
 
 gpuTest('device loss mid-drag: the host re-creates the plugin on a new device, the old instance is destroyed, the new one presents the flat page with an identity mapper', async (t) => {
   const { spy, log } = lossSpy(plugin);
   const { rig, mappers } = await presentOnce(t, spy, { ...DARK, dogEar: 0 }, { scene, before: dragged(POSE), offsetMs: 400 });
   assert.ok(isNoTarget(/** @type {any} */ (mappers.at(-1))({ x: 470, y: 310, width: W, height: H })), 'curled before the loss');
   log.devices[0].destroy();
-  for (let i = 0; i < 300 && log.devices.length < 2; i += 1) await new Promise((r) => setTimeout(r, 10));
+  await until(() => log.devices.length >= 2, 3000);
   assert.equal(log.devices.length, 2, 'create() ran again');
   assert.notEqual(log.devices[1], log.devices[0]);
   assert.equal(log.destroyed, 1, 'the old instance (and its document listeners) was destroyed');

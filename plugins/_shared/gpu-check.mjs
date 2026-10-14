@@ -137,3 +137,23 @@ export async function checkMapperAgainstGpu(t, plugin, options, { maxWrong = 5, 
   };
   return verdict;
 }
+
+/** The definition, wrapped to record the device of every create() and to count destroy() of its instances (device-loss tests). @param {any} def */
+export function lossSpy(def) {
+  const log = { devices: /** @type {any[]} */ ([]), destroyed: 0 };
+  const spy = Object.freeze({
+    ...def,
+    async create(/** @type {any} */ ctx, /** @type {any} */ o) {
+      log.devices.push(ctx.device);
+      const inst = await def.create(ctx, o);
+      return { ...inst, destroy() { log.destroyed += 1; inst.destroy?.(); } };
+    },
+  });
+  return { spy, log };
+}
+
+/** Polls `done` every 10 ms until it holds or `ms` passed. @param {() => boolean} done */
+export async function until(done, ms = 5000) {
+  const end = performance.now() + ms;
+  while (!done() && performance.now() < end) await new Promise((r) => setTimeout(r, 10));
+}

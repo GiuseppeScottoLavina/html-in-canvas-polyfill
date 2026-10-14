@@ -4,15 +4,12 @@
 // impact point, submit wiring, destroy).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
 import { blockedMapper, CRACK_MS, crackFront, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions, settled, trigger } from '../index.js';
 import { BEVEL, buildShards, crackedLayout, crackedSource, HEAL, MAX_POLY, MAX_SHARDS, MAX_VERTICES, mulberry32, polygonCentroid, SHARD_FLOATS, shardPoint, SPAN, spiderweb, VERTEX_FLOATS } from '../shards.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 test('meta and the definition agree; the gallery defaults are valid options', () => {
   assert.equal(plugin.type, meta.name);

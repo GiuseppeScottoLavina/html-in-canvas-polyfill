@@ -2,13 +2,11 @@
 // does with a recording fake GPU (tilt spring, idle sway, reduced motion, frame cap, no per-frame allocation, per-frame mapper freeze).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
+import { fakeGpu } from '../../_shared/fake-gpu.mjs';
 import { NO_TARGET, UNIFORM_FLOATS, mapCardPoint, meta, plugin, writeCardPose } from '../index.js';
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 test('meta and the definition agree; ABI v2, direct canvas attachment, frozen', () => {
   assert.equal(plugin.type, meta.name);
@@ -70,18 +68,6 @@ test('tilt towards the pointer: the side under the pointer comes closer (drawn l
   assert.ok(Number.isFinite(mapCardPoint(s, { x: 0, y: 0, width: 1100, height: 620 }).x));
 });
 
-/** A GPU device that records what the plugin submits. */
-function fakeGpu() {
-  const writes = [];
-  const passes = [];
-  const device = {
-    createShaderModule: () => ({}), createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) }),
-    createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: () => ({}),
-    queue: { writeBuffer: (_b, _o, data) => writes.push({ data, copy: new Float32Array(data) }) },
-  };
-  const encoder = { beginRenderPass: (d) => { passes.push(d); return { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} }; } };
-  return { device, writes, passes, encoder };
-}
 
 async function create(options = {}, { reduced = false } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };

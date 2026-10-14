@@ -1,13 +1,10 @@
 // Node tests of the template plugin: the folder contract, the mapper formula, and what render() submits (with a recording fake GPU).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
 import { mapOffsetPoint, meta, plugin } from '../index.js';
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 test('meta and the definition agree', () => {
   assert.equal(plugin.type, meta.name);

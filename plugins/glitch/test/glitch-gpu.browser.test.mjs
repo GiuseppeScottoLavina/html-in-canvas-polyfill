@@ -2,7 +2,7 @@
 // shared check, then every layer on (split, sort streaks, grain, scanlines) read on the green channel, which the split does not move;
 // a wrong-mapper control (the next pattern of the same burst); the ambient mode; the GPU time of the pass.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, markerScene, presentOnce } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
 import { HEADER_FLOATS, PATTERN_MS, UNIFORM_FLOATS, fillGlitchFrame, mapGlitchPoint, meta, plugin } from '/plugins/glitch/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -84,25 +84,12 @@ gpuTest('ambient: whatever the instant (micro-glitch or not), the presented fram
   }
 });
 
-/** Wraps a definition: records every created instance's device and counts destroy() calls (device-loss tests). @param {any} def */
-function lossSpy(def) {
-  const log = { devices: /** @type {any[]} */ ([]), destroyed: 0 };
-  const spy = Object.freeze({
-    ...def,
-    async create(/** @type {any} */ ctx, /** @type {any} */ o) {
-      log.devices.push(ctx.device);
-      const inst = await def.create(ctx, o);
-      return { ...inst, destroy() { log.destroyed += 1; inst.destroy?.(); } };
-    },
-  });
-  return { spy, log };
-}
 
 gpuTest('device loss mid-burst: the host re-creates the plugin on a new device, the old instance is destroyed, the new one presents frames that agree with its mapper', async (t) => {
   const { spy, log } = lossSpy(plugin);
   const { rig, mappers } = await presentOnce(t, spy, { ...BURST, split: false, sort: false, noise: false }, { scene, before: invalid });
   log.devices[0].destroy();
-  for (let i = 0; i < 300 && log.devices.length < 2; i += 1) await new Promise((r) => setTimeout(r, 10));
+  await until(() => log.devices.length >= 2, 3000);
   assert.equal(log.devices.length, 2, 'create() ran again');
   assert.equal(log.destroyed, 1, 'the old instance (observer, listeners) was destroyed');
   rig.source.dispatchEvent(new Event('invalid'));   // the validation hook of the new instance works (a burst on its next frame)

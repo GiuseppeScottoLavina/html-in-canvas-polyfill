@@ -3,13 +3,11 @@
 // freeze of the mapper).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
+import { fakeGpu } from '../../_shared/fake-gpu.mjs';
 import { NO_TARGET, UNIFORM_FLOATS, bezelWidth, cornerRadius, mapCrtPoint, meta, plugin, presetOf, presets } from '../index.js';
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 test('meta and the definition agree; ABI v2, direct canvas attachment, frozen', () => {
   assert.equal(plugin.type, meta.name);
@@ -71,20 +69,6 @@ test('the barrel: the centre is fixed, edge midpoints land on the edges of the s
   assert.ok(mid.x < 825, 'the bulge magnifies the middle of the screen: halfway out, the mapper reaches a point nearer the centre');
 });
 
-/** A GPU device that records what the plugin submits. */
-function fakeGpu() {
-  const writes = [];
-  const passes = [];
-  const textures = [];
-  const device = {
-    createShaderModule: () => ({}), createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) }),
-    createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: (d) => ({ entries: d.entries }),
-    createTexture: (d) => { textures.push(d); return { width: d.size[0], height: d.size[1], createView: () => ({}), destroy() {} }; },
-    queue: { writeBuffer: (_b, _o, data) => writes.push({ data, copy: new Float32Array(data) }) },
-  };
-  const encoder = { beginRenderPass: (d) => { passes.push(d); return { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} }; } };
-  return { device, writes, passes, encoder, textures };
-}
 
 async function create(options = {}, { reduced = false } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };

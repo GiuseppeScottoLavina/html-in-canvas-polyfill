@@ -1,12 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
-import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { contractTest } from '../../_shared/contract-test.mjs';
 import { GLOBALS_LENGTH, RIPPLE_COUNT, plugin as WaterEffectPlugin, mapWaterPoint } from '../index.js';
 
-test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
-  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
-});
+contractTest(import.meta.url);
 
 /** Independent copy of the displacement of the original water plugin (its mapPresentedPoint). */
 function oracle(state, point) {
