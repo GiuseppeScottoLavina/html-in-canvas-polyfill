@@ -1,8 +1,8 @@
 // GPU time of the disintegrate pass per frame, measured with timestamp queries on the plugin's own pass (frame.profiling.timestampWrites,
 // the hook the water plugin also honours), at the gallery canvas size at DPR 2 (1100x620 css = 2200x1240 backing px), frames 8.33 ms apart
-// (120 Hz) through a whole play (out, hold, in), plus the wall time of the two frames that also run the compute pass that makes the embers
-// (once per phase: the way out, the way back). It reports numbers; it asserts only that they exist. The 120 Hz budget is 8.33 ms per frame
-// for everything the GPU does, not only this pass. Chrome quantises timestamps (100 us without developer features), so small passes read coarse.
+// (120 Hz) through a whole play (out, then in), plus the wall time of the frame that also makes the background estimate (two small passes,
+// once while the page does not change). It asserts the p95 of the moving frames stays under half of the 120 Hz budget (8.33 ms per frame for
+// everything the GPU does). Chrome quantises timestamps (100 us without developer features), so small passes read coarse.
 import { assert } from '/test/unit/lib/t.js';
 import { gpuTest } from '/plugins/_shared/gpu-check.mjs';
 import { plugin, trigger } from '/plugins/disintegrate/index.js';
@@ -30,7 +30,7 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   const dst = device.createTexture({ size: [W, H], format, usage: U.RENDER_ATTACHMENT });
   const canvas = document.createElement('canvas');
   const context = /** @type {any} */ ({ apiVersion: 2, adapter, device, format, canvas, source: document.createElement('div'), requestRender() {}, listen: () => () => {}, viewport: () => ({ width: W, height: H, cssWidth: CSS.w, cssHeight: CSS.h, dpr: DPR }) });
-  const inst = await plugin.create(context, { duration: 1000, intro: false });
+  const inst = await plugin.create(context, { duration: 1000, durationIn: 1000, intro: false });
   const FRAMES = 320;
   const querySet = timestamps ? device.createQuerySet({ type: 'timestamp', count: FRAMES * 2 }) : null;
   const B = /** @type {any} */ (globalThis).GPUBufferUsage;
@@ -46,8 +46,8 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   for (let i = 0; i < FRAMES; i += 1) {
     if (i === 20) trigger(canvas, 'play');
     const real = device.createCommandEncoder();
-    let births = 0;
-    const encoder = new Proxy(real, { get: (target, key) => (key === 'beginComputePass' ? (/** @type {any} */ d) => { births += 1; return target.beginComputePass(d); } : typeof target[key] === 'function' ? target[key].bind(target) : target[key]) });
+    let births = 0;   // frames that also make the background estimate (two small passes before the frame's own)
+    const encoder = new Proxy(real, { get: (target, key) => (key === 'beginRenderPass' ? (/** @type {any} */ d) => { if (!d.timestampWrites && !('timestampWrites' in d)) births += 1; return target.beginRenderPass(d); } : typeof target[key] === 'function' ? target[key].bind(target) : target[key]) });
     const k = i;
     const frame = {
       now: t0 + i * 8.33, delta: 8.33, frameIndex: i, frameCap: 0, sourceVersion: 1, width: W, height: H, cssWidth: CSS.w, cssHeight: CSS.h, dpr: DPR,
@@ -81,9 +81,10 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   const moving = pick('moving'), idle = pick('idle');
   const fmt = (/** @type {number[]} */ xs) => `p50 ${pct(xs, 0.5).toFixed(3)} p95 ${pct(xs, 0.95).toFixed(3)} max ${Math.max(...xs).toFixed(3)} ms (n=${xs.length})`;
   console.error(`disintegrate GPU ${timestamps ? 'timestamp-query' : 'onSubmittedWorkDone (upper bound)'} ${W}x${H}: moving ${fmt(moving)}; idle ${fmt(idle)}; CPU render() ${fmt(cpu)}; adapter ${adapter.info?.vendor ?? ''} ${adapter.info?.architecture ?? ''}`);
-  console.error(`disintegrate frames that make the embers (compute + render, submit to done, wall clock): ${birthWall.map((x) => x.toFixed(2)).join(', ')} ms`);
+  console.error(`disintegrate frames that also make the background estimate (submit to done, wall clock): ${birthWall.map((x) => x.toFixed(2)).join(', ')} ms`);
   assert.ok(moving.length > 200 && moving.every(Number.isFinite), 'measured the moving frames');
-  assert.equal(birthWall.length, 1, 'the embers were made once: the page did not change during the play (they are made again only when it does)');
+  assert.equal(birthWall.length, 1, 'the background was estimated once: the page did not change during the play');
+  assert.ok(pct(moving, 0.95) < 8.33 / 2, `p95 ${pct(moving, 0.95)} ms: more than half of a 120 Hz frame`);
   inst.destroy();
   device.destroy();
 }, { timeout: 30000 });

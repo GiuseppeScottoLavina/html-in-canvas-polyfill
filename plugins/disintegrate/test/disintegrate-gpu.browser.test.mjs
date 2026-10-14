@@ -1,6 +1,8 @@
-// Disintegrate through the REAL effects host on a real WebGPU canvas: the assembled frame against the host's own passthrough (bit for bit),
-// mid-transition frames, input blocking through the interposer, frame-cap independence, the reduced-motion crossfade, device loss and the
-// submit wiring. Run: node test/unit/run.mjs plugins/disintegrate/test/disintegrate-gpu.browser.test.mjs
+// Disintegrate (dust) through the REAL effects host on a real WebGPU canvas: the assembled frame against the host's own passthrough (bit for
+// bit), mid-transition frames (never dark: the page stays), the background untouched while the content turns to dust, the dust in the
+// colours of its pixels, input blocking through the interposer, frame-cap independence, the reduced-motion crossfade, device loss, the
+// submit wiring, the diagonal sweep, and live content on the dust.
+// Run: node test/unit/run.mjs plugins/disintegrate/test/disintegrate-gpu.browser.test.mjs
 import { assert, sleep } from '/test/unit/lib/t.js';
 import { gpuAvailable, gpuTest } from '/plugins/_shared/gpu-check.mjs';
 import { makeRig, nonDominantShare } from '/test/unit/gpu-effects/lib/rig.mjs';
@@ -72,7 +74,7 @@ async function reference(t) {
 async function start(t, options, o) {
   const { rig, host } = await rigHost(t, o);
   const spy = wrap();
-  const handle = await host.addPlugin(spy.def, { duration: DURATION, ...options });
+  const handle = await host.addPlugin(spy.def, { duration: DURATION, durationIn: DURATION, ...options });
   return { rig, host, handle, ...spy };
 }
 
@@ -97,7 +99,17 @@ gpuTest('idle: the presented frame equals the host passthrough bit for bit, and 
   assert.deepEqual(m({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 });
 });
 
-gpuTest('play: mid-transition frames are non-blank, differ from each other and from the source; the end frame has no residual offset', async (t) => {
+/** mean luminance (0..255) @param {ImageData} img */
+function meanLuma(img) {
+  let sum = 0;
+  for (let i = 0; i < img.data.length; i += 4) sum += 0.299 * img.data[i] + 0.587 * img.data[i + 1] + 0.114 * img.data[i + 2];
+  return sum / (img.data.length / 4);
+}
+/** the content of the test picture (paint): the light panels, the orange button, the big text line */
+const CONTENT = [[40, 40, 120, 40], [40, 120, 200, 28], [40, 180, 200, 28], [280, 180, 90, 28], [36, 262, 340, 36]];
+const inContent = (/** @type {number} */ x, /** @type {number} */ y, m = 0) => CONTENT.some(([cx, cy, cw, ch]) => x >= cx - m && x < cx + cw + m && y >= cy - m && y < cy + ch + m);
+
+gpuTest('play: mid-transition frames are non-blank, never dark (the page stays), differ from each other and from the source; the end frame is the source', async (t) => {
   const ref = await reference(t);
   const { rig, mappers } = await start(t, { intro: false });
   const t0 = performance.now();
@@ -105,21 +117,68 @@ gpuTest('play: mid-transition frames are non-blank, differ from each other and f
   const done = trigger(rig.canvas, 'play');
   rig.tick(t0 + 10);                                  // the clock of the transition starts here
   const shots = [];
-  // the front crosses the canvas in the first half (FRONT_END); by 0.7 only embers are left
-  for (const at of [0.15, 0.3, 0.45]) { rig.tick(t0 + 10 + DURATION * at); shots.push(rig.snap()); }
+  for (const at of [0.15, 0.3, 0.45, 0.7, 0.9, 1.2, 1.5, 1.8]) { rig.tick(t0 + 10 + DURATION * at); shots.push(rig.snap()); }
   const midMapper = /** @type {any} */ (mappers.at(-1));
-  for (const img of shots) assert.ok(nonDominantShare(img) > 0.05, `mid frame non-blank (${nonDominantShare(img).toFixed(3)})`);
+  const lumas = shots.map(meanLuma);
+  console.error(`disintegrate mean luminance: source ${meanLuma(ref).toFixed(1)}, frames ${lumas.map((l) => l.toFixed(1)).join(' ')}`);
+  // (the light panels of this picture are a large share of its brightness: with all of its content gone the page alone is about 0.6 of it)
+  for (const l of lumas) assert.ok(l > 0.55 * meanLuma(ref), `a frame of the transition is dark: ${l.toFixed(1)} against ${meanLuma(ref).toFixed(1)}`);
   const d01 = diff(shots[0], shots[1]), d0r = diff(shots[0], ref), d12 = diff(shots[1], shots[2]);
   console.error(`disintegrate mid frames: 15%->30% ${d01.over} px, 15% vs source ${d0r.over} px, 30%->45% ${d12.over} px`);
-  assert.ok(d01.over > 2000 && d12.over > 2000 && d0r.over > 2000, 'frames move');
+  assert.ok(d01.over > 1500 && d12.over > 1500 && d0r.over > 1500, 'frames move');
   assert.ok(isNoTarget(midMapper({ x: 120, y: 60, width: W, height: H })), 'input blocked mid-transition (NO_TARGET)');
-  // out (1000 ms) + hold (250 ms) + in (1000 ms); step at 120 Hz to the end
-  for (let now = t0 + 10 + 700; now <= t0 + 10 + 2400; now += 8.33) rig.tick(now);
-  rig.tick(t0 + 2500);
+  for (let now = t0 + 10 + DURATION * 1.8; now <= t0 + 10 + DURATION * 2.2; now += 8.33) rig.tick(now);
+  rig.tick(t0 + 10 + DURATION * 2.3);
   assert.equal(await done, true, 'the play promise resolves true');
   const end = diff(rig.snap(), ref);
   assert.equal(end.max, 0, `reassembled frame differs from the source by up to ${end.max} levels`);
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 }, 'identity again');
+});
+
+gpuTest('the background stays: while the content turns to dust, the page around it is untouched (apart from dust passing over it); the content is gone', async (t) => {
+  const ref = await reference(t);
+  const { rig } = await start(t, { intro: false });
+  const t0 = performance.now();
+  rig.tick(t0);
+  trigger(rig.canvas, 'out');
+  rig.tick(t0 + 10);
+  rig.tick(t0 + 10 + DURATION * 0.62);               // every pixel of content has eroded by 0.5
+  const img = rig.snap();
+  let bg = 0, bgSame = 0, content = 0, contentGone = 0;
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      const k = (y * W + x) * 4;
+      const d = Math.max(Math.abs(img.data[k] - ref.data[k]), Math.abs(img.data[k + 1] - ref.data[k + 1]), Math.abs(img.data[k + 2] - ref.data[k + 2]));
+      if (!inContent(x, y, 10)) { bg += 1; if (d <= 6) bgSame += 1; }
+      else if (inContent(x, y, -3) && Math.max(ref.data[k], ref.data[k + 1]) > 200) { content += 1; if (d > 60) contentGone += 1; }
+    }
+  }
+  console.error(`disintegrate background: ${bgSame} of ${bg} background px unchanged; ${contentGone} of ${content} light content px gone`);
+  assert.ok(bgSame > 0.85 * bg, `the background changed: only ${(100 * bgSame / bg).toFixed(1)} % unchanged`);
+  assert.ok(contentGone > 0.8 * content, `the content is still there: ${contentGone} of ${content} px gone`);
+});
+
+gpuTest('the dust keeps the colour of its pixel: the orange button leaves orange dust where there was none', async (t) => {
+  const { rig } = await start(t, { intro: false });
+  const t0 = performance.now();
+  rig.tick(t0);
+  trigger(rig.canvas, 'out');
+  rig.tick(t0 + 10);
+  let orange = 0;
+  for (const at of [0.45, 0.55, 0.65]) {
+    rig.tick(t0 + 10 + DURATION * at);
+    const img = rig.snap();
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        if (inContent(x, y, 2)) continue;
+        const k = (y * W + x) * 4;
+        const [r, g, b] = [img.data[k], img.data[k + 1], img.data[k + 2]];
+        if (r > 140 && r > g + 30 && g > b + 25) orange += 1;   // #ffb06b-ish, where the picture has no orange
+      }
+    }
+  }
+  console.error(`disintegrate: ${orange} orange dust px outside the content`);
+  assert.ok(orange > 80, `${orange} orange px of dust`);
 });
 
 gpuTest('frame-cap independence: the frame at 400 ms is the same at 120 Hz and at a 15 fps cap', async (t) => {
@@ -167,7 +226,7 @@ gpuTest('input: a click on a control is swallowed mid-transition and reaches it 
   assert.equal(document.activeElement, txt, 'NO_TARGET: the host swallowed the press, so the focused field keeps the focus (keyboard input still reaches it)');
 });
 
-gpuTest('prefers-reduced-motion: a crossfade, no pixel moves (each pixel is the source mixed with the backdrop)', async (t) => {
+gpuTest('prefers-reduced-motion: the content fades into the page, nothing moves, the background is untouched', async (t) => {
   const ref = await reference(t);
   const { rig } = await start(t, { intro: false, reducedMotion: true });
   const t0 = performance.now();
@@ -176,13 +235,18 @@ gpuTest('prefers-reduced-motion: a crossfade, no pixel moves (each pixel is the 
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.5);
   const img = rig.snap();
-  const back = [0.004, 0.018, 0.034].map((v) => v * 255);
-  let worst = 0;
-  for (let i = 0; i < img.data.length; i += 4) {
-    for (let c = 0; c < 3; c += 1) worst = Math.max(worst, Math.abs(img.data[i + c] - (ref.data[i + c] * 0.5 + back[c] * 0.5)));
+  let bg = 0, bgSame = 0, light = 0, dimmer = 0;
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      const k = (y * W + x) * 4;
+      const d = Math.max(Math.abs(img.data[k] - ref.data[k]), Math.abs(img.data[k + 1] - ref.data[k + 1]), Math.abs(img.data[k + 2] - ref.data[k + 2]));
+      if (!inContent(x, y, 10)) { bg += 1; if (d <= 4) bgSame += 1; }
+      else if (inContent(x, y, -3) && ref.data[k + 1] > 200) { light += 1; const was = ref.data[k + 1], now = img.data[k + 1]; if (now < was - 40 && now > 60) dimmer += 1; }
+    }
   }
-  assert.ok(worst <= 2, `crossfade at 50%: worst channel error ${worst.toFixed(1)} levels`);
-  assert.ok(diff(img, ref).over > 1000, 'and it is not the source (positive control)');
+  console.error(`disintegrate reduced motion: ${bgSame}/${bg} background px unchanged, ${dimmer}/${light} light content px half faded`);
+  assert.ok(bgSame > 0.97 * bg, 'no dust, nothing moves: the background is the source');
+  assert.ok(dimmer > 0.8 * light, 'the content is half way to the background');
 });
 
 gpuTest('device loss mid-transition: the plugin comes back assembled (no intro), with the identity mapper; the pending promise resolves false', async (t) => {
@@ -207,7 +271,8 @@ gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submi
   const { rig, host } = await start(t, { intro: true, onSubmit: 'valid' }, { html: CONTROLS });
   const t0 = performance.now();
   rig.tick(t0);
-  assert.ok(nonDominantShare(rig.snap()) < 0.01, 'the intro starts fully dissolved (only the backdrop)');
+  const first = rig.snap();
+  assert.ok(first.data[(60 * W + 100) * 4 + 1] < 150 && meanLuma(first) > 0.6 * meanLuma(ref), 'the intro starts with the content gone (the light button at 100, 60 shows the page), the page there');
   for (let now = t0 + 50; now <= t0 + DURATION + 100; now += 50) rig.tick(now);
   assert.equal(diff(rig.snap(), ref).max, 0, 'the intro ends on the source');
   const form = /** @type {HTMLFormElement} */ (rig.layerEl.querySelector('#f'));
@@ -223,7 +288,7 @@ gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submi
   form.requestSubmit();
   rig.tick(t0 + DURATION + 600);
   rig.tick(t0 + DURATION + 600 + DURATION * 0.5);
-  assert.ok(diff(rig.snap(), ref).over > 2000, 'valid submit: the form dissolves');
+  assert.ok(diff(rig.snap(), ref).over > 2000, 'valid submit: the content turns to dust');
 });
 
 /** Pixels over 16 levels apart inside a square of half-size r around (x, y). @param {ImageData} a @param {ImageData} b */
@@ -236,39 +301,37 @@ function diffNear(a, b, x, y, r) {
   return over;
 }
 
-gpuTest('the fire starts at the pointer press: early on only the form around it burns, the far corner is untouched', async (t) => {
+gpuTest('the diagonal sweep: early on the content at the top left has started to erode, the far corner is untouched', async (t) => {
   const ref = await reference(t);
   const { rig } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  const r = rig.canvas.getBoundingClientRect();
-  rig.layerEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + 380, clientY: r.top + 80 }));
   trigger(rig.canvas, 'out');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.12);
   const early = rig.snap();
-  const near = diffNear(early, ref, 380, 80, 60), far = diffNear(early, ref, 60, 280, 40);
-  console.error(`disintegrate origin at (380, 80), 12%: changed near ${near} px / far ${far} px`);
-  assert.ok(near > 2000 && far === 0, 'the form burns around the pointer first');
-  rig.tick(t0 + 10 + DURATION * 0.45);
-  assert.ok(diffNear(rig.snap(), ref, 60, 280, 40) > 1000, 'and the front reaches the far corner later');
+  const near = diffNear(early, ref, 100, 60, 30), far = diffNear(early, ref, 325, 194, 14);
+  console.error(`disintegrate sweep, 12%: changed at the top left ${near} px / at the Send button ${far} px`);
+  assert.ok(near > 300 && far === 0, 'the content erodes from the top left first');
+  rig.tick(t0 + 10 + DURATION * 0.55);
+  assert.ok(diffNear(rig.snap(), ref, 325, 194, 14) > 300, 'and the sweep reaches the far side later');
 });
 
-gpuTest('live: the flying flakes keep sampling the page, so a change made after they broke off shows up on them, away from where it was drawn', async (t) => {
-  // the "Go" button (40..160 x 40..80) changes colour 150 ms into the burn, after its flakes have broken off; the frames at 240 ms of a
-  // run with the change and of a run without it differ, and the difference lies (also) outside the button's own rectangle: on the flakes
-  // that carry it away. Control: two runs without the change are identical, so every differing pixel is the change.
+gpuTest('live: the dust keeps sampling the page, so a change made after it blew off shows up on it, away from where it was drawn', async (t) => {
+  // the "Go" button (40..160 x 40..80) changes colour 150 ms into the transition, after its content has started to turn to dust; the
+  // frames at 450 ms of a run with the change and of a run without it differ, and the difference lies (also) outside the button's own
+  // rectangle: on the dust that carries it away. Control: two runs without the change are identical, so every differing pixel is the change.
   const recolour = (/** @type {CanvasRenderingContext2D} */ ctx) => { paint(ctx); ctx.fillStyle = '#ff2a6a'; ctx.fillRect(40, 40, 120, 40); };
   const run = async (/** @type {boolean} */ change) => {
     const { rig, host } = await start(t, { intro: false });
     const t0 = performance.now();
     rig.tick(t0);
-    trigger(rig.canvas, 'out', { x: 100, y: 60 });
+    trigger(rig.canvas, 'out');
     rig.tick(t0 + 10);
     for (let now = t0 + 10; now <= t0 + 150; now += 16) rig.tick(now);
     if (change) rig.commit(null, recolour);
-    for (let now = t0 + 160; now <= t0 + 240; now += 16) rig.tick(now);
-    rig.tick(t0 + 250);
+    for (let now = t0 + 160; now <= t0 + 440; now += 16) rig.tick(now);
+    rig.tick(t0 + 450);
     const img = rig.snap();
     host.destroy();
     rig.root.remove();
@@ -287,6 +350,6 @@ gpuTest('live: the flying flakes keep sampling the page, so a change made after 
       if (x >= 36 && x < 164 && y >= 36 && y < 84) inside += 1; else outside += 1;
     }
   }
-  console.error(`disintegrate live: the change shows on ${inside} px inside the button's rectangle and ${outside} px outside it (on flakes and embers that carry it)`);
-  assert.ok(outside > 150, `the change is visible on the moved flakes: ${outside} px outside the rectangle`);
+  console.error(`disintegrate live: the change shows on ${inside} px inside the button's rectangle and ${outside} px outside it (on the dust that carries it)`);
+  assert.ok(outside > 150, `the change is visible on the moving dust: ${outside} px outside the rectangle`);
 });

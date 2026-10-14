@@ -1,64 +1,48 @@
-// Disintegrate (README.md): the form burns away like paper. A ragged front sweeps out from an origin (the Submit button, a side); ahead of
-// it the paper scorches and the air above it shimmers, on it a thin line glows, behind it the paper breaks into flakes (Voronoi cells that
-// carry the pixels of the form) that lift off in 3D, tumble, catch the light and burn from their rims; every pixel a flake loses becomes an
-// ember shed only where the form has content (text, borders, controls). Everything is LIVE: the paper, the flakes and the embers sample the
-// page every frame, so a counter keeps counting and typed text keeps appearing on the flying flakes. A camera straight above (perspective)
-// sees flakes and embers that rise towards it larger, and out of focus. Everything is a function of the dissolve amount g (0 assembled, 1
-// gone) and of the time since the transition started.
+// Disintegrate (README.md): the content of the page turns to dust and blows away, the page stays. What is content is decided per pixel
+// against an estimate of the local background (the colour most of the neighbourhood has: panels, cards, the page). A diagonal sweep erodes
+// the content (it goes porous, then gone), and every eroded pixel becomes a grain of dust of its own LIVE colour, carried by the wind along
+// swirling, streaking paths; some grains travel together as fragments for a moment before they crumble. Run backwards, the dust flies home
+// and settles into the letters and fields of the page as it is NOW. Everything is a function of the dissolve amount g (0 assembled, 1 gone).
+//
+// Passes (index.js):
+//   vs_full / fs_down   the source, averaged into cells of BG_CELL css px                      (when a transition starts or the page changes)
+//   vs_full / fs_bg     the background estimate: per cell, the dominant colour around it (mean shift over a window of ~230 css px)
+//   vs_full / fs_base   the page: the source where its content has not eroded yet, the background estimate where it has
+//   vs_dust / fs_dust   one grain per DUST cell of content, instanced, alpha-blended over it
+//   vs_full / fs_full   assembled: the host's passthrough formula (bit for bit); with `fade` < 1 the reduced-motion crossfade
 
 struct Uniforms {
   resolution : vec2<f32>,  // backing px
-  css : vec2<f32>,
-  g : f32,
-  life : f32,              // share of g a flake lives once it lifts
-  cell : f32,              // ember grid cell, backing px
-  cols : f32,              // ember grid columns
-  origin : vec2<f32>,      // css px: where the fire starts
-  dmin : f32,              // css px: distance from the origin to the nearest point of the canvas
-  dspan : f32,             // css px: from there to the farthest corner
+  css : vec2<f32>,         // css px
+  g : f32,                 // 0 assembled .. 1 gone
+  fade : f32,              // fs_full: 1 the source; reduced motion: the share of content still shown
+  cell : f32,              // dust cell, css px
+  cols : f32,              // dust grid columns
+  sweep : vec2<f32>,       // unit direction the erosion sweeps across the page
+  sweep_min : f32,         // dot(corner, sweep) of the first corner reached
+  sweep_span : f32,        // and the extent to the last one
   wind : vec2<f32>,        // unit, y down
-  travel : f32,            // css px a flake drifts over its life
+  travel : f32,            // css px a grain travels over its life
   turbulence : f32,
-  flake : f32,             // flake cell, css px
-  fcols : f32,             // flake grid columns
-  glow_amount : f32,
-  fade : f32,              // fs_full: 1 source, 0 backdrop
+  time : f32,              // s: drives nothing but the shimmer of the dust (a function of g, so frames do not depend on the frame cap)
   seed : f32,
-  front_end : f32,         // g at which the front has crossed the whole canvas
-  plife : f32,             // share of g an ember lives
-  density : f32,           // share of the content-free cells that still shed a speck of ash
-  backdrop : vec4<f32>,
-  glow : vec4<f32>,
-  time : f32,              // seconds since this phase of the transition started (the shimmer of the hot air)
-  distance : f32,          // camera distance, css px
-  lift : f32,              // css px a flake rises towards the camera over its life (at most)
-  dof : f32,               // blur (css px) per css px out of the focal plane (the page)
-  light : vec4<f32>,       // xyz: towards the lamp
+  sweep_end : f32,         // g at which every pixel of content has eroded
+  life : f32,              // g by which every grain is gone (each lives from its birth until then)
+  fragments : f32,         // share of the grains that leave as fragments before they crumble
+  bg_cell : f32,           // css px per texel of the background estimate
+  lo : f32,                // colour distance from the background where content starts
+  hi : f32,                // ... and where it is fully content
+  backdrop : vec4<f32>,    // fs_full: what a transparent source pixel shows (the host's clear colour)
+  vanish : f32,            // 1: the dust fades out as it reaches g = 1 (the transition ends gone); 0: it turns back at full strength (play)
+  pad0 : f32,
+  pad1 : f32,
+  pad2 : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
-@group(0) @binding(1) var source_sampler : sampler;
+@group(0) @binding(1) var samp : sampler;
 @group(0) @binding(2) var source : texture_2d<f32>;
-
-// burn depth, css px behind the front: scorch ahead of it, the glowing line on it, char, then ash (transparent)
-const SCORCH : f32 = 24.0;
-const GLOW_W : f32 = 2.2;
-const ASH : f32 = 17.0;
-// EARLY_SHARE of the flakes break off when the front is still EARLY flake sizes short of their seed: they carry the intact form, the side
-// that faced the fire scorched and glowing. The others burn in place (the glowing line passes over them) and lift LATE flake sizes behind it
-// as charred ash.
-const EARLY_SHARE : f32 = 0.45;
-const EARLY : f32 = 0.6;
-const LATE : f32 = -0.9;
-// its rim starts burning at this age and moves inwards at RIM_SPEED flake sizes per life; the rim's burn depth counts RIM_SCALE times
-// (a narrower glowing edge and char band than the front's)
-const RIM_DELAY : f32 = 0.16;
-const RIM_SPEED : f32 = 3.6;
-const RIM_SCALE : f32 = 2.4;
-// a flake is consumed by this age; its embers then still have plife to live (index.js checks that it all ends by g = 1)
-const FLAKE_END : f32 = 0.75;
-// the content (luminance) holds the front back by up to this many css px: letters and borders burn a moment after the paper around them
-const INK_HOLD : f32 = 9.0;
+@group(0) @binding(3) var background : texture_2d<f32>;   // fs_bg output (rgb), or fs_down output while fs_bg reads it
 
 struct FullOut {
   @builtin(position) position : vec4<f32>,
@@ -74,15 +58,6 @@ fn vs_full(@builtin(vertex_index) index : u32) -> FullOut {
   return out;
 }
 
-// The host's passthrough formula; fade = 1 returns it untouched (bit-exact assembled frame), < 1 is the reduced-motion crossfade.
-@fragment
-fn fs_full(v : FullOut) -> @location(0) vec4<f32> {
-  let c = textureSample(source, source_sampler, v.uv);
-  let picture = mix(u.backdrop.rgb, c.rgb, c.a);
-  let faded = mix(u.backdrop.rgb, picture, u.fade);
-  return vec4<f32>(select(faded, picture, u.fade >= 1.0), 1.0);
-}
-
 // ---- hashing and noise -------------------------------------------------------------------------------------------------------------
 
 fn pcg(n : u32) -> u32 {
@@ -96,10 +71,6 @@ fn hash_cell(c : vec2<i32>, k : u32) -> f32 {
   return f32(h) * (1.0 / 4294967295.0);
 }
 
-fn rnd(n : u32) -> f32 {
-  return f32(pcg(n ^ (u32(u.seed) * 2654435761u))) * (1.0 / 4294967295.0);
-}
-
 fn vnoise(p : vec2<f32>) -> f32 {
   let i = vec2<i32>(floor(p));
   let f = fract(p);
@@ -111,439 +82,207 @@ fn vnoise(p : vec2<f32>) -> f32 {
   return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
 }
 
-fn fbm(p : vec2<f32>) -> f32 {
-  return vnoise(p) * 0.55 + vnoise(p * 2.13 + vec2<f32>(13.1, 7.3)) * 0.3 + vnoise(p * 4.37 + vec2<f32>(3.7, 21.9)) * 0.15;
+/** a divergence-free swirl: the curl of a noise field (unit-ish magnitude) */
+fn curl(p : vec2<f32>) -> vec2<f32> {
+  let e = 0.35;
+  let dx = vnoise(p + vec2<f32>(e, 0.0)) - vnoise(p - vec2<f32>(e, 0.0));
+  let dy = vnoise(p + vec2<f32>(0.0, e)) - vnoise(p - vec2<f32>(0.0, e));
+  return vec2<f32>(dy, -dx) / (2.0 * e) * 1.6;
 }
 
 fn luma(c : vec3<f32>) -> f32 {
   return dot(c, vec3<f32>(0.299, 0.587, 0.114));
 }
 
-// ---- the camera: straight above the page; the page (z = 0) is drawn one to one, nearer points farther from the centre ------------------
+// ---- assembled: the host's passthrough; reduced motion: the content fades into the page and back -----------------------------------
 
-fn to_clip3(p : vec3<f32>) -> vec4<f32> {
-  let w = max(u.distance - p.z, 1.0) / u.distance;
-  return vec4<f32>(p.x / u.css.x * 2.0 - 1.0, 1.0 - p.y / u.css.y * 2.0, 0.0, w);
+fn src_at(uv : vec2<f32>) -> vec3<f32> {
+  let c = textureSampleLevel(source, samp, uv, 0.0);
+  return mix(u.backdrop.rgb, c.rgb, c.a);
 }
 
-/** perspective scale of a point at height z */
-fn persp(z : f32) -> f32 { return u.distance / max(u.distance - z, 1.0); }
-
-/** the source as it is now, a little blurred (r css px) for what is out of focus */
-fn live_blur(home : vec2<f32>, r : f32) -> vec4<f32> {
-  let uv = home / u.css;
-  if (r < 0.35) { return textureSampleLevel(source, source_sampler, uv, 0.0); }
-  let d = vec2<f32>(r) / u.css;
-  return (textureSampleLevel(source, source_sampler, uv, 0.0) * 2.0
-    + textureSampleLevel(source, source_sampler, uv + vec2<f32>(d.x, 0.0), 0.0) + textureSampleLevel(source, source_sampler, uv - vec2<f32>(d.x, 0.0), 0.0)
-    + textureSampleLevel(source, source_sampler, uv + vec2<f32>(0.0, d.y), 0.0) + textureSampleLevel(source, source_sampler, uv - vec2<f32>(0.0, d.y), 0.0)
-    + textureSampleLevel(source, source_sampler, uv + d * 0.7, 0.0) + textureSampleLevel(source, source_sampler, uv - d * 0.7, 0.0)
-    + textureSampleLevel(source, source_sampler, uv + vec2<f32>(d.x, -d.y) * 0.7, 0.0) + textureSampleLevel(source, source_sampler, uv + vec2<f32>(-d.x, d.y) * 0.7, 0.0)) / 10.0;
+@fragment
+fn fs_full(v : FullOut) -> @location(0) vec4<f32> {
+  let c = textureSample(source, samp, v.uv);
+  let picture = mix(u.backdrop.rgb, c.rgb, c.a);
+  return vec4<f32>(picture, 1.0);
 }
 
-// ---- the front -----------------------------------------------------------------------------------------------------------------------
+// ---- the background estimate -------------------------------------------------------------------------------------------------------
 
-/** g per css px of front travel */
-fn front_speed() -> f32 {
-  return 0.86 * u.front_end / max(u.dspan, 1.0);
-}
-
-/** g at which the front reaches p (css px), without the hold of the content: in [0, front_end] */
-fn reach0(p : vec2<f32>) -> f32 {
-  let dn = clamp((length(p - u.origin) - u.dmin) / max(u.dspan, 1.0), 0.0, 1.0);
-  // a coherent, ragged edge: a slow wobble of the whole front plus the fine tear of the paper fibres
-  let wobble = fbm(p / 150.0) - 0.5;
-  let fibre = vnoise(p / 7.0) - 0.5;
-  return clamp(dn * 0.86 + 0.07 + wobble * 0.09 + fibre * 0.012, 0.0, 1.0) * u.front_end;
-}
-
-/** the same with the hold of the content: bright pixels (text, borders) burn a little later */
-fn reach(p : vec2<f32>, lum : f32) -> f32 {
-  return min(reach0(p) + lum * INK_HOLD * front_speed(), u.front_end);
-}
-
-// ---- flakes: a jittered grid of seeds, one Voronoi cell per flake ------------------------------------------------------------------
-
-fn cell_seed(c : vec2<i32>) -> vec2<f32> {
-  let h = vec2<f32>(hash_cell(c, 11u), hash_cell(c, 12u));
-  return (vec2<f32>(c) + 0.5 + (h - 0.5) * 0.72) * u.flake;
-}
-
-struct Vor {
-  id : vec2<i32>,
-  seed : vec2<f32>,
-  edge : f32,   // css px to the nearest other cell
-}
-
-fn voronoi(p : vec2<f32>) -> Vor {
-  let c0 = vec2<i32>(floor(p / u.flake));
-  let last = vec2<i32>(i32(u.fcols) - 1, i32(ceil(u.css.y / u.flake)) - 1);
-  var best = 1e9;
-  var id = clamp(c0, vec2<i32>(0), last);
-  var seed = cell_seed(id);
-  for (var j = -1; j <= 1; j += 1) {
-    for (var i = -1; i <= 1; i += 1) {
-      let c = c0 + vec2<i32>(i, j);
-      if (any(c < vec2<i32>(0)) || any(c > last)) { continue; }
-      let s = cell_seed(c);
-      let d = dot(p - s, p - s);
-      if (d < best) { best = d; id = c; seed = s; }
+/** the source averaged over one cell of the estimate (16 taps) */
+@fragment
+fn fs_down(v : FullOut) -> @location(0) vec4<f32> {
+  let cell = u.bg_cell / u.css;
+  let base = floor(v.position.xy) * cell;
+  var sum = vec3<f32>(0.0);
+  for (var j = 0; j < 4; j += 1) {
+    for (var i = 0; i < 4; i += 1) {
+      sum += src_at(base + (vec2<f32>(f32(i), f32(j)) + 0.5) * cell * 0.25);
     }
   }
-  var edge = 1e9;
-  for (var j = -1; j <= 1; j += 1) {
-    for (var i = -1; i <= 1; i += 1) {
-      let c = id + vec2<i32>(i, j);
-      if ((i == 0 && j == 0) || any(c < vec2<i32>(0)) || any(c > last)) { continue; }
-      let s = cell_seed(c);
-      edge = min(edge, dot((s + seed) * 0.5 - p, normalize(s - seed)));
+  return vec4<f32>(sum / 16.0, 1.0);
+}
+
+fn down_at(at : vec2<i32>, dims : vec2<i32>) -> vec3<f32> {
+  return textureLoad(background, clamp(at, vec2<i32>(0), dims - 1), 0).rgb;
+}
+
+/** mean shift from `m` over 11 x 11 cells, 3 apart (a window of ~260 css px); returns the mode and its support (how much agrees with it) */
+fn shift(m0 : vec3<f32>, at : vec2<i32>, dims : vec2<i32>) -> vec4<f32> {
+  var m = m0;
+  var support = 0.0;
+  for (var step = 0; step < 3; step += 1) {
+    var sum = vec3<f32>(0.0);
+    var weight = 0.0;
+    for (var j = -5; j <= 5; j += 1) {
+      for (var i = -5; i <= 5; i += 1) {
+        let c = down_at(at + vec2<i32>(i, j) * 3, dims);
+        let d = c - m;
+        let w = exp(-dot(d, d) / 0.005) / (1.0 + 0.015 * f32(i * i + j * j));
+        sum += c * w;
+        weight += w;
+      }
     }
+    if (weight > 1e-5) { m = sum / weight; }
+    support = weight;
   }
-  return Vor(id, seed, edge);
+  return vec4<f32>(m, support);
 }
 
-/** g at which flake c (seed `seed`) lifts off */
-fn detach_g(c : vec2<i32>, seed : vec2<f32>) -> f32 {
-  let early = select(LATE, EARLY, hash_cell(c, 31u) < EARLY_SHARE);
-  return clamp(reach0(seed) - early * u.flake * front_speed(), 0.0, u.front_end);
+/** the dominant colour around a cell: the best supported of the modes reached from the mean and from the four corners of the window */
+@fragment
+fn fs_bg(v : FullOut) -> @location(0) vec4<f32> {
+  let dims = vec2<i32>(textureDimensions(background));
+  let at = vec2<i32>(floor(v.position.xy));
+  var mean = vec3<f32>(0.0);
+  for (var j = -5; j <= 5; j += 1) {
+    for (var i = -5; i <= 5; i += 1) { mean += down_at(at + vec2<i32>(i, j) * 3, dims); }
+  }
+  var best = shift(mean / 121.0, at, dims);
+  for (var k = 0; k < 4; k += 1) {
+    let corner = vec2<i32>(select(-15, 15, (k & 1) == 1), select(-15, 15, (k & 2) == 2));
+    let m = shift(down_at(at + corner, dims), at, dims);
+    if (m.w > best.w * 1.05) { best = m; }
+  }
+  return vec4<f32>(best.rgb, 1.0);
 }
 
-/** rotate v about the unit axis k by angle a (Rodrigues) */
-fn rotate3(v : vec3<f32>, k : vec3<f32>, a : f32) -> vec3<f32> {
-  let c = cos(a);
-  let s = sin(a);
-  return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c);
+// ---- content, and when it erodes ---------------------------------------------------------------------------------------------------
+
+fn bg_at(p : vec2<f32>) -> vec3<f32> {
+  return textureSampleLevel(background, samp, p / u.css, 0.0).rgb;
 }
 
-struct Pose { axis : vec3<f32>, angle : f32, centre : vec3<f32>, }
-
-/** the 3D pose of flake c at age tau: it tumbles about an axis that lies roughly in the page, drifts away from the fire and with the
- *  wind, and rises towards the camera (a few sink away from it) */
-fn flake_pose(c : vec2<i32>, seed : vec2<f32>, tau : f32) -> Pose {
-  let r0 = hash_cell(c, 21u);
-  let r1 = hash_cell(c, 22u);
-  let r2 = hash_cell(c, 23u);
-  let r3 = hash_cell(c, 24u);
-  let a0 = r0 * 6.2831853;
-  let axis = normalize(vec3<f32>(cos(a0), sin(a0), (r2 - 0.5) * 0.6));
-  // most flakes turn gently (their live content keeps facing the camera), a few tumble right over
-  let spin = (0.22 + 1.1 * r1 * r1 * r1) * select(-1.0, 1.0, r2 > 0.5);
-  let away = seed - u.origin;
-  let dir = away / max(length(away), 1.0);
-  let side = vec2<f32>(-dir.y, dir.x);
-  let wobble = side * sin(tau * 7.0 + r3 * 6.2831853) * 10.0 * tau * u.turbulence;
-  let drift = (dir * 0.45 + u.wind * 0.55) * u.travel * pow(tau, 1.25) * (0.55 + 0.8 * r3)
-            + vec2<f32>(0.0, -0.3) * u.travel * tau * tau * (0.5 + r1);
-  // the flakes that broke off intact rise towards the camera; the charred ones mostly drift and some sink away from it
-  let early = hash_cell(c, 31u) < EARLY_SHARE;
-  let rise = u.lift * pow(tau, 1.15) * select(r3 * 1.4 - 0.45, 0.35 + 0.75 * r3, early);
-  var p : Pose;
-  p.axis = axis;
-  p.angle = tau * spin * 3.14159265 * (0.6 + u.turbulence * 0.4);
-  p.centre = vec3<f32>(seed + drift + wobble, rise);
-  return p;
+/** how much the pixel is content (differs from the background around it): 0 background, 1 content */
+fn content(src : vec3<f32>, bg : vec3<f32>) -> f32 {
+  return smoothstep(u.lo, u.hi, length(src - bg));
 }
 
-/** where the point `local` (css px from the seed) of flake `c` is at age tau, in 3D (it also shrinks a little as it burns) */
-fn flake_point3(c : vec2<i32>, seed : vec2<f32>, local : vec2<f32>, tau : f32) -> vec3<f32> {
-  let pose = flake_pose(c, seed, tau);
-  return pose.centre + rotate3(vec3<f32>(local * (1.0 - 0.22 * tau), 0.0), pose.axis, pose.angle);
-}
-
-/** the same, seen through the camera, on the page plane (css px): where an ember born on it starts */
-fn flake_point(c : vec2<i32>, seed : vec2<f32>, local : vec2<f32>, tau : f32) -> vec2<f32> {
-  let p = flake_point3(c, seed, local, tau);
-  return u.css * 0.5 + (p.xy - u.css * 0.5) * persp(p.z);
-}
-
-/** burn depth of the rim of a lifted flake at age tau, for a point `edge` css px inside it: irregular, from the outline inwards, starting
- *  on the side that faced the fire */
-fn rim_depth(tau : f32, edge : f32, home : vec2<f32>, seed : vec2<f32>) -> f32 {
-  let away = seed - u.origin;
-  let lee = dot(home - seed, away / max(length(away), 1.0)) + 0.6 * u.flake;
-  return ((tau - RIM_DELAY) * RIM_SPEED * u.flake - edge * (0.7 + 0.6 * vnoise(home * 0.21)) - lee * 0.8) * RIM_SCALE;
-}
-
-/** colour and alpha of the paper at burn depth b (css px behind the front; negative ahead of it) */
-fn burn(src : vec3<f32>, b : f32, home : vec2<f32>, heat : f32) -> vec4<f32> {
-  if (b < -SCORCH) { return vec4<f32>(src, 1.0); }
-  let n = vnoise(home * 0.33);
-  let s = smoothstep(-SCORCH, 0.0, b + (n - 0.5) * 6.0);
-  var rgb = mix(src, src * vec3<f32>(0.62, 0.44, 0.3) + vec3<f32>(0.07, 0.035, 0.0), s * s * 0.9);
-  let charred = smoothstep(GLOW_W * 0.5, GLOW_W * 2.2, b);
-  rgb = mix(rgb, vec3<f32>(0.05, 0.036, 0.03), charred);
-  let x = (b - GLOW_W * 0.45) / GLOW_W;
-  let line = exp(-x * x * 2.0);
-  let embers = smoothstep(0.72, 0.92, n) * charred * (1.0 - smoothstep(GLOW_W * 2.0, ASH * 0.6, b));
-  rgb = rgb + u.glow.rgb * (line * 1.8 + embers * 0.8) * u.glow_amount * heat;
-  let a = 1.0 - smoothstep(ASH - 3.5, ASH, b + (n - 0.5) * 5.0);
-  return vec4<f32>(rgb, a);
-}
-
-// ---- the paper that has not lifted yet -------------------------------------------------------------------------------------------
-
-/** g within which a pixel and the seed of its flake are reached by the front (they are at most ~1.2 flake apart) */
-fn seed_margin() -> f32 {
-  return 1.6 * u.flake * front_speed() + 0.02 * u.front_end;
-}
-
-/** the shimmer of the hot air over the paper the front is about to reach, strongest just above the fire (hot air rises): css px */
-fn heat_shift(home : vec2<f32>) -> vec2<f32> {
-  let v_px = front_speed();
-  // how far (css px) the front is past the point a little below: the air above a fire is hot
-  let past = (u.g - reach0(home + vec2<f32>(0.0, 20.0))) / v_px;
-  let heat = exp(-((past - 6.0) * (past - 6.0)) / 700.0) * step(0.001, u.g);
-  let t = u.time;
-  let q = home * 0.055 + vec2<f32>(0.0, t * 2.6);
-  return (vec2<f32>(vnoise(q), vnoise(q + vec2<f32>(7.3, 3.1 - t * 0.7))) - 0.5) * 5.0 * heat;
-}
-
-/** what shows where the paper is gone: the backdrop, with smoke lit by the fire drifting up from the front and fading behind it */
-fn void_at(home : vec2<f32>, here : f32) -> vec3<f32> {
-  let behind = max(0.0, (u.g - here) / front_speed());          // css px the front is past this point
-  let q = home * vec2<f32>(0.006, 0.009) + vec2<f32>(0.0, u.time * 0.35);
-  let smoke = smoothstep(0.35, 0.85, fbm(q + vec2<f32>(fbm(q * 1.7) * 0.8, 0.0)));
-  let near = exp(-behind / 170.0) * (1.0 - smoothstep(0.85, 1.0, u.g));
-  return u.backdrop.rgb + (u.glow.rgb * 0.16 + vec3<f32>(0.05)) * smoke * near * u.glow_amount + u.glow.rgb * 0.05 * near * near;
+/** g at which the content at p erodes: a ragged diagonal sweep, porous at the scale of a few pixels */
+fn erode_g(p : vec2<f32>) -> f32 {
+  let s = clamp((dot(p, u.sweep) - u.sweep_min) / max(u.sweep_span, 1.0), 0.0, 1.0);
+  let ragged = vnoise(p / 90.0) * 0.6 + vnoise(p / 23.0) * 0.4;
+  let pores = vnoise(p / 2.2) * 0.55 + vnoise(p / 6.5) * 0.45;
+  return clamp(s * 0.72 + ragged * 0.16 + pores * 0.12, 0.0, 1.0) * u.sweep_end;
 }
 
 @fragment
 fn fs_base(v : FullOut) -> @location(0) vec4<f32> {
   let home = v.uv * u.css;
-  let here = reach0(home);
-  let v_px = front_speed();
-  // the paper ahead of the front, seen through the shimmering air above the fire
-  let c = textureSampleLevel(source, source_sampler, (home + heat_shift(home)) / u.css, 0.0);
-  let src = mix(u.backdrop.rgb, c.rgb, c.a);
-  // most pixels are far from the front: untouched paper ahead of it, or already lifted (gone) behind it; only the band needs the flakes
-  if (u.g < here - (SCORCH + 2.0 + EARLY * u.flake) * v_px - seed_margin()) { return vec4<f32>(src, 1.0); }
-  if (u.g > here - LATE * u.flake * v_px + seed_margin()) { return vec4<f32>(void_at(home, here), 1.0); }
-  let vo = voronoi(home);
-  if (u.g >= detach_g(vo.id, vo.seed)) { return vec4<f32>(void_at(home, here), 1.0); }   // its flake carries it now
-  let b = (u.g - reach(home, luma(src))) / front_speed();
-  let paper = burn(src, b, home, 1.0);
-  return vec4<f32>(mix(void_at(home, here), paper.rgb, paper.a), 1.0);
+  let src = src_at(v.uv);
+  let bg = bg_at(home);
+  let k = content(src, bg);
+  if (u.fade < 1.0) {
+    // reduced motion: no grain moves; the content fades into the page and back
+    return vec4<f32>(mix(bg, src, mix(1.0, u.fade, k)), 1.0);
+  }
+  let t = erode_g(home);
+  // just before it goes, the content thins (its pores open): a short fade over the last 3 % of the sweep, then the background
+  let thinning = smoothstep(t - 0.03 * u.sweep_end, t, u.g);
+  let gone = select(0.0, 1.0, u.g >= t);
+  let shown = (1.0 - gone) * (1.0 - 0.45 * thinning);
+  return vec4<f32>(mix(bg, src, mix(1.0, shown, k)), 1.0);
 }
 
-// ---- flakes ------------------------------------------------------------------------------------------------------------------------
+// ---- dust ----------------------------------------------------------------------------------------------------------------------------
 
-struct FlakeOut {
+struct DustOut {
   @builtin(position) position : vec4<f32>,
-  @location(0) home : vec2<f32>,
-  @location(1) @interpolate(flat) id : u32,
-  @location(2) @interpolate(flat) gc : f32,
-  @location(3) @interpolate(flat) tau : f32,
-  @location(4) @interpolate(flat) normal : vec3<f32>,
-  @location(5) @interpolate(flat) seed : vec2<f32>,
-  @location(6) @interpolate(flat) cell : vec2<i32>,
-  @location(7) @interpolate(flat) depth : f32,
-}
-
-fn corner_of(vertex : u32) -> vec2<f32> {
-  var corners = array<vec2<f32>, 6>(vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
-                                     vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0));
-  return corners[vertex];
-}
-
-fn to_clip(css_point : vec2<f32>) -> vec4<f32> {
-  let p = css_point / u.css;
-  return vec4<f32>(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
-}
-
-@vertex
-fn vs_flake(@builtin(vertex_index) vertex : u32, @builtin(instance_index) flake : u32) -> FlakeOut {
-  let fc = max(u32(u.fcols), 1u);
-  let c = vec2<i32>(i32(flake % fc), i32(flake / fc));
-  let seed = cell_seed(c);
-  let gc = detach_g(c, seed);
-  let tau = (u.g - gc) / u.life;
-  let tc = clamp(tau, 0.0, 1.0);
-  let local = (corner_of(vertex) * 2.0 - 1.0) * 1.05 * u.flake;
-  let pose = flake_pose(c, seed, tc);
-  let p = pose.centre + rotate3(vec3<f32>(local * (1.0 - 0.22 * tc), 0.0), pose.axis, pose.angle);
-  var out : FlakeOut;
-  out.position = to_clip3(p);
-  out.home = seed + local;
-  out.id = flake;
-  out.gc = gc;
-  out.tau = tau;
-  out.normal = rotate3(vec3<f32>(0.0, 0.0, 1.0), pose.axis, pose.angle);
-  out.seed = seed;
-  out.cell = c;
-  out.depth = pose.centre.z;
-  if (tau <= 0.0 || tau >= 1.0) { out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0); }   // still on the paper, or gone: nothing to draw
-  return out;
-}
-
-/** css px from p to the nearest other cell, or -1 when p is not in the cell of `own` (its seed `seed`): the 8 neighbours decide */
-fn own_edge(p : vec2<f32>, own : vec2<i32>, seed : vec2<f32>) -> f32 {
-  let last = vec2<i32>(i32(u.fcols) - 1, i32(ceil(u.css.y / u.flake)) - 1);
-  let d0 = dot(p - seed, p - seed);
-  var edge = 1e9;
-  for (var j = -1; j <= 1; j += 1) {
-    for (var i = -1; i <= 1; i += 1) {
-      let c = own + vec2<i32>(i, j);
-      if ((i == 0 && j == 0) || any(c < vec2<i32>(0)) || any(c > last)) { continue; }
-      let s = cell_seed(c);
-      if (dot(p - s, p - s) < d0) { return -1.0; }
-      edge = min(edge, dot((s + seed) * 0.5 - p, normalize(s - seed)));
-    }
-  }
-  return edge;
-}
-
-@fragment
-fn fs_flake(v : FlakeOut) -> @location(0) vec4<f32> {
-  let edge = own_edge(v.home, v.cell, v.seed);
-  // out of the focal plane (the page) the flake is blurred: its picture and its outline
-  let blur = min(abs(v.depth) * u.dof, 7.0);
-  if (edge < -blur) { discard; }
-  // which side faces the camera: the front carries the live page, the back is the charred underside of the paper
-  let view = normalize(vec3<f32>(u.css * 0.5, u.distance) - vec3<f32>(v.home, v.depth));
-  let front = dot(v.normal, view) >= 0.0;
-  let c = live_blur(v.home, blur);
-  let src = mix(u.backdrop.rgb, c.rgb, c.a);
-  // the burn the front left when the flake lifted (its glow cools as it flies), and the rim burning in
-  let front_b = (v.gc - reach(v.home, luma(src))) / front_speed();
-  let rim = rim_depth(v.tau, max(edge, 0.0), v.home, v.seed);
-  var paper = burn(src, max(front_b, rim), v.home, select(0.85, exp(-v.tau * 9.0), front_b > rim));
-  if (!front) {
-    // the underside: scorched paper, darker where the fire reached it, its rim glowing like the front's
-    let under = vec3<f32>(0.2, 0.15, 0.11) * (0.8 + 0.4 * vnoise(v.home * 0.3));
-    let glowRim = paper.rgb - src * 0.62;
-    paper = vec4<f32>(under + max(glowRim, vec3<f32>(0.0)) * 0.9, paper.a);
-  }
-  // lit by the lamp: a flake turned towards it brightens a little, one turned away darkens
-  let n = select(-v.normal, v.normal, front);
-  let l = u.light.xyz;
-  let lit = 0.55 + 0.45 * max(dot(n, l), 0.0) / l.z;
-  let coverage = smoothstep(-blur - 0.6, blur + 0.6, edge);
-  let a = paper.a * coverage * (1.0 - smoothstep(FLAKE_END, 1.0, v.tau));
-  if (a <= 0.003) { discard; }
-  // lit from below by the fire it left, the light fading as it flies away
-  let firelight = u.glow.rgb * 0.16 * u.glow_amount * exp(-v.tau * 2.5);
-  return vec4<f32>(paper.rgb * lit * (1.0 - 0.25 * v.tau) + firelight * (0.4 + 0.6 * luma(paper.rgb)), a);
-}
-
-// ---- embers: one per ember cell where the form has content, born when its pixel burns away -----------------------------------------
-// Where, when, in which colour and how big an ember is born does not depend on g: cs_embers works it out once per phase of a transition
-// (index.js dispatches it when the picture, the origin or the grids change) into a storage buffer, and vs_ember only ages it.
-
-struct Ember {
-  a : vec4<f32>,   // birth point (css px), g of birth (2: never), size (backing px)
-  b : vec4<f32>,   // drift (css px over its life), alpha, home (pack2x16unorm of home / css: the pixel it shows, live)
-}
-
-@group(1) @binding(0) var<storage, read_write> ember_out : array<Ember>;
-@group(1) @binding(1) var<storage, read> ember_in : array<Ember>;
-
-fn load_rgb(p : vec2<i32>, dims : vec2<i32>) -> vec3<f32> {
-  let c = textureLoad(source, clamp(p, vec2<i32>(0), dims - vec2<i32>(1)), 0);
-  return mix(u.backdrop.rgb, c.rgb, c.a);
-}
-
-@compute @workgroup_size(64)
-fn cs_embers(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let ember = gid.x;
-  if (ember >= arrayLength(&ember_out)) { return; }
-  var e : Ember;
-  e.a = vec4<f32>(0.0, 0.0, 2.0, 0.0);
-  e.b = vec4<f32>(0.0);
-  let cols = max(u32(u.cols), 1u);
-  let centre_px = (vec2<f32>(f32(ember % cols), f32(ember / cols)) + 0.5) * u.cell;
-  if (centre_px.y > u.resolution.y) { ember_out[ember] = e; return; }
-  let dpr = u.resolution.x / max(u.css.x, 1.0);
-  let home = centre_px / dpr;
-  // what the pixel holds: its brightness, and how much it differs from its neighbours (an edge of text, a border)
-  let dims = vec2<i32>(textureDimensions(source));
-  let tp = vec2<i32>(centre_px * vec2<f32>(dims) / u.resolution);
-  let k = max(i32(round(1.5 * dpr)), 1);
-  let src = load_rgb(tp, dims);
-  let l = luma(src);
-  let lx = luma(load_rgb(tp + vec2<i32>(k, 0), dims)) - luma(load_rgb(tp - vec2<i32>(k, 0), dims));
-  let ly = luma(load_rgb(tp + vec2<i32>(0, k), dims)) - luma(load_rgb(tp - vec2<i32>(0, k), dims));
-  let ink = clamp((abs(lx) + abs(ly)) * 2.6 + smoothstep(0.35, 0.8, l) * 0.8, 0.0, 1.0);
-  let r0 = rnd(ember * 4u + 1u);
-  let r1 = rnd(ember * 4u + 2u);
-  let r2 = rnd(ember * 4u + 3u);
-  let r3 = rnd(ember * 4u + 4u);
-  if (ink < 0.16 && r0 > u.density * 0.12) { ember_out[ember] = e; return; }   // plain paper sheds only a few specks of ash
-  // when its pixel turns to ash: on the paper (before its flake lifts), else on the flake as its rim burns in
-  let vo = voronoi(home);
-  let gc = detach_g(vo.id, vo.seed);
-  let v = front_speed();
-  var gs = reach(home, l) + ASH * v;
-  var start = home;
-  if (gs >= gc) {
-    let away = vo.seed - u.origin;
-    let lee = dot(home - vo.seed, away / max(length(away), 1.0)) + 0.6 * u.flake;
-    let g2 = gc + (RIM_DELAY + (ASH / RIM_SCALE + vo.edge * (0.7 + 0.6 * vnoise(home * 0.21)) + lee * 0.8) / (RIM_SPEED * u.flake)) * u.life;
-    let ts = clamp((g2 - gc) / u.life, 0.0, FLAKE_END);
-    gs = gc + ts * u.life;
-    start = flake_point(vo.id, vo.seed, home - vo.seed, ts);
-  }
-  gs = min(gs, 1.0 - u.plife);
-  let swirl = (fbm(home / 90.0 + vec2<f32>(u.seed * 0.37, 0.0)) * 2.0 - 1.0) * 6.2831853 + r1 * 2.5;
-  let drift = (u.wind * 0.55 + vec2<f32>(0.0, -0.75) + vec2<f32>(cos(swirl), sin(swirl)) * 0.6 * u.turbulence) * u.travel * 0.55 * (0.4 + 0.9 * r2);
-  e.a = vec4<f32>(start, gs, u.cell * (0.5 + 0.9 * ink) * (0.7 + 0.6 * r3));
-  e.b = vec4<f32>(drift, 0.3 + 0.7 * max(ink, 0.25), bitcast<f32>(pack2x16unorm(clamp(home / u.css, vec2<f32>(0.0), vec2<f32>(1.0)))));
-  ember_out[ember] = e;
-}
-
-struct EmberOut {
-  @builtin(position) position : vec4<f32>,
-  @location(0) corner : vec2<f32>,
+  @location(0) corner : vec2<f32>,   // -1..1 across the grain, x along its streak
   @location(1) colour : vec3<f32>,
   @location(2) alpha : f32,
-  @location(3) soft : f32,      // 0 a sharp ember, 1 a wide out-of-focus disc
+}
+
+/** where a grain born at `home` is at age a (css px), and its gust: wind, a rising drift, the swirl of the air along the way */
+fn dust_path(home : vec2<f32>, a : f32, r : vec4<f32>, chunk : vec2<i32>, frag : bool) -> vec2<f32> {
+  // a fragment travels whole for its first moments, then crumbles: its grains share the chunk's motion until then
+  var lead = 0.0;
+  var p = home;
+  if (frag) {
+    let crumble = 0.12 + 0.2 * hash_cell(chunk, 41u);
+    lead = min(a, crumble);
+    let cr = vec2<f32>(hash_cell(chunk, 42u), hash_cell(chunk, 43u));
+    p += (u.wind * (0.55 + 0.5 * cr.x) + vec2<f32>(0.0, -0.25)) * u.travel * 0.28 * lead * (1.0 + cr.y);
+  }
+  let b = max(a - lead, 0.0);
+  let gust = u.wind * u.travel * pow(b, 1.6) * (0.45 + 0.9 * r.x) + vec2<f32>(0.0, -1.0) * u.travel * 0.22 * pow(b, 1.3) * r.y;
+  // the swirl is read where the grain is on its way, so its path curls instead of only bending
+  let q = (p + gust * 0.6) * 0.0065 + vec2<f32>(u.seed * 0.17, 0.0);
+  let swirl = curl(q) * u.travel * 0.3 * u.turbulence * pow(b, 1.15) * (0.6 + 0.8 * r.z);
+  return p + gust + swirl;
 }
 
 @vertex
-fn vs_ember(@builtin(vertex_index) vertex : u32, @builtin(instance_index) ember : u32) -> EmberOut {
-  var out : EmberOut;
-  // one triangle around the round dot: corners at twice the radius
-  var tri = array<vec2<f32>, 3>(vec2<f32>(0.0, -2.0), vec2<f32>(1.7320508, 1.0), vec2<f32>(-1.7320508, 1.0));
-  out.corner = tri[vertex];
+fn vs_dust(@builtin(vertex_index) vertex : u32, @builtin(instance_index) grain : u32) -> DustOut {
+  var out : DustOut;
   out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
+  out.corner = vec2<f32>(0.0);
   out.colour = vec3<f32>(0.0);
   out.alpha = 0.0;
-  out.soft = 0.0;
-  let e = ember_in[ember];
-  let age = (u.g - e.a.z) / u.plife;
-  if (age <= 0.0 || age >= 1.0) { return out; }
-  let dpr = u.resolution.x / max(u.css.x, 1.0);
-  // it rises towards the camera (or sinks away), so it grows or shrinks with the perspective and leaves the focal plane
-  let rz = rnd(ember * 7u + 5u);
-  let z = u.lift * 0.9 * pow(age, 1.1) * (rz * 1.7 - 0.45);
-  let k = persp(z);
-  let onPage = e.a.xy + e.b.xy * pow(age, 1.15);
-  let centre = (u.css * 0.5 + (onPage - u.css * 0.5) * k) * dpr;
-  let coc = min(abs(z) * u.dof * 1.6, 9.0) * dpr;           // circle of confusion, backing px
-  let size = e.a.w * (1.35 - 0.85 * age) * k;
-  let radius = size * 0.5 + coc;
-  let p = centre + out.corner * radius;
-  out.position = vec4<f32>(p.x / u.resolution.x * 2.0 - 1.0, 1.0 - p.y / u.resolution.y * 2.0, 0.0, 1.0);
-  // its colour is the LIVE colour of the pixel it came from: born glowing in it, cooling to grey ash
-  let home = unpack2x16unorm(bitcast<u32>(e.b.w)) * u.css;
-  let dims = vec2<i32>(textureDimensions(source));
-  let live = load_rgb(vec2<i32>(home * vec2<f32>(dims) / u.css), dims);
-  let l = luma(live);
-  let hot = 1.0 - smoothstep(0.05, 0.6, age);
-  let ash = vec3<f32>(0.32, 0.3, 0.29) * (0.5 + l);
-  out.colour = mix(mix(live, ash, smoothstep(0.45, 1.0, age)), u.glow.rgb * (1.3 + 0.6 * l) + live * 0.25, hot * u.glow_amount);
-  // an out-of-focus ember spreads the same light over a larger disc
-  let spread = (size * 0.5) / max(radius, 0.001);
-  out.alpha = (1.0 - smoothstep(0.55, 1.0, age)) * e.b.z * clamp(spread * spread * 1.6, 0.12, 1.0);
-  out.soft = 1.0 - spread;
+  let cols = max(u32(u.cols), 1u);
+  let c = vec2<i32>(i32(grain % cols), i32(grain / cols));
+  let home = (vec2<f32>(c) + 0.5) * u.cell;
+  if (home.y > u.css.y) { return out; }
+  let t = erode_g(home);
+  let a = (u.g - t) / max(u.life - t, 1e-3);
+  if (a <= 0.0 || a >= 1.0) { return out; }               // still on the page, or gone
+  // the grain is the live pixel: its colour now, and whether it is content now
+  let src = src_at(home / u.css);
+  let k = content(src, bg_at(home));
+  if (k < 0.25) { return out; }
+  let r = vec4<f32>(hash_cell(c, 21u), hash_cell(c, 22u), hash_cell(c, 23u), hash_cell(c, 24u));
+  let chunk = vec2<i32>(floor(home / 7.0));
+  let frag = hash_cell(chunk, 40u) < u.fragments;
+  let p0 = dust_path(home, a, r, chunk, frag);
+  let p1 = dust_path(home, min(a + 0.02, 1.0), r, chunk, frag);
+  let vel = (p1 - p0) / 0.02;                                // css px per unit of age
+  let speed = length(vel);
+  let dir = select(vec2<f32>(1.0, 0.0), vel / max(speed, 1e-4), speed > 1e-3);
+  // a grain is its cell at first (it IS the pixel), then a finer speck that streaks with its speed
+  let size = u.cell * mix(1.05, 0.85 + 0.6 * r.w, smoothstep(0.0, 0.35, a));
+  // half the grains streak with their speed (motion blur), the others stay round specks
+  let streak = min(speed * 0.01 * step(0.45, r.w) * (r.w - 0.3), 6.0);
+  var quad = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
+  let q = quad[vertex];
+  let along = q.x * (size * 0.5 + streak);
+  let across = q.y * size * 0.5;
+  let p = p0 + dir * along + vec2<f32>(-dir.y, dir.x) * across - dir * streak * 0.5;
+  out.position = vec4<f32>(p.x / u.css.x * 2.0 - 1.0, 1.0 - p.y / u.css.y * 2.0, 0.0, 1.0);
+  out.corner = vec2<f32>(q.x, q.y);
+  // the exact colour of its pixel, a touch lighter and greyer as it thins to dust
+  out.colour = mix(src, vec3<f32>(luma(src)) * 1.08 + 0.03, 0.22 * smoothstep(0.3, 1.0, a));
+  // a streak spreads the same grain over a longer line: its alpha thins with it
+  let spread = (size * 0.5) / (size * 0.5 + streak);
+  out.alpha = k * (1.0 - u.vanish * smoothstep(0.78, 1.0, a)) * mix(1.0, 0.65 + 0.35 * spread, smoothstep(0.0, 0.3, a));
   return out;
 }
 
 @fragment
-fn fs_ember(v : EmberOut) -> @location(0) vec4<f32> {
-  let d = length(v.corner);
-  // sharp: a round dot with a soft edge; out of focus: a flat bokeh disc with a slightly brighter rim
-  let edge = mix(0.55, 0.86, v.soft);
-  var a = v.alpha * (1.0 - smoothstep(edge, 1.0, d));
-  a = a * (1.0 + 0.35 * v.soft * smoothstep(0.5, 0.95, d));
+fn fs_dust(v : DustOut) -> @location(0) vec4<f32> {
+  // a square grain at birth (the pixel itself), a soft speck in flight
+  let edge = 1.0 - smoothstep(0.55, 1.0, max(abs(v.corner.x), abs(v.corner.y)));
+  let a = v.alpha * edge;
+  if (a <= 0.003) { discard; }
   return vec4<f32>(v.colour, a);
 }

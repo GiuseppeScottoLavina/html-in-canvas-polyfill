@@ -34,7 +34,7 @@ const PLUGIN_CEILING = 16 * KB;
  */
 const PLUGIN_LIMITS = {
   crt: 14 * KB, // 13,669; 10.5 -> 14 KB: the arcade look (glow rings, aperture grille, glass), the presets and their picker
-  disintegrate: 41.5 * KB, // 40,589; 33.5 -> 41.5 KB: live sampling, 3D flakes (perspective, lighting), depth of field, heat shimmer, smoke, live counter (the WGSL is inlined)
+  disintegrate: 26.5 * KB, // 25,807; 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
   glitch: 13.5 * KB, // 13,269
   'holo-card': 12.75 * KB, // 12,358
   'liquid-glass': 12.25 * KB, // 11,810
