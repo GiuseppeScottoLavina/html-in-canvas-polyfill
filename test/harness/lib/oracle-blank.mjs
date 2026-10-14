@@ -13,9 +13,8 @@
 // recorded (`sampleCostMs`) and printed by the self-test; for a 2D canvas at 2x DPR it is a few tenths of a ms to ~1-2 ms. It
 // is NOT free: do not use the detector's own run for a main-thread-budget claim; measure jank in a separate traced run.
 //
-// POSITIVE CONTROL: `injectBlankFrame()` makes the sampler clear the (2D) canvas for exactly one presented frame and restore it.
-// `proveBlankDetector()` runs a clean run (must report 0 blank frames) and an injected run (must report exactly 1 blank run of
-// 1 frame); a detector that cannot see an injected blank must not be trusted for any gate.
+// POSITIVE CONTROL: `injectBlankFrame()` makes the sampler clear the (2D) canvas for exactly one presented frame and restore it;
+// a detector that cannot see an injected blank must not be trusted for any gate (the gates' blank sections use it).
 import { quantile } from './util.mjs';
 
 const SAMPLER_SRC = (selector, gw, gh) => `(() => {
@@ -126,27 +125,3 @@ export function analyseBlank({ rec, injectedAtFrame, error }, { relMin = 0.25, a
   };
 }
 
-/** A gate helper: throws unless the run was valid and had no blank frame. */
-export function assertNoBlankFrames(report, what = 'surface') {
-  if (!report.valid) throw new Error(`${what}: blank detector run is INVALID (canvas never had content), so it proves nothing`);
-  if (report.blankFrames.length) throw new Error(`${what}: ${report.blankFrames.length} blank frame(s) in ${report.blankRuns} run(s), longest ${report.longestBlankRun}; first at frame ${report.blankFrames[0].frame}`);
-}
-
-/**
- * Prove the detector fires on THIS canvas. Clean run -> expect 0 blank frames; injected run -> expect exactly one blank run of
- * one frame at the injected frame. The canvas must be a 2D canvas whose app does not redraw it every frame.
- * @returns {Promise<{ok:boolean, clean:BlankReport, injected:BlankReport, caught:boolean, falsePositives:number, reasons:string[]}>}
- */
-export async function proveBlankDetector(page, { selector = '#hic-surface', frames = 40 } = {}) {
-  const waitFrames = async (d, n) => { const t0 = await d.framesSoFar(); while ((await d.framesSoFar()) < t0 + n) await new Promise(r => setTimeout(r, 15)); };
-  const d1 = await startBlankDetector(page, { selector }); await waitFrames(d1, frames); const clean = await d1.stop();
-  const d2 = await startBlankDetector(page, { selector }); await waitFrames(d2, frames >> 1);
-  await d2.injectBlankFrame(); await waitFrames(d2, frames >> 1); const injected = await d2.stop();
-  const reasons = [];
-  if (!clean.valid) reasons.push('clean run invalid (canvas had no content)');
-  if (clean.blankFrames.length) reasons.push(`false positive: ${clean.blankFrames.length} blank frame(s) in the clean run`);
-  if (!injected.valid) reasons.push('injected run invalid');
-  const caught = injected.blankRuns === 1 && injected.longestBlankRun === 1 && injected.blankFrames[0]?.frame === injected.injectedAtFrame;
-  if (!caught) reasons.push(`injected blank NOT caught as exactly one 1-frame run at frame ${injected.injectedAtFrame}: runs=${injected.blankRuns} longest=${injected.longestBlankRun} frames=${injected.blankFrames.map(f => f.frame)}`);
-  return { ok: reasons.length === 0, clean, injected, caught, falsePositives: clean.blankFrames.length, reasons };
-}

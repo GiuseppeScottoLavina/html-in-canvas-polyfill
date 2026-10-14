@@ -1,6 +1,6 @@
 // Subjects, browser sessions, load guard, traced windows and per-process CPU / memory for the comparison bench.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as H from '../../../harness/index.mjs';
 
@@ -167,6 +167,3 @@ export function diffCpu(a, b, spanS) {
   return pct;
 }
 
-export function keepDir(...p) { const d = resolve(OUT_DIR, ...p); mkdirSync(d, { recursive: true }); return d; }
-export const exists = existsSync;
-export const fileSize = (f) => statSync(f).size;

@@ -1,7 +1,6 @@
-// Window / viewport / DPR manipulation helpers.
+// Window helpers.
 //  * dragResize      REAL window resize: Browser.setWindowBounds in small steps at a given cadence (what a user's drag does).
-//  * emulatedResize  Emulation.setDeviceMetricsOverride variant (NOT a real window; say so whenever it is used).
-//  * setDpr          Emulation DPR override that keeps the window size. A REAL DPR needs launchChrome({dpr}) (or moving monitors).
+// A REAL DPR needs launchChrome({dpr}) (or moving monitors).
 import { paced, sleep } from './util.mjs';
 
 /** In-page recorder of `resize` events and the sizes they carried. */
@@ -40,26 +39,4 @@ export async function dragResize(page, { to, from, steps = 30, intervalMs = 16, 
   const v1 = await page.viewport();
   return { kind: 'real-window-drag', injector, pageSaw: await readResizeRecorder(page), start, finalInner: { width: v1.innerWidth, height: v1.innerHeight },
     reachedTarget: v1.innerWidth === to.width && v1.innerHeight === to.height };
-}
-
-/** Emulated resize (layout viewport override). Call clearEmulation() afterwards. */
-export async function emulatedResize(page, { to, from, steps = 30, intervalMs = 16, dpr, settleMs = 300 } = {}) {
-  const v0 = await page.viewport(); const d = dpr ?? v0.dpr;
-  const start = from ?? { width: v0.innerWidth, height: v0.innerHeight };
-  await installResizeRecorder(page);
-  const path = lerpSizes(start, to, steps);
-  const injector = await paced(steps, intervalMs, i => page.send('Emulation.setDeviceMetricsOverride', { width: path[i].width, height: path[i].height, deviceScaleFactor: d, mobile: false }));
-  await sleep(settleMs);
-  const v1 = await page.viewport();
-  return { kind: 'emulation', injector, pageSaw: await readResizeRecorder(page), start, finalInner: { width: v1.innerWidth, height: v1.innerHeight }, reachedTarget: v1.innerWidth === to.width && v1.innerHeight === to.height };
-}
-export async function clearEmulation(page) { await page.send('Emulation.clearDeviceMetricsOverride'); }
-
-/** Change the page's devicePixelRatio by emulation, keeping the window size (width/height 0 = unchanged). Returns the viewport. */
-export async function setDpr(page, dpr) {
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 0, height: 0, deviceScaleFactor: dpr, mobile: false });
-  await sleep(150);
-  const v = await page.viewport();
-  if (v.dpr !== dpr) throw new Error(`setDpr(${dpr}) did not take effect: devicePixelRatio=${v.dpr}`);
-  return { kind: 'emulation', ...v };
 }

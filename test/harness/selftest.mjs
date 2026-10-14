@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Harness self-test: exercises every helper against tiny built-in fixtures (no polyfill needed) in a REAL headed Chrome and
-// PROVES the positive controls fire (blank detector, pixel oracle, non-blank assertion, cadence reporter, trace parser...).
+// PROVES the positive controls fire (blank detector, non-blank test, cadence reporter, trace parser...).
 //
-//   node test/harness/selftest.mjs [--only=env,input,...] [--skip=native] [--chrome=stable|canary] [--keep-profile]
+//   node test/harness/selftest.mjs [--only=env,input,...] [--skip=pixel] [--chrome=stable|canary] [--keep-profile]
 //
 // Writes .scratch/selftest/<timestamp>/selftest.json (+ diff PNGs, traces) and prints PASS/FAIL per check and the environment.
 // Exit code 1 when any gating check fails. `info` rows are measurements, not gates.
@@ -45,7 +45,6 @@ try {
   await ctx.page.navigate(`${srv.url}/test/harness/selftest-fixture/app.html`);
   R.environment.main = await environmentFacts(browser, ctx.page);
   R.environment.focusMode = fg.mode;
-  R.nativeProbeStock = await ctx.page.evaluate((await import('./lib/env.mjs')).NATIVE_PROBE_EXPR);
   console.log('ENVIRONMENT', JSON.stringify({ chrome: R.environment.main.chrome, dpr: R.environment.main.viewport.dpr, viewport: `${R.environment.main.viewport.innerWidth}x${R.environment.main.viewport.innerHeight}`,
     refreshHz: +R.environment.main.rafMeasured.impliedHz.toFixed(1), rafP50: +R.environment.main.rafMeasured.p50Ms.toFixed(2), focus: fg.mode, scrollbar: R.environment.main.scrollbar, mac: R.environment.main.mac }));
   for (const [name, file] of SECTIONS) {
@@ -63,10 +62,6 @@ try {
   check('selftest setup', false, String(e?.stack ?? e));
 } finally {
   if (browser) R.browserClose = await browser.close();
-  section = 'native-baseline';
-  if (wanted('native') && !R.checks.some(c => c.section === 'selftest setup')) {
-    try { await (await import('./selftest/native.mjs')).run(ctx); } catch (e) { check('section completed without exception', false, String(e?.stack ?? e).slice(0, 900)); }
-  }
   section = 'shutdown';
   check('spawned Chrome terminated, no stragglers, profile removed', !!R.browserClose && R.browserClose.remaining.length === 0 && R.browserClose.profileRemoved === true, R.browserClose);
   await srv.close();

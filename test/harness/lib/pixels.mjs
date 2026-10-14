@@ -1,4 +1,4 @@
-// Pure RGBA image helpers: statistics, the NON-BLANK assertion, comparison, compositing, cropping.
+// Pure RGBA image helpers: statistics (the non-blank test), comparison, compositing, cropping.
 // An image is {width, height, data: Uint8Array|Uint8ClampedArray RGBA}.
 
 /**
@@ -16,13 +16,6 @@ export function pixelStats({ width, height, data }, { minFraction = 0.005 } = {}
   const nonDominantFraction = n ? (n - dom) / n : 0;
   return { width, height, distinctColors: hist.size, dominantColor: [domK >>> 24, (domK >>> 16) & 255, (domK >>> 8) & 255, domK & 255],
     dominantShare: n ? dom / n : 0, nonDominantFraction, meanAlpha: n ? alphaSum / n / 255 : 0, nonBlank: n > 0 && hist.size > 8 && nonDominantFraction >= minFraction && alphaSum > 0 };
-}
-
-export class BlankImageError extends Error { constructor(what, stats) { super(`${what} is BLANK: ${JSON.stringify({ distinctColors: stats.distinctColors, nonDominantFraction: stats.nonDominantFraction, meanAlpha: stats.meanAlpha })}`); this.stats = stats; } }
-
-/** THROWS BlankImageError if the image is blank. Returns the stats otherwise. Use it in every gate that reads pixels. */
-export function assertNonBlank(img, what = 'image', opts) {
-  const s = pixelStats(img, opts); if (!s.nonBlank) throw new BlankImageError(what, s); return s;
 }
 
 /** Alpha-composite over an opaque background colour (the reference is opaque; a canvas bitmap may be transparent). */

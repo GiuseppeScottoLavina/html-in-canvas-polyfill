@@ -9,24 +9,6 @@ export const SCROLLBAR_PROBE_EXPR = `(() => {
   d.remove(); r.overlay = r.verticalGutterPx === 0; return r;
 })()`;
 
-/** Feature-detect the native HTML-in-Canvas surface in the current page. Run it on a page WITHOUT a polyfill bundle. */
-export const NATIVE_PROBE_EXPR = `(() => {
-  const out = {};
-  const protoNames = (o) => { const s = new Set(); for (let p = o; p && p !== Object.prototype; p = Object.getPrototypeOf(p)) for (const n of Object.getOwnPropertyNames(p)) s.add(n); return [...s]; };
-  const re = /element|paint|layoutsubtree|drawable|geometry|snapshot|captureElement|requestPaint|^content$/i;
-  const c = document.createElement('canvas');
-  out.canvasReflection = { content: 'content' in c, layoutSubtree: 'layoutSubtree' in c, onpaint: 'onpaint' in c, requestPaint: typeof c.requestPaint,
-    captureElementImage: typeof c.captureElementImage, getElementTransform: typeof c.getElementTransform, updateElementGeometry: typeof c.updateElementGeometry,
-    onelementgeometryupdate: 'onelementgeometryupdate' in c };
-  out.canvasProtoMatches = protoNames(HTMLCanvasElement.prototype).filter(n => re.test(n));
-  out.ctx2dProtoMatches = protoNames(CanvasRenderingContext2D.prototype).filter(n => re.test(n));
-  out.webglProtoMatches = typeof WebGL2RenderingContext !== 'undefined' ? protoNames(WebGL2RenderingContext.prototype).filter(n => re.test(n)) : null;
-  out.gpuQueueProtoMatches = typeof GPUQueue !== 'undefined' ? protoNames(GPUQueue.prototype).filter(n => re.test(n)) : null;
-  out.globalsMatches = Object.getOwnPropertyNames(globalThis).filter(n => /(ElementImage|GeometryUpdate|CanvasPaint)/.test(n));
-  out.hasDrawElementImage = typeof CanvasRenderingContext2D.prototype.drawElementImage === 'function';
-  return out;
-})()`;
-
 /**
  * Collect browser/OS/display facts. The refresh rate is NOT read from the OS (system_profiler hides ProMotion): it is the rAF
  * cadence of a foreground focused page, i.e. the rate Chrome actually renders at. Needs a foreground page.

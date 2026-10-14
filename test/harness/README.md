@@ -13,7 +13,7 @@ const browser = await H.launchChrome({ name: 'myrun' }); // headed, throwaway pr
 const page = await browser.newPage();
 await page.requireForeground('start');                   // throws loudly unless hasFocus && visible
 const { surfacePage, refPage } = await H.openPair(browser, srv, 'f1', { mode: 'poly', bundle: '/dist/hic.iife.js' });
-const d = await H.referenceDiff({ surfacePage, refPage, outDir: '.scratch/x', name: 'f1' }); // d.pass, d.fraction, d.countOver16 ...
+const d = H.compareImages(H.compositeOver(await H.readCanvas(surfacePage), [255, 255, 255]), (await H.screenshotElement(refPage)).img); // d.fraction, d.countOver16 ...
 await browser.close();                                   // terminates ONLY our PID (+ stragglers carrying our unique profile path)
 await srv.close();
 ```
@@ -21,7 +21,7 @@ await srv.close();
 ## Rules baked in
 - Profiles: `launchChrome` refuses any `userDataDir` outside `<repo>/.profiles/`. It only ever signals the PID it spawned.
 - Measure jank from traces (`RunTask` on `CrRendererMain` vs 8.33 / 16.7 ms), not the Long Tasks API (50 ms threshold).
-- A gate needs a non-blank assertion and a positive control. Each oracle below ships its control in `selftest`.
+- A gate needs a non-blank test (`pixelStats(img).nonBlank`) and a positive control.
 - `--force-color-profile=srgb` is on by default: without it compositor screenshots differ from canvas readback on every pixel.
 - Machine load: call `loadSnapshot()` / `waitForQuiet()` before a measured run and store the result with the numbers. Any
   process the run did not start above 15 % CPU marks the run `highLoad` (machine load above threshold). The selftest does this and records `loadBefore/loadAfter/highLoad`.
@@ -31,16 +31,15 @@ await srv.close();
 |---|---|
 | `chrome.mjs` | `launchChrome({chrome:'stable'\|'canary'\|path, dpr:1\|2, windowSize, nativeDrawElement, scrollbars:'default'\|'hidden'\|'overlay'\|'classic', extraArgs})`, `Browser` (newPage, `traceStart/traceStop(file)`, `info`, `close`). `nativeDrawElement` adds `--enable-blink-features=CanvasDrawElement` (native baseline). |
 | `page.mjs` | `Page`: `evaluate`, `navigate`, foreground (`focusState`, `assertForeground`, `ensureForeground`, `requireForeground`), `setInnerSize`, `screenshot`, `measureRaf`, `sampleHeap`/`perfMetrics`/`domCounters` (heap, DOM nodes, listeners), `cpuProfileStart/Stop`, primitive input, `errors()` (console+exceptions+log). |
-| `input.mjs` | Paced input that REPORTS the achieved cadence: `typeKeys`, `pressKeys`, `wheelStream`, `mouseStream`, `mouseDrag`, `touchDrag`, `scrollGesture` (`Input.synthesizeScrollGesture`, mouse or touch). Each returns `{requestedMs, actual:{p50,p95..}, cadenceOk, effectiveHz, ackMs, pageSaw?}`; `probe:true` also records what the page received. |
-| `window.mjs` | `dragResize` (REAL window drag: `Browser.setWindowBounds` in steps at a cadence, reports page-seen sizes), `emulatedResize` (Emulation override, labelled `kind:'emulation'`), `setDpr`, `clearEmulation`, resize recorder. |
+| `input.mjs` | Paced input that REPORTS the achieved cadence: `typeKeys`, `pressKeys`, `wheelStream`, `mouseStream`, `mouseDrag`. Each returns `{requestedMs, actual:{p50,p95..}, cadenceOk, effectiveHz, ackMs, pageSaw?}`; `probe:true` also records what the page received. |
+| `window.mjs` | `dragResize` (REAL window drag: `Browser.setWindowBounds` in steps at a cadence, reports page-seen sizes), resize recorder. |
 | `trace.mjs` | `analyzeTrace(file, {window\|windowMarks, thresholdMs})`: RunTask count over 8.33/16.7/50 ms, p50/p95/p99/max, busy %, `longFrames` with top events. Errors out (never "0 long tasks") if marks or tasks are missing. |
 | `cpuprofile.mjs` | `summarizeCpuProfile`, `formatProfileTable`: per-function self/total tables. |
-| `pixels.mjs`, `png.mjs` | `pixelStats`, `assertNonBlank` (throws `BlankImageError`), `compareImages` (diffPixels, maxDiff, countOver16, fraction, diff image), PNG codec. |
-| `oracle-pixel.mjs` | `referenceDiff({surfacePage, refPage, selector, source:'canvas'\|'screenshot'})`: canvas readback (or compositor screenshot) vs plain DOM, same window/size/DPR. **Gate: `fraction <= 0.03`** and non-blank surface. Writes `<name>.{surface,ref,diff}.png` + json. |
-| `oracle-blank.mjs` | `startBlankDetector`: samples the canvas after every rendering update (MessageChannel task after the rAF update). `proveBlankDetector` = clean run (0 false positives) + injected one-frame blank (must be caught at the exact frame). Reports blank runs, size-write list, observer cost. An empty canvas yields an INVALID run, never a pass. |
+| `pixels.mjs`, `png.mjs` | `pixelStats` (`nonBlank`), `compareImages` (diffPixels, maxDiff, countOver16, fraction, diff image), PNG codec. |
+| `oracle-pixel.mjs` | `readCanvas` (canvas backing store read inside a rAF), `screenshotElement` (compositor screenshot of an element's border box). |
+| `oracle-blank.mjs` | `startBlankDetector`: samples the canvas after every rendering update (MessageChannel task after the rAF update). `injectBlankFrame()` is its positive control (a one-frame blank that must be caught at the exact frame). Reports blank runs, size-write list, observer cost. An empty canvas yields an INVALID run, never a pass. |
 | `oracle-latency.mjs` | `measureLatency`: trusted event -> first rendering update whose canvas region shows the change. `commitMs` is exact up to frame quantisation; `presentedMs` adds one frame period (estimate). Observer cost: one `drawImage+getImageData` of <= 160x96 per frame (~0.2-2 ms), so never mix it with a RunTask-budget run. Timeouts and missing events are counted, not turned into numbers. |
-| `busy.mjs` | `startBusyMain(page,{busyMs,periodMs})`: periodic main-thread burn for the page-scroll A/B; reports achieved busy %. |
-| `env.mjs` | `environmentFacts` (Chrome version, DPR, window, rAF-measured refresh, scrollbar probe, GPU, mac model), `NATIVE_PROBE_EXPR`. |
+| `env.mjs` | `environmentFacts` (Chrome version, DPR, window, rAF-measured refresh, scrollbar probe, GPU, mac model). |
 | `load.mjs` | `loadSnapshot`, `waitForQuiet` (shared-machine high machine load check). |
 | `fixtures.mjs` | `openFixture`, `openPair`, `fixtureUrl`, `checkBundle`. |
 | `webdriver.mjs` | Firefox / Safari over W3C WebDriver (not exported from `index.mjs`): `launchEngine({engine})` -> `WdSession` (navigate, evaluate, screenshot, click, typeText, key, wheel, setWindowSize, close), `probeSafari()`. Used by `test/xbrowser/` (docs/TEST-PLAN.md 2.9). |
@@ -54,17 +53,17 @@ await srv.close();
 - F1 water form (the frozen demo page of an earlier prototype), F2 scroll (page scroll, sticky header, nested scrollers), F3 resize (flex-wrap, media queries at 800/520), F4 large app (`nodes=200|500|1000|2000`, exact element count of `#root` subtree), F5 classic scrollbars (`::-webkit-scrollbar`, 15 px gutters regardless of the OS setting).
 
 ## Self-test
-`node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures,native] [--chrome=canary] [--waitquiet=ms]`
+`node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures] [--chrome=canary] [--waitquiet=ms]`
 It opens a REAL, headed Chrome window (and a second tab for the foreground control) for the duration of the run, takes over the screen focus, and needs an unlocked screen; the `LOAD highLoad=true` line it may print means another process was busy at the start (the checks assert correctness, not timing). The server traversal check sends raw requests with `http.request`, because `fetch()` normalises `/../x`.
 Writes `.scratch/selftest/<ts>/selftest.json` (environment, load before/after, checks, info, diff PNGs, trace), exits 1 on any failed check.
 Positive controls proven: profile guard refuses directories outside .profiles/; `assertForeground` throws on a hidden tab; cadence reporter flags a deliberately
-slowed injector; trace parser separates 12 ms from 40 ms tasks and errors on empty windows; pixel oracle detects 1 changed device pixel and a missing child
-(gate fails) and a blank surface fails; blank detector catches the injected frame and a width-write blank; latency probe measures a 60 ms delayed app
+slowed injector; trace parser separates 12 ms from 40 ms tasks and errors on empty windows; two blank images diff to 0 while the non-blank test refuses them;
+blank detector catches a width-write blank and refuses a canvas that never had content; latency probe measures a 60 ms delayed app
 as >= 60 ms and reports no-event / no-change as such; fixtures fail loudly without a bundle.
 
 ## Known limits (read before trusting a number)
 - Scrollbar style follows the macOS setting (it flipped between runs: auto-hide vs 15 px bars, depending on pointing devices). `--disable-features=OverlayScrollbar` is not guaranteed on macOS. Always record `environmentFacts().scrollbar`; use F5 for guaranteed classic bars.
-- Pixel readback of a WebGPU-presented canvas is unreliable; use `source:'screenshot'` for effect-on surfaces.
-- Two-tab comparison: the launch tab may carry an infobar (shorter viewport). `referenceDiff` reports `viewportMismatch`; use `openPair` (fresh tabs) or `setInnerSize`.
+- Pixel readback of a WebGPU-presented canvas is unreliable; use `screenshotElement` for effect-on surfaces.
+- Two-tab comparison: the launch tab may carry an infobar (shorter viewport). compare `innerWidth`/`innerHeight`/`devicePixelRatio` of both pages; use `openPair` (fresh tabs) or `setInnerSize`.
 - Hidden tabs stall rAF: oracles call `assertForeground` and bring the page to front; only one browser run at a time.
 - Window-drag resize and `Input.*` need a real foreground window; `activateProcess()` uses osascript (macOS).

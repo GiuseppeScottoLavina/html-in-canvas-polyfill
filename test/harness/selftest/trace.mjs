@@ -1,8 +1,7 @@
-// Tracing + RunTask analysis, CPU profile summaries, heap/DOM/listener sampling, busy-main-thread load.
+// Tracing + RunTask analysis, CPU profile summaries, heap/DOM/listener sampling.
 import { resolve } from 'node:path';
 import { analyzeTrace } from '../lib/trace.mjs';
 import { summarizeCpuProfile } from '../lib/cpuprofile.mjs';
-import { startBusyMain } from '../lib/busy.mjs';
 import { sleep } from '../lib/util.mjs';
 
 const spin = ms => `{ const s = performance.now(); while (performance.now() - s < ${ms}) {} }`;
@@ -39,18 +38,6 @@ export async function run({ check, info, page, browser, srv, outDir }) {
   const empty = analyzeTrace(tr.file, { window: { startTs: 9e15, endTs: 9.1e15 }, pid: big.pid });
   check('trace: empty window -> explicit error (an empty trace can never pass a gate)', !!empty.error, empty.error);
   info('quiet window busy %', { busyPct: quiet.runTask.busyPct, tasks: quiet.runTask.count, rafFires: quiet.rafFires.n });
-
-  // ---- busy-main-thread load: achieved load measured, and visible to the trace
-  await browser.traceStart();
-  const load = await startBusyMain(page, { busyMs: 12, periodMs: 33 });
-  await page.evaluate(`(async () => { performance.mark('b0'); await new Promise(r => setTimeout(r, 700)); performance.mark('b1'); })()`);
-  const lr = await load.stop();
-  const bt = await browser.traceStop(resolve(outDir, 'selftest-busy-trace.json'));
-  const bw = analyzeTrace(bt.file, { windowMarks: ['b0', 'b1'] });
-  check('busy load: achieved busy % within tolerance of requested', lr.ok, { requested: lr.requestedBusyPct, achieved: lr.achievedBusyPct, ticks: lr.ticks, period: lr.periodMsActual });
-  check('busy load is visible in the trace as RunTasks > 8.33 ms (>= 10 in 700 ms)', !bw.error && bw.runTask.over8_33ms >= 10 && bw.runTask.over16_7ms === 0, bw.error ?? bw.runTask);
-  const raf0 = await page.measureRaf({ frames: 60 });
-  info('rAF with the load off again', { p50: raf0.p50, p95: raf0.p95 });
 
   // ---- CPU profile: self vs total
   await page.evaluate(`window.inner = function inner() { ${spin(30)} }; window.outer = function outer() { inner(); inner(); inner(); }; 0`);

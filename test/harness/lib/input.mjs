@@ -45,32 +45,3 @@ export async function mouseDrag(page, from, to, { steps = 30, intervalMs = 8, pr
   await page.mouseUp(to.x, to.y);
   return { ...r, kind: 'mouse-drag' };
 }
-
-/**
- * Compositor-driven scroll gesture (Input.synthesizeScrollGesture). `yDistance > 0` scrolls DOWN (sign already flipped vs raw
- * CDP). Resolves when the gesture finished; positions are viewport CSS px. `gestureSourceType: 'touch'` = touch fling-like.
- */
-export async function scrollGesture(page, { x, y, yDistance = 0, xDistance = 0, speed = 800, gestureSourceType = 'mouse', repeatCount = 0, repeatDelayMs = 250, preventFling = true } = {}) {
-  const t0 = performance.now();
-  await page.send('Input.synthesizeScrollGesture', { x, y, yDistance: -yDistance, xDistance: -xDistance, speed, gestureSourceType, repeatCount, repeatDelayMs, preventFling });
-  return { kind: 'scroll-gesture:' + gestureSourceType, speedPxPerS: speed, distance: { x: xDistance, y: yDistance }, totalMs: performance.now() - t0 };
-}
-
-/**
- * Raw touch drag (touchStart, paced touchMove, touchEnd) via Input.dispatchTouchEvent with touch emulation temporarily
- * enabled. Moving the finger up (to.y < from.y) scrolls the content down.
- */
-export async function touchDrag(page, from, to, { steps = 30, intervalMs = 8, probe = false } = {}) {
-  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-  try {
-    const pt = (x, y) => [{ x, y, id: 1, radiusX: 2, radiusY: 2, force: 1 }];
-    await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) });
-    const r = await run(page, 'touch-drag', ['touchmove', 'pointermove'], probe, steps, intervalMs, i => {
-      const f = (i + 1) / steps; return page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f) });
-    });
-    await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    return r;
-  } finally {
-    await page.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
-  }
-}

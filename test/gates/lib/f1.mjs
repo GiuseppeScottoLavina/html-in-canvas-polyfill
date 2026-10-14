@@ -24,11 +24,6 @@ export async function rectsOf(page, selectors) {
 
 export const center = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
 
-/** Compositor screenshot of the surface element. */
-export async function shotSurface(page, selector = '#hic-surface') {
-  return H.screenshotElement(page, selector);
-}
-
 /** Pixel diff of two screenshots, optionally restricted to a css-px rect relative to the surface. */
 export function diffImages(a, b, { rect, dpr = 1 } = {}) {
   if (!rect) return H.compareImages(a, b, { diffImage: false });

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { openFixture, fixtureUrl, checkBundle, FIXTURES } from '../lib/fixtures.mjs';
 import { screenshotElement } from '../lib/oracle-pixel.mjs';
-import { assertNonBlank, pixelStats } from '../lib/pixels.mjs';
+import { pixelStats } from '../lib/pixels.mjs';
 import { PROJECT_ROOT } from '../lib/util.mjs';
 
 const thrown = async fn => { try { await fn(); return null; } catch (e) { return e.message; } };
@@ -47,7 +47,7 @@ export async function run({ check, info, page, srv }) {
     await openFixture(page, srv, 'f4', { mode: 'ref', nodes: n });
     const count = await page.evaluate('document.querySelectorAll("#root, #root *").length');
     check(`f4 nodes=${n}: #root subtree has exactly ${n} elements`, count === n, { count });
-    if (n === 200 || n === 2000) { const { img } = await screenshotElement(page, '#hic-surface'); check(`f4 nodes=${n}: renders non-blank`, (() => { try { assertNonBlank(img, 'f4'); return true; } catch { return false; } })()); }
+    if (n === 200 || n === 2000) { const { img } = await screenshotElement(page, '#hic-surface'); check(`f4 nodes=${n}: renders non-blank`, pixelStats(img).nonBlank); }
     check(`f4 nodes=${n}: no console errors`, page.errors().length === 0, page.errors());
   }
   // F5 classic scrollbars regardless of the OS setting
