@@ -126,9 +126,8 @@
 
   /** Upload the newest snapshot of the form. Like texSubImage2D, texElementSubImage2D needs storage that already exists. */
   function uploadForm() {
-    const image = canvas.captureElementImage(card); // throws InvalidStateError before the first snapshot exists
-    const w = Math.ceil(image.width), h = Math.ceil(image.height); // the natural size: ceil(ElementImage size), in canvas bitmap pixels
-    image.close();
+    const size = canvas.getElementImageDefaultSize(card); // throws InvalidStateError before the first snapshot exists
+    const w = Math.ceil(size.width), h = Math.ceil(size.height); // the natural size, in canvas bitmap pixels
     if (!(w > 0 && h > 0)) return;
     gl.bindTexture(gl.TEXTURE_2D, texture);
     if (w !== texW || h !== texH) {

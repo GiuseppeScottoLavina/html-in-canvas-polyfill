@@ -38,11 +38,11 @@ function optionalTexels(name, v) {
 }
 
 /**
- * Default destination size = ceil(ElementImage.width), ceil(ElementImage.height) (grid px; issue 174 tells apps to preallocate exactly that); config.width/height override; config.swidth/sheight/sx/sy select the source rect.
- * A sub-rect without explicit width/height keeps the same grid scale (ceil of swidth * ElementImage.width / border-box width).
+ * Default destination size = ceil of the element image default size (getElementImageDefaultSize, grid px; issue 174 tells apps to preallocate exactly that); config.width/height override; config.swidth/sheight/sx/sy select the source rect.
+ * A sub-rect without explicit width/height keeps the same grid scale (ceil of swidth * default width / border-box width).
  * `resample` is true whenever the surface pixels covering the source rect (rounded out to whole pixels at `surfaceScale`) are not (width x height): canvas grid scale < 1,
  * above maxDpr, fractional sizes that round differently, an explicit config size. The WPT element-image-fractional-size decides rounding when it disagrees with ceil.
- * @param {{width: number, height: number}} elementImageSize  grid px (ElementImage.width/height)
+ * @param {{width: number, height: number}} elementImageSize  grid px (getElementImageDefaultSize)
  * @param {{width: number, height: number, scaleX: number, scaleY: number}} snapshotCss  border box css px and the canvas grid scale at snapshot time (scale only used when the border box is empty)
  * @param {{sx?: number, sy?: number, swidth?: number, sheight?: number, width?: number, height?: number}} config
  * @param {number} surfaceScale  surface px per css px (SnapshotVersion.scale)

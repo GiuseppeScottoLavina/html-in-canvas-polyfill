@@ -317,6 +317,21 @@ test('OffscreenCanvas without a placeholder: InvalidStateError on draw and on ev
   assert.ok(canvas.transferControlToOffscreen().getElementTransform(el, new DOMMatrix()) instanceof DOMMatrix);
   throwsDom(() => free.updateElementGeometry(el), 'InvalidStateError');
   throwsDom(() => free.clearElementGeometry(el), 'InvalidStateError');
+  throwsDom(() => free.getElementImageDefaultSize(el), 'InvalidStateError');
+});
+
+test('OffscreenCanvas.getElementImageDefaultSize follows the OffscreenCanvas bitmap, resolved through the placeholder', async (t) => {
+  const { canvas, el } = await set(t);
+  const image = canvas.captureElementImage(el);
+  const oc = canvas.transferControlToOffscreen();
+  assert.equal(OffscreenCanvas.prototype.getElementImageDefaultSize.length, 1);
+  const a = oc.getElementImageDefaultSize(el);
+  assert.deepEqual([a.width, a.height], [40, 20]);
+  oc.width = 200;
+  oc.height = 50;
+  const b = oc.getElementImageDefaultSize(image);
+  assert.deepEqual([b.width, b.height], [80, 10], 'the size follows the OffscreenCanvas bitmap (40 * 200/100, 20 * 50/100)');
+  assert.throws(() => oc.getElementImageDefaultSize(), TypeError);
 });
 
 test('OffscreenCanvas updateElementGeometry/clearElementGeometry: validated now, applied in a microtask, element omitted when it left the canvas', async (t) => {

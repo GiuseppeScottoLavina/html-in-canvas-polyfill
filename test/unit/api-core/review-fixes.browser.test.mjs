@@ -142,7 +142,8 @@ test('m7: accessor names and ElementImage shape follow the platform', async t =>
   assert.equal(/** @type {Function} */ (Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width')?.set).name, 'set width');
   const EI = /** @type {any} */ (window).ElementImage;
   assert.equal(EI.length, 0);
-  for (const key of ['width', 'height', 'close']) assert.equal(Object.getOwnPropertyDescriptor(EI.prototype, key)?.enumerable, true, key);
+  assert.equal(Object.getOwnPropertyDescriptor(EI.prototype, 'close')?.enumerable, true, 'close');
+  for (const key of ['width', 'height']) assert.equal(key in EI.prototype, false, `${key}: the 2026-10-08 interface has close() only`);
   assert.ok(thrown(() => new EI()) instanceof TypeError);
   c.captureElementImage(/** @type {Element} */ (c.querySelector('#a'))).close();
 });

@@ -1,101 +1,168 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { engineOf } from '../../../src/util/engine.js';
-import { ADDITIVE_NAMES, CORE_NAMES, LEGACY_NAMES, MIN_CHROMIUM_MAJOR, MIN_FIREFOX_MAJOR, MIN_SAFARI_MAJOR, missingRequirements, browserGate, classifyNative, decideMode } from '../../../src/api/native-detect.js';
+import { ADDITIVE_NAMES, CORE_NAMES, LEGACY_NAMES, MIN_CHROMIUM_MAJOR, MIN_FIREFOX_MAJOR, MIN_SAFARI_MAJOR, SPEC_NAMES, missingRequirements, browserGate, classifyNative, decideMode, nativeUsable } from '../../../src/api/native-detect.js';
 
-const ALL = [...CORE_NAMES, ...ADDITIVE_NAMES, ...LEGACY_NAMES];
+const ALL = [...CORE_NAMES, ...SPEC_NAMES, ...LEGACY_NAMES];
+const without = (/** @type {string[]} */ list, /** @type {string[]} */ ...names) => list.filter((n) => !names.includes(n));
+/** Canary 157.0.8103.0 with or without the flag, as measured on 2026-10-14: the 2026-10-08 specification. */
+const CURRENT = [...CORE_NAMES, ...SPEC_NAMES];
+/** The 2026-10-07 shape (pinned WPT revision, Chromium 157.0.8091.0): ElementImage.width/height, no getElementImageDefaultSize. */
+const PREVIOUS = [...without(CURRENT, 'getElementImageDefaultSize', 'OffscreenCanvas.getElementImageDefaultSize'), 'ElementImage.width'];
+/** Chrome 155.0.8059.40 with --enable-blink-features=CanvasDrawElement, as measured on 2026-10-14 (the earlier draft, with the event names). */
+const LEGACY_155 = [
+  'layoutSubtree', 'onpaint', 'onelementgeometryupdate', 'requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry',
+  'OffscreenCanvas.updateElementGeometry', 'OffscreenCanvas.clearElementGeometry', 'CanvasRenderingContext2D.drawElementImage', 'OffscreenCanvasRenderingContext2D.drawElementImage',
+  'ElementImage', 'ElementImage.width', 'ElementGeometryUpdateEvent', 'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D',
+  'GPUQueue.drawElementImageToTexture', 'WebGLRenderingContext.texElementImage2D', 'WebGL2RenderingContext.texElementImage2D', 'GPUQueue.copyElementImageToTexture',
+];
 /** Chrome 154 with --enable-blink-features=CanvasDrawElement, as measured. */
 const LEGACY_154 = [
   'layoutSubtree', 'onpaint', 'requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry',
-  'CanvasRenderingContext2D.drawElementImage', 'OffscreenCanvasRenderingContext2D.drawElementImage', 'ElementImage',
+  'CanvasRenderingContext2D.drawElementImage', 'OffscreenCanvasRenderingContext2D.drawElementImage', 'ElementImage', 'ElementImage.width',
   'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture',
   'WebGLRenderingContext.texElementImage2D', 'WebGL2RenderingContext.texElementImage2D', 'GPUQueue.copyElementImageToTexture',
 ];
-const COMPLETE = [...CORE_NAMES, ...ADDITIVE_NAMES];
-/** @param {string[]} present @param {string[]} [applicable] */
-const classify = (present, applicable = ALL) => classifyNative({ present, applicable, browserMajor: 154 });
-const without = (/** @type {string[]} */ list, /** @type {string[]} */ ...names) => list.filter((n) => !names.includes(n));
+/** @param {string[]} present @param {string[]} [applicable] @param {any} [probe] */
+const classify = (present, applicable = ALL, probe = 'ok') => classifyNative({ present, applicable, browserMajor: 157, probe });
 
 test('nothing present: absent', () => {
-  const s = classify([]);
+  const s = classify([], ALL, 'skipped');
   assert.equal(s.kind, 'absent');
   assert.deepEqual(s.gaps, []);
   assert.deepEqual(s.missing, []);
   assert.equal(s.fillable, false);
+  assert.equal(s.verified, false);
 });
 
-test('every current name: complete, no gaps', () => {
-  const s = classify(COMPLETE);
+test('the current shape (Canary 157, 2026-10-08 spec): complete, verified', () => {
+  const s = classify(CURRENT);
   assert.equal(s.kind, 'complete');
+  assert.deepEqual(s.missing, []);
   assert.deepEqual(s.gaps, []);
   assert.equal(s.fillable, false);
-  assert.equal(s.browserMajor, 154);
+  assert.equal(s.verified, true);
+  assert.equal(s.browserMajor, 157);
 });
 
-test('Chrome 154 + flag (measured shape): legacy, only the two event names are gaps', () => {
+test('regression: ElementImage without width/height is NOT a reason to refuse (the Canary 157 shape used to be classified partial and refused)', () => {
+  assert.equal(CURRENT.includes('ElementImage.width'), false, 'the measured shape has no width');
+  const s = classify(CURRENT);
+  assert.equal(nativeUsable(s), true);
+  assert.equal(decideMode(s, BAD, opts()).mode, 'native');
+  assert.equal(decideMode(s, BAD, opts()).refusal, null);
+});
+
+test('the previous shape (ElementImage.width/height, no getElementImageDefaultSize): usable, partial; the bridge can build the canvas size getter', () => {
+  const s = classify(PREVIOUS);
+  assert.equal(s.kind, 'partial');
+  assert.deepEqual(s.missing, ['getElementImageDefaultSize', 'OffscreenCanvas.getElementImageDefaultSize']);
+  assert.deepEqual(s.gaps, ['getElementImageDefaultSize'], 'built from ElementImage.width/height; the OffscreenCanvas one is not buildable');
+  assert.equal(s.fillable, true);
+  assert.deepEqual(s.legacyNames, ['ElementImage.width']);
+  assert.equal(decideMode(s, OK, opts()).mode, 'native-bridged', 'install falls back to native when the bridge is not loaded');
+});
+
+test('Chrome 155 + flag (measured 2026-10-14): legacy, bridged; the only gap is the size getter', () => {
+  const s = classify(LEGACY_155);
+  assert.equal(s.kind, 'legacy');
+  assert.deepEqual(s.missing, ['content', 'getElementImageDefaultSize', 'OffscreenCanvas.getElementImageDefaultSize']);
+  assert.deepEqual(s.gaps, ['getElementImageDefaultSize']);
+  assert.equal(s.verified, true);
+  assert.equal(decideMode(s, BAD, opts()).mode, 'native-bridged');
+});
+
+test('Chrome 154 + flag (measured legacy shape): legacy, content and the event names listed, the event names and the size getter are gaps', () => {
   const s = classify(LEGACY_154);
   assert.equal(s.kind, 'legacy');
-  assert.deepEqual(s.missing, ['content', 'onelementgeometryupdate', 'ElementGeometryUpdateEvent']);
-  assert.deepEqual(s.gaps, ['onelementgeometryupdate', 'ElementGeometryUpdateEvent']);
+  assert.deepEqual(s.missing, ['content', 'getElementImageDefaultSize', 'onelementgeometryupdate', 'OffscreenCanvas.updateElementGeometry', 'OffscreenCanvas.clearElementGeometry',
+    'OffscreenCanvas.getElementImageDefaultSize', 'ElementGeometryUpdateEvent']);
+  assert.deepEqual(s.gaps, ['onelementgeometryupdate', 'ElementGeometryUpdateEvent', 'getElementImageDefaultSize']);
   assert.equal(s.fillable, false, 'legacy is bridged by kind, not by fillable');
   assert.deepEqual(s.legacyNames.sort(), [...LEGACY_NAMES].sort());
+  assert.equal(decideMode(s, BAD, opts()).mode, 'native-bridged');
 });
 
-test('every CORE name missing, one at a time: partial and never fillable', () => {
+test('every CORE name missing, one at a time: broken, never usable', () => {
   for (const name of CORE_NAMES) {
-    const s = classify(without(COMPLETE, name));
-    assert.equal(s.kind, 'partial', name);
+    const s = classify(without(CURRENT, name));
+    assert.equal(s.kind, 'broken', name);
     assert.equal(s.fillable, false, name);
+    assert.equal(s.verified, false, name);
     assert.ok(s.missing.includes(name), name);
+    assert.equal(decideMode(s, OK, opts()).refusal?.feature, 'partial-native', name);
   }
 });
 
-test('every ADDITIVE name missing, one at a time: partial and fillable with exactly that gap', () => {
-  for (const name of ADDITIVE_NAMES) {
-    const s = classify(without(COMPLETE, name));
+test('every other name of the specification missing, one at a time: partial and usable, never refused', () => {
+  for (const name of SPEC_NAMES) {
+    const s = classify(without(CURRENT, name));
     assert.equal(s.kind, 'partial', name);
-    assert.equal(s.fillable, true, name);
-    assert.deepEqual(s.gaps, [name]);
+    assert.deepEqual(s.missing, [name], name);
+    const r = decideMode(s, BAD, opts());
+    assert.equal(r.refusal, null, name);
+    // only the two event names can be built without a legacy twin; every other missing name is used as found
+    assert.equal(r.mode, ['onelementgeometryupdate', 'ElementGeometryUpdateEvent'].includes(name) ? 'native-bridged' : 'native', name);
+    assert.equal(s.fillable, ADDITIVE_NAMES.includes(name) && r.mode === 'native-bridged', name);
   }
 });
 
-test('a core name AND an additive name missing: partial, not fillable (the core hole decides)', () => {
-  const s = classify(without(COMPLETE, 'requestPaint', 'onelementgeometryupdate'));
+test('ALL secondary names missing at once still steps aside (only the core decides)', () => {
+  const s = classify([...CORE_NAMES]);
   assert.equal(s.kind, 'partial');
-  assert.equal(s.fillable, false);
-  assert.deepEqual(s.gaps, ['onelementgeometryupdate']);
+  assert.equal(s.missing.length, SPEC_NAMES.length);
+  assert.equal(decideMode(s, BAD, opts()).refusal, null);
 });
 
-test('content missing without layoutSubtree is partial, not legacy', () => {
-  assert.equal(classify(without(COMPLETE, 'content')).kind, 'partial');
+test('texture gaps are bridgeable only when their legacy twin exists', () => {
+  const s = classify(without(CURRENT, 'WebGLRenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture'));
+  assert.deepEqual(s.gaps, [], 'nothing to build them from');
+  assert.equal(decideMode(s, OK, opts()).mode, 'native');
+  const t = classify([...without(CURRENT, 'GPUQueue.drawElementImageToTexture'), 'GPUQueue.copyElementImageToTexture']);
+  assert.deepEqual(t.gaps, ['GPUQueue.drawElementImageToTexture']);
+  assert.equal(t.fillable, true);
+  assert.equal(decideMode(t, OK, opts()).mode, 'native-bridged');
 });
 
-test('legacy shape with one more core name missing is partial', () => {
-  assert.equal(classify(without(LEGACY_154, 'requestPaint')).kind, 'partial');
-  assert.equal(classify(without(LEGACY_154, 'ElementImage')).kind, 'partial');
+test('unknown extra names never matter, and a usable native that failed the behavioural probe still steps aside (unverified)', () => {
+  for (const probe of ['inert', 'unexpected']) {
+    const s = classify([...CURRENT, 'somethingNew'], ALL, probe);
+    assert.equal(s.kind, 'complete', probe);
+    assert.equal(s.verified, false, probe);
+    assert.equal(s.probe, probe);
+    assert.equal(decideMode(s, OK, opts()).mode, 'native', probe);
+  }
 });
 
-test('a lone legacy name is partial (something native exists, it is unknown)', () => {
-  assert.equal(classify(['layoutSubtree']).kind, 'partial');
-  assert.equal(classify(['GPUQueue.copyElementImageToTexture']).kind, 'partial');
+test('content missing without layoutSubtree is broken, not legacy; legacy with a core name missing is broken', () => {
+  assert.equal(classify(without(CURRENT, 'content')).kind, 'broken');
+  assert.equal(classify(without(LEGACY_154, 'onpaint')).kind, 'broken');
+  assert.equal(classify(without(LEGACY_154, 'CanvasRenderingContext2D.drawElementImage')).kind, 'broken');
+  assert.equal(classify(without(LEGACY_154, 'requestPaint')).kind, 'legacy', 'a secondary name never breaks a legacy build either');
 });
 
-test('names of classes that do not exist in this window are not applicable, hence not gaps', () => {
-  const applicable = ALL.filter((n) => !/^(WebGL2?RenderingContext|GPUQueue)\./.test(n));
-  const s = classify(COMPLETE.filter((n) => applicable.includes(n)), applicable);
+test('a lone native name is broken (something native exists, without its core)', () => {
+  assert.equal(classify(['layoutSubtree']).kind, 'broken');
+  assert.equal(classify(['GPUQueue.copyElementImageToTexture']).kind, 'broken');
+  assert.equal(classify(['ElementImage']).kind, 'broken');
+});
+
+test('names of classes that do not exist in this window are not applicable, hence not missing', () => {
+  const applicable = ALL.filter((n) => !/^(WebGL2?RenderingContext|GPUQueue|OffscreenCanvas)\./.test(n));
+  const s = classify(CURRENT.filter((n) => applicable.includes(n)), applicable);
   assert.equal(s.kind, 'complete');
   assert.deepEqual(s.gaps, []);
 });
 
 test('the result lists are copies (mutating a state never changes a later probe)', () => {
-  const present = [...COMPLETE];
+  const present = [...CURRENT];
   const s = classify(present);
   s.present.push('x');
   assert.equal(present.includes('x'), false);
 });
 
 /** @param {Partial<{mode: 'auto'|'polyfill'|'native-only', forcePolyfill: boolean}>} [o] */
-const opts = (o = {}) => ({ mode: /** @type {'auto'|'polyfill'|'native-only'} */ ('auto'), forcePolyfill: false, ...o });
+function opts(o = {}) { return { mode: /** @type {'auto'|'polyfill'|'native-only'} */ ('auto'), forcePolyfill: false, ...o }; }
 const OK = { ok: true };
 const BAD = { ok: false, reason: 'not a Chromium-family browser' };
 
@@ -107,49 +174,60 @@ test('decideMode, auto: absent -> polyfill, gate decides', () => {
   assert.match(r.refusal?.hint ?? '', /Chromium/);
 });
 
-test('decideMode, auto: complete -> native (no gate needed), legacy and fillable -> native-bridged', () => {
-  assert.equal(decideMode(classify(COMPLETE), BAD, opts()).mode, 'native');
+test('decideMode, auto: complete and partial -> native (no gate needed), legacy and fillable -> native-bridged', () => {
+  assert.equal(decideMode(classify(CURRENT), BAD, opts()).mode, 'native');
+  assert.equal(decideMode(classify(without(CURRENT, 'requestPaint')), BAD, opts()).mode, 'native', 'a gap nothing can build is used as found');
+  assert.equal(decideMode(classify(PREVIOUS), BAD, opts()).mode, 'native-bridged');
   assert.equal(decideMode(classify(LEGACY_154), BAD, opts()).mode, 'native-bridged');
-  assert.equal(decideMode(classify(without(COMPLETE, 'GPUQueue.drawElementImageToTexture')), OK, opts()).mode, 'native-bridged');
+  assert.equal(decideMode(classify(without(CURRENT, 'onelementgeometryupdate')), OK, opts()).mode, 'native-bridged');
 });
 
-test('decideMode, auto: a partial with a core hole is refused as partial-native', () => {
-  const r = decideMode(classify(without(COMPLETE, 'captureElementImage')), OK, opts());
+test('decideMode, auto: broken is refused as partial-native and names the missing core', () => {
+  const r = decideMode(classify(without(CURRENT, 'onpaint')), OK, opts());
   assert.equal(r.mode, 'refused');
   assert.equal(r.refusal?.feature, 'partial-native');
-  assert.match(r.refusal?.message ?? '', /captureElementImage/);
+  assert.match(r.refusal?.message ?? '', /onpaint/);
 });
 
 test('decideMode, forcePolyfill: replaces any native, still needs the browser gate', () => {
-  for (const present of [COMPLETE, LEGACY_154, without(COMPLETE, 'requestPaint'), []]) {
+  for (const present of [CURRENT, PREVIOUS, LEGACY_154, without(CURRENT, 'onpaint'), []]) {
     assert.equal(decideMode(classify(present), OK, opts({ forcePolyfill: true })).mode, 'polyfill');
   }
-  assert.equal(decideMode(classify(COMPLETE), BAD, opts({ forcePolyfill: true })).refusal?.feature, 'browser');
+  assert.equal(decideMode(classify(CURRENT), BAD, opts({ forcePolyfill: true })).refusal?.feature, 'browser');
 });
 
-test('decideMode, mode polyfill: only on an absent native, a present native is never overridden', () => {
+test('decideMode, mode polyfill: on an absent native it runs; on a usable native it steps aside with a notice, never throws; broken is refused', () => {
   assert.equal(decideMode(classify([]), OK, opts({ mode: 'polyfill' })).mode, 'polyfill');
-  for (const present of [COMPLETE, LEGACY_154, without(COMPLETE, 'requestPaint')]) {
+  for (const present of [CURRENT, PREVIOUS, LEGACY_154]) {
     const r = decideMode(classify(present), OK, opts({ mode: 'polyfill' }));
-    assert.equal(r.mode, 'refused');
-    assert.equal(r.refusal?.feature, 'partial-native');
+    assert.equal(r.refusal, null);
+    assert.ok(r.mode === 'native' || r.mode === 'native-bridged');
+    assert.match(r.notice ?? '', /never replaced/);
   }
+  assert.equal(decideMode(classify(CURRENT), OK, opts()).notice, null, 'no notice in mode auto');
+  assert.equal(decideMode(classify(without(CURRENT, 'onpaint')), OK, opts({ mode: 'polyfill' })).refusal?.feature, 'partial-native');
 });
 
-test('decideMode, mode native-only: complete -> native, everything else throws (also with forcePolyfill)', () => {
-  assert.equal(decideMode(classify(COMPLETE), OK, opts({ mode: 'native-only' })).mode, 'native');
-  for (const present of [[], LEGACY_154, without(COMPLETE, 'onpaint'), without(COMPLETE, 'ElementGeometryUpdateEvent')]) {
+test('decideMode, mode native-only: any usable native -> its native mode; absent and broken throw (also with forcePolyfill)', () => {
+  assert.equal(decideMode(classify(CURRENT), OK, opts({ mode: 'native-only' })).mode, 'native');
+  assert.equal(decideMode(classify(without(CURRENT, 'requestPaint')), OK, opts({ mode: 'native-only' })).mode, 'native');
+  assert.equal(decideMode(classify(PREVIOUS), OK, opts({ mode: 'native-only' })).mode, 'native-bridged');
+  assert.equal(decideMode(classify(LEGACY_154), OK, opts({ mode: 'native-only' })).mode, 'native-bridged');
+  for (const present of [[], without(CURRENT, 'onpaint')]) {
     assert.equal(decideMode(classify(present), OK, opts({ mode: 'native-only', forcePolyfill: true })).mode, 'refused');
   }
   assert.equal(decideMode(classify([]), OK, opts({ mode: 'native-only' })).refusal?.feature, 'browser');
+  assert.equal(decideMode(classify(without(CURRENT, 'content')), OK, opts({ mode: 'native-only' })).refusal?.feature, 'partial-native');
 });
 
-test('decideMode always reports mode "refused" together with a refusal, and a refusal only with "refused"', () => {
-  for (const present of [[], COMPLETE, LEGACY_154, without(COMPLETE, 'requestPaint')]) {
+test('decideMode always reports mode "refused" together with a refusal, and a refusal only with "refused"; a usable native is never refused', () => {
+  for (const present of [[], CURRENT, PREVIOUS, LEGACY_154, without(CURRENT, 'onpaint'), without(CURRENT, 'requestPaint')]) {
     for (const mode of /** @type {const} */ (['auto', 'polyfill', 'native-only'])) {
       for (const gate of [OK, BAD]) {
-        const r = decideMode(classify(present), gate, opts({ mode }));
+        const s = classify(present);
+        const r = decideMode(s, gate, opts({ mode }));
         assert.equal(r.mode === 'refused', r.refusal !== null);
+        if (nativeUsable(s)) assert.equal(r.refusal, null, `${s.kind} ${mode}`);
       }
     }
   }

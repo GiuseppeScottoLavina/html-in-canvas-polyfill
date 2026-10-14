@@ -1,5 +1,6 @@
 /**
- * ElementImage: immutable handle on one SnapshotVersion. `new ElementImage()` throws TypeError (no constructor in the IDL); width/height are 0 after close() and when the originating canvas is gone; not Transferable (the worker guard reports it);
+ * ElementImage: immutable handle on one SnapshotVersion. `new ElementImage()` throws TypeError (no constructor in the IDL); the interface has close() only
+ * (its size is canvas.getElementImageDefaultSize(image), WHATWG HTML PR 11588 since 2026-10-08); not Transferable (the worker guard reports it);
  * getElementTransform and updateElementGeometry accept (Element or ElementImage).
  * Module: api-surface (src/api/*).
  */
@@ -40,27 +41,23 @@ function stateOf(self) {
   return state;
 }
 
-/** @param {ImageState} state @param {'w'|'h'} axis @returns {number} */
-function gridSize(state, axis) {
-  if (state.detached || state.record.state === 'disposed') return 0;
-  const v = state.pin.version;
-  const canvasSize = axis === 'w' ? v.canvasWidth : v.canvasHeight;
-  if (!(canvasSize > 0)) return 0;
-  return axis === 'w' ? v.width * (state.record.canvas.width / canvasSize) : v.height * (state.record.canvas.height / canvasSize);
+/**
+ * The spec "element image default size": the snapshot's css size scaled by the CURRENT bitmap size over the bitmap size the snapshot was taken at, in grid px.
+ * @param {SnapshotVersion} version
+ * @param {{width: number, height: number}} bitmap  the canvas (or OffscreenCanvas) whose grid the size follows
+ * @returns {{width: number, height: number}}
+ */
+export function defaultSizeOf(version, bitmap) {
+  return {
+    width: version.canvasWidth > 0 ? version.width * (bitmap.width / version.canvasWidth) : 0,
+    height: version.canvasHeight > 0 ? version.height * (bitmap.height / version.canvasHeight) : 0,
+  };
 }
 
 export class ElementImage {
   /** @param {unknown[]} args the creation token (a rest parameter keeps `ElementImage.length` at 0, as the interface has no constructor) */
   constructor(...args) {
     if (args[0] !== CREATE) throw new TypeError('Illegal constructor');
-  }
-  /** Default draw width in grid px: version.width * (canvas.width / version.canvasWidth); 0 when closed or the canvas is gone. @returns {number} */
-  get width() {
-    return gridSize(stateOf(this), 'w');
-  }
-  /** @returns {number} */
-  get height() {
-    return gridSize(stateOf(this), 'h');
   }
   /** Idempotent: detach, unpin the version. */
   close() {
@@ -82,7 +79,7 @@ export class ElementImage {
 }
 
 // WebIDL attributes and operations are enumerable; class members are not.
-for (const key of ['width', 'height', 'close']) Object.defineProperty(ElementImage.prototype, key, { enumerable: true });
+for (const key of ['close']) Object.defineProperty(ElementImage.prototype, key, { enumerable: true });
 Object.defineProperty(ElementImage.prototype, Symbol.toStringTag, { value: 'ElementImage', configurable: true });
 
 /**

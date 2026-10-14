@@ -13,9 +13,9 @@ on the prototype that preceded this implementation and say so. Layout, hit-test,
 
 | browser | behaviour | evidence |
 |---|---|---|
-| Chrome desktop 154 | polyfill (`absent`) or native-bridged (flag `CanvasDrawElement`: legacy names `layoutSubtree`, `copyElementImageToTexture`, no `content`, no `onelementgeometryupdate`) | measured: browser gates (fidelity, resize, scroll, typing); native probe |
-| Chrome Canary 157 | native expected complete (`content=drawable`); polyfill steps aside | measured: the WPT oracle runs on Canary 157 (`docs/CONFORMANCE.md`). Build 157.0.8103.0 with the flag (2026-10-14): its `ElementImage` has no `width` / `height`, so the probe classifies the native API as `partial` and `install()` refuses (`partial-native`); pages keep the browser's own API, without the polyfill and its extensions |
-| Chrome 155 | polyfill | measured: WPT subject runs and the performance comparison |
+| Chrome desktop 154 | polyfill (`absent`); with the flag `CanvasDrawElement` the legacy draft (`layoutSubtree`, `copyElementImageToTexture`, no `content`, no `onelementgeometryupdate`): native-bridged with the bridge bundle, else used as found | measured: browser gates (fidelity, resize, scroll, typing); native probe |
+| Chrome Canary 157 | native `complete`: polyfill steps aside, the page draws natively | measured 2026-10-14 on 157.0.8103.0, with and without the flag (the API is exposed by default): kind `complete`, probe `ok`, mode `native`, a drawable form painted from `onpaint`, no console message. The WPT oracle runs on Canary 157 (`docs/CONFORMANCE.md`) |
+| Chrome 155 | polyfill; with the flag `CanvasDrawElement` the legacy draft (`layoutSubtree`, `ElementImage.width/height`): native-bridged with the bridge bundle, else used as found with one warning | measured: WPT subject runs and the performance comparison; with the flag, 155.0.8059.40 on 2026-10-14 (kind `legacy`, probe `ok`) |
 | Chrome 156 and Chrome 130-153 | polyfill expected (anchor positioning needs >= 125) | expected, unverified |
 | Chrome >= 157 stable with the feature shipped | native complete: polyfill patches nothing of the standard surface; the extensions are not supported there (`docs/guides/EFFECTS-PLUGINS.md`) | expected; web evidence of shipping is contradictory (see API-CONTRACT) |
 | Edge, Opera, Brave, other Chromium desktop >= 130 | same engine as Chrome | expected, unverified |
@@ -23,8 +23,8 @@ on the prototype that preceded this implementation and say so. Layout, hit-test,
 | Safari >= 27 desktop | polyfill (row `engine-webkit`) | measured: Safari 27.0.1 (macOS), G-xbrowser 11 scenarios PASS with their controls red, incl. `controls` (56/56 regions), classic scrollbars, `interaction` and `inactive`; needs an unlocked screen (Safari suspends rendering behind the lock screen) |
 | Firefox < 155, Safari < 27 | refused (`browser`, "older than the supported minimum") | unverified |
 | Chrome Android, iOS browsers, WebViews | refused (`browser`) | not measured |
-| any browser with a PARTIAL native implementation (a CORE name missing) | refused (`partial-native`) | by design |
-| a native build missing only ADDITIVE names (155-156-like) | native-bridged gap-fill | expected; tested on synthetic shapes only |
+| any browser whose native implementation lacks its core (`content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | refused (`partial-native`) | by design |
+| a native build with the core that lacks, renames or adds other members | used as found (mode `native`; `native-bridged` gap-fill when the bridge is loaded and can build the missing name) | unit-tested on the measured shapes and on every secondary name removed in turn |
 
 Minimum Chrome for the polyfill path is 130 by policy. Every engine is also checked for the platform features the polyfill path cannot run without (CSS anchor positioning,
 ResizeObserver, `HTMLImageElement.decode`, constructable stylesheets); a missing one is named in the refusal.
@@ -67,10 +67,10 @@ What differs and why (classification):
 
 | native state (behavioural probe) | mode | polyfill does |
 |---|---|---|
-| complete | native | nothing of the standard surface. The effects global stays defined, but the extensions are not supported in this mode: no `frameCap` property, no input remapping (observed with a test stub, `docs/guides/EFFECTS-PLUGINS.md`) |
-| legacy (pre-2026-09 names) | native-bridged | attribute aliasing + missing method aliases; native renderer untouched |
-| partial (a CORE name missing / unknown shape) | refused | `install()` throws unless `forcePolyfill` (tests); the IIFE auto-install warns once instead of throwing |
-| partial, only additive names missing | native-bridged | gap-fill only; native renderer untouched |
+| complete | native | nothing of the standard surface. The effects global stays defined, but the extensions are not supported in this mode: no `frameCap` property, no input remapping (`docs/guides/EFFECTS-PLUGINS.md`) |
+| partial (the core works, another current name is missing) | native, or native-bridged with the bridge when it can build the missing name | nothing, or gap-fill only; native renderer untouched; `report().deviations` `native-step-aside` says what is missing |
+| legacy (pre-2026-09 names) | native-bridged with the bridge, else native | attribute aliasing + missing method aliases; native renderer untouched; without the bridge one console warning |
+| broken (a core name missing) | refused | `install()` throws unless `forcePolyfill` (tests); the IIFE auto-install warns once instead of throwing |
 | absent | polyfill | full implementation (Chromium gate) |
 
 ## Content inside a drawable (what the clone can reproduce)
@@ -129,10 +129,11 @@ What differs and why (classification):
 | `content-drawable` | canvas content="drawable" + drawable attribute (reflected content IDL attribute) | Descendants are relocated into a live layer; see tree-identity. |
 | `request-paint` | requestPaint() fires paint at the next rendering opportunity even without changes | Fires at the end of the polyfill frame once the paint gate is open (every eligible drawable has a snapshot); at most once per frame. |
 | `draw-element-image-2d` | ctx.drawElementImage 4 overloads, negative rects, preserveElementGeometry; 2D and main-thread Offscreen2D | Draws from a retained 2D surface; pixels are those of the browser rasteriser (SVG foreignObject), not of the live page. |
-| `capture-element-image` | captureElementImage + ElementImage (immutable, close(), width/height in grid px) | A capture pins the current surface; the store forks it on the next commit (copy-on-write). |
+| `capture-element-image` | captureElementImage + ElementImage (immutable, close()) and getElementImageDefaultSize(element \| ElementImage) on the canvas and its main-thread OffscreenCanvas (grid px, follows the current bitmap size) | A capture pins the current surface; the store forks it on the next commit (copy-on-write). |
 | `elementgeometryupdate` | main-thread OffscreenCanvas updateElementGeometry batching + elementgeometryupdate event | Main thread only; there is no worker support (worker-element-image). |
 | `frame-cap` | framecap attribute / frameCap property (fps upper bound for snapshot commits, paint events and effect frames) | An extension, not part of the standard. In mode native the frameCap property is not defined; the framecap attribute bounds effect frames only (native paint events are not throttled; observed with a test stub, docs/guides/EFFECTS-PLUGINS.md). |
 | `effect-plugins` | HTMLInCanvasEffects: effect host, plugin ABI v2 (v1 adapted), input mapper, interposer (an extension, not part of the standard) | Optional bundle (docs/BUNDLES.md): hic-live-effects.iife.js after the core; example plugins in plugins/, built to dist/plugins/. Works only while the polyfill provides the API (mode polyfill). Needs WebGPU; without it createHost rejects loudly and the page keeps the 2D path. |
+| `native-step-aside` | a usable native implementation (content or layoutSubtree, onpaint, 2D drawElementImage) is used as found, whatever secondary members it lacks or renames: install() never throws there and records why in report().deviations | The specification still changes (ElementImage.width/height became getElementImageDefaultSize on 2026-10-08); refusing a browser over a secondary member would break pages that work natively. |
 | `top-layer` | top-layer content inside a drawable (modal <dialog>, open popover, fullscreen element) is not painted into the canvas; the live element shows in the page top layer | Same behaviour as native (WPT top-layer-not-painted-in-canvas, dialog-paints-in-top-layer). |
 
 ### Limited (works, with documented deviations)
@@ -159,7 +160,7 @@ What differs and why (classification):
 | `nested-geometry` | geometry of a drawable below a transformed or clipping non-drawable ancestor is not applied to the live element | The correction transform assumes a translation-only path from the layer to the drawable; reported once. |
 | `interposer-retarget` | effect input remap re-targets focus, click activation, range drag and caret placement; not select popups, drag selection or contenteditable | Trusted pointer events cannot be re-dispatched at another target; the interposer re-implements the common activations. |
 | `surface-size` | a drawable larger than options.maxSurfacePixels is rasterised at a reduced scale and reported | Retained surfaces are bounded GPU/CPU memory. |
-| `legacy-native-bridge` | mode native-bridged: attribute aliasing (content <-> layoutsubtree), missing method shims and gap-fill of additive names over a legacy or nearly complete native implementation, with per-method argument translation | Only what the public API of the native build can express; the native renderer is never replaced (API-CONTRACT 2.1 lists what is translated). Optional bundle hic-live-native-bridge.iife.js, loaded before the core; without it such a browser is refused with partial-native. |
+| `legacy-native-bridge` | mode native-bridged: attribute aliasing (content <-> layoutsubtree), missing method shims and gap-fill of additive names over a legacy or nearly complete native implementation, with per-method argument translation | Only what the public API of the native build can express; the native renderer is never replaced (API-CONTRACT 2.1 lists what is translated). Optional bundle hic-live-native-bridge.iife.js, loaded before the core; without it the native implementation is used as found (native-step-aside). |
 | `shadow-canvas` | a managed canvas inside an open shadow root (and a closed one created after install): per-root layer/geometry sheet, the root styles are collected for the clone | Document-level selectors and the selector bridge do not cross the boundary; a closed root created before install is refused (use adoptRoot). |
 | `layer-containing-block` | canvas that is position:fixed, or sits inside a non-positioned scroller/clipping ancestor: the layer mirrors fixed and is clipped by a JS-maintained clip-path, focus reveal scrolls the canvas scrollers | An absolutely positioned layer has the canvas containing block, not its clipping ancestors; the clip follows scrolling one frame late (reported once when a case is not coverable). |
 | `stacking-overlap` | page content that natively paints above a non-positioned canvas (sticky header, floats, earlier overlays) but is covered by the layer drawn drawables is detected and reported, not fixed | A positioned layer cannot paint at the in-flow stacking step; give the canvas a positioned stacking context to avoid it. |
@@ -186,6 +187,7 @@ What differs and why (classification):
 |---|---|---|
 | `paint-timing` | paint is dispatched at the END of the polyfill frame (ResizeObserver phase, after app rAF callbacks, style/layout and earlier-created ResizeObservers), not inside update-the-rendering after the IntersectionObserver steps; snapshot content lags the DOM by >= 2 frames | A userland polyfill cannot run inside the rendering steps; the ResizeObserver slot is the closest one (measured on Chrome 154). |
 | `contain-layout` | drawable is made a containing block with contain:layout (getComputedStyle().contain === "layout" instead of "none") | The only way to give a drawable the spec containing-block behaviour from CSS. |
+| `spec-after-wpt-pin` | pinned WPT revision (2026-10-07) only: subtests reading ElementImage.width/height fail, because the polyfill follows the 2026-10-08 specification (getElementImageDefaultSize), as Canary 157 does | The pinned tests predate the change; the same tests at WPT master pass (docs/CONFORMANCE.md). |
 | `a11y-geometry` | drawables always expose real geometry to assistive technology (native withholds it until geometry is updated) | The live DOM is laid out for real. |
 | `resize-stale-first` | on canvas resize a paint with the previous snapshots fires immediately, the re-rasterised one follows | Avoids a blank canvas while the new snapshot decodes. |
 | `css-transform-on-drawable` | a translation canvas transform (every drawElementImage at the natural size) composes with the drawable's own CSS transform/translate/rotate/scale in spec order, synchronously; a canvas transform with scale, rotation or skew is not applied to a drawable that has its own CSS transform (reported once) | A translation is applied as a relative offset, outside the CSS transform chain; a general matrix needs the transform property, which the author owns. |
@@ -203,7 +205,7 @@ What differs and why (classification):
 | id | what | reason / the one thing to know |
 |---|---|---|
 | `browser` | mobile browsers, engines other than Chromium/Gecko/WebKit, Chromium < 130, Firefox < 155, Safari < 27, and any engine lacking a required platform feature (CSS anchor positioning, ResizeObserver, HTMLImageElement.decode, constructable stylesheets; the refusal names it): install() throws HicUnsupportedError | Only Chrome 154/157, Firefox 155.0.1 and Safari 27.0.1 on macOS were measured (G-xbrowser); older versions are unverified and the named features have no fallback. |
-| `partial-native` | a native implementation that lacks a CORE name or has an unknown shape is never overridden (install() throws unless forcePolyfill); a build that lacks only additive names is gap-filled | Mixing two implementations of one core surface is unsound. |
+| `partial-native` | a native implementation without its core (content or layoutSubtree, onpaint, 2D drawElementImage) is neither used nor overridden: install() throws unless forcePolyfill | It cannot run the API, and mixing two implementations of one core surface is unsound. |
 | `iframe` | <iframe>/<object>/<embed> inside a drawable subtree | A child browsing context cannot be serialised into foreignObject. |
 | `cross-origin-resource` | images/fonts/CSS that cannot be fetched with CORS or same-origin credentials | SVG-as-image cannot load external resources; read-back-allowed rendering forbids leaking them. |
 | `resource-fetch-failed` | a resource that cannot be fetched or decoded as data: | Network error or undecodable payload. |

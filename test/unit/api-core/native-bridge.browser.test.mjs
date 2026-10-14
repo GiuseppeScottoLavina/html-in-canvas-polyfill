@@ -36,6 +36,23 @@ test('legacy shape: mode native-bridged, native renderer untouched, only additio
   assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)), []);
 });
 
+test('getElementImageDefaultSize is built over the earlier ElementImage.width/height (a capture for an Element), and removed on uninstall', t => {
+  const w = makeFrame(t, '<canvas id="c" content="drawable" width="300" height="100"><div id="d"></div></canvas>');
+  const calls = defineFakeNative(w, { legacy: true });
+  assert.equal('getElementImageDefaultSize' in w.HTMLCanvasElement.prototype, false, 'control: the legacy shape has no size getter');
+  const installed = installWith({ window: w }, fakeServices());
+  assert.deepEqual(installed.native.gaps.includes('getElementImageDefaultSize'), true);
+  const c = w.document.getElementById('c');
+  const d = w.document.getElementById('d');
+  assert.deepEqual({ ...c.getElementImageDefaultSize(d) }, { width: 10, height: 10 });
+  assert.equal(calls.filter((x) => x[0] === 'captureElementImage').length, 1, 'an Element is captured once');
+  assert.deepEqual({ ...c.getElementImageDefaultSize(new w.ElementImage()) }, { width: 10, height: 10 }, 'an ElementImage is read directly');
+  assert.equal(calls.filter((x) => x[0] === 'captureElementImage').length, 1);
+  assert.throws(() => c.getElementImageDefaultSize(), TypeError);
+  installed.uninstall();
+  assert.equal('getElementImageDefaultSize' in w.HTMLCanvasElement.prototype, false);
+});
+
 test('content IDL + attribute mirroring: setter, setAttribute, removeAttribute, toggleAttribute keep layoutsubtree in step synchronously', t => {
   const { w } = legacyFrame(t);
   const c = w.document.createElement('canvas');

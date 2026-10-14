@@ -1,9 +1,18 @@
 /**
- * Behavioural native probe and browser gate (side-effect free; never trusts `in` alone: members are read as descriptors, content reflection is exercised on a detached canvas).
+ * Behavioural native probe and browser gate (side-effect free; never trusts `in` alone: members are read as descriptors, content reflection and
+ * drawElementImage are exercised on a detached canvas).
  * Module: api-core. Implemented.
  *
- * Measured shapes (Chrome 154 and Canary 157): the paint event interface is NOT a global in either build, and neither has
- * ElementImage.toImageBitmap or frameCap (both are polyfill extensions). They are therefore not part of the completeness decision.
+ * Policy: the decision rests on the CORE behaviour only (the `content` / legacy `layoutSubtree` markup, the `paint` event handler, a 2D
+ * `drawElementImage` that behaves like a platform method). Every other member of the specification is recorded when missing, but a missing,
+ * renamed or extra secondary member is never a reason to refuse: the API is still evolving (2026-10-08: ElementImage.width/height were replaced by
+ * getElementImageDefaultSize; 2026-10-09: the two-argument getElementTransform was removed), and a browser that ships a usable implementation must
+ * keep it. Only a native implementation whose core is missing is refused, because it can neither be used nor be replaced safely.
+ *
+ * Measured shapes (2026-10-14): Chrome 154 and 155.0.8059.40 with --enable-blink-features=CanvasDrawElement (legacy: layoutSubtree, ElementImage.width/height,
+ * texElementImage2D, copyElementImageToTexture); Canary 157.0.8103.0 with or without the flag (current: content, getElementImageDefaultSize on HTMLCanvasElement
+ * and OffscreenCanvas, ElementImage with close() only).
+ * None exposes ElementImage.toImageBitmap or frameCap (both are extensions of this library), so they are not probed.
  */
 
 import { carriesMark } from './patch.js';
@@ -11,28 +20,42 @@ import { engineOf } from '../util/engine.js';
 
 /** @typedef {import('../contracts/types.js').NativeState} NativeState */
 
-/** Names the CURRENT spec requires. A build missing one is `partial` and never gap-filled. */
-export const CORE_NAMES = Object.freeze([
-  'content', 'onpaint', 'requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry',
-  'CanvasRenderingContext2D.drawElementImage', 'OffscreenCanvasRenderingContext2D.drawElementImage', 'ElementImage',
+/** The core: an implementation with all three is usable and the polyfill steps aside. `content` may be replaced by the legacy `layoutSubtree`. */
+export const CORE_NAMES = Object.freeze(['content', 'onpaint', 'CanvasRenderingContext2D.drawElementImage']);
+
+/** The rest of the CURRENT specification (WHATWG HTML PR 11588 at 4cfec766, 2026-10-08). A missing one is recorded, never refused. */
+export const SPEC_NAMES = Object.freeze([
+  'requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry', 'getElementImageDefaultSize',
+  'onelementgeometryupdate', 'OffscreenCanvasRenderingContext2D.drawElementImage', 'OffscreenCanvas.updateElementGeometry', 'OffscreenCanvas.clearElementGeometry',
+  'OffscreenCanvas.getElementImageDefaultSize', 'ElementImage', 'ElementGeometryUpdateEvent', 'WebGLRenderingContext.texElementSubImage2D',
+  'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture',
 ]);
 
-/** Names that may be missing on an otherwise complete build; they are gap-filled in mode native-bridged. */
+/** The SPEC_NAMES the optional native bridge can build from public native API (the size getter and the texture names only from their legacy twins). */
 export const ADDITIVE_NAMES = Object.freeze([
-  'onelementgeometryupdate', 'ElementGeometryUpdateEvent', 'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D',
+  'onelementgeometryupdate', 'ElementGeometryUpdateEvent', 'getElementImageDefaultSize', 'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D',
   'GPUQueue.drawElementImageToTexture',
 ]);
 
-/** Pre-2026-09 names. `layoutSubtree` plus a missing `content` is the legacy shape. */
+/** Names of earlier drafts. `layoutSubtree` plus a missing `content` is the legacy shape; the others are informational. */
 export const LEGACY_NAMES = Object.freeze([
-  'layoutSubtree', 'WebGLRenderingContext.texElementImage2D', 'WebGL2RenderingContext.texElementImage2D', 'GPUQueue.copyElementImageToTexture',
+  'layoutSubtree', 'ElementImage.width', 'WebGLRenderingContext.texElementImage2D', 'WebGL2RenderingContext.texElementImage2D', 'GPUQueue.copyElementImageToTexture',
 ]);
+
+/** What an additive name is built from in the bridge (null: from nothing native). */
+const BUILT_FROM = Object.freeze({
+  getElementImageDefaultSize: 'ElementImage.width',
+  'WebGLRenderingContext.texElementSubImage2D': 'WebGLRenderingContext.texElementImage2D',
+  'WebGL2RenderingContext.texElementSubImage2D': 'WebGL2RenderingContext.texElementImage2D',
+  'GPUQueue.drawElementImageToTexture': 'GPUQueue.copyElementImageToTexture',
+});
 
 /**
  * @typedef {Object} Observation  What the probe saw. `applicable` lists the names that CAN exist in this window (no WebGPU class, no GPUQueue names).
  * @property {string[]} present
  * @property {string[]} applicable
  * @property {number|null} browserMajor
+ * @property {NativeState['probe']} [probe]  how 2D drawElementImage behaved on a detached drawable (default 'skipped')
  */
 
 /**
@@ -43,29 +66,34 @@ export const LEGACY_NAMES = Object.freeze([
 export function classifyNative(obs) {
   const has = new Set(obs.present);
   const applicable = new Set(obs.applicable);
-  const coreMissing = CORE_NAMES.filter((n) => applicable.has(n) && !has.has(n));
-  const gaps = ADDITIVE_NAMES.filter((n) => applicable.has(n) && !has.has(n));
+  const markup = has.has('content') ? 'content' : has.has('layoutSubtree') ? 'layoutSubtree' : null;
+  const coreMissing = CORE_NAMES.filter((n) => !has.has(n) && !(n === 'content' && markup));
+  const specMissing = SPEC_NAMES.filter((n) => applicable.has(n) && !has.has(n));
   const legacyNames = LEGACY_NAMES.filter((n) => has.has(n));
-  const seen = [...CORE_NAMES, ...ADDITIVE_NAMES].some((n) => has.has(n)) || legacyNames.length > 0;
+  const seen = [...CORE_NAMES, ...SPEC_NAMES].some((n) => has.has(n)) || legacyNames.length > 0;
 
   /** @type {NativeState['kind']} */
   let kind;
   if (!seen) kind = 'absent';
-  else if (coreMissing.length === 0) kind = gaps.length === 0 ? 'complete' : 'partial';
-  else if (coreMissing.length === 1 && coreMissing[0] === 'content' && has.has('layoutSubtree')) kind = 'legacy';
-  else kind = 'partial';
+  else if (coreMissing.length) kind = 'broken';
+  else if (markup === 'layoutSubtree') kind = 'legacy';
+  else kind = specMissing.length ? 'partial' : 'complete';
 
+  const usable = kind === 'complete' || kind === 'partial' || kind === 'legacy';
+  const gaps = usable ? ADDITIVE_NAMES.filter((n) => specMissing.includes(n) && (!(n in BUILT_FROM) || has.has(/** @type {Record<string, string>} */ (BUILT_FROM)[n]))) : [];
+  const probe = obs.probe ?? 'skipped';
   return {
     kind,
     present: [...has],
-    missing: kind === 'absent' ? [] : [...coreMissing, ...gaps],
+    missing: kind === 'absent' ? [] : [...(kind === 'legacy' ? ['content'] : coreMissing), ...specMissing],
     legacyNames,
-    gaps: kind === 'absent' ? [] : [...gaps],
-    fillable: kind === 'partial' && coreMissing.length === 0 && gaps.length > 0,
+    gaps,
+    fillable: kind === 'partial' && gaps.length > 0,
+    verified: usable && probe === 'ok',
+    probe,
     browserMajor: obs.browserMajor,
   };
 }
-
 /**
  * First descriptor of `key` along the prototype chain, or null when absent or stamped by a polyfill (ours or a foreign copy): a patched member is not native.
  * @param {object|undefined|null} obj
@@ -112,12 +140,47 @@ function contentReflects(win) {
 }
 
 /**
+ * The behavioural half of the core check: a platform drawElementImage converts its first argument (a plain object is a TypeError) and refuses a
+ * drawable of a canvas that was never rendered (an InvalidStateError DOMException; measured on Canary 157.0.8103.0). Runs on a detached canvas, so
+ * nothing is laid out, painted or observable by the page. 'inert' = it returned without throwing (a stub); 'unexpected' = it threw something else.
+ * @param {any} win
+ * @param {Function} draw  the native CanvasRenderingContext2D.prototype.drawElementImage
+ * @param {'content'|'layoutSubtree'} markup
+ * @returns {NativeState['probe']}
+ */
+function probeDraw(win, draw, markup) {
+  let ctx;
+  let child;
+  try {
+    const canvas = win.document.createElement('canvas');
+    if (markup === 'content') canvas.setAttribute('content', 'drawable');
+    else canvas.setAttribute('layoutsubtree', '');
+    child = win.document.createElement('div');
+    child.setAttribute('drawable', '');
+    canvas.append(child);
+    ctx = canvas.getContext('2d');
+  } catch { return 'unexpected'; }
+  if (!ctx) return 'unexpected';
+  /** @param {unknown} arg @returns {'returned'|'type'|'state'|'other'} */
+  const outcome = (arg) => {
+    try { draw.call(ctx, arg, 0, 0); return 'returned'; } catch (err) {
+      if (err instanceof win.TypeError) return 'type';
+      return err instanceof win.DOMException && /** @type {DOMException} */ (err).name === 'InvalidStateError' ? 'state' : 'other';
+    }
+  };
+  const foreign = outcome({});
+  const drawable = outcome(child);
+  if (foreign === 'returned' && drawable === 'returned') return 'inert';
+  return foreign === 'type' && drawable === 'state' ? 'ok' : 'unexpected';
+}
+
+/**
  * @param {any} win
  * @returns {Observation}
  */
 function observe(win) {
   /** @type {Set<string>} */ const present = new Set();
-  /** @type {Set<string>} */ const applicable = new Set([...CORE_NAMES, ...ADDITIVE_NAMES, ...LEGACY_NAMES]);
+  /** @type {Set<string>} */ const applicable = new Set([...CORE_NAMES, ...SPEC_NAMES, ...LEGACY_NAMES]);
   /** @param {string} name @param {boolean} ok */
   const note = (name, ok) => { if (ok) present.add(name); };
   /** @param {string} name */
@@ -128,14 +191,17 @@ function observe(win) {
   note('layoutSubtree', hasAccessor(canvas, 'layoutSubtree'));
   note('onpaint', hasAccessor(canvas, 'onpaint'));
   note('onelementgeometryupdate', hasAccessor(canvas, 'onelementgeometryupdate'));
-  for (const m of ['requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry']) note(m, hasMethod(canvas, m));
+  for (const m of ['requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry', 'getElementImageDefaultSize']) note(m, hasMethod(canvas, m));
+  optionalClass('OffscreenCanvas');
+  for (const m of ['updateElementGeometry', 'clearElementGeometry', 'getElementImageDefaultSize']) note(`OffscreenCanvas.${m}`, hasMethod(win.OffscreenCanvas?.prototype, m));
 
   for (const cls of ['CanvasRenderingContext2D', 'OffscreenCanvasRenderingContext2D']) {
     optionalClass(cls);
     note(`${cls}.drawElementImage`, hasMethod(win[cls]?.prototype, 'drawElementImage'));
   }
   const image = nativeGlobal(win, 'ElementImage');
-  note('ElementImage', !!image && hasAccessor(image.prototype, 'width') && hasMethod(image.prototype, 'close'));
+  note('ElementImage', !!image && hasMethod(image.prototype, 'close'));
+  note('ElementImage.width', !!image && hasAccessor(image.prototype, 'width'));
   note('ElementGeometryUpdateEvent', constructsEvent(nativeGlobal(win, 'ElementGeometryUpdateEvent'), 'elementgeometryupdate'));
 
   for (const cls of ['WebGLRenderingContext', 'WebGL2RenderingContext']) {
@@ -147,7 +213,11 @@ function observe(win) {
   note('GPUQueue.drawElementImageToTexture', hasMethod(win.GPUQueue?.prototype, 'drawElementImageToTexture'));
   note('GPUQueue.copyElementImageToTexture', hasMethod(win.GPUQueue?.prototype, 'copyElementImageToTexture'));
 
-  return { present: [...present], applicable: [...applicable], browserMajor: readBrowser(win).major };
+  const markup = present.has('content') ? 'content' : present.has('layoutSubtree') ? 'layoutSubtree' : null;
+  const draw = nativeDescriptor(win.CanvasRenderingContext2D?.prototype, 'drawElementImage')?.value;
+  /** @type {NativeState['probe']} */
+  const probe = markup && present.has('onpaint') && typeof draw === 'function' ? probeDraw(win, draw, markup) : 'skipped';
+  return { present: [...present], applicable: [...applicable], browserMajor: readBrowser(win).major, probe };
 }
 
 /**
@@ -159,8 +229,7 @@ function readBrowser(win) {
 }
 
 /**
- * Build a detached canvas and test every name of the CURRENT spec (docs/API-CONTRACT.md section 2). Fills NativeState.gaps and NativeState.fillable:
- * a build that has every CORE name but lacks only ADDITIVE names is `partial` with fillable=true (gap-fill, not refusal).
+ * Build a detached canvas, check the core behaviour and record every name of the CURRENT spec (docs/API-CONTRACT.md section 2).
  * @param {Window} win
  * @returns {NativeState}
  */
@@ -207,14 +276,20 @@ export function browserGate(win) {
  * @typedef {Object} ModeDecision
  * @property {import('../contracts/types.js').HicMode} mode  'refused' when `refusal` is set
  * @property {{feature: 'browser'|'partial-native', message: string, hint: string}|null} refusal
+ * @property {string|null} [notice]  why the polyfill stepped aside from an explicit `mode: 'polyfill'` (recorded and warned once by install)
  */
 
 /** @param {'browser'|'partial-native'} feature @param {string} message @param {string} hint @returns {ModeDecision} */
 const refuse = (feature, message, hint) => ({ mode: 'refused', refusal: { feature, message, hint } });
 
+/** @param {NativeState} native @returns {boolean} the core works: the polyfill steps aside */
+export const nativeUsable = (native) => native.kind === 'complete' || native.kind === 'partial' || native.kind === 'legacy';
+
 /**
  * Pure decision table (docs/API-CONTRACT.md section 2): native probe x browser gate x options -> mode or refusal.
- * `forcePolyfill` is the single override of a present native; `mode:'native-only'` wins over it.
+ * A usable native (complete, partial or legacy) is NEVER refused and never replaced: the result is `native`, or `native-bridged` when the optional
+ * bridge has something to add (install falls back to `native` when the bridge is not loaded). Only `broken` (a native core is missing) is refused.
+ * `forcePolyfill` is the single override of a present native and exists for tests; `mode:'native-only'` wins over it.
  * @param {NativeState} native
  * @param {{ok: boolean, reason?: string}} gate
  * @param {{mode: 'auto'|'polyfill'|'native-only', forcePolyfill: boolean}} opts
@@ -223,24 +298,22 @@ const refuse = (feature, message, hint) => ({ mode: 'refused', refusal: { featur
 export function decideMode(native, gate, opts) {
   const gateRefusal = () => refuse('browser', `unsupported browser: ${gate.reason ?? 'browser gate failed'}`,
     `use a desktop Chromium-family browser (Chrome, Edge) >= ${MIN_CHROMIUM_MAJOR}, Firefox >= ${MIN_FIREFOX_MAJOR} or Safari >= ${MIN_SAFARI_MAJOR} (docs/SUPPORT-MATRIX.md, Browsers)`);
-  const present = native.kind !== 'absent';
+  const brokenRefusal = () => refuse('partial-native', `this browser has a native HTML-in-Canvas implementation without its core (missing: ${native.missing.join(', ')})`,
+    'update the browser or remove the experimental flag; options.forcePolyfill replaces the native parts (tests only)');
+  const usable = nativeUsable(native);
+  /** @type {ModeDecision['mode']} */
+  const nativeMode = native.kind === 'legacy' || native.fillable ? 'native-bridged' : 'native';
 
   if (opts.mode === 'native-only') {
-    if (native.kind === 'complete') return { mode: 'native', refusal: null };
-    return refuse(present ? 'partial-native' : 'browser',
-      present ? `mode "native-only" needs a complete native implementation, found "${native.kind}" (missing: ${native.missing.join(', ') || 'none'})`
-        : 'mode "native-only" needs a native HTML-in-Canvas implementation and this browser has none',
-      'use mode "auto" so the polyfill can complement or replace the missing parts');
+    if (usable) return { mode: nativeMode, refusal: null };
+    return native.kind === 'broken' ? brokenRefusal()
+      : refuse('browser', 'mode "native-only" needs a native HTML-in-Canvas implementation and this browser has none', 'use mode "auto" so the polyfill can provide the API');
   }
   if (opts.forcePolyfill) return gate.ok ? { mode: 'polyfill', refusal: null } : gateRefusal();
-
-  if (!present) return gate.ok ? { mode: 'polyfill', refusal: null } : gateRefusal();
-  if (opts.mode === 'polyfill') {
-    return refuse('partial-native', `mode "polyfill" cannot override a native implementation (kind "${native.kind}"); a present native is never replaced`,
-      'use mode "auto", or options.forcePolyfill in tests');
-  }
-  if (native.kind === 'complete') return { mode: 'native', refusal: null };
-  if (native.kind === 'legacy' || native.fillable) return { mode: 'native-bridged', refusal: null };
-  return refuse('partial-native', `this browser has a partial native implementation that the polyfill cannot complement (missing core: ${native.missing.join(', ')})`,
-    'update the browser or remove the experimental flag; options.forcePolyfill replaces the native parts (tests only)');
+  if (native.kind === 'absent') return gate.ok ? { mode: 'polyfill', refusal: null } : gateRefusal();
+  if (!usable) return brokenRefusal();
+  const notice = opts.mode === 'polyfill'
+    ? `mode "polyfill" ignored: this browser implements HTML-in-Canvas (kind "${native.kind}") and a usable native implementation is never replaced`
+    : null;
+  return { mode: nativeMode, refusal: null, notice };
 }

@@ -217,30 +217,58 @@ test('captureElementImage returns an immutable ElementImage pinned to the newest
   const a = canvas.captureElementImage(el);
   assert.ok(a instanceof ElementImage);
   assert.equal(Object.prototype.toString.call(a), '[object ElementImage]');
-  assert.deepEqual([a.width, a.height], [40, 20]);
+  const size = (/** @type {any} */ x) => { const s = canvas.getElementImageDefaultSize(x); return [s.width, s.height]; };
+  assert.deepEqual(size(a), [40, 20]);
   assert.equal(version.refs, 1, 'pinned');
   store.commit(el, { width: 60, height: 30 });
   const b = canvas.captureElementImage(el);
-  assert.deepEqual([a.width, a.height], [40, 20], 'A keeps the old snapshot');
-  assert.deepEqual([b.width, b.height], [60, 30]);
+  assert.deepEqual(size(a), [40, 20], 'A keeps the old snapshot');
+  assert.deepEqual(size(b), [60, 30]);
+  assert.deepEqual(size(el), [60, 30], 'an Element resolves to its newest snapshot');
 });
 
-test('ElementImage.width/height follow the CURRENT canvas bitmap size, and are 0 once closed', async (t) => {
+test('ElementImage has close() only (2026-10-08 spec: no width/height); getElementImageDefaultSize follows the CURRENT bitmap size and refuses a closed image', async (t) => {
   const { canvas, el, version } = await set(t);
   const image = canvas.captureElementImage(el);
+  assert.equal('width' in image, false, 'WPT captureElementImage: ElementImage should not have a width property');
+  assert.equal('height' in image, false);
+  assert.deepEqual(Object.keys(ElementImage.prototype), ['close']);
   canvas.width = 200;
   canvas.height = 50;
-  assert.deepEqual([image.width, image.height], [80, 10], '40 * 200/100, 20 * 50/100');
+  const s = canvas.getElementImageDefaultSize(image);
+  assert.deepEqual([s.width, s.height], [80, 10], '40 * 200/100, 20 * 50/100');
+  const e = canvas.getElementImageDefaultSize(el);
+  assert.deepEqual([e.width, e.height], [80, 10], 'an Element follows the same grid');
+  assert.notEqual(canvas.getElementImageDefaultSize(el), e, 'a new dictionary each call');
   image.close();
-  assert.deepEqual([image.width, image.height], [0, 0]);
+  throwsDom(() => canvas.getElementImageDefaultSize(image), 'InvalidStateError');
   image.close();
   assert.equal(version.refs, 0, 'close is idempotent and unpins once');
+});
+
+test('getElementImageDefaultSize: IDL shape and the exceptions of the WPT (another canvas, no snapshot, wrong receiver)', async (t) => {
+  const { canvas, el, root } = await set(t);
+  const fn = HTMLCanvasElement.prototype.getElementImageDefaultSize;
+  assert.equal(fn.length, 1);
+  assert.equal(fn.name, 'getElementImageDefaultSize');
+  assert.throws(() => canvas.getElementImageDefaultSize(), TypeError);
+  assert.throws(() => canvas.getElementImageDefaultSize({}), TypeError);
+  assert.throws(() => fn.call({}, el), TypeError);
+  const other = document.createElement('canvas');
+  root.append(other);
+  throwsDom(() => other.getElementImageDefaultSize(el), 'InvalidStateError');
+  throwsDom(() => other.getElementImageDefaultSize(canvas.captureElementImage(el)), 'InvalidStateError');
+});
+
+test('getElementImageDefaultSize before the first snapshot: InvalidStateError (WPT error-conditions)', async (t) => {
+  const { canvas, el } = await set(t, { version: null });
+  throwsDom(() => canvas.getElementImageDefaultSize(el), 'InvalidStateError');
 });
 
 test('ElementImage: no constructor, wrong receiver, toImageBitmap copies the border box, a closed image refuses', async (t) => {
   const { canvas, el } = await set(t);
   assert.throws(() => new ElementImage(), TypeError);
-  assert.throws(() => Object.getOwnPropertyDescriptor(ElementImage.prototype, 'width').get.call({}), TypeError);
+  assert.throws(() => ElementImage.prototype.close.call({}), TypeError);
   const image = canvas.captureElementImage(el);
   const bitmap = await image.toImageBitmap();
   assert.deepEqual([bitmap.width, bitmap.height], [40, 20]);

@@ -152,12 +152,19 @@ export function diffDescriptors(/** @type {Map<string, PropertyDescriptor>} */ a
 
 /**
  * Give a frame a native HTML-in-Canvas implementation of a chosen shape, built from plain functions (the page's Chrome has none without a flag).
- * `legacy` = the Chrome 154 shape (layoutSubtree, no content, drawElementImage returns a DOMMatrix); `omit` removes names (CORE or ADDITIVE, as in native-detect.js).
+ * Shapes, as measured:
+ *  - 'current'  (default): Canary 157.0.8103.0 with or without the flag, the 2026-10-08 specification: `content`, getElementImageDefaultSize on
+ *                HTMLCanvasElement and OffscreenCanvas, ElementImage with close() only.
+ *  - 'previous': the 2026-10-07 shape of the pinned WPT revision: `content`, ElementImage.width/height, no getElementImageDefaultSize.
+ *  - 'legacy'   (or `legacy: true`): Chrome 154 and 155 with the flag: layoutSubtree, no content, drawElementImage returns a DOMMatrix, ElementImage.width/height.
+ * `omit` removes names (as in native-detect.js). drawElementImage throws like the platform (TypeError for a non-Element without the ElementImage
+ * shape, InvalidStateError for an element of a canvas that is not connected) unless `inert` (a stub that returns without throwing).
  * Every native method records its calls in `w.__native`.
  * @param {any} w
- * @param {{legacy?: boolean, omit?: string[]}} [shape]
+ * @param {{legacy?: boolean, shape?: 'current'|'previous'|'legacy', omit?: string[], inert?: boolean}} [options]
  */
-export function defineFakeNative(w, { legacy = false, omit = [] } = {}) {
+export function defineFakeNative(w, { legacy = false, shape = legacy ? 'legacy' : 'current', omit = [], inert = false } = {}) {
+  const isLegacy = shape === 'legacy';
   /** @type {any[][]} */
   const calls = (w.__native = []);
   const has = (/** @type {string} */ name) => !omit.includes(name);
@@ -165,7 +172,7 @@ export function defineFakeNative(w, { legacy = false, omit = [] } = {}) {
     if (has(name)) Object.defineProperty(obj, key, { configurable: true, enumerable: true, ...d });
   };
   const canvas = w.HTMLCanvasElement.prototype;
-  if (legacy) {
+  if (isLegacy) {
     def(canvas, 'layoutSubtree', { get() { return this.hasAttribute('layoutsubtree'); }, set(v) { this.toggleAttribute('layoutsubtree', !!v); } });
   } else {
     def(canvas, 'content', { get() { return (this.getAttribute('content') ?? '').toLowerCase() === 'drawable' ? 'drawable' : 'fallback'; }, set(v) { this.setAttribute('content', v); } });
@@ -173,30 +180,51 @@ export function defineFakeNative(w, { legacy = false, omit = [] } = {}) {
   }
   def(canvas, 'onpaint', { get() { return null; }, set() {} });
   for (const m of ['requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry']) {
-    def(canvas, m, { writable: true, value: function (/** @type {any[]} */ ...args) { calls.push([m, ...args]); } });
+    def(canvas, m, { writable: true, value: function (/** @type {any[]} */ ...args) {
+      calls.push([m, ...args]);
+      return m === 'captureElementImage' && typeof w.ElementImage === 'function' ? new w.ElementImage() : undefined;
+    } });
+  }
+  const size = function (/** @type {any} */ el) { calls.push(['getElementImageDefaultSize', el]); return { width: 10, height: 10 }; };
+  if (shape === 'current') {
+    def(canvas, 'getElementImageDefaultSize', { writable: true, value: size });
+    if (w.OffscreenCanvas) def(w.OffscreenCanvas.prototype, 'getElementImageDefaultSize', { writable: true, value: size }, 'OffscreenCanvas.getElementImageDefaultSize');
+  }
+  if (w.OffscreenCanvas) {
+    for (const m of ['updateElementGeometry', 'clearElementGeometry']) {
+      def(w.OffscreenCanvas.prototype, m, { writable: true, value: function (/** @type {any[]} */ ...args) { calls.push([`OffscreenCanvas.${m}`, ...args]); } }, `OffscreenCanvas.${m}`);
+    }
   }
   for (const cls of ['CanvasRenderingContext2D', 'OffscreenCanvasRenderingContext2D']) {
     if (!w[cls]) continue;
     def(w[cls].prototype, 'drawElementImage', {
       writable: true,
       value: function (/** @type {any} */ el, /** @type {number} */ dx = 0, /** @type {number} */ dy = 0) {
+        if (!inert) {
+          const element = el instanceof w.Element;
+          if (!element && !(el && typeof el === 'object' && ('close' in el || 'width' in el))) throw new w.TypeError("The provided value is not of type '(Element or ElementImage)'.");
+          if (element && !el.isConnected) throw new w.DOMException('The element can only be drawn into its nearest ancestor <canvas>.', 'InvalidStateError');
+        }
         calls.push(['drawElementImage', el, dx, dy]);
-        return legacy ? new w.DOMMatrix([1, 0, 0, 1, dx, dy]) : undefined;
+        return isLegacy ? new w.DOMMatrix([1, 0, 0, 1, dx, dy]) : undefined;
       },
     }, `${cls}.drawElementImage`);
   }
   if (has('ElementImage')) {
-    def(w, 'ElementImage', { writable: true, value: class ElementImage { get width() { return 10; } get height() { return 10; } close() {} } });
+    const ElementImage = shape === 'current'
+      ? class ElementImage { close() {} }
+      : class ElementImage { get width() { return 10; } get height() { return 10; } close() {} };
+    def(w, 'ElementImage', { writable: true, value: ElementImage });
   }
-  if (!legacy && has('ElementGeometryUpdateEvent')) def(w, 'ElementGeometryUpdateEvent', { writable: true, value: class ElementGeometryUpdateEvent extends w.Event {} });
+  if (!isLegacy && has('ElementGeometryUpdateEvent')) def(w, 'ElementGeometryUpdateEvent', { writable: true, value: class ElementGeometryUpdateEvent extends w.Event {} });
   for (const cls of ['WebGLRenderingContext', 'WebGL2RenderingContext']) {
     if (!w[cls]) continue;
     def(w[cls].prototype, 'texElementSubImage2D', { writable: true, value() {} }, `${cls}.texElementSubImage2D`);
-    if (legacy) def(w[cls].prototype, 'texElementImage2D', { writable: true, value() {} }, `${cls}.texElementImage2D`);
+    if (isLegacy) def(w[cls].prototype, 'texElementImage2D', { writable: true, value() {} }, `${cls}.texElementImage2D`);
   }
   if (w.GPUQueue) {
     def(w.GPUQueue.prototype, 'drawElementImageToTexture', { writable: true, value() {} }, 'GPUQueue.drawElementImageToTexture');
-    if (legacy) def(w.GPUQueue.prototype, 'copyElementImageToTexture', { writable: true, value() {} }, 'GPUQueue.copyElementImageToTexture');
+    if (isLegacy) def(w.GPUQueue.prototype, 'copyElementImageToTexture', { writable: true, value() {} }, 'GPUQueue.copyElementImageToTexture');
   }
   return calls;
 }

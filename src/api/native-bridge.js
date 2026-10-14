@@ -1,5 +1,6 @@
 /**
- * Mode native-bridged: aliases over a LEGACY or nearly complete native implementation (never replaces the native renderer).
+ * Mode native-bridged: aliases over a LEGACY or nearly complete native implementation (never replaces the native renderer). Optional: without
+ * this bundle such an implementation is used as found (mode native, report().deviations native-step-aside).
  * Module: api-core. Implemented.
  *
  *  - legacy shape (no `content`): `content` IDL + attribute mirroring to `layoutsubtree`, and the translations of native-geometry.js;
@@ -145,6 +146,13 @@ function fillGaps(env, native, ledger) {
     }, 'onelementgeometryupdate');
     ledger.define(win.HTMLCanvasElement.prototype, 'onelementgeometryupdate', { ...accessor, enumerable: true, configurable: true });
   }
+  if (gaps.has('getElementImageDefaultSize') && present.has('ElementImage.width')) {
+    // the 2026-10-08 size getter over the earlier ElementImage.width/height (a capture for an Element); the originating canvas of an ElementImage is not checked
+    ledger.define(win.HTMLCanvasElement.prototype, 'getElementImageDefaultSize', { value: /** @this {any} */ function getElementImageDefaultSize(/** @type {any} */ element) {
+      if (arguments.length < 1) throw new TypeError("Failed to execute 'getElementImageDefaultSize': 1 argument required, but only 0 present.");
+      return nativeDefaultSize(null, element, this);
+    }, writable: true, configurable: true, enumerable: true });
+  }
   for (const cls of /** @type {const} */ (['WebGLRenderingContext', 'WebGL2RenderingContext'])) {
     if (gaps.has(`${cls}.texElementSubImage2D`)) fillTexSubImage(env, cls, present.has(`${cls}.texElementImage2D`), ledger);
   }
@@ -164,8 +172,23 @@ function fillGaps(env, native, ledger) {
 }
 
 /**
+ * The natural size of an element or ElementImage in grid px, from whichever shape the native build has: the current
+ * `getElementImageDefaultSize` on the canvas (or its OffscreenCanvas), else the earlier `ElementImage.width/height` of a capture.
+ * @param {any} canvas  the context's canvas
+ * @param {any} source  Element or ElementImage
+ * @param {any} [owner]  the canvas that captures an Element (default: its parent, the legacy direct-child rule)
+ * @returns {{width: number, height: number}}
+ */
+export function nativeDefaultSize(canvas, source, owner = source?.parentElement) {
+  if (typeof canvas?.getElementImageDefaultSize === 'function') return canvas.getElementImageDefaultSize(source);
+  if (typeof source?.close === 'function') return { width: source.width, height: source.height };
+  const image = owner.captureElementImage(source);
+  try { return { width: image.width, height: image.height }; } finally { image.close(); }
+}
+
+/**
  * texElementSubImage2D over the legacy texElementImage2D: upload into a scratch texture, copy the rectangle into the bound target at the offset, restore the GL state.
- * The natural-size rule of API-CONTRACT 5.3 applies (config.width/height, else the ElementImage size); scaling between source and destination rectangles is not available this way.
+ * The natural-size rule of API-CONTRACT 5.3 applies (config.width/height, else the native default size); scaling between source and destination rectangles is not available this way.
  * @param {HicEnv} env
  * @param {'WebGLRenderingContext'|'WebGL2RenderingContext'} cls
  * @param {boolean} hasLegacyUpload
@@ -183,10 +206,9 @@ function fillTexSubImage(env, cls, hasLegacyUpload, ledger) {
       /** @type {any} */ element, /** @type {any} */ config = {}) {
       const gl = this;
       if (target !== gl.TEXTURE_2D) throw new DOMException('texElementSubImage2D (bridged) supports target TEXTURE_2D only', 'NotSupportedError');
-      const image = element.parentElement && typeof element.parentElement.captureElementImage === 'function' && !('close' in element) ? element.parentElement.captureElementImage(element) : element;
-      const width = config.width ?? Math.ceil(image.width);
-      const height = config.height ?? Math.ceil(image.height);
-      if (image !== element) image.close();
+      const { width: naturalWidth, height: naturalHeight } = nativeDefaultSize(gl.canvas, element);
+      const width = config.width ?? Math.ceil(naturalWidth);
+      const height = config.height ?? Math.ceil(naturalHeight);
       const sx = config.sx ?? 0;
       const sy = config.sy ?? 0;
       const previousTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);

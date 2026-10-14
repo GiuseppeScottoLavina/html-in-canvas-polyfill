@@ -13,7 +13,7 @@ import { VERSION } from '../version.js';
 import { resolveOptions } from './options.js';
 import { createEnv } from './env.js';
 import { createPatchLedger } from './patch.js';
-import { browserGate, decideMode, probeNative } from './native-detect.js';
+import { browserGate, decideMode, nativeUsable, probeNative } from './native-detect.js';
 import { buildReport, createReporter, watchCsp } from './report.js';
 import { compose, composeNative, defaultServices } from './compose.js';
 import { createSchedulerHooks, defineEventGlobals, disposeHandlers } from './paint-event.js';
@@ -52,7 +52,10 @@ export function getInstalled(win = typeof window === 'undefined' ? undefined : w
 
 /**
  * SYNCHRONOUS, idempotent per window. Order: resolveOptions, probeNative, decide mode, browserGate, create env, compose, patch prototypes (ledger), registry.scan, observer.
- * HicUnsupportedError (sync) for refused browsers/partial native when onUnsupportedBrowser is "throw". A legacy native and a partial native whose gaps are all additive (NativeState.fillable) are bridged in mode native-bridged by the OPTIONAL native-bridge bundle (src/native-bridge.js registers it under EXT.NATIVE_BRIDGE_KEY); without it they are refused with partial-native and a hint naming the bundle.
+ * HicUnsupportedError (sync) for refused browsers and for a native implementation whose core is missing (kind 'broken') when onUnsupportedBrowser is "throw".
+ * A usable native implementation (kind complete, partial or legacy) never throws: install steps aside (mode native). A legacy native and a partial native with
+ * gaps the bridge can build (NativeState.fillable) are bridged in mode native-bridged by the OPTIONAL native-bridge bundle (src/native-bridge.js registers it under
+ * EXT.NATIVE_BRIDGE_KEY); without it install still steps aside in mode native and records why (report().deviations, id native-step-aside).
  * @param {HicOptions} [options]
  * @returns {HicInstalled}
  * @throws HicUnsupportedError('browser'|'partial-native')
@@ -84,14 +87,41 @@ export function installWith(options, services) {
   const native = probeNative(win);
   const decision = decideMode(native, browserGate(win), resolved);
   if (decision.refusal) return refuse(win, resolved, native, decision.refusal);
-  if (decision.mode === 'native-bridged' && !(/** @type {any} */ (globalThis))[EXT.NATIVE_BRIDGE_KEY]) {
-    return refuse(win, resolved, native, {
-      feature: 'partial-native',
-      message: `this browser has a legacy or nearly complete native implementation (kind "${native.kind}", missing: ${native.missing.join(', ') || 'none'}) and the native bridge is not loaded`,
-      hint: 'load dist/hic-live-native-bridge.iife.min.js (or hic-live-native-bridge.iife.js) before the core bundle (ESM: import the /native-bridge subpath of this package first), or use a browser with a complete native implementation',
-    });
+  const { mode, notes, warning } = stepAside(native, decision);
+  if (warning) /** @type {Window & typeof globalThis} */ (win).console.warn(`[hic-live-polyfill] ${warning}`);
+  if (mode !== 'native-bridged') return build(win, doc, resolved, native, mode, services, notes);
+  try {
+    return build(win, doc, resolved, native, mode, services, notes);
+  } catch (err) {
+    // the bridge met a native shape it cannot patch: build() already undid every step; the native implementation is used as found
+    return build(win, doc, resolved, native, 'native', services, [...notes, `the native bridge failed (${err}) and was removed; the native implementation is used as found`]);
   }
-  return build(win, doc, resolved, native, decision.mode, services);
+}
+
+/**
+ * The final mode over a usable native implementation, and what to record about it. Never throws: a usable native is used as found.
+ * @param {NativeState} native
+ * @param {ModeDecision} decision
+ * @returns {{mode: HicMode, notes: string[], warning: string|null}}  notes go to report().deviations (native-step-aside); warning is printed once
+ */
+function stepAside(native, decision) {
+  /** @type {string[]} */ const notes = [];
+  /** @type {string[]} */ const warnings = [];
+  let mode = decision.mode;
+  if (decision.notice) { notes.push(decision.notice); warnings.push(decision.notice); }
+  if (mode === 'native-bridged' && !(/** @type {any} */ (globalThis))[EXT.NATIVE_BRIDGE_KEY]) {
+    mode = 'native';
+    const bridge = 'load hic-live-native-bridge.iife.min.js before the core (ESM: import the /native-bridge subpath first)';
+    if (native.kind === 'legacy') {
+      const legacy = `this browser implements the earlier layoutsubtree draft of HTML-in-Canvas and is used as found: content="drawable" canvases are not drawable here. To bridge them, ${bridge}`;
+      notes.push(legacy);
+      warnings.push(legacy);
+    } else {
+      notes.push(`the native implementation lacks ${native.gaps.join(', ')} and is used as found. To add them, ${bridge}`);
+    }
+  }
+  if (nativeUsable(native) && !native.verified) notes.push(`the drawElementImage probe gave "${native.probe}"; the native implementation is used as found`);
+  return { mode, notes, warning: warnings.length ? warnings.join(' ') : null };
 }
 
 /**
@@ -145,15 +175,17 @@ function refuse(win, options, native, refusal) {
  * @param {NativeState} native
  * @param {HicMode} mode  'native' | 'native-bridged' | 'polyfill'
  * @param {ComposeServices} services
+ * @param {string[]} [notes]  why a usable native was used as found (report().deviations, id native-step-aside)
  * @returns {HicInstalled}
  */
-function build(win, doc, options, native, mode, services) {
+function build(win, doc, options, native, mode, services, notes = []) {
   /** @type {import('../contracts/types.js').Reporter|null} */
   let reporter = null;
   const bus = createBus((err, topic) => reporter?.caught(err, `bus:${topic}`));
   reporter = createReporter(win, options);
   const env = createEnv(win, options, bus, reporter, doc);
   const ledger = createPatchLedger(win);
+  if (notes.length) env.reporter.deviation('native-step-aside', notes.join(' | '));
   /** @type {Array<() => void>} inverses, in the order the steps ran */
   const undo = [];
   let uninstalled = false;

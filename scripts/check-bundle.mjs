@@ -17,9 +17,10 @@ const allowSize = process.argv.includes('--allow-size');
 const KB = 1000; // decimal, as in the 150 KB target
 /** target = the gate threshold; ceiling = the recorded size the bundle may not exceed (regression guard). Raise a ceiling only with a measured reason, lower it when the bundle shrinks. */
 const LIMITS = {
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 254 * KB }, // raised deliberately, one measured reason at a time
+  // raised deliberately, one measured reason at a time; 254 -> 257 KB (+2,893 bytes, 2026-10-14): the core-only native probe that never refuses a usable native, and getElementImageDefaultSize
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 257 * KB },
   'hic-live-effects.iife.min.js': { target: 27 * KB, ceiling: 27 * KB },
-  'hic-live-native-bridge.iife.min.js': { target: 11 * KB, ceiling: 11 * KB },
+  'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB }, // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height
   'hic-live-engines.iife.min.js': { target: 40 * KB, ceiling: 40 * KB }, // the Gecko / WebKit painters, outside the core
   'hic-live-gpu.iife.min.js': { target: 16 * KB, ceiling: 16 * KB }, // WebGL / WebGPU element textures, outside the core
 };

@@ -209,7 +209,7 @@ test('G-native-first (b): a complete native implementation gives mode native, pa
 });
 
 test('G-native-first (c): deleting one CORE name throws partial-native, for every CORE name', t => {
-  for (const name of ['requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry', 'onpaint', 'content', 'ElementImage', 'CanvasRenderingContext2D.drawElementImage']) {
+  for (const name of ['onpaint', 'content', 'CanvasRenderingContext2D.drawElementImage']) {
     const w = makeFrame(t);
     defineFakeNative(w, { omit: [name] });
     const before = snapshotDescriptors(w);
@@ -222,11 +222,83 @@ test('G-native-first (c): deleting one CORE name throws partial-native, for ever
   }
 });
 
+test('G-native-first (d): every native shape with its core never throws: current, previous and legacy shapes, every secondary name deleted, a stub draw', t => {
+  /** @type {Array<[string, any]>} */
+  const shapes = [
+    ['current (Canary 157)', { shape: 'current' }], ['previous (ElementImage.width/height)', { shape: 'previous' }], ['legacy (Chrome 154)', { shape: 'legacy' }],
+    ['inert stub draw', { inert: true }],
+    ...['requestPaint', 'captureElementImage', 'getElementTransform', 'updateElementGeometry', 'clearElementGeometry', 'getElementImageDefaultSize', 'ElementImage',
+      'OffscreenCanvasRenderingContext2D.drawElementImage', 'OffscreenCanvas.getElementImageDefaultSize'].map((n) => /** @type {[string, any]} */ ([`without ${n}`, { omit: [n] }])),
+  ];
+  for (const [label, shape] of shapes) {
+    for (const mode of ['auto', 'polyfill', 'native-only']) {
+      const w = makeFrame(t, '<canvas content="drawable"><b drawable></b></canvas>');
+      defineFakeNative(w, shape);
+      w.console.warn = () => {};
+      const html = w.document.documentElement.outerHTML;
+      let installed;
+      try { installed = installWith({ window: w, mode }, fakeServices()); } catch (e) { assert.fail(`${label}, mode ${mode}: install threw ${e}`); }
+      t.cleanup(() => installed.uninstall());
+      assert.ok(installed.mode === 'native' || installed.mode === 'native-bridged', `${label}, mode ${mode}: ${installed.mode}`);
+      assert.equal(w.document.documentElement.outerHTML.includes('hic-layer'), false, `${label}: no polyfill layer`);
+      if (installed.mode === 'native') assert.equal(w.document.documentElement.outerHTML, html, `${label}: the page is untouched`);
+      installed.uninstall();
+    }
+  }
+});
+
+test('G-native-first (d): what a step-aside records: the probe result, the missing names and why, in report().native and report().deviations', t => {
+  const w = makeFrame(t);
+  defineFakeNative(w, { shape: 'previous', inert: true, omit: ['ElementImage.width'] });
+  delete w.ElementImage.prototype.width; // the shape without any size API: nothing for the bridge to build from
+  const installed = installIn(t, w);
+  const report = installed.report();
+  assert.equal(report.mode, 'native');
+  assert.equal(report.native.kind, 'partial');
+  assert.equal(report.native.probe, 'inert');
+  assert.equal(report.native.verified, false);
+  assert.ok(report.native.missing.includes('getElementImageDefaultSize'));
+  const note = report.deviations.find((d) => d.id === 'native-step-aside');
+  assert.ok(note && /probe gave "inert"/.test(note.detail), JSON.stringify(report.deviations));
+  const current = makeFrame(t);
+  defineFakeNative(current);
+  const clean = installIn(t, current).report();
+  assert.equal(clean.native.kind, 'complete');
+  assert.equal(clean.native.verified, true, 'the fake draw throws like the platform, so the probe confirms it');
+  assert.deepEqual(clean.deviations, [], 'a complete, verified native records nothing');
+});
+
+test('G-native-first (d): mode "polyfill" over a usable native steps aside with one warning and a report entry instead of throwing', t => {
+  const w = makeFrame(t);
+  defineFakeNative(w);
+  /** @type {string[]} */ const warnings = [];
+  w.console.warn = (/** @type {any[]} */ ...a) => warnings.push(a.join(' '));
+  const installed = installIn(t, w, { mode: 'polyfill' });
+  assert.equal(installed.mode, 'native');
+  assert.equal(warnings.length, 1);
+  assert.ok(/never replaced/.test(warnings[0]), warnings[0]);
+  assert.ok(installed.report().deviations.some((d) => d.id === 'native-step-aside' && /mode "polyfill"/.test(d.detail)));
+});
+
+test('G-native-first (d): a bridge that throws on an unexpected native shape is removed and the native implementation is used as found', async t => {
+  const { EXT } = await import('/src/contracts/events.js');
+  const saved = Object.getOwnPropertyDescriptor(globalThis, EXT.NATIVE_BRIDGE_KEY);
+  Object.defineProperty(globalThis, EXT.NATIVE_BRIDGE_KEY, { value: { install() { throw new TypeError('Cannot redefine property: content'); } }, configurable: true });
+  t.cleanup(() => { if (saved) Object.defineProperty(globalThis, EXT.NATIVE_BRIDGE_KEY, saved); });
+  const w = makeFrame(t);
+  defineFakeNative(w, { legacy: true });
+  w.console.warn = () => {};
+  const before = snapshotDescriptors(w);
+  const installed = installIn(t, w);
+  assert.equal(installed.mode, 'native');
+  assert.ok(installed.report().deviations.some((d) => d.id === 'native-step-aside' && /bridge failed \(TypeError: Cannot redefine/.test(d.detail)));
+  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).filter((l) => l !== 'added window.Symbol(hic.installed)'), [], 'the failed bridge left nothing behind');
+});
+
 test('G-native-first (c): deleting one ADDITIVE name gap-fills it in native-bridged and leaves the native descriptors alone', t => {
-  const additive = ['onelementgeometryupdate', 'ElementGeometryUpdateEvent', 'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture'];
+  const additive = ['onelementgeometryupdate', 'ElementGeometryUpdateEvent'];
   for (const name of additive) {
     const w = makeFrame(t);
-    if (name.startsWith('GPUQueue') && !w.GPUQueue) continue;
     defineFakeNative(w, { omit: [name] });
     const before = snapshotDescriptors(w);
     const installed = installIn(t, w);
@@ -254,17 +326,14 @@ test('gap-fill of onelementgeometryupdate and ElementGeometryUpdateEvent really 
   assert.equal(ev.elements[0], c);
 });
 
-test('mode native-only: complete -> native; absent throws; polyfill mode on a present native is refused; forcePolyfill overrides a partial native', t => {
+test('mode native-only: complete -> native; absent throws; forcePolyfill overrides even a broken native', t => {
   const absent = makeFrame(t);
   assert.throws(() => installWith({ window: absent, mode: 'native-only' }, fakeServices()), HicUnsupportedError);
   const complete = makeFrame(t);
   defineFakeNative(complete);
   assert.equal(installIn(t, complete, { mode: 'native-only' }).mode, 'native');
-  const other = makeFrame(t);
-  defineFakeNative(other);
-  assert.throws(() => installWith({ window: other, mode: 'polyfill' }, fakeServices()), /never replaced|cannot override/);
   const partial = makeFrame(t, '<canvas content="drawable"><b></b></canvas>');
-  defineFakeNative(partial, { omit: ['requestPaint'] });
+  defineFakeNative(partial, { omit: ['onpaint'] });
   const installed = installIn(t, partial, { forcePolyfill: true });
   assert.equal(installed.mode, 'polyfill');
 });

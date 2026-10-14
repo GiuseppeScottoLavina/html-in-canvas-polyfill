@@ -1,12 +1,13 @@
 /**
- * HTMLCanvasElement.prototype patches: content, onpaint, onelementgeometryupdate, framecap/frameCap, layoutSubtree, requestPaint, captureElementImage, updateElementGeometry, clearElementGeometry, getElementTransform; width/height setter hook.
+ * HTMLCanvasElement.prototype patches: content, onpaint, onelementgeometryupdate, framecap/frameCap, layoutSubtree, requestPaint, captureElementImage, getElementImageDefaultSize,
+ * updateElementGeometry, clearElementGeometry, getElementTransform; width/height setter hook.
  * Module: api-surface (src/api/*).
  */
 
 import { BUS, EVENTS, EXT } from '../contracts/events.js';
 import { matrixFrom, matrixValues, multiply16, scale16, IDENTITY16 } from '../util/matrix.js';
 import { storedTransformValues } from './draw-math.js';
-import { createElementImage, elementImageVersion } from './element-image.js';
+import { createElementImage, defaultSizeOf, elementImageVersion } from './element-image.js';
 import { geometryOptionsFromValues } from './geometry.js';
 import { ensureHandlerListener, getEventHandler, isPaintDispatching, requestIdlePaint, setEventHandler } from './paint-event.js';
 import {
@@ -178,6 +179,12 @@ function installMethods(env, ledger, proto, geometry) {
     return createElementImage(env, record, /** @type {NonNullable<typeof version>} */ (version));
   });
 
+  defineMethod(ledger, proto, 'getElementImageDefaultSize', 1, /** @this {HTMLCanvasElement} */ function (/** @type {unknown} */ element) {
+    const canvas = brand(env, this);
+    if (arguments.length < 1) throw new TypeError("Failed to execute 'getElementImageDefaultSize': 1 argument required, but only 0 present.");
+    return elementImageDefaultSize(env, canvas, canvas, element);
+  });
+
   defineMethod(ledger, proto, 'updateElementGeometry', 1, /** @this {HTMLCanvasElement} */ function (/** @type {unknown} */ element, /** @type {unknown} */ options = {}) {
     const canvas = brand(env, this);
     if (arguments.length < 1) throw new TypeError("Failed to execute 'updateElementGeometry': 1 argument required, but only 0 present.");
@@ -198,6 +205,21 @@ function installMethods(env, ledger, proto, geometry) {
     if (arguments.length < 1) throw new TypeError("Failed to execute 'getElementTransform': 1 argument required, but only 0 present.");
     return elementTransformOf(env, geometry, canvas, element, drawTransform);
   });
+}
+
+/**
+ * getElementImageDefaultSize (spec "get the element image default size"): the snapshot an Element or ElementImage resolves to, scaled to the CURRENT bitmap of
+ * `bitmap` (the canvas, or the OffscreenCanvas transferred from it). InvalidStateError before a snapshot, for a closed image and for an image of another canvas
+ * (the WPT expects InvalidStateError where the PR text says TypeError; section 6.3 of API-CONTRACT).
+ * @param {HicEnv} env
+ * @param {HTMLCanvasElement} canvas  the canvas the element must belong to (an OffscreenCanvas's placeholder)
+ * @param {{width: number, height: number}} bitmap
+ * @param {unknown} element
+ * @returns {{width: number, height: number}}
+ */
+export function elementImageDefaultSize(env, canvas, bitmap, element) {
+  const { version } = resolveElement(env, canvas, element, 'snapshot');
+  return defaultSizeOf(/** @type {NonNullable<typeof version>} */ (version), bitmap);
 }
 
 /**

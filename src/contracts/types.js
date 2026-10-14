@@ -23,7 +23,8 @@ export {};
 
 /**
  * @typedef {Object} HicOptions  install() argument. Every field optional.
- * @property {'auto'|'polyfill'|'native-only'} [mode]  'auto' (default): native-first. 'native-only': never run the renderer.
+ * @property {'auto'|'polyfill'|'native-only'} [mode]  'auto' (default): native-first, a usable native implementation is never refused. 'native-only': never run the renderer.
+ *   'polyfill': run the polyfill where there is no native implementation; over a usable one it steps aside like 'auto' (one warning).
  * @property {'throw'|'warn'} [onUnsupportedBrowser]   default 'throw' (loud). 'warn' only logs and installs nothing.
  * @property {'placeholder'|'abort'} [onUnsupportedContent]  default 'placeholder' (hatched box + report + console.error once).
  *           'abort' drops the commit, fires no paint and dispatches 'hicunsupported'.
@@ -43,7 +44,7 @@ export {};
  * @property {Partial<NodeBudget>} [nodeBudget]
  * @property {'off'|'queries'|'css'|'both'} [selectorBridge] canvas-ancestor selector emulation (default 'both')
  * @property {boolean} [strictResources] true: an un-inlinable resource aborts the commit (SecurityError report) instead of a placeholder
- * @property {boolean} [forcePolyfill]   test only: replace a PARTIAL native implementation instead of refusing
+ * @property {boolean} [forcePolyfill]   test only: run the polyfill over any native implementation (usable or broken) instead of stepping aside or refusing
  * @property {boolean} [trace]           emit performance.mark/measure 'hic:*' entries (default false)
  * @property {boolean} [autoDiscover]    observe the document for canvases (default true)
  * @property {Window}  [window]          default globalThis.window
@@ -79,17 +80,20 @@ export {};
 // ---------------------------------------------------------------------------------------------- install / detection
 /**
  * @typedef {Object} NativeState  Result of the behavioural native probe (api/native-detect.js). Pure, no side effects.
- * @property {'complete'|'legacy'|'partial'|'absent'} kind
- *   complete = every name of the CURRENT spec works (content reflects 'drawable', onpaint, requestPaint, captureElementImage,
- *              getElementTransform, updateElementGeometry, clearElementGeometry, 2D+Offscreen2D drawElementImage, ElementImage, CanvasPaintEvent)
- *   legacy   = pre-2026-09 names only (layoutSubtree IDL, copyElementImageToTexture, texElementImage2D, no `content`)
- *   partial  = some names, neither complete nor the known legacy shape (a CORE name is missing, or an unknown combination)
+ * @property {'complete'|'partial'|'legacy'|'broken'|'absent'} kind
+ *   The CORE is: `content` reflecting only fallback|drawable (or the legacy `layoutSubtree`), the `onpaint` handler, 2D `drawElementImage`.
+ *   complete = the core plus every other name of the CURRENT spec (getElementImageDefaultSize, ElementImage with close(), the geometry methods, ...)
+ *   partial  = the core works, some other name of the current spec is missing (recorded in `missing`; never a reason to refuse)
+ *   legacy   = the core with the pre-2026-09 `layoutSubtree` instead of `content`
+ *   broken   = something native exists but a core name is missing: the only kind that is refused
  *   absent   = none
  * @property {string[]} present   names found
- * @property {string[]} missing   names of the current spec not found
- * @property {string[]} legacyNames  legacy-only names found
- * @property {string[]} gaps  names of the ADDITIVE set that are missing on an otherwise working native build (ElementGeometryUpdateEvent, onelementgeometryupdate, texElementSubImage2D, drawElementImageToTexture, ElementImage.toImageBitmap, frameCap, ...)
- * @property {boolean} fillable  kind 'partial' whose only missing names are `gaps` (no CORE name missing: content reflection, onpaint/CanvasPaintEvent, requestPaint, captureElementImage, drawElementImage, updateElementGeometry, clearElementGeometry, getElementTransform): install then gap-fills in mode native-bridged instead of refusing
+ * @property {string[]} missing   names of the current spec not found (`content` for a legacy build)
+ * @property {string[]} legacyNames  names of earlier drafts found (layoutSubtree, ElementImage.width, texElementImage2D, copyElementImageToTexture)
+ * @property {string[]} gaps  missing names the optional native bridge can build from the native build (onelementgeometryupdate, ElementGeometryUpdateEvent, and the texture names when their legacy twin exists)
+ * @property {boolean} fillable  kind 'partial' with at least one gap: with the bridge loaded, install gap-fills in mode native-bridged; without it, mode native
+ * @property {boolean} verified  the core is usable AND 2D drawElementImage behaved like a platform method on a detached drawable (`probe` 'ok')
+ * @property {'ok'|'inert'|'unexpected'|'skipped'} probe  the behavioural drawElementImage probe: 'inert' = returned without throwing, 'unexpected' = threw something else, 'skipped' = no core to probe. Only recorded: a usable core is never refused on it
  * @property {number|null} browserMajor  Chromium major or null when not Chromium
  */
 

@@ -248,7 +248,7 @@ function installWebGPU(env, ledger, proto) {
 
 /**
  * Adapters over store.rasterSource + one GPU copy (docs/API-CONTRACT.md 5.3/5.4). No automatic geometry update.
- * Installed on BOTH WebGLRenderingContext.prototype and WebGL2RenderingContext.prototype (legacy aliases on both) and on GPUQueue.prototype. The upload rect comes from texture-math.planUpload (default = ceil(ElementImage.width/height), config overrides);
+ * Installed on BOTH WebGLRenderingContext.prototype and WebGL2RenderingContext.prototype (legacy aliases on both) and on GPUQueue.prototype. The upload rect comes from texture-math.planUpload (default = ceil of getElementImageDefaultSize, config overrides);
  * a scratch 2D canvas resamples whenever the surface pixel size differs from the rect (canvas grid scale < 1 or > maxDpr, fractional sizes); the scratch result is cached per SnapshotVersion id. Storage too small or missing is a GL error as native, never a throw.
  * UNPACK_FLIP_Y / PREMULTIPLY_ALPHA apply as for texSubImage2D(canvas).
  * @param {HicEnv} env

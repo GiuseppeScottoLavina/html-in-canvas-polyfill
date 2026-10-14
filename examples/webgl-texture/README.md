@@ -9,7 +9,7 @@ What to look at:
 - On one face the form can look upside down: each cube face maps the texture 0..1 along its own axes (`buildCube()` in `index.html`). This is believed to be the example's cube geometry, not a polyfill defect; it was not investigated further.
 
 What the page demonstrates about the API:
-- `texElementSubImage2D` needs storage that already exists, like `texSubImage2D`: the example reads the size with `canvas.captureElementImage(card)` (`ceil(width)` x `ceil(height)` in canvas bitmap pixels), allocates with `texImage2D(..., null)` when the size changed, then uploads. Before the first snapshot exists `captureElementImage` throws `InvalidStateError`, so the upload runs from the `paint` event.
+- `texElementSubImage2D` needs storage that already exists, like `texSubImage2D`: the example reads the size with `canvas.getElementImageDefaultSize(card)` (`ceil(width)` x `ceil(height)` in canvas bitmap pixels), allocates with `texImage2D(..., null)` when the size changed, then uploads. Before the first snapshot exists `getElementImageDefaultSize` throws `InvalidStateError`, so the upload runs from the `paint` event.
 - A 3D context draws nothing through `drawElementImage`, so the page calls `canvas.updateElementGeometry(card)` once to make the live form hit-testable where the flat copy is drawn (identity transform = the canvas top-left).
 - The drawing buffer follows the device pixel size through a `ResizeObserver` on `devicePixelContentBoxSize`, as in the other examples.
 
