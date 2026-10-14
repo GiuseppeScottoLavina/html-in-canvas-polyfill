@@ -16,6 +16,9 @@
  */
 
 import { wgsl } from './wgsl.js';
+import { stateMapper } from '../_lib/mapper.js';
+import { clampNum } from '../_lib/number.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -45,12 +48,6 @@ const TRIGGER_DEBOUNCE_MS = 250;
 const CLEAR = Object.freeze({ r: 0, g: 0, b: 0, a: 1 });
 
 let uiSerial = 0;
-
-/** @param {unknown} v @param {number} lo @param {number} hi @param {number} fallback */
-function clampNum(v, lo, hi, fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
-}
 
 /** A 32-bit integer hash of (a, b) mapped to [0, 1). PURE. @param {number} a @param {number} b */
 export function hash01(a, b) {
@@ -219,31 +216,15 @@ export function mapGlitchPoint(state, point) {
   return { x: sx * (point.width / width), y: sy * (point.height / height) };
 }
 
-/** @param {Float32Array} state @returns {InputMapper} */
-function makeMapper(state) {
-  /** @type {InputMapper} */
-  const mapper = (point) => mapGlitchPoint(state, point);
-  mapper.captureGestureSnapshot = () => {
-    const frozen = new Float32Array(state);
-    return (point) => mapGlitchPoint(frozen, point);
-  };
-  return mapper;
-}
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="glitch"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'glitch';
-  style.textContent = `
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `
     .hic-glitch-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:rgba(224,247,255,.72); font-size:11px; font-weight:700; }
     .hic-glitch-ui output { color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
     .hic-glitch-ui input[type=range] { width:100%; height:24px; margin:0; accent-color:#ff5c8a; cursor:ew-resize; }
     .hic-glitch-ui select, .hic-glitch-ui button { font:inherit; color:#effcff; background:rgba(1,10,23,.55); border:1px solid rgba(173,226,255,.18); border-radius:8px; padding:3px 8px; }
     .hic-glitch-ui button { cursor:pointer; }
   `;
-  (doc.head || doc.documentElement).append(style);
-}
 
 /**
  * The plugin's controls: mode, intensity, and a button that plays a burst.
@@ -253,7 +234,7 @@ function injectUiStyle(doc) {
  */
 function mountGlitchUi(root, ui, burst) {
   const doc = root.ownerDocument;
-  injectUiStyle(doc);
+  injectStyle(doc, 'glitch', UI_CSS);
   const n = ++uiSerial;
   const o = ui.getOptions();
   const box = doc.createElement('div');
@@ -313,7 +294,7 @@ export const plugin = Object.freeze({
     const bindGroups = new WeakMap();   // one per source view: the host may replace the source texture on resize
     const globals = new Float32Array(UNIFORM_FLOATS);
     const mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
-    const mappers = mapperStates.map(makeMapper);
+    const mappers = mapperStates.map((s) => stateMapper(s, mapGlitchPoint));
     let mapperSlot = 0;
     // reused every frame: no allocation on the render path
     const attachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: CLEAR };

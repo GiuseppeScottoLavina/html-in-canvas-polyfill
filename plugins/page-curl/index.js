@@ -18,6 +18,9 @@
 import { NO_TARGET, isNoTarget } from '../../src/effects/no-target.js';
 import { constrainCorner, foldFor, foldPoint, project, springStep, SPRING_STEP, unproject } from './fold.js';
 import { wgsl } from './wgsl.js';
+import { stateMapper } from '../_lib/mapper.js';
+import { clampNum } from '../_lib/number.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -75,12 +78,6 @@ export function peekAt(t, every) {
   if (!(every > 0) || t < PEEK_DELAY_MS) return 0;
   const m = (t - PEEK_DELAY_MS) % Math.max(PEEK_MS, every * 1000);
   return m < PEEK_MS ? Math.sin((Math.PI * m) / PEEK_MS) ** 2 : 0;
-}
-
-/** @param {unknown} v @param {number} lo @param {number} hi @param {number} fallback */
-function clampNum(v, lo, hi, fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
 }
 
 /** '#rgb' / '#rrggbb' -> [r, g, b] in 0..1 (else `fallback`). @param {unknown} hex @param {number[]} [fallback] */
@@ -216,23 +213,14 @@ export const stateOf = (mapper) => mapperStates.get(mapper);
 
 /** @param {Float32Array} state @returns {InputMapper} */
 function makeMapper(state) {
-  /** @type {InputMapper} */
-  const mapper = (point) => mapCurlPoint(state, point);
+  const mapper = stateMapper(state, mapCurlPoint);
   mapperStates.set(mapper, state);
-  mapper.captureGestureSnapshot = () => {
-    const frozen = new Float32Array(state);
-    return (point) => mapCurlPoint(frozen, point);
-  };
   return mapper;
 }
 
 let uiSerial = 0;
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="page-curl"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'page-curl';
-  style.textContent = `
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `
     .hic-curl-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:rgba(224,247,255,.72); font-size:11px; font-weight:700; }
     .hic-curl-ui p { grid-column:1 / -1; margin:0 0 2px; font-size:13px; font-weight:800; color:#9cf5ff; }
     .hic-curl-ui output { color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
@@ -241,8 +229,6 @@ function injectUiStyle(doc) {
     [data-hic-curl-cursor=grab], [data-hic-curl-cursor=grab] * { cursor:grab !important; }
     [data-hic-curl-cursor=grabbing], [data-hic-curl-cursor=grabbing] * { cursor:grabbing !important; }
   `;
-  (doc.head || doc.documentElement).append(style);
-}
 
 /**
  * The plugin's controls: which corner can be grabbed, the roll radius and the shadow.
@@ -251,7 +237,7 @@ function injectUiStyle(doc) {
  */
 function mountCurlUi(root, ui) {
   const doc = root.ownerDocument;
-  injectUiStyle(doc);
+  injectStyle(doc, 'page-curl', UI_CSS);
   const n = ++uiSerial;
   const o = ui.getOptions();
   const box = doc.createElement('div');
@@ -381,7 +367,7 @@ export const plugin = Object.freeze({
     const doc = canvas.ownerDocument;
     const win = /** @type {any} */ (doc.defaultView);
     const reducedMotion = !!win?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (/** @type {any} */ (doc).createElement) injectUiStyle(doc);   // the grab cursor rules (a test fake may have no DOM)
+    if (/** @type {any} */ (doc).createElement) injectStyle(doc, 'page-curl', UI_CSS);   // the grab cursor rules (a test fake may have no DOM)
 
     let corner = 'any';
     let radius = 48;

@@ -9,6 +9,11 @@
  */
 
 import { wgsl } from './wgsl.js';
+import { stateMapper } from '../_lib/mapper.js';
+import { clampTo } from '../_lib/number.js';
+import { fullscreenPass } from '../_lib/gpu.js';
+import { springSubsteps } from '../_lib/spring.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectPluginContext} EffectPluginContext */
@@ -30,18 +35,11 @@ export const UNIFORM_FLOATS = 16;
 const MAPPER_SLOTS = 4;
 /** @type {Readonly<Record<string, [number, number]>>} */
 const LIMITS = Object.freeze({ size: [60, 280], refraction: [0, 1], dispersion: [0, 1], highlight: [0, 1], aspect: [1, 2.5] });
-/** spring: stiffness (1/s^2) and damping ratio; integration substep */
+/** spring: stiffness (1/s^2) and damping (from the damping ratio) */
 const STIFFNESS = 260;
 const DAMPING = 2 * 0.74 * Math.sqrt(STIFFNESS);
-const SUBSTEP = 1 / 240;
 
 let uiSerial = 0;
-
-/** @param {unknown} v @param {[number, number]} range @param {number} fallback */
-function clampTo(v, [lo, hi], fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
-}
 
 /**
  * Signed distance from (dx, dy) to a rounded box of half size (hx, hy) and corner radius r (negative inside); same as sd_box().
@@ -104,23 +102,9 @@ export function writeLensGeometry(u, lens) {
   u[8] = radius; u[9] = radius * 0.55; u[10] = lens.refraction; u[11] = 1 + 0.28 * lens.refraction;
 }
 
-/** @param {Float32Array} state @returns {InputMapper} */
-function makeMapper(state) {
-  /** @type {InputMapper} */
-  const mapper = (point) => mapLensPoint(state, point);
-  mapper.captureGestureSnapshot = () => {
-    const frozen = new Float32Array(state);
-    return (point) => mapLensPoint(frozen, point);
-  };
-  return mapper;
-}
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="liquid-glass"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'liquid-glass';
-  style.textContent = `
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `
     .hic-lg-ui { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)) auto; gap:4px 12px; align-items:end; }
     .hic-lg-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
     .hic-lg-ui output { color:#9cf5ff; font-variant-numeric:tabular-nums; }
@@ -128,8 +112,6 @@ function injectUiStyle(doc) {
     .hic-lg-ui label.pin { display:flex; align-items:center; gap:6px; padding-bottom:4px; white-space:nowrap; }
     .hic-lg-ui label.pin input { width:15px; height:15px; margin:0; accent-color:#9fd8ff; }
   `;
-  (doc.head || doc.documentElement).append(style);
-}
 
 const SLIDERS = /** @type {const} */ ([
   ['size', 'Lens size', 60, 280, 2, (/** @type {number} */ v) => `${Math.round(v)} px`, 1],
@@ -147,23 +129,11 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('liquid-glass.wgsl'), label: 'liquid-glass' });
-    const pipeline = device.createRenderPipeline({
-      layout: 'auto', label: 'liquid-glass',
-      vertex: { module, entryPoint: 'vs' },
-      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
-      primitive: { topology: 'triangle-list' },
-    });
-    const usage = /** @type {any} */ (globalThis).GPUBufferUsage;
-    const uniforms = device.createBuffer({ label: 'liquid-glass', size: UNIFORM_FLOATS * 4, usage: usage.UNIFORM | usage.COPY_DST });
-    const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const bindGroups = new WeakMap();
+    const gpu = fullscreenPass(device, format, module, 'liquid-glass', UNIFORM_FLOATS);
     const u = new Float32Array(UNIFORM_FLOATS);
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
-    const mappers = states.map(makeMapper);
+    const mappers = states.map((s) => stateMapper(s, mapLensPoint));
     let slot = 0;
-    // render pass descriptor reused every frame (no allocation on the 120 Hz path)
-    const attachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
-    const passDescriptor = { colorAttachments: [attachment], timestampWrites: /** @type {any} */ (undefined) };
 
     const canvas = context.canvas;
     const win = /** @type {any} */ (canvas?.ownerDocument?.defaultView ?? globalThis);
@@ -184,7 +154,7 @@ export const plugin = Object.freeze({
     readOptions({ ...meta.defaults, ...(options ?? {}) });
 
     // the lens: position and target as fractions of the canvas, velocity in fractions per second; it starts at rest at (x, y)
-    const lens = { px: o.x, py: o.y, vx: 0, vy: 0, tx: o.x, ty: o.y, w: 1, h: 1 };
+    const lens = { x: o.x, y: o.y, vx: 0, vy: 0, tx: o.x, ty: o.y, w: 1, h: 1 };
     const geometry = { cx: 0, cy: 0, vx: 0, vy: 0, size: 0, aspect: 0, refraction: 0 };
     /** @type {Array<(o: any) => void>} */
     const uiSyncs = [];
@@ -197,7 +167,7 @@ export const plugin = Object.freeze({
       render,
       captureInputMapper,
       mountUI,
-      destroy() { uniforms.destroy?.(); },
+      destroy() { gpu.uniforms.destroy?.(); },
     };
 
     function wake() {
@@ -243,19 +213,11 @@ export const plugin = Object.freeze({
 
     /** Advance the spring by dt seconds (substeps keep it stable at a 15 fps cap). @param {number} dt */
     function step(dt) {
-      if (reducedMotion) { lens.px = lens.tx; lens.py = lens.ty; lens.vx = 0; lens.vy = 0; return; }
-      let left = dt;
-      while (left > 1e-6) {
-        const h = Math.min(SUBSTEP, left);
-        lens.vx += ((lens.tx - lens.px) * STIFFNESS - lens.vx * DAMPING) * h;
-        lens.vy += ((lens.ty - lens.py) * STIFFNESS - lens.vy * DAMPING) * h;
-        lens.px += lens.vx * h;
-        lens.py += lens.vy * h;
-        left -= h;
-      }
-      const restPx = Math.abs(lens.tx - lens.px) * lens.w + Math.abs(lens.ty - lens.py) * lens.h;
+      if (reducedMotion) { lens.x = lens.tx; lens.y = lens.ty; lens.vx = 0; lens.vy = 0; return; }
+      springSubsteps(lens, dt, STIFFNESS, DAMPING);
+      const restPx = Math.abs(lens.tx - lens.x) * lens.w + Math.abs(lens.ty - lens.y) * lens.h;
       const speedPx = Math.abs(lens.vx) * lens.w + Math.abs(lens.vy) * lens.h;
-      if (restPx < 0.02 && speedPx < 1) { lens.px = lens.tx; lens.py = lens.ty; lens.vx = 0; lens.vy = 0; }
+      if (restPx < 0.02 && speedPx < 1) { lens.x = lens.tx; lens.y = lens.ty; lens.vx = 0; lens.vy = 0; }
     }
 
     /** @param {any} frame */
@@ -263,27 +225,14 @@ export const plugin = Object.freeze({
       lens.w = frame.cssWidth;
       lens.h = frame.cssHeight;
       step(Math.min(0.1, Math.max(0, (frame.delta || 0) / 1000)));
-      instance.continuous = lens.px !== lens.tx || lens.py !== lens.ty || lens.vx !== 0 || lens.vy !== 0;
+      instance.continuous = lens.x !== lens.tx || lens.y !== lens.ty || lens.vx !== 0 || lens.vy !== 0;
       u[0] = frame.width; u[1] = frame.height; u[2] = frame.cssWidth; u[3] = frame.cssHeight;
-      geometry.cx = lens.px * frame.cssWidth; geometry.cy = lens.py * frame.cssHeight;
+      geometry.cx = lens.x * frame.cssWidth; geometry.cy = lens.y * frame.cssHeight;
       geometry.vx = lens.vx * frame.cssWidth; geometry.vy = lens.vy * frame.cssHeight;
       geometry.size = o.size; geometry.aspect = o.aspect; geometry.refraction = o.refraction;
       writeLensGeometry(u, geometry);
       u[12] = o.dispersion; u[13] = o.highlight; u[14] = frame.sourceReady ? 1 : 0; u[15] = 0;
-      device.queue.writeBuffer(uniforms, 0, u);
-      let bindGroup = bindGroups.get(frame.sourceView);
-      if (!bindGroup) {
-        bindGroup = device.createBindGroup({
-          label: 'liquid-glass', layout: pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: uniforms } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView }],
-        });
-        bindGroups.set(frame.sourceView, bindGroup);
-      }
-      attachment.view = frame.destinationView;
-      passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('liquid-glass');
-      const pass = frame.encoder.beginRenderPass(passDescriptor);
-      pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); pass.end();
-      attachment.view = null;
+      gpu.draw(frame, u);
     }
 
     // called each time a frame is PRESENTED: copy the uniform block of that frame into a slot (no allocation)
@@ -296,7 +245,7 @@ export const plugin = Object.freeze({
     /** @param {Element} root @param {{getOptions: () => Readonly<Record<string, unknown>>, setOptions: (patch: Record<string, unknown>) => void}} ui */
     function mountUI(root, ui) {
       const doc = root.ownerDocument;
-      injectUiStyle(doc);
+      injectStyle(doc, 'liquid-glass', UI_CSS);
       const box = doc.createElement('div');
       box.className = 'hic-lg-ui';
       const id = `hic-lg-${++uiSerial}`;
@@ -325,7 +274,7 @@ export const plugin = Object.freeze({
       const box2 = /** @type {HTMLInputElement} */ (pin.querySelector('input'));
       const syncPin = (/** @type {any} */ opts) => { if (box2.checked !== opts.pinned) box2.checked = opts.pinned; };
       // pinning keeps the lens where it is now: its current position becomes the pinned (x, y)
-      const onPin = () => ui.setOptions(box2.checked ? { pinned: true, x: lens.px, y: lens.py } : { pinned: false });
+      const onPin = () => ui.setOptions(box2.checked ? { pinned: true, x: lens.x, y: lens.y } : { pinned: false });
       box2.addEventListener('change', onPin);
       offs.push(() => box2.removeEventListener('change', onPin));
       uiSyncs.push(syncPin);

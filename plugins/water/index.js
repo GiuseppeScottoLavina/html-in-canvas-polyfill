@@ -10,6 +10,8 @@
  */
 
 import { wgsl } from './wgsl.js';
+import { stateMapper } from '../_lib/mapper.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectPluginContext} EffectPluginContext */
@@ -112,20 +114,6 @@ function fillGlobals(globals, frame, ripples, time, intensity) {
   }
 }
 
-/**
- * One mapper per state slot. captureGestureSnapshot copies the tiny numeric program, so a drag keeps one mapping while the slot is reused.
- * @param {Float32Array} state
- * @returns {InputMapper}
- */
-function makeMapper(state) {
-  /** @type {InputMapper} */
-  const mapper = (point) => mapWaterPoint(state, point);
-  mapper.captureGestureSnapshot = () => {
-    const frozen = new Float32Array(state);
-    return (point) => mapWaterPoint(frozen, point);
-  };
-  return mapper;
-}
 
 /**
  * Ripples from the pointer: a drop where it goes down, a faster pointer makes a stronger ripple.
@@ -166,19 +154,13 @@ function listenPointer(context, drop, reducedMotion) {
   });
 }
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="water"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'water';
-  style.textContent = `
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `
     .hic-water-control { display:grid; grid-template-columns:1fr auto; gap:6px 10px; align-items:center; padding-top:2px; color:rgba(224,247,255,.62); font-size:9px; font-weight:700; }
     .hic-water-control > span { grid-column:1; }
     .hic-water-control output { grid-column:2; color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; }
     .hic-water-control input[type=range] { grid-column:1 / -1; width:100%; height:28px; margin:0; padding:3px 0; border:0; border-radius:0; background:transparent; box-shadow:none; accent-color:#79efff; cursor:ew-resize; }
   `;
-  (doc.head || doc.documentElement).append(style);
-}
 
 /**
  * The plugin-owned intensity slider.
@@ -188,7 +170,7 @@ function injectUiStyle(doc) {
  */
 function mountIntensityUi(root, ui, bind) {
   const doc = root.ownerDocument;
-  injectUiStyle(doc);
+  injectStyle(doc, 'water', UI_CSS);
   const id = `hic-water-intensity-${++uiSerial}`;
   const label = doc.createElement('label');
   label.className = 'hic-water-control';
@@ -243,7 +225,7 @@ export const plugin = Object.freeze({
     const bindGroups = new WeakMap();
     const globals = new Float32Array(GLOBALS_LENGTH);
     const mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(GLOBALS_LENGTH));
-    const mappers = mapperStates.map(makeMapper);
+    const mappers = mapperStates.map((s) => stateMapper(s, mapWaterPoint));
     let mapperSlot = 0;
     const start = performance.now();
     const win = /** @type {any} */ (context.canvas.ownerDocument.defaultView);

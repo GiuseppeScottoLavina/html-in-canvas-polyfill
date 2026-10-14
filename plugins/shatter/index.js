@@ -19,6 +19,7 @@
 import { wgsl } from './wgsl.js';
 import { buildShards, crackedLayout, crackedSource, HEAL, MAX_SHARDS, MAX_VERTICES, SHARD_FLOATS, SPAN, VERTEX_FLOATS } from './shards.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor, sourcePointOnCanvas } from '../_lib/transition.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectRenderFrame} EffectRenderFrame */
@@ -140,15 +141,9 @@ function smoothstep(a, b, x) {
   return t * t * (3 - 2 * t);
 }
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="shatter"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'shatter';
-  style.textContent = `.hic-shatter-ui{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `.hic-shatter-ui{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
     + `.hic-shatter-ui label{display:grid}.hic-shatter-ui input{width:100%;margin:0;accent-color:#bfe9ff}.hic-shatter-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#06202c;background:#bfe9ff}`;
-  (doc.head || doc.documentElement).append(style);
-}
 
 /** @type {EffectPluginDefinition} */
 export const plugin = Object.freeze({
@@ -396,7 +391,7 @@ export const plugin = Object.freeze({
       captureInputMapper() { return shown === 'intact' ? identityMapper : shown === 'cracked' && crackedMapper ? crackedMapper : blockedMapper; },
       mountUI(root, ui) {
         const doc = root.ownerDocument;
-        injectUiStyle(doc);
+        injectStyle(doc, 'shatter', UI_CSS);
         const box = doc.createElement('div');
         box.className = 'hic-shatter-ui';
         box.innerHTML = '<button type="button">Strike</button><label>Cracks<input type="range" min="6" max="24" step="1"></label>';

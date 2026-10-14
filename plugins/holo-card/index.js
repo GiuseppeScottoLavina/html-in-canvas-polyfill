@@ -10,6 +10,11 @@
 
 import { NO_TARGET } from '../../src/effects/no-target.js';
 import { wgsl } from './wgsl.js';
+import { stateMapper } from '../_lib/mapper.js';
+import { clampTo } from '../_lib/number.js';
+import { fullscreenPass } from '../_lib/gpu.js';
+import { springSubsteps } from '../_lib/spring.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -32,15 +37,8 @@ const MAPPER_SLOTS = 4;
 const MAX_TILT = 30;
 const STIFFNESS = 180;
 const DAMPING = 2 * 0.62 * Math.sqrt(STIFFNESS);
-const SUBSTEP = 1 / 240;
 
 let uiSerial = 0;
-
-/** @param {unknown} v @param {[number, number]} range @param {number} fallback */
-function clampTo(v, [lo, hi], fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
-}
 
 /**
  * Write the card pose into the uniform block: basis of the card rotated by rx about x then ry about y (radians), camera distance,
@@ -81,23 +79,9 @@ export function mapCardPoint(s, point) {
   return sd < 0 && Number.isFinite(x) && Number.isFinite(y) ? { x, y } : NO_TARGET;
 }
 
-/** @param {Float32Array} state @returns {InputMapper} */
-function makeMapper(state) {
-  /** @type {InputMapper} */
-  const mapper = (point) => mapCardPoint(state, point);
-  mapper.captureGestureSnapshot = () => {
-    const frozen = new Float32Array(state);
-    return (point) => mapCardPoint(frozen, point);
-  };
-  return mapper;
-}
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="holo-card"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'holo-card';
-  style.textContent = `
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `
     .hic-holo-ui { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)) auto; gap:4px 12px; align-items:end; }
     .hic-holo-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
     .hic-holo-ui output { color:#ffc8f4; font-variant-numeric:tabular-nums; }
@@ -105,8 +89,6 @@ function injectUiStyle(doc) {
     .hic-holo-ui label.idle { display:flex; align-items:center; gap:6px; padding-bottom:4px; white-space:nowrap; }
     .hic-holo-ui label.idle input { width:15px; height:15px; margin:0; accent-color:#e7a6ff; }
   `;
-  (doc.head || doc.documentElement).append(style);
-}
 
 const SLIDERS = /** @type {const} */ ([
   ['tilt', 'Tilt', 0, MAX_TILT, 1, (/** @type {number} */ v) => `${Math.round(v)}°`, 1],
@@ -124,22 +106,11 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('holo-card.wgsl'), label: 'holo-card' });
-    const pipeline = device.createRenderPipeline({
-      layout: 'auto', label: 'holo-card',
-      vertex: { module, entryPoint: 'vs' },
-      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
-      primitive: { topology: 'triangle-list' },
-    });
-    const usage = /** @type {any} */ (globalThis).GPUBufferUsage;
-    const uniforms = device.createBuffer({ label: 'holo-card', size: UNIFORM_FLOATS * 4, usage: usage.UNIFORM | usage.COPY_DST });
-    const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const bindGroups = new WeakMap();
+    const gpu = fullscreenPass(device, format, module, 'holo-card', UNIFORM_FLOATS);
     const u = new Float32Array(UNIFORM_FLOATS);
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
-    const mappers = states.map(makeMapper);
+    const mappers = states.map((s) => stateMapper(s, mapCardPoint));
     let slot = 0;
-    const attachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
-    const passDescriptor = { colorAttachments: [attachment], timestampWrites: /** @type {any} */ (undefined) };
     const canvas = context.canvas;
     const win = /** @type {any} */ (canvas?.ownerDocument?.defaultView ?? globalThis);
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -169,7 +140,7 @@ export const plugin = Object.freeze({
       render,
       captureInputMapper,
       mountUI,
-      destroy() { uniforms.destroy?.(); },
+      destroy() { gpu.uniforms.destroy?.(); },
     };
     const swaying = () => o.idle && !pose.hover && !reducedMotion;
     instance.continuous = swaying();
@@ -220,15 +191,7 @@ export const plugin = Object.freeze({
         pose.x = pose.tx; pose.y = pose.ty; pose.vx = 0; pose.vy = 0;
         return;
       }
-      let left = dt;
-      while (left > 1e-6) {
-        const h = Math.min(SUBSTEP, left);
-        pose.vx += ((pose.tx - pose.x) * STIFFNESS - pose.vx * DAMPING) * h;
-        pose.vy += ((pose.ty - pose.y) * STIFFNESS - pose.vy * DAMPING) * h;
-        pose.x += pose.vx * h;
-        pose.y += pose.vy * h;
-        left -= h;
-      }
+      springSubsteps(pose, dt, STIFFNESS, DAMPING);
       if (Math.abs(pose.tx - pose.x) + Math.abs(pose.ty - pose.y) < 1e-4 && Math.abs(pose.vx) + Math.abs(pose.vy) < 1e-3) {
         pose.x = pose.tx; pose.y = pose.ty; pose.vx = 0; pose.vy = 0;
       }
@@ -247,20 +210,7 @@ export const plugin = Object.freeze({
       u[16] = o.foil; u[17] = o.glare; u[18] = 0.5 + 0.5 * pose.x; u[19] = 0.5 + 0.5 * pose.y;
       u[20] = reducedMotion ? 0 : time % 600; u[21] = frame.sourceReady ? 1 : 0;
       u[22] = reducedMotion ? 0 : pose.x * (o.tilt / 14); u[23] = reducedMotion ? 0 : pose.y * (o.tilt / 14);
-      device.queue.writeBuffer(uniforms, 0, u);
-      let bindGroup = bindGroups.get(frame.sourceView);
-      if (!bindGroup) {
-        bindGroup = device.createBindGroup({
-          label: 'holo-card', layout: pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: uniforms } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView }],
-        });
-        bindGroups.set(frame.sourceView, bindGroup);
-      }
-      attachment.view = frame.destinationView;
-      passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('holo-card');
-      const pass = frame.encoder.beginRenderPass(passDescriptor);
-      pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); pass.end();
-      attachment.view = null;
+      gpu.draw(frame, u);
     }
 
     function captureInputMapper() {
@@ -272,7 +222,7 @@ export const plugin = Object.freeze({
     /** @param {Element} root @param {{setOptions: (patch: Record<string, unknown>) => void}} ui */
     function mountUI(root, ui) {
       const doc = root.ownerDocument;
-      injectUiStyle(doc);
+      injectStyle(doc, 'holo-card', UI_CSS);
       const box = doc.createElement('div');
       box.className = 'hic-holo-ui';
       const id = `hic-holo-${++uiSerial}`;

@@ -21,7 +21,7 @@ The plugin interface (ABI v2), step by step: [docs/guides/EFFECTS-PLUGINS.md](..
 
 The previews are recorded from the gallery in headless Chrome (each plugin's `test/gallery.e2e.mjs --record`). Each plugin's `meta.reducedMotion` says what it does when the user prefers reduced motion; the gallery shows it.
 
-Not built: [`_template`](_template/) (start a new plugin from a copy of it), [`_lib`](_lib/) (runtime code that more than one plugin uses, bundled into each: the transition timeline of disintegrate and shatter) and [`_shared`](_shared/) (test tooling).
+Not built: [`_template`](_template/) (start a new plugin from a copy of it), [`_lib`](_lib/) (runtime code that more than one plugin uses, bundled into each: the transition timeline of disintegrate and shatter, the WGSL loader, the UI stylesheet, the state mapper, option clamping, the full-screen WebGPU pass and the pointer spring) and [`_shared`](_shared/) (test tooling).
 
 ## Using a built plugin
 
@@ -48,7 +48,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `meta` | frozen `{name, title, description, defaults?, reducedMotion?}`: `name` equals the folder name, `title` at most 40 characters, `description` one line of at most 160, `defaults` the options the gallery passes to `addPlugin`, `reducedMotion` one line of at most 160 on what the plugin does under `prefers-reduced-motion: reduce` |
 | `plugin` | the frozen ABI v2 definition, `type` equal to `meta.name`; `definePlugin` of the effects host must accept it |
 | imports | only files of the plugin's own folder, of [`_lib/`](_lib/), and `src/effects/no-target.js` (the `NO_TARGET` value of the effects ABI, a module without dependencies); type-only JSDoc imports of `src/contracts/types.js` are fine; no `blob:` URLs. The build bundles all of it into the plugin |
-| shaders | `.wgsl` files in the folder, loaded with `await wgsl('<file>.wgsl')` from `./wgsl.js` (a copy of the template's); the build inlines them, so a built plugin makes no request |
+| shaders | `.wgsl` files in the folder, loaded with `await wgsl('<file>.wgsl')` from `./wgsl.js` (a copy of the template's, over `_lib/wgsl.js`); the build inlines them, so a built plugin makes no request |
 | `README.md` | what the plugin does, its options, its files |
 | `test/` | at least one `*.test.mjs` (Node) and, for a plugin that moves pixels, a `*.browser.test.mjs` that checks the input mapper against the GPU pixels; optionally a `gallery.e2e.mjs` that drives the plugin in the gallery with trusted input |
 | this file | one row in the table above (`npm run lint` checks it) |

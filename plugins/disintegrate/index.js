@@ -17,6 +17,7 @@
 
 import { wgsl } from './wgsl.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor } from '../_lib/transition.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectRenderFrame} EffectRenderFrame */
@@ -144,17 +145,11 @@ export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = 
   data[28] = turning ? 0 : 1; data[29] = 0; data[30] = 0; data[31] = 0;
 }
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="disintegrate"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'disintegrate';
-  style.textContent = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
     + `.hic-dis-ui label{display:grid}.hic-dis-ui input{width:100%;margin:0;accent-color:#ffb06b}.hic-dis-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#1b0d02;background:#ffb06b}`
     + `.hic-dis-live{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin-top:4px}.hic-dis-live label{display:flex;align-items:center;gap:6px}.hic-dis-live input{width:15px;height:15px}`
     + `.hic-dis-counter{font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:#ffd7a8}.hic-dis-counter[hidden]{display:none}`;
-  (doc.head || doc.documentElement).append(style);
-}
 
 /** @type {EffectPluginDefinition} */
 export const plugin = Object.freeze({
@@ -343,7 +338,7 @@ export const plugin = Object.freeze({
       mountUI(root, ui) {
         const doc = root.ownerDocument;
         const win2 = /** @type {any} */ (doc.defaultView);
-        injectUiStyle(doc);
+        injectStyle(doc, 'disintegrate', UI_CSS);
         const box = doc.createElement('div');
         box.className = 'hic-dis-ui';
         box.innerHTML = '<button type="button">Turn to dust</button><label>Dust size<input type="range" min="10" max="40" step="1"></label><label>Wind<input type="range" min="0" max="200" step="5"></label>'

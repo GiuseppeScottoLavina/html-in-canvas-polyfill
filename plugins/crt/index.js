@@ -12,6 +12,9 @@
 
 import { NO_TARGET } from '../../src/effects/no-target.js';
 import { wgsl } from './wgsl.js';
+import { stateMapper } from '../_lib/mapper.js';
+import { fullscreenPass } from '../_lib/gpu.js';
+import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -85,23 +88,9 @@ export function mapCrtPoint(s, point) {
   return sd < 0 ? { x, y } : NO_TARGET;
 }
 
-/** @param {Float32Array} state @returns {InputMapper} */
-function makeMapper(state) {
-  /** @type {InputMapper} */
-  const mapper = (point) => mapCrtPoint(state, point);
-  mapper.captureGestureSnapshot = () => {
-    const frozen = new Float32Array(state);
-    return (point) => mapCrtPoint(frozen, point);
-  };
-  return mapper;
-}
 
-/** @param {Document} doc */
-function injectUiStyle(doc) {
-  if (doc.querySelector('style[data-hic-effect-style="crt"]')) return;
-  const style = doc.createElement('style');
-  style.dataset.hicEffectStyle = 'crt';
-  style.textContent = `
+/** CSS of the plugin UI (mountUI) */
+const UI_CSS = `
     .hic-crt-ui { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px 12px; }
     .hic-crt-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
     .hic-crt-ui output { color:#ffcf7a; font-variant-numeric:tabular-nums; }
@@ -109,8 +98,6 @@ function injectUiStyle(doc) {
     .hic-crt-ui label.preset { grid-template-columns:auto; }
     .hic-crt-ui select { width:100%; height:22px; margin:0; padding:0 4px; font:inherit; font-weight:700; color:#ffcf7a; background:#14161c; border:1px solid #5a4a30; border-radius:4px; }
   `;
-  (doc.head || doc.documentElement).append(style);
-}
 
 const LABELS = /** @type {Record<string, string>} */ ({ curvature: 'Curvature', scanlines: 'Scanlines', mask: 'Mask', glow: 'Glow', warmth: 'Warmth', flicker: 'Flicker', misconvergence: 'Convergence' });
 /** the sliders of mountUI (misconvergence is an option without a slider) */
@@ -132,22 +119,11 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('crt.wgsl'), label: 'crt' });
-    const pipeline = device.createRenderPipeline({
-      layout: 'auto', label: 'crt',
-      vertex: { module, entryPoint: 'vs' },
-      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
-      primitive: { topology: 'triangle-list' },
-    });
-    const usage = /** @type {any} */ (globalThis).GPUBufferUsage;
-    const uniforms = device.createBuffer({ label: 'crt', size: UNIFORM_FLOATS * 4, usage: usage.UNIFORM | usage.COPY_DST });
-    const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const bindGroups = new WeakMap();
+    const gpu = fullscreenPass(device, format, module, 'crt', UNIFORM_FLOATS);
     const u = new Float32Array(UNIFORM_FLOATS);
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
-    const mappers = states.map(makeMapper);
+    const mappers = states.map((s) => stateMapper(s, mapCrtPoint));
     let slot = 0;
-    const attachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
-    const passDescriptor = { colorAttachments: [attachment], timestampWrites: /** @type {any} */ (undefined) };
     const win = /** @type {any} */ (context.canvas?.ownerDocument?.defaultView ?? globalThis);
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     const start = performance.now();
@@ -171,7 +147,7 @@ export const plugin = Object.freeze({
       render,
       captureInputMapper,
       mountUI,
-      destroy() { uniforms.destroy?.(); },
+      destroy() { gpu.uniforms.destroy?.(); },
     };
     const animated = () => !reducedMotion && o.flicker > 0;
     instance.continuous = animated();
@@ -190,20 +166,7 @@ export const plugin = Object.freeze({
       u[4] = o.curvature * MAX_K; u[5] = bezelWidth(frame.cssWidth, frame.cssHeight); u[6] = cornerRadius(frame.cssWidth, frame.cssHeight); u[7] = frame.sourceReady ? 1 : 0;
       u[8] = o.scanlines; u[9] = o.glow; u[10] = !reducedMotion && o.flicker > 0 ? o.flicker : 0; u[11] = o.misconvergence * MAX_MIS;
       u[12] = ((frame.now - start) / 1000) % 600; u[13] = o.mask; u[14] = o.warmth; u[15] = 0;
-      device.queue.writeBuffer(uniforms, 0, u);
-      let group = bindGroups.get(frame.sourceView);
-      if (!group) {
-        group = device.createBindGroup({
-          label: 'crt', layout: pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: uniforms } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView }],
-        });
-        bindGroups.set(frame.sourceView, group);
-      }
-      attachment.view = frame.destinationView;
-      passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('crt');
-      const pass = frame.encoder.beginRenderPass(passDescriptor);
-      pass.setPipeline(pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();
-      attachment.view = null;
+      gpu.draw(frame, u);
     }
 
     function captureInputMapper() {
@@ -215,7 +178,7 @@ export const plugin = Object.freeze({
     /** @param {Element} root @param {{setOptions: (patch: Record<string, unknown>) => void}} ui */
     function mountUI(root, ui) {
       const doc = root.ownerDocument;
-      injectUiStyle(doc);
+      injectStyle(doc, 'crt', UI_CSS);
       const box = doc.createElement('div');
       box.className = 'hic-crt-ui';
       const id = `hic-crt-${++uiSerial}`;
