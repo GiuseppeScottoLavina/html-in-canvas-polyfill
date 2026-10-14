@@ -1,6 +1,7 @@
 // Fakes for the pure scheduler tests: a window whose frames are stepped by hand (rAF callbacks, then ResizeObserver delivery in creation order,
 // like one rendering update), a minimal document, a store with scripted behaviour, canvas records and an env. No DOM, no timers.
 import { createBus } from '../../../src/util/bus.js';
+import { DEFAULT_OPTIONS } from '../../../src/api/options.js';
 
 export function createFakeWindow() {
   let nextId = 1;
@@ -176,7 +177,7 @@ export function createFakeEnv(optionOverrides = {}) {
     bus,
     reporter,
     now: () => clock.t,
-    options: { defaultFrameCap: 0, maxSnapshotFps: 60, interactionFloorFps: 0, coherentPaint: true, coherenceMaxWaitMs: 50, paintGateMaxWaitMs: 400, inkMargin: 24, ...optionOverrides },
+    options: { ...DEFAULT_OPTIONS, ...optionOverrides },
     registry: {
       all: () => records,
       get: (canvas) => records.find((r) => r.canvas === canvas),

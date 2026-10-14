@@ -13,7 +13,6 @@
 /** @typedef {import('../contracts/types.js').SchedulerHooks} SchedulerHooks */
 /** @typedef {import('../contracts/types.js').Services} Services */
 /** @typedef {import('./canvas-registry.js').CoreRegistry} CoreRegistry */
-/** @typedef {Services} ComposeServices  kept as the name the install code and the tests use */
 
 import { BUS } from '../contracts/events.js';
 import { createLiveLayer } from '../live/live-layer.js';
@@ -30,7 +29,7 @@ import { createCanvasRegistry } from './canvas-registry.js';
 
 /**
  * The production Services (IMPLEMENTED: it is the type-level conformance check of every factory signature against contracts/types.js Services).
- * @returns {ComposeServices}
+ * @returns {Services}
  */
 export function defaultServices() {
   return { createLiveLayer, createRootScope, installSelectorBridge, createCapture, createSnapshotStore, createScheduler, startObservers, createEffects: createEffectsSeam, createInteractionTracker };
@@ -70,7 +69,7 @@ function disposeAll(env, parts) {
  * subscribe: CANVAS_MOUNTED -> scheduler.register, CANVAS_UNMOUNTING -> scheduler.unregister + store.forget (the store also subscribes itself; forget is idempotent).
  * Drawable, resize, DPR and geometry topics are consumed by the modules that own them (store, effects, observers), not re-routed here.
  * @param {HicEnv} env
- * @param {ComposeServices} services
+ * @param {Services} services
  * @param {SchedulerHooks} hooks
  * @param {PatchLedger} ledger  the install's ledger (the root scope patches attachShadow through it)
  * @returns {{effects: EffectsSeam, geometry: GeometryApi, registry: import('./canvas-registry.js').CoreRegistry, dispose: () => void}}
@@ -102,7 +101,7 @@ export function compose(env, services, hooks, ledger) {
 /**
  * The body of compose(); every created part is recorded in `made` the moment it exists.
  * @param {HicEnv} env
- * @param {ComposeServices} services
+ * @param {Services} services
  * @param {SchedulerHooks} hooks
  * @param {PatchLedger} ledger
  * @param {Record<string, any>} made
@@ -158,7 +157,7 @@ const NO_INTERACTION = Object.freeze({
  * Modes native and native-bridged: no layer, no snapshots, no scheduler. Only the effects seam is built; the effects bundle then reads the native implementation
  * through its native source provider and finds no record for any canvas.
  * @param {HicEnv} env
- * @param {ComposeServices} services
+ * @param {Services} services
  * @returns {{effects: EffectsSeam, dispose: () => void}}
  */
 export function composeNative(env, services) {

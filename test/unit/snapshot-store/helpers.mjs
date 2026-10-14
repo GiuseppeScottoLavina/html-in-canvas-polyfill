@@ -72,6 +72,7 @@ export function forceContextLoss(surface) {
  */
 export async function makeRig(t, cfg = {}) {
   const { createBus } = await import('/src/util/bus.js');
+  const { DEFAULT_OPTIONS } = await import('/src/api/options.js');
   const { createSnapshotStore } = await import('/src/snapshot/store/store.js');
   const { decodeDataUrl } = await import('/src/snapshot/store/decode.js');
   const { BUS } = await import('/src/contracts/events.js');
@@ -86,11 +87,7 @@ export async function makeRig(t, cfg = {}) {
     caught: (/** @type {unknown} */ err, /** @type {string} */ where) => { reports.caught.push({ err, where }); },
     entries: () => [],
   };
-  const options = {
-    mode: 'auto', onUnsupportedContent: 'placeholder', maxDpr: 3, maxSnapshotFps: 0, maxSurfacePixels: 33554432, interactionFloorFps: 0, inkMargin: INK,
-    coherentPaint: true, coherenceMaxWaitMs: 50, paintGateMaxWaitMs: 400, maxTotalSurfaceBytes: 536870912,
-    nodeBudget: { soft: 350, hard: 3000, absolute: 20000 }, ...cfg.options,
-  };
+  const options = { ...DEFAULT_OPTIONS, maxDpr: 3, maxSnapshotFps: 0, inkMargin: INK, ...cfg.options };
   const host = fixture('');
   /** @type {Element[]} */ const els = [];
   const sizes = new Map();

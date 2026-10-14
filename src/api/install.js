@@ -32,7 +32,7 @@ import { installWorkerGuard } from './worker-guard.js';
 /** @typedef {import('../contracts/types.js').HicEnv} HicEnv */
 /** @typedef {import('../contracts/types.js').NativeState} NativeState */
 /** @typedef {import('../contracts/types.js').ResolvedOptions} ResolvedOptions */
-/** @typedef {import('./compose.js').ComposeServices} ComposeServices */
+/** @typedef {import('../contracts/types.js').Services} Services */
 /** @typedef {import('./native-detect.js').ModeDecision} ModeDecision */
 
 /** One slot per window, shared by every copy of the library on the page: a second bundle must find the first one's install instead of probing patched prototypes. */
@@ -67,7 +67,7 @@ export function install(options) {
 /**
  * install() with injected module factories (tests wire fakes through this; production uses defaultServices()).
  * @param {HicOptions|undefined} options
- * @param {ComposeServices} services
+ * @param {Services} services
  * @returns {HicInstalled}
  */
 export function installWith(options, services) {
@@ -174,7 +174,7 @@ function refuse(win, options, native, refusal) {
  * @param {Readonly<ResolvedOptions>} options
  * @param {NativeState} native
  * @param {HicMode} mode  'native' | 'native-bridged' | 'polyfill'
- * @param {ComposeServices} services
+ * @param {Services} services
  * @param {string[]} [notes]  why a usable native was used as found (report().deviations, id native-step-aside)
  * @returns {HicInstalled}
  */
@@ -223,7 +223,7 @@ function build(win, doc, options, native, mode, services, notes = []) {
 
 /**
  * @param {HicEnv} env
- * @param {ComposeServices} services
+ * @param {Services} services
  * @param {import('../contracts/types.js').PatchLedger} ledger
  * @param {Array<() => void>} undo
  * @param {(a: {adoptRoot: (root: ShadowRoot) => void}) => void} setAdoption
@@ -261,7 +261,7 @@ function installPolyfill(env, services, ledger, undo, setAdoption) {
  * @param {HicEnv} env
  * @param {NativeState} native
  * @param {HicMode} mode
- * @param {ComposeServices} services
+ * @param {Services} services
  * @param {import('../contracts/types.js').PatchLedger} ledger
  * @param {Array<() => void>} undo
  * @param {(a: {adoptRoot: (root: ShadowRoot) => void}) => void} setAdoption
