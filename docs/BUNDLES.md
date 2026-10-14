@@ -13,7 +13,7 @@
 | + the water demo plugin | `hic-live-polyfill`, `hic-live-effects`, then `hic-live-effects-water.iife.min.js` | + `window.HicLiveEffectsWater.WaterEffectPlugin` (WGSL inlined, no fetch) |
 | Chrome 154-156 behind `--enable-blink-features=CanvasDrawElement` (legacy or nearly complete native) | `hic-live-native-bridge.iife.min.js` BEFORE `hic-live-polyfill.iife.min.js` | mode `native-bridged` instead of a refusal |
 | Chrome 157+ (complete native), Firefox 155+, Safari 27+ | Chrome: nothing extra; Firefox / Safari: `hic-live-engines.iife.min.js` with the core (row above) | complete native: mode `native` (the core does no snapshotting); Firefox 155+ and Safari 27+: mode `polyfill`; older Firefox/Safari and mobile: refused loudly (one `console.warn`, `window.__HIC__.error`) |
-| a bundler (Vite, webpack, rollup...) | `import { install } from '@giuseppescottolavina/html-in-canvas-polyfill'`, optionally `@giuseppescottolavina/html-in-canvas-polyfill/effects`, `.../effects/water`, `.../native-bridge` | tree-shakeable ESM with shared chunks |
+| a bundler (Vite, webpack, rollup...) | `import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill'`, optionally `@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects`, `.../effects/water`, `.../native-bridge` | tree-shakeable ESM with shared chunks |
 
 All scripts are classic `<script src>` tags (no `type=module`, no `import`), make no network request when they load, and the minified twins are drop-in replacements for the readable files (the gates and the mutants run the readable ones, G-bundle loads both).
 

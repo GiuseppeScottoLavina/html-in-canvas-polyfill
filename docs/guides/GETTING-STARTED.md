@@ -6,7 +6,7 @@ Status: `0.1.0-preview.1`, a preview published under the npm dist-tag `next`, fo
 
 ## 1. Run the examples (about 3 minutes)
 
-Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppescottolavina/html-in-canvas-polyfill@next`.
+Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next`.
 
 ```sh
 git clone https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill.git && cd html-in-canvas-polyfill
@@ -64,7 +64,7 @@ Load order: the core script must run before any script that reads the API (`docs
 ## 3. ES modules and bundlers
 
 ```js
-import { install } from '@giuseppescottolavina/html-in-canvas-polyfill';   // or dist/esm/index.js by path
+import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill';   // or dist/esm/index.js by path
 
 const hic = install();                            // synchronous; call it before app code reads the API
 console.log(hic.mode);                            // 'polyfill' | 'native' | 'native-bridged' ('refused' with onUnsupportedBrowser: 'warn')
@@ -72,7 +72,7 @@ console.log(hic.mode);                            // 'polyfill' | 'native' | 'na
 
 `install()` throws a `HicUnsupportedError` (`feature: 'browser'` or `'partial-native'`) in a browser the polyfill refuses. Catch it, or pass `{ onUnsupportedBrowser: 'warn' }` to log once and install nothing. The classic script never throws on refusal: it logs one `console.warn` and sets `window.__HIC__ = { error }`.
 
-Optional parts: `import { installEffects } from '@giuseppescottolavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { WaterEffectPlugin } from '@giuseppescottolavina/html-in-canvas-polyfill/effects/water'`, `import '@giuseppescottolavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-156 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
+Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { WaterEffectPlugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects/water'`, `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-156 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
 
 ## 4. Adding the effects
 

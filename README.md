@@ -1,7 +1,7 @@
 # html-in-canvas-polyfill
 
 [![CI](https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/actions/workflows/ci.yml/badge.svg)](https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@giuseppescottolavina/html-in-canvas-polyfill/next?label=npm%40next)](https://www.npmjs.com/package/@giuseppescottolavina/html-in-canvas-polyfill)
+[![npm](https://img.shields.io/npm/v/@giuseppe-scotto-lavina/html-in-canvas-polyfill/next?label=npm%40next)](https://www.npmjs.com/package/@giuseppe-scotto-lavina/html-in-canvas-polyfill)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in-canvas): put real, interactive HTML inside `<canvas content="drawable">` and draw it with `ctx.drawElementImage()`, in today's desktop Chrome, Firefox and Safari.
@@ -19,18 +19,18 @@ HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, access
 ## Quick start
 
 ```sh
-npm install @giuseppescottolavina/html-in-canvas-polyfill@next
+npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next
 ```
 
 ```js
-import { install } from '@giuseppescottolavina/html-in-canvas-polyfill';
+import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill';
 install(); // synchronous; throws HicUnsupportedError in a browser it refuses
 ```
 
 Or with a script tag (load it before your own scripts; it installs while the tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppescottolavina/html-in-canvas-polyfill@0.1.0-preview.1/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.1/dist/hic-live-polyfill.iife.min.js"></script>
 ```
 
 Then use the standard API. This is the explainer's own example, unchanged:

@@ -47,7 +47,7 @@ the names of the CURRENT spec: `content` IDL reflecting only `fallback|drawable`
 | `absent` | no names | `polyfill` | full polyfill (browser gate below). |
 
 #### 2.1 What the native bridge translates (modes `native-bridged`)
-The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `import '@giuseppescottolavina/html-in-canvas-polyfill/native-bridge'`), loaded BEFORE the core installs. Without it a `legacy` or `partial, fillable` native is refused with `HicUnsupportedError('partial-native')` whose hint names the bundle.
+The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'`), loaded BEFORE the core installs. Without it a `legacy` or `partial, fillable` native is refused with `HicUnsupportedError('partial-native')` whose hint names the bundle.
 | area | legacy native (Chrome 154 flag) | bridge |
 |---|---|---|
 | markup | `layoutsubtree` attribute / `layoutSubtree` IDL, no `content` | `content` IDL + attribute mirrored to `layoutsubtree`; only DIRECT children can be drawn natively, so drawing a non-direct descendant is reported loudly (no silent no-op) |
