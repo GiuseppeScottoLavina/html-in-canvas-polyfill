@@ -1,11 +1,11 @@
 // Node tests of the page-curl plugin: the folder contract, the curl geometry and the mapper formula (against an independent port of the
 // whole shader region decision), the grab gesture (which events are taken from the page), the release on the frame clock (the same at
-// every frame cap), reduced motion, and the render path (no allocation per frame).
+// every frame cap), the rest pose (dog-ear, hover lift, auto-peek, grab cursor), reduced motion, and the render path (no allocation per frame).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { checkPluginFolder } from '../../_shared/contract.mjs';
-import { NO_TARGET, RELEASE_MS, UNIFORM_FLOATS, curlGeometry, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, plugin, releaseEase } from '../index.js';
+import { NO_TARGET, PEEK_MS, RELEASE_MS, UNIFORM_FLOATS, curlGeometry, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, plugin, releaseEase } from '../index.js';
 
 const W = 480;
 const H = 320;
@@ -17,7 +17,7 @@ test('the folder satisfies the plugin contract (plugins/README.md)', async () =>
 test('meta and the definition agree; the defaults are valid options', () => {
   assert.equal(plugin.type, meta.name);
   assert.equal(plugin.apiVersion, 2);
-  assert.deepEqual(Object.keys(meta.defaults).sort(), ['corner', 'radius', 'shadow']);
+  assert.deepEqual(Object.keys(meta.defaults).sort(), ['autoPeek', 'corner', 'dogEar', 'radius', 'shadow']);
 });
 
 /** @param {number} cx @param {number} cy @param {number} dx @param {number} dy @param {number} [r] */
@@ -130,7 +130,10 @@ test('options: colours parse, the release eases from 0 to 1', () => {
 });
 
 // ------------------------------------------------------------------------------------------------ the instance, with a recording fake GPU
-function fakeEnv({ reduced = false } = {}) {
+/** options without the rest-pose hints: the page lies flat at rest */
+const FLAT = { ...meta.defaults, dogEar: 0, autoPeek: 0 };
+
+function fakeEnv({ reduced = false, timers = false } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const writes = [];
   const passes = [];
@@ -140,8 +143,11 @@ function fakeEnv({ reduced = false } = {}) {
   };
   const encoder = { beginRenderPass: (d) => { passes.push(d); return { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} }; } };
   const docListeners = new Map();
+  const pending = [];
+  const view = { matchMedia: () => ({ matches: reduced }) };
+  if (timers) Object.assign(view, { setTimeout: (fn, ms) => { pending.push({ fn, ms }); return pending.length; }, clearTimeout: (id) => { if (pending[id - 1]) pending[id - 1].fn = null; } });
   const doc = {
-    defaultView: { matchMedia: () => ({ matches: reduced }) },
+    defaultView: view,
     addEventListener: (type, fn, capture) => { assert.equal(capture, true); docListeners.set(type, fn); },
     removeEventListener: (type, fn) => { if (docListeners.get(type) === fn) docListeners.delete(type); },
   };
@@ -153,7 +159,10 @@ function fakeEnv({ reduced = false } = {}) {
   };
   const source = {};
   let renders = 0;
-  const context = { device, format: 'bgra8unorm', canvas, source, requestRender() { renders += 1; }, listen: () => () => {} };
+  const layerListeners = new Map();
+  const attrs = new Map();
+  const layer = { setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k), setPointerCapture: (id) => captured.push(`layer${id}`), releasePointerCapture: (id) => captured.push(`layer-${id}`) };
+  const context = { device, format: 'bgra8unorm', canvas, source, requestRender() { renders += 1; }, listen: (type, fn) => { layerListeners.set(type, fn); return () => {}; } };
   /** @param {string} type @param {number} x page css px @param {number} y @param {object} [o] */
   const fire = (type, x, y, o = {}) => {
     const e = {
@@ -164,7 +173,9 @@ function fakeEnv({ reduced = false } = {}) {
     return e;
   };
   const frame = (now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, sourceReady: true, sourceView: {}, destinationView: {}, encoder });
-  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders };
+  /** a pointer event reaching the live layer (after the document's capture listeners) @param {string} type */
+  const atLayer = (type) => layerListeners.get(type)?.({ type, currentTarget: layer });
+  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders, pending, atLayer, attrs };
 }
 
 async function created(t, env, options = meta.defaults) {
@@ -206,7 +217,7 @@ test('the release animates back on the frame clock: the same pose at the same ti
   const poses = [];
   for (const fps of [120, 30, 15]) {
     const env = fakeEnv();
-    const inst = await created(t, env);
+    const inst = await created(t, env, FLAT);
     env.fire('pointerdown', 475, 315);
     env.fire('pointermove', 260, 180);
     inst.render(env.frame(1000));
@@ -230,7 +241,7 @@ test('the release animates back on the frame clock: the same pose at the same ti
 
 test('prefers-reduced-motion: the page lies flat at once on release and the hover lift does not animate', async (t) => {
   const env = fakeEnv({ reduced: true });
-  const inst = await created(t, env);
+  const inst = await created(t, env, FLAT);
   env.fire('pointermove', 470, 310);
   inst.render(env.frame(0));
   const lifted = env.renders();
@@ -249,7 +260,7 @@ test('prefers-reduced-motion: the page lies flat at once on release and the hove
 
 test('a mapper keeps the curl of its own frame after later frames (frozen slots, gesture snapshot copies)', async (t) => {
   const env = fakeEnv();
-  const inst = await created(t, env);
+  const inst = await created(t, env, FLAT);
   env.fire('pointerdown', 470, 310);
   env.fire('pointermove', 300, 200);
   inst.render(env.frame(0));
@@ -277,7 +288,7 @@ test('the hover lift animates from the first frame after the hover, the same at 
   const lifts = [];
   for (const fps of [120, 30]) {
     const env = fakeEnv();
-    const inst = await created(t, env);
+    const inst = await created(t, env, FLAT);
     inst.render(env.frame(0));                    // a frame long before the hover
     env.fire('pointermove', 470, 312);
     const out = [];
@@ -290,4 +301,107 @@ test('the hover lift animates from the first frame after the hover, the same at 
     lifts.push(out);
   }
   assert.ok(Math.abs(lifts[0][2] - lifts[1][2]) < 0.05 * lifts[0][2], `settled lift at 120 and 30 fps: ${lifts}`);
+});
+
+// ------------------------------------------------------------------------------------------------ the rest pose: dog-ear, hover, auto-peek
+/** the lifted corner of a written uniform block: the point where the corner lies (back side up), from the cylinder @param {Float32Array} u */
+const curledAt = (u) => (u[8] > 0.5 ? { dir: [u[4], u[5]], radius: u[7] } : null);
+
+test('the hint: top-right unless one corner is allowed; the label names it', () => {
+  assert.equal(hintCorner('any'), 'tr');
+  assert.equal(hintCorner('bl'), 'bl');
+  assert.match(hintText('any'), /Drag the top-right corner to peel the page \(any corner works\)/);
+  assert.match(hintText('br'), /Drag the bottom-right corner/);
+  assert.equal(peekAt(0, 5), 0);
+  assert.equal(peekAt(1500 + PEEK_MS / 2, 5), 1, 'half way through the first peek the dog-ear is fully open');
+  assert.equal(peekAt(1500 + PEEK_MS + 10, 5), 0);
+  assert.ok(peekAt(1500 + 5000 + PEEK_MS / 2, 5) > 0.99, 'the next peek, 5 s later');
+  assert.equal(peekAt(1500 + PEEK_MS / 2, 0), 0, 'autoPeek 0: never');
+});
+
+test('at rest the top-right corner is a dog-ear: curled from the first frame, no frame requested, NO_TARGET on the dog-ear only', async (t) => {
+  const env = fakeEnv();
+  const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
+  inst.render(env.frame(0));
+  const u = env.writes.at(-1);
+  assert.equal(u[8], 1, 'curled at rest');
+  assert.ok(u[4] > 0 && u[5] < 0, `the cylinder points to the top-right corner: ${u[4]}, ${u[5]}`);
+  const r0 = env.renders();
+  inst.render(env.frame(16));
+  assert.equal(env.renders(), r0, 'static: no frame requested');
+  const m = inst.captureInputMapper(/** @type {any} */ ({}));
+  assert.ok(isNoTarget(m({ x: W - 3, y: 3, width: W, height: H })), 'the dog-ear itself is not the page');
+  for (const [x, y] of [[3, 3], [W - 3, H - 3], [3, H - 3], [W - 80, 80], [240, 160]]) assert.deepEqual(m({ x, y, width: W, height: H }), { x, y });
+});
+
+test('hovering a hot zone lifts its corner further and shows the grab cursor on the layer; dragging shows grabbing; leaving restores', async (t) => {
+  const env = fakeEnv();
+  const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
+  env.atLayer('pointerover');                       // the plugin learns the layer the pointer events land on
+  inst.render(env.frame(0));
+  const rest = curledAt(env.writes.at(-1)).radius;
+  env.fire('pointermove', W - 10, 10);
+  env.atLayer('pointermove');
+  assert.equal(env.attrs.get('data-hic-curl-cursor'), 'grab');
+  for (let now = 1000; now <= 1600; now += 8) inst.render(env.frame(now));
+  assert.ok(curledAt(env.writes.at(-1)).radius > rest * 1.5, 'the corner lifts further');
+  env.fire('pointerdown', W - 10, 10);
+  assert.equal(env.attrs.get('data-hic-curl-cursor'), 'grabbing');
+  assert.deepEqual(env.captured, ['layer1'], 'the pointer is captured to the layer');
+  env.fire('pointerup', 300, 200);
+  assert.equal(env.attrs.has('data-hic-curl-cursor'), false);
+  env.fire('pointermove', 240, 160);
+  assert.equal(env.attrs.has('data-hic-curl-cursor'), false, 'off the hot zones: no grab cursor');
+  inst.destroy();
+});
+
+test('the release of the dog-eared corner ends on the dog-ear (not flat); another corner ends flat and the dog-ear comes back', async (t) => {
+  const env = fakeEnv();
+  const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
+  inst.render(env.frame(0));
+  const rest = Array.from(env.writes.at(-1).slice(4, 9));
+  env.fire('pointerdown', W - 4, 4);
+  env.fire('pointermove', 200, 200);
+  inst.render(env.frame(100));
+  env.fire('pointerup', 200, 200);
+  for (let now = 100; now <= 100 + RELEASE_MS + 50; now += 8) inst.render(env.frame(now));
+  const after = Array.from(env.writes.at(-1).slice(4, 9));
+  after.forEach((v, i) => assert.ok(Math.abs(v - rest[i]) < 1e-3, `back on the dog-ear: ${after} vs ${rest}`));
+  env.fire('pointerdown', 4, H - 4);
+  env.fire('pointermove', 200, 100);
+  inst.render(env.frame(1000));
+  env.fire('pointerup', 200, 100);
+  for (let now = 1000; now <= 1000 + RELEASE_MS + 1500; now += 8) inst.render(env.frame(now));
+  const back = Array.from(env.writes.at(-1).slice(4, 9));
+  back.forEach((v, i) => assert.ok(Math.abs(v - rest[i]) < 1e-3, `the dog-ear is back on the top-right corner: ${back} vs ${rest}`));
+});
+
+test('auto-peek: until the first drag the dog-ear opens now and then on its own (a timer wakes the host); the first drag ends it', async (t) => {
+  const env = fakeEnv({ timers: true });
+  const inst = await created(t, env, { ...meta.defaults, autoPeek: 5 });
+  inst.render(env.frame(0));
+  const rest = curledAt(env.writes.at(-1)).radius;
+  assert.equal(env.pending.length, 1, 'at rest a timer is set for the first peek');
+  assert.equal(env.pending[0].ms, 1500);
+  const r0 = env.renders();
+  env.pending[0].fn();
+  assert.equal(env.renders(), r0 + 1, 'the timer asks for a frame');
+  let max = 0;
+  for (let now = 1500; now <= 1500 + PEEK_MS + 600; now += 16) { inst.render(env.frame(now)); max = Math.max(max, curledAt(env.writes.at(-1)).radius); }
+  assert.ok(max > rest * 2, `the dog-ear peeks open: radius ${rest} -> ${max}`);
+  assert.ok(env.renders() - r0 > PEEK_MS / 16 - 5, 'frames are requested while it peeks');
+  assert.ok(Math.abs(curledAt(env.writes.at(-1)).radius - rest) < 0.05, 'and it closes again');
+  assert.ok(env.pending.at(-1).fn && env.pending.at(-1).ms > 1000, 'the next peek is scheduled');
+  env.fire('pointerdown', W - 4, 4);
+  env.fire('pointermove', 300, 100);
+  inst.render(env.frame(4000));
+  env.fire('pointerup', 300, 100);
+  for (let now = 4000; now <= 20000; now += 16) inst.render(env.frame(now));
+  assert.ok(env.pending.slice(1).every((p) => p.fn === null), 'after the first drag no peek is pending (the first timer already fired)');
+  assert.ok(Math.abs(curledAt(env.writes.at(-1)).radius - rest) < 0.05, 'and the dog-ear stays still');
+  const reduced = fakeEnv({ reduced: true, timers: true });
+  const still = await created(t, reduced, { ...meta.defaults, autoPeek: 5 });
+  for (let now = 0; now <= 5000; now += 16) still.render(reduced.frame(now));
+  assert.equal(reduced.pending.length, 0, 'reduced motion: no auto-peek');
+  assert.equal(reduced.writes.at(-1)[8], 1, 'reduced motion: the dog-ear is still there');
 });

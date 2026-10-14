@@ -1,5 +1,5 @@
 // The page-curl input mapper against the pixels the GPU really produced (plugins/_shared/gpu-check.mjs), with a wrong-mapper control,
-// the back of the page (mirrored and dimmed) checked pixel by pixel, the release back to the identity, and the GPU time of the pass.
+// the back of the page (paper, the front mirrored through it) checked pixel by pixel, the dog-ear at rest, the release, and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
 import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, markerScene, presentOnce } from '/plugins/_shared/gpu-check.mjs';
 import { RELEASE_MS, UNIFORM_FLOATS, curlGeometry, isNoTarget, mapCurlPoint, meta, plugin } from '/plugins/page-curl/index.js';
@@ -60,8 +60,8 @@ gpuTest('the mapper of the presented frame is the one the plugin computes for th
   assert.ok(curled > 200 && flat > 1500, `${curled} sampled points are curled, ${flat} flat`);
 });
 
-gpuTest('the back of the page is the source mirrored across the fold and dimmed (pixel by pixel)', async (t) => {
-  const far = [170, 110];
+gpuTest('the back of the page is paper with the source mirrored across the fold showing through it (pixel by pixel)', async (t) => {
+  const far = [90, 60];   // a long pull: with the default radius (56 px) the flat part of the flap covers several markers
   const { img } = await presentOnce(t, plugin, { ...meta.defaults }, { scene, before: dragTo(far) });
   const s = stateFor(far);
   const r = s[7];
@@ -80,13 +80,30 @@ gpuTest('the back of the page is the source mirrored across the fold and dimmed 
       const red = img.data[(j * W + i) * 4];
       const marker = d < 0;
       if (marker) dimMarkers += 1;
-      // a white marker seen from behind: dimmed to about a third (never as bright as the front); the back elsewhere: dark tint
-      if (marker ? !(red > 45 && red < 110) : !(red < 35)) wrong += 1;
+      // paper (#62a9c4, red 98, lit 0.92 to 1); a white marker seen through it darkens it by the ink share (0.42): red about 52 to 57.
+      // Both stay under the oracle's "bright" threshold (110), so the back is never mistaken for the front.
+      if (marker ? !(red > 40 && red < 70) : !(red > 82 && red < 105)) wrong += 1;
     }
   }
   console.error(`page-curl back side: decided=${decided} wrong=${wrong} dim mirrored marker px=${dimMarkers}`);
   assert.ok(decided > 2000 && dimMarkers > 100, `the flap covers ${decided} px, ${dimMarkers} of them a mirrored marker`);
   assert.ok(wrong <= 5, `${wrong} px of the back disagree with the mirror of the source`);
+});
+
+gpuTest('at rest the top-right corner is a dog-ear: paper-coloured pixels there, and the mapper predicts the whole frame', async (t) => {
+  const { img, mapper } = await presentOnce(t, plugin, { ...meta.defaults, autoPeek: 0 }, { scene });
+  let paper = 0;
+  for (let j = 0; j < 64; j += 1) {
+    for (let i = W - 64; i < W; i += 1) {
+      const k = (j * W + i) * 4;
+      if (img.data[k + 2] > 120 && img.data[k + 1] > 90 && img.data[k] < 110) paper += 1;
+    }
+  }
+  const real = agreement(img, /** @type {any} */ (mapper), scene);
+  console.error(`page-curl dog-ear: ${paper} paper px in the top-right 64x64; mapper wrong ${real.wrong}`);
+  assert.ok(paper > 200, `${paper} paper-coloured px at the top-right corner`);
+  assert.ok(real.wrong <= 5 && real.bright > 3000, `mapper wrong ${real.wrong}`);
+  assert.ok(isNoTarget(/** @type {any} */ (mapper)({ x: W - 2, y: 2, width: W, height: H })), 'the dog-ear is not the page');
 });
 
 gpuTest('released: the page springs back and the presented frame is the plain source again (identity, pixel-exact)', async (t) => {

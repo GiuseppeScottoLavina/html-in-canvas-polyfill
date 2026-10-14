@@ -1,8 +1,9 @@
-// Shatter through the REAL effects host on a real WebGPU canvas: the assembled frame against the host's own passthrough (bit for bit),
-// mid-transition frames, input blocking through the interposer, frame-cap independence, the reduced-motion crossfade, device loss and the
-// submit wiring. Run: node test/unit/run.mjs plugins/shatter/test/shatter-gpu.browser.test.mjs
+// Shatter through the REAL effects host on a real WebGPU canvas: the assembled frame against the host's own passthrough (bit for bit), the
+// mapper of the cracked pane against the GPU pixels, a click through the cracked glass, the cracks running from the impact, the fall,
+// input blocking through the interposer, frame-cap independence, reduced motion, device loss and the submit wiring.
+// Run: node test/unit/run.mjs plugins/shatter/test/shatter-gpu.browser.test.mjs
 import { assert, sleep } from '/test/unit/lib/t.js';
-import { gpuAvailable, gpuTest } from '/plugins/_shared/gpu-check.mjs';
+import { checkMapperAgainstGpu, gpuAvailable, gpuTest } from '/plugins/_shared/gpu-check.mjs';
 import { makeRig, nonDominantShare } from '/test/unit/gpu-effects/lib/rig.mjs';
 import { createEffectHost } from '/src/effects/effect-host.js';
 import { definePlugin } from '/src/effects/plugin-abi.js';
@@ -97,28 +98,68 @@ gpuTest('idle: the presented frame equals the host passthrough bit for bit, and 
   assert.deepEqual(m({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 });
 });
 
-gpuTest('play: mid-transition frames are non-blank, differ from each other and from the source; the end frame has no residual offset', async (t) => {
+gpuTest('cracked pane: the mapper agrees with the GPU pixels (the inverse of the offsets and of the bending), the identity does not', async (t) => {
+  const verdict = await checkMapperAgainstGpu(t, plugin, { intro: false, state: 'cracked', impact: { x: 200, y: 150 }, edgeAmount: 0, glint: 0 });
+  console.error(`shatter cracked mapper: ${verdict.real.wrong} wrong px of ${verdict.real.decided} (identity ${verdict.identity.wrong}), ${verdict.real.bright} bright`);
+  assert.ok(verdict.ok, verdict.why);
+});
+
+gpuTest('a click through the cracked glass reaches the control drawn there; while the cracks run it is swallowed', async (t) => {
+  const { rig, mappers } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
+  const btn = /** @type {HTMLButtonElement} */ (rig.layerEl.querySelector('#btn'));
+  let clicks = 0;
+  btn.addEventListener('click', () => { clicks += 1; });
+  const press = () => {
+    const r = rig.canvas.getBoundingClientRect();
+    const cx = r.left + 100, cy = r.top + 60;
+    const target = /** @type {Element} */ (document.elementFromPoint(cx, cy));
+    const init = { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: cy, pointerId: 1, isPrimary: true, button: 0 };
+    target.dispatchEvent(new PointerEvent('pointerdown', init));
+    target.dispatchEvent(new PointerEvent('pointerup', init));
+    target.dispatchEvent(new MouseEvent('click', { ...init, detail: 1 }));
+  };
+  const t0 = performance.now();
+  rig.tick(t0);
+  trigger(rig.canvas, 'crack', { x: 120, y: 90 });
+  rig.tick(t0 + 10);
+  rig.tick(t0 + 100);
+  press();
+  assert.equal(clicks, 0, 'the cracks are running: the press is swallowed');
+  rig.tick(t0 + 600);
+  const m = /** @type {any} */ (mappers.at(-1));
+  const p = m({ x: 100, y: 60, width: W, height: H });
+  assert.ok(!isNoTarget(p) && (p.x !== 100 || p.y !== 60), `cracked: the mapper moves the point (${p.x.toFixed(2)}, ${p.y.toFixed(2)})`);
+  press();
+  assert.equal(clicks, 1, 'cracked and still: the click reaches the button drawn under the pointer');
+});
+
+gpuTest('the second impact breaks the pane: mid frames non-blank, moving, input blocked; it ends on the source with the identity', async (t) => {
   const ref = await reference(t);
   const { rig, mappers } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  const done = trigger(rig.canvas, 'play');
-  rig.tick(t0 + 10);                                  // the clock of the transition starts here
+  await Promise.all([trigger(rig.canvas, 'impact', { x: 300, y: 120 }), (async () => { rig.tick(t0 + 10); rig.tick(t0 + 600); })()]);
+  const cracked = rig.snap();
+  const dc = diff(cracked, ref);
+  console.error(`shatter cracked pane vs source: ${dc.over} px`);
+  assert.ok(dc.over > 500 && dc.over < 0.25 * W * H, 'cracked: crack lines and shifted pieces, the form still there');
+  const done = trigger(rig.canvas, 'impact');
+  rig.tick(t0 + 700);                                  // the clock of the fall starts here
   const shots = [];
-  // physics 0.19, 0.35 and 0.51 s: on this small canvas most shards have fallen out of it by 0.7 s
-  for (const at of [0.12, 0.22, 0.32]) { rig.tick(t0 + 10 + DURATION * at); shots.push(rig.snap()); }
+  // physics 0.31, 0.48 and 0.65 s (the fall starts at 0.17 s): on this small canvas most shards have fallen out by 0.8 s
+  for (const at of [0.18, 0.28, 0.38]) { rig.tick(t0 + 700 + DURATION * at); shots.push(rig.snap()); }
   const midMapper = /** @type {any} */ (mappers.at(-1));
   for (const img of shots) assert.ok(nonDominantShare(img) > 0.05, `mid frame non-blank (${nonDominantShare(img).toFixed(3)})`);
   const d01 = diff(shots[0], shots[1]), d0r = diff(shots[0], ref), d12 = diff(shots[1], shots[2]);
-  console.error(`shatter mid frames: 12%->22% ${d01.over} px, 12% vs source ${d0r.over} px, 22%->32% ${d12.over} px`);
+  console.error(`shatter mid frames: 18%->28% ${d01.over} px, 18% vs source ${d0r.over} px, 28%->38% ${d12.over} px`);
   assert.ok(d01.over > 2000 && d12.over > 2000 && d0r.over > 2000, 'frames move');
   assert.ok(isNoTarget(midMapper({ x: 120, y: 60, width: W, height: H })), 'input blocked mid-transition (NO_TARGET)');
   // out (1000 ms) + hold (300 ms) + in (1000 ms); step at 120 Hz to the end
-  for (let now = t0 + 10 + 700; now <= t0 + 10 + 2400; now += 8.33) rig.tick(now);
-  rig.tick(t0 + 2500);
+  for (let now = t0 + 700 + 400; now <= t0 + 700 + 2400; now += 8.33) rig.tick(now);
+  rig.tick(t0 + 3200);
   assert.equal(await done, true, 'the play promise resolves true');
   const end = diff(rig.snap(), ref);
-  assert.equal(end.max, 0, `reassembled frame differs from the source by up to ${end.max} levels`);
+  assert.equal(end.max, 0, `reassembled frame differs from the source by up to ${end.max} levels (the cracks closed too)`);
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 }, 'identity again');
 });
 
@@ -172,7 +213,10 @@ gpuTest('prefers-reduced-motion: a crossfade, no pixel moves (each pixel is the 
   const { rig } = await start(t, { intro: false, reducedMotion: true });
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'out');
+  assert.equal(await trigger(rig.canvas, 'crack'), false, 'nothing cracks');
+  rig.tick(t0 + 5);
+  assert.equal(diff(rig.snap(), ref).max, 0, 'the frame is the source');
+  trigger(rig.canvas, 'impact');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.5);
   const img = rig.snap();
@@ -202,7 +246,7 @@ gpuTest('device loss mid-transition: the plugin comes back assembled (no intro),
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 5, y: 6, width: W, height: H }), { x: 5, y: 6 });
 });
 
-gpuTest('intro and submit wiring: the shards fly together; an invalid submit shatters, a valid one does not', async (t) => {
+gpuTest('intro and submit wiring: the shards fly together; an invalid submit cracks, a second one breaks it, a valid one heals the cracks', async (t) => {
   const ref = await reference(t);
   const { rig } = await start(t, { intro: true, onSubmit: 'invalid' }, { html: CONTROLS });
   const t0 = performance.now();
@@ -215,15 +259,25 @@ gpuTest('intro and submit wiring: the shards fly together; an invalid submit sha
   const form = /** @type {HTMLFormElement} */ (rig.layerEl.querySelector('#f'));
   const mail = /** @type {HTMLInputElement} */ (rig.layerEl.querySelector('#mail'));
   form.addEventListener('submit', (e) => e.preventDefault());   // the page's own handler (a real submit would navigate the test page)
+  let now = t0 + DURATION + 200;
   form.requestSubmit();
-  rig.tick(t0 + DURATION + 200);
-  rig.tick(t0 + DURATION + 500);
-  assert.equal(diff(rig.snap(), ref).max, 0, 'valid form: no transition');
+  rig.tick(now); rig.tick(now += 300);
+  assert.equal(diff(rig.snap(), ref).max, 0, 'valid form: nothing happens');
   mail.value = 'nope';
   form.requestSubmit();
-  rig.tick(t0 + DURATION + 600);
-  rig.tick(t0 + DURATION + 600 + DURATION * 0.5);
-  assert.ok(diff(rig.snap(), ref).over > 2000, 'invalid email: the form shatters');
+  rig.tick(now += 10); rig.tick(now += 600);
+  const cracked = diff(rig.snap(), ref).over;
+  assert.ok(cracked > 500 && cracked < 0.25 * W * H, `invalid email: the pane cracks (${cracked} px), the form still there`);
+  mail.value = 'ada@example.com';
+  form.requestSubmit();
+  rig.tick(now += 10); rig.tick(now += 600);
+  assert.equal(diff(rig.snap(), ref).max, 0, 'fixed and submitted again: the cracks close');
+  mail.value = 'nope';
+  form.requestSubmit();
+  rig.tick(now += 10); rig.tick(now += 600);
+  form.requestSubmit();
+  rig.tick(now += 10); rig.tick(now += DURATION * 0.35);
+  assert.ok(diff(rig.snap(), ref).over > 0.3 * W * H, 'a second invalid submit breaks the pane');
 });
 
 /** Pixels over 16 levels apart inside a square of half-size r around (x, y). @param {ImageData} a @param {ImageData} b */
@@ -243,17 +297,23 @@ gpuTest('the cracks start at the pointer: first crack lines only near it, then t
   rig.tick(t0);
   const r = rig.canvas.getBoundingClientRect();
   rig.layerEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + 380, clientY: r.top + 80 }));
-  trigger(rig.canvas, 'out');
+  trigger(rig.canvas, 'crack');
   rig.tick(t0 + 10);
-  rig.tick(t0 + 10 + DURATION * (0.04 / 1.6));      // physics 40 ms: the crack front is 104 px out, nothing moves yet
+  rig.tick(t0 + 10 + 25);                            // 25 ms of the 450 ms the cracks take: they have run about 70 px
   const crack = rig.snap();
   const nearCrack = diffNear(crack, ref, 380, 80, 60), farCrack = diffNear(crack, ref, 80, 260, 60);
-  rig.tick(t0 + 10 + DURATION * (0.22 / 1.6));      // physics 220 ms: shards within ~260 px have started, the far corner has not
+  rig.tick(t0 + 600);
+  const cracked = rig.snap();
+  const farLater = diffNear(cracked, ref, 80, 260, 60);
+  trigger(rig.canvas, 'impact');
+  rig.tick(t0 + 610);
+  rig.tick(t0 + 610 + DURATION * (0.25 / 1.7));     // physics 250 ms: the fall started at 170 ms, near the impact first
   const early = rig.snap();
-  const nearMove = diffNear(early, ref, 380, 80, 60), farMove = diffNear(early, ref, 80, 260, 60);
-  console.error(`shatter impact at (380, 80): crack lines near ${nearCrack} px / far ${farCrack} px; moved near ${nearMove} px / far ${farMove} px`);
-  assert.ok(nearCrack > 50 && farCrack === 0, 'crack lines appear around the impact only');
-  assert.ok(nearMove > 3000 && nearMove > 10 * farMove, 'shards near the impact move first (the far corner shows only crack lines)');
+  const nearMove = diffNear(early, cracked, 380, 80, 60), farMove = diffNear(early, cracked, 80, 260, 60);
+  console.error(`shatter impact at (380, 80): crack lines near ${nearCrack} px / far ${farCrack} px (later ${farLater}); fell near ${nearMove} px / far ${farMove} px`);
+  assert.ok(nearCrack > 50 && farCrack === 0, 'crack lines appear around the impact first');
+  assert.ok(farLater > 0, 'and reach the far corner later');
+  assert.ok(nearMove > 3000 && nearMove > 10 * farMove, 'shards near the impact fall first');
 });
 
 gpuTest('after a play from an off-centre impact the last frame equals the source at every sampled pixel and the mapper is the identity', async (t) => {

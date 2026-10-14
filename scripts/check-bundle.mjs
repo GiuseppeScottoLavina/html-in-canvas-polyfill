@@ -18,7 +18,8 @@ const KB = 1000; // decimal, as in the 150 KB target
 /** target = the gate threshold; ceiling = the recorded size the bundle may not exceed (regression guard). Raise a ceiling only with a measured reason, lower it when the bundle shrinks. */
 const LIMITS = {
   // raised deliberately, one measured reason at a time; 254 -> 257 KB (+2,893 bytes, 2026-10-14): the core-only native probe that never refuses a usable native, and getElementImageDefaultSize
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 257 * KB },
+  // 257 -> 257.5 KB (+493 bytes, 2026-10-14): a selection of the static text inside the canvas repaints when it changes (owner bug report)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 257.5 * KB },
   'hic-live-effects.iife.min.js': { target: 27.5 * KB, ceiling: 27.5 * KB }, // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer)
   'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB }, // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height
   'hic-live-engines.iife.min.js': { target: 40 * KB, ceiling: 40 * KB }, // the Gecko / WebKit painters, outside the core
@@ -27,17 +28,17 @@ const LIMITS = {
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
 /**
- * Per plugin: the measured minified size (2026-10-14) plus a small margin, so that growth is a decision, not an accident. shatter is above
- * the 16 KB default (15,911 bytes: the Voronoi shard geometry and physics of shards.js run on the CPU).
+ * Per plugin: the measured minified size (2026-10-14) plus a small margin, so that growth is a decision, not an accident. disintegrate and
+ * shatter are above the 16 KB default: most of each is its WGSL, inlined by the build (shatter also builds its crack pattern on the CPU).
  */
 const PLUGIN_LIMITS = {
-  crt: 10.5 * KB, // 10,119
-  disintegrate: 15.25 * KB, // 14,940
+  crt: 14 * KB, // 13,907; 10.5 -> 14 KB: interlace (second pipeline for the field history, the toggle, WGSL)
+  disintegrate: 33.5 * KB, // 32,819; 15.25 -> 33.5 KB: burning-paper rework (front, Voronoi flakes, embers made by a compute pass; the WGSL is inlined)
   glitch: 13.5 * KB, // 13,269
   'holo-card': 12.75 * KB, // 12,358
   'liquid-glass': 12.25 * KB, // 11,810
-  'page-curl': 13.75 * KB, // 13,373
-  shatter: 16.25 * KB, // 15,911
+  'page-curl': 15.5 * KB, // 15,474; 13.75 -> 15.5 KB: dog-ear, auto-peek, grab cursor, hint label
+  shatter: 29 * KB, // 28,363; 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
   water: 10.75 * KB, // 10,479; 10.5 -> 10.75 KB: meta.reducedMotion
 };
 const problems = [];

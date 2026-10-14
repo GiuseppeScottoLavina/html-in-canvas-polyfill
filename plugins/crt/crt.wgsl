@@ -1,5 +1,5 @@
 // CRT monitor. Lengths in CSS px of the presented frame. mapCrtPoint() in index.js is the JavaScript twin of the barrel and of the
-// screen mask below: same formula, same rounded screen corners.
+// screen mask below: same formula, same rounded screen corners. The interlace (index.js) moves samples by under half a line, never the barrel.
 struct U {
   res : vec2<f32>,     // presented size, backing px
   css : vec2<f32>,     // presented size, CSS px
@@ -12,14 +12,18 @@ struct U {
   flicker : f32,       // 0..1 (0 with prefers-reduced-motion)
   mis : f32,           // red / blue misconvergence, CSS px
   time : f32,          // seconds
-  pad0 : f32, pad1 : f32, pad2 : f32,
+  interlace : f32,
+  parity : f32,        // field drawn now: 0 even lines, 1 odd
+  history : f32,       // 1: hist = source of the previous field
 }
 
 @group(0) @binding(0) var<uniform> u : U;
 @group(0) @binding(1) var samp : sampler;
 @group(0) @binding(2) var src : texture_2d<f32>;
+@group(0) @binding(3) var hist : texture_2d<f32>;
 
 const BG = vec3<f32>(0.012, 0.016, 0.02);
+const FIELD_SHIFT = 0.3;   // odd field offset, CSS px
 
 @vertex
 fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> {
@@ -35,6 +39,22 @@ fn sd_box(d : vec2<f32>, h : vec2<f32>, r : f32) -> f32 {
 fn tap(p : vec2<f32>) -> vec3<f32> {
   let c = textureSampleLevel(src, samp, clamp(p / u.css, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
   return mix(BG, c.rgb, c.a);
+}
+
+fn tap_old(p : vec2<f32>) -> vec3<f32> {
+  if (u.history < 0.5) { return tap(p); }
+  let c = textureSampleLevel(hist, samp, clamp(p / u.css, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
+  return mix(BG, c.rgb, c.a);
+}
+
+// one sample with the red / blue misconvergence (red and blue land to each side of green)
+fn beam(p : vec2<f32>, old : bool) -> vec3<f32> {
+  if (old) {
+    if (u.mis > 0.0) { return vec3<f32>(tap_old(p + vec2<f32>(u.mis, 0.0)).r, tap_old(p).g, tap_old(p - vec2<f32>(u.mis, 0.0)).b); }
+    return tap_old(p);
+  }
+  if (u.mis > 0.0) { return vec3<f32>(tap(p + vec2<f32>(u.mis, 0.0)).r, tap(p).g, tap(p - vec2<f32>(u.mis, 0.0)).b); }
+  return tap(p);
 }
 
 // eight taps on a circle of radius r around p
@@ -64,9 +84,24 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   bezel = bezel * (0.85 + 0.15 * smoothstep(half.y * 1.4, 0.0, length(p - vec2<f32>(half.x, 0.0))));
   if (sd * dpr >= 0.34 || u.ready < 0.5) { return vec4<f32>(bezel, 1.0); }
 
-  // RGB misconvergence: red and blue guns land a little to each side of green
-  var col = tap(s);
-  if (u.mis > 0.0) { col = vec3<f32>(tap(s + vec2<f32>(u.mis, 0.0)).r, col.g, tap(s - vec2<f32>(u.mis, 0.0)).b); }
+  let period = max(2.5 / dpr, u.css.y / 240.0);
+  // interlace: two fields of lines; each line samples at its centre (thin edges twitter); the other field is the previous one, dimmer,
+  // from hist (moved content combs)
+  var col : vec3<f32>;
+  var lineGain = 1.0;
+  var linePhase = s.y / period;
+  if (u.interlace > 0.5) {
+    let pitch = max(2.0 / dpr, period * 0.5);
+    let n = floor(s.y / pitch);
+    let odd = n - 2.0 * floor(n * 0.5);
+    let old = abs(odd - u.parity) > 0.5;
+    col = beam(vec2<f32>(s.x + odd * FIELD_SHIFT, (n + 0.5) * pitch), old);
+    let decay = 1.0 - 0.5 * (0.35 + 0.65 * u.scanlines);
+    lineGain = select(1.0, decay, old) * (1.0 + 0.3 * (1.0 - decay));
+    linePhase = s.y / pitch;
+  } else {
+    col = beam(s, false);
+  }
 
   // phosphor glow: two rings of taps, the brightest parts bleed the most
   if (u.glow > 0.0) {
@@ -76,10 +111,10 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
     col = col + bloom * bloom * (1.25 * u.glow) + bloom * (0.12 * u.glow);
   }
 
-  // scanlines that follow the curved glass, and an aperture-grille mask on the backing pixels
-  let period = max(2.5 / dpr, u.css.y / 240.0);
-  let beam = 0.5 + 0.5 * cos(6.2831853 * s.y / period);
-  col = col * (1.0 + 0.16 * u.scanlines) * (1.0 - u.scanlines * 0.42 * (1.0 - beam));
+  // scanlines on the curved glass, aperture-grille mask on the backing pixels
+  let profile = 0.5 + 0.5 * cos(6.2831853 * linePhase);
+  let gap = select(0.42, 0.3, u.interlace > 0.5);
+  col = col * lineGain * (1.0 + 0.16 * u.scanlines) * (1.0 - u.scanlines * gap * (1.0 - profile));
   let column = u32(pos.x) % 3u;
   var mask = vec3<f32>(1.0, 0.86, 0.86);
   if (column == 1u) { mask = vec3<f32>(0.86, 1.0, 0.86); }
@@ -99,4 +134,10 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
 
   let cover = clamp(0.5 - 1.5 * sd * dpr, 0.0, 1.0);
   return vec4<f32>(mix(bezel, col, cover), 1.0);
+}
+
+// source -> history texture (same size)
+@fragment
+fn fs_copy(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
+  return textureLoad(src, vec2<i32>(pos.xy), 0);
 }

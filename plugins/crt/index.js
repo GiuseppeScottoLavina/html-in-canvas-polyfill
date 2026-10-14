@@ -3,8 +3,8 @@
  * Shader: ./crt.wgsl.
  *
  * The drawn HTML is shown on a curved CRT screen: barrel curvature inside a bezel, scanlines that follow the glass, an aperture-grille
- * mask, phosphor glow, slight red/blue misconvergence, vignette, and (unless the user prefers reduced motion) a gentle flicker, a
- * rolling bar and faint static. The input mapper (`mapCrtPoint`) is the JavaScript twin of the barrel formula and of the screen mask in
+ * mask, phosphor glow, slight red/blue misconvergence, vignette, interlaced fields, and (unless the user prefers reduced motion) a
+ * gentle flicker, a rolling bar and faint static. The input mapper (`mapCrtPoint`) is the JavaScript twin of the barrel formula and of the screen mask in
  * crt.wgsl, so a click on the curved picture reaches the element the user sees there, and a click on the bezel reaches nothing.
  */
 
@@ -19,9 +19,9 @@ import { wgsl } from './wgsl.js';
 export const meta = Object.freeze({
   name: 'crt',
   title: 'CRT monitor',
-  description: 'A curved CRT screen with scanlines, phosphor glow and flicker; clicks are mapped through the barrel distortion.',
-  defaults: Object.freeze({ curvature: 0.5, scanlines: 0.6, glow: 0.55, flicker: 0.5 }),
-  reducedMotion: 'With reduced motion the flicker, the rolling bar and the static stop; the curved screen stays.',
+  description: 'A curved, interlaced CRT screen with scanlines, phosphor glow and flicker; clicks are mapped through the barrel distortion.',
+  defaults: Object.freeze({ curvature: 0.5, scanlines: 0.6, glow: 0.55, flicker: 0.5, interlace: true }),
+  reducedMotion: 'With reduced motion the flicker, the rolling bar, the static and the field alternation stop; the curved screen and a still interlace look stay.',
 });
 
 /** floats in the uniform block (crt.wgsl, struct U) */
@@ -33,6 +33,8 @@ const MAPPER_SLOTS = 4;
 const MAX_K = 0.5;
 /** red / blue misconvergence at misconvergence 1, CSS px */
 const MAX_MIS = 1.4;
+/** interlaced fields per second (NTSC: 59.94) */
+export const FIELD_HZ = 60;
 
 let uiSerial = 0;
 
@@ -93,11 +95,24 @@ function injectUiStyle(doc) {
     .hic-crt-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
     .hic-crt-ui output { color:#b6ffbf; font-variant-numeric:tabular-nums; }
     .hic-crt-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#8dffa0; cursor:ew-resize; }
+    .hic-crt-ui label.toggle { grid-column:1 / -1; display:flex; align-items:center; gap:6px; }
+    .hic-crt-ui input[type=checkbox] { width:15px; height:15px; margin:0; accent-color:#8dffa0; }
   `;
   (doc.head || doc.documentElement).append(style);
 }
 
 const SLIDERS = /** @type {const} */ ([['curvature', 'Curvature'], ['scanlines', 'Scanlines'], ['glow', 'Glow'], ['flicker', 'Flicker']]);
+
+/**
+ * The field drawn at frame time `now` (ms), given the last one: a new field starts every 1/FIELD_HZ s, and each new field flips the
+ * parity once, however many field periods passed since the last frame (at a 30 fps cap the fields still alternate frame by frame instead
+ * of aliasing to one parity). PURE. @param {number} now @param {{index: number, parity: number}} last  updated in place
+ */
+export function nextField(now, last) {
+  const index = Math.floor((now * FIELD_HZ) / 1000);
+  if (index !== last.index) { last.index = index; last.parity ^= 1; }
+  return last.parity;
+}
 
 /** @type {EffectPluginDefinition} */
 export const plugin = Object.freeze({
@@ -116,10 +131,25 @@ export const plugin = Object.freeze({
       primitive: { topology: 'triangle-list' },
     });
     const usage = /** @type {any} */ (globalThis).GPUBufferUsage;
+    const textureUsage = /** @type {any} */ (globalThis).GPUTextureUsage;
     const uniforms = device.createBuffer({ label: 'crt', size: UNIFORM_FLOATS * 4, usage: usage.UNIFORM | usage.COPY_DST });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const bindGroups = new WeakMap();
     const u = new Float32Array(UNIFORM_FLOATS);
+    // interlace history: the source of the previous field, copied by a second pipeline (the source texture has no COPY_SRC)
+    const copyPipeline = device.createRenderPipeline({
+      layout: 'auto', label: 'crt-field-copy',
+      vertex: { module, entryPoint: 'vs' },
+      fragment: { module, entryPoint: 'fs_copy', targets: [{ format: 'rgba8unorm' }] },
+      primitive: { topology: 'triangle-list' },
+    });
+    const copyBindGroups = new WeakMap();
+    const copyAttachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } };
+    const copyDescriptor = { colorAttachments: [copyAttachment] };
+    /** @type {any} */ let hist = null;
+    /** @type {any} */ let histView = null;
+    let histVersion = -1;
+    const field = { index: -1, parity: 0 };
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
     const mappers = states.map(makeMapper);
     let slot = 0;
@@ -129,7 +159,7 @@ export const plugin = Object.freeze({
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     const start = performance.now();
 
-    const o = { curvature: 0.5, scanlines: 0.6, glow: 0.55, flicker: 0.5, misconvergence: 0.5 };
+    const o = { curvature: 0.5, scanlines: 0.6, glow: 0.55, flicker: 0.5, misconvergence: 0.5, interlace: true };
     /** @param {Record<string, unknown>} next */
     function readOptions(next) {
       o.curvature = unit(next.curvature, o.curvature);
@@ -137,6 +167,7 @@ export const plugin = Object.freeze({
       o.glow = unit(next.glow, o.glow);
       o.flicker = unit(next.flicker, o.flicker);
       o.misconvergence = unit(next.misconvergence, o.misconvergence);
+      if (next.interlace !== undefined) o.interlace = next.interlace !== false && next.interlace !== 0 && next.interlace !== 'false';
     }
     readOptions({ ...meta.defaults, ...(options ?? {}) });
     /** @type {Array<(o: any) => void>} */
@@ -144,15 +175,16 @@ export const plugin = Object.freeze({
 
     const instance = {
       spatial: true,
-      /** animated (flicker, rolling bar, static) only while flicker > 0 and the user does not prefer reduced motion */
+      /** animated (flicker, rolling bar, static; the alternating fields) only while flicker > 0 or interlace is on, and the user does not
+       * prefer reduced motion */
       continuous: false,
       setOptions,
       render,
       captureInputMapper,
       mountUI,
-      destroy() { uniforms.destroy?.(); },
+      destroy() { uniforms.destroy?.(); hist?.destroy?.(); hist = histView = null; },
     };
-    const animated = () => !reducedMotion && o.flicker > 0;
+    const animated = () => !reducedMotion && (o.flicker > 0 || o.interlace);
     instance.continuous = animated();
 
     /** @param {Record<string, unknown>} next */
@@ -167,22 +199,49 @@ export const plugin = Object.freeze({
     function render(frame) {
       u[0] = frame.width; u[1] = frame.height; u[2] = frame.cssWidth; u[3] = frame.cssHeight;
       u[4] = o.curvature * MAX_K; u[5] = bezelWidth(frame.cssWidth, frame.cssHeight); u[6] = cornerRadius(frame.cssWidth, frame.cssHeight); u[7] = frame.sourceReady ? 1 : 0;
-      u[8] = o.scanlines; u[9] = o.glow; u[10] = animated() ? o.flicker : 0; u[11] = o.misconvergence * MAX_MIS;
-      u[12] = ((frame.now - start) / 1000) % 600; u[13] = 0; u[14] = 0; u[15] = 0;
+      u[8] = o.scanlines; u[9] = o.glow; u[10] = !reducedMotion && o.flicker > 0 ? o.flicker : 0; u[11] = o.misconvergence * MAX_MIS;
+      u[12] = ((frame.now - start) / 1000) % 600;
+      // interlace: the fields alternate at FIELD_HZ; with reduced motion one field stays (the still interlace look), without history
+      const fields = o.interlace && !reducedMotion;
+      const texture = fields && frame.sourceReady ? frame.sourceTexture : null;
+      if (texture && (!hist || hist.width !== texture.width || hist.height !== texture.height)) {
+        hist?.destroy?.();
+        hist = device.createTexture({ label: 'crt-field', size: [texture.width, texture.height], format: 'rgba8unorm', usage: textureUsage.TEXTURE_BINDING | textureUsage.RENDER_ATTACHMENT });
+        histView = hist.createView();
+        histVersion = -1;
+      }
+      u[13] = o.interlace ? 1 : 0; u[14] = fields ? nextField(frame.now, field) : 0; u[15] = texture && histVersion >= 0 ? 1 : 0;
       device.queue.writeBuffer(uniforms, 0, u);
-      let bindGroup = bindGroups.get(frame.sourceView);
-      if (!bindGroup) {
-        bindGroup = device.createBindGroup({
-          label: 'crt', layout: pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: uniforms } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView }],
-        });
-        bindGroups.set(frame.sourceView, bindGroup);
+      const histNow = u[15] ? histView : frame.sourceView;
+      let cached = bindGroups.get(frame.sourceView);
+      if (!cached || cached.hist !== histNow) {
+        cached = {
+          hist: histNow,
+          group: device.createBindGroup({
+            label: 'crt', layout: pipeline.getBindGroupLayout(0),
+            entries: [{ binding: 0, resource: { buffer: uniforms } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView }, { binding: 3, resource: histNow }],
+          }),
+        };
+        bindGroups.set(frame.sourceView, cached);
       }
       attachment.view = frame.destinationView;
       passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('crt');
       const pass = frame.encoder.beginRenderPass(passDescriptor);
-      pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); pass.end();
+      pass.setPipeline(pipeline); pass.setBindGroup(0, cached.group); pass.draw(3); pass.end();
       attachment.view = null;
+      // a new source: keep it for the next field (after the pass above, which still read the previous one)
+      if (texture && frame.sourceVersion !== histVersion) {
+        let copyGroup = copyBindGroups.get(frame.sourceView);
+        if (!copyGroup) {
+          copyGroup = device.createBindGroup({ label: 'crt-field-copy', layout: copyPipeline.getBindGroupLayout(0), entries: [{ binding: 2, resource: frame.sourceView }] });
+          copyBindGroups.set(frame.sourceView, copyGroup);
+        }
+        copyAttachment.view = histView;
+        const copy = frame.encoder.beginRenderPass(copyDescriptor);
+        copy.setPipeline(copyPipeline); copy.setBindGroup(0, copyGroup); copy.draw(3); copy.end();
+        copyAttachment.view = null;
+        histVersion = frame.sourceVersion;
+      }
     }
 
     function captureInputMapper() {
@@ -217,6 +276,17 @@ export const plugin = Object.freeze({
         sync(o);
         box.append(label);
       }
+      const toggle = doc.createElement('label');
+      toggle.className = 'toggle';
+      toggle.innerHTML = `<input type="checkbox" id="${id}-interlace"><span>Interlace (alternating fields, ${FIELD_HZ} Hz)</span>`;
+      const check = /** @type {HTMLInputElement} */ (toggle.querySelector('input'));
+      const syncToggle = (/** @type {any} */ opts) => { if (check.checked !== opts.interlace) check.checked = opts.interlace; };
+      const onToggle = () => ui.setOptions({ interlace: check.checked });
+      check.addEventListener('change', onToggle);
+      offs.push(() => check.removeEventListener('change', onToggle));
+      mine.push(syncToggle);
+      syncToggle(o);
+      box.append(toggle);
       uiSyncs.push(...mine);
       root.append(box);
       return () => {

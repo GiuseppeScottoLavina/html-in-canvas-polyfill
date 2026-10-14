@@ -1,6 +1,7 @@
 // GPU time of the disintegrate pass per frame, measured with timestamp queries on the plugin's own pass (frame.profiling.timestampWrites,
 // the hook the water plugin also honours), at the gallery canvas size at DPR 2 (1100x620 css = 2200x1240 backing px), frames 8.33 ms apart
-// (120 Hz) through a whole play (out, hold, in). It reports numbers; it asserts only that they exist. The 120 Hz budget is 8.33 ms per frame
+// (120 Hz) through a whole play (out, hold, in), plus the wall time of the two frames that also run the compute pass that makes the embers
+// (once per phase: the way out, the way back). It reports numbers; it asserts only that they exist. The 120 Hz budget is 8.33 ms per frame
 // for everything the GPU does, not only this pass. Chrome quantises timestamps (100 us without developer features), so small passes read coarse.
 import { assert } from '/test/unit/lib/t.js';
 import { gpuTest } from '/plugins/_shared/gpu-check.mjs';
@@ -39,11 +40,14 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   /** @type {string[]} */ const phase = [];
   /** @type {number[]} */ const cpu = [];
   /** @type {number[]} */ const wall = [];
+  /** @type {number[]} */ const birthWall = [];
   const t0 = performance.now();
   let index = 0;
   for (let i = 0; i < FRAMES; i += 1) {
     if (i === 20) trigger(canvas, 'play');
-    const encoder = device.createCommandEncoder();
+    const real = device.createCommandEncoder();
+    let births = 0;
+    const encoder = new Proxy(real, { get: (target, key) => (key === 'beginComputePass' ? (/** @type {any} */ d) => { births += 1; return target.beginComputePass(d); } : typeof target[key] === 'function' ? target[key].bind(target) : target[key]) });
     const k = i;
     const frame = {
       now: t0 + i * 8.33, delta: 8.33, frameIndex: i, frameCap: 0, sourceVersion: 1, width: W, height: H, cssWidth: CSS.w, cssHeight: CSS.h, dpr: DPR,
@@ -54,10 +58,12 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
     inst.render(/** @type {any} */ (frame));
     cpu.push(performance.now() - c0);
     phase.push(inst.continuous ? 'moving' : 'idle');
-    device.queue.submit([encoder.finish()]);
+    if (births) await device.queue.onSubmittedWorkDone();   // the frames before it are done: what follows is this frame's own work
     const w0 = performance.now();
-    if (!querySet) await device.queue.onSubmittedWorkDone();
+    device.queue.submit([real.finish()]);
+    if (!querySet || births) await device.queue.onSubmittedWorkDone();
     wall.push(performance.now() - w0);
+    if (births) birthWall.push(performance.now() - w0);
     index += 1;
   }
   /** @type {number[]} */ let gpu = [];
@@ -75,7 +81,9 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   const moving = pick('moving'), idle = pick('idle');
   const fmt = (/** @type {number[]} */ xs) => `p50 ${pct(xs, 0.5).toFixed(3)} p95 ${pct(xs, 0.95).toFixed(3)} max ${Math.max(...xs).toFixed(3)} ms (n=${xs.length})`;
   console.error(`disintegrate GPU ${timestamps ? 'timestamp-query' : 'onSubmittedWorkDone (upper bound)'} ${W}x${H}: moving ${fmt(moving)}; idle ${fmt(idle)}; CPU render() ${fmt(cpu)}; adapter ${adapter.info?.vendor ?? ''} ${adapter.info?.architecture ?? ''}`);
+  console.error(`disintegrate frames that make the embers (compute + render, submit to done, wall clock): ${birthWall.map((x) => x.toFixed(2)).join(', ')} ms`);
   assert.ok(moving.length > 200 && moving.every(Number.isFinite), 'measured the moving frames');
+  assert.equal(birthWall.length, 2, 'the embers were made twice: for the way out and for the way back');
   inst.destroy();
   device.destroy();
 }, { timeout: 30000 });

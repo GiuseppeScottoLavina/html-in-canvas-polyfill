@@ -3,8 +3,9 @@
  * Shader: ./page-curl.wgsl.
  *
  * Drag a corner of the drawn page (a hot zone of `hotZone` CSS px around it) and the page peels off around a cylinder: the back of the
- * page (mirrored, dimmed) folds over the front, the curl is shaded and casts a shadow on the page underneath. On release the page
- * springs back. Hovering a hot zone lifts the corner a little to show that it can be grabbed.
+ * page (light paper, the front showing through it mirrored) folds over the front, the curl is shaded and casts a shadow on the page
+ * underneath. On release the page springs back. At rest one corner (top-right unless `corner` names another) is a small dog-ear; hovering
+ * a hot zone lifts its corner further and shows a grab cursor, and until the first drag the dog-ear now and then peeks open by itself.
  *
  * Input: the grab is the plugin's own gesture. Its pointer events are taken in the capture phase at the document, before the host's
  * interposer and the form see them (preventDefault: no focus change, no text selection, no click), and the pointer is captured to the
@@ -26,16 +27,17 @@ import { wgsl } from './wgsl.js';
 export const meta = Object.freeze({
   name: 'page-curl',
   title: 'Page curl',
-  description: 'Drag a corner to peel the page like a book page; it springs back on release. Clicks still reach the flat part.',
-  defaults: Object.freeze({ corner: 'any', radius: 36, shadow: 0.6 }),
-  reducedMotion: 'With reduced motion the drag still follows the hand; the release and the corner lift happen at once, without animation.',
+  description: 'Grab the dog-eared top-right corner and drag to peel the page like a book page; it springs back on release. Clicks still reach the flat part.',
+  defaults: Object.freeze({ corner: 'any', radius: 56, shadow: 0.8, dogEar: 40, autoPeek: 5 }),
+  reducedMotion: 'With reduced motion the drag still follows the hand; the dog-ear stays still (no auto-peek); release and hover lift happen at once.',
 });
 
 /**
  * Uniform block (page-curl.wgsl `Uniforms`): [0,1] resolution, [2,3] css size, [4,5] dir, [6] axis, [7] radius, [8] curled, [9] shadow,
- * [10] ready, [11] back_dim, [12..14] colour of the page underneath, [15] padding.
+ * [10] ready, [11] ink (how much of the front shows through the back), [12..14] colour of the page underneath, [15] padding,
+ * [16..18] colour of the back of the page (paper), [19] padding.
  */
-export const UNIFORM_FLOATS = 16;
+export const UNIFORM_FLOATS = 20;
 /** What a mapper returns for a point that shows no element: the NO_TARGET of the effects ABI (the host swallows a press there). */
 export { NO_TARGET, isNoTarget };
 /** Release animation length (ms of the frame clock, so it ends at the same time whatever the frame cap). */
@@ -43,13 +45,33 @@ export const RELEASE_MS = 420;
 export const CORNERS = Object.freeze(['any', 'tl', 'tr', 'bl', 'br']);
 
 const MAPPER_SLOTS = 4;   // the host keeps the mappers of the last 3 presented frames, plus the one being written
-const BACK_DIM = 0.28;
-const PEEK_FRACTION = 0.42;   // hover lift, as a fraction of the hot zone
-const PEEK_MS = 90;           // time constant of the hover lift
+const INK = 0.42;             // the front seen through the paper: bright parts of the front darken the back by this much
+const HOVER_FRACTION = 0.55;  // hover lift (CSS px per axis), as a fraction of the hot zone, on top of the dog-ear
+const LIFT_MS = 90;           // time constant of the hover lift and of the corner changes
+const PEEK_DELAY_MS = 1500;   // first auto-peek after the first frame
+export const PEEK_MS = 1800;  // one auto-peek: the dog-ear opens and closes (sin^2)
 const MIN_DRAG = 0.5;         // CSS px: a shorter pull is no curl
 const CLEAR = Object.freeze({ r: 0, g: 0, b: 0, a: 1 });
 /** corner name -> [x, y] as a fraction of the page */
 const CORNER_AT = Object.freeze({ tl: [0, 0], tr: [1, 0], bl: [0, 1], br: [1, 1] });
+const CORNER_NAME = Object.freeze({ tl: ['top-left', '\u2196'], tr: ['top-right', '\u2197'], bl: ['bottom-left', '\u2199'], br: ['bottom-right', '\u2198'] });
+/** The corner that wears the dog-ear and peeks: the allowed corner, or top-right when any corner may be grabbed. @param {unknown} corner */
+export const hintCorner = (corner) => /** @type {'tl'|'tr'|'bl'|'br'} */ (corner === 'tl' || corner === 'bl' || corner === 'br' ? corner : 'tr');
+/** The text of the hint label for `corner`. @param {unknown} corner */
+export function hintText(corner) {
+  const [name, arrow] = CORNER_NAME[hintCorner(corner)];
+  return `${arrow} Drag the ${name} corner to peel the page${corner === 'any' || !CORNERS.includes(String(corner)) ? ' (any corner works)' : ''}.`;
+}
+
+/**
+ * The auto-peek of the dog-ear at frame time `t` (ms since the first frame): 0 at rest, rising to 1 and back during each peek of PEEK_MS,
+ * the first one PEEK_DELAY_MS after the first frame and then one every `every` seconds. PURE. @param {number} t @param {number} every
+ */
+export function peekAt(t, every) {
+  if (!(every > 0) || t < PEEK_DELAY_MS) return 0;
+  const m = (t - PEEK_DELAY_MS) % Math.max(PEEK_MS, every * 1000);
+  return m < PEEK_MS ? Math.sin((Math.PI * m) / PEEK_MS) ** 2 : 0;
+}
 
 let uiSerial = 0;
 
@@ -59,10 +81,10 @@ function clampNum(v, lo, hi, fallback) {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
 }
 
-/** '#rgb' / '#rrggbb' -> [r, g, b] in 0..1 (falls back to the default page colour). @param {unknown} hex */
-export function parseColor(hex) {
+/** '#rgb' / '#rrggbb' -> [r, g, b] in 0..1 (falls back to `fallback`, the default page colour). @param {unknown} hex */
+export function parseColor(hex, fallback = [0.055, 0.105, 0.16]) {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex ?? ''));
-  if (!m) return [0.055, 0.105, 0.16];
+  if (!m) return fallback;
   const h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
   return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 }
@@ -165,10 +187,12 @@ function injectUiStyle(doc) {
   style.dataset.hicEffectStyle = 'page-curl';
   style.textContent = `
     .hic-curl-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:rgba(224,247,255,.72); font-size:11px; font-weight:700; }
-    .hic-curl-ui p { grid-column:1 / -1; margin:0; font-weight:400; color:rgba(224,247,255,.6); }
+    .hic-curl-ui p { grid-column:1 / -1; margin:0 0 2px; font-size:13px; font-weight:800; color:#9cf5ff; }
     .hic-curl-ui output { color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
     .hic-curl-ui input[type=range] { width:100%; height:24px; margin:0; accent-color:#79efff; cursor:ew-resize; }
     .hic-curl-ui select { font:inherit; color:#effcff; background:rgba(1,10,23,.55); border:1px solid rgba(173,226,255,.18); border-radius:8px; padding:3px 6px; }
+    [data-hic-curl-cursor=grab], [data-hic-curl-cursor=grab] * { cursor:grab !important; }
+    [data-hic-curl-cursor=grabbing], [data-hic-curl-cursor=grabbing] * { cursor:grabbing !important; }
   `;
   (doc.head || doc.documentElement).append(style);
 }
@@ -185,19 +209,21 @@ function mountCurlUi(root, ui) {
   const o = ui.getOptions();
   const box = doc.createElement('div');
   box.className = 'hic-curl-ui';
-  box.innerHTML = `<p>Drag a corner of the form to peel it.</p>`
+  box.innerHTML = `<p class="hic-curl-hint"></p>`
     + `<label for="hic-curl-corner-${n}">Corner</label><select id="hic-curl-corner-${n}">${CORNERS.map((c) => `<option value="${c}">${c}</option>`).join('')}</select><span></span>`
-    + `<label for="hic-curl-radius-${n}">Radius</label><input id="hic-curl-radius-${n}" data-key="radius" type="range" min="12" max="96" step="1"><output></output>`
+    + `<label for="hic-curl-radius-${n}">Radius</label><input id="hic-curl-radius-${n}" data-key="radius" type="range" min="12" max="140" step="1"><output></output>`
     + `<label for="hic-curl-shadow-${n}">Shadow</label><input id="hic-curl-shadow-${n}" data-key="shadow" type="range" min="0" max="100" step="1"><output></output>`;
   const select = /** @type {HTMLSelectElement} */ (box.querySelector('select'));
+  const hint = /** @type {HTMLElement} */ (box.querySelector('p'));
   const [radius, shadow] = /** @type {HTMLInputElement[]} */ ([...box.querySelectorAll('input')]);
   const [radiusOut, shadowOut] = [...box.querySelectorAll('output')];
   select.value = CORNERS.includes(String(o.corner)) ? String(o.corner) : 'any';
-  radius.value = String(clampNum(o.radius, 12, 96, 36));
-  shadow.value = String(Math.round(clampNum(o.shadow, 0, 1, 0.6) * 100));
+  radius.value = String(clampNum(o.radius, 12, 140, 56));
+  shadow.value = String(Math.round(clampNum(o.shadow, 0, 1, 0.8) * 100));
+  hint.textContent = hintText(select.value);
   const show = () => { radiusOut.textContent = `${radius.value}px`; shadowOut.textContent = `${shadow.value}%`; };
   show();
-  const onCorner = () => ui.setOptions({ corner: select.value });
+  const onCorner = () => { hint.textContent = hintText(select.value); ui.setOptions({ corner: select.value }); };
   const onRange = () => { show(); ui.setOptions({ radius: Number(radius.value), shadow: Number(shadow.value) / 100 }); };
   select.addEventListener('change', onCorner);
   radius.addEventListener('input', onRange);
@@ -255,34 +281,52 @@ export const plugin = Object.freeze({
     const doc = canvas.ownerDocument;
     const win = /** @type {any} */ (doc.defaultView);
     const reducedMotion = !!win?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (/** @type {any} */ (doc).createElement) injectUiStyle(doc);   // the grab cursor rules (a test fake may have no DOM)
 
     let corner = 'any';
-    let radius = 36;
-    let shadow = 0.6;
+    let radius = 56;
+    let shadow = 0.8;
     let hotZone = 64;
+    let dogEar = 40;
+    let autoPeek = 5;
     let under = parseColor(null);
+    let paper = parseColor(null, [0.384, 0.663, 0.769]);   // #62a9c4
     /** @param {Readonly<Record<string, unknown>>|undefined} o */
     function applyOptions(o) {
       if (!o) return;
       if (o.corner !== undefined) corner = CORNERS.includes(String(o.corner)) ? String(o.corner) : 'any';
-      if (o.radius !== undefined) radius = clampNum(o.radius, 4, 160, radius);
+      if (o.radius !== undefined) radius = clampNum(o.radius, 4, 200, radius);
       if (o.shadow !== undefined) shadow = clampNum(o.shadow, 0, 1, shadow);
       if (o.hotZone !== undefined) hotZone = clampNum(o.hotZone, 16, 200, hotZone);
+      if (o.dogEar !== undefined) dogEar = clampNum(o.dogEar, 0, 120, dogEar);
+      if (o.autoPeek !== undefined) autoPeek = clampNum(o.autoPeek === false ? 0 : o.autoPeek, 0, 600, autoPeek);
       if (o.under !== undefined) under = parseColor(o.under);
+      if (o.paper !== undefined) paper = parseColor(o.paper, paper);
     }
     applyOptions(initialOptions);
 
     // gesture state (CSS px of the page)
     let phase = IDLE;
     let pointerId = -1;
+    let grabbed = /** @type {'tl'|'tr'|'bl'|'br'} */ ('tr');
     let cornerX = 0, cornerY = 0;          // the grabbed corner
     let dragX = 0, dragY = 0;              // the pointer while dragging
     let fromX = 0, fromY = 0;              // where the release started
     let releaseStart = -1;                 // frame clock; -1 until the first frame after the release
-    let hover = /** @type {string|null} */ (null);
-    let peek = 0, peekTarget = 0, lastNow = -1;
     let swallowClick = false;
     let pageWidth = 0, pageHeight = 0;     // css size of the last frame
+    // the rest pose: `restCorner` is lifted by `lift` CSS px per axis (the dog-ear, the hover lift, an auto-peek)
+    let restCorner = hintCorner(corner);
+    let lift = dogEar;
+    let hover = /** @type {'tl'|'tr'|'bl'|'br'|null} */ (null);
+    let lastNow = -1;
+    let born = -1;                         // frame clock of the first frame: the auto-peek schedule starts there
+    let dragged = false;                   // the first drag ends the auto-peek for good
+    let peekTimer = 0;
+    // the element the pointer events land on (the live layer): its cursor shows the grab
+    /** @type {Element|null} */ let surface = null;
+    let cursor = '';
+    /** @type {Element} */ let captureEl = canvas;
 
     const size = () => (pageWidth > 0 ? [pageWidth, pageHeight] : [canvas.clientWidth, canvas.clientHeight]);
     /** @param {PointerEvent} e @returns {[number, number]} */
@@ -297,6 +341,21 @@ export const plugin = Object.freeze({
     const onPage = (e) => { const path = e.composedPath(); return path.includes(canvas) || path.includes(source); };
     /** @param {Event} e */
     const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    /** 'grab' over a hot zone, 'grabbing' while dragging, '' otherwise (a data attribute on the layer; the rules are in injectUiStyle) @param {string} value */
+    function setCursor(value) {
+      if (value === cursor || !surface) return;
+      cursor = value;
+      if (value) surface.setAttribute('data-hic-curl-cursor', value); else surface.removeAttribute('data-hic-curl-cursor');
+    }
+    const peeking = () => autoPeek > 0 && !dragged && !reducedMotion;
+    function stopPeekTimer() { if (peekTimer) win?.clearTimeout?.(peekTimer); peekTimer = 0; }
+    /** the hot corner under the pointer changed @param {'tl'|'tr'|'bl'|'br'|null} key */
+    function hoverTo(key) {
+      setCursor(key ? 'grab' : '');
+      if (key === hover) return;
+      hover = key; lastNow = -1;
+      context.requestRender();
+    }
 
     /** @param {PointerEvent} e */
     function onDown(e) {
@@ -310,10 +369,15 @@ export const plugin = Object.freeze({
       swallow(e);
       phase = DRAG;
       pointerId = e.pointerId;
+      grabbed = key;
       cornerX = CORNER_AT[key][0] * w; cornerY = CORNER_AT[key][1] * h;
       dragX = x; dragY = y;
-      hover = null; peek = 0; peekTarget = 0;
-      try { canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic or finished pointer */ }
+      hover = null; dragged = true;
+      stopPeekTimer();
+      setCursor('grabbing');
+      // captured to the layer when known, so the grabbing cursor stays while the pointer leaves the page
+      captureEl = surface ?? canvas;
+      try { captureEl.setPointerCapture(e.pointerId); } catch { /* a synthetic or finished pointer */ }
       context.requestRender();
     }
     /** @param {PointerEvent} e */
@@ -329,22 +393,28 @@ export const plugin = Object.freeze({
       if (phase !== IDLE || !onPage(e)) return;
       const [x, y] = toPage(e);
       const [w, h] = size();
-      const key = hotCorner(x, y, w, h, corner, hotZone);
-      const target = key ? 1 : 0;
-      if (key && peek < 0.01) hover = key;
-      if (target !== peekTarget) { peekTarget = target; lastNow = -1; if (reducedMotion) peek = target; context.requestRender(); }
+      hoverTo(hotCorner(x, y, w, h, corner, hotZone));
     }
     /** @param {PointerEvent} e */
     function onUp(e) {
       if (phase !== DRAG || e.pointerId !== pointerId) return;
       swallow(e);
-      try { canvas.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      try { captureEl.releasePointerCapture(e.pointerId); } catch { /* already released */ }
       swallowClick = e.type === 'pointerup';
       fromX = dragX; fromY = dragY;
       releaseStart = -1;
-      phase = reducedMotion ? IDLE : RELEASE;   // reduced motion: the page lies flat at once
       pointerId = -1;
+      setCursor('');
+      if (reducedMotion) settle();   // reduced motion: the page lies back at once
+      else phase = RELEASE;
       context.requestRender();
+    }
+    /** the release ended: the grabbed corner is the rest corner again, at its rest lift */
+    function settle() {
+      phase = IDLE;
+      restCorner = grabbed;
+      lift = grabbed === hintCorner(corner) ? dogEar : 0;
+      lastNow = -1;
     }
     /** the click that follows the grab's pointerup (a pointer click has detail > 0) @param {MouseEvent} e */
     function onClick(e) {
@@ -352,54 +422,91 @@ export const plugin = Object.freeze({
       swallowClick = false;
       swallow(e);
     }
-    const onLeave = () => { if (peekTarget !== 0) { peekTarget = 0; lastNow = -1; if (reducedMotion) peek = 0; context.requestRender(); } };
+    const onLeave = () => { if (phase === IDLE) hoverTo(null); };
+    /** pointer events that reach the live layer: learn it (the cursor is shown there) @param {Event} e */
+    const onLayerMove = (e) => {
+      const t = /** @type {Element|null} */ (e.currentTarget);
+      if (t && t !== canvas && t !== surface) { const c = cursor; setCursor(''); surface = t; setCursor(c || (hover ? 'grab' : '')); }
+      else if (hover && !cursor) setCursor('grab');
+    };
 
     /** @type {[string, (e: any) => void][]} */
     const documentListeners = [['pointerdown', onDown], ['pointermove', onMove], ['pointerup', onUp], ['pointercancel', onUp], ['click', onClick]];
     for (const [type, fn] of documentListeners) doc.addEventListener(type, fn, true);
     context.listen('pointerleave', onLeave);
+    context.listen('pointermove', onLayerMove);
+    context.listen('pointerover', onLayerMove);
 
-    /** Writes the curl of this frame; advances the release and the hover lift on the frame clock. @param {number} now @param {number} w @param {number} h */
+    /** where the corner `key` lies when lifted by `a` CSS px per axis @param {'tl'|'tr'|'bl'|'br'} key @param {number} a @param {number} w @param {number} h */
+    const liftedTo = (key, a, w, h) => {
+      const [fx, fy] = CORNER_AT[key];
+      return [fx * w + (fx ? -a : a), fy * h + (fy ? -a : a)];
+    };
+
+    /**
+     * Writes the curl of this frame; advances the release, the hover lift and the auto-peek on the frame clock. Returns true while
+     * something still moves (the next frame is needed). @param {number} now @param {number} w @param {number} h
+     */
     function step(now, w, h) {
+      if (born < 0) born = now;
       // the lift starts on the first frame after the hover changed (lastNow = -1), not from whenever the last frame was drawn
       const dt = lastNow < 0 ? 0 : Math.max(0, now - lastNow);
       lastNow = now;
-      if (phase === DRAG) return curlGeometry(globals, cornerX, cornerY, dragX, dragY, radius);
+      if (phase === DRAG) { curlGeometry(globals, cornerX, cornerY, dragX, dragY, radius); return false; }
       if (phase === RELEASE) {
         if (releaseStart < 0) releaseStart = now;
         const t = (now - releaseStart) / RELEASE_MS;
-        if (t >= 1) phase = IDLE;
+        if (t >= 1) settle();
         else {
           const e = releaseEase(Math.max(0, t));
-          return curlGeometry(globals, cornerX, cornerY, fromX + (cornerX - fromX) * e, fromY + (cornerY - fromY) * e, radius);
+          const [ex, ey] = liftedTo(grabbed, grabbed === hintCorner(corner) ? dogEar : 0, w, h);
+          curlGeometry(globals, cornerX, cornerY, fromX + (ex - fromX) * e, fromY + (ey - fromY) * e, radius);
+          return true;
         }
       }
-      if (reducedMotion) peek = peekTarget;
+      // the rest pose that is wanted now: the hovered corner lifted, else the dog-ear (peeking open now and then)
+      const hint = hintCorner(corner);
+      const want = hover ?? hint;
+      const peek = !hover && peeking() ? peekAt(now - born, autoPeek) : 0;
+      const a = (want === hint ? dogEar : 0) + (hover ? hotZone * HOVER_FRACTION : peek * Math.min(150, 0.25 * Math.min(w, h)));
+      let moving = peek > 0;
+      if (reducedMotion) { restCorner = want; lift = a; }
       else {
-        peek += (peekTarget - peek) * (1 - Math.exp(-dt / PEEK_MS));   // the same curve at every frame rate
-        if (Math.abs(peekTarget - peek) < 0.002) peek = peekTarget;
+        const target = restCorner === want ? a : 0;   // another corner: lay this one flat first
+        lift += (target - lift) * (1 - Math.exp(-dt / LIFT_MS));   // the same curve at every frame rate
+        if (Math.abs(target - lift) < 0.05) lift = target;
+        if (restCorner !== want && lift < 2) { restCorner = want; lift = 0; }
+        moving = moving || lift !== a || restCorner !== want;
       }
-      if (!hover || peek <= 0) return curlGeometry(globals, 0, 0, 0, 0, radius);
-      const [fx, fy] = CORNER_AT[/** @type {'tl'} */ (hover)];
-      const lift = hotZone * PEEK_FRACTION * peek * Math.SQRT1_2;
-      const cx = fx * w;
-      const cy = fy * h;
-      return curlGeometry(globals, cx, cy, cx + (fx ? -lift : lift), cy + (fy ? -lift : lift), radius);
+      const [tx, ty] = liftedTo(restCorner, lift, w, h);
+      const [fx, fy] = CORNER_AT[restCorner];
+      curlGeometry(globals, fx * w, fy * h, tx, ty, radius);
+      return moving;
+    }
+
+    /** At rest, wake for the next auto-peek (frames are requested only while something moves). @param {number} now */
+    function schedulePeek(now) {
+      stopPeekTimer();
+      if (!peeking() || hover || phase !== IDLE || !win?.setTimeout) return;
+      const t = now - born - PEEK_DELAY_MS;
+      const every = Math.max(PEEK_MS, autoPeek * 1000);
+      const wait = t < 0 ? -t : every - (t % every);
+      peekTimer = win.setTimeout(() => { peekTimer = 0; context.requestRender(); }, Math.max(16, wait));
     }
 
     return {
-      spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift), none at rest
-      setOptions(next) { applyOptions(next); context.requestRender(); },
+      spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift, auto-peek), none at rest
+      setOptions(next) { applyOptions(next); lastNow = -1; context.requestRender(); },
       render(frame) {
         const w = frame.cssWidth;
         const h = frame.cssHeight;
         pageWidth = w; pageHeight = h;
         globals[0] = frame.width; globals[1] = frame.height; globals[2] = w; globals[3] = h;
-        step(frame.now, w, h);
-        // the release and the hover lift run on the frame clock: ask for the next (capped) frame until they settle
-        if (phase === RELEASE || peek !== peekTarget) context.requestRender();
-        globals[9] = shadow; globals[10] = frame.sourceReady ? 1 : 0; globals[11] = BACK_DIM;
+        // the release, the lift and the peek run on the frame clock: ask for the next (capped) frame until they settle
+        if (step(frame.now, w, h)) { stopPeekTimer(); context.requestRender(); } else schedulePeek(frame.now);
+        globals[9] = shadow; globals[10] = frame.sourceReady ? 1 : 0; globals[11] = INK;
         globals[12] = under[0]; globals[13] = under[1]; globals[14] = under[2]; globals[15] = 0;
+        globals[16] = paper[0]; globals[17] = paper[1]; globals[18] = paper[2]; globals[19] = 0;
         device.queue.writeBuffer(uniforms, 0, globals);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
@@ -423,7 +530,9 @@ export const plugin = Object.freeze({
       mountUI(root, ui) { return mountCurlUi(root, ui); },
       destroy() {
         for (const [type, fn] of documentListeners) doc.removeEventListener(type, fn, true);
-        if (pointerId >= 0) { try { canvas.releasePointerCapture(pointerId); } catch { /* gone */ } }
+        if (pointerId >= 0) { try { captureEl.releasePointerCapture(pointerId); } catch { /* gone */ } }
+        stopPeekTimer();
+        setCursor('');
         uniforms.destroy?.();
       },
     };

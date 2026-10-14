@@ -105,14 +105,15 @@ gpuTest('play: mid-transition frames are non-blank, differ from each other and f
   const done = trigger(rig.canvas, 'play');
   rig.tick(t0 + 10);                                  // the clock of the transition starts here
   const shots = [];
-  for (const at of [0.25, 0.5, 0.7]) { rig.tick(t0 + 10 + DURATION * at); shots.push(rig.snap()); }
+  // the front crosses the canvas in the first half (FRONT_END); by 0.7 only embers are left
+  for (const at of [0.15, 0.3, 0.45]) { rig.tick(t0 + 10 + DURATION * at); shots.push(rig.snap()); }
   const midMapper = /** @type {any} */ (mappers.at(-1));
   for (const img of shots) assert.ok(nonDominantShare(img) > 0.05, `mid frame non-blank (${nonDominantShare(img).toFixed(3)})`);
   const d01 = diff(shots[0], shots[1]), d0r = diff(shots[0], ref), d12 = diff(shots[1], shots[2]);
-  console.error(`disintegrate mid frames: 25%->50% ${d01.over} px, 25% vs source ${d0r.over} px, 50%->70% ${d12.over} px`);
+  console.error(`disintegrate mid frames: 15%->30% ${d01.over} px, 15% vs source ${d0r.over} px, 30%->45% ${d12.over} px`);
   assert.ok(d01.over > 2000 && d12.over > 2000 && d0r.over > 2000, 'frames move');
   assert.ok(isNoTarget(midMapper({ x: 120, y: 60, width: W, height: H })), 'input blocked mid-transition (NO_TARGET)');
-  // out (1000 ms) + hold (380 ms) + in (1000 ms); step at 120 Hz to the end
+  // out (1000 ms) + hold (250 ms) + in (1000 ms); step at 120 Hz to the end
   for (let now = t0 + 10 + 700; now <= t0 + 10 + 2400; now += 8.33) rig.tick(now);
   rig.tick(t0 + 2500);
   assert.equal(await done, true, 'the play promise resolves true');
@@ -223,4 +224,32 @@ gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submi
   rig.tick(t0 + DURATION + 600);
   rig.tick(t0 + DURATION + 600 + DURATION * 0.5);
   assert.ok(diff(rig.snap(), ref).over > 2000, 'valid submit: the form dissolves');
+});
+
+/** Pixels over 16 levels apart inside a square of half-size r around (x, y). @param {ImageData} a @param {ImageData} b */
+function diffNear(a, b, x, y, r) {
+  let over = 0;
+  for (let j = Math.max(0, y - r); j < Math.min(H, y + r); j += 1) for (let i = Math.max(0, x - r); i < Math.min(W, x + r); i += 1) {
+    const k = (j * W + i) * 4;
+    if (Math.max(Math.abs(a.data[k] - b.data[k]), Math.abs(a.data[k + 1] - b.data[k + 1]), Math.abs(a.data[k + 2] - b.data[k + 2])) > 16) over += 1;
+  }
+  return over;
+}
+
+gpuTest('the fire starts at the pointer press: early on only the form around it burns, the far corner is untouched', async (t) => {
+  const ref = await reference(t);
+  const { rig } = await start(t, { intro: false });
+  const t0 = performance.now();
+  rig.tick(t0);
+  const r = rig.canvas.getBoundingClientRect();
+  rig.layerEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + 380, clientY: r.top + 80 }));
+  trigger(rig.canvas, 'out');
+  rig.tick(t0 + 10);
+  rig.tick(t0 + 10 + DURATION * 0.12);
+  const early = rig.snap();
+  const near = diffNear(early, ref, 380, 80, 60), far = diffNear(early, ref, 60, 280, 40);
+  console.error(`disintegrate origin at (380, 80), 12%: changed near ${near} px / far ${far} px`);
+  assert.ok(near > 2000 && far === 0, 'the form burns around the pointer first');
+  rig.tick(t0 + 10 + DURATION * 0.45);
+  assert.ok(diffNear(rig.snap(), ref, 60, 280, 40) > 1000, 'and the front reaches the far corner later');
 });

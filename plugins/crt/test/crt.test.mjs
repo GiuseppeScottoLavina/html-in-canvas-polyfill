@@ -1,10 +1,11 @@
 // Node tests of the CRT plugin: the folder contract, the barrel mapper against an independent formula, and what render() does with a
-// recording fake GPU (animation only when allowed, reduced motion, no per-frame allocation, per-frame freeze of the mapper).
+// recording fake GPU (animation only when allowed, reduced motion, the interlaced fields and their history, no per-frame allocation,
+// per-frame freeze of the mapper).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { checkPluginFolder } from '../../_shared/contract.mjs';
-import { NO_TARGET, UNIFORM_FLOATS, bezelWidth, cornerRadius, mapCrtPoint, meta, plugin } from '../index.js';
+import { FIELD_HZ, NO_TARGET, UNIFORM_FLOATS, bezelWidth, cornerRadius, mapCrtPoint, meta, nextField, plugin } from '../index.js';
 
 test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
   assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
@@ -74,17 +75,20 @@ test('the barrel: the centre is fixed, edge midpoints land on the edges of the s
 function fakeGpu() {
   const writes = [];
   const passes = [];
+  const textures = [];
   const device = {
     createShaderModule: () => ({}), createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) }),
-    createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: () => ({}),
+    createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: (d) => ({ entries: d.entries }),
+    createTexture: (d) => { textures.push(d); return { width: d.size[0], height: d.size[1], createView: () => ({ hist: textures.length }), destroy() {} }; },
     queue: { writeBuffer: (_b, _o, data) => writes.push({ data, copy: new Float32Array(data) }) },
   };
   const encoder = { beginRenderPass: (d) => { passes.push(d); return { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} }; } };
-  return { device, writes, passes, encoder };
+  return { device, writes, passes, encoder, textures };
 }
 
 async function create(options = {}, { reduced = false } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
+  globalThis.GPUTextureUsage = { TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' });
   const gpu = fakeGpu();
@@ -93,16 +97,17 @@ async function create(options = {}, { reduced = false } = {}) {
   try {
     const instance = await plugin.create(context, options);
     let now = performance.now();
-    const frame = () => { now += 1000 / 120; return { now, delta: 1000 / 120, width: 2200, height: 1240, cssWidth: 1100, cssHeight: 620, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder }; };
+    const frame = (/** @type {any} */ extra = {}) => { now += 1000 / 120; return { now, delta: 1000 / 120, width: 2200, height: 1240, cssWidth: 1100, cssHeight: 620, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder, ...extra }; };
     return { instance, gpu, frame };
   } finally { globalThis.fetch = realFetch; }
 }
 
-test('flicker animates (continuous) unless it is 0 or the user prefers reduced motion', async () => {
+test('flicker and interlace animate (continuous) unless both are off or the user prefers reduced motion', async () => {
   assert.equal((await create({})).instance.continuous, true);
-  const off = await create({ flicker: 0 });
+  assert.equal((await create({ flicker: 0 })).instance.continuous, true, 'the interlaced fields alternate on their own');
+  const off = await create({ flicker: 0, interlace: false });
   assert.equal(off.instance.continuous, false);
-  off.instance.setOptions({ ...meta.defaults, flicker: 0.4 });
+  off.instance.setOptions({ ...meta.defaults, flicker: 0.4, interlace: false });
   assert.equal(off.instance.continuous, true, 'setOptions turns the animation back on');
   const reduced = await create({ flicker: 1 }, { reduced: true });
   assert.equal(reduced.instance.continuous, false);
@@ -143,4 +148,70 @@ test('a mapper keeps the curvature of its own frame after setOptions; a gesture 
   for (let k = 0; k < 6; k += 1) { instance.render(frame()); instance.captureInputMapper(); }
   assert.deepEqual(snapshot(probe), before);
   assert.notDeepEqual(instance.captureInputMapper()(probe), before);
+});
+
+test('interlace: on by default; the fields alternate at FIELD_HZ, frame by frame at a 30 fps cap, and stay on one parity with reduced motion', async () => {
+  assert.equal(meta.defaults.interlace, true);
+  // the pure field clock: 120 fps shows each field on two frames, 60 and 30 fps flip every frame (no aliasing to one parity)
+  for (const [fps, expected] of [[120, [1, 1, 0, 0, 1, 1, 0, 0]], [60, [1, 0, 1, 0, 1, 0, 1, 0]], [30, [1, 0, 1, 0, 1, 0, 1, 0]]]) {
+    const last = { index: -1, parity: 0 };
+    const got = Array.from({ length: 8 }, (_, i) => nextField(1000 + (i * 1000) / fps + 0.5, last));
+    assert.deepEqual(got, expected, `${fps} fps`);
+  }
+  assert.equal(FIELD_HZ, 60);
+  const { instance, gpu, frame } = await create({});
+  const parities = [];
+  for (let k = 0; k < 8; k += 1) { instance.render(frame()); parities.push(gpu.writes.at(-1).copy[14]); assert.equal(gpu.writes.at(-1).copy[13], 1); }
+  assert.ok(parities.includes(0) && parities.includes(1), `the parity alternates: ${parities}`);
+  const reduced = await create({}, { reduced: true });
+  const still = [];
+  for (let k = 0; k < 8; k += 1) { reduced.instance.render(reduced.frame()); still.push(reduced.gpu.writes.at(-1).copy[14]); }
+  assert.deepEqual([...new Set(still)], [0], 'reduced motion: one field, the static interlace look');
+  assert.equal(reduced.gpu.writes.at(-1).copy[13], 1);
+  assert.equal(reduced.instance.continuous, false);
+  const off = await create({ interlace: false });
+  off.instance.render(off.frame());
+  assert.equal(off.gpu.writes.at(-1).copy[13], 0);
+  assert.equal(off.gpu.writes.at(-1).copy[14], 0);
+});
+
+test('interlace history: the previous field\'s source is copied once per new source version, after the pass that still reads the old one', async () => {
+  const { instance, gpu, frame } = await create({});
+  const sourceTexture = { width: 2200, height: 1240 };
+  const sourceView = {};
+  const at = (/** @type {number} */ v) => frame({ sourceTexture, sourceView, sourceVersion: v });
+  instance.render(at(1));
+  assert.equal(gpu.textures.length, 1, 'one history texture, the size of the source');
+  assert.deepEqual(gpu.textures[0].size, [2200, 1240]);
+  assert.equal(gpu.writes.at(-1).copy[15], 0, 'no history yet: the old field shows the current source');
+  assert.equal(gpu.passes.length, 2, 'the CRT pass, then the copy of version 1');
+  instance.render(at(1));
+  assert.equal(gpu.writes.at(-1).copy[15], 1);
+  assert.equal(gpu.passes.length, 3, 'the same version is not copied again');
+  instance.render(at(2));
+  assert.equal(gpu.passes.length, 5, 'a new version: the pass reads the history (version 1), then version 2 is copied');
+  assert.equal(new Set(gpu.passes).size, 2, 'two reused pass descriptors');
+  instance.render(frame({ sourceTexture: { width: 1000, height: 600 }, sourceView: {}, sourceVersion: 3 }));
+  assert.equal(gpu.textures.length, 2, 'a resized source gets a new history texture');
+  assert.equal(gpu.writes.at(-1).copy[15], 0);
+  const reduced = await create({}, { reduced: true });
+  reduced.instance.render(reduced.frame({ sourceTexture, sourceView, sourceVersion: 1 }));
+  reduced.instance.render(reduced.frame({ sourceTexture, sourceView, sourceVersion: 2 }));
+  assert.equal(reduced.gpu.textures.length, 0, 'reduced motion: no history, no combing');
+  assert.equal(reduced.gpu.passes.length, 2);
+});
+
+test('interlace changes no geometry: the mapper is the same with interlace on and off, at either field', async () => {
+  const on = await create({ interlace: true });
+  const off = await create({ interlace: false });
+  on.instance.render(on.frame()); off.instance.render(off.frame());
+  const a = on.instance.captureInputMapper();
+  on.instance.render(on.frame());
+  const b = on.instance.captureInputMapper();
+  const c = off.instance.captureInputMapper();
+  for (const p of [{ x: 900, y: 120 }, { x: 550, y: 310 }, { x: 30, y: 600 }, { x: 3, y: 3 }]) {
+    const q = { ...p, width: 1100, height: 620 };
+    assert.deepEqual(a(q), c(q));
+    assert.deepEqual(b(q), c(q));
+  }
 });

@@ -1,6 +1,7 @@
 // GPU time of the shatter pass per frame, measured with timestamp queries on the plugin's own pass (frame.profiling.timestampWrites,
 // the hook the water plugin also honours), at the gallery canvas size at DPR 2 (1100x620 css = 2200x1240 backing px), frames 8.33 ms apart
-// (120 Hz) through a whole play (out, hold, in). It reports numbers; it asserts only that they exist. The 120 Hz budget is 8.33 ms per frame
+// (120 Hz): the cracks running and the cracked pane (first impact), then the fall, the hold and the way back (second impact). It reports
+// numbers; it asserts only that they exist. The 120 Hz budget is 8.33 ms per frame
 // for everything the GPU does, not only this pass. Chrome quantises timestamps (100 us without developer features), so small passes read coarse.
 import { assert } from '/test/unit/lib/t.js';
 import { gpuTest } from '/plugins/_shared/gpu-check.mjs';
@@ -11,7 +12,7 @@ const CSS = { w: 1100, h: 620 }, DPR = 2, W = CSS.w * DPR, H = CSS.h * DPR;
 /** @param {number[]} xs @param {number} q */
 const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
 
-gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', async () => {
+gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a crack and a whole fall', async () => {
   const adapter = /** @type {any} */ (await navigator.gpu.requestAdapter());
   const timestamps = adapter.features.has('timestamp-query');
   const device = await adapter.requestDevice({ requiredFeatures: timestamps ? ['timestamp-query'] : [] });
@@ -30,7 +31,7 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   const canvas = document.createElement('canvas');
   const context = /** @type {any} */ ({ apiVersion: 2, adapter, device, format, canvas, source: document.createElement('div'), requestRender() {}, listen: () => () => {}, viewport: () => ({ width: W, height: H, cssWidth: CSS.w, cssHeight: CSS.h, dpr: DPR }) });
   const inst = await plugin.create(context, { duration: 1000, intro: false });
-  const FRAMES = 320;
+  const FRAMES = 400;
   const querySet = timestamps ? device.createQuerySet({ type: 'timestamp', count: FRAMES * 2 }) : null;
   const B = /** @type {any} */ (globalThis).GPUBufferUsage;
   const resolve = timestamps ? device.createBuffer({ size: FRAMES * 16, usage: B.QUERY_RESOLVE | B.COPY_SRC }) : null;
@@ -42,7 +43,8 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   const t0 = performance.now();
   let index = 0;
   for (let i = 0; i < FRAMES; i += 1) {
-    if (i === 20) trigger(canvas, 'play');
+    if (i === 20) trigger(canvas, 'impact', { x: 580, y: 400 });   // cracks (450 ms = 54 frames)
+    if (i === 100) trigger(canvas, 'impact');                      // breaks
     const encoder = device.createCommandEncoder();
     const k = i;
     const frame = {
@@ -53,7 +55,7 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
     const c0 = performance.now();
     inst.render(/** @type {any} */ (frame));
     cpu.push(performance.now() - c0);
-    phase.push(inst.continuous ? 'moving' : 'idle');
+    phase.push(i < 20 ? 'idle' : i < 100 ? 'cracked' : inst.continuous ? 'moving' : 'idle');
     device.queue.submit([encoder.finish()]);
     const w0 = performance.now();
     if (!querySet) await device.queue.onSubmittedWorkDone();
@@ -72,9 +74,9 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
     read.unmap();
   } else gpu = wall;
   const pick = (/** @type {string} */ p) => gpu.filter((_, i) => phase[i] === p && i > 2);
-  const moving = pick('moving'), idle = pick('idle');
+  const moving = pick('moving'), idle = pick('idle'), cracked = pick('cracked');
   const fmt = (/** @type {number[]} */ xs) => `p50 ${pct(xs, 0.5).toFixed(3)} p95 ${pct(xs, 0.95).toFixed(3)} max ${Math.max(...xs).toFixed(3)} ms (n=${xs.length})`;
-  console.error(`shatter GPU ${timestamps ? 'timestamp-query' : 'onSubmittedWorkDone (upper bound)'} ${W}x${H}: moving ${fmt(moving)}; idle ${fmt(idle)}; CPU render() ${fmt(cpu)}; adapter ${adapter.info?.vendor ?? ''} ${adapter.info?.architecture ?? ''}`);
+  console.error(`shatter GPU ${timestamps ? 'timestamp-query' : 'onSubmittedWorkDone (upper bound)'} ${W}x${H}: cracks and cracked pane ${fmt(cracked)}; falling ${fmt(moving)}; intact ${fmt(idle)}; CPU render() ${fmt(cpu)}; adapter ${adapter.info?.vendor ?? ''} ${adapter.info?.architecture ?? ''}`);
   assert.ok(moving.length > 200 && moving.every(Number.isFinite), 'measured the moving frames');
   inst.destroy();
   device.destroy();

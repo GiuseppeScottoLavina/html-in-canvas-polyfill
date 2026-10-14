@@ -30,6 +30,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 ### Fixed
 
 - `install()` threw `HicUnsupportedError('partial-native')` on Chrome Canary 157.0.8103.0, which exposes the API by default, because the native probe required `ElementImage.width` / `height`. The probe now decides on the core behaviour only, and Canary 157 installs in mode `native` and draws natively.
+- Selecting static text inside the canvas (double or triple click, drag, select all) did not show on the canvas until something else repainted it, and clearing the selection did not show either; with an effect plugin the picture stayed unchanged until the effect was switched. A selection change now repaints the drawables where the old and the new highlight are.
 
 ### Known limitations
 
