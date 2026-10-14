@@ -8,9 +8,9 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 ### Added
 
-- The proposed HTML-in-Canvas API over a live DOM: `content="drawable"` on the canvas and the `drawable` attribute on drawn elements (legacy `layoutsubtree` / `layoutSubtree` accepted with one deprecation warning); the `paint` event with `changedElements`, `onpaint` and `requestPaint()`; `drawElementImage` (all overloads) on 2D and main-thread `OffscreenCanvas` contexts; `captureElementImage` and `ElementImage`; `updateElementGeometry`, `clearElementGeometry`, `getElementTransform` and `elementgeometryupdate`.
+- The proposed HTML-in-Canvas API over a live DOM: `content="drawable"` on the canvas and the `drawable` attribute on drawn elements (legacy `layoutsubtree` / `layoutSubtree` accepted with one deprecation warning); the `paint` event with `changedElements`, `onpaint` and `requestPaint()`; `drawElementImage` (all overloads) on 2D and main-thread `OffscreenCanvas` contexts; `captureElementImage` and `ElementImage` (`close()`); `getElementImageDefaultSize` on the canvas and on its main-thread `OffscreenCanvas`; `updateElementGeometry`, `clearElementGeometry`, `getElementTransform` and `elementgeometryupdate`. The API follows the HTML Standard pull request as of 2026-10-08.
 - WebGL and WebGL2 `texElementSubImage2D` (and the legacy `texElementImage2D`), WebGPU `GPUQueue.drawElementImageToTexture` (and the legacy `copyElementImageToTexture`), in the opt-in `hic-live-gpu` bundle.
-- Native-first install: a behavioural probe chooses between running the polyfill, stepping aside for a complete native implementation, bridging a legacy native (`hic-live-native-bridge`), or refusing loudly (`HicUnsupportedError`, `installed.report()`).
+- Native-first install: a behavioural probe of the core (`content="drawable"`, the `paint` handler, a 2D `drawElementImage` that behaves like a platform method) chooses between running the polyfill and stepping aside for the browser's own implementation. A usable native implementation is never refused, whatever secondary members it lacks, renames or adds; `installed.report()` records what differs (`native-step-aside`). The optional `hic-live-native-bridge` adds what it can build over the earlier `layoutsubtree` draft. Only a native implementation without its core is refused (`HicUnsupportedError('partial-native')`).
 - Desktop Chrome, Firefox 155+ and Safari 27+. On Firefox and Safari the opt-in `hic-live-engines` bundle draws form controls, classic scrollbars and shadows in each engine's look.
 - Typed text in single-line fields is drawn at once, inner scrolling is composed from cached pages, and snapshot builds run after the frame, so typing and wheel scrolling are close to native latency (`docs/PERFORMANCE-COMPARISON.md`).
 - Extensions of this library, not part of the standard and not provided by native implementations: a frame cap (`framecap` attribute, `canvas.frameCap`) and a WebGPU effect-plugin host with input remapping (`HTMLInCanvasEffects`, plugin ABI v2). They work only while the polyfill provides the API (mode `polyfill`).
@@ -19,11 +19,21 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - Six examples, among them a gallery of the effect plugins over one live form, and a zero-dependency demo server (`npm run demo`); guides for getting started, frameworks (React, Vue, Svelte, Lit), effect plugins, performance and troubleshooting.
 - Tests: unit tests in Node and headless Chrome, browser gates with positive controls and a mutation suite, the official WPT HTML-in-Canvas tests at a pinned commit (`docs/CONFORMANCE.md`), Firefox and Safari through WebDriver, and framework apps.
 
+### Changed
+
+- Following the specification change of 2026-10-08 (whatwg/html#11588), `ElementImage` has `close()` only: its size is `canvas.getElementImageDefaultSize(elementImage)`. There is no deprecated `width` / `height` alias, because native Chrome has none and code that relied on it would pass on the polyfill and fail natively.
+- The two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from native builds on 2026-10-09, remain as deprecated legacy overloads until the pinned WPT revision moves.
+- `options.mode: 'polyfill'` over a usable native implementation steps aside with one warning instead of throwing; a legacy native without the bridge bundle is used as found (one warning) instead of being refused.
+
+### Fixed
+
+- `install()` threw `HicUnsupportedError('partial-native')` on Chrome Canary 157.0.8103.0, which exposes the API by default, because the native probe required `ElementImage.width` / `height`. The probe now decides on the core behaviour only, and Canary 157 installs in mode `native` and draws natively.
+
 ### Known limitations
 
 - The picture lags the DOM by about two frames, except for the typing and scrolling shortcuts above.
 - The children of a drawable canvas are relocated into a live layer next to it; some CSS selectors and live collections can see that layer.
-- The core bundle is about 88 KB gzipped, over its original size target.
+- The core bundle is about 89 KB gzipped, over its original size target.
 - Iframes, cross-origin resources without CORS, native UI (select popups, date pickers, IME composition), workers and mobile browsers are not supported.
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.

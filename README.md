@@ -14,7 +14,7 @@ A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in
 
 ## Why
 
-HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome has it behind the `CanvasDrawElement` flag and is expected to ship it in Chrome 157. This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: where a complete native implementation exists, it patches nothing of the standard surface and steps aside.
+HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome Canary 157 exposes it without a flag (measured on 157.0.8103.0) and Chrome is expected to ship it in 157. This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: wherever the browser implements the API in a usable form, it patches nothing of the standard surface and steps aside, and it never throws because a native build differs in a secondary member.
 
 ## Quick start
 
@@ -75,7 +75,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | blank frames during real window resizes | 0 of 3132 | 537 of 3132 | 0 of 3129 |
 | one update in a 1000-element drawable, main thread | 18.3 ms | 41.5 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 120 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 254 KB / 88 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 257 KB / 89 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+ | claims all, including mobile (not verified here) | Chrome with the flag |
 
 The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -85,9 +85,8 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | browser | status |
 |---|---|
 | Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 |
-| Chrome with a complete native implementation (expected from 157) | polyfill steps aside; the two extensions are not available there |
-| Chrome Canary 157.0.8103.0 with the `CanvasDrawElement` flag | refused as a partial native (its `ElementImage` has no `width` / `height`); pages keep the browser's own API, without the polyfill |
-| Chrome 154-156 with the `CanvasDrawElement` flag | needs `hic-live-native-bridge.iife.min.js` before the core |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured, with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions are not available there |
+| Chrome 154-155 with the `CanvasDrawElement` flag (the earlier `layoutsubtree` draft) | used as found, with one console warning; load `hic-live-native-bridge.iife.min.js` before the core to bridge `content="drawable"` to it |
 | Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
 | Safari 27+ desktop | polyfill runs; measured on 27.0.1 (macOS) |
@@ -99,7 +98,7 @@ Nothing was measured on Windows or Linux. Row-by-row evidence: [docs/SUPPORT-MAT
 
 - **The picture lags the DOM by about 2 frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 88 KB gzipped (254 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 89 KB gzipped (257 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
 - **Not supported:** mobile browsers, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). Only DPR 2 on macOS has gates on this implementation.
 - **Preview.** `0.1.0-preview.1` follows a proposed standard that may still change. The two extensions below may change between previews.

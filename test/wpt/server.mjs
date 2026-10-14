@@ -16,7 +16,8 @@ import { MIME } from '../harness/server.mjs';
 import { PROJECT_ROOT, SCRATCH_DIR } from '../harness/lib/util.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const VENDOR_ROOT = resolve(PROJECT_ROOT, 'test/vendor/wpt');
+/** The vendored tree; HIC_WPT_ROOT points the runner at another checkout of the same paths (to measure a candidate revision before re-pinning). */
+export const VENDOR_ROOT = process.env.HIC_WPT_ROOT ? resolve(process.env.HIC_WPT_ROOT) : resolve(PROJECT_ROOT, 'test/vendor/wpt');
 export const MAIN_HOST = 'web-platform.test';
 export const ALT_DOMAIN = 'not-web-platform.test';
 /** --host-resolver-rules for Chrome: every name of the two domains (and subdomains) resolves to the loopback server. */

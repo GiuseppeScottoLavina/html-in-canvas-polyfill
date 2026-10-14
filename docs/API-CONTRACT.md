@@ -3,10 +3,13 @@
 What this polyfill implements of the WICG / WHATWG *HTML-in-Canvas* API, how each part behaves (timing, exceptions), what is
 out of scope and how it fails, and the two extensions (frame cap, effect plugins).
 
-Sources: the WICG explainer (https://github.com/WICG/html-in-canvas), the Chromium IDL, the HTML Standard pull request texts of 2026-09-30
-and the WPT tests, re-checked against the WICG repository on 2026-10-07. Spec status: an explainer plus a draft in the HTML Standard PR; Chrome
-ran an origin trial in 148-150, the `content=drawable` rename landed 2026-09 (WICG issues 174, 179), Chrome 157 is expected to ship
-it. Web evidence for "shipped in stable" is contradictory, so the polyfill detects behaviourally and never assumes (section 2).
+Sources: the WICG explainer (https://github.com/WICG/html-in-canvas), the Chromium IDL, the HTML Standard pull request
+(whatwg/html#11588) and the WPT tests, re-checked on 2026-10-14 against explainer commit `8aaaf5d6` (2026-10-09), pull request head `4cfec766`
+(2026-10-08, "Replace ElementImage width/height with getElementImageDefaultSize()"), Chromium `main` (`html_canvas_element.idl`; the runtime
+feature `CanvasDrawElement` has status `stable`) and WPT `master`. Spec status: an explainer plus a draft in the HTML Standard PR; Chrome
+ran an origin trial in 148-150, the `content=drawable` rename landed 2026-09 (WICG issues 174, 179), and Chrome Canary 157.0.8103.0 exposes
+the API without any flag (measured 2026-10-14). The API still changes week to week, so the polyfill decides on the core behaviour and never on
+a secondary member (section 2); section 2.2 lists the changes after the pinned WPT revision.
 
 Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" = layout pixels. The names of the typedefs
 (`CanvasRecord`, `SnapshotVersion`, ...) are in `src/contracts/types.js`. Feature ids (`tree-identity`, ...) are the rows of
@@ -19,7 +22,7 @@ Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" 
 | `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27, other engines, mobile, an engine lacking a required platform feature |
 | `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | shadow DOM, iframes/objects/embeds, top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
 | `ctx.drawElementImage` (all 4 overloads) on `CanvasRenderingContext2D` and main-thread `OffscreenCanvasRenderingContext2D` | cross-origin resources that cannot be inlined (section 9.2) |
-| `canvas.captureElementImage`, `ElementImage` (`width`, `height`, `close()`) | a worker as a source or sink of `ElementImage` (use `toImageBitmap()`; `postMessage` of one throws a loud, actionable error) |
+| `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas | a worker as a source or sink of `ElementImage` (use `toImageBitmap()`; `postMessage` of one throws a loud, actionable error) |
 | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `ElementGeometryUpdateEvent` | a managed canvas in a closed shadow root created before install (`adoptRoot` hook) |
 | WebGL and WebGL2 `texElementSubImage2D` (+ legacy `texElementImage2D`); WebGPU `GPUQueue.drawElementImageToTexture` (+ legacy `copyElementImageToTexture`) | zero-copy texture paths |
 | canvases in open shadow roots (limited), nested `<canvas content=drawable>` managed independently (limited) | |
@@ -33,21 +36,32 @@ Interfaces defined by the polyfill only when the platform lacks them: `window.El
 
 `install(options?)` is synchronous and idempotent per window (a second call returns the first `HicInstalled`).
 
-**Behavioural probe (`api/native-detect.js`, pure, no side effects, never trusts `in` alone).** It builds a detached canvas and checks
-the names of the CURRENT spec: `content` IDL reflecting only `fallback|drawable`, `onpaint`, `requestPaint`, `captureElementImage`,
-`getElementTransform`, `updateElementGeometry`, `clearElementGeometry`, `onelementgeometryupdate`, `CanvasRenderingContext2D.prototype
-.drawElementImage` and the Offscreen one, `ElementImage`. `CanvasPaintEvent` is deliberately NOT probed (the `onpaint` IDL attribute and the event are one feature; the global is only defined when absent). Result `NativeState.kind`:
+**Behavioural probe (`api/native-detect.js`, pure, no side effects, never trusts `in` alone).** The decision rests on the CORE only:
+`content` reflecting only `fallback|drawable` (exercised on a detached canvas) or the legacy `layoutSubtree`, the `onpaint` handler, and
+`CanvasRenderingContext2D.prototype.drawElementImage`. The probe also calls that `drawElementImage` on a detached `content=drawable` canvas: a
+platform method converts its argument (a plain object is a `TypeError`) and refuses a drawable of a canvas that was never rendered
+(`InvalidStateError`), as Canary 157 does; the outcome is `NativeState.probe` (`ok`, `inert` for a stub that returns, `unexpected`) and
+`NativeState.verified`. Every other name of the current specification (`requestPaint`, `captureElementImage`, `getElementTransform`,
+`updateElementGeometry`, `clearElementGeometry`, `getElementImageDefaultSize`, `onelementgeometryupdate`, the OffscreenCanvas methods and
+Offscreen 2D `drawElementImage`, `ElementImage` with `close()`, `ElementGeometryUpdateEvent`, the WebGL and WebGPU names) is recorded in
+`NativeState.missing` when absent, and names of earlier drafts (`layoutSubtree`, `ElementImage.width`, `texElementImage2D`,
+`copyElementImageToTexture`) in `NativeState.legacyNames`. `CanvasPaintEvent` is not probed (the `onpaint` IDL attribute and the event are one feature).
+
+**Policy: a usable native implementation is never refused and never replaced.** A missing, renamed or extra secondary member never makes
+`install()` throw: the polyfill steps aside, leaves the standard surface untouched and records why (`report().native`, and
+`report().deviations` id `native-step-aside`). Only a native implementation whose core is missing is refused, because it can neither run the API
+nor be replaced safely. A failed behavioural probe alone is not a refusal either: in doubt the polyfill steps aside and reports it.
 
 | kind | meaning | `HicMode` | what install does |
 |---|---|---|---|
-| `complete` | every current name is present and `content` reflects | `native` | patches NOTHING of the standard surface. The extensions are not supported in this mode (section 7.6): no `frameCap` property, no input remapping. |
-| `legacy` | pre-2026-09 names only (`layoutSubtree` IDL, no `content`, `copyElementImageToTexture`/`texElementImage2D`), as in Chrome 154 behind `--enable-blink-features=CanvasDrawElement` | `native-bridged` | adds only what the public API can express: `content` IDL + attribute mirroring to `layoutsubtree`, missing method aliases (`drawElementImageToTexture`, `texElementSubImage2D`), `ElementGeometryUpdateEvent`. The native renderer is never replaced. Row `legacy-native-bridge`. |
-| `partial` | a CORE name is missing (`content` reflection, `onpaint`, `requestPaint`, `captureElementImage`, `drawElementImage`, `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`) or the shape is unknown | `refused` | throws `HicUnsupportedError('partial-native')` unless `options.forcePolyfill` (test only). |
-| `partial`, `fillable` | every CORE name present, only ADDITIVE names missing (`NativeState.gaps`: `onelementgeometryupdate`, `ElementGeometryUpdateEvent`, texture/WebGPU aliases, `ElementImage.toImageBitmap`, `frameCap`) | `native-bridged` | gap-fill only, the native renderer is untouched (a 155-156-like build missing one name is not refused). |
+| `complete` | the core plus every other current name (Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. The extensions are not supported in this mode (section 7.6): no `frameCap` property, no input remapping. |
+| `partial` | the core works, some other current name is missing (for example the 2026-10-07 shape with `ElementImage.width/height` and no `getElementImageDefaultSize`) | `native`, or `native-bridged` when the bridge is loaded and can build a missing name (`NativeState.fillable`) | uses the native implementation as found; with the bridge, adds only the names it can build from public native API (`gaps`). Never throws. |
+| `legacy` | the core with the earlier `layoutSubtree` instead of `content` (Chrome 154 and 155.0.8059.40 behind `--enable-blink-features=CanvasDrawElement`, measured) | `native-bridged` with the bridge, else `native` | with the bridge: `content` IDL + attribute mirroring to `layoutsubtree`, method aliases, `getElementImageDefaultSize` over `ElementImage.width/height` (section 2.1; row `legacy-native-bridge`). Without it: used as found, one `console.warn` that `content="drawable"` canvases are not drawable in that build and how to load the bridge. Never throws. |
+| `broken` | something native exists but a core name is missing | `refused` | throws `HicUnsupportedError('partial-native')` unless `options.forcePolyfill` (test only). |
 | `absent` | no names | `polyfill` | full polyfill (browser gate below). |
 
-#### 2.1 What the native bridge translates (modes `native-bridged`)
-The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'`), loaded BEFORE the core installs. Without it a `legacy` or `partial, fillable` native is refused with `HicUnsupportedError('partial-native')` whose hint names the bundle.
+### 2.1 What the native bridge translates (modes `native-bridged`)
+The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'`), loaded BEFORE the core installs. Without it a `legacy` or `partial, fillable` native is used as found (mode `native`; the `native-step-aside` entry of `report().deviations` names the bundle).
 | area | legacy native (Chrome 154 flag) | bridge |
 |---|---|---|
 | markup | `layoutsubtree` attribute / `layoutSubtree` IDL, no `content` | `content` IDL + attribute mirrored to `layoutsubtree`; only DIRECT children can be drawn natively, so drawing a non-direct descendant is reported loudly (no silent no-op) |
@@ -55,17 +69,18 @@ The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `i
 | geometry | no automatic geometry update: an app written for the new API gets non-hit-testable, geometry-less children | the bridge calls `updateElementGeometry` after a draw unless `preserveElementGeometry` |
 | WebGPU | `copyElementImageToTexture({source, sx, sy, swidth, sheight}, {destination:{texture}, width, height})` | `drawElementImageToTexture({source, sourceX, sourceY, sourceWidth, sourceHeight}, {texture, size, origin, ...})` mapped both ways |
 | WebGL | `texElementImage2D` only | `texElementSubImage2D` added on WebGL and WebGL2 with the natural-size rule of 5.3 |
-| events | no `onelementgeometryupdate` | `ElementGeometryUpdateEvent` + handler added |
+| events | no `onelementgeometryupdate` (Chrome 154) | `ElementGeometryUpdateEvent` + handler added |
+| size | `ElementImage.width/height`, no `getElementImageDefaultSize` | `HTMLCanvasElement.prototype.getElementImageDefaultSize(element \| ElementImage)` built over them (a capture for an Element), so it returns that build's own numbers: Chrome 155.0.8059.40 reports device pixels, not grid px (400 x 120 for a 200 x 60 css element at DPR 2 on a canvas whose grid equals its css size, measured 2026-10-14); the originating canvas of an `ElementImage` is not checked; the OffscreenCanvas one is not added |
 | `{preserveElementGeometry}` | ignored by legacy native | honoured by skipping the automatic update |
-Gate G-bridged-translation runs these rows on Chrome 154 with the flag.
+Gate G-bridged-translation runs these rows on Chrome 154 with the flag; the unit tests run them on fake native shapes (`test/unit/api-core/_page-env.mjs`: the measured current, previous and legacy shapes).
 
 Browser gate (only evaluated for `absent`/`forcePolyfill`): desktop Chromium >= 130 (only 154 and Canary 157 measured), Firefox >= 155 or
 Safari >= 27 (the measured majors, G-xbrowser), AND every required platform feature present (CSS anchor positioning, ResizeObserver,
 `HTMLImageElement.decode`, constructable stylesheets; a missing one is named in the message). Anything else: `install()` throws
 `HicUnsupportedError('browser')` (default `onUnsupportedBrowser: 'throw'`); `'warn'` logs once and installs nothing.
-`options.mode`: `'auto'` (default) as above; `'native-only'` never runs the renderer (throws if native is not complete);
-`'polyfill'` skips the native check only when native is `absent`, otherwise it is refused (a complete native is never overridden;
-`forcePolyfill` is the single override and exists for tests).
+`options.mode`: `'auto'` (default) as above; `'native-only'` never runs the renderer (throws where `auto` would run the polyfill or refuse);
+`'polyfill'` runs the polyfill when native is `absent`; over a usable native it steps aside like `auto`, with one `console.warn` and a
+`native-step-aside` report entry (a usable native is never overridden; `forcePolyfill` is the single override and exists for tests).
 
 Patch hygiene: every installed function/descriptor carries `Symbol.for('hic.patch')` (`MARK.PATCH_SYMBOL`). `uninstall()` restores
 the exact original descriptor. If a foreign script wrapped one of our patches after us, uninstall leaves that property alone and
@@ -73,9 +88,17 @@ reports it (`report().errors`). The install is transactional: a step that throws
 
 Bundle contract (docs/BUNDLES.md has the file list, sizes and load order): the classic core IIFE (`dist/hic-live-polyfill.iife.js`, the 2D path; `.min.js` twin) exposes `window.HicLivePolyfill = {install, version, FEATURES,
 HicUnsupportedError}` and auto-installs synchronously when it executes, unless its `<script>` has `data-hic-manual`. It must be
-loaded before app scripts that read the API. AUTO-install policy: a refusal (`HicUnsupportedError`: an unsupported or too old browser, a missing required platform feature, core-incomplete native) is ONE `console.warn` and `window.__HIC__ = {error}`, never a throw (a site that includes the script
-unconditionally keeps working for every visitor; the same holds for a legacy or nearly complete native when the optional native-bridge bundle was not loaded first); any other error is a polyfill bug: `console.error`, `window.__HIC__ = {error}`, rethrown. An explicit `install()` call throws on refusal. Pages whose CSP forbids `img-src data:` get a `csp-blocked` report with a hint
+loaded before app scripts that read the API. AUTO-install policy: a refusal (`HicUnsupportedError`: an unsupported or too old browser, a missing required platform feature, a native implementation without its core) is ONE `console.warn` and `window.__HIC__ = {error}`, never a throw (a site that includes the script
+unconditionally keeps working for every visitor; a usable native implementation is never a refusal at all, with or without the optional native-bridge bundle); any other error is a polyfill bug: `console.error`, `window.__HIC__ = {error}`, rethrown. An explicit `install()` call throws on refusal. Pages whose CSP forbids `img-src data:` get a `csp-blocked` report with a hint
 (every snapshot is a data: SVG image); `onpaint="..."` attributes need `new Function`, a CSP/Trusted Types block of it is reported.
+
+### 2.2 Specification changes after the pinned WPT revision (2026-10-07) and what the polyfill does
+| change (source) | polyfill |
+|---|---|
+| `ElementImage.width/height` removed; `getElementImageDefaultSize(element \| ElementImage)` on `HTMLCanvasElement` and `OffscreenCanvas` returns `{width, height}` in grid px of the CURRENT bitmap (WHATWG PR `4cfec766`, 2026-10-08; WPT `dcdb8e11`, 2026-10-09; explainer PR #184) | follows it: `ElementImage` has `close()` only (plus the `toImageBitmap()` extension); both `getElementImageDefaultSize` methods exist. No deprecated `width`/`height` alias: the current WPT asserts `'width' in elementImage` is false, and an alias would let code pass on the polyfill and fail on native Chrome. The WPT expects `InvalidStateError` for a closed image, another canvas and a standalone OffscreenCanvas where the PR text says `TypeError`; the polyfill follows the WPT (section 6.3). |
+| the two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform` removed; the one-argument form stays (WPT `b59184b6`, 2026-10-09) | the one-argument form is unchanged; the two-argument form and the OffscreenCanvas method are KEPT as deprecated legacy overloads until the WPT pin moves (they cost nothing to code written for the current API, which never passes a second argument) |
+| non-finite source or destination rects: draw nothing and return (WPT `30d4d7d4`, 2026-10-07) | already the behaviour (`draw-math.js` returns before drawing or updating geometry) |
+| `opacity: 0` on the canvas or an ancestor does not hide the drawn content (WPT `beed7c13`); popover privacy, filters invalidated when content moves into a canvas, backdrop-filter with mix-blend-mode (WPT `136493f8`, `a7242745`, `e723d22a`) | rendering fixes of the native implementation; measured against WPT master in `docs/CONFORMANCE.md` |
 
 ## 3. Markup
 
@@ -130,15 +153,23 @@ Calling it inside a `paint` handler schedules the NEXT frame, never a re-entrant
 ### 4.3 `captureElementImage(element)` -> `ElementImage`
 Resolution of the snapshot is the spec "get element image snapshot" (section 6 for exceptions). Returns a new `ElementImage` holding
 the newest committed `SnapshotVersion` of `element`; it never changes afterwards (WPT `captureElementImage.html`: A and B taken before
-a repaint keep width 100 after the DOM grew to 150). The capture pins the version (`SnapshotStore.pin`). The argument is an `Element` only, as in the IDL: an `ElementImage` is a `TypeError` (accepting it would have to pin the version it holds, not the newest). `drawElementImage` and the geometry methods accept both.
+a repaint keep the default width 100 after the DOM grew to 150). The capture pins the version (`SnapshotStore.pin`). The argument is an `Element` only, as in the IDL: an `ElementImage` is a `TypeError` (accepting it would have to pin the version it holds, not the newest). `drawElementImage` and the geometry methods accept both.
 
 ### 4.4 `ElementImage`
-- No constructor: `new ElementImage()` throws `TypeError`. `width`, `height` (double): `snapshot.width * (canvasBitmapWidth / snapshot.canvasWidth)` and the analogue for height, i.e. the
-  default `dw`/`dh` in grid px, computed at read time from the CURRENT bitmap size of the originating canvas. `0` when closed or when
-  the originating canvas is gone.
+- No constructor: `new ElementImage()` throws `TypeError`. The interface has `close()` only (WHATWG PR 11588 since 2026-10-08): there is no `width` / `height`, and
+  `'width' in elementImage` is false, as natively. Its size is `canvas.getElementImageDefaultSize(elementImage)` (4.4.1).
 - `close()`: idempotent; detaches (`[[Detached]]`), unpins the version. Later use throws `InvalidStateError` (section 6).
 - A never-closed `ElementImage` is released by a `FinalizationRegistry`; the bytes stay pinned until then (stat `pinnedSurfaces`).
 - Extension `toImageBitmap(): Promise<ImageBitmap>`: a transferable copy of the pinned surface (full source rect), for workers.
+
+#### 4.4.1 `getElementImageDefaultSize(element | ElementImage)` -> `{width, height}`
+On `HTMLCanvasElement` and on a main-thread `OffscreenCanvas` transferred from one (spec "get the element image default size"). Resolves the
+snapshot like `drawElementImage` (an `Element` gives its newest committed snapshot, an `ElementImage` the one it holds) and returns a new
+dictionary `{width: snapshot.width * (bitmapWidth / snapshot.canvasWidth), height: ...}` in grid px: the default `dw`/`dh` of a draw, computed at
+call time from the CURRENT bitmap size (the canvas's, or the OffscreenCanvas's own for the OffscreenCanvas method), so a `canvas.width` write is
+reflected before the next paint (WPT `element-image-fractional-size`). Doubles, fractional values kept. Throws `InvalidStateError` before the
+first snapshot, for a canvas that is not rendered, for a closed `ElementImage`, for an element or image of another canvas and on a standalone
+OffscreenCanvas (WPT; the PR text says `TypeError` for the last two, section 6.3); `TypeError` for a missing or non-`Element`/`ElementImage` argument.
 
 ### 4.5 `updateElementGeometry(element | ElementImage, options?)`
 `options`: `{preserveHitTestOrder = false, clip?: DOMRectInit, canvasTransform?: DOMMatrixInit}`. The spec text names the clip member
@@ -157,8 +188,8 @@ Removes the element from the drawn list, sets canvas transform and clip to null;
 (`pointer-events:none` again) and its CSS correction.
 
 ### 4.7 `getElementTransform(element)` -> `DOMMatrix`
-A NEW `DOMMatrix` each call (a copy of the canvas transform, identity when null; 3D preserved). The two-argument overload
-`getElementTransform(element, drawTransform: DOMMatrix)` (in the IDL and exercised by WPT `get-element-transform`; always available, also without `legacyNames`) returns, without
+A NEW `DOMMatrix` each call (a copy of the canvas transform, identity when null; 3D preserved). Deprecated: the two-argument overload
+`getElementTransform(element, drawTransform: DOMMatrix)` (in the IDL of the pinned WPT revision and exercised by its `get-element-transform`; removed from native builds on 2026-10-09, section 2.2; kept until the WPT pin moves, always available, also without `legacyNames`) returns, without
 changing state, the matrix a draw with `drawTransform` as the draw transform would store, `S^-1 * D * S` (`S` = scale(canvas grid / css size)); it needs a snapshot (`InvalidStateError` before the first paint). The same overload exists on a main-thread `OffscreenCanvas` (two arguments only, as native). The first argument of `getElementTransform` and `updateElementGeometry` is `Element` or `ElementImage`. `drawable` on an outermost `<svg>` is supported like any CSS box; `drawable` on an SVG element inside an `<svg>` is refused (`svg-drawable`: `HicUnsupportedError`; the WPT `<rect drawable>` cases fail by design).
 
 ### 4.8 `elementgeometryupdate` / `onelementgeometryupdate`
@@ -203,7 +234,7 @@ placeholder semantics) can use `getContext('2d').drawElementImage` and `offscree
 Installed on BOTH `WebGLRenderingContext.prototype` and `WebGL2RenderingContext.prototype` (legacy aliases on both).
 `gl.texElementSubImage2D(target, level, xoffset, yoffset, element, config = {})` with `config = {sx, sy, swidth, sheight, width,
 height}`. Implemented as `gl.texSubImage2D(target, level, xoffset, yoffset, RGBA, UNSIGNED_BYTE, source)`.
-**Upload rectangle (the natural-size rule).** Source rect = `(sx, sy, swidth, sheight)` in css px of the border-box frame, default the whole border box. Destination size = `config.width/height` when given, else `ceil(ElementImage.width) x ceil(ElementImage.height)` (grid px; this is what issue 174 tells apps to preallocate with `texImage2D`); WPT `element-image-fractional-size` is the oracle for the rounding and wins if it disagrees with ceil.
+**Upload rectangle (the natural-size rule).** Source rect = `(sx, sy, swidth, sheight)` in css px of the border-box frame, default the whole border box. Destination size = `config.width/height` when given, else the ceiling of `canvas.getElementImageDefaultSize(element)` (grid px; this is what issue 174 tells apps to preallocate with `texImage2D`); WPT `element-image-fractional-size` is the oracle for the rounding and wins if it disagrees with ceil.
 `source` is the retained surface when its pixel size for that rect equals the destination size, otherwise a scratch 2D canvas holding the resampled rect (canvas grid scale < 1, grid scale above `maxDpr`, fractional sizes), cached per `SnapshotVersion` id. Like `texSubImage2D` the
 storage must exist (no auto allocation; issue 174): missing or too-small storage is a GL error (`getError()`), never an exception, as native. The current `UNPACK_*` state (FLIP_Y, PREMULTIPLY_ALPHA) applies. Legacy
 `texElementImage2D(target, level, internalformat, format, type, element[, config])` -> `texImage2D` with the same size rule. Geometry is NOT updated
@@ -212,7 +243,7 @@ automatically (spec: 3D contexts must call `updateElementGeometry`). Cost: one G
 ### 5.4 WebGPU
 `queue.drawElementImageToTexture({source, sourceX, sourceY, sourceWidth, sourceHeight}, {texture, size, origin, colorSpace,
 premultipliedAlpha})` -> `queue.copyExternalImageToTexture({source: surfaceOrCrop, origin: {x:sourceX, y:sourceY}}, destination,
-size)` (flipY false); the default `size` follows the same natural-size rule as 5.3 (`ceil(ElementImage.width/height)`), with the same scratch resample. Legacy `copyElementImageToTexture({source, sx, sy, swidth, sheight}, {destination:{texture}, width, height})` is
+size)` (flipY false); the default `size` follows the same natural-size rule as 5.3 (the ceiling of the element image default size), with the same scratch resample. Legacy `copyElementImageToTexture({source, sx, sy, swidth, sheight}, {destination:{texture}, width, height})` is
 mapped to the same call. One GPU copy per call; the surface is a 2D canvas, which is the only sink that does not taint (measured on Chrome 154 and Safari).
 
 ## 6. Exceptions
@@ -245,6 +276,8 @@ After mounting, the first snapshot is committed one or more frames later (async 
 `updateElementGeometry` / `clearElementGeometry` / `getElementTransform` on an ineligible element: spec text says `TypeError`;
 `wpt/error-conditions.html` asserts `InvalidStateError` for `getElementTransform(grandchild)` and for every method when
 `content` was removed. The polyfill throws `InvalidStateError`. Spec text `options["canvasClip"]` vs IDL `clip`: both accepted (4.5).
+`getElementImageDefaultSize` of an element or `ElementImage` of another canvas, or on a standalone OffscreenCanvas: the PR text says `TypeError`, WPT master
+(`dcdb8e11`) and Canary 157 throw `InvalidStateError`; the polyfill throws `InvalidStateError`.
 
 ## 7. Extensions
 
@@ -316,8 +349,8 @@ popups, drag selection, contenteditable (row `interposer-retarget`). Validated a
 
 ### 7.6 On top of a native implementation (not supported)
 Checked on 2026-10-14 with the built core and effects bundles (macOS, Apple M1 Max, 120 Hz, headed and headless; details in `docs/guides/EFFECTS-PLUGINS.md`):
-- Chrome Canary 157.0.8103.0 with `--enable-blink-features=CanvasDrawElement`: `install()` refuses (`partial-native`: that build's `ElementImage` has no `width` / `height`), so no extension exists: no `frameCap` property, `createHost` rejects with `InvalidStateError`.
-- The same build with a test-only stub that completes `ElementImage` (mode `native`): `createHost` and the water plugin rendered over `GPUQueue.drawElementImageToTexture`; the `frameCap` property is not defined (the `framecap` attribute paced effect frames: 15 and 30.5 per second at 15 and 30); pointer input is not remapped (the interposer needs the polyfill's live layer), so a click on the drawn field reached the canvas, not the field.
+- Chrome Canary 157.0.8103.0, with or without `--enable-blink-features=CanvasDrawElement`: `install()` steps aside (mode `native`, kind `complete`, probe `ok`) and the page draws natively (a drawable form painted from `onpaint`, `getElementImageDefaultSize` 200 x 60, no console message). No extension exists there: no `frameCap` property, no input remapping.
+- Before this check the same build was refused (`partial-native`, because its `ElementImage` has no `width` / `height`); with a test-only stub that completed `ElementImage` (mode `native`), `createHost` and the water plugin rendered over `GPUQueue.drawElementImageToTexture`; the `frameCap` property was not defined (the `framecap` attribute paced effect frames: 15 and 30.5 per second at 15 and 30); pointer input is not remapped (the interposer needs the polyfill's live layer), so a click on the drawn field reached the canvas, not the field.
 
 ## 8. Timing model (summary; full detail in ARCHITECTURE ADR-C)
 - DOM change -> mutation/input/focus/hover observers publish `Damage` -> (next tick, under the cap) clone + serialise + data: URL (main
@@ -337,7 +370,7 @@ Checked on 2026-10-14 with the built core and effects bundles (macOS, Apple M1 M
 ### 9.1 Mechanism
 Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name === 'NotSupportedError'`, `code === 9`, plus
 `feature`, `hint`, `path`). Rules:
-1. A call the polyfill cannot honour THROWS it synchronously (install on a bad browser, forced partial native, `toImageBitmap` on a
+1. A call the polyfill cannot honour THROWS it synchronously (install on a bad browser or over a native implementation without its core, `toImageBitmap` on a
    closed image is `InvalidStateError`, etc.).
 2. Content the polyfill cannot capture never stalls and never blanks the rest: the offending subtree is replaced in the clone by a
    visible hatched placeholder box (`options.onUnsupportedContent: 'placeholder'`, default), a `Reporter.unsupported()` entry is
@@ -365,7 +398,7 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | id | trigger | behaviour |
 |---|---|---|
 | `browser` | not Chromium desktop >= 130 | `install()` throws |
-| `partial-native` | partial/unknown native | `install()` throws unless `forcePolyfill` |
+| `partial-native` | a native implementation without its core (no `content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | `install()` throws unless `forcePolyfill`; a usable native is never refused (section 2) |
 | `shadow-dom` | (no longer reported) open shadow roots inside a drawable are drawn in flat-tree order with computed styles inlined (limited) | - |
 | `iframe` | iframe/object/embed in a drawable subtree | placeholder + entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |

@@ -100,8 +100,8 @@
   },
   "element-image-fractional-size.tentative.html": {
    "category": "deviation",
-   "reason": "resize-stale-first",
-   "note": "the canvas.width write repaints at once with the previous snapshot, which the awaited paint then presents. Not in `stable` (2026-10-14): the second subtest passes when the snapshot of the new child size lands before the single awaited paint and fails (the deviation) when the awaited paint presents the stale-first tile; since the in-frame resize re-raster (DECISIONS P-09) the fresh tile often wins (B, 3 reps: 1 / 1 / 2 of 2; earlier runs 2 / 2 / 2 / 2 / 1 and 1 / 1 / 1), never below the partial floor of 1; native at the pinned Canary fails both subtests (ElementImage.width undefined): a frame-timing race of the test against an asynchronous snapshot"
+   "reason": "spec-after-wpt-pin",
+   "note": "the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11); the polyfill follows the specification, as Canary 157 does. The same file at WPT master passes in the polyfill (docs/CONFORMANCE.md, Not covered). Before that change the second subtest raced the stale-first resize tile (resize-stale-first); with getElementImageDefaultSize the master version passes 2/2"
   },
   "iframe-local.tentative.html": {
    "category": "deviation",
@@ -404,6 +404,20 @@
    "category": "deviation",
    "reason": "paint-timing",
    "note": "the first snapshot (and so the first paint of a mounted canvas) lands 2-3 frames after load, the test attaches its handler after one frame and counts that initial paint; stable in 7 of 8 warm repetitions, passes when the page is cold"
+  },
+  "captureElementImage.tentative.html": {
+   "category": "deviation",
+   "reason": "spec-after-wpt-pin",
+   "note": "the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11); the polyfill follows the specification, as Canary 157 does. The same file at WPT master passes in the polyfill (docs/CONFORMANCE.md, Not covered)"
+  },
+  "offscreen/offscreenCanvas-drawElementImage.tentative.html": {
+   "subtests": {
+    "OffscreenCanvas.drawElementImage should draw an ElementImage": {
+     "category": "deviation",
+     "reason": "spec-after-wpt-pin",
+     "note": "the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11); the polyfill follows the specification, as Canary 157 does. The same file at WPT master passes in the polyfill (docs/CONFORMANCE.md, Not covered)"
+    }
+   }
   }
  },
  "controlPass": {
@@ -430,7 +444,6 @@
   "canvas-in-custom-element.tentative.html",
   "canvas-transform-update-element-image.tentative.html",
   "canvas-transform-update.tentative.html",
-  "captureElementImage.tentative.html",
   "changes-in-paint-event.tentative.html",
   "changing-size-in-paint-event.tentative.html",
   "child-overflow.tentative.html",
@@ -487,7 +500,6 @@
   "nested-div-content-drawable-canvas.tentative.html",
   "nested-drawable.tentative.html",
   "non-opaque-element.tentative.html",
-  "offscreen/offscreenCanvas-drawElementImage.tentative.html",
   "onpaint-display-none.tentative.html",
   "onpaint-invalidation-crash.tentative.html",
   "onpaint-outside-invalidation-crash.tentative.html",
@@ -566,7 +578,7 @@
   "display-contents.tentative.html": 1,
   "draw-element-image-different-canvas.tentative.html": 1,
   "draw-element-image-get-image-data.tentative.html": 1,
-  "element-image-fractional-size.tentative.html": 1,
+  "offscreen/offscreenCanvas-drawElementImage.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,
   "onpaint-remove-drawable-element.tentative.html": 2,
   "onpaint.tentative.html": 3,

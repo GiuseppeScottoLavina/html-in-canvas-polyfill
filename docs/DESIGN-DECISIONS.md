@@ -20,7 +20,7 @@ Each drawable has a retained 2D canvas with immutable versions; a new picture is
 
 ### 5. Native first
 
-`install()` detects the native API by behaviour, not by browser name or version. With a complete native implementation it patches nothing of the standard surface; the two extensions (decision 11) are not supported there. A legacy native (Chrome 154 to 156 behind a flag) needs the separate native-bridge bundle; a partial native without it is refused rather than mixed. Install is synchronous, so the API exists before any page script reads it.
+`install()` detects the native API by behaviour, not by browser name or version, and decides on the core only: `content="drawable"` (or the earlier `layoutsubtree`), the `paint` event handler and a 2D `drawElementImage` that behaves like a platform method. A browser with that core is never refused: whatever secondary members it lacks, renames or adds, the polyfill patches nothing of the standard surface, steps aside and records what differs in `report()`. The specification still moves (on 2026-10-08 `ElementImage.width/height` became `canvas.getElementImageDefaultSize()`), and an earlier preview that required the old members refused Chrome Canary 157 and would have thrown on a shipping Chrome; deciding on the core is what keeps a page working when the browser is ahead of, or behind, the polyfill. The optional native-bridge bundle adds what it can build from public native API (the `content` attribute over the earlier `layoutsubtree` draft of Chrome 154 and 155, the size getter, event names); without it such a build is used as found. Only a native implementation without its core is refused, because it can neither run the API nor be replaced safely. The two extensions (decision 11) are not supported in mode `native`. Install is synchronous, so the API exists before any page script reads it.
 
 ### 6. Paint is asynchronous: about two frames behind the DOM
 
@@ -58,4 +58,4 @@ Refusals are loud: a hatched placeholder, one console message and a `report()` e
 
 ### 13. Small, dependency-free, no network on load
 
-No runtime dependencies; the bundles make no network request when they load (snapshots fetch same-origin or CORS resources only to inline them). Modules talk only through typed interfaces (`src/contracts/`), at most 1000 code lines per file, enforced by `npm run lint`. The cost is a large core: about 88 KB gzipped, over the original 150 KB minified target (`docs/BUNDLES.md`).
+No runtime dependencies; the bundles make no network request when they load (snapshots fetch same-origin or CORS resources only to inline them). Modules talk only through typed interfaces (`src/contracts/`), at most 1000 code lines per file, enforced by `npm run lint`. The cost is a large core: about 89 KB gzipped, over the original 150 KB minified target (`docs/BUNDLES.md`).

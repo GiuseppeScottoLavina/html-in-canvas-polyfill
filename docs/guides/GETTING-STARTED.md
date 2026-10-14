@@ -70,7 +70,7 @@ const hic = install();                            // synchronous; call it before
 console.log(hic.mode);                            // 'polyfill' | 'native' | 'native-bridged' ('refused' with onUnsupportedBrowser: 'warn')
 ```
 
-`install()` throws a `HicUnsupportedError` (`feature: 'browser'` or `'partial-native'`) in a browser the polyfill refuses. Catch it, or pass `{ onUnsupportedBrowser: 'warn' }` to log once and install nothing. The classic script never throws on refusal: it logs one `console.warn` and sets `window.__HIC__ = { error }`.
+`install()` throws a `HicUnsupportedError` (`feature: 'browser'`, or `'partial-native'` for a native implementation without its core) in a browser the polyfill refuses; it never throws where the browser's own API is usable. Catch it, or pass `{ onUnsupportedBrowser: 'warn' }` to log once and install nothing. The classic script never throws on refusal: it logs one `console.warn` and sets `window.__HIC__ = { error }`.
 
 Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'` (an example plugin, `plugins/README.md`), `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-156 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
 
@@ -100,9 +100,8 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | browser | what the polyfill does | source |
 |---|---|---|
 | desktop Chrome without the native feature (154 measured) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
-| Chrome with a complete native implementation (157+ expected) | steps aside (mode `native`); the extensions (frame cap, effects) are not supported there | API-CONTRACT section 2, EFFECTS-PLUGINS |
-| Chrome Canary 157.0.8103.0 with `--enable-blink-features=CanvasDrawElement` (measured 2026-10-14) | refused with `partial-native` (its `ElementImage` has no `width` / `height`); the page keeps the browser's own API | EFFECTS-PLUGINS |
-| Chrome 154-156 behind `--enable-blink-features=CanvasDrawElement` | needs `dist/hic-live-native-bridge.iife.min.js` BEFORE the core, else refused with `partial-native` | BUNDLES |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) are not supported there | API-CONTRACT section 2, EFFECTS-PLUGINS |
+| Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
 | older Firefox/Safari, mobile, WebViews | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
