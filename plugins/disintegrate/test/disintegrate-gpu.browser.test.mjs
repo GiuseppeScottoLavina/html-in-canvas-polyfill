@@ -253,3 +253,40 @@ gpuTest('the fire starts at the pointer press: early on only the form around it 
   rig.tick(t0 + 10 + DURATION * 0.45);
   assert.ok(diffNear(rig.snap(), ref, 60, 280, 40) > 1000, 'and the front reaches the far corner later');
 });
+
+gpuTest('live: the flying flakes keep sampling the page, so a change made after they broke off shows up on them, away from where it was drawn', async (t) => {
+  // the "Go" button (40..160 x 40..80) changes colour 150 ms into the burn, after its flakes have broken off; the frames at 240 ms of a
+  // run with the change and of a run without it differ, and the difference lies (also) outside the button's own rectangle: on the flakes
+  // that carry it away. Control: two runs without the change are identical, so every differing pixel is the change.
+  const recolour = (/** @type {CanvasRenderingContext2D} */ ctx) => { paint(ctx); ctx.fillStyle = '#ff2a6a'; ctx.fillRect(40, 40, 120, 40); };
+  const run = async (/** @type {boolean} */ change) => {
+    const { rig, host } = await start(t, { intro: false });
+    const t0 = performance.now();
+    rig.tick(t0);
+    trigger(rig.canvas, 'out', { x: 100, y: 60 });
+    rig.tick(t0 + 10);
+    for (let now = t0 + 10; now <= t0 + 150; now += 16) rig.tick(now);
+    if (change) rig.commit(null, recolour);
+    for (let now = t0 + 160; now <= t0 + 240; now += 16) rig.tick(now);
+    rig.tick(t0 + 250);
+    const img = rig.snap();
+    host.destroy();
+    rig.root.remove();
+    return img;
+  };
+  const same = await run(false);
+  const again = await run(false);
+  const changed = await run(true);
+  assert.equal(diff(same, again).over, 0, 'without the change two runs are identical');
+  let inside = 0, outside = 0;
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      const i = (y * W + x) * 4;
+      const d = Math.max(Math.abs(same.data[i] - changed.data[i]), Math.abs(same.data[i + 1] - changed.data[i + 1]), Math.abs(same.data[i + 2] - changed.data[i + 2]));
+      if (d <= 24) continue;
+      if (x >= 36 && x < 164 && y >= 36 && y < 84) inside += 1; else outside += 1;
+    }
+  }
+  console.error(`disintegrate live: the change shows on ${inside} px inside the button's rectangle and ${outside} px outside it (on flakes and embers that carry it)`);
+  assert.ok(outside > 150, `the change is visible on the moved flakes: ${outside} px outside the rectangle`);
+});

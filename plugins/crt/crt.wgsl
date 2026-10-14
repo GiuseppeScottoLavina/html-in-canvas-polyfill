@@ -1,5 +1,6 @@
-// CRT monitor. Lengths in CSS px of the presented frame. mapCrtPoint() in index.js is the JavaScript twin of the barrel and of the
-// screen mask below: same formula, same rounded screen corners. The interlace (index.js) moves samples by under half a line, never the barrel.
+// CRT arcade monitor. Lengths in CSS px of the presented frame. mapCrtPoint() in index.js is the JavaScript twin of the barrel and of
+// the screen mask below: same formula, same rounded screen corners. Everything after the barrel (beam, scanlines, shadow mask, glow,
+// warmth, flicker, glass) changes colours only, never which source point a pixel shows.
 struct U {
   res : vec2<f32>,     // presented size, backing px
   css : vec2<f32>,     // presented size, CSS px
@@ -12,18 +13,16 @@ struct U {
   flicker : f32,       // 0..1 (0 with prefers-reduced-motion)
   mis : f32,           // red / blue misconvergence, CSS px
   time : f32,          // seconds
-  interlace : f32,
-  parity : f32,        // field drawn now: 0 even lines, 1 odd
-  history : f32,       // 1: hist = source of the previous field
+  mask : f32,          // 0..1 shadow mask
+  warmth : f32,        // 0..1 warm phosphor
+  pad : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : U;
 @group(0) @binding(1) var samp : sampler;
 @group(0) @binding(2) var src : texture_2d<f32>;
-@group(0) @binding(3) var hist : texture_2d<f32>;
 
-const BG = vec3<f32>(0.012, 0.016, 0.02);
-const FIELD_SHIFT = 0.3;   // odd field offset, CSS px
+const BG = vec3<f32>(0.008, 0.009, 0.010);
 
 @vertex
 fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> {
@@ -41,27 +40,13 @@ fn tap(p : vec2<f32>) -> vec3<f32> {
   return mix(BG, c.rgb, c.a);
 }
 
-fn tap_old(p : vec2<f32>) -> vec3<f32> {
-  if (u.history < 0.5) { return tap(p); }
-  let c = textureSampleLevel(hist, samp, clamp(p / u.css, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
-  return mix(BG, c.rgb, c.a);
-}
-
-// one sample with the red / blue misconvergence (red and blue land to each side of green)
-fn beam(p : vec2<f32>, old : bool) -> vec3<f32> {
-  if (old) {
-    if (u.mis > 0.0) { return vec3<f32>(tap_old(p + vec2<f32>(u.mis, 0.0)).r, tap_old(p).g, tap_old(p - vec2<f32>(u.mis, 0.0)).b); }
-    return tap_old(p);
-  }
-  if (u.mis > 0.0) { return vec3<f32>(tap(p + vec2<f32>(u.mis, 0.0)).r, tap(p).g, tap(p - vec2<f32>(u.mis, 0.0)).b); }
-  return tap(p);
-}
-
-// eight taps on a circle of radius r around p
-fn ring(p : vec2<f32>, r : f32) -> vec3<f32> {
-  let a = r * 0.7071;
-  return tap(p + vec2<f32>(r, 0.0)) + tap(p - vec2<f32>(r, 0.0)) + tap(p + vec2<f32>(0.0, r)) + tap(p - vec2<f32>(0.0, r))
-    + tap(p + vec2<f32>(a, a)) + tap(p - vec2<f32>(a, a)) + tap(p + vec2<f32>(a, -a)) + tap(p - vec2<f32>(a, -a));
+// eight taps on a circle of radius r around p; `turn` rotates the ring by 22.5 degrees so that two rings do not line up
+fn ring(p : vec2<f32>, r : f32, turn : bool) -> vec3<f32> {
+  var a = r * 0.7071;
+  var c = r;
+  if (turn) { a = r * 0.3827; c = r * 0.9239; }
+  return (tap(p + vec2<f32>(c, a)) + tap(p - vec2<f32>(c, a)) + tap(p + vec2<f32>(-a, c)) + tap(p + vec2<f32>(a, -c))
+    + tap(p + vec2<f32>(a, c)) + tap(p - vec2<f32>(a, c)) + tap(p + vec2<f32>(c, -a)) + tap(p + vec2<f32>(-c, a))) * 0.125;
 }
 
 @fragment
@@ -78,48 +63,55 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let s = half + qb * half;
   let sd = sd_box(s - half, half, u.corner);
 
-  // the bezel: dark plastic, lit a little by the screen near its edge
+  // the glass over the tube and the bezel: a soft reflection of a light up and to the left, and a faint sheen across it
+  let gp = (p - vec2<f32>(u.css.x * 0.22, u.css.y * 0.15)) / u.css.y * vec2<f32>(0.7, 1.0);
+  let sheen = 0.075 * exp(-dot(gp, gp) / 0.03) + 0.014 * smoothstep(0.3, 0.0, abs((p.x + p.y * 0.8) / u.css.x - 0.42));
+
+  // the bezel: dark warm plastic with a lip, lit by the screen near its inner edge
   let edge = max(sd, 0.0);
-  var bezel = BG * 2.4 + vec3<f32>(0.05, 0.07, 0.08) * exp(-edge * 0.12) * (0.4 + 0.6 * u.glow);
-  bezel = bezel * (0.85 + 0.15 * smoothstep(half.y * 1.4, 0.0, length(p - vec2<f32>(half.x, 0.0))));
+  let lip = smoothstep(u.bezel * 0.5, 0.0, edge) * smoothstep(0.0, 2.0, edge);
+  var bezel = vec3<f32>(0.022, 0.021, 0.020) + vec3<f32>(0.10, 0.085, 0.07) * exp(-edge * 0.14) * (0.3 + 0.7 * u.glow);
+  bezel = bezel * (0.75 + 0.25 * smoothstep(half.y * 1.6, 0.0, length(p - vec2<f32>(half.x, 0.0)))) + vec3<f32>(0.035) * lip;
+  bezel = bezel + vec3<f32>(sheen * 0.6);
   if (sd * dpr >= 0.34 || u.ready < 0.5) { return vec4<f32>(bezel, 1.0); }
 
-  let period = max(2.5 / dpr, u.css.y / 240.0);
-  // interlace: two fields of lines; each line samples at its centre (thin edges twitter); the other field is the previous one, dimmer,
-  // from hist (moved content combs)
-  var col : vec3<f32>;
-  var lineGain = 1.0;
-  var linePhase = s.y / period;
-  if (u.interlace > 0.5) {
-    let pitch = max(2.0 / dpr, period * 0.5);
-    let n = floor(s.y / pitch);
-    let odd = n - 2.0 * floor(n * 0.5);
-    let old = abs(odd - u.parity) > 0.5;
-    col = beam(vec2<f32>(s.x + odd * FIELD_SHIFT, (n + 0.5) * pitch), old);
-    let decay = 1.0 - 0.5 * (0.35 + 0.65 * u.scanlines);
-    lineGain = select(1.0, decay, old) * (1.0 + 0.3 * (1.0 - decay));
-    linePhase = s.y / pitch;
-  } else {
-    col = beam(s, false);
-  }
+  // the beam: red and blue guns land a little to each side of green (misconvergence)
+  var col = tap(s);
+  if (u.mis > 0.0) { col = vec3<f32>(tap(s + vec2<f32>(u.mis, 0.0)).r, col.g, tap(s - vec2<f32>(u.mis, 0.0)).b); }
 
-  // phosphor glow: two rings of taps, the brightest parts bleed the most
+  // phosphor glow and bloom: three rings of taps. The light spills from bright parts into darker neighbours (a halo around text and
+  // controls), and bright parts glow a little more; a flat bright area is not washed out, so its lines and stripes stay
   if (u.glow > 0.0) {
-    let near = ring(s, 1.6) * 0.125;
-    let far = ring(s, 4.2) * 0.125;
-    let bloom = near * 0.6 + far * 0.4;
-    col = col + bloom * bloom * (1.25 * u.glow) + bloom * (0.12 * u.glow);
+    let near = ring(s, 1.5, false);
+    let mid = ring(s, 4.0, true);
+    let far = ring(s, 9.0, false);
+    let bloom = near * 0.45 + mid * 0.35 + far * 0.2;
+    col = col + max(bloom - col, vec3<f32>(0.0)) * (1.1 * u.glow) + bloom * bloom * (0.45 * u.glow) + far * (0.16 * u.glow);
   }
 
-  // scanlines on the curved glass, aperture-grille mask on the backing pixels
-  let profile = 0.5 + 0.5 * cos(6.2831853 * linePhase);
-  let gap = select(0.42, 0.3, u.interlace > 0.5);
-  col = col * lineGain * (1.0 + 0.16 * u.scanlines) * (1.0 - u.scanlines * gap * (1.0 - profile));
-  let column = u32(pos.x) % 3u;
-  var mask = vec3<f32>(1.0, 0.86, 0.86);
-  if (column == 1u) { mask = vec3<f32>(0.86, 1.0, 0.86); }
-  if (column == 2u) { mask = vec3<f32>(0.86, 0.86, 1.0); }
-  col = col * mix(vec3<f32>(1.0), mask, 0.55 * u.scanlines);
+  // thick scanlines that follow the curved glass: each line is a beam with a Gaussian profile; bright lines are wider (they fill the
+  // gap), dark ones thinner (the gap shows); a line is at least 3 CSS px (and so at least 3 backing px: the lines never alias with the
+  // pixel grid), or 1/240 of the height on a taller screen
+  let period = max(3.0, u.css.y / 240.0);
+  let f = fract(s.y / period) - 0.5;
+  let lum = clamp(max(col.r, max(col.g, col.b)), 0.0, 1.0);
+  let sigma = mix(0.2, 0.46, sqrt(lum));
+  let beam = exp(-f * f / (2.0 * sigma * sigma));
+  let depth = 0.94 * u.scanlines;
+  col = col * ((1.0 - depth) + depth * beam) * (1.0 + 0.5 * depth);
+
+  // aperture-grille mask on the backing pixels: red, green and blue phosphor stripes, each `cw` px wide (one CSS px), so the triads
+  // stay visible at any device pixel ratio; the darker channels keep `lo`, and the gain makes up for the light the mask removes
+  let cw = max(1.0, round(dpr));
+  let column = u32(floor(pos.x / cw)) % 3u;
+  var phos = vec3<f32>(1.0, 0.0, 0.0);
+  if (column == 1u) { phos = vec3<f32>(0.0, 1.0, 0.0); }
+  if (column == 2u) { phos = vec3<f32>(0.0, 0.0, 1.0); }
+  let lo = 1.0 - 0.75 * u.mask;
+  col = col * mix(vec3<f32>(lo), vec3<f32>(1.0), phos) * (1.0 + 0.75 * u.mask);
+
+  // warm phosphor: a little more red and less blue, and a warm black level
+  col = col * mix(vec3<f32>(1.0), vec3<f32>(1.07, 0.98, 0.82), u.warmth) + vec3<f32>(0.012, 0.008, 0.004) * u.warmth;
 
   // flicker, a slow rolling bar, faint static (all scaled by `flicker`, which is 0 with reduced motion)
   let roll = fract(u.time * 0.09) * 1.5 - 0.25;
@@ -127,17 +119,14 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let grain = fract(sin(dot(floor(pos.xy) + vec2<f32>(u.time * 61.0, u.time * 17.0), vec2<f32>(12.9898, 78.233))) * 43758.547) - 0.5;
   col = col * (1.0 + u.flicker * (0.022 * sin(u.time * 47.0) + 0.05 * bar)) + vec3<f32>(u.flicker * (0.018 * bar + 0.022 * grain));
 
-  // vignette and the dark rim of the curved glass
-  let v = clamp(1.0 - 0.16 * dot(qb, qb) * dot(qb, qb), 0.0, 1.0);
-  col = col * v * (0.55 + 0.45 * smoothstep(0.0, 9.0, -sd));
-  col = col * vec3<f32>(0.97, 1.02, 0.98);
+  // a soft shoulder instead of a hard clip: the brightest parts compress but keep their lines and their phosphor stripes
+  let over = max(col - vec3<f32>(0.55), vec3<f32>(0.0));
+  col = min(col, vec3<f32>(0.55)) + 0.43 * (vec3<f32>(1.0) - exp(-over / 0.43));
+
+  // vignette, the dark rim of the curved glass, and the glass reflection on top
+  let v = clamp(1.0 - 0.28 * dot(qb, qb) * dot(qb, qb), 0.0, 1.0);
+  col = col * v * (0.5 + 0.5 * smoothstep(0.0, 10.0, -sd)) + vec3<f32>(sheen);
 
   let cover = clamp(0.5 - 1.5 * sd * dpr, 0.0, 1.0);
   return vec4<f32>(mix(bezel, col, cover), 1.0);
-}
-
-// source -> history texture (same size)
-@fragment
-fn fs_copy(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
-  return textureLoad(src, vec2<i32>(pos.xy), 0);
 }

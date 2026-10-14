@@ -83,7 +83,7 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   console.error(`disintegrate GPU ${timestamps ? 'timestamp-query' : 'onSubmittedWorkDone (upper bound)'} ${W}x${H}: moving ${fmt(moving)}; idle ${fmt(idle)}; CPU render() ${fmt(cpu)}; adapter ${adapter.info?.vendor ?? ''} ${adapter.info?.architecture ?? ''}`);
   console.error(`disintegrate frames that make the embers (compute + render, submit to done, wall clock): ${birthWall.map((x) => x.toFixed(2)).join(', ')} ms`);
   assert.ok(moving.length > 200 && moving.every(Number.isFinite), 'measured the moving frames');
-  assert.equal(birthWall.length, 2, 'the embers were made twice: for the way out and for the way back');
+  assert.equal(birthWall.length, 1, 'the embers were made once: the page did not change during the play (they are made again only when it does)');
   inst.destroy();
   device.destroy();
 }, { timeout: 30000 });

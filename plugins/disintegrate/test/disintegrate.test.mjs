@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { checkPluginFolder } from '../../_shared/contract.mjs';
 import { readFileSync } from 'node:fs';
-import { NO_TARGET, blockedMapper, createTimeline, FLAKE_END, fillUniforms, flakeGrid, flakeTiming, FRONT_END, frontSpan, identityMapper, LIFE, MAX_PARTICLES, meta, originFor, parseColor, particleGrid, PLIFE, plugin, readOptions, trigger, UNIFORM_FLOATS } from '../index.js';
+import { CAMERA, NO_TARGET, blockedMapper, createTimeline, FLAKE_END, fillUniforms, flakeGrid, flakeTiming, FRONT_END, frontSpan, identityMapper, LIFE, MAX_PARTICLES, meta, originFor, parseColor, particleGrid, PLIFE, plugin, readOptions, trigger, UNIFORM_FLOATS } from '../index.js';
 import { findInvalid, sourcePointOnCanvas } from '../../_lib/transition.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
@@ -158,10 +158,13 @@ test('uniforms: the layout of disintegrate.wgsl', () => {
   assert.equal(data[11], Math.fround(Math.hypot(400, 100)), 'to the farthest corner');
   assert.deepEqual([data[12], data[13]], [1, 0], 'wind direction 0: to the right');
   assert.equal(data[14], Math.fround(0.4 * 400));
-  assert.deepEqual([data[16], data[17], data[19]], [20, 20, 1], 'flake size, flake columns, fade');
+  assert.deepEqual([data[16], data[17], data[19]], [28, 20, 1], 'flake size, flake columns, fade');
   assert.deepEqual([data[21], data[22]], [Math.fround(FRONT_END), Math.fround(PLIFE)]);
   assert.equal(data[27], 1);
   assert.equal(data[31], 1);
+  fillUniforms(data, { width: 800, height: 400, cssWidth: 400, cssHeight: 200 }, readOptions({}), 0.5, { cell: 6, cols: 134 }, { cols: 20 }, { x: 0, y: 100 }, 1, 1.25);
+  assert.deepEqual(Array.from(data.slice(32, 36)), [1.25, Math.fround(CAMERA.distance * 400), Math.fround(CAMERA.lift * 400), Math.fround(CAMERA.dof)], 'time, camera distance, lift, depth of field');
+  assert.ok(Math.abs(Math.hypot(data[36], data[37], data[38]) - 1) < 1e-6 && data[38] > 0.8, 'towards the lamp, from above');
 });
 
 test('findInvalid and the invalid field point on the canvas', () => {
@@ -218,7 +221,7 @@ async function instance(options) {
   }
 }
 
-test('instance: no GPU object is created per frame, idle or animating; one freeze per transition; the embers are made once per phase', async () => {
+test('instance: no GPU object is created per frame, idle or animating; nothing is frozen (the live page is sampled); the embers are made again only when the page changes', async () => {
   const { inst, gpu, canvas, frame } = await instance({});
   inst.render(frame(0));
   const before = { ...gpu.created };
@@ -226,17 +229,19 @@ test('instance: no GPU object is created per frame, idle or animating; one freez
   assert.deepEqual(gpu.created, before, 'idle frames');
   assert.equal(gpu.dispatches.length, 0, 'idle: no ember is made');
   trigger(canvas, 'play');
-  assert.equal(gpu.created.submit, before.submit + 1, 'the freeze copy');
-  assert.equal(gpu.created.texture, before.texture + 1, 'the frozen texture, once');
+  assert.equal(gpu.created.submit, before.submit, 'no copy of the picture: the transition samples the live page');
+  assert.equal(gpu.created.texture, before.texture, 'no frozen texture');
   inst.render(frame(500));
   const afterFirst = { ...gpu.created };
-  assert.deepEqual(afterFirst, { ...before, texture: before.texture + 1, submit: before.submit + 1, bindGroup: before.bindGroup + 3, buffer: before.buffer + 1 },
-    'first burning frame: the ember buffer and its two bind groups, and the bind group of the frozen view');
+  assert.deepEqual(afterFirst, { ...before, bindGroup: before.bindGroup + 2, buffer: before.buffer + 1 }, 'first burning frame: the ember buffer and its two bind groups');
   assert.equal(gpu.dispatches.length, 1, 'the embers of the way out');
   assert.equal(gpu.dispatches[0], Math.ceil(160 * 80 / 64), 'one invocation per ember cell (2.5 css px at dpr 2 = 5 backing px)');
-  for (let k = 1; k <= 400; k += 1) inst.render(frame(500 + k * 8.33));
-  assert.equal(gpu.dispatches.length, 2, 'and once more for the way back (the live picture)');
-  assert.deepEqual(gpu.created, afterFirst, 'animating frames create nothing (the live view had its bind group from the idle frames)');
+  for (let k = 1; k <= 100; k += 1) inst.render(frame(500 + k * 8.33));
+  assert.equal(gpu.dispatches.length, 1, 'the page did not change: the same embers');
+  inst.render({ ...frame(1400), sourceVersion: 2 });
+  assert.equal(gpu.dispatches.length, 2, 'the page changed (a counter, typing): the embers are made from the new picture');
+  for (let k = 1; k <= 300; k += 1) inst.render({ ...frame(1400 + k * 8.33), sourceVersion: 2 });
+  assert.deepEqual(gpu.created, afterFirst, 'animating frames create nothing');
 });
 
 test('instance: identity mapper when assembled, blocked while it moves; continuous only while animating; paper, flakes and embers drawn', async () => {
@@ -249,7 +254,7 @@ test('instance: identity mapper when assembled, blocked while it moves; continuo
   inst.render(frame(10));
   assert.equal(inst.captureInputMapper(frame(10)), blockedMapper, 'g = 0 but the transition has started: blocked');
   inst.render(frame(300));
-  assert.deepEqual(gpu.draws.slice(-3), [[3], [6, 20 * 10], [3, 160 * 80]], 'the paper (full screen), one quad per flake (20 css px), one triangle per ember cell');
+  assert.deepEqual(gpu.draws.slice(-3), [[3], [6, 15 * 8], [3, 160 * 80]], 'the paper (full screen), one quad per flake (28 css px), one triangle per ember cell');
   inst.render(frame(1010));
   inst.render(frame(1400));
   inst.render(frame(2400));

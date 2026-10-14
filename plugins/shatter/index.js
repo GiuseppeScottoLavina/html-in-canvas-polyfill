@@ -56,6 +56,20 @@ const lostOn = new WeakSet();
 /** @typedef {'impact'|'crack'|'out'|'in'|'play'} Action */
 /** @type {WeakMap<HTMLCanvasElement, (action: Action, point?: {x: number, y: number}|null) => Promise<boolean>>} */
 const controllers = new WeakMap();
+/** @type {WeakMap<HTMLCanvasElement, () => Promise<'intact'|'cracked'|'gone'|null>>} */
+const settlers = new WeakMap();
+
+/**
+ * Resolves once nothing of the shatter plugin on `canvas` moves any more, with what the pane then shows: 'intact', 'cracked' or 'gone'
+ * (null when no instance runs there or it is removed first). When something moves, it resolves after the frame that draws the end state
+ * was rendered; when nothing moves, at once. A deterministic signal for tests and page code (no polling, no timeout).
+ * @param {HTMLCanvasElement} canvas
+ * @returns {Promise<'intact'|'cracked'|'gone'|null>}
+ */
+export function settled(canvas) {
+  const wait = settlers.get(canvas);
+  return wait ? wait() : Promise.resolve(null);
+}
 
 /**
  * Start a transition of the shatter plugin running on `canvas`.
@@ -280,6 +294,11 @@ export const plugin = Object.freeze({
       return done;
     }
     controllers.set(canvas, request);
+    /** @type {((state: 'intact'|'cracked'|'gone'|null) => void)[]} */ const waiters = [];
+    const restingState = () => (!fall.assembled ? 'gone' : cracks.phase === 'gone' ? 'cracked' : 'intact');
+    const moving = () => cracks.animating || fall.animating;
+    const wait = () => (moving() ? new Promise((resolve) => { waiters.push(resolve); }) : Promise.resolve(restingState()));
+    settlers.set(canvas, wait);
     if (fall.phase === 'gone' && s.state === 'in') { crossfade = reduced(); request('in'); }   // the intro: the shards fly into place
 
     context.listen('pointerdown', (event) => {
@@ -290,10 +309,12 @@ export const plugin = Object.freeze({
       pointer.t = performance.now();
     });
     const onSubmit = (/** @type {Event} */ event) => {
-      if (s.onSubmit === 'off' || !fall.assembled || cracks.animating) return;   // a submit during a transition changes nothing
+      if (s.onSubmit === 'off' || !fall.assembled) return;                       // a submit while shards fall changes nothing
       const bad = findInvalid(source, s.invalidSelector);
       const match = s.onSubmit === 'always' || (s.onSubmit === 'invalid' ? !!bad : !bad);
-      if (!match) { if (cracked()) request('in'); return; }                        // the form was fixed: the glass heals
+      // the form was fixed: the glass heals, also while its cracks are still running (they close from where they are)
+      if (!match) { if (!cracks.assembled && cracks.phase !== 'in') request('in'); return; }
+      if (cracks.animating) return;                                                // a second impact while the cracks run changes nothing
       const recent = performance.now() - pointer.t < POINTER_MS;
       const el = bad ?? /** @type {any} */ (event).submitter;
       const at = !recent && el?.getBoundingClientRect ? sourcePointOnCanvas(source.getBoundingClientRect(), el.getBoundingClientRect(), { width: canvas.clientWidth, height: canvas.clientHeight }) : null;
@@ -369,6 +390,7 @@ export const plugin = Object.freeze({
           }
         }
         pass.end();
+        if (waiters.length && frame.sourceReady && !moving()) { const state = restingState(); for (const resolve of waiters.splice(0)) resolve(state); }
       },
       // the mapper of the frame just presented: the identity, the mapper of this crack pattern (made once per crack), or blocking
       captureInputMapper() { return shown === 'intact' ? identityMapper : shown === 'cracked' && crackedMapper ? crackedMapper : blockedMapper; },
@@ -392,6 +414,8 @@ export const plugin = Object.freeze({
         destroyed = true;
         fall.cancel();
         cracks.cancel();
+        for (const resolve of waiters.splice(0)) resolve(null);
+        if (settlers.get(canvas) === wait) settlers.delete(canvas);
         source.removeEventListener('submit', onSubmit);
         if (controllers.get(canvas) === request) controllers.delete(canvas);
         uniforms.destroy?.();

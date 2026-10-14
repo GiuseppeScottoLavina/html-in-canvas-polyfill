@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { checkPluginFolder } from '../../_shared/contract.mjs';
-import { blockedMapper, CRACK_MS, crackFront, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions, trigger } from '../index.js';
+import { blockedMapper, CRACK_MS, crackFront, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions, settled, trigger } from '../index.js';
 import { BEVEL, buildShards, crackedLayout, crackedSource, HEAL, MAX_POLY, MAX_SHARDS, MAX_VERTICES, mulberry32, polygonCentroid, SHARD_FLOATS, shardPoint, SPAN, spiderweb, VERTEX_FLOATS } from '../shards.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
@@ -309,6 +309,34 @@ test('instance: submit wiring: invalid cracks, invalid again breaks it, a valid 
   inst.render(frame(2000));
   assert.equal(inst.captureInputMapper(frame(0)), blockedMapper, 'the second invalid submit breaks the pane');
   assert.deepEqual(gpu.draws.at(-1), [3, 260], 'with debris: one triangle per chip');
+});
+
+test('instance: a valid submit while the cracks still run heals them (a fixed form never stays behind cracked glass); settled() reports the end state', async () => {
+  const { inst, source, canvas, frame } = await instance({ onSubmit: 'invalid' });
+  inst.render(frame(0));
+  assert.equal(await settled(canvas), 'intact', 'nothing moves: at once');
+  source.invalid = true;
+  source.dispatchEvent(new Event('submit'));
+  inst.render(frame(10));
+  inst.render(frame(10 + CRACK_MS / 3));                   // the cracks are a third of the way out
+  /** @type {any[]} */ const seen = [];
+  settled(canvas).then((v) => seen.push(v));
+  source.invalid = false;
+  source.dispatchEvent(new Event('submit'));                // fixed and submitted again, before the cracks have finished
+  assert.equal(inst.continuous, true, 'the cracks turn back');
+  inst.render(frame(10 + CRACK_MS / 3 + 50));
+  await Promise.resolve();
+  assert.deepEqual(seen, [], 'not settled while they close');
+  inst.render(frame(10 + CRACK_MS * 2));
+  await Promise.resolve();
+  assert.deepEqual(seen, ['intact'], 'settled after the frame that draws the intact pane');
+  assert.equal(inst.captureInputMapper(frame(0)), identityMapper);
+  source.invalid = true;
+  source.dispatchEvent(new Event('submit'));
+  inst.render(frame(2000)); inst.render(frame(2010 + CRACK_MS));
+  assert.equal(await settled(canvas), 'cracked');
+  inst.destroy();
+  assert.equal(await settled(canvas), null, 'no instance any more');
 });
 
 test('instance: reduced motion: nothing cracks; an impact crossfades', async () => {

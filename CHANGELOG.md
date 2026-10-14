@@ -23,6 +23,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 ### Changed
 
+- The `crt` example plugin looks like an old bar arcade monitor by default (preset `arcade`: thick scanlines, an RGB aperture grille, strong phosphor glow, warm phosphor, a reflection on the glass; preset `monitor` is cleaner). The interlace mode was removed. The input mapper is unchanged.
 - Following the specification change of 2026-10-08 (whatwg/html#11588), `ElementImage` has `close()` only: its size is `canvas.getElementImageDefaultSize(elementImage)`. There is no deprecated `width` / `height` alias, because native Chrome has none and code that relied on it would pass on the polyfill and fail natively.
 - The two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from native builds on 2026-10-09, remain as deprecated legacy overloads until the pinned WPT revision moves.
 - `options.mode: 'polyfill'` over a usable native implementation steps aside with one warning instead of throwing; a legacy native without the bridge bundle is used as found (one warning) instead of being refused.
@@ -31,6 +32,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 - `install()` threw `HicUnsupportedError('partial-native')` on Chrome Canary 157.0.8103.0, which exposes the API by default, because the native probe required `ElementImage.width` / `height`. The probe now decides on the core behaviour only, and Canary 157 installs in mode `native` and draws natively.
 - Selecting static text inside the canvas (double or triple click, drag, select all) did not show on the canvas until something else repainted it, and clearing the selection did not show either; with an effect plugin the picture stayed unchanged until the effect was switched. A selection change now repaints the drawables where the old and the new highlight are.
+- A text or style change on an element whose text-shadow, box-shadow or outline reached further than 24 css px past its box (`options.inkMargin`) left the old shadow on the canvas: a counter with a glow or an offset shadow on a transparent background showed ghosts of older digits. The repainted area now includes the ink the element paints outside its box, before and after the change.
 
 ### Known limitations
 

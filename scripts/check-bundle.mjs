@@ -32,12 +32,12 @@ const PLUGIN_CEILING = 16 * KB;
  * shatter are above the 16 KB default: most of each is its WGSL, inlined by the build (shatter also builds its crack pattern on the CPU).
  */
 const PLUGIN_LIMITS = {
-  crt: 14 * KB, // 13,907; 10.5 -> 14 KB: interlace (second pipeline for the field history, the toggle, WGSL)
-  disintegrate: 33.5 * KB, // 32,819; 15.25 -> 33.5 KB: burning-paper rework (front, Voronoi flakes, embers made by a compute pass; the WGSL is inlined)
+  crt: 14 * KB, // 13,669; 10.5 -> 14 KB: the arcade look (glow rings, aperture grille, glass), the presets and their picker
+  disintegrate: 41.5 * KB, // 40,589; 33.5 -> 41.5 KB: live sampling, 3D flakes (perspective, lighting), depth of field, heat shimmer, smoke, live counter (the WGSL is inlined)
   glitch: 13.5 * KB, // 13,269
   'holo-card': 12.75 * KB, // 12,358
   'liquid-glass': 12.25 * KB, // 11,810
-  'page-curl': 15.5 * KB, // 15,474; 13.75 -> 15.5 KB: dog-ear, auto-peek, grab cursor, hint label
+  'page-curl': 33.5 * KB, // 32,375; 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
   shatter: 29 * KB, // 28,363; 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
   water: 10.75 * KB, // 10,479; 10.5 -> 10.75 KB: meta.reducedMotion
 };

@@ -18,6 +18,8 @@ const active = () => page.evaluate('document.activeElement && document.activeEle
 const value = (/** @type {string} */ id) => page.evaluate(`document.getElementById(${JSON.stringify(id)}).value`);
 const feedback = () => page.evaluate(`document.getElementById('form-feedback').dataset.state + ' ' + document.getElementById('email').className`);
 const changed = async (/** @type {any} */ img) => compareImages((await shot(page)).img, img).countOver16;
+/** what the pane shows once nothing moves ('intact', 'cracked', 'gone'): the plugin's own signal, resolved after the frame of the end state */
+const rest = () => page.evaluate(`HicLivePlugins.shatter.settled(document.getElementById('stage'))`);
 try {
   c.check('the gallery is ready with the plugin applied', true, await page.evaluate('({ mode: window.__gallery.mode, active: window.__gallery.active })'));
   c.check('the intro ends: the host stops rendering (idle, not continuous)', await idle(page));
@@ -37,7 +39,7 @@ try {
   await clickOn(page, '#submit');
   await sleep(120);
   c.check('a trusted click on Submit with an invalid email cracks the glass: the frame 120 ms later differs', (await changed(typed)) > 2000);
-  c.check('the cracks settle: the host goes idle (the cracked pane is still)', await idle(page));
+  c.check('the cracks settle: the plugin reports a cracked pane and the host goes idle (the pane is still)', (await rest()) === 'cracked' && await idle(page));
   const cracked = (await shot(page)).img;
   const crackDiff = compareImages(cracked, typed).countOver16;
   c.check('cracked: crack lines and shifted pieces over a form that is still there', crackDiff > 3000 && crackDiff < 0.35 * area && pixelStats(cracked).nonBlank, { changedPixels: crackDiff });
@@ -61,7 +63,7 @@ try {
   await clickOn(page, '#name'); await sleep(60);
   c.check('during the fall a trusted click on the name field changes nothing: no focus change (NO_TARGET, swallowed by the host)',
     (await active()) === focusedBefore, { before: focusedBefore, after: await active() });
-  c.check('the fall ends (idle again)', await idle(page), { ms: Date.now() - t0 });
+  c.check('the fall ends: the plugin reports the intact pane and the host goes idle', (await rest()) === 'intact' && await idle(page), { ms: Date.now() - t0 });
   const after = (await shot(page)).img;
   const backDiff = compareImages(after, typed).countOver16;
   c.check('the form is back, cracks closed, not blank, close to before (only the error line, the red email border and the message changed)',
@@ -75,13 +77,23 @@ try {
   await clickOn(page, '#effect-controls .hic-shatter-ui button');
   await sleep(150);
   c.check('the Strike button of the plugin controls (trusted click) cracks the pane', (await changed(intact)) > 2000);
-  await idle(page);
+  c.check('and the pane rests cracked', (await rest()) === 'cracked');
   await page.evaluate(`document.getElementById('email').value = 'ada@example.com'`);
   await clickOn(page, '#submit');
-  c.check('a valid Submit while cracked heals the glass (the cracks close)', await idle(page));
+  c.check('a valid Submit while cracked heals the glass (the cracks close)', (await rest()) === 'intact');
   const healed = (await shot(page)).img;
   const healDiff = compareImages(healed, intact).countOver16;
   c.check('healed: the intact form with the success line', (await page.evaluate(`document.getElementById('form-feedback').dataset.state`)) === 'success' && healDiff < 0.03 * area, { changedPixels: healDiff });
+  await idle(page);
+  // the same while the cracks are still running: pointer input is blocked then (NO_TARGET), but the keyboard is not (Enter submits the
+  // form; modelled with requestSubmit): a fixed form must not stay behind cracked glass
+  await clickOn(page, '#effect-controls .hic-shatter-ui button');
+  await sleep(100);
+  const running = await page.evaluate(`(() => { const s = HicLivePlugins.shatter.settled(document.getElementById('stage')); let done = false; s.then(() => { done = true; }); return new Promise((ok) => setTimeout(() => ok(!done), 0)); })()`);
+  await page.evaluate(`document.getElementById('demo-form').requestSubmit()`);
+  const quick = await rest();
+  const quickDiff = await changed(healed);
+  c.check('a valid submit (keyboard) while the cracks still run heals the glass too', running && quick === 'intact' && quickDiff < 0.03 * area, { running, state: quick, changedPixels: quickDiff });
 
   // what scripts/check-examples.mjs asks of every plugin of the gallery: picked after "Effect off", its controls mount and the presented
   // pixels 900 ms later differ from "Effect off" (here: the intro), and the frame is not blank

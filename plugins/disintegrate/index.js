@@ -1,9 +1,10 @@
 /**
  * Disintegrate (effect plugin ABI v2): an EXAMPLE of the effects extension of html-in-canvas-polyfill, not part of the polyfill.
  * The drawn form burns away like paper: a ragged front sweeps out from the Submit button (or a side), scorching the form ahead of it with a
- * thin glowing edge; behind it the form breaks into flakes that carry its exact pixels, lift, curl and burn from their rims, and every
- * pixel of text, border or control they lose becomes an ember of that pixel's colour. Then it all plays in reverse, showing the form's new
- * state. Shader: ./disintegrate.wgsl.
+ * thin glowing edge and the air above it shimmering; behind it the form breaks into flakes that lift off in 3D, tumble, catch the light and
+ * burn from their rims, and every pixel of text, border or control they lose becomes an ember. All of it samples the LIVE page every frame:
+ * a running counter keeps counting and typed text keeps appearing on the flying flakes and embers. A camera above the page sees what rises
+ * towards it larger and out of focus. Then it all plays in reverse, showing the form's new state. Shader: ./disintegrate.wgsl.
  *
  * A transition plugin: idle, it presents the source unchanged and its input mapper is the identity, so the form is fully usable. While pieces
  * move, are gone or fade, its mapper BLOCKS pointer input: it returns NO_TARGET (the effects ABI value for "no element here") for every point,
@@ -26,19 +27,22 @@ export { NO_TARGET, blockedMapper, createTimeline, findInvalid, identityMapper, 
 export const meta = Object.freeze({
   name: 'disintegrate',
   title: 'Disintegrate',
-  description: 'The form burns away from the Submit button into flakes and embers of its own pixels, then re-forms in its new state. Input is blocked while it plays.',
-  defaults: Object.freeze({ duration: 2000, onSubmit: 'valid', intro: true }),
+  description: 'The live form burns from the Submit button into 3D flakes and embers that keep showing it as it changes (a counter, typing), then re-forms in its new state.',
+  defaults: Object.freeze({ duration: 3200, flakeSize: 28, onSubmit: 'valid', intro: true }),
   reducedMotion: 'With reduced motion the same triggers crossfade to the backdrop and back; nothing burns or moves.',
 });
 
 /** floats in the uniform block (disintegrate.wgsl `Uniforms`) */
-export const UNIFORM_FLOATS = 32;
+export const UNIFORM_FLOATS = 40;
+/** the camera's distance, in canvas sizes; how far flakes rise towards it, in canvas sizes; blur per css px out of the page plane */
+export const CAMERA = Object.freeze({ distance: 2.4, lift: 0.34, dof: 0.012 });
+const LIGHT = (() => { const v = [-0.3, -0.42, 1]; const l = Math.hypot(...v); return v.map((x) => x / l); })();
 /** the ember grid grows its cells beyond this many embers (a 4K canvas at 1.5 px embers would be 3.7 million) */
 export const MAX_PARTICLES = 262144;
 /** g at which the front has crossed the whole canvas; then the last flakes still live LIFE, their last embers PLIFE */
-export const FRONT_END = 0.6;
+export const FRONT_END = 0.45;
 /** share of the timeline a flake lives from lifting off to gone */
-export const LIFE = 0.32;
+export const LIFE = 0.5;
 /** share of the timeline an ember lives */
 export const PLIFE = 0.16;
 /** the age at which a flake is consumed (FLAKE_END in disintegrate.wgsl): its last embers are born then */
@@ -134,11 +138,11 @@ export function readOptions(o) {
   const from = o.from;
   return {
     particleSize: clampNumber(o.particleSize, 1.5, 12, 2.5),
-    flakeSize: clampNumber(o.flakeSize, 8, 64, 20),
+    flakeSize: clampNumber(o.flakeSize, 8, 64, 28),
     wind: clampNumber(o.wind, 0, 2, 1),
     direction: clampNumber(o.direction, -180, 180, -70),
     turbulence: clampNumber(o.turbulence, 0, 2, 1),
-    duration: clampNumber(o.duration, 300, 8000, 2000),
+    duration: clampNumber(o.duration, 300, 8000, 3200),
     glow: parseColor(o.glow, DEFAULT_GLOW),
     glowAmount: clampNumber(o.glowAmount, 0, 1, 0.9),
     density: clampNumber(o.density, 0, 1, 0.5),
@@ -151,6 +155,8 @@ export function readOptions(o) {
     reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : null,
     state: /** @type {'out'|'in'} */ (o.state === 'out' ? 'out' : 'in'),
     seed: clampNumber(o.seed, 0, 1000, 1),
+    /** the plugin's controls show a running counter inside the form (it makes the liveness of the flakes visible) */
+    liveCounter: o.liveCounter === true,
   };
 }
 
@@ -164,8 +170,9 @@ export function readOptions(o) {
  * @param {{cols: number}} flakes  the flake grid
  * @param {{x: number, y: number}} origin  css px
  * @param {number} fade
+ * @param {number} [time]  seconds since this phase of the transition started
  */
-export function fillUniforms(data, frame, s, g, grid, flakes, origin, fade) {
+export function fillUniforms(data, frame, s, g, grid, flakes, origin, fade, time = 0) {
   const angle = (s.direction * Math.PI) / 180;
   const dx = Math.max(0, -origin.x, origin.x - frame.cssWidth), dy = Math.max(0, -origin.y, origin.y - frame.cssHeight);
   const dmin = Math.hypot(dx, dy);
@@ -179,6 +186,9 @@ export function fillUniforms(data, frame, s, g, grid, flakes, origin, fade) {
   data[20] = s.seed; data[21] = FRONT_END; data[22] = PLIFE; data[23] = s.density;
   data[24] = s.backdrop[0]; data[25] = s.backdrop[1]; data[26] = s.backdrop[2]; data[27] = 1;
   data[28] = s.glow[0]; data[29] = s.glow[1]; data[30] = s.glow[2]; data[31] = 1;
+  const size = Math.max(frame.cssWidth, frame.cssHeight);
+  data[32] = time; data[33] = CAMERA.distance * size; data[34] = CAMERA.lift * size; data[35] = CAMERA.dof;
+  data[36] = LIGHT[0]; data[37] = LIGHT[1]; data[38] = LIGHT[2]; data[39] = 0;
 }
 
 /** @param {Document} doc */
@@ -187,7 +197,9 @@ function injectUiStyle(doc) {
   const style = doc.createElement('style');
   style.dataset.hicEffectStyle = 'disintegrate';
   style.textContent = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
-    + `.hic-dis-ui label{display:grid}.hic-dis-ui input{width:100%;margin:0;accent-color:#ffb06b}.hic-dis-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#1b0d02;background:#ffb06b}`;
+    + `.hic-dis-ui label{display:grid}.hic-dis-ui input{width:100%;margin:0;accent-color:#ffb06b}.hic-dis-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#1b0d02;background:#ffb06b}`
+    + `.hic-dis-live{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin-top:4px}.hic-dis-live label{display:flex;align-items:center;gap:6px}.hic-dis-live input{width:15px;height:15px}`
+    + `.hic-dis-counter{font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:#ffd7a8}.hic-dis-counter[hidden]{display:none}`;
   (doc.head || doc.documentElement).append(style);
 }
 
@@ -207,7 +219,7 @@ export const plugin = Object.freeze({
       entries: [
         { binding: 0, visibility: S.VERTEX | S.FRAGMENT | S.COMPUTE, buffer: { type: 'uniform' } },
         { binding: 1, visibility: S.FRAGMENT, sampler: { type: 'filtering' } },
-        { binding: 2, visibility: S.FRAGMENT | S.COMPUTE, texture: { sampleType: 'float' } },   // cs_embers reads the pixels of the embers
+        { binding: 2, visibility: S.VERTEX | S.FRAGMENT | S.COMPUTE, texture: { sampleType: 'float' } },   // embers read their live pixel
       ],
     });
     // the embers: written by cs_embers once per phase of a transition, read by vs_ember every frame
@@ -234,10 +246,8 @@ export const plugin = Object.freeze({
     /** @type {any} */ let emberWriteGroup = null;
     /** @type {any} */ let emberReadGroup = null;
     /** what the embers in emberBuffer were made from: recomputed when any of it changes */
-    const made = { view: /** @type {any} */ (null), freeze: -1, version: -1, x: NaN, y: NaN, grid: /** @type {any} */ (null), flakes: /** @type {any} */ (null), options: -1 };
-    let freezes = 0;
+    const made = { view: /** @type {any} */ (null), version: -1, x: NaN, y: NaN, grid: /** @type {any} */ (null), flakes: /** @type {any} */ (null), options: -1 };
     let optionsSerial = 0;
-    const copy = pipeline('vs_full', 'fs_copy', 'rgba8unorm');
     const uniforms = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: g.GPUBufferUsage.UNIFORM | g.GPUBufferUsage.COPY_DST });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const data = new Float32Array(UNIFORM_FLOATS);
@@ -274,38 +284,13 @@ export const plugin = Object.freeze({
     const origin = { x: 0, y: 0, set: false };
     const fire = { x: 0, y: 0 };
     /** @type {{x: number, y: number, t: number}} */ const pointer = { x: 0, y: 0, t: -Infinity };
-    /** the source of the last rendered frame: what the user sees right now, frozen when a transition starts */
-    /** @type {any} */ let lastTexture = null;
-    /** @type {any} */ let lastView = null;
-    /** @type {any} */ let frozen = null;
-    /** @type {any} */ let frozenView = null;
-    let useFrozen = false;
-
-    /** Copy the picture the user sees now into `frozen` (its own command buffer, ordered before the next source upload). */
-    function freeze() {
-      if (!lastTexture || !lastView) return false;
-      const w = lastTexture.width, h = lastTexture.height;
-      if (!frozen || frozen.width !== w || frozen.height !== h) {
-        frozen?.destroy?.();
-        frozen = device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: g.GPUTextureUsage.TEXTURE_BINDING | g.GPUTextureUsage.RENDER_ATTACHMENT });
-        frozenView = frozen.createView();
-      }
-      const encoder = device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: frozenView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }] });
-      pass.setPipeline(copy); pass.setBindGroup(0, groupFor(lastView)); pass.draw(3); pass.end();
-      device.queue.submit([encoder.finish()]);
-      freezes += 1;
-      return true;
-    }
-
     /**
      * Make the embers of this picture, origin and grid with one compute pass ahead of the frame's render pass, when anything they depend on
      * changed (a new phase of the transition, a page update during the way back, a resize, new options). Allocates only when the grid grows.
      * @param {any} encoder @param {any} group @param {any} view @param {number} version
      */
     function makeEmbers(encoder, group, view, version) {
-      const frozenNow = view === frozenView;
-      if (made.view === view && made.freeze === (frozenNow ? freezes : -1) && (frozenNow || made.version === version) && made.x === fire.x
+      if (made.view === view && made.version === version && made.x === fire.x
         && made.y === fire.y && made.grid === grid && made.flakes === flakeCells && made.options === optionsSerial) return;
       if (!emberBuffer || emberBuffer.size < grid.count * 32) {
         emberBuffer?.destroy?.();
@@ -317,7 +302,7 @@ export const plugin = Object.freeze({
       pass.setPipeline(birth); pass.setBindGroup(0, group); pass.setBindGroup(1, emberWriteGroup);
       pass.dispatchWorkgroups(Math.ceil(grid.count / 64));
       pass.end();
-      made.view = view; made.freeze = frozenNow ? freezes : -1; made.version = version; made.x = fire.x; made.y = fire.y;
+      made.view = view; made.version = version; made.x = fire.x; made.y = fire.y;
       made.grid = grid; made.flakes = flakeCells; made.options = optionsSerial;
     }
 
@@ -326,7 +311,6 @@ export const plugin = Object.freeze({
       if (action !== 'out' && action !== 'in' && action !== 'play') return Promise.reject(new TypeError('disintegrate: unknown action ' + action));
       if (destroyed) return Promise.resolve(false);
       if (action !== 'in' && timeline.assembled) {
-        useFrozen = freeze();
         const recent = performance.now() - pointer.t < POINTER_MS;
         const at = point ?? (recent ? pointer : null);
         origin.set = !!at;
@@ -371,10 +355,7 @@ export const plugin = Object.freeze({
         context.requestRender();
       },
       render(/** @type {EffectRenderFrame} */ frame) {
-        lastTexture = frame.sourceTexture;
-        lastView = frame.sourceView;
         const amount = frame.sourceReady ? timeline.advance(frame.now) : timeline.g;
-        if (amount >= 1 || timeline.assembled) useFrozen = false;
         assembledFrame = timeline.assembled;
         if (gridOf[0] !== frame.width || gridOf[1] !== frame.height || gridOf[2] !== frame.dpr || gridOf[3] !== s.particleSize || gridOf[4] !== s.flakeSize) {
           gridOf[0] = frame.width; gridOf[1] = frame.height; gridOf[2] = frame.dpr; gridOf[3] = s.particleSize; gridOf[4] = s.flakeSize;
@@ -383,12 +364,14 @@ export const plugin = Object.freeze({
         }
         originFor(s.from, origin.set ? origin : null, frame.cssWidth, frame.cssHeight, fire);
         const fade = assembledFrame ? 1 : crossfade ? 1 - amount : 1;
-        fillUniforms(data, frame, s, amount, grid, flakeCells, fire, fade);
+        // the time of the shimmer: a function of g (so a frame at a given instant is the same at any frame cap)
+        fillUniforms(data, frame, s, amount, grid, flakeCells, fire, fade, (amount * s.duration) / 1000);
         device.queue.writeBuffer(uniforms, 0, data);
         attachment.view = frame.destinationView;
         attachment.clearValue.r = s.backdrop[0]; attachment.clearValue.g = s.backdrop[1]; attachment.clearValue.b = s.backdrop[2];
         passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('disintegrate');
-        const picture = useFrozen && frozenView ? frozenView : frame.sourceView;
+        // the live page: every frame samples the source as it is now (a counter, typed text keep changing on the flakes and embers)
+        const picture = frame.sourceView;
         const group = groupFor(picture);
         const burning = frame.sourceReady && !assembledFrame && !crossfade && amount < 1;
         if (burning) makeEmbers(frame.encoder, group, picture, frame.sourceVersion ?? -1);
@@ -408,26 +391,46 @@ export const plugin = Object.freeze({
       captureInputMapper() { return assembledFrame ? identityMapper : blockedMapper; },
       mountUI(root, ui) {
         const doc = root.ownerDocument;
+        const win2 = /** @type {any} */ (doc.defaultView);
         injectUiStyle(doc);
         const box = doc.createElement('div');
         box.className = 'hic-dis-ui';
-        box.innerHTML = '<button type="button">Burn</button><label>Flake size<input type="range" min="10" max="48" step="2"></label><label>Wind<input type="range" min="0" max="200" step="5"></label>';
-        const [size, wind] = /** @type {NodeListOf<HTMLInputElement>} */ (box.querySelectorAll('input'));
+        box.innerHTML = '<button type="button">Burn</button><label>Flake size<input type="range" min="10" max="48" step="2"></label><label>Wind<input type="range" min="0" max="200" step="5"></label>'
+          + '<div class="hic-dis-live"><label><input type="checkbox"> Live counter</label><output class="hic-dis-counter" aria-label="A counter that keeps running while the form burns"></output></div>';
+        const [size, wind, live] = /** @type {NodeListOf<HTMLInputElement>} */ (box.querySelectorAll('input'));
+        const counter = /** @type {HTMLOutputElement} */ (box.querySelector('output'));
         const o = readOptions(ui.getOptions());
         size.value = String(o.flakeSize);
         wind.value = String(Math.round(o.wind * 100));
+        live.checked = o.liveCounter;
+        // live content inside the form: a stopwatch that keeps running while the form burns, so the flakes show it changing
+        let timer = 0, t0 = 0;
+        const show = () => {
+          const t = (performance.now() - t0) / 1000;
+          counter.value = `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+        };
+        const sync = () => {
+          if (timer) { win2?.clearInterval?.(timer); timer = 0; }
+          counter.hidden = !live.checked;
+          if (live.checked) { t0 = performance.now(); show(); timer = win2?.setInterval?.(show, 50) ?? 0; }
+        };
         const onBurn = () => { trigger(canvas, 'play'); };   // the fire starts at the pointer press on this button
         const onSize = () => ui.setOptions({ flakeSize: Number(size.value) });
         const onWind = () => ui.setOptions({ wind: Number(wind.value) / 100 });
+        const onLive = () => { ui.setOptions({ liveCounter: live.checked }); sync(); };
         const button = /** @type {HTMLButtonElement} */ (box.querySelector('button'));
         button.addEventListener('click', onBurn);
         size.addEventListener('input', onSize);
         wind.addEventListener('input', onWind);
+        live.addEventListener('change', onLive);
         root.append(box);
+        sync();
         return () => {
+          if (timer) win2?.clearInterval?.(timer);
           button.removeEventListener('click', onBurn);
           size.removeEventListener('input', onSize);
           wind.removeEventListener('input', onWind);
+          live.removeEventListener('change', onLive);
           box.remove();
         };
       },
@@ -438,7 +441,6 @@ export const plugin = Object.freeze({
         if (controllers.get(canvas) === request) controllers.delete(canvas);
         uniforms.destroy?.();
         emberBuffer?.destroy?.();
-        frozen?.destroy?.();
       },
     };
   },

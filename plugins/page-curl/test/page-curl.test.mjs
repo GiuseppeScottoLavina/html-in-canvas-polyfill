@@ -1,11 +1,13 @@
-// Node tests of the page-curl plugin: the folder contract, the curl geometry and the mapper formula (against an independent port of the
-// whole shader region decision), the grab gesture (which events are taken from the page), the release on the frame clock (the same at
-// every frame cap), the rest pose (dog-ear, hover lift, auto-peek, grab cursor), reduced motion, and the render path (no allocation per frame).
+// Node tests of the page-curl plugin: the folder contract; the fold (an isometry, the corner under the pointer, the bound edge flat); the
+// mapper against an independent forward rendering of the sheet (every point of the sheet splatted through the camera into a z-buffer);
+// the grab gesture (which events are taken from the page); the springs on the frame clock (the same pose at the same time whatever the
+// frame cap); the rest pose (dog-ear, hover lift, auto-peek, grab cursor); reduced motion; and the render path (no allocation per frame).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { checkPluginFolder } from '../../_shared/contract.mjs';
-import { NO_TARGET, PEEK_MS, RELEASE_MS, UNIFORM_FLOATS, curlGeometry, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, plugin, releaseEase } from '../index.js';
+import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
+import { NO_TARGET, PEEK_MS, UNIFORM_FLOATS, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, plugin, poseState } from '../index.js';
 
 const W = 480;
 const H = 320;
@@ -20,113 +22,143 @@ test('meta and the definition agree; the defaults are valid options', () => {
   assert.deepEqual(Object.keys(meta.defaults).sort(), ['autoPeek', 'corner', 'dogEar', 'radius', 'shadow']);
 });
 
-/** @param {number} cx @param {number} cy @param {number} dx @param {number} dy @param {number} [r] */
-function state(cx, cy, dx, dy, r = 36) {
-  const s = new Float32Array(UNIFORM_FLOATS);
-  s[2] = W; s[3] = H;
-  curlGeometry(s, cx, cy, dx, dy, r);
-  return s;
-}
+// ------------------------------------------------------------------------------------------------ the fold
+const fold = (/** @type {number} */ x, /** @type {number} */ y, /** @type {'top'|'bottom'} */ lead = 'bottom', maxR = 48) => {
+  const c = constrainCorner({ x, y }, lead, W, H, { x: 0, y: 0 });
+  return { f: foldFor(c, lead, W, H, maxR, /** @type {any} */ ({})), c };
+};
+const poses = [[400, 300], [300, 280], [200, 250], [60, 320], [-150, 300], [250, 160], [420, 40]];
 
-/**
- * Independent port of fs() in page-curl.wgsl (written from the shader, not from mapCurlPoint): which layer a presented point shows,
- * and the source point it samples.
- * @param {Float32Array} u
- * @param {number} x @param {number} y
- */
-function shaderRegion(u, x, y) {
-  if (u[8] < 0.5) return { region: 'flat', q: [x, y] };
-  const [dx, dy, axis] = [u[4], u[5], u[6]];
-  const r = Math.max(u[7], 0.001);
-  const ins = (qx, qy) => qx >= 0 && qy >= 0 && qx <= u[2] && qy <= u[3];
-  const s = x * dx + y * dy - axis;
-  if (s < 0) {
-    const k = Math.PI * r - 2 * s;
-    if (ins(x + k * dx, y + k * dy)) return { region: 'back', q: [x + k * dx, y + k * dy] };
-    return { region: 'flat', q: [x, y] };
-  }
-  if (s <= r) {
-    const up = Math.PI - Math.asin(Math.min(1, s / r));
-    const kb = r * up - s;
-    if (ins(x + kb * dx, y + kb * dy)) return { region: 'curl-back', q: [x + kb * dx, y + kb * dy] };
-    const lo = Math.asin(Math.min(1, s / r));
-    const kf = r * lo - s;
-    if (ins(x + kf * dx, y + kf * dy)) return { region: 'curl-front', q: [x + kf * dx, y + kf * dy] };
-  }
-  return { region: 'under', q: null };
-}
-
-test('geometry: the dragged corner lands exactly under the pointer, back side up (any direction, any length)', () => {
-  for (const [cx, cy] of [[W, H], [0, 0], [W, 0], [0, H]]) {
-    for (const [dx, dy] of [[300, 200], [240, 160], [W - 150, H - 20], [30, 300], [W - 5, H - 5]]) {
-      const u = state(cx, cy, dx, dy);
-      const len = Math.hypot(cx - dx, cy - dy);
-      // half a pixel from the tip, along the pull, the presented pixel shows the back of the page half a pixel from the corner
-      const back = shaderRegion(u, dx + 0.5 * u[4], dy + 0.5 * u[5]);
-      assert.ok(back.region === 'back' || back.region === 'curl-back', `corner ${cx},${cy} -> ${dx},${dy}: ${back.region}`);
-      assert.ok(Math.abs(Math.hypot(back.q[0] - cx, back.q[1] - cy) - 0.5) < 0.01, `the tip samples the corner (${back.q}, pull ${len.toFixed(1)} px)`);
+test('fold: the held corner lands exactly where it is held, for both leading corners', () => {
+  for (const [x, y] of poses) {
+    for (const lead of /** @type {const} */ (['bottom', 'top'])) {
+      const { f, c } = fold(x, lead === 'top' ? H - y : y, lead);
+      const out = [0, 0, 0];
+      foldPoint(W, lead === 'bottom' ? H : 0, f, out);
+      assert.ok(Math.hypot(out[0] - c.x, out[1] - c.y) < 1e-6, `${lead} corner at ${out} for ${c.x},${c.y}`);
     }
   }
 });
 
-test('geometry: a pull shorter than half a pixel is no curl; a short pull uses a thinner cylinder (r <= distance / pi)', () => {
-  assert.equal(state(W, H, W - 0.2, H - 0.2)[8], 0);
-  const u = state(W, H, W - 20, H);
-  assert.equal(u[8], 1);
-  assert.ok(Math.abs(u[7] - 20 / Math.PI) < 1e-4);
-  assert.ok(Math.abs(state(W, H, 200, H)[7] - 36) < 1e-6);
+test('fold: an isometry (lengths along the paper are kept) and the bound edge never lifts', () => {
+  const length = (/** @type {any} */ f, /** @type {number[]} */ a, /** @type {number[]} */ b) => {
+    let L = 0; const p = [0, 0, 0], q = [0, 0, 0];
+    foldPoint(a[0], a[1], f, p);
+    for (let i = 1; i <= 4000; i += 1) {
+      const t = i / 4000;
+      foldPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, f, q);
+      L += Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]); p[0] = q[0]; p[1] = q[1]; p[2] = q[2];
+    }
+    return L;
+  };
+  for (const [x, y] of poses) {
+    const { f } = fold(x, y);
+    for (const [a, b] of [[[0, H], [W, H]], [[W, 0], [W, H]], [[0, 0], [W, H]]]) {
+      const want = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      assert.ok(Math.abs(length(f, a, b) - want) < 0.08, `edge ${a}-${b}: ${length(f, a, b)} vs ${want}`);
+    }
+  }
+  for (let x = -600; x <= 500; x += 37) {
+    for (let y = -200; y <= 600; y += 41) {
+      const { f } = fold(x, y);
+      const out = [0, 0, 0];
+      for (const yy of [0, H / 2, H]) { foldPoint(0, yy, f, out); assert.ok(out[2] < 1e-9 && Math.abs(out[0]) < 1e-9, `the bound edge lifted at ${x},${y}`); }
+    }
+  }
+  const n = [0, 0, 0];
+  foldNormal(W - 2, H - 2, fold(100, H).f, n);
+  assert.ok(n[2] < -0.99, 'the folded flap shows its other side');
 });
 
-test('the mapper: identity where the shader shows the flat page, the exact point on the front of the curl, NO_TARGET on the back and underneath (every pixel, 6 poses)', () => {
-  const poses = [[W, H, 300, 200], [W, H, 420, 300], [0, 0, 200, 150], [W, 0, 100, 250], [0, H, 470, 10], [W, H, 2, 2]];
-  for (const [cx, cy, dx, dy] of poses) {
-    const u = state(cx, cy, dx, dy);
-    const counts = { flat: 0, front: 0, other: 0 };
-    for (let y = 0.5; y < H; y += 1) {
-      for (let x = 0.5; x < W; x += 1) {
-        const m = mapCurlPoint(u, { x, y, width: W, height: H });
-        const region = shaderRegion(u, x, y).region;
-        const shown = shaderRegion(u, x, y);
-        if (region === 'flat') { counts.flat += 1; assert.deepEqual(m, { x, y }); }
-        else if (region === 'curl-front') { counts.front += 1; assert.ok(Math.abs(m.x - shown.q[0]) < 1e-3 && Math.abs(m.y - shown.q[1]) < 1e-3, `${x},${y}: ${JSON.stringify(m)} vs ${shown.q}`); }
-        else { counts.other += 1; assert.ok(isNoTarget(m), `${x},${y} is ${region}`); }
+// ------------------------------------------------------------------------------------------------ the mapper against a forward rendering
+/**
+ * Independent forward rendering (written from page-curl.wgsl's vertex stage, not from mapCurlPoint): every point of the sheet, 4 per css px
+ * in each direction, is folded, projected and kept per pixel when it is the nearest to the eye. Returns, per pixel, which side is seen
+ * (0 flat page, 1 front of the lifted sheet, 2 back) and the source point.
+ * @param {Float32Array} st
+ */
+function splat(st) {
+  const f = { nx: st[4], ny: st[5], ax: st[6], ay: st[7], R: st[8], L: st[9] };
+  const m = st[10], D = st[11];
+  const z = new Float32Array(W * H).fill(-1);
+  const kind = new Int8Array(W * H).fill(-1);
+  const sx = new Float32Array(W * H), sy = new Float32Array(W * H);
+  const p = [0, 0, 0], n = [0, 0, 0], q = { x: 0, y: 0 };
+  for (let ly = 0; ly <= H; ly += 0.25) {
+    for (let lx = 0; lx <= W; lx += 0.25) {
+      foldPoint(lx, ly, f, p);
+      const X = m > 0 ? p[0] : W - p[0];
+      project(X, p[1], p[2], W, H, D, q);
+      const i = Math.floor(q.x), j = Math.floor(q.y);
+      if (i < 0 || j < 0 || i >= W || j >= H) continue;
+      const k = j * W + i;
+      if (p[2] <= z[k]) continue;
+      foldNormal(lx, ly, f, n);
+      const facing = n[0] * m * (W / 2 - X) + n[1] * (H / 2 - p[1]) + n[2] * (D - p[2]);
+      z[k] = p[2];
+      kind[k] = p[2] < 1e-6 ? 0 : facing >= 0 ? 1 : 2;
+      sx[k] = m > 0 ? lx : W - lx; sy[k] = ly;
+    }
+  }
+  return { kind, sx, sy, z };
+}
+
+test('the mapper answers what the forward rendering shows: the page point on the flat page and on the front of the roll, NO_TARGET on the back and beneath (every pixel, 8 poses)', () => {
+  const cases = [['br', 300, 200], ['br', 200, 250], ['br', 60, 300], ['tr', 260, 120], ['bl', 260, 150], ['tl', 120, 200], ['br', 455, 300], ['tr', 420, 40]];
+  for (const [key, x, y] of /** @type {[any, number, number][]} */ (cases)) {
+    const st = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48), W, H);
+    const { kind, sx, sy, z } = splat(st);
+    const f = { nx: st[4], ny: st[5], ax: st[6], ay: st[7], R: st[8], L: st[9] }, m = st[10];
+    const p = [0, 0, 0], q = { x: 0, y: 0 };
+    const counts = { flat: 0, front: 0, back: 0, under: 0, skipped: 0 };
+    for (let j = 1; j < H - 1; j += 1) {
+      for (let i = 1; i < W - 1; i += 1) {
+        const k = j * W + i;
+        // pixels next to a change of layer are ambiguous at the resolution of the splat
+        let mixed = false;
+        for (let dj = -1; dj <= 1 && !mixed; dj += 1) for (let di = -1; di <= 1; di += 1) if (kind[k + dj * W + di] !== kind[k]) { mixed = true; break; }
+        if (mixed) { counts.skipped += 1; continue; }
+        const got = mapCurlPoint(st, { x: i + 0.5, y: j + 0.5, width: W, height: H });
+        if (kind[k] === -1) { counts.under += 1; assert.ok(isNoTarget(got), `${key} ${x},${y}: ${i},${j} lies beneath the sheet`); }
+        else if (kind[k] === 2) { counts.back += 1; assert.ok(isNoTarget(got), `${key} ${x},${y}: ${i},${j} shows the back`); }
+        else {
+          if (kind[k] === 0) counts.flat += 1; else counts.front += 1;
+          assert.ok(!isNoTarget(got), `${key} ${x},${y}: ${i},${j} shows the page, the mapper says no target`);
+          if (kind[k] === 0) assert.ok(Math.hypot(got.x - sx[k], got.y - sy[k]) < 0.75, `${key} ${x},${y}: ${i},${j} shows ${sx[k]},${sy[k]}, mapped to ${JSON.stringify(got)}`);
+          else {
+            // on the roll a pixel spans several source px (the paper is seen at a slant): the mapped point must be drawn at this pixel,
+            // at the height of the nearest layer there (near its silhouette the roll is seen edge-on: its height varies by several px across one pixel)
+            const lx = m > 0 ? got.x : W - got.x;
+            foldPoint(lx, got.y, f, p);
+            project(m > 0 ? p[0] : W - p[0], p[1], p[2], W, H, st[11], q);
+            assert.ok(Math.hypot(q.x - (i + 0.5), q.y - (j + 0.5)) < 1 && p[2] > z[k] - 8, `${key} ${x},${y}: ${i},${j} maps to ${JSON.stringify(got)}, drawn at ${q.x},${q.y} height ${p[2]} (top ${z[k]})`);
+          }
+        }
       }
     }
-    assert.ok(counts.other > 500, `pose ${[cx, cy, dx, dy]}: the curl covers ${counts.other} px`);
+    assert.ok(counts.back > 20 && counts.flat > 10000, `${key} ${x},${y}: ${JSON.stringify(counts)}`);
   }
 });
 
-test('released (no curl): the mapper is the identity everywhere, including the hot zones', () => {
-  const u = state(W, H, W, H);
-  for (const [x, y] of [[0, 0], [W, H], [W - 3, H - 3], [240, 160]]) assert.deepEqual(mapCurlPoint(u, { x, y, width: W, height: H }), { x, y });
-});
-
-test('the mapper scales from the presented size to the page size of its frame', () => {
-  const u = state(W, H, 300, 200);
-  const a = mapCurlPoint(u, { x: 100, y: 100, width: W, height: H });
-  const b = mapCurlPoint(u, { x: 200, y: 200, width: 2 * W, height: 2 * H });
-  assert.deepEqual(a, { x: 100, y: 100 });
-  assert.deepEqual(b, { x: 200, y: 200 });
-  assert.ok(isNoTarget(mapCurlPoint(u, { x: 2 * 470, y: 2 * 310, width: 2 * W, height: 2 * H })));
+test('released (no pull): the mapper is the identity everywhere, including the hot zones; it scales from the presented size', () => {
+  const st = poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'br', W, H, 48);
+  assert.equal(st[9], 0);
+  for (const [x, y] of [[0, 0], [W, H], [W - 3, H - 3], [240, 160]]) assert.deepEqual(mapCurlPoint(st, { x, y, width: W, height: H }), { x, y });
+  const curled = poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'br', 300, 200, 48);
+  assert.deepEqual(mapCurlPoint(curled, { x: 200, y: 200, width: 2 * W, height: 2 * H }), { x: 200, y: 200 });
+  assert.ok(isNoTarget(mapCurlPoint(curled, { x: 2 * 470, y: 2 * 310, width: 2 * W, height: 2 * H })));
   assert.ok(Number.isFinite(NO_TARGET.x) && Number.isFinite(NO_TARGET.y), 'the host requires finite points');
 });
 
-test('hot zones: corners only, `corner` restricts them, points off the page never grab', () => {
+test('hot zones: corners only, `corner` restricts them, points off the page never grab; colours parse', () => {
   assert.equal(hotCorner(470, 310, W, H, 'any', 64), 'br');
   assert.equal(hotCorner(10, 10, W, H, 'any', 64), 'tl');
   assert.equal(hotCorner(10, 10, W, H, 'br', 64), null);
   assert.equal(hotCorner(240, 160, W, H, 'any', 64), null);
   assert.equal(hotCorner(W + 1, H, W, H, 'any', 64), null);
-  assert.equal(hotCorner(W - 70, H, W, H, 'any', 64), null);
-});
-
-test('options: colours parse, the release eases from 0 to 1', () => {
   assert.deepEqual(parseColor('#ff0000'), [1, 0, 0]);
   assert.deepEqual(parseColor('#fff'), [1, 1, 1]);
-  assert.equal(parseColor('nope').length, 3);
-  assert.equal(releaseEase(0), 0);
-  assert.equal(releaseEase(1), 1);
-  assert.ok(releaseEase(0.5) > 0.5);
+  assert.deepEqual(parseColor('nope', [0.5, 0.5, 0.5]), [0.5, 0.5, 0.5]);
 });
 
 // ------------------------------------------------------------------------------------------------ the instance, with a recording fake GPU
@@ -134,37 +166,44 @@ test('options: colours parse, the release eases from 0 to 1', () => {
 const FLAT = { ...meta.defaults, dogEar: 0, autoPeek: 0 };
 
 function fakeEnv({ reduced = false, timers = false } = {}) {
-  globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
-  const writes = [];
-  const passes = [];
+  Object.assign(globalThis, {
+    GPUBufferUsage: { UNIFORM: 1, COPY_DST: 2, VERTEX: 4, INDEX: 8 },
+    GPUShaderStage: { VERTEX: 1, FRAGMENT: 2 },
+    GPUTextureUsage: { RENDER_ATTACHMENT: 1, TEXTURE_BINDING: 2 },
+  });
+  /** @type {any[]} */ const writes = [];
+  /** @type {any[]} */ const passes = [];
+  let draws = 0;
   const device = {
-    createShaderModule: () => ({}), createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) }), createBuffer: () => ({ destroy() {} }),
-    createSampler: () => ({}), createBindGroup: () => ({}), queue: { writeBuffer: (_b, _o, d) => writes.push(d) },
+    createShaderModule: () => ({ getCompilationInfo: async () => ({ messages: [] }) }),
+    createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}), createRenderPipeline: () => ({}),
+    createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: () => ({}),
+    createTexture: () => ({ createView: () => ({}), destroy() {} }),
+    queue: { writeBuffer: (/** @type {any} */ _b, /** @type {any} */ _o, /** @type {any} */ d) => writes.push(d) },
   };
-  const encoder = { beginRenderPass: (d) => { passes.push(d); return { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} }; } };
+  const encoder = { beginRenderPass: (/** @type {any} */ d) => { passes.push(d); return { setPipeline() {}, setBindGroup() {}, draw() { draws += 1; }, end() {} }; } };
   const docListeners = new Map();
-  const pending = [];
-  const view = { matchMedia: () => ({ matches: reduced }) };
-  if (timers) Object.assign(view, { setTimeout: (fn, ms) => { pending.push({ fn, ms }); return pending.length; }, clearTimeout: (id) => { if (pending[id - 1]) pending[id - 1].fn = null; } });
+  /** @type {{fn: any, ms: number}[]} */ const pending = [];
+  /** @type {any} */ const view = { matchMedia: () => ({ matches: reduced }) };
+  if (timers) Object.assign(view, { setTimeout: (/** @type {any} */ fn, /** @type {number} */ ms) => { pending.push({ fn, ms }); return pending.length; }, clearTimeout: (/** @type {number} */ id) => { if (pending[id - 1]) pending[id - 1].fn = null; } });
   const doc = {
     defaultView: view,
-    addEventListener: (type, fn, capture) => { assert.equal(capture, true); docListeners.set(type, fn); },
-    removeEventListener: (type, fn) => { if (docListeners.get(type) === fn) docListeners.delete(type); },
+    addEventListener: (/** @type {string} */ type, /** @type {any} */ fn, /** @type {boolean} */ capture) => { assert.equal(capture, true); docListeners.set(type, fn); },
+    removeEventListener: (/** @type {string} */ type, /** @type {any} */ fn) => { if (docListeners.get(type) === fn) docListeners.delete(type); },
   };
-  const captured = [];
+  /** @type {any[]} */ const captured = [];
   const canvas = {
     ownerDocument: doc, clientWidth: W, clientHeight: H,
     getBoundingClientRect: () => ({ left: 10, top: 20, width: W, height: H }),
-    setPointerCapture: (id) => captured.push(id), releasePointerCapture: (id) => captured.push(-id),
+    setPointerCapture: (/** @type {number} */ id) => captured.push(id), releasePointerCapture: (/** @type {number} */ id) => captured.push(-id),
   };
-  const source = {};
   let renders = 0;
   const layerListeners = new Map();
   const attrs = new Map();
-  const layer = { setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k), setPointerCapture: (id) => captured.push(`layer${id}`), releasePointerCapture: (id) => captured.push(`layer-${id}`) };
-  const context = { device, format: 'bgra8unorm', canvas, source, requestRender() { renders += 1; }, listen: (type, fn) => { layerListeners.set(type, fn); return () => {}; } };
-  /** @param {string} type @param {number} x page css px @param {number} y @param {object} [o] */
-  const fire = (type, x, y, o = {}) => {
+  const layer = { setAttribute: (/** @type {string} */ k, /** @type {string} */ v) => attrs.set(k, v), removeAttribute: (/** @type {string} */ k) => attrs.delete(k),
+    setPointerCapture: (/** @type {number} */ id) => captured.push(`layer${id}`), releasePointerCapture: (/** @type {number} */ id) => captured.push(`layer-${id}`) };
+  const context = { device, format: 'bgra8unorm', canvas, source: {}, requestRender() { renders += 1; }, listen: (/** @type {string} */ type, /** @type {any} */ fn) => { layerListeners.set(type, fn); return () => {}; } };
+  const fire = (/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, o = {}) => {
     const e = {
       type, pointerId: 1, isPrimary: true, button: 0, detail: 1, clientX: 10 + x, clientY: 20 + y, prevented: false, stopped: false,
       composedPath: () => [canvas], preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...o,
@@ -172,22 +211,26 @@ function fakeEnv({ reduced = false, timers = false } = {}) {
     docListeners.get(type)?.(e);
     return e;
   };
-  const frame = (now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, sourceReady: true, sourceView: {}, destinationView: {}, encoder });
-  /** a pointer event reaching the live layer (after the document's capture listeners) @param {string} type */
-  const atLayer = (type) => layerListeners.get(type)?.({ type, currentTarget: layer });
-  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders, pending, atLayer, attrs };
+  const frame = (/** @type {number} */ now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, sourceReady: true, sourceView: {}, destinationView: {}, encoder });
+  const atLayer = (/** @type {string} */ type) => layerListeners.get(type)?.({ type, currentTarget: layer });
+  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders, draws: () => draws, pending, atLayer, attrs };
 }
 
+/** @param {any} t @param {any} env @param {Record<string, unknown>} [options] */
 async function created(t, env, options = meta.defaults) {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' }); // source mode loads page-curl.wgsl; Node has no server
+  globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' })); // source mode loads the .wgsl files; Node has no server
   t.after(() => { globalThis.fetch = realFetch; });
-  return plugin.create(/** @type {any} */ (env.context), options);
+  return /** @type {any} */ (await plugin.create(/** @type {any} */ (env.context), options));
 }
+/** the written uniform block of the last frame */
+const last = (/** @type {any} */ env) => /** @type {Float32Array} */ (env.writes.filter((/** @type {any} */ w) => w.length === UNIFORM_FLOATS).at(-1));
+/** where the held corner of a written state lies (page css px) */
+const cornerOf = (/** @type {Float32Array} */ s) => { const lx = s[2] - s[4] * s[9], ly = s[3] - s[5] * s[9]; return [s[10] > 0 ? lx : s[2] - lx, ly]; };
 
 test('the grab is the plugin\'s gesture: down/move/up/click are taken from the page, the pointer is captured; elsewhere nothing is taken', async (t) => {
   const env = fakeEnv();
-  const inst = await created(t, env);
+  const inst = await created(t, env, FLAT);
   const miss = env.fire('pointerdown', 240, 160);
   assert.equal(miss.prevented || miss.stopped, false, 'a press away from the corners belongs to the form');
   const down = env.fire('pointerdown', 470, 312);
@@ -195,51 +238,66 @@ test('the grab is the plugin\'s gesture: down/move/up/click are taken from the p
   assert.deepEqual(env.captured, [1]);
   const move = env.fire('pointermove', 300, 200);
   assert.ok(move.prevented && move.stopped);
-  inst.render(env.frame(0));
-  assert.equal(env.writes.at(-1)[8], 1, 'curled');
-  const tip = inst.captureInputMapper(/** @type {any} */ ({}))({ x: 301, y: 201, width: W, height: H });
-  assert.ok(isNoTarget(tip));
-  assert.deepEqual(inst.captureInputMapper(/** @type {any} */ ({}))({ x: 40, y: 40, width: W, height: H }), { x: 40, y: 40 }, 'the flat page still maps');
+  for (let now = 0; now <= 1000; now += 16) inst.render(env.frame(now));
+  assert.ok(last(env)[9] > 100, 'curled');
+  const m = inst.captureInputMapper({});
+  assert.ok(isNoTarget(m({ x: 302, y: 202, width: W, height: H })), 'the corner under the pointer is the back of the sheet');
+  assert.deepEqual(m({ x: 40, y: 40, width: W, height: H }), { x: 40, y: 40 }, 'the flat page still maps');
   const up = env.fire('pointerup', 300, 200);
   assert.ok(up.prevented && up.stopped);
   assert.deepEqual(env.captured, [1, -1]);
-  const click = env.fire('click', 300, 200);
-  assert.ok(click.stopped, 'the click that follows the grab is swallowed');
-  const keyClick = env.fire('click', 300, 200, { detail: 0 });
-  assert.equal(keyClick.stopped, false, 'keyboard / script clicks pass');
-  const other = env.fire('pointermove', 300, 200, { pointerId: 2 });
-  assert.equal(other.stopped, false);
+  assert.ok(env.fire('click', 300, 200).stopped, 'the click that follows the grab is swallowed');
+  assert.equal(env.fire('click', 300, 200, { detail: 0 }).stopped, false, 'keyboard / script clicks pass');
+  assert.equal(env.fire('pointermove', 300, 200, { pointerId: 2 }).stopped, false);
   inst.destroy();
   assert.equal(env.docListeners.size, 0, 'destroy removes the document listeners');
 });
 
-test('the release animates back on the frame clock: the same pose at the same time whatever the frame cap, flat (identity) at the end', async (t) => {
-  const poses = [];
+test('the corner follows the pointer on a spring (weight, no jump) and settles exactly under it, seen through the camera', async (t) => {
+  const env = fakeEnv();
+  const inst = await created(t, env, FLAT);
+  env.fire('pointerdown', 475, 315);
+  env.fire('pointermove', 200, 150);
+  inst.render(env.frame(0));
+  inst.render(env.frame(16));
+  const early = cornerOf(last(env));
+  assert.ok(early[0] > 380, `16 ms after the move the corner has only started to follow: ${early}`);
+  for (let now = 32; now <= 1500; now += 16) inst.render(env.frame(now));
+  const s = last(env);
+  const [cx, cy] = cornerOf(s);
+  const q = project(cx, cy, 2 * s[8], W, H, s[11], { x: 0, y: 0 });
+  assert.ok(Math.hypot(q.x - 200, q.y - 150) < 0.5, `settled: the corner is seen at ${q.x}, ${q.y}`);
+});
+
+test('the release springs back on the frame clock: the same pose at the same time whatever the frame cap, flat (identity) at the end', async (t) => {
+  /** @type {number[][][]} */ const poses = [];
   for (const fps of [120, 30, 15]) {
     const env = fakeEnv();
     const inst = await created(t, env, FLAT);
     env.fire('pointerdown', 475, 315);
     env.fire('pointermove', 260, 180);
-    inst.render(env.frame(1000));
+    for (let now = 0; now <= 1000; now += 20) inst.render(env.frame(now));
     env.fire('pointerup', 260, 180);
     const before = env.renders();
-    const at = [];
-    for (let now = 1000; now <= 1000 + RELEASE_MS + 100; now += 1000 / fps) {
+    /** @type {number[][]} */ const at = [];
+    for (let k = 0; ; k += 1) {
+      const now = 1000 + (k * 1000) / fps;
+      if (now > 3000) break;
       inst.render(env.frame(now));
-      if (Math.abs(now - 1200) < 0.01 || Math.abs(now - 1000) < 0.01) at.push(Array.from(env.writes.at(-1).slice(4, 9)));
+      if ([1000, 1200, 1400].some((x) => Math.abs(now - x) < 1e-6)) at.push(Array.from(last(env).slice(4, 10)));
     }
-    assert.equal(env.writes.at(-1)[8], 0, 'flat again');
-    assert.ok(env.renders() - before >= Math.floor((RELEASE_MS / 1000) * fps) - 1, 'the release asked for its frames');
+    assert.equal(last(env)[9], 0, 'flat again');
+    assert.ok(env.renders() - before >= 0.25 * fps, 'the release asked for its frames');
     const settled = env.renders();
     inst.render(env.frame(5000));
     assert.equal(env.renders(), settled, 'no frame is requested once the page is flat');
-    assert.deepEqual(inst.captureInputMapper(/** @type {any} */ ({}))({ x: 470, y: 310, width: W, height: H }), { x: 470, y: 310 });
+    assert.deepEqual(inst.captureInputMapper({})({ x: 470, y: 310, width: W, height: H }), { x: 470, y: 310 });
     poses.push(at);
   }
-  for (const p of poses.slice(1)) assert.deepEqual(p, poses[0]);
+  for (const p of poses.slice(1)) p.forEach((pose, i) => pose.forEach((v, j) => assert.ok(Math.abs(v - poses[0][i][j]) < 1e-3, `pose ${i}: ${pose} vs ${poses[0][i]}`)));
 });
 
-test('prefers-reduced-motion: the page lies flat at once on release and the hover lift does not animate', async (t) => {
+test('prefers-reduced-motion: the drag follows the hand at once; the page lies flat at once on release; the hover lift is static', async (t) => {
   const env = fakeEnv({ reduced: true });
   const inst = await created(t, env, FLAT);
   env.fire('pointermove', 470, 310);
@@ -249,12 +307,12 @@ test('prefers-reduced-motion: the page lies flat at once on release and the hove
   assert.equal(env.renders(), lifted, 'the hover lift is static: no frame requested after it');
   env.fire('pointerdown', 470, 310);
   env.fire('pointermove', 300, 200);
-  inst.render(env.frame(0));
-  assert.equal(env.writes.at(-1)[8], 1, 'a drag still peels (it follows the hand, it is not an animation)');
+  inst.render(env.frame(16));
+  assert.ok(last(env)[9] > 100, 'a drag still curls (it follows the hand, it is not an animation)');
   env.fire('pointerup', 300, 200);
   const released = env.renders();
-  inst.render(env.frame(16));
-  assert.equal(env.writes.at(-1)[8], 0);
+  inst.render(env.frame(32));
+  assert.equal(last(env)[9], 0);
   assert.equal(env.renders(), released, 'no animation frames');
 });
 
@@ -263,54 +321,37 @@ test('a mapper keeps the curl of its own frame after later frames (frozen slots,
   const inst = await created(t, env, FLAT);
   env.fire('pointerdown', 470, 310);
   env.fire('pointermove', 300, 200);
-  inst.render(env.frame(0));
-  const first = inst.captureInputMapper(/** @type {any} */ ({}));
+  for (let now = 0; now <= 800; now += 16) inst.render(env.frame(now));
+  const first = inst.captureInputMapper({});
   const gesture = first.captureGestureSnapshot();
   const p = { x: 330, y: 230, width: W, height: H };
   assert.ok(isNoTarget(first(p)));
   env.fire('pointerup', 300, 200);
-  for (let k = 1; k <= 3; k += 1) { inst.render(env.frame(k * 500)); inst.captureInputMapper(/** @type {any} */ ({})); }
+  for (let k = 1; k <= 3; k += 1) { inst.render(env.frame(800 + k * 1000)); inst.captureInputMapper({}); }
   assert.ok(isNoTarget(first(p)), 'three newer presentations did not change the first mapper');
   assert.ok(isNoTarget(gesture(p)));
-  assert.deepEqual(inst.captureInputMapper(/** @type {any} */ ({}))(p), { x: 330, y: 230 }, 'the newest frame is flat');
+  assert.deepEqual(inst.captureInputMapper({})(p), { x: 330, y: 230 }, 'the newest frame is flat');
 });
 
-test('the render path allocates nothing per frame: one uniform array, one pass descriptor', async (t) => {
+test('the render path allocates nothing per frame: one uniform array, the same pass descriptors; the shadow passes run only when the fold moved', async (t) => {
   const env = fakeEnv();
   const inst = await created(t, env);
+  inst.render(env.frame(0));
+  const writes0 = env.writes.length;
   env.fire('pointerdown', 470, 310);
-  for (let k = 0; k < 20; k += 1) { env.fire('pointermove', 470 - k * 8, 310 - k * 5); inst.render(env.frame(k * 8)); }
-  assert.equal(new Set(env.writes).size, 1);
-  assert.equal(new Set(env.passes).size, 1);
-});
-
-test('the hover lift animates from the first frame after the hover, the same at every frame cap', async (t) => {
-  const lifts = [];
-  for (const fps of [120, 30]) {
-    const env = fakeEnv();
-    const inst = await created(t, env, FLAT);
-    inst.render(env.frame(0));                    // a frame long before the hover
-    env.fire('pointermove', 470, 312);
-    const out = [];
-    for (let now = 5000; now <= 5400; now += 1000 / fps) {
-      inst.render(env.frame(now));
-      if ([5000, 5100, 5400].some((x) => Math.abs(now - x) < 0.01)) out.push(env.writes.at(-1)[8] ? Math.hypot(env.writes.at(-1)[4], env.writes.at(-1)[5]) && env.writes.at(-1)[7] : 0);
-    }
-    assert.equal(out[0], 0, 'no jump on the first frame');
-    assert.ok(out[1] > 0 && out[2] > out[1], `the corner lifts over time: ${out}`);
-    lifts.push(out);
-  }
-  assert.ok(Math.abs(lifts[0][2] - lifts[1][2]) < 0.05 * lifts[0][2], `settled lift at 120 and 30 fps: ${lifts}`);
+  for (let k = 1; k <= 20; k += 1) { env.fire('pointermove', 470 - k * 8, 310 - k * 5); inst.render(env.frame(k * 8)); }
+  assert.equal(new Set(env.writes.slice(writes0)).size, 1);
+  assert.ok(new Set(env.passes).size <= 2, 'the shadow pass and the main pass reuse their descriptors');
+  const passes = env.passes.length;
+  inst.render(env.frame(1000)); inst.render(env.frame(1000));   // the same time twice: the fold did not move
+  assert.equal(env.passes.length - passes, (1 + 6 + 1) + 1, 'the first frame: shadow, 6 blurs, main; the second frame at the same pose: the main pass only');
 });
 
 // ------------------------------------------------------------------------------------------------ the rest pose: dog-ear, hover, auto-peek
-/** the lifted corner of a written uniform block: the point where the corner lies (back side up), from the cylinder @param {Float32Array} u */
-const curledAt = (u) => (u[8] > 0.5 ? { dir: [u[4], u[5]], radius: u[7] } : null);
-
-test('the hint: top-right unless one corner is allowed; the label names it', () => {
+test('the hint: top-right unless one corner is allowed; the label names it; the peek schedule', () => {
   assert.equal(hintCorner('any'), 'tr');
   assert.equal(hintCorner('bl'), 'bl');
-  assert.match(hintText('any'), /Drag the top-right corner to peel the page \(any corner works\)/);
+  assert.match(hintText('any'), /Drag the top-right corner to turn the page \(any corner works\)/);
   assert.match(hintText('br'), /Drag the bottom-right corner/);
   assert.equal(peekAt(0, 5), 0);
   assert.equal(peekAt(1500 + PEEK_MS / 2, 5), 1, 'half way through the first peek the dog-ear is fully open');
@@ -323,28 +364,29 @@ test('at rest the top-right corner is a dog-ear: curled from the first frame, no
   const env = fakeEnv();
   const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
   inst.render(env.frame(0));
-  const u = env.writes.at(-1);
-  assert.equal(u[8], 1, 'curled at rest');
-  assert.ok(u[4] > 0 && u[5] < 0, `the cylinder points to the top-right corner: ${u[4]}, ${u[5]}`);
+  const u = last(env);
+  assert.ok(u[9] > 0, 'curled at rest');
+  assert.equal(u[10], 1, 'a right-hand corner: the sheet is bound on the left');
+  assert.ok(u[4] > 0 && u[5] < 0, `the fold points to the top-right corner: ${u[4]}, ${u[5]}`);
   const r0 = env.renders();
   inst.render(env.frame(16));
   assert.equal(env.renders(), r0, 'static: no frame requested');
-  const m = inst.captureInputMapper(/** @type {any} */ ({}));
-  assert.ok(isNoTarget(m({ x: W - 3, y: 3, width: W, height: H })), 'the dog-ear itself is not the page');
-  for (const [x, y] of [[3, 3], [W - 3, H - 3], [3, H - 3], [W - 80, 80], [240, 160]]) assert.deepEqual(m({ x, y, width: W, height: H }), { x, y });
+  const m = inst.captureInputMapper({});
+  assert.ok(isNoTarget(m({ x: W - 4, y: 4, width: W, height: H })), 'the dog-ear itself is not the page');
+  for (const [x, y] of [[3, 3], [W - 3, H - 3], [3, H - 3], [W - 90, 90], [240, 160]]) assert.deepEqual(m({ x, y, width: W, height: H }), { x, y });
 });
 
 test('hovering a hot zone lifts its corner further and shows the grab cursor on the layer; dragging shows grabbing; leaving restores', async (t) => {
   const env = fakeEnv();
   const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
-  env.atLayer('pointerover');                       // the plugin learns the layer the pointer events land on
+  env.atLayer('pointerover');
   inst.render(env.frame(0));
-  const rest = curledAt(env.writes.at(-1)).radius;
+  const rest = last(env)[9];
   env.fire('pointermove', W - 10, 10);
   env.atLayer('pointermove');
   assert.equal(env.attrs.get('data-hic-curl-cursor'), 'grab');
-  for (let now = 1000; now <= 1600; now += 8) inst.render(env.frame(now));
-  assert.ok(curledAt(env.writes.at(-1)).radius > rest * 1.5, 'the corner lifts further');
+  for (let now = 1000; now <= 1800; now += 8) inst.render(env.frame(now));
+  assert.ok(last(env)[9] > rest * 1.5, `the corner lifts further: ${rest} -> ${last(env)[9]}`);
   env.fire('pointerdown', W - 10, 10);
   assert.equal(env.attrs.get('data-hic-curl-cursor'), 'grabbing');
   assert.deepEqual(env.captured, ['layer1'], 'the pointer is captured to the layer');
@@ -355,24 +397,25 @@ test('hovering a hot zone lifts its corner further and shows the grab cursor on 
   inst.destroy();
 });
 
-test('the release of the dog-eared corner ends on the dog-ear (not flat); another corner ends flat and the dog-ear comes back', async (t) => {
+test('the release of the dog-eared corner ends on the dog-ear; another corner ends flat and the dog-ear comes back', async (t) => {
   const env = fakeEnv();
   const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
   inst.render(env.frame(0));
-  const rest = Array.from(env.writes.at(-1).slice(4, 9));
+  const rest = Array.from(last(env).slice(4, 10));
   env.fire('pointerdown', W - 4, 4);
   env.fire('pointermove', 200, 200);
-  inst.render(env.frame(100));
+  for (let now = 16; now <= 600; now += 16) inst.render(env.frame(now));
   env.fire('pointerup', 200, 200);
-  for (let now = 100; now <= 100 + RELEASE_MS + 50; now += 8) inst.render(env.frame(now));
-  const after = Array.from(env.writes.at(-1).slice(4, 9));
+  for (let now = 616; now <= 3000; now += 8) inst.render(env.frame(now));
+  const after = Array.from(last(env).slice(4, 10));
   after.forEach((v, i) => assert.ok(Math.abs(v - rest[i]) < 1e-3, `back on the dog-ear: ${after} vs ${rest}`));
   env.fire('pointerdown', 4, H - 4);
   env.fire('pointermove', 200, 100);
-  inst.render(env.frame(1000));
+  for (let now = 3016; now <= 3600; now += 16) inst.render(env.frame(now));
+  assert.equal(last(env)[10], -1, 'a left-hand corner: the sheet is bound on the right');
   env.fire('pointerup', 200, 100);
-  for (let now = 1000; now <= 1000 + RELEASE_MS + 1500; now += 8) inst.render(env.frame(now));
-  const back = Array.from(env.writes.at(-1).slice(4, 9));
+  for (let now = 3616; now <= 8000; now += 8) inst.render(env.frame(now));
+  const back = Array.from(last(env).slice(4, 10));
   back.forEach((v, i) => assert.ok(Math.abs(v - rest[i]) < 1e-3, `the dog-ear is back on the top-right corner: ${back} vs ${rest}`));
 });
 
@@ -380,28 +423,28 @@ test('auto-peek: until the first drag the dog-ear opens now and then on its own 
   const env = fakeEnv({ timers: true });
   const inst = await created(t, env, { ...meta.defaults, autoPeek: 5 });
   inst.render(env.frame(0));
-  const rest = curledAt(env.writes.at(-1)).radius;
+  const rest = last(env)[9];
   assert.equal(env.pending.length, 1, 'at rest a timer is set for the first peek');
   assert.equal(env.pending[0].ms, 1500);
   const r0 = env.renders();
   env.pending[0].fn();
   assert.equal(env.renders(), r0 + 1, 'the timer asks for a frame');
   let max = 0;
-  for (let now = 1500; now <= 1500 + PEEK_MS + 600; now += 16) { inst.render(env.frame(now)); max = Math.max(max, curledAt(env.writes.at(-1)).radius); }
-  assert.ok(max > rest * 2, `the dog-ear peeks open: radius ${rest} -> ${max}`);
+  for (let now = 1500; now <= 1500 + PEEK_MS + 900; now += 16) { inst.render(env.frame(now)); max = Math.max(max, last(env)[9]); }
+  assert.ok(max > rest * 2, `the dog-ear peeks open: pull ${rest} -> ${max}`);
   assert.ok(env.renders() - r0 > PEEK_MS / 16 - 5, 'frames are requested while it peeks');
-  assert.ok(Math.abs(curledAt(env.writes.at(-1)).radius - rest) < 0.05, 'and it closes again');
-  assert.ok(env.pending.at(-1).fn && env.pending.at(-1).ms > 1000, 'the next peek is scheduled');
+  assert.ok(Math.abs(last(env)[9] - rest) < 0.05, 'and it closes again');
+  assert.ok(env.pending.at(-1)?.fn && /** @type {any} */ (env.pending.at(-1)).ms > 1000, 'the next peek is scheduled');
   env.fire('pointerdown', W - 4, 4);
   env.fire('pointermove', 300, 100);
-  inst.render(env.frame(4000));
+  inst.render(env.frame(4300));
   env.fire('pointerup', 300, 100);
-  for (let now = 4000; now <= 20000; now += 16) inst.render(env.frame(now));
-  assert.ok(env.pending.slice(1).every((p) => p.fn === null), 'after the first drag no peek is pending (the first timer already fired)');
-  assert.ok(Math.abs(curledAt(env.writes.at(-1)).radius - rest) < 0.05, 'and the dog-ear stays still');
+  for (let now = 4316; now <= 20000; now += 16) inst.render(env.frame(now));
+  assert.ok(env.pending.slice(1).every((p) => p.fn === null), 'after the first drag no peek is pending');
+  assert.ok(Math.abs(last(env)[9] - rest) < 0.05, 'and the dog-ear stays still');
   const reduced = fakeEnv({ reduced: true, timers: true });
   const still = await created(t, reduced, { ...meta.defaults, autoPeek: 5 });
   for (let now = 0; now <= 5000; now += 16) still.render(reduced.frame(now));
   assert.equal(reduced.pending.length, 0, 'reduced motion: no auto-peek');
-  assert.equal(reduced.writes.at(-1)[8], 1, 'reduced motion: the dog-ear is still there');
+  assert.ok(last(reduced)[9] > 0, 'reduced motion: the dog-ear is still there');
 });
