@@ -10,7 +10,7 @@ import { parseFrameCap } from '../frame-cap.js';
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
 
 /**
- * Attribute observer on the canvas; parse per API-CONTRACT 7.1 (invalid -> options.defaultFrameCap). Scheduler.setFrameCap is the single place that stores the cap and emits BUS.FRAME_CAP,
+ * Attribute observer on the canvas; parse per API-CONTRACT 7.1 (invalid -> options.defaultFrameCap). Scheduler.setFrameCap is the single place that stores the cap,
  * so the attribute, the `frameCap` property (which writes the attribute) and direct calls all end up there. A change is effective on the next tick (the attribute observer is a microtask).
  * @param {HicEnv} env
  * @param {CanvasRecord} record

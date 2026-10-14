@@ -11,9 +11,6 @@ import { installLayerStyle } from './layer-style.js';
 /** @typedef {import('../contracts/types.js').PatchLedger} PatchLedger */
 /** @typedef {import('../contracts/types.js').RootScope} RootScope */
 
-/** @param {Node} node @returns {node is ShadowRoot} */
-const isShadowRoot = (node) => node.nodeType === 11 && 'host' in node;
-
 /**
  * Patches Element.prototype.attachShadow through the ledger (the returned ShadowRoot is recorded even when the root is closed, as long as it is created after install),
  * walks existing OPEN roots once at creation, emits BUS.ROOT_ADDED for every new root, and hands out one reference-counted LayerStyleHandle per root
@@ -72,11 +69,6 @@ export function createRootScope(env, ledger) {
         else if (root.host.isConnected) out.push(root);
       }
       return out;
-    },
-    rootOf(node) {
-      const root = node.getRootNode();
-      if (isShadowRoot(root)) return root;
-      return root.nodeType === 9 ? /** @type {Document} */ (root) : env.document;
     },
     adopt(root) { record(root); },
     onRoot(cb) {

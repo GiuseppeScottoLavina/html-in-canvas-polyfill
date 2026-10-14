@@ -43,9 +43,7 @@ export {};
  * @property {number}  [maxTotalSurfaceBytes] total bytes of all retained surfaces of an install; above it new surfaces are rasterised at a reduced scale and reported (default 536870912)
  * @property {Partial<NodeBudget>} [nodeBudget]
  * @property {'off'|'queries'|'css'|'both'} [selectorBridge] canvas-ancestor selector emulation (default 'both')
- * @property {boolean} [strictResources] true: an un-inlinable resource aborts the commit (SecurityError report) instead of a placeholder
  * @property {boolean} [forcePolyfill]   test only: run the polyfill over any native implementation (usable or broken) instead of stepping aside or refusing
- * @property {boolean} [trace]           emit performance.mark/measure 'hic:*' entries (default false)
  * @property {boolean} [autoDiscover]    observe the document for canvases (default true)
  * @property {Window}  [window]          default globalThis.window
  * @property {Document} [document]       default window.document
@@ -71,9 +69,7 @@ export {};
  * @property {number} maxTotalSurfaceBytes
  * @property {NodeBudget} nodeBudget
  * @property {'off'|'queries'|'css'|'both'} selectorBridge
- * @property {boolean} strictResources
  * @property {boolean} forcePolyfill
- * @property {boolean} trace
  * @property {boolean} autoDiscover
  */
 
@@ -176,7 +172,6 @@ export {};
  * @typedef {Object} PatchLedger  Every prototype/instance patch is recorded with its original descriptor so uninstall restores it exactly (api/patch.js implements it).
  * @property {(target: object, key: PropertyKey, descriptor: PropertyDescriptor) => void} define  define/replace a property; stamps MARK.PATCH_SYMBOL on functions
  * @property {(target: object, key: string, wrap: (original: Function) => Function) => void} wrap  replace a method by wrap(original)
- * @property {(target: object, key: PropertyKey) => boolean} isPatched
  * @property {() => Array<{target: object, key: PropertyKey, patched: boolean}>} list
  * @property {() => string[]} restoreAll  restore in reverse order; returns keys left alone because a foreign script re-patched them
  */
@@ -199,7 +194,6 @@ export {};
 /**
  * @typedef {Object} RootScope  Tree scopes that can contain a managed canvas (ADR-K). Owner: live (root-scope.js). Anchor names and adopted sheets are tree-scoped, so every root that holds a canvas needs its own layer sheet.
  * @property {() => Array<Document|ShadowRoot>} roots  document first, then every observed shadow root that is connected
- * @property {(node: Node) => Document|ShadowRoot} rootOf  the tree scope a node belongs to (getRootNode, composed:false), never a detached tree
  * @property {(root: ShadowRoot) => void} adopt  observe a root explicitly (adoptRoot); idempotent
  * @property {(cb: (root: ShadowRoot) => void) => () => void} onRoot  a shadow root appeared (attachShadow patch or initial walk); the registry then scans it and observes it for canvases
  * @property {(root: Document|ShadowRoot) => LayerStyleHandle} style  reference-counted layer + geometry stylesheet of one root
@@ -319,7 +313,6 @@ export {};
  * @property {(el: Element) => Insets|null} [paintInk]  ink an element paints beyond its border box (outer box-shadow, outline, text-shadow), css px >= 0; null when not laid out. Damage rects grow by it
  * @property {(el: Element) => Rect|null} frameRect  rect of el in the border-box FRAME of its nearest drawable (origin = that border box top-left, css px) with the drawable's applied geometry transform removed; null when not laid out. Damage sources and the clone use it, never raw getBoundingClientRect
  * @property {(el: Element, geometry: ElementGeometry|null, layoutOffset?: {x:number,y:number}|null) => void} applyGeometry  make the live element land where its pixels are drawn (ADR-F); null removes the correction and the hit attribute. NEVER measures layout: `layoutOffset` comes from the newest SnapshotVersion (null/undefined = the layer's cached offset, revalidated lazily). A no-op when matrix, clip and rank are unchanged; DOM/rule writes are batched to one flush per task.
- * @property {(el: Element) => void} revealInAncestors  scroll the canvas's own scrollers ('nearest') so that el is visible (the browser only scrolls the layer's ancestors); called on focusin inside the layer (ADR-L)
  * @property {() => StackingFinding[]} stackingAudit  elementsFromPoint sampling of the drawn drawables: page elements that sit between a drawn drawable and the canvas in hit order (ADR-L); no style mutation
  * @property {() => void} revalidateGeometry  re-measure layout offsets of every geometry-applied drawable and rewrite its CSS correction (called after structural commits)
  * @property {(order: Element[]) => void} setHitTestOrder  z-order for hit testing (bottom to top); elements not in `order` lose BUS HIT_ATTR (pointer-events:none)
@@ -421,7 +414,6 @@ export {};
  * @property {(now: number, budget: PumpBudget) => PumpResult} pump  start builds/decodes that are due; synchronous part bounded by budget.mainThreadMs
  * @property {(record?: CanvasRecord) => boolean} hasLanded  at least one decoded result (of `record` when given) is waiting to be committed
  * @property {(record?: CanvasRecord) => ChangeSet} commitLanded  apply landed results to surfaces in ONE synchronous step, publish new versions. With `record` only that canvas is committed (the others keep their landed results queued: a closed paint gate stays closed)
- * @property {(el: Element) => void} drop  reset drawable element state (spec "reset drawable element state")
  * @property {(record: CanvasRecord) => void} forget  drop every drawable of the record and release its surfaces (content!=drawable, unmount, uninstall)
  * @property {(el: Element) => boolean} has  the store tracks el (eligible drawable with a CSS box)
  * @property {(el: Element) => boolean} isSettled  no damage pending, nothing building/decoding for el
@@ -598,7 +590,6 @@ export {};
  * @property {(record: CanvasRecord, fps: number) => void} setFrameCap
  * @property {(record: CanvasRecord, hook: FrameHook) => () => void} addFrameHook  returns remove()
  * @property {(record: CanvasRecord, cause: DamageCause, drawable?: Element|null, rect?: Rect|null, urgent?: boolean) => void} damage  sink for observers; `urgent` (and every focus/active damage): a discrete user action whose tile is built at once, in the input task (optimization 5)
- * @property {() => Promise<void>} idle  resolves when no canvas has pending damage/in-flight work (tests)
  * @property {() => {frames:number, paintsFired:number, lateFrames:number, phaseFallbacks:number, gateTimeouts:number}} stats
  * @property {() => void} dispose
  */
@@ -630,7 +621,7 @@ export {};
  * @property {number} delta
  * @property {number} frameIndex
  * @property {number} frameCap
- * @property {number|null} sourceVersion  SnapshotVersion.id sampled by sourceTexture, null before the first source upload  (ABI v1: sourceSnapshotSerial)
+ * @property {number|null} sourceVersion  SnapshotVersion.id sampled by sourceTexture, null before the first source upload
  */
 /**
  * @typedef {EffectViewport & EffectPresentationFrame & {sourceReady:boolean, encoder:any, sourceTexture:any, sourceView:any, destinationTexture:any, destinationView:any, profiling?:any}} EffectRenderFrame
@@ -666,9 +657,9 @@ export {};
  * @property {() => void} [destroy]
  */
 /**
- * @typedef {Object} EffectPluginDefinition  ABI v2 (v1 definitions are adapted, see API-CONTRACT 7.2)
+ * @typedef {Object} EffectPluginDefinition  ABI v2 (API-CONTRACT 7.2)
  * @property {string} type
- * @property {1|2} apiVersion
+ * @property {2} apiVersion
  * @property {number} version
  * @property {{directCanvasRenderAttachment?: true}} [outputCapabilities]
  * @property {(context: EffectPluginContext, options: Readonly<Record<string, unknown>>) => EffectPluginInstance | Promise<EffectPluginInstance>} create
@@ -695,7 +686,7 @@ export {};
 /**
  * @typedef {Object} EffectsApi  What window.HTMLInCanvasEffects exposes (effects/index.js).
  * @property {2} version
- * @property {(def: EffectPluginDefinition) => EffectPluginDefinition} definePlugin  validates; adapts ABI v1 definitions to v2
+ * @property {(def: EffectPluginDefinition) => EffectPluginDefinition} definePlugin  validates and freezes a definition
  * @property {Readonly<{x: number, y: number}>} NO_TARGET  what an input mapper returns where no element is shown (effects/no-target.js)
  * @property {(point: unknown) => boolean} isNoTarget
  * @property {(canvas: HTMLCanvasElement, source: Element, options?: EffectHostOptions) => Promise<EffectHost>} createHost

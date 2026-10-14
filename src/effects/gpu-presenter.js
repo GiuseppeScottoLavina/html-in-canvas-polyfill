@@ -4,7 +4,6 @@
  */
 
 import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
-import { withV1Fields } from './plugin-abi.js';
 
 /** @typedef {import('../contracts/types.js').EffectHostOptions} EffectHostOptions */
 /** @typedef {import('../contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -31,7 +30,6 @@ import { withV1Fields } from './plugin-abi.js';
  * @property {() => EffectViewport} viewport
  * @property {() => boolean} syncSize  apply css size * min(dpr, maxDpr) to the canvas backing store; true when it changed (the bitmap was cleared: render now)
  * @property {(provider: SourceProvider) => number} uploadSource  returns the version uploaded (0 = nothing to upload yet)
- * @property {() => boolean} sourceReady
  * @property {(plugins: ChainStage[], frame: EffectPresentationFrame) => ({plugin: ChainStage, error: unknown, acquired: boolean}|null)} renderChain  null = submitted; otherwise the plugin whose render() threw and NOTHING was submitted. `acquired`: the canvas texture of this frame was already taken (then the canvas would present an empty frame unless something is drawn again)
  * @property {(keepContext?: boolean) => void} dispose  keepContext: do not unconfigure the canvas (a replacement presenter already configured it)
  */
@@ -158,7 +156,6 @@ export async function createPresenter(canvas, options, hooks = {}) {
       vp = { width: w, height: h, cssWidth: css.width, cssHeight: css.height, dpr: css.width > 0 ? w / css.width : scale };
       return changed;
     },
-    sourceReady: () => ready,
     uploadSource(provider) {
       const size = provider.size();
       if (!size) return 0;
@@ -191,7 +188,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
           sourceTexture: input.texture, sourceView: input.view, destinationTexture: out.texture, destinationView: out.view,
         };
         try {
-          stage.instance.render(stage.def.apiVersion === 1 ? withV1Fields(renderFrame) : renderFrame);
+          stage.instance.render(renderFrame);
         } catch (error) {
           return { plugin: stage, error, acquired: canvasTexture !== null };
         }

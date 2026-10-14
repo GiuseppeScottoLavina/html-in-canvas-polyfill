@@ -240,18 +240,6 @@ gtest('a spatial plugin without captureInputMapper is rejected by addPlugin and 
   assert.ok(isRed(RED(rig.snap())));
 });
 
-gtest('a v1 plugin definition runs through the adapter and sees sourceSnapshotSerial', async (t) => {
-  const { rig, host } = await startHost(t);
-  const seen = [];
-  const v1 = definePlugin({
-    type: 'v1', apiVersion: 1, version: 1,
-    create: (ctx) => { seen.push(['ctx', ctx.apiVersion]); return { render(frame) { seen.push(['frame', frame.sourceSnapshotSerial, frame.sourceVersion]); } }; },
-  });
-  await host.addPlugin(v1);
-  rig.tick();
-  assert.deepEqual(seen, [['ctx', 1], ['frame', 1, 1]]);
-});
-
 gtest('resize: the backing store follows the content box, plugins get resize(), the source geometry gets a fill transform', async (t) => {
   const { rig, host } = await startHost(t);
   const sizes = [];
@@ -410,7 +398,6 @@ gtest('createPresenter alone: sizes the canvas, passthrough chain, reports the l
   assert.equal(p.syncSize(), false, 'createPresenter already synced the size');
   assert.deepEqual([rig.canvas.width, rig.canvas.height], [200, 100]);
   assert.equal(p.uploadSource({ size: () => ({ width: 480, height: 320, cssWidth: 480, cssHeight: 320 }), upload: (device, tex) => { device.queue.copyExternalImageToTexture({ source: rig.surface }, { texture: tex }, [480, 320]); return 7; } }), 7);
-  assert.equal(p.sourceReady(), true);
   p.device.destroy();
   await sleep(50);
   assert.equal(lost.length, 1);

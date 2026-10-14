@@ -1,6 +1,5 @@
 import { test, assert, fixture } from '/test/unit/lib/t.js';
 import { resetGeometry } from '/src/api/geometry.js';
-import { BUS } from '/src/contracts/events.js';
 import { arrange } from './fakes.mjs';
 
 const setup = (t) => arrange(t, fixture, { patches: [] });
@@ -19,22 +18,18 @@ test('get is identity until an update; update stores transform and clip verbatim
   assert.deepEqual([clip.x, clip.width], [1, 3], 'clip kept when only the transform is updated');
 });
 
-test('an unchanged update is a no-op: no layer write, no event, order untouched', async (t) => {
-  const { geometry, record, el, env } = await setup(t);
-  const events = [];
-  env.bus.on(BUS.GEOMETRY, (p) => events.push(p));
+test('an unchanged update is a no-op: no layer write, order untouched', async (t) => {
+  const { geometry, record, el } = await setup(t);
   const opts = { canvasTransform: { e: 5 }, clip: { x: 0, y: 0, width: 10, height: 10 } };
   geometry.update(record, el, opts);
   geometry.update(record, el, opts);
   geometry.update(record, el, { canvasTransform: { e: 5 } });
   assert.equal(record.layerCalls.applyGeometry.length, 1);
   assert.equal(record.layerCalls.setHitTestOrder.length, 1);
-  assert.equal(events.length, 1);
   geometry.update(record, el, { canvasTransform: { e: 6 } });
   assert.equal(record.layerCalls.applyGeometry.length, 2);
   assert.equal(record.layerCalls.setHitTestOrder.length, 1, 'rank did not change');
-  assert.equal(events.length, 2);
-  assert.deepEqual(events[1], { record, element: el });
+  assert.equal(record.layerCalls.applyGeometry.at(-1).el, el);
 });
 
 test('an element in the drawn list with no transform is passed to the layer as identity geometry (hit-testable at the origin)', async (t) => {
@@ -63,18 +58,17 @@ test('rank: update moves to the end, preserveHitTestOrder keeps a listed element
 });
 
 test('clear and resetGeometry remove transform, clip and rank, and tell the layer', async (t) => {
-  const { geometry, record, el, env } = await setup(t);
-  const events = [];
-  env.bus.on(BUS.GEOMETRY, (p) => events.push(p));
+  const { geometry, record, el } = await setup(t);
   geometry.clear(record, el);
-  assert.equal(events.length, 0, 'nothing to clear');
+  assert.equal(record.layerCalls.applyGeometry.length, 0, 'nothing to clear');
+  assert.equal(record.layerCalls.setHitTestOrder.length, 0, 'nothing to clear');
   geometry.update(record, el, { canvasTransform: { e: 9 } });
   geometry.clear(record, el);
   assert.equal(geometry.get(record, el).isIdentity, true);
   assert.deepEqual(record.geometry.order, []);
   assert.equal(record.layerCalls.applyGeometry.at(-1).geometry, null);
   assert.deepEqual(record.layerCalls.setHitTestOrder.at(-1), []);
-  assert.equal(events.length, 2);
+  assert.equal(record.layerCalls.applyGeometry.length, 2);
   geometry.update(record, el, { canvasTransform: { e: 9 } });
   assert.equal(resetGeometry(record, el), true);
   assert.equal(resetGeometry(record, el), false);

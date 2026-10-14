@@ -8,7 +8,7 @@ test('the folder satisfies the plugin contract (plugins/README.md)', async () =>
   assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
 });
 
-/** Independent copy of the displacement of the ABI v1 plugin (mapPresentedPoint of the original water plugin). */
+/** Independent copy of the displacement of the original water plugin (its mapPresentedPoint). */
 function oracle(state, point) {
   const fastExpNeg = (v) => { const q = Math.max(0, v); const q2 = q * q; return 1 / (1 + q + 0.48 * q2 + 0.235 * q2 * q); };
   const width = Math.max(1, point.width), height = Math.max(1, point.height);

@@ -1,5 +1,5 @@
 /**
- * Plugin definition validation, ABI v1 adapter, plugin context construction.
+ * Plugin definition validation (ABI v2) and plugin context construction.
  * Module: gpu-effects (src/effects/**).
  */
 
@@ -18,8 +18,7 @@ const OPTIONAL_METHODS = ['resize', 'setOptions', 'captureInputMapper', 'mountUI
 const defined = new WeakSet();
 
 /**
- * Validate (type string, apiVersion 1|2, version number, create function), freeze; adapt v1. TypeError on invalid input.
- * A v1 definition is kept as declared (`apiVersion: 1`): the host reads that to hand it the v1 aliases (withV1Fields).
+ * Validate (type string, apiVersion 2, version number, create function), freeze. TypeError on invalid input.
  * @param {EffectPluginDefinition} def
  * @returns {EffectPluginDefinition}
  * @throws TypeError
@@ -28,7 +27,7 @@ export function definePlugin(def) {
   if (def && defined.has(def)) return def;
   if (!def || typeof def !== 'object') throw typeError('definePlugin: the definition must be an object');
   if (typeof def.type !== 'string' || def.type === '') throw typeError('definePlugin: `type` must be a non-empty string');
-  if (def.apiVersion !== 1 && def.apiVersion !== 2) throw typeError(`definePlugin(${def.type}): \`apiVersion\` must be 1 or 2, got ${String(def.apiVersion)}`);
+  if (def.apiVersion !== 2) throw typeError(`definePlugin(${def.type}): \`apiVersion\` must be 2, got ${String(def.apiVersion)}`);
   if (typeof def.version !== 'number' || !Number.isFinite(def.version)) throw typeError(`definePlugin(${def.type}): \`version\` must be a finite number`);
   if (typeof def.create !== 'function') throw typeError(`definePlugin(${def.type}): \`create\` must be a function`);
   const caps = def.outputCapabilities;
@@ -77,29 +76,6 @@ export function validateInstance(instance, def) {
 }
 
 /**
- * Add the ABI v1 aliases to a frame for a v1 plugin (sourceSnapshotSerial = sourceVersion). Writes into `frame` and returns it: the
- * frame objects are host-owned and per call, so no copy is made on the 120 Hz path.
- * @template {EffectPresentationFrame} F
- * @param {F} frame
- * @returns {F}
- */
-export function withV1Fields(frame) {
-  /** @type {any} */ (frame).sourceSnapshotSerial = frame.sourceVersion;
-  return frame;
-}
-
-/**
- * The frame as the plugin's declared ABI sees it.
- * @template {EffectPresentationFrame} F
- * @param {EffectPluginDefinition} def
- * @param {F} frame
- * @returns {F}
- */
-export function frameFor(def, frame) {
-  return def.apiVersion === 1 ? withV1Fields(frame) : frame;
-}
-
-/**
  * Ask a spatial instance for the mapper of exactly the frame just presented.
  * @param {EffectPluginInstance} instance
  * @param {EffectPluginDefinition} def
@@ -108,13 +84,13 @@ export function frameFor(def, frame) {
  * @throws TypeError
  */
 export function captureMapper(instance, def, frame) {
-  const mapper = /** @type {(f: EffectPresentationFrame) => InputMapper} */ (instance.captureInputMapper)(frameFor(def, frame));
+  const mapper = /** @type {(f: EffectPresentationFrame) => InputMapper} */ (instance.captureInputMapper)(frame);
   if (typeof mapper !== 'function') throw typeError(`plugin "${def.type}": captureInputMapper must return a function`);
   return mapper;
 }
 
 /**
- * Context handed to create(): `apiVersion` equals the DECLARED version (a v1 plugin sees 1).
+ * Context handed to create(): `apiVersion` equals the declared version (2).
  * @param {EffectPluginDefinition} def
  * @param {Omit<EffectPluginContext, 'apiVersion'>} parts
  * @returns {EffectPluginContext}

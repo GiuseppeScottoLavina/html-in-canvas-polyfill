@@ -26,7 +26,7 @@ export function isRange(el) {
 }
 
 /** @param {Element|null} el @returns {el is HTMLInputElement|HTMLTextAreaElement} */
-export function isTextControl(el) {
+function isTextControl(el) {
   if (!el) return false;
   if (el.localName === 'textarea') return true;
   return el.localName === 'input' && SELECTABLE.has(/** @type {HTMLInputElement} */ (el).type);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rasterSourceFor } from '../../../src/snapshot/store/raster-source.js';
-import { newVersion, parseTransformOrigin, rebaseVersion, reviseVersion } from '../../../src/snapshot/store/versions.js';
+import { newVersion, parseTransformOrigin, reviseVersion } from '../../../src/snapshot/store/versions.js';
 
 const ink = { left: 24, top: 24, right: 24, bottom: 24 };
 const surface = { width: 296, height: 296 };
@@ -66,10 +66,10 @@ test('newVersion: layoutOffset null is kept, dirty is copied and frozen', () => 
   assert.throws(() => { v.dirty.x = 0; }, TypeError);
 });
 
-test('rebaseVersion: metadata-only, same surface and pixels, new canvas size, new id, counters reset', () => {
+test('a resize revision: metadata-only, same surface and pixels, new canvas size, new id, counters reset', () => {
   const v = make();
   v.refs = 2;
-  const r = rebaseVersion(v, { width: 800, height: 600 }, 20);
+  const r = reviseVersion(v, { canvasWidth: 800, canvasHeight: 600 }, 20);
   assert.equal(r.surface, v.surface);
   assert.equal(r.canvasWidth, 800);
   assert.equal(r.canvasHeight, 600);

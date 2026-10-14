@@ -74,7 +74,6 @@
     },
     "./plugins/*/iife": "./dist/plugins/*.iife.js",
     "./plugins/*/iife/min": "./dist/plugins/*.iife.min.js",
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [

@@ -15,11 +15,11 @@ test('no options: the defaults, frozen', () => {
 });
 
 test('given values override defaults and leave the others alone', () => {
-  const o = resolveOptions({ maxDpr: 3, defaultFrameCap: 30, selectorBridge: 'off', trace: true, autoDiscover: false, stackingAudit: 'off' });
+  const o = resolveOptions({ maxDpr: 3, defaultFrameCap: 30, selectorBridge: 'off', forcePolyfill: true, autoDiscover: false, stackingAudit: 'off' });
   assert.equal(o.maxDpr, 3);
   assert.equal(o.defaultFrameCap, 30);
   assert.equal(o.selectorBridge, 'off');
-  assert.equal(o.trace, true);
+  assert.equal(o.forcePolyfill, true);
   assert.equal(o.autoDiscover, false);
   assert.equal(o.stackingAudit, 'off');
   assert.equal(o.inkMargin, DEFAULT_OPTIONS.inkMargin);
@@ -39,6 +39,7 @@ test('the DEFAULT_OPTIONS object is never mutated by a resolve', () => {
 
 test('an unknown option name is an error (a typo must not be silent)', () => {
   assert.throws(() => resolveOptions(/** @type {any} */ ({ maxDrp: 2 })), /unknown option "maxDrp"/);
+  for (const removed of ['strictResources', 'trace']) assert.throws(() => resolveOptions(/** @type {any} */ ({ [removed]: false })), new RegExp(`unknown option "${removed}"`));
 });
 
 test('options must be an object', () => {
@@ -54,9 +55,9 @@ test('enum options reject unknown values and name the allowed ones', () => {
 });
 
 test('boolean options reject non-booleans (no truthiness coercion)', () => {
-  for (const name of ['legacyNames', 'coherentPaint', 'parentFacade', 'strictResources', 'forcePolyfill', 'trace', 'autoDiscover']) {
+  for (const name of ['legacyNames', 'coherentPaint', 'parentFacade', 'forcePolyfill', 'autoDiscover']) {
     for (const bad of [1, 'true', null, 0]) assert.throws(() => resolveOptions(/** @type {any} */ ({ [name]: bad })), new RegExp(`option "${name}".*boolean`));
-    assert.equal(resolveOptions(/** @type {any} */ ({ [name]: false }))[/** @type {'trace'} */ (name)], false);
+    assert.equal(resolveOptions(/** @type {any} */ ({ [name]: false }))[/** @type {'autoDiscover'} */ (name)], false);
   }
 });
 

@@ -16,7 +16,7 @@ export function makeEnv(opts = {}) {
     deviation() {}, caught(err, where) { caught.push({ err, where }); }, entries: () => reported,
   };
   const env = {
-    window, document, options: { nodeBudget: { ...NODE_BUDGET, ...(opts.nodeBudget ?? {}) }, inkMargin: 24, strictResources: false }, bus: createBus(), reporter, now: () => performance.now(),
+    window, document, options: { nodeBudget: { ...NODE_BUDGET, ...(opts.nodeBudget ?? {}) }, inkMargin: 24 }, bus: createBus(), reporter, now: () => performance.now(),
     isManagedLayerNode: (el) => el.hasAttribute('data-hic-node'),
   };
   return { env, reported, caught, consoleOnce };

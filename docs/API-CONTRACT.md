@@ -13,7 +13,8 @@ a secondary member (section 2); section 2.2 lists the changes after the pinned W
 
 Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" = layout pixels. The names of the typedefs
 (`CanvasRecord`, `SnapshotVersion`, ...) are in `src/contracts/types.js`. Feature ids (`tree-identity`, ...) are the rows of
-`src/contracts/features.js` and `docs/SUPPORT-MATRIX.md`.
+`src/contracts/features.js` and `docs/SUPPORT-MATRIX.md`. The public API is what this document describes, reached through the entry
+points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/` are internal and may change in any release.
 
 ## 1. Scope
 
@@ -303,15 +304,13 @@ The frame cap and the effects host are extensions of this library. They are not 
   30-60 Hz source updates is `framecap=120` with source builds limited by `maxSnapshotFps`/pipeline throughput.
 - In mode `native` the `frameCap` property is not defined; the `framecap` attribute bounds effect frames only (feature row `frame-cap`, section 7.6).
 
-### 7.2 Effect plugins: ABI v2 (v1 adapted)
+### 7.2 Effect plugins: ABI v2
 Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options), NO_TARGET, isNoTarget(point)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
-`definePlugin` validates and freezes a definition: `{type: string, apiVersion: 1|2, version: number, outputCapabilities?:
+`definePlugin` validates and freezes a definition: `{type: string, apiVersion: 2, version: number, outputCapabilities?:
 {directCanvasRenderAttachment?: true}, create(context, options)}`. `create` may be async and returns an `EffectPluginInstance`:
 `render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `destroy?`, `spatial?`, `continuous?`
 (`continuous` is read after every frame and may change at runtime; an idle host needs `context.requestRender()` to see it turn true).
-v1 -> v2 adapter (`effects/plugin-abi.js`): a v1 definition is accepted unchanged; the frame it receives additionally carries the
-v1 field `sourceSnapshotSerial` (= v2 `sourceVersion`), and `context.apiVersion` equals the DECLARED version. v2 renames are
-`sourceSnapshotSerial -> sourceVersion` and snapshot-vocabulary alignment with the standard (`SnapshotVersion.id`). A `spatial`
+Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial`
 plugin MUST provide `captureInputMapper` (definePlugin throws `TypeError` otherwise). Types: `EffectPluginContext`,
 `EffectRenderFrame`, `EffectPluginInstance` in `contracts/types.js`.
 
@@ -330,7 +329,7 @@ plugin MUST provide `captureInputMapper` (definePlugin throws `TypeError` otherw
 - `destroy()`: stops rendering, unregisters the frame hook and the interposer, destroys plugin resources and the device. A WebGPU canvas context cannot
   be released, so the canvas keeps a (cleared) WebGPU context; a later `getContext('2d')` on it returns `null`, as in any browser.
 
-### 7.4 Input mapper and interposer (contract kept from ABI v1)
+### 7.4 Input mapper and interposer
 `captureInputMapper(frame: EffectPresentationFrame): InputMapper` is called by the host each time a frame is PRESENTED; the host keeps
 the mapper of the last few presented frames. `InputMapper = (p: InputPoint) => {x, y}` is a PURE function mapping a point of the presented
 output (canvas-relative css px of the content box, plus the presented `width`/`height` in css px) to the SOURCE point it shows, in the same
@@ -397,7 +396,6 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
    the per-drawable depth of one build and the main-thread budget (ARCHITECTURE ADR-D). The decode of one tile is bounded as well: `decodeDataUrl` rejects
    after 4000 ms, the tile is dropped, its rect is re-damaged and the next build waits 100, 200, ... 5000 ms (consecutive failures), so the pump never waits
    forever on `img.decode()`.
-5. `options.strictResources: true`: an un-inlinable resource aborts the commit and reports a `SecurityError`-class entry instead of a placeholder.
 
 ### 9.2 Refusal table
 | id | trigger | behaviour |

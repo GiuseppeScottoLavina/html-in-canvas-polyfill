@@ -18,7 +18,6 @@ const RING_SIZE = 3;
  * @property {(p: InputPoint, age?: number) => {x: number, y: number}} map  through the newest presented frame (`age` 1..2 = older presentations); NO_TARGET when a mapper says no element is shown there
  * @property {(age?: number) => ((p: InputPoint) => {x: number, y: number})} captureGesture  frozen mapper for one pointer gesture (captureGestureSnapshot when offered)
  * @property {() => boolean} active  the newest presented frame had at least one spatial mapper
- * @property {() => number} depth  presented frames currently kept
  * @property {() => void} clear
  */
 
@@ -70,7 +69,6 @@ export function createMapperChain() {
       const e = at(0);
       return !!e && e.mappers.length > 0;
     },
-    depth: () => ring.length,
     clear() { ring.length = 0; },
   };
 }

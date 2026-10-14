@@ -15,7 +15,7 @@ import { layerOpacity } from './layer-style.js';
  * INHERITED properties that children no longer inherit from the canvas (they are siblings now): the CSS inherited-property list as longhands, minus
  * pointer-events (the layer owns it). container-type/name are not inherited but must sit on the layer for @container rules of the canvas to reach the children.
  */
-export const INHERITED_PROPS = Object.freeze([
+const INHERITED_PROPS = Object.freeze([
   'font-family', 'font-size', 'font-size-adjust', 'font-weight', 'font-style', 'font-stretch', 'font-kerning', 'font-optical-sizing', 'font-palette', 'font-language-override',
   'font-synthesis-weight', 'font-synthesis-style', 'font-synthesis-small-caps', 'font-feature-settings', 'font-variation-settings',
   'font-variant-caps', 'font-variant-east-asian', 'font-variant-emoji', 'font-variant-ligatures', 'font-variant-numeric', 'font-variant-position',

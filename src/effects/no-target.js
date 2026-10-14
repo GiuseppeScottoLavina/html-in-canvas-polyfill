@@ -9,7 +9,7 @@
  */
 
 /** The brand of NO_TARGET (Symbol.for: the same symbol in every bundle and realm). */
-export const NO_TARGET_KEY = Symbol.for('html-in-canvas-polyfill.effects.no-target');
+const NO_TARGET_KEY = Symbol.for('html-in-canvas-polyfill.effects.no-target');
 
 /** @type {Readonly<{x: number, y: number}>} */
 export const NO_TARGET = Object.freeze({ x: -1e5, y: -1e5, [NO_TARGET_KEY]: true });

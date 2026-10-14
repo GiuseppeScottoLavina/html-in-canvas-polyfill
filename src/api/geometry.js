@@ -6,7 +6,6 @@
  * Module: api-surface (src/api/*).
  */
 
-import { BUS } from '../contracts/events.js';
 import { matrixFrom, matrixInit, values16Equal } from '../util/matrix.js';
 import { geometryOptionsValues } from './validate.js';
 
@@ -39,19 +38,13 @@ export function geometryOptionsFromValues(v) {
 }
 
 /**
- * Implements GeometryApi. Mutates record.geometry, calls record.layer.applyGeometry / setHitTestOrder, emits BUS.GEOMETRY. Never requires a snapshot.
+ * Implements GeometryApi. Mutates record.geometry, calls record.layer.applyGeometry / setHitTestOrder. Never requires a snapshot.
  * An element that is in the drawn list with a null transform is passed to the layer as `{transform: null, clip: null}` (identity: hit-tested at the canvas origin, WPT);
  * `applyGeometry(el, null)` is only called when the element leaves the list.
  * @param {HicEnv} env
  * @returns {GeometryApi}
  */
 export function createGeometryApi(env) {
-  /** @param {CanvasRecord} record @param {Element} el @param {boolean} orderChanged */
-  const publish = (record, el, orderChanged) => {
-    if (orderChanged) record.layer?.setHitTestOrder(record.geometry.order.slice());
-    env.bus.emit(BUS.GEOMETRY, { record, element: el });
-  };
-
   return {
     update(record, el, opts) {
       const o = geometryOptionsValues(opts);
@@ -89,11 +82,11 @@ export function createGeometryApi(env) {
       }
       if (!changed && !orderChanged) return;
       if (changed) record.layer?.applyGeometry(el, geometry, env.store.version(el)?.layoutOffset ?? null);
-      publish(record, el, orderChanged);
+      if (orderChanged) record.layer?.setHitTestOrder(order.slice());
     },
 
     clear(record, el) {
-      if (resetGeometry(record, el)) env.bus.emit(BUS.GEOMETRY, { record, element: el });
+      resetGeometry(record, el);
     },
 
     get(record, el) {

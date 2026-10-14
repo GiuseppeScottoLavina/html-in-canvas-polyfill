@@ -14,16 +14,6 @@ import { compoundSpec, padReplacement, rewriteSelectorForCanvas } from '../util/
 
 export { compoundSpec, padReplacement, rewriteSelectorForCanvas };
 
-/**
- * PURE. Replacement compound for a canvas compound `original` (as found in the selector) so that the layer selector has the same specificity: `hic-layer[data-hic-layer="id"]` is (0,1,1); pad with :not(.hic-pad)/:not(#hic-pad) for the difference, never below the base.
- * @param {string} original  the canvas compound, e.g. `canvas.chart[data-x]`
- * @param {number} id        record id
- * @returns {string}
- */
-export function layerReplacement(original, id) {
-  return padReplacement(layerSelector(id), original);
-}
-
 /** @param {number} id @returns {string} */
 const layerSelector = (id) => `hic-layer[data-hic-layer="${id}"]`;
 

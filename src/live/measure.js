@@ -51,7 +51,7 @@ export function layoutSize(el, style = styleOf(el)) {
 }
 
 /** @param {Element} el @returns {HTMLElement|null} nearest polyfill layer above el (not el itself); reads the native parent chain, which the tree facade shadows */
-export function layerOf(el) {
+function layerOf(el) {
   const parentOf = nativeDom().parentNode;
   for (let cur = parentOf.call(el); cur && cur.nodeType === 1; cur = parentOf.call(cur)) {
     if (isLayerElement(/** @type {Element} */ (cur))) return /** @type {HTMLElement} */ (cur);
@@ -64,7 +64,7 @@ export function layerOf(el) {
  * @param {Element|null} layer
  * @returns {{x: number, y: number}}
  */
-export function layoutScale(layer) {
+function layoutScale(layer) {
   if (!layer) return { x: 1, y: 1 };
   const size = layoutSize(layer);
   if (!size || size.width < EPS || size.height < EPS) return { x: 1, y: 1 };
@@ -167,7 +167,7 @@ export function rectInLayer(layerEl, el) {
  * @param {CSSStyleDeclaration} cs
  * @returns {DOMMatrix|null}
  */
-export function ownTransformMatrix(cs) {
+function ownTransformMatrix(cs) {
   const set = (/** @type {string} */ v) => v && v !== 'none';
   const parts = [];
   if (set(cs.translate)) { const [x, y = '0px', z = '0px'] = cs.translate.split(/\s+/); parts.push(`translate3d(${x}, ${y}, ${z})`); }

@@ -14,8 +14,8 @@ export const DEFAULT_OPTIONS = Object.freeze({
   mode: 'auto', onUnsupportedBrowser: 'throw', onUnsupportedContent: 'placeholder', legacyNames: true, defaultFrameCap: 0,
   maxDpr: 2.5, maxSnapshotFps: 60, maxSurfacePixels: 33554432, interactionFloorFps: 0, inkMargin: 24,
   coherentPaint: true, coherenceMaxWaitMs: 50, paintGateMaxWaitMs: 400, parentFacade: true, stackingAudit: 'report', maxTotalSurfaceBytes: 536870912,
-  nodeBudget: Object.freeze({ soft: 350, hard: 3000, absolute: 20000 }), selectorBridge: 'both', strictResources: false,
-  forcePolyfill: false, trace: false, autoDiscover: true,
+  nodeBudget: Object.freeze({ soft: 350, hard: 3000, absolute: 20000 }), selectorBridge: 'both',
+  forcePolyfill: false, autoDiscover: true,
 });
 
 /** Options that exist on HicOptions but are not part of ResolvedOptions (they live on the env). */
@@ -29,7 +29,7 @@ const ENUMS = /** @type {const} */ ({
   selectorBridge: ['off', 'queries', 'css', 'both'],
 });
 
-const BOOLEANS = ['legacyNames', 'coherentPaint', 'parentFacade', 'strictResources', 'forcePolyfill', 'trace', 'autoDiscover'];
+const BOOLEANS = ['legacyNames', 'coherentPaint', 'parentFacade', 'forcePolyfill', 'autoDiscover'];
 
 /**
  * Numeric options: [name, minimum, whether the minimum is exclusive]. Every value must be a finite number.

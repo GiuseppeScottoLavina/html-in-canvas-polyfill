@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPluginContext, captureMapper, definePlugin, frameFor, validateInstance, withV1Fields } from '../../../src/effects/plugin-abi.js';
+import { buildPluginContext, captureMapper, definePlugin, validateInstance } from '../../../src/effects/plugin-abi.js';
 
 const base = () => ({ type: 'demo', apiVersion: 2, version: 1, create() { return { render() {} }; } });
 
@@ -9,6 +9,7 @@ test('definePlugin validates every required field with a TypeError', () => {
   assert.throws(() => definePlugin({ ...base(), type: '' }), TypeError);
   assert.throws(() => definePlugin({ ...base(), type: 5 }), TypeError);
   assert.throws(() => definePlugin({ ...base(), apiVersion: 3 }), /apiVersion/);
+  assert.throws(() => definePlugin({ ...base(), apiVersion: 1 }), /apiVersion.*must be 2/, 'ABI v1 is not accepted');
   assert.throws(() => definePlugin({ ...base(), apiVersion: undefined }), /apiVersion/);
   assert.throws(() => definePlugin({ ...base(), version: NaN }), /version/);
   assert.throws(() => definePlugin({ ...base(), version: '1' }), /version/);
@@ -33,19 +34,8 @@ test('output capabilities: only directCanvasRenderAttachment: true is accepted',
   assert.throws(() => definePlugin({ ...base(), outputCapabilities: 3 }), TypeError);
 });
 
-test('a v1 definition is accepted unchanged and keeps its declared version', () => {
-  const def = definePlugin({ ...base(), apiVersion: 1 });
-  assert.equal(def.apiVersion, 1);
-  assert.equal(buildPluginContext(def, { canvas: null }).apiVersion, 1, 'context.apiVersion equals the DECLARED version');
+test('the plugin context carries apiVersion 2', () => {
   assert.equal(buildPluginContext(definePlugin(base()), {}).apiVersion, 2);
-});
-
-test('v1 frames carry sourceSnapshotSerial = sourceVersion; v2 frames do not', () => {
-  const v1 = definePlugin({ ...base(), apiVersion: 1 });
-  const v2 = definePlugin(base());
-  assert.equal(frameFor(v1, { sourceVersion: 42 }).sourceSnapshotSerial, 42);
-  assert.equal('sourceSnapshotSerial' in frameFor(v2, { sourceVersion: 42 }), false);
-  assert.equal(withV1Fields({ sourceVersion: null }).sourceSnapshotSerial, null);
 });
 
 test('validateInstance: render is required, optional members must be functions, flags booleans', () => {
@@ -68,15 +58,13 @@ test('a spatial instance without captureInputMapper is rejected (pointer input c
   assert.doesNotThrow(() => validateInstance({ render() {}, spatial: false }, def));
 });
 
-test('captureMapper hands the frame to the instance (v1 alias for v1 plugins) and checks the result', () => {
+test('captureMapper hands the frame to the instance unchanged and checks the result', () => {
   const seen = [];
   const mapper = () => ({ x: 1, y: 2 });
   const inst = { render() {}, spatial: true, captureInputMapper(frame) { seen.push(frame); return mapper; } };
-  const v1 = definePlugin({ ...base(), apiVersion: 1 });
   const v2 = definePlugin(base());
-  assert.equal(captureMapper(inst, v1, { sourceVersion: 7 }), mapper);
-  assert.equal(seen[0].sourceSnapshotSerial, 7);
-  captureMapper(inst, v2, { sourceVersion: 8 });
-  assert.equal('sourceSnapshotSerial' in seen[1], false);
+  const frame = { sourceVersion: 8 };
+  assert.equal(captureMapper(inst, v2, frame), mapper);
+  assert.equal(seen[0], frame);
   assert.throws(() => captureMapper({ ...inst, captureInputMapper: () => 5 }, v2, {}), /must return a function/);
 });

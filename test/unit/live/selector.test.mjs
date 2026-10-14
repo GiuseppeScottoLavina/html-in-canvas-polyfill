@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rewriteSelectorForCanvas, layerReplacement, compoundSpec, padReplacement, structuralTwins } from '../../../src/live/selector-bridge.js';
+import { rewriteSelectorForCanvas, compoundSpec, padReplacement, structuralTwins } from '../../../src/live/selector-bridge.js';
 import { correctionTransform } from '../../../src/live/geometry-apply.js';
 
 /** A canvas stand-in: <canvas id="app" class="chart big" data-x="1" lang="en"> */
@@ -38,14 +38,14 @@ test('specificity is preserved by padding (never below the layer base)', () => {
   assert.equal(rw('canvas.chart .x'), `${L} .x`, '(0,1,1) equals the base');
   assert.equal(rw('canvas#app.chart .x'), `${L}:not(#hic-pad) .x`, '(1,1,1): one id unit');
   assert.equal(rw('.chart.big .x'), `${L}:not(.hic-pad) .x`, '(0,2,0): one class unit');
-  assert.equal(layerReplacement('canvas', 3), L);
-  assert.equal(layerReplacement('canvas.chart[data-x]', 3), `${L}:not(.hic-pad)`);
-  assert.equal(layerReplacement('.chart.big[data-x]', 3), `${L}:not(.hic-pad):not(.hic-pad)`);
-  assert.equal(layerReplacement('#app', 3), `${L}:not(#hic-pad)`);
-  assert.equal(layerReplacement('*', 3), L, 'never below the base');
+  assert.equal(padReplacement(L, 'canvas'), L);
+  assert.equal(padReplacement(L, 'canvas.chart[data-x]'), `${L}:not(.hic-pad)`);
+  assert.equal(padReplacement(L, '.chart.big[data-x]'), `${L}:not(.hic-pad):not(.hic-pad)`);
+  assert.equal(padReplacement(L, '#app'), `${L}:not(#hic-pad)`);
+  assert.equal(padReplacement(L, '*'), L, 'never below the base');
   assert.equal(padReplacement('[data-hic-root]', 'canvas.chart'), '[data-hic-root]:not(hic-pad)');
   // the padded replacement really ties the original: (id, class, type) of both sides are equal
-  const padded = layerReplacement('canvas#app.chart[data-x]', 3);
+  const padded = padReplacement(L, 'canvas#app.chart[data-x]');
   assert.deepEqual(compoundSpec(padded), compoundSpec('canvas#app.chart[data-x]'));
 });
 

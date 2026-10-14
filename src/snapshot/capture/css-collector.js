@@ -54,7 +54,7 @@ function textOfDataUrl(dataUrl) {
  * @param {(query: string) => boolean} matches
  * @returns {string}
  */
-export function flattenNestedMedia(css, matches) {
+function flattenNestedMedia(css, matches) {
   /** @param {RuleNode[]} nodes @returns {RuleNode[]} */
   const walk = (nodes) => {
     /** @type {RuleNode[]} */

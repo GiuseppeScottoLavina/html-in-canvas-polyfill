@@ -12,7 +12,7 @@ Built from `src/contracts/errors.js`, `src/contracts/features.js` and the code t
 | `installed.report()` / `window.__HIC__.installed.report()` | JSON: `mode`, `native`, `browser`, `canvases[]` (state, drawables, frame cap, entries), `unsupported[]` (with `count`), `deviations[]`, `errors[]` | any time; attach it to bug reports. `count` is how often the reporter was told about the entry (typically once per snapshot attempt that meets the content), not the number of elements: one iframe can show `count: 3` |
 | `console.warn` once | install refused (classic script), or the legacy `layoutsubtree` name used | see sections 1 and 6 |
 
-Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires. With `strictResources: true` an un-inlinable resource aborts the commit instead of showing a placeholder.
+Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires.
 
 ## 1. Install refused
 

@@ -14,7 +14,6 @@ test('a canvas in an open and in a closed shadow root: layer positioned by the r
   const { managed, env } = setup({ t });
   for (const mode of ['open', 'closed']) {
     const { root, canvas } = shadowHost(mode);
-    assert.equal(env.roots.rootOf(canvas), root);
     const r = managed(canvas);
     assert.equal(r.root, root);
     assert.equal(getComputedStyle(r.layer.element).position, 'absolute');
@@ -49,9 +48,6 @@ test('RootScope: roots, onRoot, ROOT_ADDED for roots created after and before th
   assert.equal(added.length, 1, 'adopt is idempotent');
   const detached = document.createElement('div');
   detached.attachShadow({ mode: 'open' });
-  assert.equal(env.roots.rootOf(detached.shadowRoot.host), document, 'a detached tree resolves to the document');
-  const free = document.createElement('p');
-  assert.equal(env.roots.rootOf(free), document);
   assert.equal(env.roots.roots().includes(detached.shadowRoot), false, 'disconnected roots are not listed');
 });
 

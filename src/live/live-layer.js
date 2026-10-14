@@ -267,7 +267,6 @@ export function createLiveLayer(env, record) {
       // Synchronous: getBoundingClientRect() / elementsFromPoint() right after updateElementGeometry() or drawElementImage() must already see the canvas transform (WPT canvas-transform-*).
       flushGeometryWrites();
     },
-    revealInAncestors(el) { clip?.reveal(el); },
     stackingAudit() {
       if (!mounted || env.options.stackingAudit === 'off' || !drawnSet.size) return [];
       const now = env.now();

@@ -41,7 +41,7 @@ const uaLooks = new Map();
  * Any CSS colour as sRGB [r, g, b, a] (computed values can be `oklab()`, `color(display-p3 ...)`): rgb() strings are parsed, the rest resolved through a 1 x 1 canvas.
  * @param {Document} doc @param {string} value @returns {Rgba}
  */
-export function rgbaOf(doc, value) {
+function rgbaOf(doc, value) {
   const hit = colorCache.get(value);
   if (hit) return hit;
   /** @type {Rgba} */
@@ -107,7 +107,7 @@ function paletteOf(doc, dark) {
  * Which natively drawn control `src` is, or null (a listbox select is drawn alike in WebKit's page and image; Gecko draws it as a field).
  * @param {Element} src @param {string} [engine] @returns {string|null}
  */
-export function controlKind(src, engine = 'webkit') {
+function controlKind(src, engine = 'webkit') {
   switch (src.localName) {
     case 'input': {
       const t = /** @type {HTMLInputElement} */ (src).type;
@@ -275,7 +275,7 @@ function rangeRatio(el) {
  * locale, `field` false for the literal separators.
  * @param {HTMLInputElement} el @returns {{text: string, field: boolean}[]}
  */
-export function dateParts(el) {
+function dateParts(el) {
   const v = el.value, t = el.type;
   if (!v) return [];
   try {

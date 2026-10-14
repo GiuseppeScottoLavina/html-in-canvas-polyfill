@@ -13,7 +13,6 @@ test('no frame presented: identity, inactive', () => {
   const c = createMapperChain();
   assert.deepEqual(c.map(P(3, 4)), { x: 3, y: 4 });
   assert.equal(c.active(), false);
-  assert.equal(c.depth(), 0);
 });
 
 test('mappers are walked in reverse: the LAST plugin is undone first', () => {
@@ -38,7 +37,6 @@ test('the presented size is handed to every mapper unchanged', () => {
 test('ring keeps the last 3 presented frames; age selects an older one', () => {
   const c = createMapperChain();
   for (let i = 1; i <= 5; i += 1) c.push(i, [shiftX(i)]);
-  assert.equal(c.depth(), 3);
   assert.equal(c.map(P(0, 0)).x, 5);
   assert.equal(c.map(P(0, 0), 1).x, 4);
   assert.equal(c.map(P(0, 0), 2).x, 3);

@@ -179,7 +179,7 @@ function fillGaps(env, native, ledger) {
  * @param {any} [owner]  the canvas that captures an Element (default: its parent, the legacy direct-child rule)
  * @returns {{width: number, height: number}}
  */
-export function nativeDefaultSize(canvas, source, owner = source?.parentElement) {
+function nativeDefaultSize(canvas, source, owner = source?.parentElement) {
   if (typeof canvas?.getElementImageDefaultSize === 'function') return canvas.getElementImageDefaultSize(source);
   if (typeof source?.close === 'function') return { width: source.width, height: source.height };
   const image = owner.captureElementImage(source);

@@ -29,7 +29,7 @@
  * @property {Rgba} red
  */
 
-export const DISABLED_ALPHA = 0.4;
+const DISABLED_ALPHA = 0.4;
 const LUMINANCE_THRESHOLD = 0.5;
 
 /** @param {number} v 0-255 @returns {number} linear 0-1 */

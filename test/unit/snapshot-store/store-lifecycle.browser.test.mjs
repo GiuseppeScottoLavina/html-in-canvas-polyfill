@@ -174,21 +174,14 @@ test('display:none (not laid out) drops the snapshot; showing it again builds a 
   assert.deepEqual(rig.css(a, 50, 30), RGBA.lime);
 });
 
-test('drop(el) resets the state of an element that is still a drawable and rebuilds it; forget(record) releases everything silently', async (t) => {
+test('forget(record) releases everything silently', async (t) => {
   const rig = await makeRig(t);
   const a = rig.add('a', 100, 60);
   const b = rig.add('b', 100, 60);
   await rig.build(a);
   await rig.build(b);
-  rig.store.drop(a);
-  assert.equal(rig.store.version(a), null);
-  assert.equal(rig.store.has(a), true);
-  assert.equal(rig.store.isSettled(a), false);
-  assert.equal(rig.store.isPaintReady(rig.record).reason, 'first-commit');
-  assert.deepEqual(rig.store.commitLanded(), { changed: [], removed: [a] }, 'the reset is announced');
-  await rig.build(a);
-  assert.notEqual(rig.store.version(a), null);
   rig.store.commitLanded();
+  assert.notEqual(rig.store.version(a), null);
   rig.store.forget(rig.record);
   assert.equal(rig.store.has(a), false);
   assert.equal(rig.store.version(b), null);

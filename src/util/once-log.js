@@ -1,6 +1,6 @@
 /** console.error/warn at most once per key. */
 
-/** @param {Console} [con] @returns {{once: (key: string, level: 'error'|'warn', ...args: unknown[]) => boolean, reset: () => void}} */
+/** @param {Console} [con] @returns {{once: (key: string, level: 'error'|'warn', ...args: unknown[]) => boolean}} */
 export function createOnceLog(con = globalThis.console) {
   const seen = new Set();
   return {
@@ -10,6 +10,5 @@ export function createOnceLog(con = globalThis.console) {
       try { con[level](...args); } catch { /* console may be absent */ }
       return true;
     },
-    reset() { seen.clear(); },
   };
 }

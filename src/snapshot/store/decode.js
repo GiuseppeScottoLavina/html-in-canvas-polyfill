@@ -6,7 +6,7 @@
 import { typeError } from '../../contracts/errors.js';
 
 /** A decode that never settles would hold the pipeline (depth 1) forever. */
-export const DECODE_TIMEOUT_MS = 4000;
+const DECODE_TIMEOUT_MS = 4000;
 
 /**
  * new Image(); decoding=async; src=url; await decode(). Rejects on a broken image or after `timeoutMs` (the pump reports it and keeps the previous version).

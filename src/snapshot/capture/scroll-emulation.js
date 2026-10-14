@@ -242,7 +242,7 @@ function onDarkBackground(win, src) {
  * @param {HTMLElement} cloneScroller
  * @param {boolean} [scrolled]  the clone scroller itself shows the scroll offset (marker); false when its children were translated instead (bars sit at the box origin)
  */
-export function paintClassicScrollbars(src, cloneScroller, scrolled = true) {
+function paintClassicScrollbars(src, cloneScroller, scrolled = true) {
   const win = src.ownerDocument.defaultView ?? window;
   const cs = win.getComputedStyle(src);
   const f = scrollFacts(src, cs);

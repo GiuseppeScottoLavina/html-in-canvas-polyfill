@@ -12,7 +12,7 @@ import { defineMethod, globalsOf } from './validate.js';
 /** @typedef {import('../contracts/types.js').PatchLedger} PatchLedger */
 /** @typedef {{installTexturePatches: (env: HicEnv, ledger: PatchLedger) => void}} GpuBundle */
 
-export const GPU_KEY = Symbol.for('hic.gpu-patches');
+const GPU_KEY = Symbol.for('hic.gpu-patches');
 export const GPU_LATE_KEY = Symbol.for('hic.gpu-late');
 
 /** @param {HicEnv} env @param {string} feature @param {string} name @returns {never} */

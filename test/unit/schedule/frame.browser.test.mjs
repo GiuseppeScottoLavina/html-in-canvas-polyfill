@@ -203,7 +203,7 @@ test('startObservers: starts on CANVAS_MOUNTED, stops on CANVAS_UNMOUNTING and o
   s.canvas.setAttribute('framecap', '45');
   await microtasks();
   assert.equal(s.record.frameCap, 45);
-  await s.scheduler.idle();
+  for (let last = -1; s.scheduler.stats().frames !== last;) { last = s.scheduler.stats().frames; await sleep(50); } // settled: no frame for 50 ms
   s.bus.emit(BUS.CANVAS_UNMOUNTING, { record: s.record });
   s.store.calls.length = 0;
   s.canvas.setAttribute('framecap', '12');

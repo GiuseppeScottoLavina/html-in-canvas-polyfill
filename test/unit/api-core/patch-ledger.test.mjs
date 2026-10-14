@@ -17,6 +17,8 @@ class Target extends Base {
   set acc(_v) { /* native setter */ }
 }
 const ledgerFor = () => createPatchLedger(/** @type {any} */ ({}));
+/** the property currently carries the polyfill's patch mark */
+const isPatched = (/** @type {object} */ target, /** @type {PropertyKey} */ key) => carriesMark(Object.getOwnPropertyDescriptor(target, key));
 
 test('define + restoreAll: a data property comes back with the very same function and flags', () => {
   const proto = Target.prototype;
@@ -25,11 +27,11 @@ test('define + restoreAll: a data property comes back with the very same functio
   const replacement = function () { return 'patched'; };
   ledger.define(proto, 'method', { ...before, value: replacement });
   assert.equal(new Target().method(1, 2), 'patched');
-  assert.equal(ledger.isPatched(proto, 'method'), true);
+  assert.equal(isPatched(proto, 'method'), true);
   assert.deepEqual(ledger.restoreAll(), []);
   assertSameDescriptor(Object.getOwnPropertyDescriptor(proto, 'method'), before, 'method');
   assert.equal(new Target().method(1, 2), 3);
-  assert.equal(ledger.isPatched(proto, 'method'), false);
+  assert.equal(isPatched(proto, 'method'), false);
 });
 
 test('an accessor is restored with the same getter and setter objects', () => {
@@ -177,9 +179,9 @@ test('regression: install, uninstall, install again patches every property (no s
   for (let round = 0; round < 3; round++) {
     const ledger = ledgerFor();
     installOnce(ledger);
-    assert.equal(ledger.isPatched(proto, 'acc'), true, `round ${round}: accessor patched`);
-    assert.equal(ledger.isPatched(proto, 'method'), true, `round ${round}: method patched`);
-    assert.equal(ledger.isPatched(proto, 'fresh'), true, `round ${round}: new key patched`);
+    assert.equal(isPatched(proto, 'acc'), true, `round ${round}: accessor patched`);
+    assert.equal(isPatched(proto, 'method'), true, `round ${round}: method patched`);
+    assert.equal(isPatched(proto, 'fresh'), true, `round ${round}: new key patched`);
     assert.equal(new Target().method(1, 2), 4, `round ${round}: wrapped method answers`);
     assert.equal(Object.getOwnPropertyDescriptor(proto, 'acc')?.get, nativeGet, `round ${round}: the platform getter was kept as is`);
     assert.equal(/** @type {any} */ (nativeGet)[MARK.PATCH_SYMBOL], undefined, `round ${round}: the platform getter is not stamped`);

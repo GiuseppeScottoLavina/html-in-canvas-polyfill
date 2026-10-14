@@ -351,20 +351,18 @@ test('G-fps-cap positive control: the uncapped canvas exceeds 1.3 x N', () => {
   assert.ok(t.fired.length / 3 > 1.3 * 30);
 });
 
-test('a runtime cap change is effective within 2 frames and is announced once', () => {
+test('a runtime cap change is stored once and is effective within 2 frames', () => {
   const t = setup();
   const record = mounted(t);
   t.ctl.onFire = (r) => t.scheduler.requestPaint(r);
   t.scheduler.setFrameCap(record, 10);
   t.scheduler.requestPaint(record);
   t.run(1000);
-  const announced = [];
-  t.bus.on(BUS.FRAME_CAP, (e) => announced.push(e.fps));
   t.fired.length = 0;
   t.scheduler.setFrameCap(record, 120);
   t.scheduler.setFrameCap(record, 120);
+  assert.equal(record.frameCap, 120);
   t.run(1000 / 120 * 4);
-  assert.deepEqual(announced, [120]);
   assert.ok(t.fired.length >= 3, `fast again after ${t.fired.length} paints in 4 frames`);
   t.scheduler.setFrameCap(record, 10);
   t.fired.length = 0;
@@ -514,20 +512,6 @@ test('stats: frames, paintsFired, lateFrames (a skipped frame while ticking back
   assert.equal(after.lateFrames, before.lateFrames + 1);
   assert.ok(after.frames > before.frames && after.paintsFired > before.paintsFired);
   assert.deepEqual(Object.keys(after).sort(), ['frames', 'gateTimeouts', 'lateFrames', 'paintsFired', 'phaseFallbacks']);
-});
-
-test('idle() resolves when no canvas has pending work', async () => {
-  const t = setup();
-  const record = t.addRecord([fakeElement()]);
-  t.scheduler.register(record);
-  let resolved = false;
-  const p = t.scheduler.idle().then(() => { resolved = true; });
-  await Promise.resolve();
-  assert.equal(resolved, false);
-  t.run(100);
-  await p;
-  assert.equal(resolved, true);
-  await t.scheduler.idle();
 });
 
 test('dispose removes the visibility listener, the pending frame and all state', () => {

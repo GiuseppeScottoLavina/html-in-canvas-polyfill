@@ -104,7 +104,6 @@ export function createPatchLedger(_win) {
   return {
     define,
     wrap,
-    isPatched: (target, key) => carriesMark(Object.getOwnPropertyDescriptor(target, key)),
     list: () => entries.map((e) => ({ target: e.target, key: e.key, patched: sameDescriptor(Object.getOwnPropertyDescriptor(e.target, e.key), e.installed) })),
     restoreAll() {
       const left = [];

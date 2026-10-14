@@ -130,7 +130,7 @@ export function geckoToggleSkin(w, h, s, p) {
 }
 
 /** nsITheme::GetMinimumRangeThumbSize */
-export const GECKO_THUMB = 20;
+const GECKO_THUMB = 20;
 
 /**
  * Theme::PaintRange (horizontal): a 6 px bar centred vertically, radius 3, 1 px border; left of the thumb centre the progress colours (accent / accent dark; disabled grey40 50 %),

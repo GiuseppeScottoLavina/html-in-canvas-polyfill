@@ -47,7 +47,7 @@ test('take records the SHAPED rect as in flight (what the tile will cover)', () 
   const grown = { x: -2, y: -2, width: 14, height: 14 };
   const t = d.take(el, () => grown);
   assert.deepEqual(t.rect, grown);
-  assert.equal(d.inFlightCount(el), 1);
+  assert.equal((d.states.get(el)?.inflight.size ?? 0), 1);
 });
 
 test('structural damage after a take bumps the epoch; the older result is no longer accepted', () => {
@@ -123,7 +123,7 @@ test('G-out-of-order: tile 5 lands after tile 6 -> its rect is re-damaged', () =
   const again = d.reclaim(el, t5.rect, t5.generation);
   assert.deepEqual(again, A, 'the older, non-overlapping tile covered a region the newer one does not');
   assert.equal(d.hasPending(el), true);
-  assert.equal(d.inFlightCount(el), 0, 'the dropped generation is settled');
+  assert.equal((d.states.get(el)?.inflight.size ?? 0), 0, 'the dropped generation is settled');
   assert.deepEqual(d.take(el).rect, A);
 });
 
@@ -186,7 +186,7 @@ test('committed tiles are forgotten once no older generation is unresolved', () 
   assert.equal(d.states.get(el).committedTiles.length, 1);
   d.reclaim(el, g1.rect, g1.generation);
   assert.equal(d.states.get(el).committedTiles.length, 0);
-  assert.equal(d.inFlightCount(el), 0);
+  assert.equal((d.states.get(el)?.inflight.size ?? 0), 0);
 });
 
 test('forget drops all state; an unknown element accepts nothing', () => {

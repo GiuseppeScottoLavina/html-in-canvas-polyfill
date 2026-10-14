@@ -42,7 +42,7 @@ When the drawn source and the canvas differ by more than 1 CSS pixel at the firs
 | field | rule |
 |---|---|
 | `type` | non-empty string |
-| `apiVersion` | `2` (a v1 definition is accepted and adapted, section 8) |
+| `apiVersion` | `2` (any other value is a `TypeError`) |
 | `version` | finite number (your plugin's own version) |
 | `create(context, options)` | function, may be async, returns the instance |
 | `outputCapabilities` | optional. `{ directCanvasRenderAttachment: true }` promises that the pass only WRITES its destination as a colour attachment of the same format and never samples or reads it; the host may then give the last plugin the canvas texture directly. Any other key is a `TypeError`. |
@@ -77,7 +77,7 @@ What the host does with a mapper (the interposer, on by default): for `pointermo
 
 ### `NO_TARGET`: no element here
 
-`NO_TARGET` is the value a mapper returns for "the user sees no element of the source at this point". It is exported by the effects module (`import { NO_TARGET, isNoTarget } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'`) and by the classic bundle (`HTMLInCanvasEffects.NO_TARGET`, `HTMLInCanvasEffects.isNoTarget(point)`). A plugin that is built as its own bundle may also import `src/effects/no-target.js`, a module without dependencies (the plugins of this repository do).
+`NO_TARGET` is the value a mapper returns for "the user sees no element of the source at this point". It is exported by the effects module (`import { NO_TARGET, isNoTarget } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'`) and by the classic bundle (`HTMLInCanvasEffects.NO_TARGET`, `HTMLInCanvasEffects.isNoTarget(point)`). The plugins of this repository, built inside it, import `src/effects/no-target.js` by relative path; `src/` is internal and not an entry point of the package.
 
 What the host does with it:
 - The mapper chain stops at it. The mappers of the plugins before this one never see the point, so none of them can clamp it back onto the canvas, onto an element (a mapper that clamps to the canvas is common: the water plugin and the wobble example below do it).
@@ -252,11 +252,7 @@ host.destroy();                         // stops rendering; the canvas keeps a (
 
 Events on the canvas: `effectframe` (a frame was presented, `detail` is the presentation frame) and `effecterror` (`detail: {error, type, id, phase}`). A plugin that throws is marked failed and is no longer called (`src/effects/effect-plugins.js`); the error is recorded in `installed.report().errors` and printed once. The contract says the canvas keeps the last presented frame after `effecterror` (`docs/API-CONTRACT.md` 7.3); that behaviour has no gate of its own.
 
-## 8. ABI v1 plugins
-
-A definition with `apiVersion: 1` is accepted unchanged. Its frame also carries `sourceSnapshotSerial`, the v1 name of `sourceVersion`, and `context.apiVersion` is 1. v2 renamed that field and aligned the vocabulary with the standard (`docs/API-CONTRACT.md` 7.2).
-
-## 9. Checklist
+## 8. Checklist
 
 - `spatial: true` has a `captureInputMapper` and it is pure and frozen per frame.
 - Where the presented pixel shows no element of the source, the mapper returns `NO_TARGET`.

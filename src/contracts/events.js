@@ -17,20 +17,10 @@ export const BUS = Object.freeze({
   DAMAGE: 'damage',
   /** {record, changed: Element[], removed: Element[]} commitLanded() produced a change set */
   COMMIT: 'snapshot:commit',
-  /** {record} requestPaint() */
-  PAINT_REQUESTED: 'paint:requested',
-  /** {record, changed: Element[], serial: number} a paint event was dispatched */
-  PAINT_FIRED: 'paint:fired',
-  /** {record, element: Element} canvas transform / clip / order changed (api -> live, effects) */
-  GEOMETRY: 'geometry:changed',
   /** {record, contentBox: ContentBox, previous: ContentBox} canvas content box changed (resize) */
   RESIZE: 'canvas:resize',
   /** {dpr: number} devicePixelRatio changed (page zoom / monitor move) */
   DPR: 'dpr:changed',
-  /** {record, fps: number} effective frame cap changed */
-  FRAME_CAP: 'framecap:changed',
-  /** UnsupportedEntry */
-  UNSUPPORTED: 'unsupported',
   /** {record, version: SnapshotVersion} effects: a new source version is available for upload */
   SOURCE_VERSION: 'source:version',
   /** {commits: number, windowMs: number} the snapshot pipeline committed >= 30/s for 3 s with no outside damage (store/runaway.js); install.js reports it and uninstalls */
@@ -47,7 +37,7 @@ export const EVENTS = Object.freeze({
   ELEMENT_GEOMETRY_UPDATE: 'elementgeometryupdate',
   /** polyfill extension, CustomEvent<UnsupportedEntry>, bubbles:false, dispatched on the canvas */
   UNSUPPORTED: 'hicunsupported',
-  /** polyfill extension (ABI v1 name kept), CustomEvent, dispatched on the canvas by the effect host */
+  /** polyfill extension, CustomEvent, dispatched on the canvas by the effect host */
   EFFECT_FRAME: 'effectframe',
   EFFECT_ERROR: 'effecterror',
 });
@@ -86,7 +76,7 @@ export const EXT = Object.freeze({
   FRAME_CAP_PROP: 'frameCap',
   FRAME_CAP_MIN: 1,
   FRAME_CAP_MAX: 240,
-  /** global namespace of the effect API (ABI v1 name kept) */
+  /** global namespace of the effect API */
   EFFECTS_GLOBAL: 'HTMLInCanvasEffects',
   /** debug/report handle */
   DEBUG_GLOBAL: '__HIC__',

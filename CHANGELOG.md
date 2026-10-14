@@ -28,6 +28,12 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - The two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from native builds on 2026-10-09, remain as deprecated legacy overloads until the pinned WPT revision moves.
 - `options.mode: 'polyfill'` over a usable native implementation steps aside with one warning instead of throwing; a legacy native without the bridge bundle is used as found (one warning) instead of being refused.
 
+### Removed
+
+- The options `strictResources` and `trace`: they were validated but had no effect. Passing either now throws a `TypeError`, like any unknown option.
+- Plugin ABI 1 and its adapter (the `sourceSnapshotSerial` frame field): `definePlugin` accepts `apiVersion: 2` only.
+- The `./src/*` package export. The public API is the documented entry points of `exports`; the modules under `src/` are internal.
+
 ### Fixed
 
 - `install()` threw `HicUnsupportedError('partial-native')` on Chrome Canary 157.0.8103.0, which exposes the API by default, because the native probe required `ElementImage.width` / `height`. The probe now decides on the core behaviour only, and Canary 157 installs in mode `native` and draws natively.

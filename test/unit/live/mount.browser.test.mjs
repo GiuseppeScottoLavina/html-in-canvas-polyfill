@@ -1,5 +1,5 @@
 import { test, assert, frames, microtasks } from '/test/unit/lib/t.js';
-import { setup, page, rect, contentRect, closeRect } from '/test/unit/live/lib.mjs';
+import { setup, page, rect, contentRect, closeRect, scopeOf } from '/test/unit/live/lib.mjs';
 
 const CHILDREN = '<div drawable id="a" tabindex="0">A</div>text<!--note--><p id="b">B <b>bold</b></p>';
 
@@ -194,7 +194,7 @@ test('mount() on a mounted layer re-homes it: moved canvas, disconnected canvas,
   root.append(host);
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.append(canvas);
-  r.root = env.roots.rootOf(canvas);
+  r.root = scopeOf(canvas);
   r.layer.mount();
   assert.equal(layer.getRootNode(), shadow);
   assert.equal(getComputedStyle(layer).position, 'absolute');

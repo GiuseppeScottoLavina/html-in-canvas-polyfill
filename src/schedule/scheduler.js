@@ -89,8 +89,6 @@ export function createScheduler(env, store, hooks) {
   const gate = createPaintGate(env, store);
   const counters = { frames: 0, paintsFired: 0, lateFrames: 0, gateTimeouts: 0 };
   const phase = createFramePhase(env, runTick);
-  /** @type {Array<() => void>} */
-  let idleWaiters = [];
   let registeredCount = 0;
   let armed = false;
   let disposed = false;
@@ -251,7 +249,6 @@ export function createScheduler(env, store, hooks) {
     } finally {
       entry.dispatching = false;
     }
-    env.bus.emit(BUS.PAINT_FIRED, { record, changed: list, serial: paint.serial });
   }
 
   /**
@@ -432,7 +429,6 @@ export function createScheduler(env, store, hooks) {
       }
     }
     if (again) armTick();
-    flushIdle();
   }
 
   /** @param {Entry} entry @param {number} now */
@@ -536,20 +532,6 @@ export function createScheduler(env, store, hooks) {
     }
     chained = again;
     if (again) armTick();
-    flushIdle();
-  }
-
-  function isIdle() {
-    if (armed || pumpQueued) return false;
-    for (const entry of entries.values()) if (entry.registered && isServable(entry) && hasWork(entry)) return false;
-    return true;
-  }
-
-  function flushIdle() {
-    if (!idleWaiters.length || !isIdle()) return;
-    const waiters = idleWaiters;
-    idleWaiters = [];
-    for (const done of waiters) done();
   }
 
   /**
@@ -592,16 +574,12 @@ export function createScheduler(env, store, hooks) {
         phase.cancel();
         armed = false;
       }
-      flushIdle();
     },
 
     requestPaint(record) {
       const entry = entries.get(record);
       if (!entry?.registered) return;
-      if (!record.paint.force) {
-        record.paint.force = true;
-        env.bus.emit(BUS.PAINT_REQUESTED, { record });
-      }
+      record.paint.force = true;
       entry.dirty = true;
       armTick();
     },
@@ -628,7 +606,6 @@ export function createScheduler(env, store, hooks) {
       if (record.frameCap === next) return;
       record.frameCap = next;
       capGate.reset(record.id);
-      env.bus.emit(BUS.FRAME_CAP, { record, fps: next });
       if (entries.get(record)?.dirty) armTick();
     },
 
@@ -664,13 +641,6 @@ export function createScheduler(env, store, hooks) {
       if (urgent || URGENT_CAUSES.has(cause)) urgentPump();
     },
 
-    idle() {
-      return new Promise((resolve) => {
-        if (isIdle()) resolve();
-        else idleWaiters.push(resolve);
-      });
-    },
-
     stats() {
       return { ...counters, phaseFallbacks: phase.stats().fallbacks };
     },
@@ -692,7 +662,6 @@ export function createScheduler(env, store, hooks) {
       entries.clear();
       registeredCount = 0;
       armed = false;
-      flushIdle();
     },
   };
 

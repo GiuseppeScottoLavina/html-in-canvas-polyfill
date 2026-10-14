@@ -20,7 +20,7 @@ import { createRunawayGuard } from './runaway.js';
 import { createBackdropCache, paintTextOverlay } from './text-paint.js';
 import { createScrollCompositor } from './scroll-compose.js';
 import { allocateSurface, forkSurface, makeCanvas, surfaceBytes, watchSurfaceLoss } from './surfaces.js';
-import { newVersion, parseTransformOrigin, rebaseVersion } from './versions.js';
+import { newVersion, parseTransformOrigin, reviseVersion } from './versions.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').CaptureFn} CaptureFn */
@@ -827,7 +827,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       for (const entry of entriesOf(e.record)) {
         markDamage(entry.el, null, 'resize');
         if (!entry.version) continue;
-        entry.version = rebaseVersion(entry.version, e.contentBox, t);
+        entry.version = reviseVersion(entry.version, { canvasWidth: e.contentBox.width, canvasHeight: e.contentBox.height }, t); // same surface, new canvas size
         pendingChanged.add(entry.el);
       }
     }),
@@ -903,13 +903,6 @@ export function createSnapshotStore(env, capture, extras = {}) {
       return false;
     },
     commitLanded,
-    drop(el) {
-      const entry = entries.get(el);
-      if (!entry) return;
-      const record = entry.record;
-      dropEntry(entry, true);
-      if (record.layer?.drawableElements().includes(el)) { track(record, el); markDamage(el, null, 'forced'); }
-    },
     forget,
     has: (el) => entries.has(el),
     isSettled(el) {

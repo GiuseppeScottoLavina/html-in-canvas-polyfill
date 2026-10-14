@@ -41,7 +41,7 @@ export function getRectMemory(env) {
  * @param {number} ink  css px added on every side
  * @returns {RectMemory}
  */
-export function createRectMemory(ink) {
+function createRectMemory(ink) {
   /** @type {WeakMap<Element, {box: Rect, reach: Rect, own: Rect, painted: boolean}>} */
   const last = new WeakMap();
 

@@ -181,11 +181,6 @@ export class DamageTracker {
     return this.states.get(el)?.pending?.since ?? null;
   }
 
-  /** @param {Element} el @returns {number} builds taken and neither committed nor reclaimed */
-  inFlightCount(el) {
-    return this.states.get(el)?.inflight.size ?? 0;
-  }
-
   /** @param {Element} el */
   forget(el) {
     this.states.delete(el);

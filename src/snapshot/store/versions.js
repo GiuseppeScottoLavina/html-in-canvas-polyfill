@@ -1,9 +1,8 @@
 /**
- * SnapshotVersion construction and the metadata-only rebase used on resize.
+ * SnapshotVersion construction and the metadata-only revisions (caret-only commit, resize).
  * Module: snapshot-store (src/snapshot/store/*).
  */
 
-/** @typedef {import('../../contracts/types.js').ContentBox} ContentBox */
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 /** @typedef {import('../../contracts/types.js').SnapshotVersion} SnapshotVersion */
 
@@ -58,17 +57,6 @@ export function reviseVersion(v, changes, now) {
     surface: changes.surface ?? v.surface,
     dirty: changes.dirty ?? null,
   }, now);
-}
-
-/**
- * New version sharing the same surface with new canvasWidth/canvasHeight (resize). The surface is shared, so the store's per-surface pin count covers every version that reads it.
- * @param {SnapshotVersion} v
- * @param {ContentBox} box
- * @param {number} now
- * @returns {SnapshotVersion}
- */
-export function rebaseVersion(v, box, now) {
-  return reviseVersion(v, { canvasWidth: box.width, canvasHeight: box.height }, now);
 }
 
 /**

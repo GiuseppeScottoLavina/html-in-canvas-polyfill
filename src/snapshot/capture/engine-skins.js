@@ -21,7 +21,7 @@ import { currentEngine } from '../../util/engine.js';
  * @property {(win: Window, src: Element) => boolean} webkitDarkBars
  */
 
-export const ENGINE_SKINS_KEY = Symbol.for('hic.engine-skins');
+const ENGINE_SKINS_KEY = Symbol.for('hic.engine-skins');
 
 /** @returns {EngineSkins|null} the registered engines bundle */
 export function engineSkins() {

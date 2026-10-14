@@ -6,6 +6,12 @@ import { createPatchLedger } from '/src/api/patch.js';
 import { createRootScope } from '/src/live/root-scope.js';
 import { createLiveLayer } from '/src/live/live-layer.js';
 
+/** the tree scope of a node (document or shadow root); a detached tree counts as the document */
+export function scopeOf(/** @type {Node} */ node) {
+  const root = node.getRootNode();
+  return root.nodeType === 9 || root.nodeType === 11 ? root : document;
+}
+
 /**
  * A HicEnv with real bus, ledger and root scope; registry, reporter and record creation are tiny stand-ins.
  * @param {{t: {cleanup: (fn: () => any) => void}, options?: object}} args
@@ -32,7 +38,7 @@ export function setup({ t, options = {} }) {
   /** Build a record for `canvas` (not mounted yet). */
   function record(/** @type {HTMLCanvasElement} */ canvas, legacy = false) {
     const r = /** @type {any} */ ({
-      id: ++nextId, canvas, state: 'active', legacy, root: env.roots.rootOf(canvas), layer: null,
+      id: ++nextId, canvas, state: 'active', legacy, root: scopeOf(canvas), layer: null,
       contentBox: { width: 0, height: 0, gridScaleX: 1, gridScaleY: 1 },
     });
     r.layer = createLiveLayer(env, r);
