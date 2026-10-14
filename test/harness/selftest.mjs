@@ -11,10 +11,9 @@ import { resolve } from 'node:path';
 import { startServer } from './server.mjs';
 import { launchChrome } from './lib/chrome.mjs';
 import { environmentFacts } from './lib/env.mjs';
-import { SCRATCH_DIR } from './lib/util.mjs';
+import { SCRATCH_DIR, arg } from './lib/util.mjs';
 import { waitForQuiet, loadSnapshot } from './lib/load.mjs';
 
-const arg = k => process.argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const only = arg('only')?.split(','), skip = arg('skip')?.split(',') ?? [], chrome = arg('chrome') ?? 'stable';
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve(SCRATCH_DIR, 'selftest', stamp); mkdirSync(outDir, { recursive: true });

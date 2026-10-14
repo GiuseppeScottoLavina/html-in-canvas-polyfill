@@ -17,6 +17,20 @@ export const FRAME_60 = 1000 / 60;   // 16.667 ms
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/** The value of the command-line option `--name=value`, else `fallback`. */
+export const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
+
+/** Poll until `fn()` is truthy; returns the value, or null on timeout (a rejection counts as not yet). */
+export async function until(fn, timeoutMs = 8000, intervalMs = 100) {
+  const t = Date.now();
+  for (;;) {
+    const v = await fn().catch(() => null);
+    if (v) return v;
+    if (Date.now() - t > timeoutMs) return null;
+    await sleep(intervalMs);
+  }
+}
+
 /**
  * Order statistics of a numeric sample. Quantiles use the nearest-rank method.
  * @param {number[]} values

@@ -63,10 +63,6 @@ class Run {
   }
   get ok() { return this.checks.length > 0 && this.checks.every((c) => c.ok); }
 }
-async function until(fn, timeoutMs = 6000, intervalMs = 100) {
-  const t = Date.now();
-  for (;;) { const v = await fn().catch(() => null); if (v) return v; if (Date.now() - t > timeoutMs) return null; await sleep(intervalMs); }
-}
 const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const rgb = (s) => (s.match(/\d+/g) ?? []).slice(0, 3).map(Number);
 const near = (a, b, tol = 24) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) <= tol);
@@ -112,12 +108,12 @@ async function openApp(page, base, fw, params = '', file = 'index.html') {
   await page.send('Emulation.setDeviceMetricsOverride', { width: VIEW.width, height: VIEW.height, deviceScaleFactor: 1, mobile: false });
   page.clearLogs();
   await page.navigate(`${base}/examples/frameworks/${fw}/${file}${params}`);
-  return !!(await until(() => page.evaluate(`!!(window.__app && __app.ready)`), 8000));
+  return !!(await H.until(() => page.evaluate(`!!(window.__app && __app.ready)`), 8000));
 }
 /** Wait for a non-blank canvas showing `fn(img)` truthy. */
 async function surfaceUntil(page, fn, timeoutMs = 6000, sel = '#surface') {
   let last = null;
-  const hit = await until(async () => { last = await readSurface(page, sel); return fn(last) ? last : null; }, timeoutMs, 120);
+  const hit = await H.until(async () => { last = await readSurface(page, sel); return fn(last) ? last : null; }, timeoutMs, 120);
   return { img: hit ?? last, ok: !!hit };
 }
 function save(name, img) { mkdirSync(OUT, { recursive: true }); writeFileSync(resolve(OUT, `${name}.png`), H.encodePng(img)); }
@@ -155,11 +151,11 @@ async function typing(run, base, { params = '?tick=1', file } = {}) {
   await run.step('click on the drawn input focuses it', async () => {
     if (!input || !input.w) return { ok: false, why: 'input has no box', input };
     await clickAt(page, input.sx + input.x + 20, input.sy + input.y + input.h / 2);
-    return { ok: !!(await until(() => deepFocusEditable(page), 1500)) };
+    return { ok: !!(await H.until(() => deepFocusEditable(page), 1500)) };
   });
   await run.step('typing updates framework state', async () => {
     await typeTrusted(page, 'ada');
-    const s = await until(async () => { const st = await state(page); return st.name === 'ada' ? st : null; }, 3000);
+    const s = await H.until(async () => { const st = await state(page); return st.name === 'ada' ? st : null; }, 3000);
     return { ok: !!s, name: (await state(page)).name };
   });
   await run.step('typing updates the canvas pixels (input and echo regions)', async () => {
@@ -187,7 +183,7 @@ async function rowsMatch(page, row, order) {
 
 async function clickRowExpect(page, row, k, id) {
   const r = row(k); await clickAt(page, r.px, r.py);
-  const s = await until(async () => { const st = await state(page); return st.selected === id ? st : null; }, 2000);
+  const s = await H.until(async () => { const st = await state(page); return st.selected === id ? st : null; }, 2000);
   return { ok: !!s, expected: id, selected: (await state(page)).selected };
 }
 
@@ -200,7 +196,7 @@ async function list(run, base, { params = '?tick=1' } = {}) {
   await run.step('click drawn row 2 -> its handler (selected = b)', async () => clickRowExpect(page, row, 1, 'b'));
   await run.step('Reverse (drawn button): state, live DOM and drawn rows follow', async () => {
     await btn('#btn-reverse');
-    const s = await until(async () => { const st = await state(page); return st.order.join() === 'c,b,a' ? st : null; }, 2000);
+    const s = await H.until(async () => { const st = await state(page); return st.order.join() === 'c,b,a' ? st : null; }, 2000);
     const dom = await page.evaluate(`[...__app.q('#list').children].map((li) => li.dataset.id).join()`);
     const m = await rowsMatch(page, row, ['c', 'b', 'a']);
     return { ok: !!s && dom === 'c,b,a' && m.ok, dom, rows: m };
@@ -209,7 +205,7 @@ async function list(run, base, { params = '?tick=1' } = {}) {
   let added;
   await run.step('Add: new row drawn at the end and clickable', async () => {
     await btn('#btn-add');
-    const s = await until(async () => { const st = await state(page); return st.order.length === 4 ? st : null; }, 2000);
+    const s = await H.until(async () => { const st = await state(page); return st.order.length === 4 ? st : null; }, 2000);
     if (!s) return { ok: false, why: 'state did not grow' };
     added = s.order[3];
     const m = await rowsMatch(page, row, s.order);
@@ -218,7 +214,7 @@ async function list(run, base, { params = '?tick=1' } = {}) {
   });
   await run.step('Remove first: rows shift up in the canvas, freed row is background, click hits the shifted item', async () => {
     await btn('#btn-remove');
-    const s = await until(async () => { const st = await state(page); return st.order.length === 3 ? st : null; }, 2000);
+    const s = await H.until(async () => { const st = await state(page); return st.order.length === 3 ? st : null; }, 2000);
     if (!s) return { ok: false, why: 'state did not shrink' };
     const m = await rowsMatch(page, row, s.order);
     const c = await clickRowExpect(page, row, 0, s.order[0]);
@@ -237,7 +233,7 @@ async function conditional(run, base) {
   await run.step('badge drawn at (340,300)', async () => { const r = await surfaceUntil(page, (img) => near(badgePx(img), BADGE_RED)); return { ok: r.ok, got: badgePx(r.img) }; });
   await run.step('click where the badge is DRAWN reaches its handler', async () => {
     const n0 = await clicks(); await clickDrawnBadge();
-    return { ok: !!(await until(async () => (await clicks()) === n0 + 1, 2000)), clicks: await clicks() };
+    return { ok: !!(await H.until(async () => (await clicks()) === n0 + 1, 2000)), clicks: await clicks() };
   });
   await run.step('control C2: click where the badge is LAID OUT (origin) does not reach it', async () => {
     const n0 = await clicks(); await clickAt(page, surf.x + 100, surf.y + 30); await sleep(400);
@@ -245,7 +241,7 @@ async function conditional(run, base) {
   });
   await run.step('unmount (drawn toggle button): badge pixels gone, no hit', async () => {
     await btn('#btn-toggle');
-    const s = await until(async () => ((await state(page)).badge === false ? true : null), 2000);
+    const s = await H.until(async () => ((await state(page)).badge === false ? true : null), 2000);
     const r = await surfaceUntil(page, (img) => near(badgePx(img), PANEL_BG));
     const n0 = await clicks(); await clickDrawnBadge(); await sleep(400);
     return { ok: !!s && r.ok && (await clicks()) === n0, got: badgePx(r.img), badgeInDom: await page.evaluate(`!!__app.q('#badge')`) };
@@ -254,7 +250,7 @@ async function conditional(run, base) {
     await btn('#btn-toggle');
     const r = await surfaceUntil(page, (img) => near(badgePx(img), BADGE_RED));
     const n0 = await clicks(); await clickDrawnBadge();
-    return { ok: r.ok && !!(await until(async () => (await clicks()) === n0 + 1, 2000)), got: badgePx(r.img) };
+    return { ok: r.ok && !!(await H.until(async () => (await clicks()) === n0 + 1, 2000)), got: badgePx(r.img) };
   });
   await run.step('12 fast toggles via the app API (30 ms apart), ends mounted and drawn', async () => {
     for (let i = 0; i < 12; i++) { await page.evaluate(`__app.actions.toggle()`); await sleep(30); }
@@ -344,22 +340,22 @@ async function remount(run, base) {
   });
   await run.step('the canvas remounts: a NEW canvas is wired, painted, rows and badge clickable', async () => {
     await page.evaluate(`__app.actions.toggleSurface()`);
-    const fresh = await until(() => page.evaluate(`!!__app.q('#surface') && __app.q('#surface') !== window.__oldCanvas && __app.q('#surface').width > 0`), 3000);
+    const fresh = await H.until(() => page.evaluate(`!!__app.q('#surface') && __app.q('#surface') !== window.__oldCanvas && __app.q('#surface').width > 0`), 3000);
     const real = await realSiblings(page);
     const row = await rowGeom(page); const order = (await state(page)).order;
     const m = await rowsMatch(page, row, order);
     const c = await clickRowExpect(page, row, 2, order[2]);
     const surf = await page.evaluate(`__app.rect('#surface')`), n0 = (await state(page)).badgeClicks;
     await clickAt(page, surf.x + BADGE.x + 60, surf.y + BADGE.y + 30);
-    const b = await until(async () => (await state(page)).badgeClicks === n0 + 1, 2000);
+    const b = await H.until(async () => (await state(page)).badgeClicks === n0 + 1, 2000);
     return { ok: !!fresh && real === 'surface,hic-layer,note' && m.ok && c.ok && !!b, real, rows: m.ok, click: c, badgeHit: !!b };
   });
   await run.step('typing still works in the remounted canvas (state kept by the framework)', async () => {
     const input = await rel(page, '#name');
     await clickAt(page, input.sx + input.x + 20, input.sy + input.y + input.h / 2);
-    if (!(await until(() => deepFocusEditable(page), 1500))) return { ok: false, why: 'no focus' };
+    if (!(await H.until(() => deepFocusEditable(page), 1500))) return { ok: false, why: 'no focus' };
     await typeTrusted(page, 'zed');
-    return { ok: !!(await until(async () => ((await state(page)).name === 'zed' ? true : null), 2000)), name: (await state(page)).name };
+    return { ok: !!(await H.until(async () => ((await state(page)).name === 'zed' ? true : null), 2000)), name: (await state(page)).name };
   });
   await run.step('sibling after the canvas removed while the canvas stays: layer stays next to the canvas', async () => {
     await page.evaluate(`__app.actions.toggleNote()`); await sleep(200);
@@ -397,7 +393,7 @@ async function docSnippet(run, base) {
     const c = await page.evaluate(`__app.rect('canvas')`), i = await page.evaluate(`__app.rect('input')`);
     if (!before || !i || !i.w) return { ok: false, why: 'no input box' };
     await clickAt(page, i.x + 20, i.y + i.h / 2);
-    if (!(await until(() => deepFocusEditable(page), 1500))) return { ok: false, why: 'no focus' };
+    if (!(await H.until(() => deepFocusEditable(page), 1500))) return { ok: false, why: 'no focus' };
     await typeTrusted(page, 'abc');
     const box = { x: Math.round(i.x - c.x), y: Math.round(i.y - c.y), w: Math.round(i.w), h: Math.round(i.h) };
     const crop = (img) => H.cropImage(img, box.x, box.y, box.w, box.h);
@@ -425,7 +421,7 @@ async function hydration(run, base) {
     run.known = [t ? { id: 'react-hydration-canvas-attributes', still: true, attributes: (t.match(/^-\s+([\w-]+)=/gm) ?? []).map((x) => x.replace(/^-\s+/, '').replace('=', '')) } : { id: 'react-hydration-canvas-attributes', still: false }];
     // second probe: a top-level drawable WITHOUT id gets a generated id before hydration; suppressHydrationWarning on the canvas does not cover it
     p2.clearLogs();
-    await p2.navigate(`${base}/__probe/probe-noid.html`); await until(() => p2.evaluate('!!window.__probeDone'), 4000);
+    await p2.navigate(`${base}/__probe/probe-noid.html`); await H.until(() => p2.evaluate('!!window.__probeDone'), 4000);
     const t2 = errorsSince(p2).errors.map((x) => String(x.text)).find((x) => /didn't match/.test(x));
     run.known.push(t2 ? { id: 'react-hydration-generated-child-id', still: true, attributes: (t2.match(/^-\s+([\w-]+)=.*$/gm) ?? []).map((x) => x.replace(/^-\s+/, '').slice(0, 60)) } : { id: 'react-hydration-generated-child-id', still: false, note: errorsSince(p2).errors.length + ' errors' });
   } finally { await p2.close(); }

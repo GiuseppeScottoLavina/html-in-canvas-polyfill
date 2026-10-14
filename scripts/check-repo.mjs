@@ -74,18 +74,10 @@ if (!docsOnly) {
   console.log(`checked ${folders.length} plugin folders`);
 }
 
-// G-doc-sync: every feature id appears in the matrix with the right status section
-const { FEATURES } = await import(pathToFileURL(join(root, 'src/contracts/features.js')).href);
-const matrix = readFileSync(join(root, 'docs/SUPPORT-MATRIX.md'), 'utf8');
-const titles = { supported: '### Supported', limited: '### Limited', deviation: '### Deviations', unsupported: '### Unsupported' };
-for (const f of FEATURES) {
-  const at = matrix.indexOf('| `' + f.id + '` |');
-  if (at < 0) { problems.push(`G-doc-sync: feature ${f.id} missing in SUPPORT-MATRIX.md`); continue; }
-  const head = matrix.lastIndexOf('### ', at);
-  if (!matrix.startsWith(titles[f.status], head)) problems.push(`G-doc-sync: feature ${f.id} is ${f.status} but listed under another heading`);
-}
-const ids = new Set(FEATURES.map((f) => f.id));
-for (const m of matrix.matchAll(/^\| `([a-z0-9-]+)` \|/gm)) if (!ids.has(m[1]) && !/^(chrome|edge)/.test(m[1])) problems.push(`G-doc-sync: matrix lists unknown feature ${m[1]}`);
+// G-doc-sync: the generated block of the matrix is exactly what scripts/gen-support-matrix.mjs renders from src/contracts/features.js
+const { MATRIX_PATH, renderMatrix } = await import(pathToFileURL(join(root, 'scripts/gen-support-matrix.mjs')).href);
+const matrix = readFileSync(MATRIX_PATH, 'utf8');
+if (renderMatrix(matrix) !== matrix) problems.push('G-doc-sync: docs/SUPPORT-MATRIX.md differs from the table of src/contracts/features.js (run npm run docs:sync)');
 
 const known = allowSize ? problems.filter((p) => p.startsWith('G-size')) : [];
 const blocking = problems.filter((p) => !known.includes(p));

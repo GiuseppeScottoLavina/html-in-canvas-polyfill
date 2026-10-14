@@ -7,8 +7,7 @@ import { resolve } from 'node:path';
 import { Session, SUBJECTS, OURS_DEBUG_URL, RESULTS_DIR, H } from './lib/session.mjs';
 import { canvasGeo, nonce } from './lib/common.mjs';
 
-const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
-const cases = arg('cases', 'wheel,f4,typing,resize,idle,click').split(',');
+const cases = H.arg('cases', 'wheel,f4,typing,resize,idle,click').split(',');
 const sess = new Session({ ...SUBJECTS.ours, id: 'ours-debug', bundle: OURS_DEBUG_URL });
 const out = { kind: 'bench-compare-profile', bundle: OURS_DEBUG_URL, startedAt: new Date().toISOString(), cases: {} };
 

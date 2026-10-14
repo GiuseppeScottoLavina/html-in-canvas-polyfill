@@ -20,9 +20,8 @@ import * as H from '../test/harness/index.mjs';
 import { startServer } from '../examples/serve.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const arg = (name, d) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? d;
-const LOADS = +arg('loads', 30);
-const THROTTLE = +arg('throttle', 1);
+const LOADS = +H.arg('loads', 30);
+const THROTTLE = +H.arg('throttle', 1);
 const BOUND_MS = 15000;
 const SCENARIOS = ['typing', 'idle', 'misfocus'];
 

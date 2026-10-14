@@ -7,14 +7,13 @@
 //     --update-expectations   rewrite the `pass`, `partial` and `stable` lists from this subject run (reasons and categories are never written by a tool)
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PROJECT_ROOT } from '../harness/lib/util.mjs';
+import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RESULTS_DIR, runConfig, saveResults, selectTests } from './run.mjs';
 import { gateFailures, formatTable, loadJson, triage } from './triage.mjs';
 import { writeConformance } from './report.mjs';
 
 const EXPECTATIONS = resolve(PROJECT_ROOT, 'test/wpt/expectations.json');
 const args = new Set(process.argv.slice(2));
-const arg = k => process.argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const reps = Number(arg('reps') ?? 3);
 const latest = n => loadJson(`${RESULTS_DIR}/wpt-${n}-latest.json`);
 

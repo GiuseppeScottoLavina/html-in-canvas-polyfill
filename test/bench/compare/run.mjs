@@ -12,10 +12,9 @@ import { resolve } from 'node:path';
 import { Session, SUBJECTS, RESULTS_DIR, H } from './lib/session.mjs';
 import { SCENARIOS } from './scenarios/index.mjs';
 
-const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
 const has = (k) => process.argv.includes(`--${k}`);
-const subjects = arg('subjects', 'ours,competitor,native').split(',');
-const scenarios = arg('scenarios', Object.keys(SCENARIOS).join(',')).split(',');
+const subjects = H.arg('subjects', 'ours,competitor,native').split(',');
+const scenarios = H.arg('scenarios', Object.keys(SCENARIOS).join(',')).split(',');
 const quick = has('quick');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 

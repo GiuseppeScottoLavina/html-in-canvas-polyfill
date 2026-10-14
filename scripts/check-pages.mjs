@@ -20,8 +20,7 @@ import { fileURLToPath } from 'node:url';
 import * as H from '../test/harness/index.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const arg = (/** @type {string} */ name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
-const BASE = (arg('base') ?? '/html-in-canvas-polyfill/').replace(/\/?$/, '/');
+const BASE = (H.arg('base') ?? '/html-in-canvas-polyfill/').replace(/\/?$/, '/');
 const VIEW = { width: 1200, height: 1300 };
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.css': 'text/css', '.md': 'text/plain; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webp': 'image/webp' };
 

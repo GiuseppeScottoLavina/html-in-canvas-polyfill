@@ -11,11 +11,10 @@ import { resolve, join } from 'node:path';
 import { launchEngine } from '../harness/lib/webdriver.mjs';
 import { startServer } from '../harness/server.mjs';
 import { encodePng } from '../harness/lib/png.mjs';
-import { PROJECT_ROOT, sleep } from '../harness/lib/util.mjs';
+import { PROJECT_ROOT, arg, sleep } from '../harness/lib/util.mjs';
 import { RECORDER } from './lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES } from './scenarios.mjs';
 
-const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const engines = (arg('engine') ?? 'firefox,safari').split(',');
 const only = arg('only')?.split(',');
 const noControl = process.argv.includes('--no-control');

@@ -1,5 +1,5 @@
 // Public surface of the harness. `import * as H from '/abs/path/test/harness/index.mjs'`
-export { PROJECT_ROOT, SCRATCH_DIR, FRAME_120, sleep, stats, assert } from './lib/util.mjs';
+export { PROJECT_ROOT, SCRATCH_DIR, FRAME_120, sleep, arg, until, stats, assert } from './lib/util.mjs';
 export { CdpTimeoutError } from './lib/cdp-conn.mjs';
 export { launchChrome, Browser, DEFAULT_TRACE_CATEGORIES } from './lib/chrome.mjs';
 export { Page } from './lib/page.mjs';

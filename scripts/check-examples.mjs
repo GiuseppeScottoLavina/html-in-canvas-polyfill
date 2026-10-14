@@ -33,8 +33,7 @@ import * as H from '../test/harness/index.mjs';
 import { startServer } from '../examples/serve.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
-const only = arg('only')?.split(',');
+const only = H.arg('only')?.split(',');
 const withControl = !process.argv.includes('--no-control');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve(ROOT, '.scratch/results', `examples-${stamp}`);
@@ -79,16 +78,6 @@ async function canvasImage(page, selector, kind) {
   return (await H.screenshotElement(page, selector)).img;
 }
 
-/** Poll until `fn()` is truthy; returns the value or null on timeout. */
-async function until(fn, timeoutMs = 8000, intervalMs = 100) {
-  const t = Date.now();
-  for (;;) {
-    const v = await fn().catch(() => null);
-    if (v) return v;
-    if (Date.now() - t > timeoutMs) return null;
-    await sleep(intervalMs);
-  }
-}
 
 /** Trusted typing, refused (as a failed check) when no editable element has focus: see Page.typeText for why sending keys there must never happen. */
 const typeText = (page, text, intervalMs = 25) => page.typeText(text, { intervalMs });
@@ -105,10 +94,10 @@ async function genericChecks(run, { canvas, kind, ready }) {
     run.numbers.mode = info.mode;
     return { ok: info.api && (info.mode === 'polyfill' || info.mode === 'native'), ...info };
   });
-  await run.step('install', 'the page signalled that its setup finished', async () => ({ ok: !!(await until(() => page.evaluate(ready), run.fast ? 2500 : 12000)), ready }));
+  await run.step('install', 'the page signalled that its setup finished', async () => ({ ok: !!(await H.until(() => page.evaluate(ready), run.fast ? 2500 : 12000)), ready }));
   let first = null;
   await run.step('surface', 'the canvas is not blank (first paint)', async () => {
-    first = await until(async () => { const img = await canvasImage(page, canvas, kind); return H.pixelStats(img).nonBlank ? img : null; }, run.fast ? 2500 : 12000, 250);
+    first = await H.until(async () => { const img = await canvasImage(page, canvas, kind); return H.pixelStats(img).nonBlank ? img : null; }, run.fast ? 2500 : 12000, 250);
     if (!first) { const stats = H.pixelStats(await canvasImage(page, canvas, kind)); return { ok: false, ...stats, dominantColor: undefined }; }
     return { ok: true, ...(({ distinctColors, nonDominantFraction }) => ({ distinctColors, nonDominantFraction }))(H.pixelStats(first)) };
   });
@@ -123,7 +112,7 @@ async function genericChecks(run, { canvas, kind, ready }) {
 /** Wait until the canvas differs from `before` by more than `minPixels` pixels (delta > 16). Returns the comparison or null. */
 async function changedFrom(page, selector, kind, before, minPixels = 30, timeoutMs = 6000) {
   let last = null;
-  const found = await until(async () => {
+  const found = await H.until(async () => {
     const img = await canvasImage(page, selector, kind);
     if (img.width !== before.width || img.height !== before.height) return null;
     last = H.compareImages(img, before);
@@ -223,7 +212,7 @@ const SCENARIOS = {
 
   async ['water-form'](run, opts) {
     const { page } = run;
-    const pathOk = await until(() => page.evaluate(`window.__waterForm ? window.__waterForm.mode : null`), run.fast ? 2500 : 15000);
+    const pathOk = await H.until(() => page.evaluate(`window.__waterForm ? window.__waterForm.mode : null`), run.fast ? 2500 : 15000);
     run.numbers.path = pathOk === 'effect' ? 'webgpu-effect' : pathOk === '2d' ? '2d-fallback' : 'unknown';
     run.notes.push(`presentation path exercised: ${run.numbers.path}${pathOk === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose: this run exercises the fallback, not the effect)' : ' (no WebGPU adapter in this headless Chrome, so the effect itself was NOT exercised)') : ''}`);
     if (opts.noGpu) run.check('install', 'with navigator.gpu hidden the page takes the 2D fallback path', pathOk === '2d', { path: run.numbers.path });
@@ -269,7 +258,7 @@ const SCENARIOS = {
   async plugins(run, opts) {
     const { page } = run;
     const { plugins: manifest } = JSON.parse(readFileSync(resolve(ROOT, 'dist/plugins/manifest.json'), 'utf8'));
-    const mode = await until(() => page.evaluate(`window.__gallery && window.__gallery.mode`), run.fast ? 2500 : 15000);
+    const mode = await H.until(() => page.evaluate(`window.__gallery && window.__gallery.mode`), run.fast ? 2500 : 15000);
     run.numbers.path = mode === 'effect' ? 'webgpu-effect' : mode === '2d' ? '2d-fallback' : 'unknown';
     run.notes.push(`presentation path exercised: ${run.numbers.path}${mode === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose)' : ' (no WebGPU adapter in this headless Chrome, so the effects were NOT exercised)') : ''}`);
     if (opts.noGpu) run.check('install', 'with navigator.gpu hidden the gallery takes the 2D fallback path', mode === '2d', { path: run.numbers.path });
@@ -280,7 +269,7 @@ const SCENARIOS = {
       await page.evaluate(`document.querySelector('#picker button[data-effect=${q(name)}]').scrollIntoView({ block: 'center' })`);
       const c = await centerOf(page, `#picker button[data-effect="${name}"]`);
       await page.click(c.x, c.y);
-      return until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
+      return H.until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
     };
     await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title and description', async () => {
       const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, disabled: b.disabled }))`);
@@ -369,7 +358,7 @@ const SCENARIOS = {
     await run.step('interact', 'after a viewport resize below 760 px the canvas follows, is not blank and shows the narrow layout (Emulation override)', async () => {
       const wide = await canvasImage(page, '#stage', '2d');
       await setViewport(page, 700, VIEW.height);
-      const narrow = await until(async () => {
+      const narrow = await H.until(async () => {
         const w = await page.evaluate(`document.getElementById('stage').width`);
         const name = await layoutName();
         return /narrow/.test(name) && w > 0 && w < wide.width ? { w, name } : null;
@@ -382,7 +371,7 @@ const SCENARIOS = {
     });
     await run.step('interact', 'back to the wide viewport: the wide layout and the typed note are drawn again', async () => {
       await setViewport(page, VIEW.width, VIEW.height);
-      const back = await until(async () => /wide/.test(await layoutName()), 6000);
+      const back = await H.until(async () => /wide/.test(await layoutName()), 6000);
       await sleep(500);
       const img = await canvasImage(page, '#stage', '2d');
       return { ok: !!back && H.pixelStats(img).nonBlank, width: img.width };
@@ -410,7 +399,7 @@ const SCENARIOS = {
       await page.click(nameBox.x, nameBox.y); await sleep(200);
       await typeText(page, 'zzz');
       const state = await page.evaluate(`({ value: document.getElementById('name').value, big: document.getElementById('big').textContent })`);
-      await until(async () => (await uploads()) > before, 6000);
+      await H.until(async () => (await uploads()) > before, 6000);
       await sleep(300);
       const shotAfter = await canvasImage(page, '#gl', 'gpu');
       // the HUD rectangle of the canvas (page CSS px relative to the canvas), cropped from both screenshots
@@ -458,11 +447,11 @@ const SMOKE = {
   async ['esm-quickstart'](run) {
     const { page } = run;
     await run.step('install', 'install() from dist/esm/index.js ran and the page is ready', async () => {
-      const st = await until(() => page.evaluate('window.__state && (window.__state.ready || window.__state.error) ? window.__state : null'), 8000);
+      const st = await H.until(() => page.evaluate('window.__state && (window.__state.ready || window.__state.error) ? window.__state : null'), 8000);
       return { ok: !!st && st.ready === true && st.mode === 'polyfill', ...st };
     });
     await run.step('surface', 'the canvas drawn through the ESM-installed polyfill is not blank', async () => {
-      const img = await until(async () => { const i = await canvasImage(page, '#c', '2d'); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250);
+      const img = await H.until(async () => { const i = await canvasImage(page, '#c', '2d'); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250);
       return { ok: !!img };
     });
   },
@@ -476,7 +465,7 @@ const SMOKE = {
     const { page } = run;
     if (!(await page.evaluate('(async () => !!navigator.gpu && !!(await navigator.gpu.requestAdapter()))()'))) { run.notes.push('SKIPPED: no WebGPU adapter in this Chrome; the guide plugin was NOT exercised'); run.numbers.skipped = true; return; }
     await run.step('install', 'createHost + addPlugin(WobblePlugin) succeeded', async () => {
-      const st = await until(() => page.evaluate('window.__state && (window.__state.ready || window.__state.error) ? window.__state : null'), 10000);
+      const st = await H.until(() => page.evaluate('window.__state && (window.__state.ready || window.__state.error) ? window.__state : null'), 10000);
       return { ok: !!st && st.ready === true, ...st };
     });
     await run.step('surface', 'the presented frame is not blank and the live layer is invisible', async () => {
@@ -500,7 +489,7 @@ const SMOKE = {
       let result = null;
       for (let attempt = 0; attempt < 4 && !result; attempt++) {
         await page.evaluate(`window.__ef = 0; (() => { const c = document.getElementById('stage'); c.addEventListener('effectframe', () => { window.__ef += 1; }); c.setAttribute('framecap', '1'); })()`);
-        await until(() => page.evaluate('window.__ef >= 1'), 4000, 50);
+        await H.until(() => page.evaluate('window.__ef >= 1'), 4000, 50);
         const efBefore = await page.evaluate('window.__ef');
         const img = (await H.screenshotElement(page, '#stage')).img;
         const rows = edges(img);
@@ -563,7 +552,7 @@ async function main() {
   const names = NAMES.filter((n) => !only || only.includes(n));
   if (!names.length && !(only && only.includes('smoke'))) { console.error('no example selected'); process.exit(2); }
 
-  const browser = await H.launchChrome({ name: 'examples', chrome: arg('chrome') ?? 'stable', windowSize: [VIEW.width, VIEW.height + 100], dpr: 1,
+  const browser = await H.launchChrome({ name: 'examples', chrome: H.arg('chrome') ?? 'stable', windowSize: [VIEW.width, VIEW.height + 100], dpr: 1,
     extraArgs: ['--headless=new', '--hide-scrollbars'] });
   const result = { script: 'scripts/check-examples.mjs', startedAt: new Date().toISOString(), headless: true, dpr: 1, viewport: VIEW, viewportKind: 'Emulation.setDeviceMetricsOverride',
     chrome: browser.version?.Browser, examples: [], controls: [], pass: false };
