@@ -5,6 +5,7 @@
 
 import { setInlineStyle } from './inline-style.js';
 import { fallbackCaretIndex, selectionApiMissing } from '../../util/caret-index.js';
+import { rangeRectsIn } from '../../util/selection-rects.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 
@@ -261,15 +262,5 @@ export function buildSelectionRects(doc, focus, frame) {
 export function buildDocumentSelectionRects(doc, scope, frame) {
   const sel = doc.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
-  const range = sel.getRangeAt(0);
-  if (!range.intersectsNode(scope)) return [];
-  const sr = scope.getBoundingClientRect();
-  const k = frame.width > 0 && sr.width > 0 ? sr.width / frame.width : 1;
-  /** @type {Element[]} */
-  const out = [];
-  for (const r of Array.from(range.getClientRects())) {
-    if (r.width < 0.5 || r.height < 0.5 || r.right < sr.left || r.left > sr.right || r.bottom < sr.top || r.top > sr.bottom) continue;
-    out.push(highlight(doc, { x: frame.x + (r.left - sr.left) / k, y: frame.y + (r.top - sr.top) / k, width: r.width / k, height: r.height / k }, scope));
-  }
-  return out;
+  return rangeRectsIn(sel.getRangeAt(0), scope, frame).map((r) => highlight(doc, r, scope));
 }

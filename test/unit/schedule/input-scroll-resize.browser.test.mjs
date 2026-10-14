@@ -1,4 +1,4 @@
-import { test, assert, frames, microtasks, sleep } from '/test/unit/lib/t.js';
+import { test, assert, fixture, frames, microtasks, sleep } from '/test/unit/lib/t.js';
 import { createRig, rect } from './_dom.js';
 import { observeInput } from '/src/schedule/observers/input-observer.js';
 import { observeScroll } from '/src/schedule/observers/scroll-observer.js';
@@ -45,6 +45,112 @@ test('selectionchange on the focused text control (and on the document) damages 
   input.setSelectionRange(1, 3);
   await frames(2);
   assert.ok(rig.sink.damage.some(d => d.cause === 'selection' && d.drawable.id === 'd'), `causes: ${rig.sink.causes()}`);
+});
+
+// ---- the page text selection (static text, no focused control): the highlight is drawn into the tile, so each change of it must damage it
+const TEXT = '<div drawable id="d1" style="width:180px;padding:10px;font:16px/20px sans-serif"><p id="p1" style="margin:0">Touch the interface.</p><p id="p2" style="margin:30px 0 0">Second line here</p></div>'
+  + '<div drawable id="d2" style="width:180px;padding:10px;font:16px/20px sans-serif"><p id="p3" style="margin:0">Other drawable text</p></div>';
+
+/** Select `length` characters of the first text node of `#id` from `start` (what a double click on a word does). */
+function selectText(id, start, length) {
+  const text = document.getElementById(id).firstChild;
+  getSelection().setBaseAndExtent(text, start, text, start + length);
+}
+/** The line boxes of the current selection inside `drawable`, in its frame, grown by the ink margin (24). */
+function expectedRect(drawable) {
+  const range = getSelection().getRangeAt(0);
+  const d = drawable.getBoundingClientRect();
+  const rs = [...range.getClientRects()].filter((r) => r.width > 0 && r.bottom > d.top && r.top < d.bottom);
+  const x = Math.min(...rs.map((r) => r.left)) - d.left, y = Math.min(...rs.map((r) => r.top)) - d.top;
+  const x2 = Math.max(...rs.map((r) => r.right)) - d.left, y2 = Math.max(...rs.map((r) => r.bottom)) - d.top;
+  return { x: x - 24, y: y - 24, width: x2 - x + 48, height: y2 - y + 48 };
+}
+const selectionDamage = (rig) => rig.sink.damage.filter((d) => d.cause === 'selection');
+
+test('selecting a word of the static text (no focused control) damages the word in its drawable, cause selection', async t => {
+  const rig = createRig({ html: TEXT });
+  t.cleanup(observeInput(rig.env, rig.record));
+  t.cleanup(() => getSelection().removeAllRanges());
+  /** @type {HTMLElement} */ (document.activeElement)?.blur?.();
+  selectText('p1', 0, 5);
+  const want = expectedRect(rig.layerEl.querySelector('#d1'));
+  await frames(2);
+  const got = selectionDamage(rig);
+  assert.equal(got.length, 1, `damage: ${JSON.stringify(rig.sink.damage.map((d) => [d.cause, d.drawable?.id]))}`);
+  assert.equal(got[0].drawable.id, 'd1');
+  assert.deepEqual(rect(got[0].rect), rect(want));
+});
+
+test('clearing the static text selection damages where the highlight was (deselection repaints)', async t => {
+  const rig = createRig({ html: TEXT });
+  t.cleanup(observeInput(rig.env, rig.record));
+  t.cleanup(() => getSelection().removeAllRanges());
+  selectText('p1', 6, 3);
+  const was = expectedRect(rig.layerEl.querySelector('#d1'));
+  await frames(2);
+  rig.sink.clear();
+  getSelection().removeAllRanges();
+  await frames(2);
+  const got = selectionDamage(rig);
+  assert.equal(got.length, 1, `damage: ${rig.sink.causes()}`);
+  assert.equal(got[0].drawable.id, 'd1');
+  assert.deepEqual(rect(got[0].rect), rect(was));
+  rig.sink.clear();
+  getSelection().collapse(document.body, 0);
+  await frames(2);
+  assert.equal(selectionDamage(rig).length, 0, 'nothing of the canvas was or is selected: no damage');
+});
+
+test('moving the selection damages the old and the new highlight; a selection across two drawables damages both', async t => {
+  const rig = createRig({ html: TEXT });
+  t.cleanup(observeInput(rig.env, rig.record));
+  t.cleanup(() => getSelection().removeAllRanges());
+  selectText('p1', 0, 5);
+  const first = expectedRect(rig.layerEl.querySelector('#d1'));
+  await frames(2);
+  rig.sink.clear();
+  selectText('p2', 0, 6);
+  const second = expectedRect(rig.layerEl.querySelector('#d1'));
+  await frames(2);
+  const got = selectionDamage(rig);
+  assert.equal(got.length, 1);
+  const r = rect(got[0].rect);
+  assert.ok(r.y <= Math.round(first.y) && r.y + r.height >= Math.round(second.y + second.height) - 1, `the damage ${JSON.stringify(r)} covers the old ${JSON.stringify(rect(first))} and the new ${JSON.stringify(rect(second))} word`);
+  rig.sink.clear();
+  getSelection().setBaseAndExtent(document.getElementById('p1').firstChild, 0, document.getElementById('p3').firstChild, 5);
+  await frames(2);
+  assert.deepEqual(selectionDamage(rig).map((d) => d.drawable.id).sort(), ['d1', 'd2']);
+});
+
+test('after the selected text moved, deselection damages where it is drawn now (the old range follows the layout)', async t => {
+  const rig = createRig({ html: TEXT });
+  t.cleanup(observeInput(rig.env, rig.record));
+  t.cleanup(() => getSelection().removeAllRanges());
+  selectText('p2', 0, 6);
+  await frames(2);
+  /** @type {HTMLElement} */ (rig.layerEl.querySelector('#p2')).style.marginTop = '60px';
+  const now = expectedRect(rig.layerEl.querySelector('#d1'));
+  rig.sink.clear();
+  getSelection().removeAllRanges();
+  await frames(2);
+  const got = selectionDamage(rig);
+  assert.equal(got.length, 1);
+  const r = rect(got[0].rect);
+  assert.ok(r.y + r.height >= Math.round(now.y + now.height) - 1, `the damage ${JSON.stringify(r)} reaches the moved highlight ${JSON.stringify(rect(now))}`);
+});
+
+test('a selection outside the layer, and any selection after the observer is disposed, cause no damage', async t => {
+  const rig = createRig({ html: TEXT });
+  const outside = fixture('<p id="outside">Outside the canvas</p>').querySelector('#outside');
+  const stop = observeInput(rig.env, rig.record);
+  t.cleanup(() => getSelection().removeAllRanges());
+  getSelection().setBaseAndExtent(outside.firstChild, 0, outside.firstChild, 7);
+  await frames(2);
+  assert.equal(selectionDamage(rig).length, 0);
+  stop();
+  selectText('p1', 0, 5);
+  await frames(2);
+  assert.equal(selectionDamage(rig).length, 0);
 });
 
 test('events outside the layer are ignored; the disposer removes the listeners', async t => {

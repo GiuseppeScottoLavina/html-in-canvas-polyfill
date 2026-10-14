@@ -5,11 +5,14 @@
 
 import { getRectMemory } from './damage-rect.js';
 import { isTextEditing } from './interaction-tracker.js';
+import { inflateRect, unionRect } from '../../util/rect.js';
+import { rangeRectsIn } from '../../util/selection-rects.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').Damage} Damage */
 /** @typedef {import('../../contracts/types.js').DamageCause} DamageCause */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
+/** @typedef {import('../../contracts/types.js').Rect} Rect */
 
 const VALUE_EVENTS = ['input', 'change', 'compositionstart', 'compositionupdate', 'compositionend'];
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph', 'Dead']);
@@ -29,7 +32,8 @@ export function typingDeferred(record, control) {
 }
 
 /**
- * Capture listeners on the layer + document selectionchange (only when the active element is inside the layer). Damage rect = the control's own frame rect grown by the ink margin (the caret and the focus ring stay inside it;
+ * Capture listeners on the layer + document selectionchange: the focused control when the active element is inside the layer, and the page text selection
+ * (labels, headings, paragraphs: double / triple click, drag, select all) through pageSelection() below. Damage rect = the control's own frame rect grown by the ink margin (the caret and the focus ring stay inside it;
  * a control whose box changes size is reported by the mutation observer through its attributes). Keydown on a text control damages the caret/selection too: arrow keys move it without any other event, and the damage lands
  * before the browser has applied the key, but the build that serves it only starts at the frame end.
  * Remembering the control's box here (memory.own) lets later hover or class damage on the same element stay local.
@@ -92,10 +96,38 @@ export function observeInput(env, record) {
     if ((deferred.has(target) || overlaid.has(target)) && (ev.key.length === 1 || EDIT_KEYS.has(ev.key))) return;
     damageControl(target, 'input');
   };
+  /** @type {Range|null} a copy of the last selection range that touched the layer: it follows later DOM changes, so its rects say where that highlight is drawn now */
+  let shown = null;
+
+  /**
+   * A selection of the page text inside the layer is drawn into the tiles (capture: buildDocumentSelectionRects), so every change of it damages the drawables
+   * where the old and the new highlight are; deselection included. (A layout change that moves the selected text damages its old and new place itself, so the copy of
+   * the old range, measured now, is where its highlight is drawn.) The browser queues at most one selectionchange per task and the scheduler unions the damage of a frame,
+   * so a drag selection costs one rect read per pointer step. A selection that neither touches the layer now nor did before costs one intersectsNode() call.
+   */
+  function pageSelection() {
+    const sel = env.document.getSelection();
+    const range = sel && !sel.isCollapsed && sel.rangeCount ? sel.getRangeAt(0) : null;
+    const now = range?.intersectsNode(root) ? range : null;
+    if (!now && !shown) return;
+    /** @type {Map<Element, Rect|null>} */
+    const damaged = new Map();
+    for (const r of [shown, now]) {
+      const clientRects = r?.getClientRects();
+      if (r) for (const drawable of layer.drawableElements()) {
+        const frame = layer.frameRect(drawable);
+        for (const box of frame ? rangeRectsIn(r, drawable, frame, clientRects) : []) damaged.set(drawable, unionRect(damaged.get(drawable) ?? null, box));
+      }
+    }
+    shown = now?.cloneRange() ?? null;
+    for (const [drawable, r] of damaged) if (r) env.scheduler.damage(record, 'selection', drawable, inflateRect(r, env.options.inkMargin));
+  }
+
   /** @param {Event} ev */
   const onSelection = (ev) => {
     const target = /** @type {Element|Document} */ (ev.target);
     // Chrome fires selectionchange on the text control itself (reaches us in the capture phase) and on the document for ordinary selections.
+    if (target.nodeType !== 1) pageSelection();
     const control = target.nodeType === 1 ? /** @type {Element} */ (target) : record.root.activeElement;
     // the caret that follows the typing is drawn by the overlay; a real selection (non-collapsed) is built at once
     if (control && deferred.has(control) && collapsed(control)) return;
@@ -110,6 +142,7 @@ export function observeInput(env, record) {
   return () => {
     for (const t of deferred.values()) env.window.clearTimeout(t);
     deferred.clear();
+    shown = null;
     if (DEFERRED.get(record) === deferred) DEFERRED.delete(record);
     for (const type of VALUE_EVENTS) root.removeEventListener(type, onValue, capture);
     root.removeEventListener('keydown', /** @type {EventListener} */ (onKey), capture);

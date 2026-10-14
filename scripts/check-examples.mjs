@@ -11,7 +11,8 @@
 //   4. the canvas is NOT BLANK (2D canvases: backing-store readback; WebGL / WebGPU canvases: compositor screenshot)
 //   5. the key interaction works with TRUSTED input: typing reaches the live field AND changes the canvas pixels (basic, form,
 //      webgl-texture), the frame cap slider changes canvas.frameCap (water-form, plugins), wheel scroll + a viewport resize (scroll-and-resize),
-//      the gallery (plugins) lists every plugin of dist/plugins/manifest.json, applies each one (its controls mount, the pixels change) and "Effect off" removes it
+//      the gallery (plugins) lists every plugin of dist/plugins/manifest.json, applies each one (its controls mount, the pixels change) and "Effect off" removes it;
+//      a trusted double click on a word of its static text shows the selection on the canvas and a click elsewhere removes it (with an effect, with "Effect off", and on the 2D path)
 //   water-form and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects)
 // Smoke pages (test/examples-smoke/, served by the harness server) run the code the documentation shows:
 //   esm-quickstart  README "ES modules": install() from dist/esm/index.js, then the standard pattern
@@ -129,6 +130,49 @@ async function changedFrom(page, selector, kind, before, minPixels = 30, timeout
     return last.countOver16 >= minPixels ? { ...last, img } : null;
   }, timeoutMs, 200);
   return found ?? { countOver16: last?.countOver16 ?? 0, timedOut: true };
+}
+
+/**
+ * Selection of static text drawn in the canvas (a heading, not a field): a trusted double click on the word `word` must show the highlight on the canvas within
+ * `timeoutMs`, and a trusted click outside the canvas must remove it again (the word's pixels return to the picture before the double click). With the effects host,
+ * the source version that the host uploads must advance both times (the effect sees the new source). Measured in the word's box only, so an animated effect
+ * elsewhere does not count. Returns the check detail.
+ */
+async function staticSelectionShows(page, selector, kind, word, { effect = false, timeoutMs = 1500 } = {}) {
+  await page.evaluate(`(() => { const layer = document.querySelector('hic-layer'); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
+    while ((t = tw.nextNode())) if (t.data.includes(${q(word)})) { t.parentElement.scrollIntoView({ block: 'center' }); break; }
+    getSelection().removeAllRanges();
+    window.__selSource = null; if (!window.__selSourceListener) { window.__selSourceListener = true; document.querySelector(${q(selector)}).addEventListener('effectframe', (e) => { window.__selSource = e.detail.sourceVersion; }); } })()`);
+  await sleep(400);
+  const target = await page.evaluate(`(() => { const layer = document.querySelector('hic-layer'); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
+    while ((t = tw.nextNode())) { const i = t.data.indexOf(${q(word)}); if (i < 0) continue;
+      const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + ${word.length}); const b = r.getBoundingClientRect(); const c = document.querySelector(${q(selector)}).getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2, box: { x: b.left - c.left, y: b.top - c.top, w: b.width, h: b.height }, canvas: { w: c.width, h: c.height } }; }
+    return null; })()`);
+  if (!target) return { ok: false, reason: `no text "${word}" in the layer` };
+  const source = () => page.evaluate('window.__selSource');
+  const before = await canvasImage(page, selector, kind);
+  const sx = before.width / target.canvas.w, sy = before.height / target.canvas.h;
+  const x0 = Math.max(0, Math.floor(target.box.x * sx)), y0 = Math.max(0, Math.floor(target.box.y * sy));
+  const x1 = Math.min(before.width, Math.ceil((target.box.x + target.box.w) * sx)), y1 = Math.min(before.height, Math.ceil((target.box.y + target.box.h) * sy));
+  const area = Math.max(1, (x1 - x0) * (y1 - y0));
+  /** pixels of the word's box that differ from the picture before the double click */
+  const changed = (img) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const i = (y * img.width + x) * 4; if (Math.abs(img.data[i] - before.data[i]) + Math.abs(img.data[i + 1] - before.data[i + 1]) + Math.abs(img.data[i + 2] - before.data[i + 2]) > 48) n++; } return n; };
+  const wait = async (want) => { const t0 = Date.now(); let n = -1; do { const img = await canvasImage(page, selector, kind); n = img.width === before.width ? changed(img) : -1; if (want(n)) return { ms: Date.now() - t0, n }; await sleep(50); } while (Date.now() - t0 < timeoutMs); return { ms: null, n }; };
+  const v0 = await source();
+  await page.mouseMove(target.x, target.y);
+  await page.mouseDown(target.x, target.y, { clickCount: 1 }); await page.mouseUp(target.x, target.y, { clickCount: 1 });
+  await page.mouseDown(target.x, target.y, { clickCount: 2 }); await page.mouseUp(target.x, target.y, { clickCount: 2 });
+  const selected = await page.evaluate('String(getSelection())');
+  const shown = await wait((n) => n > area * 0.2);
+  const v1 = await source();
+  await page.click(4, target.y); // the page padding, outside the canvas: collapses the selection
+  const cleared = await page.evaluate('getSelection().isCollapsed');
+  const gone = await wait((n) => n >= 0 && n < area * 0.02);
+  const v2 = await source();
+  const sourceOk = !effect || (v1 !== null && v1 !== v0 && v2 !== null && v2 !== v1);
+  return { ok: selected === word && shown.ms !== null && cleared && gone.ms !== null && sourceOk, selected, shownAfterMs: shown.ms, shownPixels: shown.n, goneAfterMs: gone.ms, residualPixels: gone.n, wordPixels: area,
+    ...(effect ? { sourceVersions: [v0, v1, v2] } : {}) };
 }
 
 // ---- per example scenarios ------------------------------------------------------------------------------------------------------------
@@ -271,6 +315,15 @@ const SCENARIOS = {
       await run.step('install', 'without WebGPU the page says so above the canvas and the effects are disabled ("Effect off" stays)', async () => {
         const st = await page.evaluate(`({ notice: document.getElementById('notice').textContent, shown: getComputedStyle(document.getElementById('notice')).display !== 'none', disabled: [...document.querySelectorAll('#picker button')].filter((b) => b.disabled).map((b) => b.dataset.effect), active: window.__gallery.active })`);
         return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && st.active === 'off', ...st };
+      });
+    }
+    // owner report: a double click on a word of the static text showed no selection on the canvas until the effect changed; nor did the deselection
+    const selectionCases = mode === 'effect' ? [manifest.some((p) => p.name === 'glitch') ? 'glitch' : manifest[0].name, 'off'] : ['off'];
+    for (const name of selectionCases) {
+      await run.step('interact', `a trusted double click on a word of the static text shows the selection on the canvas, a click elsewhere removes it (${mode === 'effect' ? (name === 'off' ? 'effects host, "Effect off"' : `effect ${name}`) : '2D, no effect'})`, async () => {
+        if (mode === 'effect' && !(await pick(name))) return { ok: false, reason: `${name} not selected` };
+        await sleep(600);
+        return staticSelectionShows(page, '#stage', kind, 'Touch', { effect: mode === 'effect' });
       });
     }
     await run.step('interact', 'click + type in the name field reaches the live input (effect off)', async () => {
