@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: changing digits on a transparent drawable leave no ghost (M4)</title>
+<script>var q = new URLSearchParams(location.search); window.__q = q;
+  // control: the retained surface composites tiles source-over instead of replacing them, so every old digit stays visible under the new one
+  if (q.get("sabotage") === "1") for (var C of [CanvasRenderingContext2D, OffscreenCanvasRenderingContext2D]) (function (P) { var d = Object.getOwnPropertyDescriptor(P, "globalCompositeOperation"); Object.defineProperty(P, "globalCompositeOperation", { configurable: true, get: d.get, set: function (v) { d.set.call(this, v === "copy" ? "source-over" : v); } }); })(C.prototype);
+  if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<style>body{margin:8px;background:#fff} #c{display:block;width:420px;height:160px}
+  #d{width:400px;height:140px;font:44px sans-serif;color:#111}
+  #glow{text-shadow:110px 0 0 #c00}</style></head><body>
+<canvas id="c" content="drawable"><div id="d" drawable><div>clock <span id="clock">00:00:00</span></div><div><span id="glow">0</span></div></div></canvas>
+<script>
+  // a running counter and a clock on a TRANSPARENT drawable; the counter's text-shadow reaches past its box + the ink margin. The app clears the canvas on every paint.
+  const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const d = document.getElementById('d'); const clock = document.getElementById('clock'); const glow = document.getElementById('glow');
+  canvas.width = 420 * devicePixelRatio; canvas.height = 160 * devicePixelRatio;
+  if (q.get('init')) { const v = JSON.parse(q.get('init')); clock.textContent = v[0]; glow.textContent = v[1]; }
+  window.__paints = 0; window.__errors = [];
+  canvas.onpaint = () => { window.__paints++; try { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawElementImage(d, 0, 0); } catch (e) { window.__errors.push(String(e)); } };
+  let i = 0;
+  window.__run = (ms) => new Promise((resolve) => {
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+      i++;
+      glow.firstChild.data = String(i % 1000);
+      if (i % 15 === 0) clock.textContent = new Date(Date.UTC(2026, 0, 1, 11, 59, 50) + 1000 * (i / 15)).toISOString().slice(11, 19);
+      if (performance.now() - t0 >= ms) { clearInterval(timer); resolve(i); }
+    }, 16);
+  });
+  // the canvas bitmap after the last change has painted, as base64 RGBA, with the texts it shows
+  window.__pixels = async () => {
+    await new Promise((r) => setTimeout(r, 700));
+    const a = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let bin = ''; for (let k = 0; k < a.length; k += 8192) bin += String.fromCharCode.apply(null, a.subarray(k, k + 8192));
+    return { px: btoa(bin), w: canvas.width, h: canvas.height, texts: [clock.textContent, glow.textContent], paints: window.__paints, errors: window.__errors };
+  };
+</script></body></html>

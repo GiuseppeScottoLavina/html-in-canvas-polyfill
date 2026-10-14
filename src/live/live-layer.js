@@ -11,7 +11,7 @@ import { collectDrawables, cssPath, nativeDom, nearestDrawableOf } from './drawa
 import { installEventBridge } from './event-bridge.js';
 import { installCanvasSelection } from './canvas-selection.js';
 import { appliedMatrixOf, appliedOffsetOf, applyGeometryToElement, applyHitTestOrder, clearGeometry, flushGeometryWrites, revalidateOffsets } from './geometry-apply.js';
-import { borderBoxSize, frameRectOf, inkOverflowOf, isLaidOut, rectInLayer } from './measure.js';
+import { borderBoxSize, frameRectOf, inkOverflowOf, isLaidOut, paintInkOf, rectInLayer } from './measure.js';
 import { resetLayerStyle, syncPresentation } from './presentation.js';
 import { auditStacking } from './stacking-audit.js';
 import { installParentFacade, installTreeFacade } from './tree-facade.js';
@@ -255,6 +255,7 @@ export function createLiveLayer(env, record) {
       return at && { x: at.x, y: at.y, width: size.width, height: size.height };
     },
     inkOverflow: (el) => inkOverflowOf(el, appliedMatrixOf(el, layerEl) === null),
+    paintInk: (el) => paintInkOf(el),
     frameRect(el) {
       const drawable = nearestDrawableOf(el, layerEl, drawableSet);
       return drawable ? frameRectOf(drawable, el, appliedMatrixOf(drawable, layerEl)) : null;

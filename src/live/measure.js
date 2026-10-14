@@ -202,7 +202,7 @@ function untransformedBox(el) {
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y, width: size.width, height: size.height } : null;
 }
 
-/** @param {string} list computed box-shadow @returns {Insets} extent of the outer shadows beyond the border box (blur reaches ~1.5 radius: 3 sigma of the spec Gaussian) */
+/** @param {string} list computed box-shadow or text-shadow (no spread) @returns {Insets} extent of the outer shadows beyond the border box (blur reaches ~1.5 radius: 3 sigma of the spec Gaussian) */
 function shadowExtent(list) {
   const out = { left: 0, top: 0, right: 0, bottom: 0 };
   if (!list || list === 'none') return out;
@@ -218,6 +218,22 @@ function shadowExtent(list) {
 }
 
 /**
+ * Ink that an element paints beyond its border box, css px per side (>= 0): outer box-shadow, outline and, with `text`, text-shadow (inherited, so it also covers the text of
+ * descendants that do not override it). Damage rects are grown by it (paintInkOf): a changed digit whose glow or offset shadow reached past the damaged box left the old shadow on the surface.
+ * @param {CSSStyleDeclaration} cs
+ * @param {boolean} text
+ * @returns {Insets}
+ */
+function ownInk(cs, text) {
+  const ink = shadowExtent(text ? `${cs.boxShadow},${cs.textShadow}` : cs.boxShadow);
+  const o = cs.outlineStyle !== 'none' ? Math.max(0, px(cs.outlineWidth) + px(cs.outlineOffset)) : 0;
+  return { left: Math.max(ink.left, o), top: Math.max(ink.top, o), right: Math.max(ink.right, o), bottom: Math.max(ink.bottom, o) };
+}
+
+/** ownInk with text-shadow; one computed style, no layout. null when not laid out. @param {Element} el @returns {Insets|null} */
+export const paintInkOf = (el) => (isLaidOut(el) ? ownInk(styleOf(el), true) : null);
+
+/**
  * Ink overflow of a drawable beyond its border box, css px per side (>= 0), in the drawable's own coordinates after its own CSS transform: box-shadow, outline, descendants that overflow to the
  * right/bottom of a non-clipping drawable (its scrollable overflow: O(1), descendant shadows and overflow to the left/top are not measured), then the bounding box of that rect under the
  * element's own transform. Cheap: one computed style and scrollWidth/scrollHeight of clean layout. null when not laid out.
@@ -229,11 +245,7 @@ export function inkOverflowOf(el, ownTransform = true) {
   if (!isLaidOut(el)) return null;
   const cs = styleOf(el);
   const size = layoutSize(el, cs) ?? offsetSize(/** @type {HTMLElement} */ (el));
-  const ink = shadowExtent(cs.boxShadow);
-  if (cs.outlineStyle !== 'none') {
-    const o = Math.max(0, px(cs.outlineWidth) + px(cs.outlineOffset));
-    ink.left = Math.max(ink.left, o); ink.top = Math.max(ink.top, o); ink.right = Math.max(ink.right, o); ink.bottom = Math.max(ink.bottom, o);
-  }
+  const ink = ownInk(cs, false);
   if (cs.overflowX === 'visible' && cs.overflowY === 'visible' && !/paint|strict|content/.test(cs.contain)) {
     const h = /** @type {HTMLElement} */ (el);
     // scrollWidth is the padding box plus overflow, rounded to whole px: one extra px covers the rounding.

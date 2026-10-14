@@ -2,7 +2,8 @@
  * Damage rectangles for observers that know WHICH element changed but not how far the change reaches (hover rules, class toggles, animations, text edits).
  * Module: schedule (src/schedule/observers/*).
  *
- * A rect is only safe when nothing around it moves. The memory therefore keeps, per element, the last box and the last reach (box grown to its scrollable overflow and the ink margin):
+ * A rect is only safe when nothing around it moves. The memory therefore keeps, per element, the last box and the last reach (box grown to its scrollable overflow, the ink margin and the
+ * ink it paints beyond its box: shadows, outline, LiveLayer.paintInk):
  * the next damage is the union of old and new reach (a dropdown that closes still clears its old pixels), and a first sighting or a box that changed size answers null (whole drawable),
  * because siblings may have shifted.
  */
@@ -15,7 +16,7 @@ import { inflateRect, unionRect } from '../../util/rect.js';
 
 /**
  * @typedef {Object} RectMemory
- * @property {(layer: LiveLayer, el: Element) => Rect|null} own  frame rect of `el` grown by the ink margin; for changes that stay inside the box (typing, caret, focus ring). Remembers the box for later `reach` calls. null = not laid out
+ * @property {(layer: LiveLayer, el: Element) => Rect|null} own  frame rect of `el` grown by the ink margin and its painted ink (and by the ink it painted before, which the change may have removed); for changes that stay inside the box (typing, caret, focus ring). Remembers the box for later `reach` calls. null = not laid out
  * @property {(layer: LiveLayer, el: Element) => Rect|null} reach  union of the previous and the current reach of `el`; null (whole drawable) on first sight, when the box changed size or when `el` is not laid out
  */
 
@@ -41,7 +42,7 @@ export function getRectMemory(env) {
  * @returns {RectMemory}
  */
 export function createRectMemory(ink) {
-  /** @type {WeakMap<Element, {box: Rect, reach: Rect}>} */
+  /** @type {WeakMap<Element, {box: Rect, reach: Rect, own: Rect, painted: boolean}>} */
   const last = new WeakMap();
 
   /** @param {LiveLayer} layer @param {Element} el */
@@ -52,18 +53,26 @@ export function createRectMemory(ink) {
     const scrollH = /** @type {HTMLElement} */ (el).scrollHeight;
     const width = Math.max(box.width, Number.isFinite(scrollW) ? scrollW : 0);
     const height = Math.max(box.height, Number.isFinite(scrollH) ? scrollH : 0);
-    return { box, reach: inflateRect({ x: box.x, y: box.y, width, height }, ink) };
+    const p = layer.paintInk?.(el) ?? null;
+    const painted = !!p && p.left + p.top + p.right + p.bottom > 0;
+    /** @param {Rect} r */
+    const grow = (r) => {
+      const g = inflateRect(r, ink);
+      return painted && p ? { x: g.x - p.left, y: g.y - p.top, width: g.width + p.left + p.right, height: g.height + p.top + p.bottom } : g;
+    };
+    return { box, reach: grow({ x: box.x, y: box.y, width, height }), own: grow(box), painted };
   }
 
   return {
     own(layer, el) {
       const m = measure(layer, el);
+      const prev = last.get(el);
       if (!m) {
         last.delete(el);
         return null;
       }
       last.set(el, m);
-      return inflateRect(m.box, ink);
+      return prev?.painted ? unionRect(prev.own, m.own) : m.own;
     },
     reach(layer, el) {
       const cur = measure(layer, el);

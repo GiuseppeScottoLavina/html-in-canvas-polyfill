@@ -2,7 +2,10 @@
 //   M1 a drawable appended after mount is tracked and painted (paint fires, the draw does not throw, its pixels are in the canvas) without any other damage
 //   M2 three drawables drawn in ONE task all stay hit-testable (elementsFromPoint + a trusted click reaches each one and no other)
 //   M3 `canvas.width = N` inside onpaint does not start a paint loop (paint count over 1.5 s stays small)
-// Positive control per finding: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop; every check class must go red.
+//   M4 digits changing at 60 Hz on a TRANSPARENT drawable (a counter whose text-shadow reaches past its box + ink margin, and a clock) leave no ghost of older digits: the canvas after the
+//      run equals a fresh page that shows the same texts (the app clears its canvas on every paint, so any old ink left in it comes from the retained surface)
+// Positive control per finding: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop, M4 composites tiles source-over
+// instead of replacing them; every check class must go red.
 import { runGate, H } from './lib/gate.mjs';
 import { openRegress } from './lib/regress.mjs';
 import { canvasShot, assertLayerHidden } from './lib/pixel.mjs';
@@ -53,7 +56,25 @@ runGate('G-regress-paint', async (ctx) => {
   numbers.widthLoop = { paintsIn1500ms: w1 - w0 };
   ctx.check('M3: a canvas.width write inside onpaint does not start a paint loop (<= 6 paints in 1.5 s; the buggy build made ~180)', w1 - w0 <= 6, { paints: w1 - w0 }, 'loop');
 
+  // --- M4: no ghost of older digits on a transparent drawable -----------------------------------------------------------------------------------------
+  await openRegress(ctx, page, 'ghost-digits.html', ctx.control ? { sabotage: 1 } : {});
+  await page.evaluate('window.__run(1500)');
+  const ran = await page.evaluate('window.__pixels()');
+  await openRegress(ctx, page, 'ghost-digits.html', { init: JSON.stringify(ran.texts) });
+  const fresh = await page.evaluate('window.__pixels()');
+  const A = Buffer.from(ran.px, 'base64'), B = Buffer.from(fresh.px, 'base64');
+  let differ = 0, ghost = 0, ink = 0;
+  for (let p = 0; p < A.length; p += 4) {
+    let m = 0; for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(A[p + k] - B[p + k]));
+    if (m > 8) differ++;
+    if (A[p + 3] > 8 && B[p + 3] === 0) ghost++;
+    if (B[p + 3] > 0) ink++;
+  }
+  numbers.ghost = { texts: ran.texts, paints: ran.paints, differ, ghost, freshInkPixels: ink, size: [ran.w, ran.h], errors: [...ran.errors, ...fresh.errors] };
+  ctx.check('M4: the run painted its changes and the fresh page is not blank', ran.paints > 20 && ink > 200 && ran.errors.length + fresh.errors.length === 0, numbers.ghost, 'surface');
+  ctx.check('M4: no ghost of older digits: the canvas after 1.5 s of 60 Hz changes equals a fresh page with the same texts (<= 4 px differ)', A.length === B.length && differ <= 4 && ghost === 0, numbers.ghost, 'ghost');
+
   const errs = page.errors({ includeWarnings: false }).slice(errors0);
   ctx.check('no page error or console error', errs.length === 0, errs.slice(0, 3), 'surface');
   return { numbers };
-}, { controlSabotage: ['nogeom'], controlClasses: ['append', 'hit', 'loop'] });
+}, { controlSabotage: ['nogeom'], controlClasses: ['append', 'hit', 'loop', 'ghost'] });

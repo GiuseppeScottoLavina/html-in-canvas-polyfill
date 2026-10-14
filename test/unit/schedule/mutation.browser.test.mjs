@@ -1,7 +1,8 @@
-import { test, assert, frames, microtasks } from '/test/unit/lib/t.js';
+import { test, assert, fixture, frames, microtasks } from '/test/unit/lib/t.js';
 import { createRig } from './_dom.js';
 import { observeMutations } from '/src/schedule/observers/mutation-observer.js';
 import { BUS } from '/src/contracts/events.js';
+import { paintInkOf } from '/src/live/measure.js';
 
 const PAGE = '<div drawable id="d1" style="width:200px"><p id="p1">hello</p><div id="box" style="width:50px;height:20px;background:#eee"></div></div><div drawable id="d2"><span id="s">x</span></div>';
 
@@ -221,4 +222,49 @@ test('textContent of a text-only element is a local change (no drawable can appe
   nav.append(document.createElement('b'));
   await microtasks();
   assert.equal(rig.sink.damage[0].rect, null, 'an element was added: structural, whole drawable');
+});
+
+// Regression (ghost digits): a counter whose text carries a shadow beyond the ink margin left the old digits' shadow on the surface, because the damage rect was the
+// span's box + inkMargin only. The rect must also cover the ink the element paints outside its box (text-shadow, box-shadow, outline: LiveLayer.paintInk).
+const SHADOWED = '<div drawable id="d1" style="width:400px;height:160px;font:48px sans-serif;text-shadow:120px 30px 0 red"><span id="n">0</span></div>';
+
+test('paintInkOf measures text-shadow, box-shadow and outline beyond the border box', () => {
+  const root = fixture('<div id="a" style="text-shadow:120px -10px 4px red">x</div><div id="b" style="box-shadow:0 0 0 30px red;outline:2px solid;outline-offset:40px">y</div><div id="c">z</div>');
+  const a = paintInkOf(root.querySelector('#a'));
+  assert.ok(a.right >= 126 && a.left === 0 && a.top >= 16 && a.bottom === 0, JSON.stringify(a));
+  const b = paintInkOf(root.querySelector('#b'));
+  assert.ok(b.left >= 42 && b.right >= 42 && b.top >= 42 && b.bottom >= 42, JSON.stringify(b));
+  assert.deepEqual(paintInkOf(root.querySelector('#c')), { left: 0, top: 0, right: 0, bottom: 0 });
+});
+
+test('text change under a text-shadow: the damage rect covers the shadow of the old and new text, not only box + ink margin', async t => {
+  const rig = createRig({ html: SHADOWED });
+  rig.layer.paintInk = paintInkOf;
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const n = rig.layerEl.querySelector('#n');
+  n.firstChild.data = '1';
+  await microtasks();
+  rig.sink.clear();
+  n.firstChild.data = '2';
+  await microtasks();
+  const r = rig.sink.damage[0].rect;
+  const box = rig.layer.frameRect(n);
+  assert.ok(r, 'a same-size text change stays local');
+  assert.ok(r.x + r.width >= box.x + box.width + 120 && r.y + r.height >= box.y + box.height + 30, `rect ${JSON.stringify(r)} must reach the shadow of box ${JSON.stringify(box)}`);
+  assert.ok(r.x <= box.x - 24 && r.y <= box.y - 24, 'and still keeps the ink margin on the other sides');
+});
+
+test('own(): a box-shadow that a state change removes is still covered (the previous ink is part of the rect)', async () => {
+  const rig = createRig({ html: '<div drawable id="d1" style="width:400px;height:200px"><button id="b" style="margin:60px;box-shadow:0 0 0 50px blue">ok</button></div>' });
+  rig.layer.paintInk = paintInkOf;
+  const { getRectMemory } = await import('/src/schedule/observers/damage-rect.js');
+  const memory = getRectMemory(rig.env);
+  const b = rig.layerEl.querySelector('#b');
+  memory.own(rig.layer, b);
+  b.style.boxShadow = 'none';
+  const r = memory.own(rig.layer, b);
+  const box = rig.layer.frameRect(b);
+  assert.ok(r.x <= box.x - 50 && r.x + r.width >= box.x + box.width + 50, `rect ${JSON.stringify(r)} keeps the removed shadow of ${JSON.stringify(box)}`);
+  const again = memory.own(rig.layer, b);
+  assert.ok(again.x === box.x - 24 && again.width === box.width + 48, `without ink it is box + ink margin again: ${JSON.stringify(again)}`);
 });
