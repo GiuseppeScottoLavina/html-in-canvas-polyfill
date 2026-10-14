@@ -543,7 +543,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /** @param {Entry} entry @param {Landed} l @param {Round} round */
   function commitOne(entry, l, round) {
-    if (!damage.accepts(entry.el, l.epoch, l.generation)) { dropResult(entry, l, false); return; }
+    if (!damage.accepts(entry.el, l.epoch, l.generation, l.rect === null)) { dropResult(entry, l, false); return; }
     const crop = cropPxOf(l);
     if (reportUnsupported(entry, l.result) || !crop) { discardResult(entry, l); return; }
     const t0 = env.now();

@@ -27,6 +27,7 @@ export const WHOLE_RECT = Object.freeze({ x: -1e9, y: -1e9, width: 2e9, height: 
 /**
  * @typedef {Object} ElState
  * @property {number} epoch
+ * @property {number} hard  epoch of the last structural cause other than a DOM 'mutation' (resize, dpr, stylesheet, ...): a whole tile older than it is dropped
  * @property {number} gen          last generation handed out
  * @property {number} lastCommitted
  * @property {boolean} takenSinceBump  an epoch bump only matters to builds taken before it
@@ -70,7 +71,7 @@ export class DamageTracker {
   #state(el) {
     let s = this.states.get(el);
     if (!s) {
-      s = { epoch: 1, gen: 0, lastCommitted: 0, takenSinceBump: false, pending: null, inflight: new Map(), committedTiles: [] };
+      s = { epoch: 1, hard: 1, gen: 0, lastCommitted: 0, takenSinceBump: false, pending: null, inflight: new Map(), committedTiles: [] };
       this.states.set(el, s);
     }
     return s;
@@ -88,6 +89,7 @@ export class DamageTracker {
     const s = this.#state(el);
     const structural = STRUCTURAL.has(cause) || (cause === 'mutation' && rect === null);
     if (structural && s.takenSinceBump) { s.epoch++; s.takenSinceBump = false; }
+    if (structural && cause !== 'mutation') s.hard = s.epoch;
     this.#addPending(s, structural ? null : rect, [cause], now);
   }
 
@@ -116,10 +118,15 @@ export class DamageTracker {
     return !!this.states.get(el)?.pending?.causes.has(cause);
   }
 
-  /** True when a landed result may be committed: not from before a structural change and newer than the last commit. @param {Element} el @param {number} epoch @param {number} generation @returns {boolean} */
-  accepts(el, epoch, generation) {
+  /**
+   * True when a landed result may be committed: newer than the last commit and not from before a structural change. A WHOLE tile from before a DOM mutation is still accepted:
+   * it is a complete picture (no seam) of a state newer than the one shown, and the pending damage rebuilds the latest state. Dropping it starved a drawable that changes size at
+   * 60 Hz (a counter in proportional digits): every build was superseded before it landed and nothing was ever drawn. Resize, dpr and the other causes keep dropping it (geometry).
+   * @param {Element} el @param {number} epoch @param {number} generation @param {boolean} [whole] the result is a whole-drawable tile @returns {boolean}
+   */
+  accepts(el, epoch, generation, whole = false) {
     const s = this.states.get(el);
-    return !!s && epoch >= s.epoch && generation > s.lastCommitted;
+    return !!s && generation > s.lastCommitted && (epoch >= s.epoch || (whole && epoch >= s.hard));
   }
 
   /**

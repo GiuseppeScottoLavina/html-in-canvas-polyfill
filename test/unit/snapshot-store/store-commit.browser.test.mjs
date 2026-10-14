@@ -233,6 +233,40 @@ test('a result of an older damage epoch is dropped when a structural change happ
   assert.equal(rig.store.isSettled(a), false);
 });
 
+test('a WHOLE tile superseded by a DOM mutation while it decoded is committed, then the latest state is rebuilt; a resize still drops it', async (t) => {
+  // regression: a counter in proportional digits changes its box at 60 Hz, so every change is whole-drawable 'mutation' damage; dropping every superseded build drew nothing
+  const rig = await makeRig(t);
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  rig.deferDecode = true;
+  rig.script.push({ color: 'lime' });
+  rig.store.markDamage(a, null, 'mutation');
+  rig.pump();
+  rig.store.markDamage(a, null, 'mutation');
+  await rig.release();
+  assert.deepEqual(rig.store.commitLanded().changed, [a], 'the superseded whole tile advances the visible state');
+  assert.deepEqual(rig.css(a, 20, 20), RGBA.lime);
+  assert.equal(rig.store.stats().dropped, 0);
+  assert.equal(rig.store.isSettled(a), false, 'the newer mutation is still pending');
+  rig.deferDecode = false;
+  rig.color = 'blue';
+  rig.pump();
+  await until(() => rig.store.hasLanded());
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 20, 20), RGBA.blue, 'the latest state follows');
+  assert.equal(rig.store.isSettled(a), true);
+
+  rig.deferDecode = true;
+  rig.script.push({ color: 'lime' });
+  rig.store.markDamage(a, null, 'mutation');
+  rig.pump();
+  rig.store.markDamage(a, null, 'resize');
+  await rig.release();
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 20, 20), RGBA.blue, 'a whole tile from before a resize is not drawn (its geometry is gone)');
+  assert.equal(rig.store.stats().dropped, 1);
+});
+
 test('G-caret-patch: a blink costs no build and no decode; the caret is painted on the surface and lifted bit-exact', async (t) => {
   const rig = await makeRig(t);
   const a = rig.add('a', 100, 60);

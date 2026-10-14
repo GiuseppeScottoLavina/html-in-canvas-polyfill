@@ -62,6 +62,29 @@ test('structural damage after a take bumps the epoch; the older result is no lon
   assert.equal(d.accepts(el, next.epoch, next.generation), true);
 });
 
+test('a WHOLE tile from before a DOM mutation is still accepted (a complete, newer picture); a partial one is not; a resize, dpr or stylesheet drops both', () => {
+  const { d, el } = fresh();
+  d.mark(el, null, 'mutation', 1);
+  const whole = d.take(el);
+  d.mark(el, null, 'mutation', 2);
+  assert.equal(d.accepts(el, whole.epoch, whole.generation, true), true, 'a counter that changes width at 60 Hz is never starved');
+  assert.equal(d.accepts(el, whole.epoch, whole.generation, false), false, 'a partial tile of that epoch may show a seam');
+  d.committed(el, whole.generation);
+  assert.equal(d.accepts(el, whole.epoch, whole.generation, true), false, 'never twice');
+  const next = d.take(el);
+  assert.equal(next.rect, null, 'the newer mutation is rebuilt');
+  d.mark(el, null, 'resize', 3);
+  assert.equal(d.accepts(el, next.epoch, next.generation, true), false, 'resize: the geometry of the tile is gone');
+  for (const cause of ['dpr', 'stylesheet', 'content-attr', 'forced']) {
+    const e = fresh();
+    e.d.mark(e.el, null, 'mutation', 1);
+    const w = e.d.take(e.el);
+    e.d.mark(e.el, null, 'mutation', 2);
+    e.d.mark(e.el, null, cause, 3);
+    assert.equal(e.d.accepts(e.el, w.epoch, w.generation, true), false, `${cause} after a mutation (no second bump) still drops the older whole tile`);
+  }
+});
+
 test('structural damage with nothing taken in between does not bump the epoch twice', () => {
   const { d, el } = fresh();
   d.mark(el, null, 'resize', 1);

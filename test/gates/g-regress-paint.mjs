@@ -4,8 +4,9 @@
 //   M3 `canvas.width = N` inside onpaint does not start a paint loop (paint count over 1.5 s stays small)
 //   M4 digits changing at 60 Hz on a TRANSPARENT drawable (a counter whose text-shadow reaches past its box + ink margin, and a clock) leave no ghost of older digits: the canvas after the
 //      run equals a fresh page that shows the same texts (the app clears its canvas on every paint, so any old ink left in it comes from the retained surface)
+//   M5 a 60 Hz counter in proportional digits (its width changes, so every change supersedes the build in flight) paints at the rate of a tabular one, and ends pixel-exact
 // Positive control per finding: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop, M4 composites tiles source-over
-// instead of replacing them; every check class must go red.
+// instead of replacing them, M5 holds every snapshot decode 60 ms; every check class must go red.
 import { runGate, H } from './lib/gate.mjs';
 import { openRegress } from './lib/regress.mjs';
 import { canvasShot, assertLayerHidden } from './lib/pixel.mjs';
@@ -74,7 +75,33 @@ runGate('G-regress-paint', async (ctx) => {
   ctx.check('M4: the run painted its changes and the fresh page is not blank', ran.paints > 20 && ink > 200 && ran.errors.length + fresh.errors.length === 0, numbers.ghost, 'surface');
   ctx.check('M4: no ghost of older digits: the canvas after 1.5 s of 60 Hz changes equals a fresh page with the same texts (<= 4 px differ)', A.length === B.length && differ <= 4 && ghost === 0, numbers.ghost, 'ghost');
 
+  // --- M5: a 60 Hz counter in proportional digits paints at the display rate ---------------------------------------------------------------------------
+  // Its box changes width on most changes, so each one is whole-drawable damage that supersedes the build in flight; when every superseded build was dropped the canvas froze
+  // (0 to 30 paints/s against ~55 for tabular digits). Reference: the same counter in a monospace font on the same machine.
+  const rate = {};
+  for (const [font, bg] of [['mono', 'transparent'], ['georgia', 'transparent'], ['impact', 'opaque']]) {
+    await openRegress(ctx, page, 'proportional-counter.html', { font, bg, ...(ctx.control ? { slow: 1 } : {}) });
+    const r = await page.evaluate('window.__run(2000)');
+    rate[font] = { paints: Math.round(r.paintsPerSec * 10) / 10, changed: Math.round(r.changedPerSec * 10) / 10, store: r.store, errors: r.errors };
+    if (font === 'georgia') {
+      const after = await page.evaluate('window.__pixels()');
+      await openRegress(ctx, page, 'proportional-counter.html', { font, bg, init: after.text });
+      const ref = await page.evaluate('window.__pixels()');
+      const P = Buffer.from(after.px, 'base64'), R = Buffer.from(ref.px, 'base64');
+      let differ = 0;
+      for (let p = 0; p < P.length; p += 4) { let m = 0; for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(P[p + k] - R[p + k])); if (m > 8) differ++; }
+      rate.pixels = { text: after.text, differ };
+      ctx.check('M5: after the run the canvas equals a fresh page that shows the same counter (<= 4 px differ)', P.length === R.length && differ <= 4 && !after.errors.length, rate.pixels, 'ghost');
+    }
+  }
+  numbers.proportional = rate;
+  const floor = Math.max(20, 0.75 * rate.mono.paints);
+  for (const font of ['georgia', 'impact']) {
+    const r = rate[font];
+    ctx.check(`M5: a ${font} counter changing at 60 Hz paints at least 75 % of the tabular rate and >= 20/s, every paint a changed picture`, r.paints >= floor && r.changed >= floor && !r.errors.length, { ...r, floor }, 'rate');
+  }
+
   const errs = page.errors({ includeWarnings: false }).slice(errors0);
   ctx.check('no page error or console error', errs.length === 0, errs.slice(0, 3), 'surface');
   return { numbers };
-}, { controlSabotage: ['nogeom'], controlClasses: ['append', 'hit', 'loop', 'ghost'] });
+}, { controlSabotage: ['nogeom'], controlClasses: ['append', 'hit', 'loop', 'ghost', 'rate'] });
