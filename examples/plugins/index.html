@@ -17,19 +17,28 @@
   h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
   p.note { margin: 0 0 1rem; max-width: 60rem; color: #a9c4d6; }
   p.note a { color: #9cf5ff; }
-  #picker { display: flex; flex-wrap: wrap; gap: .6rem; margin: 0 0 1rem; padding: 0; list-style: none; }
-  #picker button { display: grid; gap: .15rem; width: 17rem; min-height: 4.2rem; padding: .6rem .8rem; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  #picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; max-width: 1100px; margin: 0 0 1rem; padding: 0; list-style: none; }
+  #picker li { display: flex; }
+  #picker button { display: grid; align-content: start; gap: .15rem; width: 100%; min-height: 4.2rem; padding: .6rem .8rem; text-align: left; font: inherit; color: inherit; cursor: pointer;
     border: 1px solid rgba(190, 237, 255, .22); border-radius: 14px; background: #061626; }
   #picker button b { font-size: .95rem; }
   #picker button span { color: #a9c4d6; font-size: .8rem; line-height: 1.35; }
   #picker button[aria-pressed="true"] { border-color: #79efff; background: #0b2a40; box-shadow: 0 0 0 2px rgba(121, 239, 255, .25); }
   #picker button:disabled { cursor: not-allowed; opacity: .45; }
   #picker button:focus-visible { outline: 2px solid #79efff; outline-offset: 2px; }
-  #notice { display: none; max-width: 60rem; margin: 0 0 1rem; padding: .7rem .9rem; border: 1px solid #c9a24a; border-radius: 12px; background: #2a210c; color: #ffe7a8; }
+  #notice { display: none; box-sizing: border-box; max-width: 1100px; margin: 0 0 1rem; padding: .7rem .9rem; border: 1px solid #c9a24a; border-radius: 12px; background: #2a210c; color: #ffe7a8; }
   #notice.shown { display: block; }
   #stage { display: block; width: min(1100px, 100%); height: 620px; border: 1px solid rgba(190, 237, 255, .18); border-radius: 22px; background: #03101c; }
   #meta { margin-top: .75rem; font: 13px/1.5 ui-monospace, monospace; color: #8fb4c8; }
   #meta b { color: #dff3ff; font-weight: 600; }
+  #about { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem 1.2rem; max-width: 1100px; margin: 0 0 1rem; padding: .7rem .9rem;
+    border: 1px solid rgba(190, 237, 255, .14); border-radius: 12px; background: #04121f; font-size: .85rem; color: #a9c4d6; }
+  #about h2 { grid-column: 1; margin: 0; font-size: 1rem; color: #dff3ff; }
+  #about h2 small { margin-left: .4rem; font-weight: 400; color: #8fb4c8; }
+  #about p { grid-column: 1; margin: 0; }
+  #about p b { color: #dff3ff; font-weight: 600; }
+  #about code { font: 12px/1.5 ui-monospace, monospace; color: #9cf5ff; overflow-wrap: anywhere; }
+  #about a { grid-column: 2; grid-row: 1; align-self: start; color: #9cf5ff; white-space: nowrap; }
 
   /* ---- inside the canvas: ordinary HTML (the form of examples/water-form) ---- */
   #demo-form { box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 26px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, .9fr) minmax(300px, 1.1fr); gap: 22px;
@@ -39,6 +48,8 @@
   .eyebrow { margin: 0 0 10px; color: #76f5ff; font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
   .hero h1 { margin: 0; max-width: 9ch; font-size: 56px; line-height: .95; letter-spacing: -.05em; }
   .lede { margin: 16px 0 0; max-width: 40ch; color: rgba(225, 246, 255, .7); font-size: 13px; }
+  .try { margin: 0; padding: 14px 0 0; border-top: 1px solid rgba(178, 230, 255, .12); list-style: none; display: grid; gap: 6px; color: rgba(225, 246, 255, .62); font-size: 12px; }
+  .try li::before { content: '\2192'; margin-right: 8px; color: #76f5ff; }
   .card h2 { margin: 0 0 14px; font-size: 24px; letter-spacing: -.03em; }
   .fields { display: grid; gap: 11px; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -62,8 +73,13 @@
   #form-feedback[data-state="success"] { color: #a8ffd7; }
   .invalid { border-color: rgba(255, 111, 138, .8) !important; }
 
+  @media (max-width: 900px) { #picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 760px) {
-    #picker button { width: 100%; }
+    #picker { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
+    #picker button { min-height: 0; padding: .5rem .7rem; }
+    #picker button span { display: none; }   /* the panel below describes the selected effect */
+    #about { grid-template-columns: 1fr; }
+    #about a { grid-column: 1; grid-row: auto; }
     #stage { height: 760px; }
     #demo-form { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
     .hero h1 { font-size: 38px; max-width: none; }
@@ -76,6 +92,7 @@
 <p class="note">Pick an effect: it is applied to the same live HTML form drawn inside the canvas below, and the form stays usable through it. The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>.</p>
 
 <ul id="picker" aria-label="Effect"></ul>
+<section id="about" aria-live="polite" aria-label="The selected effect"><h2 id="about-title">Effect off</h2></section>
 <p id="notice" role="status"></p>
 
 <canvas id="stage" content="drawable" aria-label="Interactive form with the selected effect">
@@ -86,6 +103,11 @@
         <h1>Touch the interface.</h1>
         <p class="lede">Every field you see is ordinary HTML inside this canvas. The selected effect is a WebGPU plugin applied to the drawn result; the form keeps its layout, focus, typing and scrolling, and clicks are mapped through the effect to the field you see.</p>
       </div>
+      <ul class="try" aria-label="Things to try">
+        <li>Click a field where the effect draws it, and type.</li>
+        <li>Submit with an empty name or a broken email: some effects react to the error.</li>
+        <li>Move the frame cap: the effect renders at most that often.</li>
+      </ul>
     </section>
     <section class="card">
       <h2>Contact</h2>
@@ -105,7 +127,7 @@
   </form>
 </canvas>
 
-<div id="meta">mode: <b id="m-mode">starting</b> &nbsp; effect: <b id="m-effect">starting</b> &nbsp; cap: <b id="m-cap">-</b> &nbsp; effect frames/s (page-side count of effectframe events): <b id="m-fps">-</b></div>
+<div id="meta">mode: <b id="m-mode">starting</b> &nbsp; effect: <b id="m-effect">starting</b> &nbsp; cap: <b id="m-cap">-</b> &nbsp; effect frames/s (page-side count of effectframe events): <b id="m-fps">-</b> &nbsp; prefers-reduced-motion: <b id="m-motion">-</b></div>
 
 <script>
 (async () => {
@@ -115,6 +137,31 @@
   const hic = window.__HIC__;
   const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [] });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const showMotion = () => { $('m-motion').textContent = reduceMotion.matches ? 'reduce (the panel above says what the selected effect does then)' : 'no preference'; };
+  reduceMotion.addEventListener('change', showMotion);
+  showMotion();
+
+  // ---- what the selected effect is: its manifest entry (title, version, description, reduced-motion behaviour, defaults, source) ----
+  const SOURCE = 'https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/tree/main/plugins/';
+  function describe(p) {
+    const about = $('about');
+    const line = (label, text, code) => {
+      const el = document.createElement('p');
+      el.append(Object.assign(document.createElement('b'), { textContent: label + ': ' }), code ? Object.assign(document.createElement('code'), { textContent: text }) : text);
+      return el;
+    };
+    const title = Object.assign(document.createElement('h2'), { id: 'about-title' });
+    if (!p) {
+      title.textContent = 'Effect off';
+      about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: 'The form as the polyfill draws it, with no plugin: the plain HTML-in-Canvas picture.' }));
+      return;
+    }
+    title.append(p.title, Object.assign(document.createElement('small'), { textContent: p.name + ' v' + p.version }));
+    const link = Object.assign(document.createElement('a'), { href: SOURCE + p.name, textContent: 'Source and README', target: '_blank', rel: 'noopener' });
+    about.replaceChildren(title, link, Object.assign(document.createElement('p'), { textContent: p.description }),
+      line('Reduced motion', p.reducedMotion || 'not stated by the plugin'), line('Options passed here (meta.defaults)', JSON.stringify(p.defaults), true));
+  }
 
   // The frame cap and the effects are extensions of this library: they run only while the polyfill provides the API (mode 'polyfill').
   // A browser whose own implementation is used (the polyfill stepped aside or refused it) still draws the form, without them.
@@ -214,6 +261,7 @@
     const url = new URL(location.href);
     if (name === 'off') url.searchParams.delete('effect'); else url.searchParams.set('effect', name);
     history.replaceState(null, '', url);
+    describe(name === 'off' || !host ? null : plugins.find((x) => x.name === name));
     if (name === 'off' || !host) {
       state.active = 'off';
       $('m-effect').textContent = host ? 'off (the host shows the form unchanged)' : '2D, no effect';

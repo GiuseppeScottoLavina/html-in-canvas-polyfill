@@ -127,10 +127,33 @@ The browser itself lays out and paints the HTML; the polyfill only takes picture
 - **Frame cap:** `<canvas content="drawable" framecap="30">` or `canvas.frameCap = 60` bounds `paint` events, effect frames and snapshot builds for that canvas (0 = display rate).
 - **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. The plugins are not part of the polyfill: the water ripple of the demo is one example plugin in [plugins/](plugins/), with a template for new ones and a [gallery](examples/plugins/) that applies each to one live form. [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) builds another one step by step.
 
+## Example plugins
+
+Eight example effect plugins, each applied to the same live form in the [plugin gallery](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/) (desktop Chrome with WebGPU). Under each of them the form stays live: a click is mapped through the effect to the element the user sees there (and swallowed where the effect shows no element), typing goes to the real field, and each plugin states what it does when the user prefers reduced motion.
+
+<table>
+<tr>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=crt"><img src="docs/media/plugins/crt.webp" width="200" alt="The gallery form under the CRT monitor plugin"></a><br><a href="plugins/crt/">CRT monitor</a></td>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=disintegrate"><img src="docs/media/plugins/disintegrate.webp" width="200" alt="The gallery form under the Disintegrate plugin"></a><br><a href="plugins/disintegrate/">Disintegrate</a></td>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=glitch"><img src="docs/media/plugins/glitch.webp" width="200" alt="The gallery form under the Glitch plugin"></a><br><a href="plugins/glitch/">Glitch</a></td>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=holo-card"><img src="docs/media/plugins/holo-card.webp" width="200" alt="The gallery form under the Holo card plugin"></a><br><a href="plugins/holo-card/">Holo card</a></td>
+</tr>
+<tr>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=liquid-glass"><img src="docs/media/plugins/liquid-glass.webp" width="200" alt="The gallery form under the Liquid glass plugin"></a><br><a href="plugins/liquid-glass/">Liquid glass</a></td>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=page-curl"><img src="docs/media/plugins/page-curl.webp" width="200" alt="The gallery form under the Page curl plugin"></a><br><a href="plugins/page-curl/">Page curl</a></td>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=shatter"><img src="docs/media/plugins/shatter.webp" width="200" alt="The gallery form under the Shatter plugin"></a><br><a href="plugins/shatter/">Shatter</a></td>
+<td align="center"><a href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=water"><img src="docs/media/plugins/water.webp" width="200" alt="The gallery form under the Water plugin"></a><br><a href="plugins/water/">Water</a></td>
+</tr>
+</table>
+
+> **Extensions, not the standard.** The plugins, the effects host they run in and the frame cap are extensions of this library. They are not part of the HTML-in-Canvas proposal and are not available on native implementations: they work only while this polyfill provides the API ([details](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+
+What each plugin does and how its input mapping works: [plugins/README.md](plugins/README.md). Writing one: [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md).
+
 ## Testing and conformance
 
 - **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 140 files (242 of 375 subtests); native Chrome passes 208 (354) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 373 in Node and 597 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
+- **Unit tests:** 471 in Node and 658 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
 - **Browser gates:** 11 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page (pixels, hit testing, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 35 seeded bugs are caught.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).

@@ -245,7 +245,7 @@ const SCENARIOS = {
     });
     if (mode === 'effect') {
       for (const p of manifest) {
-        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form and the presented pixels change against "Effect off"`, async () => {
+        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form, the presented pixels change against "Effect off", and the panel shows its title, version and reduced-motion behaviour`, async () => {
           if (!(await pick('off'))) return { ok: false, reason: 'off not selected' };
           await sleep(600);
           const off = await canvasImage(page, '#stage', 'gpu');
@@ -253,9 +253,11 @@ const SCENARIOS = {
           await sleep(900);
           const on = await canvasImage(page, '#stage', 'gpu');
           const controls = await page.evaluate(`document.getElementById('effect-controls').children.length`);
+          const about = await page.evaluate(`document.getElementById('about').textContent`);
+          const described = about.includes(p.title) && about.includes(`v${p.version}`) && (!p.reducedMotion || about.includes(p.reducedMotion));
           const cmp = H.compareImages(on, off);
           run.shots[`effect-${p.name}`] = on;
-          return { ok: !!selected && controls > 0 && cmp.countOver16 > 300 && H.pixelStats(on).nonBlank, controls, changedPixels: cmp.countOver16 };
+          return { ok: !!selected && controls > 0 && described && cmp.countOver16 > 300 && H.pixelStats(on).nonBlank, controls, described, changedPixels: cmp.countOver16 };
         });
       }
       await run.step('interact', '"Effect off" removes the plugin and its controls; the frame is still presented and not blank', async () => {
