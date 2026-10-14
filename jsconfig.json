@@ -11,6 +11,6 @@
     "noImplicitOverride": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.js"],
+  "include": ["src/**/*.js", "plugins/**/*.js"],
   "exclude": ["node_modules", "dist", ".scratch", ".profiles", "test", "examples", "_site"]
 }

@@ -44,22 +44,22 @@ jobs:
 
       - run: npm ci
 
-      - name: Lint (repo checks)
+      - name: Lint (repo checks, plugin folder contract)
         run: npm run lint
 
       - name: Types
         run: npm run check
 
-      - name: Unit tests (Node)
+      - name: Unit tests (Node; src and plugins/)
         run: node test/unit/lib/run-node-tests.mjs
 
-      - name: Unit tests (headless Chrome)
+      - name: Unit tests (headless Chrome; src and plugins/)
         run: node test/unit/run.mjs --chrome="${{ steps.chrome.outputs.chrome-path }}"
 
       - name: Build
         run: npm run build
 
-      - name: Bundle check (sizes, every bundle loaded in headless Chrome)
+      - name: Bundle check (sizes, every bundle and plugin bundle loaded in headless Chrome)
         # --allow-size: the 150 KB core target is a documented known miss (docs/BUNDLES.md); the size ceilings still fail.
         run: node scripts/check-bundle.mjs --no-build --allow-size
 

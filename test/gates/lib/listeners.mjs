@@ -7,8 +7,8 @@
 // The audit is run with the effect host off, with the effect host on, and AFTER uninstall (zero listeners, active observers or intervals may remain).
 import { H } from './gate.mjs';
 
-/** Script names that count as the polyfill: the core bundle and the optional effects/water bundles (docs/BUNDLES.md), so the effect host's listeners stay audited. */
-const MARK = /hic-live-(polyfill|effects)/;
+/** Script names that count as the polyfill: the core bundle, the optional effects bundle and the plugin bundles (dist/plugins/, docs/BUNDLES.md), so the effect host's listeners stay audited. */
+const MARK = /hic-live-(polyfill|effects)|\/dist\/plugins\//;
 
 export const TRACKER_SRC = `(() => {
   if (window.__trk) return;

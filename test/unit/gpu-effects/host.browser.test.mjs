@@ -6,7 +6,7 @@ import { createPresenter } from '/src/effects/gpu-presenter.js';
 import { createEffects, createLateEffects, installEffectsGlobal } from '/src/effects/index.js';
 import { EXT } from '/src/contracts/events.js';
 import { definePlugin } from '/src/effects/plugin-abi.js';
-import { WaterEffectPlugin } from '/src/effects/water/water-plugin.js';
+import { plugin as WaterEffectPlugin } from '/plugins/water/index.js'; // the example plugin (plugins/water), used here as a real spatial plugin
 import { BUS, EVENTS } from '/src/contracts/events.js';
 
 const GPU = await gpuAvailable();

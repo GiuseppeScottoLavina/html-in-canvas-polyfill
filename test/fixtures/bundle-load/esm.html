@@ -9,7 +9,7 @@
   try {
     const core = await import('/dist/esm/index.js');
     const effects = await import('/dist/esm/effects.js');
-    const water = await import('/dist/esm/effects-water.js');
+    const water = await import('/dist/plugins/water.esm.js');
     const bridge = await import('/dist/esm/native-bridge.js');
     const installed = core.install();
     if (installed.mode !== 'polyfill') out.bad.push('mode ' + installed.mode);
@@ -17,11 +17,11 @@
     if ('HTMLInCanvasEffects' in window) out.bad.push('importing effects.js must not define the global by itself');
     const api = effects.installEffects(window);
     if (window.HTMLInCanvasEffects !== api || api.version !== 2) out.bad.push('installEffects did not define window.HTMLInCanvasEffects');
-    if (water.WaterEffectPlugin.type !== 'water') out.bad.push('WaterEffectPlugin missing');
-    if (effects.definePlugin(water.WaterEffectPlugin) !== water.WaterEffectPlugin && effects.definePlugin(water.WaterEffectPlugin).type !== 'water') out.bad.push('definePlugin does not accept the water plugin (separate copies of the ABI?)');
+    if (water.plugin?.type !== 'water' || water.meta?.name !== 'water') out.bad.push('the water plugin module does not export meta and plugin');
+    if (effects.definePlugin(water.plugin).type !== 'water') out.bad.push('definePlugin does not accept the water plugin');
     let code = null;
     const device = { createShaderModule: (d) => { code = d.code; return {}; }, createRenderPipeline: () => { throw new Error('stop after the shader'); } };
-    await water.WaterEffectPlugin.create({ device, format: 'bgra8unorm', canvas: document.getElementById('c'), listen() {} }, {}).catch(() => {});
+    await water.plugin.create({ device, format: 'bgra8unorm', canvas: document.getElementById('c'), listen() {} }, {}).catch(() => {});
     if (typeof code !== 'string' || !code.includes('@fragment')) out.bad.push('the water plugin did not compile an inlined WGSL string');
     if (typeof globalThis[Symbol.for('hic.native-bridge')]?.install !== 'function' || typeof bridge.installNativeBridge !== 'function') out.bad.push('the native bridge entry did not register itself');
     installed.uninstall();

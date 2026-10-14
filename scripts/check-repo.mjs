@@ -1,5 +1,5 @@
-// Repo gates that need no browser: G-size, G-deps, G-no-blob, G-doc-sync (--docs only checks docs).
-//   node scripts/check-repo.mjs          size + deps + no-blob + doc sync
+// Repo gates that need no browser: G-size, G-deps, G-no-blob, G-plugins, G-doc-sync (--docs only checks docs).
+//   node scripts/check-repo.mjs          size + deps + no-blob + plugin folder contract + doc sync
 //   node scripts/check-repo.mjs --docs   doc sync only
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -62,6 +62,14 @@ if (!docsOnly) {
   // The core ceiling is not a hard design limit: it is raised deliberately, one measured reason at a time (conformance fixes, Firefox / Safari support, the performance work).
   if (total > 12650) problems.push(`G-size: core is ${total} code lines (> 12650)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
+
+  // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
+  const { checkPluginFolder } = await import(pathToFileURL(join(root, 'plugins/_shared/contract.mjs')).href);
+  const folders = readdirSync(join(root, 'plugins')).filter((n) => n !== '_shared' && !n.startsWith('.') && statSync(join(root, 'plugins', n)).isDirectory());
+  for (const n of folders) problems.push(...(await checkPluginFolder(join(root, 'plugins', n))).map((/** @type {string} */ m) => `G-plugins: ${m}`));
+  const pluginsReadme = readFileSync(join(root, 'plugins/README.md'), 'utf8');
+  for (const n of folders.filter((x) => !x.startsWith('_'))) if (!pluginsReadme.includes(`| [\`${n}\`](${n}/) |`)) problems.push(`G-plugins: plugins/README.md has no row for ${n}`);
+  console.log(`checked ${folders.length} plugin folders`);
 }
 
 // G-doc-sync: every feature id appears in the matrix with the right status section

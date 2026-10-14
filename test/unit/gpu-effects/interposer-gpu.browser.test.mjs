@@ -3,7 +3,7 @@
 import { test, assert } from '/test/unit/lib/t.js';
 import { gpuAvailable, makeRig } from './lib/rig.mjs';
 import { createEffectHost } from '/src/effects/effect-host.js';
-import { WaterEffectPlugin } from '/src/effects/water/water-plugin.js';
+import { plugin as WaterEffectPlugin } from '/plugins/water/index.js'; // the example plugin (plugins/water), used here as a real spatial plugin
 
 const GPU = await gpuAvailable();
 console.error(`interposer-gpu tests: WebGPU ${GPU ? 'available' : 'NOT available'}`);

@@ -16,7 +16,7 @@ const { values: opt, positionals } = parseArgs({
   },
 });
 
-/** Files: explicit positionals, else test/unit/[<module>/]**.browser.test.mjs (or **.expect-fail.mjs with --expect-fail). */
+/** Files: explicit positionals, else test/unit/[<module>/]**.browser.test.mjs (or **.expect-fail.mjs with --expect-fail); `--module plugins` (and no --module) adds plugins/**. */
 function discover() {
   const suffix = opt['expect-fail'] ? '.expect-fail.mjs' : '.browser.test.mjs';
   /** @type {string[]} */ const out = [];
@@ -27,7 +27,7 @@ function discover() {
     }
   };
   if (positionals.length) return positionals.map(p => resolve(p));
-  for (const m of opt.module?.length ? opt.module : ['']) walk(resolve(UNIT_DIR, m));
+  for (const m of opt.module?.length ? opt.module : ['', 'plugins']) walk(m === 'plugins' ? resolve(PROJECT_ROOT, 'plugins') : resolve(UNIT_DIR, m));
   return out;
 }
 

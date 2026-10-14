@@ -2,15 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>water-form: a live form under a WebGPU water effect</title>
-<!-- Load order matters: the core first (it installs synchronously), then the optional effects bundle, then the water plugin. -->
+<!-- The core first (it installs synchronously), then the optional effects bundle and the water example plugin (plugins/water). -->
 <script src="../../dist/hic-live-polyfill.iife.min.js"></script>
 <!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
 <script src="../../dist/hic-live-engines.iife.min.js"></script>
 <script src="../../dist/hic-live-effects.iife.min.js"></script>
-<script src="../../dist/hic-live-effects-water.iife.min.js"></script>
+<script src="../../dist/plugins/water.iife.min.js"></script>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; padding: 1.25rem; font: 16px/1.5 system-ui, sans-serif; background: #020a13; color: #dff3ff; }
@@ -59,7 +60,7 @@
 </head>
 <body>
 <h1>Water form</h1>
-<p class="note">A real HTML form drawn into a canvas by hic-live-polyfill, then presented through a WebGPU water-ripple plugin. Move the pointer over it to make ripples. The fields stay live: click one, type, press Submit. Drag the frame cap slider (15 to 120 fps) to limit how often the effect renders.</p>
+<p class="note">A real HTML form drawn into a canvas by hic-live-polyfill, then presented through a WebGPU water-ripple plugin. Move the pointer over it to make ripples. The fields stay live: click one, type, press Submit. Drag the frame cap slider (15 to 120 fps) to limit how often the effect renders. The effect plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal. More effects: the <a href="../plugins/" style="color:#9cf5ff">plugin gallery</a>.</p>
 
 <canvas id="stage" content="drawable" aria-label="Interactive water form">
   <form id="demo-form" drawable autocomplete="off" novalidate>
@@ -97,8 +98,13 @@
   const $ = (id) => document.getElementById(id);
   const hic = window.__HIC__;
 
-  $('m-mode').textContent = hic && hic.installed ? hic.installed.mode : 'polyfill not installed';
-  if (!hic || !hic.installed) {
+  // The frame cap and the effects are extensions of this library: they run only while the polyfill provides the API (mode 'polyfill').
+  // A browser whose own implementation is used (the polyfill stepped aside or refused it) still draws the form, without them.
+  const mode = hic && hic.installed ? hic.installed.mode : null;
+  const nativeApi = !mode && typeof CanvasRenderingContext2D.prototype.drawElementImage === 'function';
+  const extensions = mode === 'polyfill';
+  $('m-mode').textContent = mode || (nativeApi ? 'polyfill not active, native API' : 'polyfill not installed');
+  if (!mode && !nativeApi) {
     $('m-effect').textContent = hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'run `npm run build` first';
     return;
   }
@@ -106,6 +112,7 @@
   // ---- the frame cap: the canvas.frameCap property reflects the framecap attribute (0 = uncapped = display rate) ------------------------
   const range = $('fps-cap'), output = $('fps-cap-value');
   function applyCap() {
+    if (!extensions) { range.disabled = true; output.textContent = 'n/a'; $('m-cap').textContent = 'n/a (needs the polyfill)'; return; }
     const value = Math.min(120, Math.max(15, Number(range.value) || 60));
     canvas.frameCap = value;
     output.textContent = value + ' fps';
@@ -126,12 +133,12 @@
 
   // ---- choose the presentation path BEFORE any getContext: a canvas has one context type for life -----------------------------------
   let effect = null;
-  const canUseEffect = !!navigator.gpu && !!window.HTMLInCanvasEffects && !!window.HicLiveEffectsWater;
+  const canUseEffect = extensions && !!navigator.gpu && !!window.HTMLInCanvasEffects && !!(window.HicLivePlugins && HicLivePlugins.water);
   if (canUseEffect) {
     try {
       // The host owns the canvas bitmap and the 'webgpu' context: it samples the polyfill's snapshot of `form`, runs the plugin chain, presents.
       const host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true });
-      const water = await host.addPlugin(HicLiveEffectsWater.WaterEffectPlugin, { intensity: 0.28 });
+      const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.28 });
       water.mountUI($('effect-controls')); // the plugin's own intensity slider, as ordinary HTML inside the form
       canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
       let frames = 0, t0 = performance.now();
@@ -144,7 +151,7 @@
       $('m-effect').textContent = '2D fallback (' + error.message + ')';
     }
   } else {
-    $('m-effect').textContent = '2D fallback (' + (navigator.gpu ? 'effects bundles not loaded' : 'no WebGPU in this browser') + ')';
+    $('m-effect').textContent = '2D, no effect (' + (!extensions ? 'the effects need the polyfill; the browser\'s own implementation draws the form' : navigator.gpu ? 'effects bundles not loaded' : 'no WebGPU in this browser') + ')';
   }
 
   // ---- the plain 2D path: the standard pattern. Same page, no effect. -------------------------------------------------------------

@@ -1,20 +1,29 @@
 /**
- * Water ripple plugin (ABI v2). Shader: ./water.wgsl, unchanged.
- * Module: gpu-effects (src/effects/**).
+ * Water ripple effect plugin (effect plugin ABI v2): an EXAMPLE of the effects extension of html-in-canvas-polyfill, not part of the polyfill.
+ * Shader: ./water.wgsl.
  *
  * The input mapper (`mapWaterPoint`) is the JS twin of the displacement in water.wgsl: same constants, same fast_exp_neg, same clamp.
- * It evaluates the uniform block that was submitted for the presented frame, so it describes exactly those pixels. The unit test
- * test/unit/gpu-effects/water-gpu.browser.test.mjs checks the twin against the pixels the GPU actually produced.
+ * It evaluates the uniform block that was submitted for the presented frame, so it describes exactly those pixels. The test
+ * test/water-gpu.browser.test.mjs checks the twin against the pixels the GPU actually produced.
+ *
+ * The module has no dependency: `plugin` is a plain, frozen definition that `host.addPlugin` validates (docs/guides/EFFECTS-PLUGINS.md).
  */
 
-import { definePlugin } from '../plugin-abi.js';
-import { shaderSource } from './shader-source.js';
+import { wgsl } from './wgsl.js';
 
-/** @typedef {import('../../contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
-/** @typedef {import('../../contracts/types.js').EffectPluginContext} EffectPluginContext */
-/** @typedef {import('../../contracts/types.js').EffectPluginInstance} EffectPluginInstance */
-/** @typedef {import('../../contracts/types.js').InputMapper} InputMapper */
-/** @typedef {import('../../contracts/types.js').InputPoint} InputPoint */
+/** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
+/** @typedef {import('../../src/contracts/types.js').EffectPluginContext} EffectPluginContext */
+/** @typedef {import('../../src/contracts/types.js').EffectPluginInstance} EffectPluginInstance */
+/** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
+/** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
+
+/** What the plugin gallery and the build read (plugins/README.md). */
+export const meta = Object.freeze({
+  name: 'water',
+  title: 'Water',
+  description: 'Ripples that follow the pointer; clicks and typing are remapped through the displacement.',
+  defaults: Object.freeze({ intensity: 0.28 }),
+});
 
 export const RIPPLE_COUNT = 4;
 /** floats in the uniform block: resolution(2) time ready | params(4) | ripples(4 x vec4) */
@@ -216,14 +225,15 @@ function createPipeline(device, code, format) {
 }
 
 /** @type {EffectPluginDefinition} */
-export const WaterEffectPlugin = definePlugin({
+export const plugin = Object.freeze({
   type: 'water',
   apiVersion: 2,
   version: 2,
   // The pass only writes its destination as a same-format colour attachment; it never samples or reads it back.
-  outputCapabilities: { directCanvasRenderAttachment: true },
+  outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
-    const code = await shaderSource(initialOptions?.shader);
+    const shader = initialOptions?.shader;
+    const code = typeof shader === 'string' && shader !== '' ? shader : await wgsl('water.wgsl');
     const { device, format } = context;
     const pipeline = createPipeline(device, code, format);
     const usage = /** @type {any} */ (globalThis).GPUBufferUsage;

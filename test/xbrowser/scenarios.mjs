@@ -306,16 +306,16 @@ export async function clickEffect(ctx) {
   await s.navigate(url(ctx, P, { mode: 'ref' })); await until(s, 'window.__HIC_FIXTURE && window.__HIC_FIXTURE.ready'); await sleep(OVERLAY_FADE_MS);
   const surf = await rectOf(s, '#hic-surface'); const em = await rectOf(s, '#email');
   const ref = (await shotRect(s, surf)).img;
-  const bundles = [ctx.bundle, '/dist/hic-live-effects.iife.js', '/dist/hic-live-effects-water.iife.js'].join(',');
+  const bundles = [ctx.bundle, '/dist/hic-live-effects.iife.js', '/dist/plugins/water.iife.js'].join(',');
   for (const variant of ['effect', '2d']) {
     const params = variant === 'effect' ? { mode: 'poly', bundle: bundles, painter: 'none' } : { mode: 'poly', bundle: ctx.bundle };
     await s.navigate(url(ctx, P, params));
     await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 15000).catch(() => null);
     if (variant === 'effect') {
       ctx.numbers.clickEffectHost = await s.evaluate(`(async () => { try {
-        await new Promise((ok) => { const t = setInterval(() => { if (window.HTMLInCanvasEffects && window.HicLiveEffectsWater) { clearInterval(t); ok(); } }, 50); setTimeout(ok, 8000); });
+        await new Promise((ok) => { const t = setInterval(() => { if (window.HTMLInCanvasEffects && window.HicLivePlugins && window.HicLivePlugins.water) { clearInterval(t); ok(); } }, 50); setTimeout(ok, 8000); });
         const host = await HTMLInCanvasEffects.createHost(document.querySelector('#hic-surface'), document.querySelector('#demo-form'), { maxDpr: 2.5, interposer: true });
-        await host.addPlugin(HicLiveEffectsWater.WaterEffectPlugin, { intensity: 0 }); return 'webgpu'; } catch (e) { return 'error: ' + e.message; } })()`, { timeoutMs: 20000 });
+        await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0 }); return 'webgpu'; } catch (e) { return 'error: ' + e.message; } })()`, { timeoutMs: 20000 });
       ctx.check('clickEffect: the WebGPU water host runs over the form', ctx.numbers.clickEffectHost === 'webgpu', { host: ctx.numbers.clickEffectHost }, 'surface');
     }
     await sleep(1200);

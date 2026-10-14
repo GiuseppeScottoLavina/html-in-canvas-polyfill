@@ -29,10 +29,11 @@
   "sideEffects": [
     "./src/iife.js",
     "./src/effects-iife.js",
-    "./src/effects-water-iife.js",
     "./src/native-bridge.js",
     "./dist/*.iife.js",
     "./dist/*.iife.min.js",
+    "./dist/plugins/*.iife.js",
+    "./dist/plugins/*.iife.min.js",
     "./dist/esm/native-bridge.js",
     "./src/engines.js",
     "./src/engines-iife.js",
@@ -52,10 +53,6 @@
       "types": "./dist/types/effects.d.ts",
       "default": "./dist/esm/effects.js"
     },
-    "./effects/water": {
-      "types": "./dist/types/effects-water.d.ts",
-      "default": "./dist/esm/effects-water.js"
-    },
     "./native-bridge": {
       "types": "./dist/types/native-bridge.d.ts",
       "default": "./dist/esm/native-bridge.js"
@@ -64,20 +61,28 @@
     "./iife/min": "./dist/hic-live-polyfill.iife.min.js",
     "./iife/effects": "./dist/hic-live-effects.iife.js",
     "./iife/effects/min": "./dist/hic-live-effects.iife.min.js",
-    "./iife/effects-water": "./dist/hic-live-effects-water.iife.js",
-    "./iife/effects-water/min": "./dist/hic-live-effects-water.iife.min.js",
     "./iife/native-bridge": "./dist/hic-live-native-bridge.iife.js",
     "./iife/native-bridge/min": "./dist/hic-live-native-bridge.iife.min.js",
     "./iife/engines": "./dist/hic-live-engines.iife.js",
     "./iife/engines/min": "./dist/hic-live-engines.iife.min.js",
     "./iife/gpu": "./dist/hic-live-gpu.iife.js",
     "./iife/gpu/min": "./dist/hic-live-gpu.iife.min.js",
+    "./plugins/manifest.json": "./dist/plugins/manifest.json",
+    "./plugins/*": {
+      "types": "./dist/types/plugins/*/index.d.ts",
+      "default": "./dist/plugins/*.esm.js"
+    },
+    "./plugins/*/iife": "./dist/plugins/*.iife.js",
+    "./plugins/*/iife/min": "./dist/plugins/*.iife.min.js",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "dist",
+    "plugins",
+    "!plugins/*/test",
+    "!plugins/_shared",
     "!dist/sizes.json",
     "docs/API-CONTRACT.md",
     "docs/BUNDLES.md",
@@ -92,6 +97,7 @@
     "examples/basic",
     "examples/form",
     "examples/water-form",
+    "examples/plugins",
     "examples/scroll-and-resize",
     "examples/webgl-texture",
     "CHANGELOG.md"

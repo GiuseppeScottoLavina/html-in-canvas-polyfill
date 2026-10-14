@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GLOBALS_LENGTH, RIPPLE_COUNT, WaterEffectPlugin, mapWaterPoint } from '../../../src/effects/water/water-plugin.js';
+import { fileURLToPath } from 'node:url';
+import { checkPluginFolder } from '../../_shared/contract.mjs';
+import { GLOBALS_LENGTH, RIPPLE_COUNT, plugin as WaterEffectPlugin, mapWaterPoint } from '../index.js';
+
+test('the folder satisfies the plugin contract (plugins/README.md)', async () => {
+  assert.deepEqual(await checkPluginFolder(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')), []);
+});
 
 /** Independent copy of the displacement of the ABI v1 plugin (mapPresentedPoint of the original water plugin). */
 function oracle(state, point) {
@@ -118,7 +124,7 @@ test('create rejects when the shader cannot be had, as a plugin error (no unhand
   globalThis.fetch = async () => ({ ok: false, status: 404 });
   try {
     globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
-    await assert.rejects(WaterEffectPlugin.create({ device: {}, canvas: {}, listen() {} }, {}), /water WGSL fetch 404/);
+    await assert.rejects(WaterEffectPlugin.create({ device: {}, canvas: {}, listen() {} }, {}), /water\.wgsl fetch 404/);
   } finally { globalThis.fetch = realFetch; }
 });
 

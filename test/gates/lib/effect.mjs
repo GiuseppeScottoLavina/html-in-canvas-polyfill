@@ -1,12 +1,12 @@
-// Effect-host setup shared by the effect gates: the F1 page with the polyfill and `painter=none` (the page draws nothing itself), then the water plugin over the form
+// Effect-host setup shared by the effect gates: the F1 page with the polyfill and `painter=none` (the page draws nothing itself), then the water example plugin (plugins/water) over the form
 // through the PUBLIC `HTMLInCanvasEffects.createHost`. Frame stamps and clicks are recorded page-side.
 import { H } from './gate.mjs';
 
 /** @param {*} ctx @param {*} page @param {{interposer?:boolean, intensity?:number, installListeners?:boolean}} o */
 export async function setupEffect(ctx, page, { interposer = true, intensity = 0.28, extraParams = {} } = {}) {
-  // the core, then the optional effects and water bundles (docs/BUNDLES.md), exactly as a page loads them
+  // the core, then the optional effects bundle and the water plugin bundle (docs/BUNDLES.md), exactly as a page loads them
   await page.navigate(H.fixtureUrl(ctx.srv, 'f1', { mode: 'poly', bundle: ctx.effectsBundle, params: { painter: 'none', ...extraParams } }));
-  await page.waitForFunction('!!window.__HIC__ && !!window.HTMLInCanvasEffects && !!window.HicLiveEffectsWater', { timeout: 10000 });
+  await page.waitForFunction('!!window.__HIC__ && !!window.HTMLInCanvasEffects && !!window.HicLivePlugins?.water', { timeout: 10000 });
   return page.evaluate(`(async () => {
     const canvas = document.querySelector('#hic-surface'); const form = document.querySelector('#demo-form');
     window.__frames = []; canvas.addEventListener('effectframe', () => window.__frames.push(performance.now()));
@@ -16,7 +16,7 @@ export async function setupEffect(ctx, page, { interposer = true, intensity = 0.
     document.querySelector('#demo-form').addEventListener('submit', (e) => e.preventDefault(), true);
     const host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: ${interposer} });
     window.__host = host;
-    window.__water = await host.addPlugin(HicLiveEffectsWater.WaterEffectPlugin, { intensity: ${intensity} });
+    window.__water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: ${intensity} });
     await new Promise((r) => setTimeout(r, 700));
     return JSON.stringify({ stats: host.stats() });
   })()`);

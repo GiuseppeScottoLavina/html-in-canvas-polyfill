@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Effect plugins: a gallery over one live form</title>
+<!-- The core first (it installs synchronously), then the optional effects host. Plugin bundles are loaded on demand from dist/plugins/manifest.json. -->
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (Chromium does not need it; docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<script src="../../dist/hic-live-effects.iife.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 1.25rem; font: 16px/1.5 system-ui, sans-serif; background: #020a13; color: #dff3ff; }
+  h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+  p.note { margin: 0 0 1rem; max-width: 60rem; color: #a9c4d6; }
+  p.note a { color: #9cf5ff; }
+  #picker { display: flex; flex-wrap: wrap; gap: .6rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+  #picker button { display: grid; gap: .15rem; width: 17rem; min-height: 4.2rem; padding: .6rem .8rem; text-align: left; font: inherit; color: inherit; cursor: pointer;
+    border: 1px solid rgba(190, 237, 255, .22); border-radius: 14px; background: #061626; }
+  #picker button b { font-size: .95rem; }
+  #picker button span { color: #a9c4d6; font-size: .8rem; line-height: 1.35; }
+  #picker button[aria-pressed="true"] { border-color: #79efff; background: #0b2a40; box-shadow: 0 0 0 2px rgba(121, 239, 255, .25); }
+  #picker button:disabled { cursor: not-allowed; opacity: .45; }
+  #picker button:focus-visible { outline: 2px solid #79efff; outline-offset: 2px; }
+  #notice { display: none; max-width: 60rem; margin: 0 0 1rem; padding: .7rem .9rem; border: 1px solid #c9a24a; border-radius: 12px; background: #2a210c; color: #ffe7a8; }
+  #notice.shown { display: block; }
+  #stage { display: block; width: min(1100px, 100%); height: 620px; border: 1px solid rgba(190, 237, 255, .18); border-radius: 22px; background: #03101c; }
+  #meta { margin-top: .75rem; font: 13px/1.5 ui-monospace, monospace; color: #8fb4c8; }
+  #meta b { color: #dff3ff; font-weight: 600; }
+
+  /* ---- inside the canvas: ordinary HTML (the form of examples/water-form) ---- */
+  #demo-form { box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 26px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, .9fr) minmax(300px, 1.1fr); gap: 22px;
+    font: 14px/1.45 system-ui, sans-serif; color: #edfaff; background: radial-gradient(circle at 18% 18%, rgba(68, 135, 255, .16), transparent 40%), radial-gradient(circle at 84% 78%, rgba(149, 92, 255, .14), transparent 42%), #03101c; }
+  .hero, .card { box-sizing: border-box; min-width: 0; padding: 26px; border: 1px solid rgba(178, 230, 255, .14); border-radius: 22px; background: linear-gradient(150deg, rgba(8, 25, 48, .8), rgba(4, 13, 28, .6)); }
+  .hero { display: flex; flex-direction: column; justify-content: space-between; }
+  .eyebrow { margin: 0 0 10px; color: #76f5ff; font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+  .hero h1 { margin: 0; max-width: 9ch; font-size: 56px; line-height: .95; letter-spacing: -.05em; }
+  .lede { margin: 16px 0 0; max-width: 40ch; color: rgba(225, 246, 255, .7); font-size: 13px; }
+  .card h2 { margin: 0 0 14px; font-size: 24px; letter-spacing: -.03em; }
+  .fields { display: grid; gap: 11px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label.field { display: grid; gap: 5px; min-width: 0; color: rgba(232, 249, 255, .78); font-size: 11px; font-weight: 700; }
+  input[type=text], input[type=email], textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 11px; font: inherit; font-weight: 400; color: #effcff; caret-color: #83f6ff;
+    border: 1px solid rgba(173, 226, 255, .18); border-radius: 12px; outline: 0; background: rgba(1, 10, 23, .55); }
+  input:focus, textarea:focus { border-color: rgba(112, 244, 255, .75); box-shadow: 0 0 0 3px rgba(85, 232, 255, .1); }
+  textarea { height: 70px; resize: none; line-height: 1.4; }
+  .consent { display: flex; align-items: center; gap: 8px; color: rgba(220, 244, 255, .7); font-size: 12px; }
+  .consent input { width: 15px; height: 15px; margin: 0; accent-color: #79efff; }
+  .control { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; color: rgba(224, 247, 255, .72); font-size: 11px; font-weight: 700; }
+  .control output { color: #9cf5ff; text-align: right; font-variant-numeric: tabular-nums; min-width: 6ch; }
+  .control input[type=range] { grid-column: 1 / -1; width: 100%; height: 26px; margin: 0; accent-color: #79efff; cursor: ew-resize; }
+  #effect-controls { display: grid; gap: 6px; min-height: 1.2em; color: rgba(224, 247, 255, .72); font-size: 11px; font-weight: 700; }
+  #effect-controls:empty::before { content: attr(data-empty); color: rgba(224, 247, 255, .45); font-weight: 400; }
+  #effect-controls input[type=range] { width: 100%; accent-color: #79efff; }
+  .actions { display: flex; align-items: center; gap: 12px; }
+  button.submit { padding: 10px 18px; font: inherit; font-weight: 800; color: #03131e; border: 1px solid rgba(139, 240, 255, .5); border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, #78f7ff, #c5fbff 55%, #bba8ff); }
+  #form-feedback { min-height: 1.4em; color: rgba(222, 246, 255, .65); font-size: 12px; }
+  #form-feedback[data-state="error"] { color: #ffc0c9; }
+  #form-feedback[data-state="success"] { color: #a8ffd7; }
+  .invalid { border-color: rgba(255, 111, 138, .8) !important; }
+
+  @media (max-width: 760px) {
+    #picker button { width: 100%; }
+    #stage { height: 760px; }
+    #demo-form { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
+    .hero h1 { font-size: 38px; max-width: none; }
+    .row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Effect plugins</h1>
+<p class="note">Pick an effect: it is applied to the same live HTML form drawn inside the canvas below, and the form stays usable through it. The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>.</p>
+
+<ul id="picker" aria-label="Effect"></ul>
+<p id="notice" role="status"></p>
+
+<canvas id="stage" content="drawable" aria-label="Interactive form with the selected effect">
+  <form id="demo-form" drawable autocomplete="off" novalidate>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Real DOM, drawn by a polyfill</p>
+        <h1>Touch the interface.</h1>
+        <p class="lede">Every field you see is ordinary HTML inside this canvas. The selected effect is a WebGPU plugin applied to the drawn result; the form keeps its layout, focus, typing and scrolling, and clicks are mapped through the effect to the field you see.</p>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Contact</h2>
+      <div class="fields">
+        <div class="row">
+          <label class="field">Name<input id="name" name="name" type="text" value="Ada" placeholder="Your name"></label>
+          <label class="field">Email<input id="email" name="email" type="email" value="ada@example.com" placeholder="you@example.com"></label>
+        </div>
+        <label class="field">Message<textarea id="message" name="message">Every effect in the list bends this actual form.</textarea></label>
+        <label class="consent"><input id="consent" name="consent" type="checkbox" checked> Keep me posted</label>
+        <label class="control" for="fps-cap"><span>Frame cap (canvas.frameCap)</span><output id="fps-cap-value" for="fps-cap">60 fps</output>
+          <input id="fps-cap" type="range" min="15" max="120" step="5" value="60"></label>
+        <div id="effect-controls" aria-label="Controls of the selected effect" data-empty="The selected effect has no controls."></div>
+        <div class="actions"><button class="submit" id="submit" type="submit">Submit</button><span id="form-feedback" role="status" aria-live="polite" data-state="idle">Nothing is sent anywhere.</span></div>
+      </div>
+    </section>
+  </form>
+</canvas>
+
+<div id="meta">mode: <b id="m-mode">starting</b> &nbsp; effect: <b id="m-effect">starting</b> &nbsp; cap: <b id="m-cap">-</b> &nbsp; effect frames/s (page-side count of effectframe events): <b id="m-fps">-</b></div>
+
+<script>
+(async () => {
+  const canvas = document.getElementById('stage');
+  const form = document.getElementById('demo-form');
+  const $ = (id) => document.getElementById(id);
+  const hic = window.__HIC__;
+  const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [] });
+  const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
+
+  // The frame cap and the effects are extensions of this library: they run only while the polyfill provides the API (mode 'polyfill').
+  // A browser whose own implementation is used (the polyfill stepped aside or refused it) still draws the form, without them.
+  const mode = hic && hic.installed ? hic.installed.mode : null;
+  const nativeApi = !mode && typeof CanvasRenderingContext2D.prototype.drawElementImage === 'function';
+  const extensions = mode === 'polyfill';
+  $('m-mode').textContent = mode || (nativeApi ? 'polyfill not active, native API' : 'polyfill not installed');
+  if (!mode && !nativeApi) {
+    $('m-effect').textContent = hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'run `npm run build` first';
+    notice('The polyfill is not installed in this browser, so nothing is drawn: ' + $('m-effect').textContent);
+    return;
+  }
+
+  // ---- the frame cap (an extension): canvas.frameCap reflects the framecap attribute -------------------------------------------
+  const range = $('fps-cap'), output = $('fps-cap-value');
+  function applyCap() {
+    if (!extensions) { range.disabled = true; output.textContent = 'n/a'; $('m-cap').textContent = 'n/a (needs the polyfill)'; return; }
+    const value = Math.min(120, Math.max(15, Number(range.value) || 60));
+    canvas.frameCap = value;
+    output.textContent = value + ' fps';
+    $('m-cap').textContent = value + ' fps';
+  }
+  range.addEventListener('input', applyCap);
+  applyCap();
+
+  // ---- the form is live: ordinary listeners ---------------------------------------------------------------------------------------
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const feedback = $('form-feedback');
+    const bad = !form.elements.name.value.trim() ? 'name' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.elements.email.value) ? 'email' : '';
+    for (const id of ['name', 'email']) form.elements[id].classList.toggle('invalid', id === bad);
+    feedback.dataset.state = bad ? 'error' : 'success';
+    feedback.textContent = bad ? 'Please check the ' + bad + ' field.' : 'Thanks, ' + form.elements.name.value.trim() + '. (not sent)';
+  });
+
+  // ---- the plugin list: dist/plugins/manifest.json, written by the build from every plugins/<name>/ (plugins/README.md) -----------
+  const manifestRequest = fetch('../../dist/plugins/manifest.json').then((r) => (r.ok ? r.json() : Promise.reject(new Error('manifest ' + r.status))));
+
+  // ---- choose the presentation path BEFORE any getContext: a canvas has one context type for life -------------------------------
+  let host = null, why = '';
+  if (!extensions) why = 'The effects and the frame cap are extensions that run only while this polyfill provides the API; here the browser\'s own implementation is used (' + (mode ? 'mode ' + mode : (hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'polyfill not installed')) + ').';
+  else if (!navigator.gpu) why = 'This browser has no WebGPU, so the effects are off.';
+  else if (!window.HTMLInCanvasEffects) why = 'The effects bundle is not loaded, so the effects are off.';
+  else {
+    try {
+      // the host owns the canvas bitmap and its 'webgpu' context: it samples the polyfill's picture of `form`, runs the plugin, presents
+      host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true });
+      canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
+      let frames = 0, t0 = performance.now();
+      canvas.addEventListener('effectframe', () => { frames += 1; });
+      setInterval(() => { const now = performance.now(); $('m-fps').textContent = (frames * 1000 / (now - t0)).toFixed(1); frames = 0; t0 = now; }, 1000);
+    } catch (error) {
+      why = 'The effects host could not start (' + error.message + '), so the effects are off.';
+    }
+  }
+  if (!host) {
+    // the plain 2D path of the standard: the same form, drawn without an effect
+    const ctx = canvas.getContext('2d');
+    canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(form, 0, 0); };
+    new ResizeObserver((entries) => {
+      const box = entries[0].devicePixelContentBoxSize[0];
+      canvas.width = box.inlineSize; canvas.height = box.blockSize;
+    }).observe(canvas, { box: 'device-pixel-content-box' });
+    $('m-fps').textContent = 'n/a (no effect)';
+    notice(why + ' The form below is still drawn ' + (extensions ? 'by the polyfill' : 'by the browser') + ' and fully usable.');
+  }
+  state.mode = host ? 'effect' : '2d';
+
+  let plugins = [];
+  try { plugins = (await manifestRequest).plugins; } catch (error) { notice('The plugin list could not be loaded (' + error.message + '). Run `npm run build` first.'); }
+  state.plugins = plugins.map((p) => p.name);
+
+  // ---- loading and switching plugins ----------------------------------------------------------------------------------------------
+  const loaded = new Map();
+  function loadPlugin(p) {
+    if (!loaded.has(p.name)) {
+      loaded.set(p.name, new Promise((resolve, reject) => {
+        if (window.HicLivePlugins && window.HicLivePlugins[p.name]) return resolve(window.HicLivePlugins[p.name]);
+        const script = document.createElement('script');
+        script.src = '../../dist/plugins/' + p.files.min;
+        script.onload = () => (window.HicLivePlugins && window.HicLivePlugins[p.name] ? resolve(window.HicLivePlugins[p.name]) : reject(new Error(p.name + ' did not register')));
+        script.onerror = () => reject(new Error('could not load ' + script.src));
+        document.head.append(script);
+      }));
+      loaded.get(p.name).catch(() => loaded.delete(p.name));
+    }
+    return loaded.get(p.name);
+  }
+
+  const buttons = new Map();
+  let current = null, serial = 0;
+  async function select(name) {
+    const mine = ++serial;
+    for (const [key, button] of buttons) button.setAttribute('aria-pressed', String(key === name));
+    if (current) { current.remove(); current = null; }                          // removing a plugin also disposes its mounted UI
+    $('effect-controls').replaceChildren();
+    const url = new URL(location.href);
+    if (name === 'off') url.searchParams.delete('effect'); else url.searchParams.set('effect', name);
+    history.replaceState(null, '', url);
+    if (name === 'off' || !host) {
+      state.active = 'off';
+      $('m-effect').textContent = host ? 'off (the host shows the form unchanged)' : '2D, no effect';
+      return;
+    }
+    const p = plugins.find((x) => x.name === name);
+    $('m-effect').textContent = 'loading ' + p.title;
+    try {
+      const entry = await loadPlugin(p);
+      if (mine !== serial) return;                                              // another choice was made meanwhile
+      const handle = await host.addPlugin(entry.plugin, { ...p.defaults });
+      if (mine !== serial) { handle.remove(); return; }
+      current = handle;
+      handle.mountUI($('effect-controls'));                                     // the plugin's own controls, as HTML inside the drawn form
+      state.active = name;
+      $('m-effect').textContent = p.title + ' plugin running';
+    } catch (error) {
+      if (mine !== serial) return;
+      state.active = 'off';
+      $('m-effect').textContent = 'failed: ' + error.message;
+      notice('The ' + p.title + ' effect could not start: ' + error.message);
+    }
+  }
+
+  const add = (name, title, description) => {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.effect = name;
+    button.setAttribute('aria-pressed', 'false');
+    button.disabled = !host && name !== 'off';
+    button.append(Object.assign(document.createElement('b'), { textContent: title }), Object.assign(document.createElement('span'), { textContent: description }));
+    button.addEventListener('click', () => select(name));
+    li.append(button);
+    $('picker').append(li);
+    buttons.set(name, button);
+  };
+  add('off', 'Effect off', 'The form as drawn, with no plugin.');
+  for (const p of plugins) add(p.name, p.title, p.description);
+
+  const wanted = new URL(location.href).searchParams.get('effect');
+  const first = wanted && (wanted === 'off' || plugins.some((p) => p.name === wanted)) ? wanted : plugins.length ? plugins[0].name : 'off';
+  await select(host ? first : 'off');
+  state.ready = true;
+})();
+</script>
+</body>
+</html>

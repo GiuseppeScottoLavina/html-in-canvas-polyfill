@@ -2,7 +2,7 @@
 //   node scripts/check-bundle.mjs [--no-build] [--allow-size] [--skip-browser]
 //   1. size: core min <= 150 KB (the target), and never above the recorded RATCHET (a regression fails even with --allow-size); every other bundle below its own ceiling
 //   2. static: each IIFE parses as a CLASSIC script (a static import/export or import.meta is a SyntaxError there) and has no dynamic import()
-//   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + water, native bridge + core:
+//   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + each plugin of dist/plugins/, native bridge + core:
 //      the globals exist and work, the page made NO request beyond its own scripts (server log + Resource Timing), and the minified FEATURES agree with src/contracts/features.js
 // --allow-size: the 150 KB target is a KNOWN RED (printed, does not fail); the ratchet still fails. Used by `npm test` and CI until the target is met (docs/BUNDLES.md).
 import { readFileSync } from 'node:fs';
@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { Script } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { discoverPlugins } from '../plugins/_shared/contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const allowSize = process.argv.includes('--allow-size');
@@ -18,16 +19,24 @@ const KB = 1000; // decimal, as in the 150 KB target
 const LIMITS = {
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 254 * KB }, // raised deliberately, one measured reason at a time
   'hic-live-effects.iife.min.js': { target: 27 * KB, ceiling: 27 * KB },
-  'hic-live-effects-water.iife.min.js': { target: 10.5 * KB, ceiling: 10.5 * KB },
   'hic-live-native-bridge.iife.min.js': { target: 11 * KB, ceiling: 11 * KB },
   'hic-live-engines.iife.min.js': { target: 40 * KB, ceiling: 40 * KB }, // the Gecko / WebKit painters, outside the core
   'hic-live-gpu.iife.min.js': { target: 16 * KB, ceiling: 16 * KB }, // WebGL / WebGPU element textures, outside the core
 };
+/** Every plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling unless PLUGIN_LIMITS gives it a tighter one: plugins are small add-ons. */
+const PLUGIN_CEILING = 16 * KB;
+const PLUGIN_LIMITS = { water: 10.5 * KB };
 const problems = [];
 const known = [];
 
 if (!process.argv.includes('--no-build')) execFileSync(process.execPath, [join(root, 'scripts/build.mjs'), '--quiet'], { stdio: 'inherit' });
 const sizes = JSON.parse(readFileSync(join(root, 'dist/sizes.json'), 'utf8'));
+const { plugins: PLUGINS } = JSON.parse(readFileSync(join(root, 'dist/plugins/manifest.json'), 'utf8'));
+for (const p of PLUGINS) {
+  const ceiling = PLUGIN_LIMITS[p.name] ?? PLUGIN_CEILING;
+  LIMITS[`plugins/${p.name}.iife.min.js`] = { target: ceiling, ceiling };
+}
+for (const name of discoverPlugins(root).map((p) => p.name)) if (!PLUGINS.some((p) => p.name === name)) problems.push(`G-bundle: plugins/${name} is not in dist/plugins/manifest.json`);
 
 // ---- 1. size
 const sizeProblem = (raw, target, ceiling) => (raw > ceiling ? 'ceiling' : raw > target ? 'target' : null);
@@ -66,7 +75,7 @@ if (!process.argv.includes('--skip-browser')) {
   try {
     for (const min of [false, true]) {
       const f = (name) => `/dist/${name}.iife${min ? '.min' : ''}.js`;
-      const CORE = f('hic-live-polyfill'), EFFECTS = f('hic-live-effects'), WATER = f('hic-live-effects-water'), BRIDGE = f('hic-live-native-bridge'), ENGINES = f('hic-live-engines'), GPU = f('hic-live-gpu');
+      const CORE = f('hic-live-polyfill'), EFFECTS = f('hic-live-effects'), BRIDGE = f('hic-live-native-bridge'), ENGINES = f('hic-live-engines'), GPU = f('hic-live-gpu');
       const tag = min ? 'min' : 'js';
       /** @param {string} name @param {string[]} scripts @param {string} expr page-side check, must return a string[] of problems */
       const check = async (name, scripts, expr, declared = scripts, allowErrors = /$^/) => {
@@ -144,20 +153,26 @@ if (!process.argv.includes('--skip-browser')) {
         const after = await api.createHost(document.getElementById('c'), document.getElementById('d')).then(() => null, (e) => e);
         if (!after || !/needs the installed polyfill/.test(after.message)) bad.push('after uninstall createHost must reject with the installed-polyfill message, got ' + after);
         return bad;`);
-      await check('core + effects + water (inlined shader)', [CORE, EFFECTS, WATER], `
-        const bad = [];
-        const W = window.HicLiveEffectsWater?.WaterEffectPlugin;
-        if (!W || W.type !== 'water') { bad.push('HicLiveEffectsWater.WaterEffectPlugin missing'); return bad; }
-        let code = null;
-        const device = { createShaderModule: (d) => { code = d.code; return {}; }, createRenderPipeline: () => { throw new Error('stop after the shader'); } };
-        await W.create({ device, format: 'bgra8unorm', canvas: document.getElementById('c'), listen() {} }, {}).catch(() => {});
-        if (typeof code !== 'string' || !code.includes('@fragment')) bad.push('the plugin did not compile an inlined WGSL string: ' + String(code).slice(0, 60));
-        if (typeof window.HTMLInCanvasEffects?.definePlugin !== 'function') bad.push('effects bundle missing');
-        return bad;`);
+      // every plugin: it registers itself, the effects host accepts its definition, and it compiles its shaders from inlined strings (no request)
+      for (const p of PLUGINS) {
+        const PLUGIN = `/dist/plugins/${min ? p.files.min : p.files.iife}`;
+        const shaders = discoverPlugins(root).find((x) => x.name === p.name)?.wgsl.length ?? 0;
+        await check(`core + effects + plugin ${p.name} (inlined shaders)`, [CORE, EFFECTS, PLUGIN], `
+          const bad = [];
+          const entry = window.HicLivePlugins?.[${JSON.stringify(p.name)}];
+          if (!entry || entry.meta?.name !== ${JSON.stringify(p.name)} || entry.plugin?.type !== ${JSON.stringify(p.name)}) { bad.push('HicLivePlugins.${p.name} missing or wrong'); return bad; }
+          try { HTMLInCanvasEffects.definePlugin(entry.plugin); } catch (e) { bad.push('definePlugin refused it: ' + e.message); }
+          const codes = [];
+          const stop = () => { throw new Error('stop after the shaders'); };
+          const device = new Proxy({ createShaderModule: (d) => { codes.push(d.code); return {}; }, createRenderPipeline: stop, createComputePipeline: stop, createRenderPipelineAsync: stop, createComputePipelineAsync: stop }, { get: (t, k) => (k in t ? t[k] : stop) });
+          await entry.plugin.create({ apiVersion: 2, device, format: 'bgra8unorm', canvas: document.getElementById('c'), source: document.getElementById('d'), listen() { return () => {}; }, requestRender() {}, viewport: () => ({}) }, {}).catch(() => {});
+          if (${shaders} > 0 && !codes.some((c) => typeof c === 'string' && /@(vertex|fragment|compute)/.test(c))) bad.push('the plugin did not compile an inlined WGSL string: ' + String(codes[0]).slice(0, 60));
+          return bad;`);
+      }
       // positive control: a script the page was not declared to load is an unexpected request, and a missing global is reported
       if (!min) {
         await check('CONTROL undeclared script', [CORE, EFFECTS], 'return [];', [CORE]);
-        await check('CONTROL missing global', [CORE], "return typeof HicLiveEffectsWater === 'object' ? [] : ['HicLiveEffectsWater missing (expected for this control)'];");
+        await check('CONTROL missing global', [CORE], "return typeof HicLivePlugins === 'object' ? [] : ['HicLivePlugins missing (expected for this control)'];");
       }
       await check('native bridge + core', [BRIDGE, CORE], `
         const bad = [];
@@ -166,7 +181,7 @@ if (!process.argv.includes('--skip-browser')) {
         if (window.__HIC__?.installed?.mode !== 'polyfill') bad.push('core after bridge did not install');
         return bad;`);
     }
-    // the ESM builds, as native modules (the split: index / effects / effects-water / native-bridge + shared chunks)
+    // the ESM builds, as native modules (the split: index / effects / native-bridge + shared chunks, and dist/plugins/water.esm.js)
     {
       const page = await browser.newPage({ reuseFirst: false });
       srv.requests.length = 0;
@@ -175,7 +190,7 @@ if (!process.argv.includes('--skip-browser')) {
         await page.navigate(`${srv.url}/test/fixtures/bundle-load/esm.html`);
         await page.waitForFunction('window.__esm?.done === true', { timeout: 15000 }).catch(() => {});
         const out = await page.evaluate('JSON.stringify(window.__esm ?? { bad: ["no result"] })').then(JSON.parse);
-        const stray = srv.requests.map((r) => r.url.split('?')[0]).filter((u) => u !== '/test/fixtures/bundle-load/esm.html' && !u.startsWith('/dist/esm/') && !/favicon/.test(u));
+        const stray = srv.requests.map((r) => r.url.split('?')[0]).filter((u) => u !== '/test/fixtures/bundle-load/esm.html' && !u.startsWith('/dist/esm/') && u !== '/dist/plugins/water.esm.js' && !/favicon/.test(u));
         const errs = page.errors({ includeWarnings: false }).map((e) => e.text).filter((t) => !/favicon/.test(t));
         results.push({ name: 'ESM builds', bad: [...(out.bad ?? []), ...(out.done ? [] : ['the module did not finish']), ...stray.map((u) => `unexpected request ${u}`), ...errs.map((e) => `page error: ${e}`)] });
       } finally { await page.close(); }

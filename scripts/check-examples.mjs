@@ -10,7 +10,9 @@
 //   3. the live layer is invisible (computed opacity 0), so a screenshot cannot show the live DOM instead of the canvas
 //   4. the canvas is NOT BLANK (2D canvases: backing-store readback; WebGL / WebGPU canvases: compositor screenshot)
 //   5. the key interaction works with TRUSTED input: typing reaches the live field AND changes the canvas pixels (basic, form,
-//      webgl-texture), the frame cap slider changes canvas.frameCap (water-form), wheel scroll + a viewport resize (scroll-and-resize)
+//      webgl-texture), the frame cap slider changes canvas.frameCap (water-form, plugins), wheel scroll + a viewport resize (scroll-and-resize),
+//      the gallery (plugins) lists every plugin of dist/plugins/manifest.json, applies each one (its controls mount, the pixels change) and "Effect off" removes it
+//   water-form and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects)
 // Smoke pages (test/examples-smoke/, served by the harness server) run the code the documentation shows:
 //   esm-quickstart  README "ES modules": install() from dist/esm/index.js, then the standard pattern
 //   doc-readme-basic, doc-getting-started   the HTML blocks printed in README.md and docs/guides/GETTING-STARTED.md, extracted from the Markdown and run as written
@@ -36,8 +38,8 @@ const withControl = !process.argv.includes('--no-control');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve(ROOT, '.scratch/results', `examples-${stamp}`);
 const VIEW = { width: 1100, height: 800 };
-const NAMES = ['basic', 'form', 'water-form', 'scroll-and-resize', 'webgl-texture'];
-const DIST_FILES = ['hic-live-polyfill', 'hic-live-engines', 'hic-live-gpu', 'hic-live-effects', 'hic-live-effects-water'].map((n) => `dist/${n}.iife.min.js`);
+const NAMES = ['basic', 'form', 'plugins', 'water-form', 'scroll-and-resize', 'webgl-texture'];
+const DIST_FILES = [...['hic-live-polyfill', 'hic-live-engines', 'hic-live-gpu', 'hic-live-effects'].map((n) => `dist/${n}.iife.min.js`), 'dist/plugins/manifest.json', 'dist/plugins/water.iife.min.js'];
 
 // ------------------------------------------------------------------------------------------------------------------------------------
 // Defects of src/ that this script found and does not hide. Each entry is printed on every run as KNOWN RED and recorded in the result file;
@@ -218,6 +220,75 @@ const SCENARIOS = {
         return { ok: H.pixelStats(img).nonBlank };
       });
     }
+  },
+
+  async plugins(run, opts) {
+    const { page } = run;
+    const { plugins: manifest } = JSON.parse(readFileSync(resolve(ROOT, 'dist/plugins/manifest.json'), 'utf8'));
+    const mode = await until(() => page.evaluate(`window.__gallery && window.__gallery.mode`), run.fast ? 2500 : 15000);
+    run.numbers.path = mode === 'effect' ? 'webgpu-effect' : mode === '2d' ? '2d-fallback' : 'unknown';
+    run.notes.push(`presentation path exercised: ${run.numbers.path}${mode === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose)' : ' (no WebGPU adapter in this headless Chrome, so the effects were NOT exercised)') : ''}`);
+    if (opts.noGpu) run.check('install', 'with navigator.gpu hidden the gallery takes the 2D fallback path', mode === '2d', { path: run.numbers.path });
+    const kind = mode === 'effect' ? 'gpu' : '2d';
+    const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!(window.__gallery && window.__gallery.ready)` });
+    if (!first || opts.generic) return;
+    const pick = async (name) => {
+      await page.evaluate(`document.querySelector('#picker button[data-effect=${q(name)}]').scrollIntoView({ block: 'center' })`);
+      const c = await centerOf(page, `#picker button[data-effect="${name}"]`);
+      await page.click(c.x, c.y);
+      return until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
+    };
+    await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title and description', async () => {
+      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, disabled: b.disabled }))`);
+      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.text.includes(p.description)));
+      return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name) };
+    });
+    if (mode === 'effect') {
+      for (const p of manifest) {
+        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form and the presented pixels change against "Effect off"`, async () => {
+          if (!(await pick('off'))) return { ok: false, reason: 'off not selected' };
+          await sleep(600);
+          const off = await canvasImage(page, '#stage', 'gpu');
+          const selected = await pick(p.name);
+          await sleep(900);
+          const on = await canvasImage(page, '#stage', 'gpu');
+          const controls = await page.evaluate(`document.getElementById('effect-controls').children.length`);
+          const cmp = H.compareImages(on, off);
+          run.shots[`effect-${p.name}`] = on;
+          return { ok: !!selected && controls > 0 && cmp.countOver16 > 300 && H.pixelStats(on).nonBlank, controls, changedPixels: cmp.countOver16 };
+        });
+      }
+      await run.step('interact', '"Effect off" removes the plugin and its controls; the frame is still presented and not blank', async () => {
+        const off = await pick('off');
+        await sleep(600);
+        const img = await canvasImage(page, '#stage', 'gpu');
+        const st = await page.evaluate(`({ controls: document.getElementById('effect-controls').children.length, url: location.search })`);
+        return { ok: !!off && st.controls === 0 && !st.url.includes('effect=') && H.pixelStats(img).nonBlank, ...st };
+      });
+    } else {
+      await run.step('install', 'without WebGPU the page says so above the canvas and the effects are disabled ("Effect off" stays)', async () => {
+        const st = await page.evaluate(`({ notice: document.getElementById('notice').textContent, shown: getComputedStyle(document.getElementById('notice')).display !== 'none', disabled: [...document.querySelectorAll('#picker button')].filter((b) => b.disabled).map((b) => b.dataset.effect), active: window.__gallery.active })`);
+        return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && st.active === 'off', ...st };
+      });
+    }
+    await run.step('interact', 'click + type in the name field reaches the live input (effect off)', async () => {
+      if (mode === 'effect' && !(await pick('off'))) return { ok: false, reason: 'off not selected' };
+      await page.evaluate(`window.scrollTo(0, 0)`);
+      const c = await centerOf(page, '#name');
+      await page.click(c.x, c.y); await sleep(200);
+      await typeText(page, 'x');
+      const state = await page.evaluate(`({ value: document.getElementById('name').value, active: document.activeElement && document.activeElement.id })`);
+      return { ok: state.value === 'Adax', ...state };
+    });
+    await run.step('interact', 'the frame cap slider changes canvas.frameCap (keyboard, trusted)', async () => {
+      await page.evaluate(`document.getElementById('fps-cap').focus()`);
+      await page.key('Home'); await sleep(150);
+      const at15 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, attr: document.getElementById('stage').getAttribute('framecap') })`);
+      for (let i = 0; i < 3; i++) await page.key('ArrowRight');
+      await sleep(150);
+      const at30 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, attr: document.getElementById('stage').getAttribute('framecap') })`);
+      return { ok: at15.prop === 15 && at15.attr === '15' && at30.prop === 30 && at30.attr === '30', at15, at30 };
+    });
   },
 
   async ['scroll-and-resize'](run, opts) {
@@ -455,12 +526,12 @@ async function main() {
       for (const id of s.knownRed) console.log(`       KNOWN RED ${id}: ${KNOWN_RED.find((k) => k.id === id).where}`);
       for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name}: ${c.name}`); }
     }
-    // ---- the water-form 2D fallback (a browser without WebGPU), same checks except the GPU-only ones
-    if (names.includes('water-form')) {
-      const run = await runExample(browser, server, 'water-form', { noGpu: true, tag: 'no-gpu' });
-      const s = summarize(run); s.example = 'water-form (navigator.gpu hidden)'; result.examples.push(s);
-      console.log(`${s.ok ? 'ok  ' : 'FAIL'} water-form, no WebGPU  (${run.checks.filter((c) => c.ok).length}/${run.checks.length} checks)  note: ${run.notes.join('; ')}`);
-      for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`water-form no-gpu: ${c.name}`); }
+    // ---- the 2D fallback of the effect pages (a browser without WebGPU), same checks except the GPU-only ones
+    for (const name of ['plugins', 'water-form'].filter((n) => names.includes(n))) {
+      const run = await runExample(browser, server, name, { noGpu: true, tag: 'no-gpu' });
+      const s = summarize(run); s.example = `${name} (navigator.gpu hidden)`; result.examples.push(s);
+      console.log(`${s.ok ? 'ok  ' : 'FAIL'} ${name}, no WebGPU  (${run.checks.filter((c) => c.ok).length}/${run.checks.length} checks)  note: ${run.notes.join('; ')}`);
+      for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name} no-gpu: ${c.name}`); }
     }
     // ---- smoke pages of the documentation (served by the harness server, repository root)
     if (!only || only.includes('smoke')) {

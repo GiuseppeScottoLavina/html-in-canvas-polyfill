@@ -25,8 +25,8 @@ export const ROOT = H.PROJECT_ROOT;
 export const BUNDLE = '/dist/hic-live-polyfill.iife.js';
 export const CONTROL_BUNDLE = '/dist/hic-live-polyfill.control.iife.js';
 export const EFFECTS_BUNDLE = '/dist/hic-live-effects.iife.js';
-export const WATER_BUNDLE = '/dist/hic-live-effects-water.iife.js';
-/** `bundle=` value of a fixture URL that also loads the optional effects and water bundles, in load order after the core `bundle`. */
+export const WATER_BUNDLE = '/dist/plugins/water.iife.js';
+/** `bundle=` value of a fixture URL that also loads the optional effects bundle and the water example plugin (plugins/water), after the core `bundle`. */
 export const withEffects = (bundle) => `${bundle},${EFFECTS_BUNDLE},${WATER_BUNDLE}`;
 export const RESULTS = resolve(ROOT, '.scratch/results');
 const FOCUS_RANK = { real: 0, emulated: 1, 'cdp-click': 2, failed: 3 };
@@ -144,7 +144,7 @@ export async function runGate(id, run, { dpr, chrome = 'stable', windowSize, scr
   const phases = has('control-only') ? ['control'] : has('no-control') ? ['real'] : ['real', 'control'];
   const t0 = Date.now();
   const bundles = prepareBundles(id, arg('bundle-file') ?? resolve(ROOT, 'dist/hic-live-polyfill.iife.js'), controlSabotage, {
-    effects: arg('effects-file') ?? resolve(ROOT, 'dist/hic-live-effects.iife.js'), water: arg('water-file') ?? resolve(ROOT, 'dist/hic-live-effects-water.iife.js'),
+    effects: arg('effects-file') ?? resolve(ROOT, 'dist/hic-live-effects.iife.js'), water: arg('water-file') ?? resolve(ROOT, 'dist/plugins/water.iife.js'),
   });
   const srv = await H.startServer({ files: bundles.files });
   const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}) });
