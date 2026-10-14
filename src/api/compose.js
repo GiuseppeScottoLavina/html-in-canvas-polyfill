@@ -5,6 +5,7 @@
  */
 
 /** @typedef {import('../contracts/types.js').CanvasRegistryView} CanvasRegistryView */
+/** @typedef {import('../contracts/types.js').EffectsDeps} EffectsDeps */
 /** @typedef {import('../contracts/types.js').EffectsSeam} EffectsSeam */
 /** @typedef {import('../contracts/types.js').GeometryApi} GeometryApi */
 /** @typedef {import('../contracts/types.js').HicEnv} HicEnv */
@@ -23,12 +24,30 @@ import { createSnapshotStore } from '../snapshot/store/store.js';
 import { createScheduler } from '../schedule/scheduler.js';
 import { startObservers } from '../schedule/observers/index.js';
 import { createInteractionTracker } from '../schedule/observers/interaction-tracker.js';
-import { createEffectsSeam } from './effects-seam.js';
 import { createGeometryApi } from './geometry.js';
 import { createCanvasRegistry } from './canvas-registry.js';
 
 /**
- * The production Services (IMPLEMENTED: it is the type-level conformance check of every factory signature against contracts/types.js Services).
+ * The hand-over point between the core and the optional effects bundle (dist/hic-live-effects.iife.js): the core only publishes the internals the effects need
+ * (env + store/scheduler/geometry/tracker) on the HicInstalled; it never imports effects code.
+ * @param {HicEnv} env
+ * @param {EffectsDeps} deps
+ * @returns {EffectsSeam}
+ */
+function createEffectsSeam(env, deps) {
+  /** @type {Set<() => void>} */
+  const cleanups = new Set();
+  return {
+    env, deps, effects: null, cleanups,
+    dispose() {
+      for (const cleanup of [...cleanups]) cleanup();
+      cleanups.clear();
+    },
+  };
+}
+
+/**
+ * The production Services (also the type-level conformance check of every factory signature against contracts/types.js Services).
  * @returns {Services}
  */
 export function defaultServices() {

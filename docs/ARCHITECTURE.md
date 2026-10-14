@@ -411,7 +411,7 @@ Seven modules on disjoint file sets that talk only through the typed interfaces 
 
 | module | dir | depends on (interfaces only) |
 |---|---|---|
-| api-core | `src/api/{install,options,compose,effects-seam,native-detect,native-bridge,canvas-registry,report,env,patch}.js`, `src/index.js`, `src/iife.js`, `src/native-bridge.js` | all factories (composition root) |
+| api-core | `src/api/{install,options,compose,native-detect,native-bridge,canvas-registry,report,env,patch}.js`, `src/index.js`, `src/iife.js`, `src/native-bridge.js` | all factories (composition root) |
 | api-surface | `src/api/{canvas-patch,context2d-patch,texture-patch,texture-math,offscreen-patch,element-image,paint-event,geometry,draw-math,validate,fullscreen-guard,worker-guard}.js` | `env.store`, `env.scheduler`, `record.layer`, `patch.js` |
 | live | `src/live/*` (adds `root-scope`, `ancestor-clip`, `geometry-sheet`, `a11y-link`, `stacking-audit`) | contracts, util |
 | snapshot-capture | `src/snapshot/capture/*` (adds `css-shake`, `shells`; `caret-overlay` now measures) | contracts, util |

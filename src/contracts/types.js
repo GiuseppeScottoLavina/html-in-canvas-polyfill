@@ -675,7 +675,7 @@ export {};
 
 /**
  * @typedef {{store: SnapshotStore, scheduler: Scheduler, geometry: GeometryApi, tracker: InteractionTracker}} EffectsDeps
- * @typedef {Object} EffectsSeam  What the core hands to the optional effects bundle (api/effects-seam.js; hung on HicInstalled under EXT.EFFECTS_SEAM_KEY). The core never loads effects code.
+ * @typedef {Object} EffectsSeam  What the core hands to the optional effects bundle (createEffectsSeam of api/compose.js; hung on HicInstalled under EXT.EFFECTS_SEAM_KEY). The core never loads effects code.
  * @property {HicEnv} env
  * @property {EffectsDeps} deps
  * @property {EffectsApi|null} effects  the effects bundle's per-install API, created on first use
