@@ -107,7 +107,9 @@ export function encodeSvgDataUrl(svg) {
  */
 export function buildSvgDataUrl(root, css, crop, frame, scale) {
   const mode = scaleMode();
-  if (scale !== 1 && mode === 'zoom') /** @type {HTMLElement} */ (root).style.setProperty('zoom', String(scale));
+  // always written, also at scale 1, and important: the page's own `zoom` on html / body is rewritten onto the root by the collected CSS (selector-rewrite), and a tile planned in the
+  // canvas's css px at `scale` must not be zoomed again by it (a 200 % body zoom drew the drawable twice too large in a scale-1 tile)
+  if (mode === 'zoom') /** @type {HTMLElement} */ (root).style.setProperty('zoom', String(scale), 'important');
   const transform = mode === 'transform' ? rootTransform(crop, scale) : null;
   if (transform) {
     /** @type {HTMLElement} */ (root).style.setProperty('transform', transform, 'important');

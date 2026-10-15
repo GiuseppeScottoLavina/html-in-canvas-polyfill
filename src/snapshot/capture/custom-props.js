@@ -45,7 +45,7 @@ function standInForCanvas(doc, source) {
 
 /**
  * An attribute-only `display:contents` stand-in of an ancestor of the canvas: it carries tag, class, id and attributes so selectors written for the ancestor chain
- * (`.app.theme-dark .card`, `main > .content .x`, `[data-mode=dark] .y`) match, and it paints nothing. Its own inline style is dropped: the custom properties and the inherited
+ * (`.app.theme-dark .card`, `main > .content .x`, `[data-mode=dark] .y`) match, and it paints nothing and zooms nothing. Its own inline style is dropped: the custom properties and the inherited
  * text properties of the whole chain reach the clone root as computed values (inheritCustomProperties, clone.js).
  * @param {Document} doc  inert document
  * @param {Element} source  the live ancestor
@@ -57,7 +57,8 @@ export function ancestorShell(doc, source) {
   for (const name of LOADING_ATTRS) shell.removeAttribute(name);
   shell.removeAttribute('style');
   shell.setAttribute('data-hic-shell', '');
-  setInlineStyle(shell, 'display:contents!important');
+  // zoom:1 like the root (svg-builder.js): a `zoom` of an ancestor is already in the canvas's css px the tile is planned in, it must not scale the clone a second time
+  setInlineStyle(shell, 'display:contents!important;zoom:1!important');
   return shell;
 }
 

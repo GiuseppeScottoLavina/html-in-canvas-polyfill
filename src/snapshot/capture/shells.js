@@ -68,6 +68,8 @@ export function buildShell(doc, source, asBox, box, forCanvas = source.localName
     for (const a of Array.from(source.attributes)) if (!CANVAS_ONLY_ATTRS.includes(a.name) && a.name !== 'style') shell.setAttribute(a.name, a.value);
     if (source.hasAttribute('style')) setInlineStyle(shell, source.getAttribute('style') ?? '');
     shell.setAttribute('data-hic-root', '');
+    // the canvas's own zoom scales the canvas box, not the drawables (the live layer is its sibling): never in the clone
+    appendInlineStyle(shell, 'zoom:1!important');
   }
   cleanAttributes(shell);
   shell.setAttribute('data-hic-shell', '');
