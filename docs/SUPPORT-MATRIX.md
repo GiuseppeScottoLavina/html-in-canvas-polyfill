@@ -185,7 +185,7 @@ What differs and why (classification):
 
 | id | what | reason / the one thing to know |
 |---|---|---|
-| `paint-timing` | paint is dispatched at the END of the polyfill frame (ResizeObserver phase, after app rAF callbacks, style/layout and earlier-created ResizeObservers), not inside update-the-rendering after the IntersectionObserver steps; snapshot content lags the DOM by >= 2 frames | A userland polyfill cannot run inside the rendering steps; the ResizeObserver slot is the closest one (measured on Chrome 154). |
+| `paint-timing` | paint is dispatched at the END of the polyfill frame (ResizeObserver phase), or, for a snapshot that lands at once (Chromium), where it lands: in that frame, or in a high-priority task right after the frame that saw the change; snapshot content lags the DOM by 1 frame, >= 2 when the image must load first | A userland polyfill cannot run inside the rendering steps; the ResizeObserver slot is the closest one (measured on Chrome 154). |
 | `contain-layout` | drawable is made a containing block with contain:layout (getComputedStyle().contain === "layout" instead of "none") | The only way to give a drawable the spec containing-block behaviour from CSS. |
 | `spec-after-wpt-pin` | pinned WPT revision (2026-10-07) only: subtests reading ElementImage.width/height fail, because the polyfill follows the 2026-10-08 specification (getElementImageDefaultSize), as Canary 157 does | The pinned tests predate the change; the same tests at WPT master pass (docs/CONFORMANCE.md). |
 | `a11y-geometry` | drawables always expose real geometry to assistive technology (native withholds it until geometry is updated) | The live DOM is laid out for real. |

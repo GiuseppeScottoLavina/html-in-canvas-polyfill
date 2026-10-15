@@ -41,11 +41,20 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - A text or style change on an element whose text-shadow, box-shadow or outline reached further than 24 css px past its box (`options.inkMargin`) left the old shadow on the canvas: a counter with a glow or an offset shadow on a transparent background showed ghosts of older digits. The repainted area now includes the ink the element paints outside its box, before and after the change.
 - A counter changing at 60 Hz in a font with proportional digits (Georgia, Impact) reached only a few canvas paints per second, and often none, while one with tabular digits painted at the display rate. Its box changes width on most changes, which makes every change a whole-drawable rebuild, and the rebuild in flight was discarded each time a newer change arrived, so few ever reached the canvas. A whole-drawable rebuild overtaken by a DOM change is now committed (it is a complete, newer picture) and the latest state is rebuilt after it; a resize or device pixel ratio change still discards it, and so does a paint that must show the page as it is now (`requestPaint()`, the first paint), so a child canvas drawn right before `requestPaint()` is in that paint.
 
+- The first paint of a canvas landed two or three frames after it was mounted, and a change was painted at the earliest in the frame after its snapshot decoded. On Chromium a snapshot whose image loads at once (the snapshot's sheet is now an SVG `<style>`) is painted where it lands: the first paint in the first frame, a later change in a high-priority task right after the frame that saw it (after that frame's IntersectionObserver entries, before the app's next task). Fixes the official WPT files `onpaint-fires-post-resize-observer`, `requestPaint` (both were flaky), `onpaint-fires-post-intersection-observation-steps` and most of `onpaint`.
+- The canvases inside a same-origin iframe in a drawable painted after the canvas that contains the iframe; the parent's tick now runs the iframe document's tick first (WPT `onpaint-iframe-post-tree-order`, first subtest).
+- A z-index-only change of a drawable's inline style repainted it (a drawable is always its own stacking context, so its picture does not change).
+- An author-styled scrollbar thumb or track with a background image (`::-webkit-scrollbar-thumb { background-image }`) was drawn without its image, and a thumb shorter than its `min-height`.
+- A sticky (or fixed) drawable moved inside the live layer when the page scrolled, and a click at the place the app draws it missed it. While such a drawable is drawn, a passive window scroll listener re-measures it; there is no listener otherwise.
+- A page that zooms the canvas with CSS `zoom` (on `html`, `body`, a wrapper or the canvas) drew the drawables twice too large when the canvas grid was not at that zoom.
+- An explicit draw size within 1 px and 1 % of the snapshot (`el.offsetWidth * devicePixelRatio` against a fractional border box at DPR 1.25 / 1.5) resampled the whole picture by a hair and blurred every edge; it is drawn 1:1.
+- The `water` example plugin had no reduced-motion mode: with `prefers-reduced-motion: reduce` the water is now calm (a still refraction, no ripples, no animation).
+
 ### Known limitations
 
-- The picture lags the DOM by about two frames, except for the typing and scrolling shortcuts above.
+- The picture lags the DOM by one to two frames, except for the typing and scrolling shortcuts above.
 - The children of a drawable canvas are relocated into a live layer next to it; some CSS selectors and live collections can see that layer.
-- The core bundle is about 89 KB gzipped, over its original size target.
+- The core bundle is about 90 KB gzipped, over its original size target.
 - Iframes, cross-origin resources without CORS, native UI (select popups, date pickers, IME composition), workers and mobile browsers are not supported.
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
