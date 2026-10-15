@@ -30,6 +30,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 - Startup is cheaper: the canvas's custom properties are read from its computed style, a ResizeObserver notification that reports the box already measured is not synced twice, and the style rules for the controls the engines bundle paints on Firefox and Safari moved into that bundle. The minified and gzipped sizes of every classic bundle are a budget checked by `npm run check:bundle` and CI.
 
+- Large drawables: a change that resizes an element inside an unchanged parent repaints the children of that parent that moved instead of the whole drawable, and a partial tile leaves the trailing content of a large block or inline flow below it out of its snapshot. A 60 Hz counter next to 2,000 elements paints at the display rate (59/s, was 27/s).
+
 ### Removed
 
 - The options `strictResources` and `trace`: they were validated but had no effect. Passing either now throws a `TypeError`, like any unknown option.
@@ -51,6 +53,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - A page that zooms the canvas with CSS `zoom` (on `html`, `body`, a wrapper or the canvas) drew the drawables twice too large when the canvas grid was not at that zoom.
 - An explicit draw size within 1 px and 1 % of the snapshot (`el.offsetWidth * devicePixelRatio` against a fractional border box at DPR 1.25 / 1.5) resampled the whole picture by a hair and blurred every edge; it is drawn 1:1.
 - With `navigator.gpu` present but no adapter (simulators, blocklisted GPUs) or a device request that fails, `createHost` had already claimed the canvas's `webgpu` context, so the documented 2D fallback got a null context and the canvas stayed blank (`examples/water-form` and `examples/plugins` threw). The presenter now acquires the adapter and the device before it claims the canvas.
+- In a reversed ordered list (`<ol reversed>`), the numbers of the items in a partial tile of a large drawable were off: the stand-ins of the items left out of it did not count. Merged stand-ins of list items no longer change the numbering of the items after them either.
 - The `water` example plugin had no reduced-motion mode: with `prefers-reduced-motion: reduce` the water is now calm (a still refraction, no ripples, no animation).
 
 ### Known limitations

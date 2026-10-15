@@ -196,6 +196,57 @@ test('a heading that changes width inside a fixed-size header damages the header
   assert.ok(r.y + r.height < 200, 'the main area below is not damaged');
 });
 
+// A counter that changes width in a fixed-size row of a large drawable: once the row's children were seen, the damage is the children that moved, not the drawable
+const ROW = (extra = '') => '<div drawable id="d" style="width:400px;height:600px;display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:center">'
+  + '<span id="label" style="font:20px Arial">score</span><span id="n" style="font:64px Georgia">1</span><span id="pts" style="font:20px Arial">pts</span>'
+  + `<div id="filler" style="width:100%;font:9px Arial">${'<span>cell </span>'.repeat(300)}</div>${extra}</div>`;
+
+/** @param {any} rig @param {Element} n @param {string[]} values the last value's damage is returned */
+async function damageAfter(rig, n, values) {
+  for (const v of values) { rig.sink.clear(); n.firstChild.data = v; await microtasks(); }
+  return rig.sink.damage;
+}
+
+test('a counter that changes width in a fixed-size drawable row damages the row (the children that moved), not the whole drawable', async t => {
+  const rig = createRig({ html: ROW() });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const n = rig.layerEl.querySelector('#n');
+  const first = await damageAfter(rig, n, ['22']);
+  assert.equal(first[0].rect, null, 'first sighting: the children were never measured, whole drawable');
+  const [d] = await damageAfter(rig, n, ['333', '4444']);
+  assert.ok(d.rect, 'bounded by the children of the unchanged drawable');
+  const label = rig.layer.frameRect(rig.layerEl.querySelector('#label'));
+  const filler = rig.layer.frameRect(rig.layerEl.querySelector('#filler'));
+  assert.ok(d.rect.x <= label.x && d.rect.x + d.rect.width >= label.x + label.width, `covers the label that moved: ${JSON.stringify(d.rect)} vs ${JSON.stringify(label)}`);
+  assert.ok(d.rect.y + d.rect.height <= filler.y + 24 + 0.01, `stops at the ink margin above the filler that did not move: ${JSON.stringify(d.rect)} vs ${JSON.stringify(filler)}`);
+});
+
+test('row damage falls back to the whole drawable: text or generated content of the unchanged parent, a display:contents child, a child never measured', async t => {
+  const cases = {
+    'text of the parent': ROW('tail text'),
+    'generated content': ROW('<style>#d::after{content:"!"}</style>'),
+    'display: contents child': ROW('<div style="display:contents"><b>x</b></div>'),
+  };
+  for (const [name, html] of Object.entries(cases)) {
+    const rig = createRig({ html });
+    const off = observeMutations(rig.env, rig.record);
+    const n = rig.layerEl.querySelector('#n');
+    const [d] = await damageAfter(rig, n, ['22', '333', '4444']);
+    off();
+    assert.equal(d.rect, null, `${name}: whole drawable`);
+  }
+  const rig = createRig({ html: ROW() });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const n = rig.layerEl.querySelector('#n');
+  await damageAfter(rig, n, ['22', '333']);
+  const late = document.createElement('span');
+  late.textContent = 'late';
+  rig.layerEl.querySelector('#d').insertBefore(late, rig.layerEl.querySelector('#filler'));
+  await microtasks();
+  const [d] = await damageAfter(rig, n, ['4444']);
+  assert.equal(d.rect, null, 'a child that appeared since the last measurement: whole drawable');
+});
+
 test('when the header itself grows, the damage climbs to the drawable (whole), since everything below may have moved', async t => {
   const rig = createRig({ html: APP.replace('height:40px', 'min-height:40px') });
   t.cleanup(observeMutations(rig.env, rig.record));

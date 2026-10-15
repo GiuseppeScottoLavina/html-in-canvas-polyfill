@@ -31,8 +31,9 @@ const BASE_CSS = [
   ':where(.hic-focus-visible){outline:-webkit-focus-ring-color auto 1px}',
   // UA link look, which the inert clone document does not apply (no URL, so no :any-link); one tag of specificity, first in the sheet: any author rule wins
   'a:where([href]){color:-webkit-link;text-decoration:underline}',
-  // pruned sibling stand-ins (clone.js spacerFor): their box is fixed, only the width/height differ per element; the tripled attribute outranks author rules
-  '[data-hic-sp][data-hic-sp][data-hic-sp]{box-sizing:border-box!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;flex:none!important;overflow:hidden!important;contain:strict!important;visibility:hidden!important}',
+  // pruned sibling stand-ins (clone.js spacerFor): their box is fixed, only the width/height differ per element; the tripled attribute outranks author rules. No style
+  // containment: a list item's stand-in still counts in the list numbering (a contained counter-increment numbered the items after it, and a reversed list, differently)
+  '[data-hic-sp][data-hic-sp][data-hic-sp]{box-sizing:border-box!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;flex:none!important;overflow:hidden!important;contain:size layout paint!important;visibility:hidden!important}',
   '[data-hic-shell]::before,[data-hic-shell]::after{content:none!important;display:none!important}',
 ].join('\n');
 

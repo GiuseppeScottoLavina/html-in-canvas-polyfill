@@ -104,7 +104,7 @@ export function createCapture(env) {
     const t1 = env.now();
     let fold = foldable.get(bundle);
     if (fold === undefined) foldable.set(bundle, (fold = !hasStructuralSelectors(bundle.css)));
-    const clone = cloneDrawable(env, verdict === 'ok' ? req : { ...req, prune: true }, inert, fold);
+    const clone = cloneDrawable(env, verdict === 'ok' ? req : { ...req, prune: true }, inert, fold, fold && !bundle.css.includes(':has('));
     const t2 = env.now();
     const shakenCss = memoShake(`${bundle.key}|${clone.tokens.signature}`, () => shakeCss(bundle.css, clone.tokens));
     const css = shakenCss.css + clone.extraCss;

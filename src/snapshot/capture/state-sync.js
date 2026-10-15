@@ -187,6 +187,20 @@ export function inTopLayer(src) {
   return false;
 }
 
+/**
+ * The elements of `root`'s subtree (and `root` itself) rendered in the top layer, in its own tree scope: one query per pseudo-class instead of three matches() per cloned element.
+ * @param {Element} root @returns {Set<Element>}
+ */
+export function topLayerIn(root) {
+  /** @type {Set<Element>} */
+  const out = new Set();
+  if (inTopLayer(root)) out.add(root);
+  for (const sel of [':modal', ':popover-open', ':fullscreen']) {
+    try { for (const el of root.querySelectorAll(sel)) out.add(el); } catch { /* selector unknown to this engine */ }
+  }
+  return out;
+}
+
 /** @param {UnsupportedEntry[]} sink a resource was left out: the capture is `complete: false` */
 export function markPending(sink) { pendingSinks.add(sink); }
 

@@ -210,6 +210,68 @@ test('damage pruning is exact inside the crop and cuts the markup', async () => 
   assert.ok(inkFraction(farFull) > 0.5 && diffFraction(farFull, farPruned) > 0.01);
 });
 
+// A large drawable whose trailing inline cells lie below a pruned tile: the clone leaves them out (truncation) and the tile stays exact; the conditions under which the
+// kept lines could lay out differently keep every cell.
+const CELLS = (n) => Array.from({ length: n }, (_, i) => `<span>cell ${i} </span>`).join('');
+const TRUNC_CSS = '.d{width:300px;font:12px/16px sans-serif;color:#222}.h{height:60px;background:#cde}.f{width:100%}';
+/** the declaration a cut container carries in the clone (clone.js truncation) */
+const PINNED = /min-height: ?[1-9][\d.]*px ?!important/;
+
+test('a pruned tile leaves out the trailing inline cells below it, reports the full node count and equals the full tile', async () => {
+  const m = mount(`<div class="d" drawable><div class="h">head</div><div class="f">${CELLS(300)}</div></div>`, { css: TRUNC_CSS, height: 2000 });
+  const el = m.layerEl.firstElementChild;
+  const rect = { x: 0, y: 0, width: 300, height: 90 };
+  const full = m.capture(m.request(el, { rect }));
+  const pruned = m.capture(m.request(el, { rect, prune: true }));
+  const cellsIn = (r) => (decodeURIComponent(r.url).match(/cell \d+/g) ?? []).length;
+  assert.equal(cellsIn(full), 300, 'below the soft node budget the unpruned tile has every cell');
+  assert.ok(cellsIn(pruned) > 0 && cellsIn(pruned) < 120, `pruned tile keeps ${cellsIn(pruned)} of 300 cells`);
+  assert.equal(pruned.nodes, full.nodes, 'nodes report what the full clone stands for');
+  const got = await rasterize(pruned);
+  assert.ok(inkFraction(got) > 0.05, 'the tile shows the head and the first lines of cells');
+  assert.ok(diffFraction(got, await rasterize(full)) <= 0.002, 'pruned tile equals the full tile');
+  assert.ok(PINNED.test(decodeURIComponent(pruned.url)) && !PINNED.test(decodeURIComponent(full.url)), 'the cut container keeps its live height');
+  // positive control: the cells inside the tile are visible, so a cut inside it would be seen
+  const none = mount(`<div class="d" drawable><div class="h">head</div><div class="f">${CELLS(300)}</div></div>`, { css: TRUNC_CSS + '.f span{color:transparent}', height: 2000 });
+  differs(await rasterize(none.capture(none.request(none.layerEl.firstElementChild, { rect }))), got, 'no visible cells');
+});
+
+test('no truncation where the kept lines could change: justified text, ::after content, columns, a reversed list, a :has() rule; each tile stays exact', async () => {
+  const cases = {
+    justify: ['.f{text-align:justify}', 'div'],
+    after: ['.f::after{content:"end"}', 'div'],
+    columns: ['.f{columns:2}', 'div'],
+    reversed: ['', 'ol'],
+    has: ['.d:has(.f){outline:0}', 'div'],
+  };
+  for (const [name, [css, tag]] of Object.entries(cases)) {
+    const m = mount(`<div class="d" drawable><div class="h">head</div><${tag} class="f"${tag === 'ol' ? ' reversed' : ''}>${tag === 'ol' ? Array.from({ length: 60 }, (_, i) => `<li>item ${i}</li>`).join('') : CELLS(300)}</${tag}></div>`, { css: TRUNC_CSS + css, height: 2000 });
+    const el = m.layerEl.firstElementChild;
+    const rect = { x: 0, y: 0, width: 300, height: 90 };
+    const full = m.capture(m.request(el, { rect }));
+    const pruned = m.capture(m.request(el, { rect, prune: true }));
+    assert.ok(!PINNED.test(decodeURIComponent(pruned.url)), `${name}: no container was cut`);
+    assert.ok(diffFraction(await rasterize(pruned), await rasterize(full)) <= 0.002, `${name}: pruned tile equals the full tile`);
+  }
+});
+
+test('list items pruned to stand-ins still count: the items after them keep their numbers (ordered and reversed lists)', async () => {
+  const css = '.d{width:300px;font:14px/20px sans-serif;color:#222}';
+  for (const reversed of [false, true]) {
+    const m = mount(`<div class="d" drawable><ol${reversed ? ' reversed' : ''}>${Array.from({ length: 80 }, (_, i) => `<li>item ${i}</li>`).join('')}</ol></div>`, { css, height: 2000 });
+    const el = m.layerEl.firstElementChild;
+    const rect = { x: 0, y: 800, width: 300, height: 80 };
+    const full = await rasterize(m.capture(m.request(el, { rect })));
+    const prunedResult = m.capture(m.request(el, { rect, prune: true }));
+    assert.ok((decodeURIComponent(prunedResult.url).match(/data-hic-sp/g) ?? []).length > 20, 'the items far from the tile are stand-ins');
+    assert.ok(diffFraction(await rasterize(prunedResult), full) <= 0.002, `${reversed ? 'reversed' : 'ordered'} list: the numbers in the tile are the full tile's`);
+    // positive control: numbers shifted by one are more than the equality tolerance above
+    const later = mount(`<div class="d" drawable><ol${reversed ? ' reversed' : ''} start="${reversed ? 81 : 2}">${Array.from({ length: 80 }, (_, i) => `<li>item ${i}</li>`).join('')}</ol></div>`, { css, height: 2000 });
+    const shifted = diffFraction(await rasterize(later.capture(later.request(later.layerEl.firstElementChild, { rect }))), full);
+    assert.ok(shifted > 0.002, `positive control (numbering): ${shifted} of the pixels differ`);
+  }
+});
+
 test('long scrollers are cut to their window and stay exact', async () => {
   const rows = Array.from({ length: 300 }, (_, i) => `<div class="r">row ${i}</div>`).join('');
   const css = '.s{width:120px;height:100px;overflow:auto;position:relative;scrollbar-width:none;font:12px sans-serif}.r{height:20px;border-bottom:1px solid #aaa}';

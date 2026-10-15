@@ -30,7 +30,9 @@ const LIMITS = {
   // 259.8 -> 260.8 KB (+925 bytes, 2026-10-15): sticky / fixed drawables re-measured while the page scrolls (hit testing after a page scroll)
   // 260.8 -> 261 KB (+94 bytes, 2026-10-15): an explicit draw size within 1 px and 1 % of the raster is drawn 1:1 (fractional DPR, G-pixel-dpr)
   // 261 -> 260.5 KB, gzip budget 90.6 KB (2026-10-15, measured 259,952 / 90,358): the Gecko / WebKit control rules moved to the engines bundle, cheaper startup presentation sync
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 260.5 * KB, gzip: 90.6 * KB },
+  // 260.5 -> 264.75 KB, gzip 90.6 -> 92.1 KB (+4,277 / +1,471 bytes, 2026-10-15, measured 264,229 / 91,829): large drawables, a changed element's damage bounded by the children
+  //   of its unchanged parent that moved, the trailing children below a pruned tile left out of the clone (a 60 Hz counter beside 2,000 cells: 27 -> 59 paints/s)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 264.75 * KB, gzip: 92.1 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)

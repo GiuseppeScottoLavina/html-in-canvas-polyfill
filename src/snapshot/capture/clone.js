@@ -11,7 +11,7 @@ import { createTokenCollector } from './css-shake.js';
 import { applyScrollState, scrollFacts } from './scroll-emulation.js';
 import { appendWithStubs, buildShell, shellFactsOf, shellNeedsBox, siblingStub } from './shells.js';
 import {
-  LEAF_TAGS, addUnsupported, applyInteractionClasses, cleanAttributes, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, usedColorScheme,
+  LEAF_TAGS, addUnsupported, applyInteractionClasses, cleanAttributes, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, topLayerIn, usedColorScheme,
 } from './state-sync.js';
 import { placeholderElement } from './placeholder.js';
 import { addUseTargets } from './svg-refs.js';
@@ -78,6 +78,8 @@ const n3 = (v) => String(+v.toFixed(3));
  * @property {number} nodes
  * @property {number} absolute
  * @property {boolean} fold  pruned spacer runs may be merged (no selector depends on sibling positions)
+ * @property {boolean} trunc  trailing children below the keep region may be left out (fold, and no :has() selector)
+ * @property {Set<Element>} topLayer  elements of the drawable (in its own tree scope) rendered in the top layer
  * @property {Node} scope  tree scope of the drawable (document or the canvas's shadow root): elements of other scopes are inside shadow trees of the drawable
  * @property {number} shift  css px by which the descendants of CaptureRequest.scroll.el appear moved in the clone (live scrollTop - rendered scrollTop): live rects are shifted by it before a prune test
  */
@@ -141,13 +143,14 @@ function spacerFor(ctx, src, r) {
 /** @param {Ctx} ctx @param {Element} k @param {Rect|null} window  extra keep region for children of a long scroller @returns {{r: Rect, cs: CSSStyleDeclaration}|null} set when `k` can be replaced by a spacer */
 function spacerInfo(ctx, k, window) {
   if (!ctx.keep && !window) return null;
+  // the style test first: it is cheaper than the frame rect, and rows of inline content (never spacers) are common in large drawables
+  const cs = ctx.env.window.getComputedStyle(k);
+  if (NO_PRUNE_DISPLAY.test(cs.display) || cs.position === 'absolute' || cs.position === 'fixed' || cs.position === 'sticky' || cs.transform !== 'none') return null;
   const live = ctx.layer.frameRect(k);
   const r = live && ctx.shift ? { x: live.x, y: live.y + ctx.shift, width: live.width, height: live.height } : live;
   if (!r || r.width <= 0 || r.height <= 0) return null;
   if ((!ctx.keep || intersectRect(r, ctx.keep)) && (!window || intersectRect(r, window))) return null;
   if (ctx.ix.focusWithin.has(k) || k.contains(ctx.drawable)) return null;
-  const cs = ctx.env.window.getComputedStyle(k);
-  if (NO_PRUNE_DISPLAY.test(cs.display) || cs.position === 'absolute' || cs.position === 'fixed' || cs.position === 'sticky' || cs.transform !== 'none') return null;
   return { r, cs };
 }
 
@@ -157,9 +160,14 @@ function spacerInfo(ctx, k, window) {
  * @typedef {{el: HTMLElement, tag: string, x: number, y: number, width: number}} SpacerRun
  */
 
+/** block spacers that may be merged: list items are not, every one counts in the list numbering */
+const MERGEABLE = /^(block|flow-root|flex|grid)$/;
+/** @param {CSSStyleDeclaration} cs @returns {boolean} the element increments no counter (a merged run would number what follows differently) */
+const countsNothing = (cs) => cs.counterIncrement === 'none' || cs.counterIncrement === '';
+
 /** @param {SpacerRun|null} run @param {Element} k @param {{r: Rect, cs: CSSStyleDeclaration}} info @returns {boolean} true when `k` was folded into the run */
 function extendRun(run, k, info) {
-  if (!run || run.tag !== k.localName || !/^(block|list-item|flow-root|flex|grid)$/.test(info.cs.display)) return false;
+  if (!run || run.tag !== k.localName || !MERGEABLE.test(info.cs.display) || !countsNothing(info.cs)) return false;
   if (Math.abs(info.r.x - run.x) > 0.5 || Math.abs(info.r.width - run.width) > 0.5 || info.r.y < run.y) return false;
   run.el.style.setProperty('height', `${n3(info.r.y + info.r.height - run.y)}px`, 'important');
   run.el.style.setProperty('margin-bottom', info.cs.marginBottom, 'important');
@@ -170,8 +178,10 @@ function extendRun(run, k, info) {
 function cloneElement(ctx, src) {
   const ln = src.localName;
   if (src.hasAttribute(MARK.NODE_ATTR)) return null;
+  // top-layer elements of the drawable's own tree were found by one query per capture; an element of a shadow tree is asked directly
+  const scoped = src.getRootNode() === ctx.scope;
   // script/style/link/template never render but they count for :nth-child and sibling combinators: an attribute-only display:none stand-in keeps the indices
-  if (SKIP.has(ln) || inTopLayer(src)) return siblingStub(ctx.doc, src);
+  if (SKIP.has(ln) || (scoped ? ctx.topLayer.has(src) : inTopLayer(src))) return siblingStub(ctx.doc, src);
   const html = /** @type {HTMLElement} */ (src);
   if (html.hidden || html.style?.display === 'none') {
     const stub = ctx.doc.importNode(src, false);
@@ -191,7 +201,7 @@ function cloneElement(ctx, src) {
   const replaced = ok !== true;
   if (replaced) clone = /** @type {Element} */ (ok);
   applyInteractionClasses(src, clone, ctx.ix);
-  if (!replaced && styledByShadow(ctx, src)) inlineComputed(ctx, src, clone);
+  if (!replaced && (!scoped || styledByShadow(src))) inlineComputed(ctx, src, clone);
   // backdrop of the optimistic text overlay (text-overlay.js): the field without its text
   if (src === ctx.req.hideText) appendInlineStyle(clone, 'color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important');
   // a page of the scroll compositor: pinned (sticky) elements are drawn from their own tile
@@ -244,7 +254,11 @@ function cloneChildList(ctx, src, clone, window) {
   /** @type {SpacerRun|null} */
   let run = null;
   const blockParent = ctx.fold && (ctx.keep || window) && /^(block|list-item|flow-root|flex|grid)$/.test(ctx.env.window.getComputedStyle(src).display);
-  for (const k of flatChildren(src)) {
+  const kids = flatChildren(src);
+  const cut = ctx.trunc && ctx.keep && !window && kids.length > TRUNC_MIN_CHILDREN ? truncation(ctx, src, kids) : null;
+  const end = cut ? cut.index : kids.length;
+  for (let i = 0; i < end; i++) {
+    const k = kids[i];
     if (k.nodeType === 3) {
       const text = /** @type {Text} */ (k).data;
       if (/\S/.test(text)) run = null;
@@ -270,13 +284,126 @@ function cloneChildList(ctx, src, clone, window) {
       if (blockParent && extendRun(run, el, info)) continue;
       const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r));
       clone.appendChild(sp);
-      run = blockParent && /^(block|list-item|flow-root|flex|grid)$/.test(info.cs.display) ? { el: sp, tag: el.localName, x: info.r.x, y: info.r.y, width: info.r.width } : null;
+      run = blockParent && MERGEABLE.test(info.cs.display) && countsNothing(info.cs) ? { el: sp, tag: el.localName, x: info.r.x, y: info.r.y, width: info.r.width } : null;
       continue;
     }
     run = null;
     const c = cloneElement(ctx, el);
     if (c) clone.appendChild(c);
   }
+  if (!cut) return;
+  appendInlineStyle(clone, cut.pin);
+  // the left-out children still count for the node budget, as pruned spacers do
+  for (let i = cut.index; i < kids.length; i++) if (kids[i].nodeType === 1) ctx.nodes += 1 + /** @type {Element} */ (kids[i]).getElementsByTagName('*').length;
+}
+
+/** a container needs more children than this before its trailing ones are worth measuring for truncation */
+const TRUNC_MIN_CHILDREN = 8;
+const FLOW = /^(block|flow-root|list-item)$/;
+/** element children tried after the first one below the keep region, looking for one that starts a line */
+const LINE_START_TRIES = 64;
+/** boxes inspected on the cut's line */
+const UNIFORM_LINE_MAX = 200;
+
+/**
+ * Trailing children of a large flow container that lie entirely below the keep region (a damage-pruned tile) are left out of the clone: in a block or inline flow,
+ * content never moves the content before it, so the kept lines lay out as they do live, and the container keeps its live size through a min-height (and, as a row flex
+ * item, a pinned width) so nothing around it moves. A row of 1,000 inline cells under a changed counter is no longer cloned, serialised and laid out for every change.
+ * Only where nothing can depend on the dropped content: `trunc` (no selector counts siblings, no :has()); a block / flow-root / list-item container that is not a scroll
+ * container, in horizontal flow, without columns, justification, a styled last line, balanced / pretty wrapping, line clamping, text-overflow, ::after content or reversed
+ * numbering; its parent a block flow (or a row flex container when its width is not auto); no focus inside. The cut must start a line (the content before it ends above it)
+ * and everything from it on lies below the keep region (one Range rect). Positioned descendants of the dropped children are not followed, as for pruned spacers.
+ * @param {Ctx} ctx @param {Element} src @param {Node[]} kids @returns {{index: number, pin: string}|null}
+ */
+function truncation(ctx, src, kids) {
+  if (src.shadowRoot || src.localName === 'slot' || ctx.ix.focusWithin.has(src)) return null;
+  const win = ctx.env.window;
+  const cs = win.getComputedStyle(src);
+  if (!FLOW.test(cs.display) || cs.writingMode !== 'horizontal-tb' || cs.columnCount !== 'auto' || cs.columnWidth !== 'auto') return null;
+  if (!/^(visible|clip)$/.test(cs.overflowX) || !/^(visible|clip)$/.test(cs.overflowY) || cs.textOverflow !== 'clip') return null;
+  if (cs.textAlign === 'justify' || cs.textAlignLast !== 'auto' || !/^(auto|stable|)$/.test(cs.getPropertyValue('text-wrap-style'))) return null;
+  if (!/^(none|)$/.test(cs.getPropertyValue('-webkit-line-clamp')) || /reversed\(/.test(cs.counterReset) || (src.localName === 'ol' && /** @type {HTMLOListElement} */ (src).reversed)) return null;
+  const after = win.getComputedStyle(src, '::after').content;
+  if (after && after !== 'none' && after !== 'normal') return null;
+  let rowItem = false;
+  if (src !== ctx.drawable) {
+    const parent = src.parentElement;
+    const ps = parent ? win.getComputedStyle(parent) : null;
+    if (!ps) return null;
+    if (/^(inline-)?flex$/.test(ps.display) && /^row/.test(ps.flexDirection)) {
+      const width = /** @type {any} */ (src).computedStyleMap?.().get('width');
+      if (!width || String(width) === 'auto') return null;
+      rowItem = true;
+    } else if (!FLOW.test(ps.display)) return null;
+  }
+  // the first element child whose frame top (live rect shifted like a pruned spacer's) is below the keep region (flow order is top-down), then the checks that make the cut safe
+  const bottom = /** @type {Rect} */ (ctx.keep).y + /** @type {Rect} */ (ctx.keep).height;
+  const below = (/** @type {Element} */ el) => { const r = ctx.layer.frameRect(el); return !!r && r.y + ctx.shift >= bottom; };
+  /** @type {number[]} */
+  const els = [];
+  for (let i = 0; i < kids.length; i++) if (kids[i].nodeType === 1) els.push(i);
+  let lo = 0, hi = els.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (below(/** @type {Element} */ (kids[els[mid]]))) hi = mid; else lo = mid + 1;
+  }
+  if (lo >= els.length || lo === 0) return null;
+  // the kept lines must lay out as they do live: the cut starts a line (the content before it ends above it), or the content before it ends on the cut's line and
+  // that line is uniform (every box on it has the same top, bottom, line-height and vertical-align, and no bare text), so what is left of it keeps its baseline
+  const range = src.ownerDocument.createRange();
+  let index = -1;
+  let top = 0;
+  for (let e = lo, tries = 0; e < els.length && tries < LINE_START_TRIES; e++, tries++) {
+    const at = els[e];
+    let p = at - 1;
+    while (p >= 0 && kids[p].nodeType !== 1 && !(kids[p].nodeType === 3 && /\S/.test(/** @type {Text} */ (kids[p]).data))) p--;
+    if (p < 0) return null;
+    range.selectNode(/** @type {Node} */ (kids[p]));
+    const rects = range.getClientRects();
+    const tail = rects[rects.length - 1];
+    if (!tail) return null;
+    const r = /** @type {Element} */ (kids[at]).getBoundingClientRect();
+    if (tail.bottom <= r.top + 0.5 || (Math.abs(tail.top - r.top) < 0.5 && Math.abs(tail.bottom - r.bottom) < 0.5 && uniformLine(win, kids, p, at, r))) { index = at; top = r.top; break; }
+  }
+  if (index < 0) return null;
+  const first = /** @type {Element} */ (kids[index]);
+  if (ctx.drawables.has(first)) return null;
+  // everything from `first` on (descendants' boxes included) starts no higher than `first` itself
+  range.setStartBefore(first);
+  range.setEndAfter(/** @type {Node} */ (kids[kids.length - 1]));
+  if (range.getBoundingClientRect().top < top - 0.5) return null;
+  for (let i = index; i < kids.length; i++) if (kids[i].nodeType === 1 && ctx.ix.focusWithin.has(/** @type {Element} */ (kids[i]))) return null;
+  const size = ctx.layer.borderBoxSize(src);
+  if (!size) return null;
+  const n = (/** @type {string} */ v) => parseFloat(v) || 0;
+  const content = cs.boxSizing !== 'border-box';
+  const h = size.height - (content ? n(cs.paddingTop) + n(cs.paddingBottom) + n(cs.borderTopWidth) + n(cs.borderBottomWidth) : 0);
+  const w = size.width - (content ? n(cs.paddingLeft) + n(cs.paddingRight) + n(cs.borderLeftWidth) + n(cs.borderRightWidth) : 0);
+  const pin = `min-height:${n3(h)}px!important;` + (rowItem ? `width:${n3(w)}px!important;min-width:${n3(w)}px!important;flex:0 0 auto!important;` : '');
+  return { index, pin };
+}
+
+/**
+ * Is the line that starts (for the cut) at kids[at] made only of boxes like the one before it: the same top and bottom as `r`, the same line-height and vertical-align as kids[p],
+ * no bare text? Then leaving out the boxes after kids[p] does not move what is left of the line.
+ * @param {Window} win @param {Node[]} kids @param {number} p @param {number} at @param {DOMRect} r @returns {boolean}
+ */
+function uniformLine(win, kids, p, at, r) {
+  const ref = kids[p].nodeType === 1 ? win.getComputedStyle(/** @type {Element} */ (kids[p])) : null;
+  if (!ref) return false;
+  for (let j = at, n = 0; j < kids.length; j++, n++) {
+    if (n > UNIFORM_LINE_MAX) return false;
+    const k = kids[j];
+    if (k.nodeType === 3) { if (/\S/.test(/** @type {Text} */ (k).data)) return false; continue; }
+    if (k.nodeType !== 1) continue;
+    const f = /** @type {Element} */ (k).getClientRects()[0];
+    if (!f) continue;
+    if (f.top > r.top + 0.5) return true;
+    if (Math.abs(f.top - r.top) > 0.5 || Math.abs(f.bottom - r.bottom) > 0.5) return false;
+    const cs = win.getComputedStyle(/** @type {Element} */ (k));
+    if (cs.lineHeight !== ref.lineHeight || cs.verticalAlign !== ref.verticalAlign || cs.display !== ref.display) return false;
+  }
+  return true;
 }
 
 /**
@@ -297,10 +424,11 @@ function flatChildren(src) {
  * Elements of a shadow tree inside a drawable, their hosts and the light-DOM elements slotted into them are styled by rules the clone does not carry (shadow-scoped sheets, `:host`, `::slotted`),
  * while document rules that natively stop at the shadow boundary would reach the flattened clone. Such an element carries its full computed style inline (!important), which is exact for its own box;
  * the pseudo-elements of a shadow tree (`::before`/`::after` from a shadow sheet) are not reproduced.
- * @param {Ctx} ctx @param {Element} src @returns {boolean}
+ * The tree-scope test (an element of another scope than the drawable) is made by the caller.
+ * @param {Element} src @returns {boolean}
  */
-function styledByShadow(ctx, src) {
-  return !!src.shadowRoot || !!(/** @type {HTMLElement} */ (src).assignedSlot) || src.getRootNode() !== ctx.scope;
+function styledByShadow(src) {
+  return !!src.shadowRoot || !!(/** @type {HTMLElement} */ (src).assignedSlot);
 }
 
 /** @param {Ctx} ctx @param {Element} src @param {Element} clone */
@@ -335,9 +463,10 @@ function ancestorsOf(el, canvas, layerEl) {
  * @param {CaptureRequest} req
  * @param {Document} doc  inert document that owns the clone (no custom element upgrades, no resource loads)
  * @param {boolean} [fold]  pruned spacer runs may be merged: true only when the page CSS has no sibling-position selectors
+ * @param {boolean} [trunc]  trailing children below a pruned tile may be left out: `fold` and no :has() selector
  * @returns {CloneResult}
  */
-export function cloneDrawable(env, req, doc, fold = false) {
+export function cloneDrawable(env, req, doc, fold = false, trunc = false) {
   const layer = req.record.layer;
   if (!layer) throw new Error('the canvas has no live layer');
   const el = req.element;
@@ -351,7 +480,7 @@ export function cloneDrawable(env, req, doc, fold = false) {
   /** @type {Ctx} */
   const ctx = {
     env, req, doc, layer, drawable: el, drawables: new Set(layer.drawableElements()), unsupported: [], tokens: createTokenCollector(), ix: interactionContext(req.interaction, layer.element),
-    animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, scope: el.getRootNode(),
+    animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, scope: el.getRootNode(), topLayer: topLayerIn(el),
     shift: 0,
   };
   if (req.scroll?.hide.length) ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');

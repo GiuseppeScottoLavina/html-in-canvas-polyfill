@@ -86,27 +86,83 @@ function createRectMemory(ink) {
   };
 
   /**
-   * `el` resized (or is seen for the first time): what moved is bounded by the nearest ancestor inside the drawable whose box neither moved nor resized since it was last
-   * measured; its old and new reach are the damage (a text change that resizes a heading repaints the header, not a 1,000-node drawable). An ancestor never
-   * measured before cannot vouch for anything (recorded now, the next change can use it); reaching the drawable answers null (whole drawable), as before.
+   * `el` resized (or is seen for the first time): what moved is bounded by the nearest ancestor inside the drawable (the drawable included) whose box neither moved nor resized
+   * since it was last measured. Inside that ancestor only its children can have moved: when every child box is known, the damage is the old and new reach of the children that
+   * moved or resized (a counter that changes width in a fixed-size row repaints the row, not the 1,000 nodes beside it); otherwise it is the ancestor's own old and new reach
+   * (a text change that resizes a heading repaints the header), or the whole drawable (null) when that ancestor is the drawable. An ancestor never measured before cannot
+   * vouch for anything (recorded now, the next change can use it).
    * @param {LiveLayer} layer @param {Element} el @param {Rect|null} own  old and new reach of `el` (null = its old reach is unknown)
    * @returns {Rect|null}
    */
   function bounded(layer, el, own) {
     const drawable = layer.nearestDrawable(el);
+    if (!drawable || el === drawable) return null;
     let acc = own;
-    for (let a = el.parentElement, depth = 0; a && a !== drawable && depth < MAX_BOUND_DEPTH; a = a.parentElement, depth++) {
+    // acc covers the old and new reach of `child` (the chain element below `a`): only then can the children of an unchanged ancestor be inspected one by one
+    let exact = own !== null;
+    let child = el;
+    for (let a = el.parentElement, depth = 0; a && depth < MAX_BOUND_DEPTH; child = a, a = a.parentElement, depth++) {
+      const whole = a === drawable;
       const cur = measure(layer, a);
       const prev = last.get(a);
       if (cur) last.set(a, cur); else last.delete(a);
-      if (!cur || !prev) continue;
+      if (!cur || !prev) { if (whole) return null; exact = false; continue; }
+      if (sameBox(prev.box, cur.box)) {
+        const moved = exact ? movedChildren(layer, a, child) : undefined;
+        if (moved !== undefined) return moved ? unionRect(/** @type {Rect} */ (acc), moved) : acc;
+        if (whole) return null;
+        const span = unionRect(prev.reach, cur.reach);
+        return acc ? unionRect(acc, span) : span;
+      }
+      if (whole) return null;
       const span = unionRect(prev.reach, cur.reach);
       acc = acc ? unionRect(acc, span) : span;
-      if (sameBox(prev.box, cur.box)) return acc;
+      exact = true;
     }
     return null;
   }
+
+  /**
+   * Inside `parent`, whose box did not change, the children other than `except` that moved or resized: the union of their old and new reach (null: none moved).
+   * undefined when that cannot be known: a child never measured before (it is recorded now), a child that is not laid out but renders (display: contents), more than
+   * MAX_SIBLINGS children, text of `parent` itself (it reflows with its children), or generated content / a marker of `parent` (they move with the children, untracked).
+   * @param {LiveLayer} layer @param {Element} parent @param {Element} except
+   * @returns {Rect|null|undefined}
+   */
+  function movedChildren(layer, parent, except) {
+    const kids = parent.children;
+    if (kids.length > MAX_SIBLINGS) return undefined;
+    for (const n of parent.childNodes) if (n.nodeType === 3 && /\S/.test(/** @type {Text} */ (n).data)) return undefined;
+    const win = parent.ownerDocument.defaultView;
+    if (!win || win.getComputedStyle(parent).display.includes('list-item')) return undefined;
+    for (const pseudo of ['::before', '::after']) {
+      const content = win.getComputedStyle(parent, pseudo).content;
+      if (content && content !== 'none' && content !== 'normal') return undefined;
+    }
+    let known = true;
+    /** @type {Rect|null} */
+    let acc = null;
+    for (const k of kids) {
+      if (k === except) continue;
+      const cur = measure(layer, k);
+      const prev = last.get(k);
+      if (cur) last.set(k, cur); else last.delete(k);
+      if (!cur) {
+        // display:none (script, style, hidden) paints nothing; a box the layer cannot measure (display: contents) may
+        if (prev || win.getComputedStyle(k).display !== 'none') known = false;
+        continue;
+      }
+      if (!prev) { known = false; continue; }
+      if (sameBox(prev.box, cur.box) && sameBox(prev.reach, cur.reach)) continue;
+      const span = unionRect(prev.reach, cur.reach);
+      acc = acc ? unionRect(acc, span) : span;
+    }
+    return known ? acc : undefined;
+  }
 }
+
+/** children of an unchanged ancestor inspected for movement; more than this and the ancestor's own reach (or the whole drawable) is the damage */
+const MAX_SIBLINGS = 32;
 
 /** ancestors inspected above a resized element */
 const MAX_BOUND_DEPTH = 24;

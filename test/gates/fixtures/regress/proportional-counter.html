@@ -24,6 +24,8 @@
   if (q.get('bg') === 'opaque') d.classList.add('opaque');
   if (q.get('layout') === 'inline') { d.classList.add('inline'); d.replaceChildren(document.createTextNode('score '), n, document.createTextNode(' pts')); }
   if (q.get('init')) n.textContent = q.get('init');
+  // label=TEXT: a wider neighbour, so a width change of the counter moves it further than the ink margins around the counter's own box
+  if (q.get('label')) document.getElementById('label').textContent = q.get('label');
   // filler=N: N more nodes in the drawable after the counter (a large drawable: a whole-drawable rebuild costs O(N))
   if (+q.get('filler')) { d.style.flexWrap = 'wrap'; d.style.height = 'auto'; d.style.overflow = 'hidden'; d.style.maxHeight = '600px'; const f = document.createElement('div'); f.style.cssText = 'width:100%;font:9px sans-serif;color:#555'; for (let k = 0; k < +q.get('filler'); k++) { const s = document.createElement('span'); s.textContent = 'cell ' + k + ' '; f.append(s); } d.append(f); }
   window.__paints = 0; window.__changed = 0; window.__errors = [];

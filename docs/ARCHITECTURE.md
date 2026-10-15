@@ -276,10 +276,16 @@ Tick RUN(now), for each canvas record in reverse tree order:
    physical-pixel scale through `zoom:s` inside the image (not viewBox up-scaling: it drifted line metrics [E5 notes]); the viewBox crops the damage rect. Encoded as a **percent-encoded `data:` URL**
    (default; base64 optional via an internal switch), never `blob:`.
 6. **Damage tiling**: `Damage.rect` in the drawable's border-box frame (`LiveLayer.frameRect` removes any applied geometry transform); the store unions per drawable, grows the rect by `inkMargin`, rounds to
-   whole surface pixels, and converts > 55 % to a full tile.
+   whole surface pixels, and converts > 55 % to a full tile. An element whose box changed size is bounded by the nearest ancestor (the drawable included) whose box did not change: when every
+   child of that ancestor was measured before (no bare text, no generated content, at most 32 children), the rect is the old and new reach of the children that moved; otherwise the ancestor's
+   own reach, or the whole drawable when that ancestor is the drawable (`schedule/observers/damage-rect.js`).
 7. **Node budget** (`budget.js`): count nodes while cloning. `> soft` (350 by default per commit): the clone is damage-PRUNED (only subtrees intersecting the crop + ancestor skeleton + spacers) and the cadence adapts so
    main-thread time stays <= 50 % of the frame period; `> hard` (3000): the drawable is degraded to <= 4 fps, flagged, reported (`node-budget` limited); `> absolute` (20000): refused with a placeholder + entry.
    A 1125-node DOM measured ~25.7 ms RunTask per full commit (90 % busy) on the prototype [E5]: pruning and per-drawable surfaces are the lever, not a faster serializer.
+   In a pruned tile, the trailing children of a large block / inline flow container that lie below the kept region are left out altogether (`clone.js` truncation): the cut starts a line
+   (or the rest of its line is uniform), everything after it is below the region (one Range rect), and the container keeps its live height (and, as a row flex item, its width), so the kept
+   lines lay out as they do live. Not done where the dropped content could matter: sibling-position or `:has()` selectors, justification, a styled last line, balanced / pretty wrapping,
+   line clamping, columns, `::after` content, reversed numbering, scroll containers, focus inside.
 8. **Async-decode pipelining and its main-thread cost** (`pump.js`, `decode.js`): `maxInFlight` builds per canvas; decode is `new Image(); img.decoding='async'; img.src=url; await img.decode()`; the decoded image is committed
    into the surface from the landed queue during `commitLanded()` with the atomic bounded commit (`drawImage` into a 2D canvas launders the SVG-image taint; `createImageBitmap(img)` and `copyExternalImageToTexture(img)` throw
    `SecurityError` on Chrome [E4]) and `img.src=''` frees the decode. Measured on the prototype: build 0.9 ms + encode 0.08 ms + decode p50 2.7 ms (small DOM), 118 commits/s at DPR 2 [E5 throughput]; E5's `mainMsPerCommit` EXCLUDES decode.

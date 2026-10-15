@@ -108,6 +108,12 @@ application above the 15 % CPU threshold during the run; the interleaved A/B fig
   to 61.2 ms, F1 99.0 to 95.1 ms); warm: 90.6 to 87.6 ms and 122.1 to 114.6 ms; first `paint` event after script start 17.8 to 15.5 ms; parse + compile + install 8.5 to
   8.3 ms; core 260,856 to 259,952 bytes minified, 90,478 to 90,358 gzip. The sizes are now a budget in `scripts/check-bundle.mjs` (load).
 
+- **2026-10-15, large drawables.** A changed element whose width changes inside an unchanged parent damages only the children of that parent that moved (a counter in a
+  fixed-size row repaints the row, not the drawable), and a pruned tile leaves the trailing children of a large flow container that lie below it out of the clone (the
+  container keeps its live size; only where no selector or layout feature can depend on them). A 60 Hz counter beside 1,000 / 2,000 inline cells
+  (`proportional-counter.html?filler=N`): 47 / 27 to 59.5 / 59 paints/s, every paint a changed picture, final pixels equal to a fresh page. F4 author update to pixel
+  p50 at 200 / 500 / 1,000 / 2,000 elements: 17.8 / 19.1 / 18.8 / 24.2 to 5.3 / 3.5 / 2.1 / 4.4 ms (final pixels exact). Core +4,277 bytes minified (budget raised with this reason).
+
 ## Caveats
 
 - Native runs on Canary 157 and the polyfills on stable 155: a different browser build. Native latency includes Chrome's own smooth-scroll animation for wheel ticks (the same for all subjects, since all scroll the live element).
