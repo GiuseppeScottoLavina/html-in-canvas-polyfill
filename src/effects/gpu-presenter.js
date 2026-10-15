@@ -62,7 +62,7 @@ function noWebGpu(message) {
 }
 
 /**
- * Acquire adapter/device (options.powerPreference), configure canvas.getContext("webgpu") (InvalidStateError on a conflicting context), size the canvas to css*min(dpr,maxDpr). Rejects HicUnsupportedError("effect-plugins") without WebGPU.
+ * Acquire adapter/device (options.powerPreference), then claim and configure canvas.getContext("webgpu") (never before: without an adapter or a device the canvas stays free for a 2D context) (InvalidStateError on a conflicting context), size the canvas to css*min(dpr,maxDpr). Rejects HicUnsupportedError("effect-plugins") without WebGPU.
  * @param {HTMLCanvasElement} canvas
  * @param {EffectHostOptions} options
  * @param {PresenterHooks} [hooks]
@@ -72,11 +72,16 @@ export async function createPresenter(canvas, options, hooks = {}) {
   const win = /** @type {any} */ (canvas.ownerDocument.defaultView ?? globalThis);
   const gpu = win.navigator?.gpu;
   if (!gpu) throw noWebGpu('WebGPU is not available in this browser, so effect plugins cannot run');
-  const context = /** @type {any} */ (canvas.getContext('webgpu'));
-  if (!context) throw invalidState('canvas-context-conflict: the canvas already has another context type; effects need a canvas without a 2D/WebGL context');
+  // The canvas is claimed LAST: a canvas keeps its first context type for life, so claiming 'webgpu' before the adapter and the device exist
+  // would leave a canvas that can no longer give the documented 2D fallback a context when either of them is missing.
   const adapter = await gpu.requestAdapter(options.powerPreference ? { powerPreference: options.powerPreference } : undefined);
   if (!adapter) throw noWebGpu('WebGPU is present but no adapter was returned');
   const device = await adapter.requestDevice();
+  const context = /** @type {any} */ (canvas.getContext('webgpu'));
+  if (!context) {
+    device.destroy();
+    throw invalidState('canvas-context-conflict: the canvas already has another context type; effects need a canvas without a 2D/WebGL context');
+  }
   const format = gpu.getPreferredCanvasFormat();
   const USAGE = win.GPUTextureUsage;
   context.configure({ device, format, alphaMode: 'opaque', usage: USAGE.RENDER_ATTACHMENT | USAGE.COPY_DST | (hooks.extraCanvasUsage ?? 0) });

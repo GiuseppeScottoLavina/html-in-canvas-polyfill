@@ -48,6 +48,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - A sticky (or fixed) drawable moved inside the live layer when the page scrolled, and a click at the place the app draws it missed it. While such a drawable is drawn, a passive window scroll listener re-measures it; there is no listener otherwise.
 - A page that zooms the canvas with CSS `zoom` (on `html`, `body`, a wrapper or the canvas) drew the drawables twice too large when the canvas grid was not at that zoom.
 - An explicit draw size within 1 px and 1 % of the snapshot (`el.offsetWidth * devicePixelRatio` against a fractional border box at DPR 1.25 / 1.5) resampled the whole picture by a hair and blurred every edge; it is drawn 1:1.
+- With `navigator.gpu` present but no adapter (simulators, blocklisted GPUs) or a device request that fails, `createHost` had already claimed the canvas's `webgpu` context, so the documented 2D fallback got a null context and the canvas stayed blank (`examples/water-form` and `examples/plugins` threw). The presenter now acquires the adapter and the device before it claims the canvas.
 - The `water` example plugin had no reduced-motion mode: with `prefers-reduced-motion: reduce` the water is now calm (a still refraction, no ripples, no animation).
 
 ### Known limitations

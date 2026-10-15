@@ -104,6 +104,28 @@ test('a scheduler tick while the GPU is still opening does not touch the missing
   assert.equal(e?.feature, 'effect-plugins', 'the start still rejects as unsupported when the adapter is missing');
 });
 
+test('navigator.gpu without an adapter, or with a device request that fails: createHost rejects and the canvas still gives the 2D fallback a context (works without a GPU)', async (t) => {
+  // the presenter claimed the 'webgpu' context before requestAdapter(): with no adapter (simulators, blocklisted GPUs) the canvas was locked
+  // to WebGPU, getContext('2d') returned null and the documented fallback of examples/water-form and examples/plugins drew nothing
+  const real = Object.getOwnPropertyDescriptor(navigator, 'gpu');
+  t.cleanup(() => { if (real) Object.defineProperty(navigator, 'gpu', real); else delete navigator.gpu; });
+  const cases = {
+    'no adapter': { requestAdapter: async () => null, getPreferredCanvasFormat: () => 'bgra8unorm' },
+    'device request rejects': { requestAdapter: async () => ({ requestDevice: async () => { throw new DOMException('no device', 'OperationError'); } }), getPreferredCanvasFormat: () => 'bgra8unorm' },
+  };
+  for (const [name, gpu] of Object.entries(cases)) {
+    const rig = makeRig({ paint });
+    rig.commit();
+    Object.defineProperty(navigator, 'gpu', { value: gpu, configurable: true });
+    const e = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, {}).then(() => null, (error) => error);
+    assert.ok(e, `${name}: the start rejects`);
+    assert.notEqual(e.name, 'InvalidStateError', `${name}: not a context conflict (${e.message})`);
+    if (name === 'no adapter') assert.equal(e.feature, 'effect-plugins', `${name}: rejects as unsupported`);
+    assert.equal(rig.hookCount(), 0, `${name}: a failed start leaves no frame hook behind`);
+    assert.ok(rig.canvas.getContext('2d'), `${name}: the canvas was not claimed, so the 2D fallback gets a context`);
+  }
+});
+
 gtest('a plugin-less host shows the source (passthrough) and paints the dark water colour where the source is transparent', async (t) => {
   const { rig, host } = await startHost(t);
   rig.tick();

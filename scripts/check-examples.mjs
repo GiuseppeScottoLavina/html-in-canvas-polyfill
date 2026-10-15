@@ -13,7 +13,9 @@
 //      webgl-texture), the frame cap slider changes canvas.frameCap (water-form, plugins), wheel scroll + a viewport resize (scroll-and-resize),
 //      the gallery (plugins) lists every plugin of dist/plugins/manifest.json, applies each one (its controls mount, the pixels change) and "Effect off" removes it;
 //      a trusted double click on a word of its static text shows the selection on the canvas and a click elsewhere removes it (with an effect, with "Effect off", and on the 2D path)
-//   water-form and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects)
+//   water-form and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects),
+//   and a third time with navigator.gpu present but requestAdapter() resolving null (simulators, blocklisted GPUs): the same 2D fallback must draw
+//   (the canvas must not have been claimed by a 'webgpu' context before the adapter was known)
 // Smoke pages (test/examples-smoke/, served by the harness server) run the code the documentation shows:
 //   esm-quickstart  README "ES modules": install() from dist/esm/index.js, then the standard pattern
 //   doc-readme-basic, doc-getting-started   the HTML blocks printed in README.md and docs/guides/GETTING-STARTED.md, extracted from the Markdown and run as written
@@ -214,8 +216,9 @@ const SCENARIOS = {
     const { page } = run;
     const pathOk = await H.until(() => page.evaluate(`window.__waterForm ? window.__waterForm.mode : null`), run.fast ? 2500 : 15000);
     run.numbers.path = pathOk === 'effect' ? 'webgpu-effect' : pathOk === '2d' ? '2d-fallback' : 'unknown';
-    run.notes.push(`presentation path exercised: ${run.numbers.path}${pathOk === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose: this run exercises the fallback, not the effect)' : ' (no WebGPU adapter in this headless Chrome, so the effect itself was NOT exercised)') : ''}`);
+    run.notes.push(`presentation path exercised: ${run.numbers.path}${pathOk === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose: this run exercises the fallback, not the effect)' : opts.noAdapter ? ' (requestAdapter() returns null on purpose: this run exercises the fallback, not the effect)' : ' (no WebGPU adapter in this headless Chrome, so the effect itself was NOT exercised)') : ''}`);
     if (opts.noGpu) run.check('install', 'with navigator.gpu hidden the page takes the 2D fallback path', pathOk === '2d', { path: run.numbers.path });
+    if (opts.noAdapter) run.check('install', 'with no WebGPU adapter the page takes the 2D fallback path', pathOk === '2d', { path: run.numbers.path });
     const kind = pathOk === 'effect' ? 'gpu' : '2d';
     const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!window.__waterForm` });
     if (!first || opts.generic) return;
@@ -260,8 +263,9 @@ const SCENARIOS = {
     const { plugins: manifest } = JSON.parse(readFileSync(resolve(ROOT, 'dist/plugins/manifest.json'), 'utf8'));
     const mode = await H.until(() => page.evaluate(`window.__gallery && window.__gallery.mode`), run.fast ? 2500 : 15000);
     run.numbers.path = mode === 'effect' ? 'webgpu-effect' : mode === '2d' ? '2d-fallback' : 'unknown';
-    run.notes.push(`presentation path exercised: ${run.numbers.path}${mode === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose)' : ' (no WebGPU adapter in this headless Chrome, so the effects were NOT exercised)') : ''}`);
+    run.notes.push(`presentation path exercised: ${run.numbers.path}${mode === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose)' : opts.noAdapter ? ' (requestAdapter() returns null on purpose)' : ' (no WebGPU adapter in this headless Chrome, so the effects were NOT exercised)') : ''}`);
     if (opts.noGpu) run.check('install', 'with navigator.gpu hidden the gallery takes the 2D fallback path', mode === '2d', { path: run.numbers.path });
+    if (opts.noAdapter) run.check('install', 'with no WebGPU adapter the gallery takes the 2D fallback path', mode === '2d', { path: run.numbers.path });
     const kind = mode === 'effect' ? 'gpu' : '2d';
     const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!(window.__gallery && window.__gallery.ready)` });
     if (!first || opts.generic) return;
@@ -519,6 +523,7 @@ async function runExample(browser, server, name, opts = {}) {
   try {
     await setViewport(page, VIEW.width, VIEW.height);
     if (opts.noGpu) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true })" });
+    if (opts.noAdapter) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: "if (navigator.gpu) Object.defineProperty(navigator.gpu, 'requestAdapter', { value: async () => null, configurable: true })" });
     page.clearLogs();
     await page.navigate(`${server.url}/${path}`);
     await sleep(opts.generic ? 800 : 300);
@@ -526,8 +531,11 @@ async function runExample(browser, server, name, opts = {}) {
     await sleep(200);
     const all = page.errors({ includeWarnings: false }).filter((e) => !/favicon/.test(e.text ?? ''));
     // KNOWN RED, named and narrow: see KNOWN_RED above. Anything else is a failure.
-    const errors = all.filter((e) => !KNOWN_RED.some((k) => k.examples.includes(name) && k.pattern.test(e.text ?? '')));
-    for (const e of all.filter((x) => !errors.includes(x))) run.known.push(KNOWN_RED.find((k) => k.examples.includes(name) && k.pattern.test(e.text ?? '')).id);
+    // without an adapter the polyfill's loud report of the refused effect host is the documented behaviour (one console.error), not a defect
+    const expected = opts.noAdapter ? all.filter((e) => /unsupported effect-plugins: .*no adapter was returned/.test(e.text ?? '')) : [];
+    if (opts.noAdapter) run.check('load', 'the refused effect host is reported once (unsupported effect-plugins, no adapter)', expected.length === 1, expected.length);
+    const errors = all.filter((e) => !expected.includes(e) && !KNOWN_RED.some((k) => k.examples.includes(name) && k.pattern.test(e.text ?? '')));
+    for (const e of all.filter((x) => !errors.includes(x) && !expected.includes(x))) run.known.push(KNOWN_RED.find((k) => k.examples.includes(name) && k.pattern.test(e.text ?? '')).id);
     run.check('load', 'no console error, page exception or failed request', errors.length === 0, errors.slice(0, 5));
   } catch (error) {
     if (error instanceof H.CdpTimeoutError) throw error;
@@ -576,6 +584,13 @@ async function main() {
       const s = summarize(run); s.example = `${name} (navigator.gpu hidden)`; result.examples.push(s);
       console.log(`${s.ok ? 'ok  ' : 'FAIL'} ${name}, no WebGPU  (${run.checks.filter((c) => c.ok).length}/${run.checks.length} checks)  note: ${run.notes.join('; ')}`);
       for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name} no-gpu: ${c.name}`); }
+    }
+    // ---- the same fallback when navigator.gpu exists but returns no adapter (iOS / Android simulators, blocklisted GPUs)
+    for (const name of ['plugins', 'water-form'].filter((n) => names.includes(n))) {
+      const run = await runExample(browser, server, name, { noAdapter: true, tag: 'no-adapter' });
+      const s = summarize(run); s.example = `${name} (no WebGPU adapter)`; result.examples.push(s);
+      console.log(`${s.ok ? 'ok  ' : 'FAIL'} ${name}, no WebGPU adapter  (${run.checks.filter((c) => c.ok).length}/${run.checks.length} checks)  note: ${run.notes.join('; ')}`);
+      for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name} no-adapter: ${c.name}`); }
     }
     // ---- smoke pages of the documentation (served by the harness server, repository root)
     if (!only || only.includes('smoke')) {
