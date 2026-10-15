@@ -267,6 +267,30 @@ test('a WHOLE tile superseded by a DOM mutation while it decoded is committed, t
   assert.equal(rig.store.stats().dropped, 1);
 });
 
+test('a commit for a paint that must show the DOM as it is now (requestPaint, first paint) reclaims a WHOLE tile superseded by a DOM mutation instead of committing it', async (t) => {
+  // regression (WPT privacy/nested-tainted-canvas-ignored): a child canvas drawn right before requestPaint() was missing from the paint, the build that predates it stood in
+  const rig = await makeRig(t);
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  const before = rig.css(a, 20, 20);
+  rig.deferDecode = true;
+  rig.script.push({ color: 'lime' });
+  rig.store.markDamage(a, null, 'mutation');
+  rig.pump();
+  rig.store.markDamage(a, null, 'mutation');
+  await rig.release();
+  assert.deepEqual(rig.store.commitLanded(undefined, { current: true }).changed, [], 'the superseded tile is not committed');
+  assert.deepEqual(rig.css(a, 20, 20), before);
+  assert.equal(rig.store.stats().dropped, 1);
+  assert.equal(rig.store.isSettled(a), false, 'the newer mutation is still to be built');
+  rig.deferDecode = false;
+  rig.color = 'blue';
+  rig.pump();
+  await until(() => rig.store.hasLanded());
+  assert.deepEqual(rig.store.commitLanded(undefined, { current: true }).changed, [a], 'the rebuild of the latest state is committed');
+  assert.deepEqual(rig.css(a, 20, 20), RGBA.blue);
+});
+
 test('G-caret-patch: a blink costs no build and no decode; the caret is painted on the surface and lifted bit-exact', async (t) => {
   const rig = await makeRig(t);
   const a = rig.add('a', 100, 60);

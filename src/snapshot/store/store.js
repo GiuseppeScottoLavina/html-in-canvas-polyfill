@@ -51,6 +51,7 @@ import { newVersion, parseTransformOrigin, reviseVersion } from './versions.js';
  * @property {DOMMatrixReadOnly|null|undefined} translation
  * @property {number} [tileSeq]  highest Job.ovSeq of the tiles committed in this round
  * @property {boolean} [composed]  the scroll compositor rewrote a scrollport in this round
+ * @property {boolean} [current]  the paint after this commit must show the DOM as it is now (commitLanded `current`): a whole tile from before a DOM mutation does not stand in
  */
 
 /** Consecutive failures back off 100, 200, ... ms up to this cap. */
@@ -543,7 +544,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /** @param {Entry} entry @param {Landed} l @param {Round} round */
   function commitOne(entry, l, round) {
-    if (!damage.accepts(entry.el, l.epoch, l.generation, l.rect === null)) { dropResult(entry, l, false); return; }
+    if (!damage.accepts(entry.el, l.epoch, l.generation, l.rect === null && !round.current)) { dropResult(entry, l, false); return; }
     const crop = cropPxOf(l);
     if (reportUnsupported(entry, l.result) || !crop) { discardResult(entry, l); return; }
     const t0 = env.now();
@@ -735,10 +736,10 @@ export function createSnapshotStore(env, capture, extras = {}) {
     }
   }
 
-  /** @param {Entry} entry @param {Landed[]} items oldest generation first @param {number} t @returns {boolean} a version was published */
-  function commitEntry(entry, items, t) {
+  /** @param {Entry} entry @param {Landed[]} items oldest generation first @param {number} t @param {boolean} current see commitLanded @returns {boolean} a version was published */
+  function commitEntry(entry, items, t, current) {
     /** @type {Round} */
-    const round = { wrote: false, fresh: false, dirty: undefined, layoutOffset: undefined, translation: undefined };
+    const round = { wrote: false, fresh: false, dirty: undefined, layoutOffset: undefined, translation: undefined, current };
     const first = !entry.version;
     for (const l of items) commitOne(entry, l, round);
     if (items.length) entry.verifyGeometry = true;
@@ -771,8 +772,13 @@ export function createSnapshotStore(env, capture, extras = {}) {
     return groups;
   }
 
-  /** @param {CanvasRecord} [record] @returns {ChangeSet} */
-  function commitLanded(record) {
+  /**
+   * @param {CanvasRecord} [record]
+   * @param {{current?: boolean}} [opts]  current: the paint that follows must show the DOM as it is now (requestPaint(), first mount, shown again): a whole tile that a DOM mutation
+   *   superseded while it decoded is reclaimed instead of committed, so that paint waits for the rebuild (WPT nested-tainted-canvas: a child canvas drawn right before requestPaint())
+   * @returns {ChangeSet}
+   */
+  function commitLanded(record, { current = false } = {}) {
     const t = env.now();
     const groups = takeLanded(t, record);
     /** @type {Set<Element>} */
@@ -782,7 +788,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       pendingChanged.delete(el);
       changed.add(el);
     }
-    for (const [entry, items] of groups) if (commitEntry(entry, items, t)) changed.add(entry.el);
+    for (const [entry, items] of groups) if (commitEntry(entry, items, t, current)) changed.add(entry.el);
     const removed = new Map();
     for (const [el, owner] of [...pendingRemoved]) {
       if (record && owner !== record) continue;

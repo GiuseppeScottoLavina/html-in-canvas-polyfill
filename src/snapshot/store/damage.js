@@ -119,14 +119,15 @@ export class DamageTracker {
   }
 
   /**
-   * True when a landed result may be committed: newer than the last commit and not from before a structural change. A WHOLE tile from before a DOM mutation is still accepted:
+   * True when a landed result may be committed: newer than the last commit and not from before a structural change. A WHOLE tile from before a DOM mutation may stand in:
    * it is a complete picture (no seam) of a state newer than the one shown, and the pending damage rebuilds the latest state. Dropping it starved a drawable that changes size at
    * 60 Hz (a counter in proportional digits): every build was superseded before it landed and nothing was ever drawn. Resize, dpr and the other causes keep dropping it (geometry).
-   * @param {Element} el @param {number} epoch @param {number} generation @param {boolean} [whole] the result is a whole-drawable tile @returns {boolean}
+   * The store does not let it stand in when the paint that follows must show the DOM as it is now (requestPaint(), first paint).
+   * @param {Element} el @param {number} epoch @param {number} generation @param {boolean} [standIn] the result is a whole-drawable tile that may stand in for a newer DOM state @returns {boolean}
    */
-  accepts(el, epoch, generation, whole = false) {
+  accepts(el, epoch, generation, standIn = false) {
     const s = this.states.get(el);
-    return !!s && generation > s.lastCommitted && (epoch >= s.epoch || (whole && epoch >= s.hard));
+    return !!s && generation > s.lastCommitted && (epoch >= s.epoch || (standIn && epoch >= s.hard));
   }
 
   /**

@@ -198,7 +198,8 @@ export function createScheduler(env, store, hooks) {
     /** @type {ChangeSet|undefined} */
     let cs;
     try {
-      cs = store.commitLanded(entry.record);
+      // a forced paint (requestPaint(), first mount, shown again) reports the DOM as it is now: no superseded tile may stand in for it
+      cs = store.commitLanded(entry.record, { current: entry.record.paint.force });
     } finally {
       commitSeen = null;
     }
