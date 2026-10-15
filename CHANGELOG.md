@@ -60,7 +60,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 - The picture lags the DOM by one to two frames, except for the typing and scrolling shortcuts above.
 - The children of a drawable canvas are relocated into a live layer next to it; some CSS selectors and live collections can see that layer.
-- The core bundle is about 90 KB gzipped, over its original size target.
+- The core bundle is about 92 KB gzipped, over its original size target.
 - Iframes, cross-origin resources without CORS, native UI (select popups, date pickers, IME composition), workers and mobile browsers are not supported.
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.

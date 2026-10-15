@@ -16,7 +16,7 @@ A `blob:` SVG image taints every canvas sink on Chrome and Safari; a `data:` URL
 
 ### 4. One retained surface per drawable
 
-Each drawable has a retained 2D canvas with immutable versions; a new picture is committed atomically when it has been decoded, and the old one stays visible until then. That is why a window resize shows no blank frame (0 of 3132 sampled frames), and why `drawElementImage` can draw synchronously inside `paint`.
+Each drawable has a retained 2D canvas with immutable versions; a new picture is committed atomically when it has been decoded, and the old one stays visible until then. That is why a window resize shows no blank frame (0 of 3127 sampled frames), and why `drawElementImage` can draw synchronously inside `paint`.
 
 ### 5. Native first
 
@@ -32,11 +32,11 @@ The expensive part of a snapshot runs in a task after the rendering update, so i
 
 ### 8. Typed text is drawn at once
 
-For a focused single-line text field, each keystroke is drawn into the retained surface immediately with `fillText`, from the live field's font, colour, alignment and scroll offset; the next snapshot replaces it. Keydown to canvas pixel is then 6.3 ms p50 against 5.2 ms natively, instead of a full snapshot round trip (15 to 18 ms).
+For a focused single-line text field, each keystroke is drawn into the retained surface immediately with `fillText`, from the live field's font, colour, alignment and scroll offset; the next snapshot replaces it. Keydown to canvas pixel is then 5.3 ms p50 against 5.2 ms natively, instead of a full snapshot round trip (15 to 18 ms).
 
 ### 9. Inner scrolling is composed from cached pages
 
-A scroll step does not rebuild the scroller: it composes pages of the scrollport rendered at other offsets, plus sticky elements from their own tiles, in the step's own frame; the exact picture follows when scrolling settles. Wheel to pixel went from 51.5 ms to 28.1 ms p50 (native: 36.5 ms, which includes Chrome's smooth-scroll animation).
+A scroll step does not rebuild the scroller: it composes pages of the scrollport rendered at other offsets, plus sticky elements from their own tiles, in the step's own frame; the exact picture follows when scrolling settles. Wheel to pixel went from 51.5 ms to 28.5 ms p50 (native: 36.5 ms, which includes Chrome's smooth-scroll animation).
 
 ### 10. Form controls on Firefox and Safari are drawn by the polyfill
 
@@ -58,4 +58,4 @@ Refusals are loud: a hatched placeholder, one console message and a `report()` e
 
 ### 13. Small, dependency-free, no network on load
 
-No runtime dependencies; the bundles make no network request when they load (snapshots fetch same-origin or CORS resources only to inline them). Modules talk only through typed interfaces (`src/contracts/`), at most 1000 code lines per file, enforced by `npm run lint`. The cost is a large core: about 90 KB gzipped, over the original 150 KB minified target (`docs/BUNDLES.md`).
+No runtime dependencies; the bundles make no network request when they load (snapshots fetch same-origin or CORS resources only to inline them). Modules talk only through typed interfaces (`src/contracts/`), at most 1000 code lines per file, enforced by `npm run lint`. The cost is a large core: about 92 KB gzipped, over the original 150 KB minified target (`docs/BUNDLES.md`).

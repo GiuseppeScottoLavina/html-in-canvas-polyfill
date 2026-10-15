@@ -70,12 +70,12 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Canary 157, flag) |
 |---|---|---|---|
 | official WPT HTML-in-Canvas files passing (of 230) | 143 | 66 | 202 |
-| keydown to canvas pixel, p50 / p95 | 6.3 / 10.0 ms | 14.4 / 135.6 ms, final text wrong | 5.2 / 10.3 ms |
-| wheel scroll inside the canvas, p50 to pixel | 28.1 ms | never drawn | 36.5 ms |
-| blank frames during real window resizes | 0 of 3132 | 537 of 3132 | 0 of 3129 |
-| one update in a 1000-element drawable, main thread | 18.3 ms | 41.5 ms | 6.5 ms |
-| first paint of a form page (new tab), p50 | 120 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 261 KB / 90 KB | 30 KB / 10 KB | none |
+| keydown to canvas pixel, p50 / p95 | 5.3 / 9.9 ms | 14.5 / 135.2 ms, final text wrong | 5.2 / 10.3 ms |
+| wheel scroll inside the canvas, p50 to pixel | 28.5 ms | never drawn | 36.5 ms |
+| blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
+| one update in a 1000-element drawable, main thread | 19.2 ms | 40.9 ms | 6.5 ms |
+| first paint of a form page (new tab), p50 | 97 ms | 69 ms | 71 ms |
+| core bundle, minified / gzipped | 264 KB / 92 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+ | claims all, including mobile (not verified here) | Chrome with the flag |
 
 The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -98,7 +98,7 @@ Nothing was measured on Windows or Linux. Row-by-row evidence: [docs/SUPPORT-MAT
 
 - **The picture lags the DOM by one to two frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn; on Chromium a snapshot that needs no font or image to load is painted one frame after the change, others about two. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 90 KB gzipped (261 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 92 KB gzipped (264 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
 - **Not supported:** mobile browsers, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
 - **Preview.** `0.1.0-preview.1` follows a proposed standard that may still change. The two extensions below may change between previews.

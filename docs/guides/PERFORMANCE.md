@@ -13,17 +13,18 @@ Read this before quoting a number from this project. The figures come from [docs
 
 | scenario | this polyfill | native |
 |---|---|---|
-| keydown to canvas pixel, explainer example, text fits | 6.3 / 10.0 | 5.2 / 10.3 |
-| keydown to canvas pixel, F1 form | 6.9 / 10.3 | 6.9 / 10.5 |
-| click to focus pixel | 9.3 / 15.6 | 5.7 / 8.1 |
-| wheel to pixel, inner list | 28.1 / 36.5 | 36.5 / 42.2 |
-| real window resize: blank frames | 0 of 3132 | 0 of 3129 |
-| resize: convergence after the last resize event | 8.2 / 17.5 | 8.1 / 9.9 |
-| author update in a large drawable (F4, 1000 elements): update to pixel | 18.8 / 25.5 | 2.6 / 5.5 |
-| first paint of the F1 form, new renderer (p50) | 120 | 71 |
-| minified core: parse, compile and install (p50) | 8.2 | 0 |
+| keydown to canvas pixel, explainer example, text fits | 5.3 / 9.9 | 5.2 / 10.3 |
+| keydown to canvas pixel, F1 form | 6.3 / 12.1 | 6.9 / 10.5 |
+| click to focus pixel | 13.9 / 15.6 | 5.7 / 8.1 |
+| wheel to pixel, inner list | 28.5 / 32.4 | 36.5 / 42.2 |
+| real window resize: blank frames | 0 of 3127 | 0 of 3129 |
+| resize: convergence after the last resize event | 8.2 / 8.9 | 8.1 / 9.9 |
+| author update in a large drawable (F4, 1000 elements): update to pixel | 1.8 / 11.3 | 2.6 / 5.5 |
+| a 60 Hz counter beside 2,000 elements: paints per second | 59 | not measured |
+| first paint of the F1 form, new renderer (p50) | 97 | 71 |
+| minified core: parse, compile and install (p50) | 8.1 | 0 |
 
-Where the polyfill is clearly slower: large drawables that change often, first paint, and memory (about 60 MB more renderer RSS on F1). The full table, the method and the analysis of each loss are in [docs/PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md).
+Where the polyfill is clearly slower: the main-thread cost of updates in large drawables, first paint, and memory (about 60 MB more renderer RSS on F1). The full table, the method and the analysis of each loss are in [docs/PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md).
 
 ## 3. Node budget guidance
 
@@ -35,7 +36,7 @@ Defaults (`src/api/options.js`, `docs/API-CONTRACT.md` section 9.2), counted per
 | `nodeBudget.hard` | 3000 | above it the drawable is updated at most 4 times per second and a `node-budget` entry is reported |
 | `nodeBudget.absolute` | 20000 | above it the capture is refused: a hatched placeholder and a `node-budget` entry |
 
-A drawable that updates often (typing, animation, a slider) should stay well under about 1000 elements, and under a few hundred if you want headroom for the rest of your page: one update of a 2000-element drawable costs about 20 ms of main thread (F4 rows of the comparison). A large static list is better split into several drawables or windowed (render only the visible rows). Counting: `element.getElementsByTagName('*').length + 1`. The F4 fixture (`test/fixtures/f4-large-app`, `nodes=200|500|1000|2000`) is there to measure your own sizes.
+A drawable that updates often (typing, animation, a slider) should stay well under about 1000 elements, and under a few hundred if you want headroom for the rest of your page: one update of a 2000-element drawable costs about 20 ms of main thread (F4 rows of the comparison), most of it the browser's own style and layout of the page and of the snapshot. A change that keeps its parent's size is repainted from a tile around the children that moved, and the content of a large block below that tile is left out of the snapshot, so a small part that changes often (a counter, a clock) next to a large static part stays cheap. A large static list is better split into several drawables or windowed (render only the visible rows). Counting: `element.getElementsByTagName('*').length + 1`. The F4 fixture (`test/fixtures/f4-large-app`, `nodes=200|500|1000|2000`) is there to measure your own sizes.
 
 ## 4. Frame cap semantics (`docs/API-CONTRACT.md` 7.1)
 
