@@ -34,14 +34,31 @@ for (const dpr of opt.dpr.split(',').map(Number)) {
         // a drawable at a fractional x or y is painted by the page with snapped text and by the tile at an integer origin; centred fixtures need an inner width that keeps the margin whole
         await page.setInnerSize(fid === 'f2' ? 1301 : 1300, 900);
         await H.sleep(150);
+        // The tile is the drawable at a whole device-pixel origin, which is how a canvas grid draws it (native included: its canvas output does not depend on where the page
+        // puts the canvas, measured at DPR 1.25 / 1.5 against Canary, G-pixel-dpr). At DPR 1.25 / 1.5 a whole css origin can be half a device pixel, where the page snaps text
+        // differently and the screenshot clip resamples by half a pixel: the reference is moved by that fraction (a relative offset of <body>, no layout change).
+        const shift = await page.evaluate(`(() => { const s = document.querySelector('#hic-surface'); const r = (s.firstElementChild || s).getBoundingClientRect(); const d = devicePixelRatio;
+          const fx = (Math.ceil(r.left * d - 1e-6) - r.left * d) / d, fy = (Math.ceil(r.top * d - 1e-6) - r.top * d) / d;
+          if (fx > 1e-6 || fy > 1e-6) { document.body.style.position = 'relative'; document.body.style.left = fx + 'px'; document.body.style.top = fy + 'px'; }
+          return [fx, fy]; })()`);
+        if (shift[0] || shift[1]) await H.sleep(100);
         const tiles = await page.evaluate(`(async () => { const m = await import('/test/unit/snapshot-capture/oracle.page.mjs'); return m.run('#hic-surface', ${JSON.stringify({ scale: dpr, scroll: sc.scroll, prune: opt.prune })}); })()`);
         const shotOf = async (rect) => decodeShot(await page.screenshot({ clip: { ...rect, scale: 1 } }));
         for (const t of tiles) {
-          const tile = H.compositeOver(H.decodePng(Buffer.from(t.png.split(',')[1], 'base64')), t.bg);
-          const ref = await shotOf(t.rect);
+          let tile = H.compositeOver(H.decodePng(Buffer.from(t.png.split(',')[1], 'base64')), t.bg);
+          // the clip on whole device pixels with the tile's own pixel size (a fractional clip is resampled or rounded by one pixel at the edges)
+          const clip = { x: Math.round(t.rect.x * dpr) / dpr, y: Math.round(t.rect.y * dpr) / dpr, width: tile.width / dpr, height: tile.height / dpr };
+          let ref = await shotOf(clip);
+          // a fractional border box (F1: 1178.4 css px, read as 1178.4000244 through getBoundingClientRect) can round to one more tile pixel than the screenshot has:
+          // compare the common area (at most one row / column left out)
+          if (Math.abs(tile.width - ref.width) <= 1 && Math.abs(tile.height - ref.height) <= 1 && (tile.width !== ref.width || tile.height !== ref.height)) {
+            const w = Math.min(tile.width, ref.width), h = Math.min(tile.height, ref.height);
+            tile = H.cropImage(tile, 0, 0, w, h); ref = H.cropImage(ref, 0, 0, w, h);
+          }
           const cmp = H.compareImages(tile, ref, { tolerance: 16 });
           // positive controls: the oracle must see a 3 css px shift and a blank tile
-          const shifted = await shotOf({ ...t.rect, x: t.rect.x + 3, y: t.rect.y + 3 });
+          let shifted = await shotOf({ ...clip, x: clip.x + 3, y: clip.y + 3 });
+          if (shifted.width !== tile.width || shifted.height !== tile.height) shifted = H.cropImage(shifted, 0, 0, Math.min(tile.width, shifted.width), Math.min(tile.height, shifted.height));
           const ctl = H.compareImages(tile, shifted, { tolerance: 16 });
           const stats = H.pixelStats(tile);
           const row = {

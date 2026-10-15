@@ -100,7 +100,7 @@ Nothing was measured on Windows or Linux. Row-by-row evidence: [docs/SUPPORT-MAT
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
 - **Size.** The core is about 89 KB gzipped (256 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
-- **Not supported:** mobile browsers, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). Only DPR 2 on macOS has gates on this implementation.
+- **Not supported:** mobile browsers, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
 - **Preview.** `0.1.0-preview.1` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works

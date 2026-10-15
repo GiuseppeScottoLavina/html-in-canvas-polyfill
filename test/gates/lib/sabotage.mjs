@@ -8,6 +8,7 @@
 //   nowheel every wheel event is cancelled (native scrolling of the live list never happens)
 //   freezelayer the live layer keeps a stale width (the live layout never converges to the new window size)
 //   nohit   same as nogeom, kept as a name for gates that only care about the hit test
+//   originshift every draw lands one device pixel to the right when the canvas starts on a fractional device pixel (an output that depends on the page position)
 //   nopagescroll the polyfill's window scroll listener (the page-scroll watch of sticky / fixed drawables) is never added: the build before that watch existed
 export const SABOTAGE_JS = {
   blank: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (...a) { try { o.apply(this, a); } finally { this.save(); this.setTransform(1,0,0,1,0,0); this.globalCompositeOperation='copy'; this.fillStyle='#000'; this.fillRect(0,0,this.canvas.width,this.canvas.height); this.restore(); } }; return 'blank'; })()`,
@@ -17,6 +18,7 @@ export const SABOTAGE_JS = {
 SABOTAGE_JS.nowheel = `(() => { addEventListener('wheel', (e) => e.preventDefault(), { capture: true, passive: false }); return 'nowheel'; })()`;
 SABOTAGE_JS.freezelayer = `(() => { setInterval(() => { const l = document.querySelector('hic-layer'); if (l) l.style.setProperty('width', '1400px', 'important'); }, 16); return 'freezelayer'; })()`;
 SABOTAGE_JS.nohit = SABOTAGE_JS.nogeom;
+SABOTAGE_JS.originshift = `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (el, ...a) { const f = (this.canvas.getBoundingClientRect().left * devicePixelRatio) % 1; if (f > 1e-3 && typeof a[0] === 'number') a[0] += 1; return o.call(this, el, ...a); }; return 'originshift'; })()`;
 SABOTAGE_JS.nopagescroll = `(() => { const add = EventTarget.prototype.addEventListener; EventTarget.prototype.addEventListener = function (type, fn, o) { if (this === window && type === 'scroll' && o && o.capture && /hic-live-polyfill/.test(new Error().stack || '')) return; return add.call(this, type, fn, o); }; return 'nopagescroll'; })()`;
 
 /** The bundle text with the sabotage of every kind in `kinds` appended (each wrapped so a failure is visible, not silent). */

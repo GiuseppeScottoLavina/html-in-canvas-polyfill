@@ -119,11 +119,23 @@ test('snapDefaultSize: default-size draws copy the raster 1:1 when the raster sc
   const clipped = { src: r.src, dw: r.dw, dh: r.dh };
   assert.equal(r.dw, 125.625);
   assert.deepEqual(snapDefaultSize(r, clipped, { sw: 126, sh: 63 }, 1.25), { dw: 126, dh: 63 });
-  // explicit dw is never snapped, a different raster scale is never snapped, a clipped source is never snapped
+  // an explicit dw more than 1 px / 1 % away from the raster is never snapped, a different raster scale is never snapped, a clipped source is never snapped
   const explicit = resolveRects(parseDrawArgs([EL, 0, 0, 120, 60]), V, 400, 200);
   assert.deepEqual(snapDefaultSize(explicit, { src: explicit.src, dw: 120, dh: 60 }, { sw: 126, sh: 63 }, 2), { dw: 120, dh: 60 });
   assert.deepEqual(snapDefaultSize(r, clipped, { sw: 126, sh: 63 }, 2), { dw: 125.625, dh: 62.5 + 0 });
   assert.deepEqual(snapDefaultSize(r, { src: { ...r.src, sw: 10 }, dw: 5, dh: 5 }, { sw: 126, sh: 63 }, 1.25), { dw: 5, dh: 5 });
+});
+
+test('snapDefaultSize: an explicit size within 1 px and 1 % of the raster is drawn 1:1 (offsetWidth * devicePixelRatio at DPR 1.25 / 1.5), farther ones are scaled', () => {
+  // F1 at DPR 1.25: a 1178.4 css px form rasterised to 1473 px, drawn at offsetWidth (1178) * 1.25 = 1472.5 px
+  const r = resolveRects(parseDrawArgs([EL, 0, 0, 1472.5, 947.5]), { width: 1178.4, height: 758.4, canvasWidth: 1178.4, canvasHeight: 758.4 }, 1473, 948);
+  const clipped = { src: r.src, dw: r.dw, dh: r.dh };
+  assert.deepEqual(snapDefaultSize(r, clipped, { sw: 1473, sh: 948 }, 1.25), { dw: 1473, dh: 948 });
+  // 1 px or more away, or more than 1 % of a small raster: the requested size stands
+  assert.deepEqual(snapDefaultSize(r, { ...clipped, dw: 1472 }, { sw: 1473, sh: 948 }, 1.25), { dw: 1472, dh: 948 });
+  assert.deepEqual(snapDefaultSize(r, { ...clipped, dw: 19.6, dh: 20 }, { sw: 20, sh: 20 }, 1.25), { dw: 19.6, dh: 20 });
+  // a clipped source is never snapped
+  assert.deepEqual(snapDefaultSize(r, { src: { ...r.src, sw: 10 }, dw: 1472.5, dh: 947.5 }, { sw: 1473, sh: 948 }, 1.25), { dw: 1472.5, dh: 947.5 });
 });
 
 test('canvasTransformValues: translation only, grid scale 1', () => {

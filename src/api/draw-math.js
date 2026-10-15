@@ -133,10 +133,21 @@ export function clipToSurface(r, version) {
   };
 }
 
+/** A requested size this close to the raster (under 1 px and 1 %) is the same picture rounded differently: drawn 1:1. */
+const NEAR_PX = 1;
+const NEAR_SHARE = 0.01;
+
+/** @param {number} want @param {number} have @returns {boolean} */
+const near = (want, have) => Math.abs(want - have) < NEAR_PX && Math.abs(want - have) <= NEAR_SHARE * have;
+
 /**
- * Default-size draws copy surface pixels 1:1: when dw/dh were omitted, the destination spans exactly the surface pixels that the store returned,
- * not the fractional `sw * scaleX` (125.625 px at DPR 1.25 would resample every edge). Only when the canvas grid scale equals the raster scale and the
- * source rect was not clipped.
+ * Draws copy surface pixels 1:1 when that is what the call means, because resampling a raster by a factor a hair from 1 blurs every edge by up to half a pixel where the
+ * native draw (a vector paint record) stays sharp:
+ *   - default size (dw/dh omitted): the destination spans exactly the surface pixels that the store returned, not the fractional `sw * scaleX` (125.625 px at DPR 1.25),
+ *     when the canvas grid scale equals the raster scale;
+ *   - an explicit size within 1 px and 1 % of the raster (the explainer's `el.offsetWidth * devicePixelRatio`: a rounded offsetWidth against a fractional border box at
+ *     DPR 1.25 / 1.5 asked for 1472.5 px of a 1473 px raster, and the bilinear resample put the polyfill 2.5 % of the pixels away from native instead of 1.7 %).
+ * Only when the source rect was not clipped.
  * @param {ResolvedRects} r
  * @param {{src: SourceRectCss, dw: number, dh: number}} clipped  result of clipToSurface
  * @param {{sw: number, sh: number}} raster  pixel size of the RasterSource
@@ -145,8 +156,8 @@ export function clipToSurface(r, version) {
  */
 export function snapDefaultSize(r, clipped, raster, surfaceScale) {
   const unclipped = clipped.src.sw === r.src.sw && clipped.src.sh === r.src.sh;
-  const snapW = r.dwDefaulted && unclipped && Math.abs(r.scaleX - surfaceScale) < 1e-6;
-  const snapH = r.dhDefaulted && unclipped && Math.abs(r.scaleY - surfaceScale) < 1e-6;
+  const snapW = unclipped && (r.dwDefaulted ? Math.abs(r.scaleX - surfaceScale) < 1e-6 : near(clipped.dw, raster.sw));
+  const snapH = unclipped && (r.dhDefaulted ? Math.abs(r.scaleY - surfaceScale) < 1e-6 : near(clipped.dh, raster.sh));
   return { dw: snapW ? raster.sw : clipped.dw, dh: snapH ? raster.sh : clipped.dh };
 }
 
