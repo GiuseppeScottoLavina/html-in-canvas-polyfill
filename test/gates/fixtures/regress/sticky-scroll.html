@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: a sticky drawable stays hit-testable at its drawn place after a page scroll</title>
+<script>
+  // counts the window scroll listeners the polyfill adds (live ones): the page-scroll watch must exist only while a sticky / fixed drawable does
+  window.__winScroll = 0;
+  (() => { const add = EventTarget.prototype.addEventListener, rem = EventTarget.prototype.removeEventListener; const mine = new Set();
+    EventTarget.prototype.addEventListener = function (type, fn, o) { if (this === window && type === 'scroll' && /hic-live-polyfill/.test(new Error().stack || '')) { mine.add(fn); window.__winScroll = mine.size; window.__winScrollPassive = !!(o && o.passive); } return add.call(this, type, fn, o); };
+    EventTarget.prototype.removeEventListener = function (type, fn, o) { if (this === window && type === 'scroll' && mine.delete(fn)) window.__winScroll = mine.size; return rem.call(this, type, fn, o); }; })();
+</script>
+<script>var q = new URLSearchParams(location.search); window.__q = q; if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<style>body{margin:0;background:#fff;font:14px sans-serif} #top{height:100px} #c{display:block;width:400px;height:600px;background:#fff} #tail{height:2000px}
+  #outer{width:400px;height:600px;background:#eee} #s{display:block;width:120px;height:40px;margin:0;padding:0;top:0}</style></head><body>
+<div id="top"></div>
+<canvas id="c" width="400" height="600" content="drawable"><div id="outer" drawable><button id="s" drawable>sticky</button><p>content below the sticky button</p></div></canvas>
+<div id="tail"></div>
+<script>
+  const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d');
+  const s = document.getElementById('s');
+  if (q.get('sticky') !== '0') s.style.position = 'sticky';
+  window.__paints = 0; window.__clicks = 0; window.__errors = [];
+  s.addEventListener('click', () => { window.__clicks++; });
+  // the nested drawable is drawn at a FIXED canvas place: a click there must reach it wherever the page scroll put its layout box
+  window.__at = [20, 300];
+  canvas.onpaint = () => { window.__paints++; ctx.reset(); try { ctx.drawElementImage(document.getElementById('outer'), 0, 0); ctx.drawElementImage(s, ...window.__at); } catch (e) { window.__errors.push(e.name); } };
+</script></body></html>

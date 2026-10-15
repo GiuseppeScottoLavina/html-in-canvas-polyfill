@@ -60,7 +60,8 @@ if (!docsOnly) {
     }
   }
   // The core ceiling is not a hard design limit: it is raised deliberately, one measured reason at a time (conformance fixes, Firefox / Safari support, the performance work).
-  if (total > 12650) problems.push(`G-size: core is ${total} code lines (> 12650)`);
+  // 12650 -> 12700 (2026-10-15): the page-scroll watch that re-measures sticky / fixed drawables (live/geometry-apply.js, live/live-layer.js).
+  if (total > 12700) problems.push(`G-size: core is ${total} code lines (> 12700)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

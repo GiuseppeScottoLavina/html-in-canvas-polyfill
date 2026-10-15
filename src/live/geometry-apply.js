@@ -40,6 +40,8 @@ export function correctionTransform(m, offset, zoom = 1) {
  * @property {{width: number, height: number}|null} size  border box size (for the clip)
  * @property {boolean} relative  the element is static and needs position:relative for its z-index
  * @property {number} zoom  CSS zoom of the element relative to the layer, read at the first application
+ * @property {boolean} scrolls  the element is position:sticky or position:fixed: its layout offset in the layer can change when the page (or a scroller around the canvas) scrolls,
+ *   which no mutation or resize announces; the layer re-measures it while such scrolling happens (revalidateScrolled) and its measured offset wins over the one cached on the snapshot
  * @property {Set<Element>} nested  geometry-applied drawables below this one
  * @property {Element|null} parentDrawable  applied drawable ancestor this correction was computed against
  * @property {{geometry: ElementGeometry|null, inDrawnList: boolean, offset: {x: number, y: number}|null}} last
@@ -187,8 +189,11 @@ function firstChecks(env, layerEl, el, m) {
   if (transformed(cs) && !(isTranslation(m) && cs.position === 'static')) { reportOnce(env, 'css-transform-on-drawable', el, 'geometry not applied, the element has its own CSS transform'); return null; }
   const path = ancestorPath(el, layerEl);
   if (path.blocked) { reportOnce(env, 'nested-geometry', el, 'geometry not applied below a transformed or clipping ancestor'); return null; }
-  return { relative: cs.position === 'static', clipped: cs.clipPath !== 'none', zoom: zoomInLayer(el, layerEl, cs) };
+  return { relative: cs.position === 'static', clipped: cs.clipPath !== 'none', zoom: zoomInLayer(el, layerEl, cs), scrolls: movesWithScroll(cs) };
 }
+
+/** @param {CSSStyleDeclaration} cs @returns {boolean} sticky and fixed boxes are placed against a scrollport, so a scroll outside the layer can move them inside it */
+const movesWithScroll = (cs) => cs.position === 'sticky' || cs.position === 'fixed';
 
 /** @param {Element} el @param {HTMLElement} layerEl @param {CSSStyleDeclaration} cs @returns {number} product of the `zoom` of el and its ancestors below the layer */
 function zoomInLayer(el, layerEl, cs) {
@@ -214,16 +219,17 @@ function zoomInLayer(el, layerEl, cs) {
 export function applyGeometryToElement(env, rules, layerEl, el, geometry, inDrawnList, layoutOffset) {
   if (!geometry || !inDrawnList) { detach(layerEl, rules, el); return; }
   let st = states.get(el);
-  /** @type {{relative: boolean, clipped: boolean, zoom: number}|null} */
+  /** @type {{relative: boolean, clipped: boolean, zoom: number, scrolls: boolean}|null} */
   let checks = null;
   if (!st) {
     checks = firstChecks(env, layerEl, el, geometry.transform ?? new DOMMatrix());
     if (!checks) return;
-    st = { key: `g${++keyCounter}`, attached: false, signature: '', place: {}, shifted: false, clip: null, authorClip: checks.clipped, matrix: null, offset: null, size: null, relative: checks.relative, zoom: checks.zoom, nested: new Set(), parentDrawable: null, last: { geometry, inDrawnList, offset: layoutOffset } };
+    st = { key: `g${++keyCounter}`, attached: false, signature: '', place: {}, shifted: false, clip: null, authorClip: checks.clipped, matrix: null, offset: null, size: null, relative: checks.relative, zoom: checks.zoom, scrolls: checks.scrolls, nested: new Set(), parentDrawable: null, last: { geometry, inDrawnList, offset: layoutOffset } };
     states.set(el, st);
   }
   st.last = { geometry, inDrawnList, offset: layoutOffset };
-  const offset = layoutOffset ?? st.offset ?? (st.matrix ? null : measureLayoutOffset(layerEl, el));
+  // a sticky / fixed element: the offset the layer measured after the last scroll is newer than the one the snapshot cached when it was built
+  const offset = (st.scrolls && st.offset) || layoutOffset || st.offset || (st.matrix ? null : measureLayoutOffset(layerEl, el));
   if (!offset) { detach(layerEl, rules, el); return; }
   st.offset = { x: offset.x, y: offset.y };
   const m = geometry.transform ?? new DOMMatrix();
@@ -330,10 +336,44 @@ export function revalidateOffsets(env, rules, layerEl) {
     const st = states.get(el);
     const r = rects[i];
     if (!st || !r) return;
+    st.scrolls = movesWithScroll(styleOf(el));
     if (st.offset && Math.abs(st.offset.x - r.x) < 0.01 && Math.abs(st.offset.y - r.y) < 0.01) return;
     st.size = null;
+    st.offset = { x: r.x, y: r.y };
     applyGeometryToElement(env, rules, layerEl, el, st.last.geometry, st.last.inDrawnList, { x: r.x, y: r.y });
   });
+}
+
+/**
+ * The applied elements of a layer whose layout offset can change with a scroll outside the layer (sticky, fixed: HitState.scrolls). Empty for almost every page.
+ * @param {HTMLElement} layerEl
+ * @returns {Element[]}
+ */
+export function scrollMovedElements(layerEl) {
+  const out = [];
+  for (const el of registry(layerEl)) if (states.get(el)?.scrolls && states.get(el)?.matrix) out.push(el);
+  return out;
+}
+
+/**
+ * Re-measure only the sticky / fixed applied elements of a layer (a page or ancestor scroll moved them in the layer) and rewrite the corrections that changed.
+ * @param {HicEnv} env
+ * @param {GeometryRules} rules
+ * @param {HTMLElement} layerEl
+ */
+export function revalidateScrolled(env, rules, layerEl) {
+  flushGeometryWrites();
+  for (const el of scrollMovedElements(layerEl)) {
+    const st = /** @type {HitState} */ (states.get(el));
+    const r = measureLayoutOffset(layerEl, el);
+    if (!r || (st.offset && Math.abs(st.offset.x - r.x) < 0.01 && Math.abs(st.offset.y - r.y) < 0.01)) continue;
+    // applied drawables inside it moved with it, and their corrections are computed against its offset: re-measure the whole layer
+    if (st.nested.size) { revalidateOffsets(env, rules, layerEl); return; }
+    st.offset = r;
+    st.size = null;
+    applyGeometryToElement(env, rules, layerEl, el, st.last.geometry, st.last.inDrawnList, r);
+  }
+  flushGeometryWrites();
 }
 
 /**

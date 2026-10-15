@@ -10,7 +10,9 @@ import { createAncestorClip } from './ancestor-clip.js';
 import { collectDrawables, cssPath, nativeDom, nearestDrawableOf } from './drawables.js';
 import { installEventBridge } from './event-bridge.js';
 import { installCanvasSelection } from './canvas-selection.js';
-import { appliedMatrixOf, appliedOffsetOf, applyGeometryToElement, applyHitTestOrder, clearGeometry, flushGeometryWrites, revalidateOffsets } from './geometry-apply.js';
+import {
+  appliedMatrixOf, appliedOffsetOf, applyGeometryToElement, applyHitTestOrder, clearGeometry, flushGeometryWrites, revalidateOffsets, revalidateScrolled, scrollMovedElements,
+} from './geometry-apply.js';
 import { borderBoxSize, frameRectOf, inkOverflowOf, isLaidOut, paintInkOf, rectInLayer } from './measure.js';
 import { resetLayerStyle, syncPresentation } from './presentation.js';
 import { auditStacking } from './stacking-audit.js';
@@ -89,6 +91,27 @@ export function createLiveLayer(env, record) {
   const reportedCovers = new WeakSet();
 
   const rules = () => /** @type {LayerStyleHandle} */ (style).geometry;
+
+  /** @type {(() => void)|null} removes the scroll listener of syncScrollWatch */
+  let scrollWatch = null;
+  /**
+   * A sticky or fixed drawable with applied geometry moves inside the layer when the page (or a scroller around the canvas) scrolls, and nothing else announces it: while
+   * one exists, a passive capture `scroll` listener on the window re-measures those drawables in the scroll event of each frame, so the hit test follows the drawn position.
+   * No listener at all otherwise (the design keeps page scroll free of polyfill work), and the listener ignores scrolling inside the layer (the scroll observer's).
+   */
+  function syncScrollWatch() {
+    const want = mounted && !!style && scrollMovedElements(layerEl).length > 0;
+    if (want === !!scrollWatch) return;
+    if (!want) { scrollWatch?.(); scrollWatch = null; return; }
+    const win = env.window;
+    const onScroll = (/** @type {Event} */ ev) => {
+      const target = /** @type {any} */ (ev.target);
+      if (!mounted || !style || typeof target?.contains !== 'function' || !target.contains(layerEl)) return;
+      try { revalidateScrolled(env, rules(), layerEl); } catch (err) { env.reporter.caught(err, 'live.page-scroll'); }
+    };
+    win.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    scrollWatch = () => win.removeEventListener('scroll', onScroll, { capture: true });
+  }
   const logical = () => (facade ? facade.logicalChildNodes() : [...nat.childNodes.call(canvas)]);
 
   function place() {
@@ -201,6 +224,8 @@ export function createLiveLayer(env, record) {
   function unmount() {
     if (!mounted) return;
     mounted = false;
+    scrollWatch?.();
+    scrollWatch = null;
     for (const off of teardown.reverse()) off();
     teardown = [];
     if (style) clearGeometry(rules(), layerEl);
@@ -266,6 +291,7 @@ export function createLiveLayer(env, record) {
       applyGeometryToElement(env, rules(), layerEl, el, geometry, drawnSet.has(el), layoutOffset ?? null);
       // Synchronous: getBoundingClientRect() / elementsFromPoint() right after updateElementGeometry() or drawElementImage() must already see the canvas transform (WPT canvas-transform-*).
       flushGeometryWrites();
+      syncScrollWatch();
     },
     stackingAudit() {
       if (!mounted || env.options.stackingAudit === 'off' || !drawnSet.size) return [];
@@ -288,13 +314,18 @@ export function createLiveLayer(env, record) {
       }
       return lastFindings;
     },
-    revalidateGeometry() { if (mounted && style) revalidateOffsets(env, rules(), layerEl); },
+    revalidateGeometry() {
+      if (!mounted || !style) return;
+      revalidateOffsets(env, rules(), layerEl);
+      syncScrollWatch();
+    },
     setHitTestOrder(order) {
       if (!mounted || !style) return;
       drawnSet = new Set(order);
       for (const [el, d] of desired) applyGeometryToElement(env, rules(), layerEl, el, d.geometry, drawnSet.has(el), d.offset);
       applyHitTestOrder(rules(), layerEl, order);
       flushGeometryWrites();
+      syncScrollWatch();
     },
     onChildrenChanged(cb) {
       childListeners.add(cb);
