@@ -6,6 +6,7 @@
 import { BUS } from '../../contracts/events.js';
 import { onCanvasSuspension } from '../../util/suspension.js';
 import { watchPresentation } from './presentation-watch.js';
+import { sameContentRect } from '../../util/rect.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').ContentBox} ContentBox */
@@ -70,7 +71,12 @@ export function observeCanvasResize(env, record) {
     if (!previous || previous.width !== box.width || previous.height !== box.height) env.scheduler.damage(record, 'resize', null, null);
   }
 
-  const ro = new win.ResizeObserver(refresh);
+  // an observation that reports the box already measured (the one observe() always delivers, or a resize the layer already measured in a width/height write) needs no
+  // second syncPresentation; a BUS.RESIZE announced meanwhile still revalidates the geometry
+  const ro = new win.ResizeObserver((/** @type {ResizeObserverEntry[]} */ entries) => {
+    if (!shifted && sameContentRect(entries, record.contentBox)) return;
+    refresh();
+  });
   ro.observe(canvas, { box: 'content-box' });
   const mo = new win.MutationObserver((batch) => {
     if (batch.some((m) => !IGNORED_ATTRIBUTE.test(m.attributeName ?? ''))) refresh();

@@ -1,6 +1,7 @@
 // G-bundle (docs/TEST-PLAN.md): the built bundles are what they claim to be.
 //   node scripts/check-bundle.mjs [--no-build] [--allow-size] [--skip-browser]
-//   1. size: core min <= 150 KB (the target), and never above the recorded RATCHET (a regression fails even with --allow-size); every other bundle below its own ceiling
+//   1. size: core min <= 150 KB (the target), and never above the recorded RATCHET (a regression fails even with --allow-size); every other bundle below its own ceiling;
+//      the five classic bundles also below their gzip budget (level 9). The ceilings and budgets are the measured sizes plus a small margin.
 //   2. static: each IIFE parses as a CLASSIC script (a static import/export or import.meta is a SyntaxError there) and has no dynamic import()
 //   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + each plugin of dist/plugins/, native bridge + core:
 //      the globals exist and work, the page made NO request beyond its own scripts (server log + Resource Timing), and the minified FEATURES agree with src/contracts/features.js
@@ -15,7 +16,10 @@ import { discoverPlugins } from '../plugins/_shared/contract.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const allowSize = process.argv.includes('--allow-size');
 const KB = 1000; // decimal, as in the 150 KB target
-/** target = the gate threshold; ceiling = the recorded size the bundle may not exceed (regression guard). Raise a ceiling only with a measured reason, lower it when the bundle shrinks. */
+/**
+ * target = the gate threshold; ceiling = the recorded minified size the bundle may not exceed (regression guard); gzip = the recorded gzip (level 9) size it may not exceed.
+ * Raise a ceiling only with a measured reason, lower it when the bundle shrinks. Since 2026-10-15 every ceiling is the measured size plus a small margin (the size budget).
+ */
 const LIMITS = {
   // raised deliberately, one measured reason at a time; 254 -> 257 KB (+2,893 bytes, 2026-10-14): the core-only native probe that never refuses a usable native, and getElementImageDefaultSize
   // 257 -> 257.5 KB (+493 bytes, 2026-10-14): a selection of the static text inside the canvas repaints when it changes (bug report)
@@ -25,12 +29,16 @@ const LIMITS = {
   //   iframes, styled scrollbar images, z-index-only style changes left undamaged
   // 259.8 -> 260.8 KB (+925 bytes, 2026-10-15): sticky / fixed drawables re-measured while the page scrolls (hit testing after a page scroll)
   // 260.8 -> 261 KB (+94 bytes, 2026-10-15): an explicit draw size within 1 px and 1 % of the raster is drawn 1:1 (fractional DPR, G-pixel-dpr)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 261 * KB },
-  // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed
-  'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB },
-  'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB }, // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height
-  'hic-live-engines.iife.min.js': { target: 40 * KB, ceiling: 40 * KB }, // the Gecko / WebKit painters, outside the core
-  'hic-live-gpu.iife.min.js': { target: 16 * KB, ceiling: 16 * KB }, // WebGL / WebGPU element textures, outside the core
+  // 261 -> 260.5 KB, gzip budget 90.6 KB (2026-10-15, measured 259,952 / 90,358): the Gecko / WebKit control rules moved to the engines bundle, cheaper startup presentation sync
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 260.5 * KB, gzip: 90.6 * KB },
+  // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
+  'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },
+  // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
+  'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB, gzip: 4.5 * KB },
+  // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
+  'hic-live-engines.iife.min.js': { target: 38.5 * KB, ceiling: 38.5 * KB, gzip: 15 * KB },
+  // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
+  'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
@@ -65,9 +73,10 @@ const sizeProblem = (raw, target, ceiling) => (raw > ceiling ? 'ceiling' : raw >
 const dynamicImport = (text) => /\bimport\s*\(/.test(text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''));
 console.log('bundle'.padEnd(38), 'raw'.padStart(9), 'gzip'.padStart(9));
 for (const r of sizes) console.log(r.file.padEnd(38), String(r.raw).padStart(9), String(r.gzip).padStart(9));
-for (const [file, { target, ceiling }] of Object.entries(LIMITS)) {
+for (const [file, { target, ceiling, gzip }] of Object.entries(LIMITS)) {
   const row = sizes.find((r) => r.file === file);
   if (!row) { problems.push(`G-bundle: ${file} was not built`); continue; }
+  if (gzip !== undefined && row.gzip > gzip) problems.push(`G-bundle: ${file} is ${row.gzip} bytes gzipped, above its gzip budget ${gzip} (a regression)`);
   const verdict = sizeProblem(row.raw, target, ceiling);
   if (verdict === 'ceiling') problems.push(`G-bundle: ${file} is ${row.raw} bytes, above its ceiling ${ceiling} (a regression)`);
   else if (verdict === 'target') (allowSize ? known : problems).push(`G-bundle: ${file} is ${row.raw} bytes (${(row.raw / KB).toFixed(1)} KB), target <= ${target / KB} KB`);

@@ -4,6 +4,7 @@
  */
 
 import { inlineCssUrls, resolveResource } from './inline-resources.js';
+import { engineSkins } from './engine-skins.js';
 import {
   detectPseudos, dropUnclonableSelectors, parseRules, rewriteLinkPseudos, rewriteCanvasSelectors, rewriteHostSelectors, rewriteInteractionPseudos, rewriteRootSelectors, rewriteViewportUnits, serializeRules,
 } from './css-rewrite.js';
@@ -20,7 +21,10 @@ import {
  * @property {() => void} invalidate  stylesheet epoch changed
  */
 
-/** Rules every clone gets first: bars are painted by the polyfill, animations are frozen by value, ancestors' own pseudo-elements and the UA focus ring. */
+/**
+ * Rules every clone gets first: bars are painted by the polyfill, animations are frozen by value, ancestors' own pseudo-elements and the UA focus ring. The rules for the
+ * controls the engines bundle paints on Gecko / WebKit (EngineSkins.css) follow them when that bundle is registered.
+ */
 const BASE_CSS = [
   '*{scrollbar-width:none!important;animation:none!important;transition:none!important}',
   '*::-webkit-scrollbar{display:none!important}',
@@ -30,13 +34,10 @@ const BASE_CSS = [
   // pruned sibling stand-ins (clone.js spacerFor): their box is fixed, only the width/height differ per element; the tripled attribute outranks author rules
   '[data-hic-sp][data-hic-sp][data-hic-sp]{box-sizing:border-box!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;flex:none!important;overflow:hidden!important;contain:strict!important;visibility:hidden!important}',
   '[data-hic-shell]::before,[data-hic-shell]::after{content:none!important;display:none!important}',
-  // Gecko: a range, progress or meter drawn by native-controls.js carries its thumb and bar in its own skin
-  '[data-hic-range]::-moz-range-thumb{visibility:hidden!important}[data-hic-range]::-moz-range-track,[data-hic-range]::-moz-range-progress,[data-hic-range]::-moz-progress-bar,[data-hic-range]::-moz-meter-bar{background:none!important;border:0!important}',
-  // WebKit: a control drawn by webkit-controls.js carries its thumb, spin button and cancel button in its skin; the file button takes the refreshed fill
-  '[data-hic-wk]::-webkit-slider-thumb,[data-hic-wk]::-webkit-inner-spin-button,[data-hic-wk]::-webkit-search-cancel-button{-webkit-appearance:none!important;visibility:hidden!important;box-shadow:none!important}',
-  '[data-hic-wk]::-webkit-progress-bar,[data-hic-wk]::-webkit-progress-value,[data-hic-wk]::-webkit-meter-bar,[data-hic-wk]::-webkit-meter-optimum-value,[data-hic-wk]::-webkit-meter-suboptimum-value,[data-hic-wk]::-webkit-meter-even-less-good-value{-webkit-appearance:none!important;background:none!important;border-color:transparent!important;box-shadow:none!important}',
-  '[data-hic-wk-file]::file-selector-button{-webkit-appearance:none!important;appearance:none!important;background:var(--hic-wk-fb)!important;border-color:transparent!important;border-radius:6px!important;color:var(--hic-wk-fbc)!important;box-sizing:var(--hic-wk-fbs)!important;width:var(--hic-wk-fbw)!important;height:var(--hic-wk-fbh)!important;padding:var(--hic-wk-fbp)!important;border-width:var(--hic-wk-fbb)!important;background-clip:border-box!important}',
 ].join('\n');
+
+/** @returns {string} the engines bundle's rules for the controls it paints ('' without it: on Chromium nothing carries those attributes) */
+const engineCss = () => (engineSkins()?.css ? '\n' + engineSkins()?.css : '');
 
 /** @param {string} dataUrl @returns {string} text of a text/css data: URL */
 function textOfDataUrl(dataUrl) {
@@ -164,7 +165,7 @@ export function createCssCollector(env) {
     bundle(record, resources) {
       if (!watched.has(resources)) { watched.add(resources); resources.onReady(() => { ready++; }); }
       const key = [epoch, ready, record.id, win.innerWidth, win.innerHeight, win.devicePixelRatio, canvasIdentity(record.canvas), dark.matches ? 'd' : 'l', reduced.matches ? 'r' : 'n', doc.styleSheets.length, doc.adoptedStyleSheets.length,
-        record.root === doc ? '' : 'shadow'].join('|');
+        record.root === doc ? '' : 'shadow', engineCss() ? 'e' : ''].join('|');
       const hit = cache.get(record.id);
       if (hit && hit.key === key) return hit.bundle;
       /** @type {string[]} */
@@ -180,7 +181,7 @@ export function createCssCollector(env) {
       css = rewriteCanvasSelectors(dropUnclonableSelectors(css), record.canvas);
       if (record.root !== doc) css = rewriteHostSelectors(css);
       /** @type {CssBundle} */
-      const bundle = { css: BASE_CSS + '\n' + css, key, pseudo: detectPseudos(joined), pendingUrls: [...new Set(pending)] };
+      const bundle = { css: BASE_CSS + engineCss() + '\n' + css, key, pseudo: detectPseudos(joined), pendingUrls: [...new Set(pending)] };
       cache.set(record.id, { key, bundle });
       return bundle;
     },

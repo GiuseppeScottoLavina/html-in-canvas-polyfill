@@ -15,6 +15,7 @@ import {
 } from './geometry-apply.js';
 import { borderBoxSize, frameRectOf, inkOverflowOf, isLaidOut, paintInkOf, rectInLayer } from './measure.js';
 import { resetLayerStyle, syncPresentation } from './presentation.js';
+import { sameContentRect } from '../util/rect.js';
 import { auditStacking } from './stacking-audit.js';
 import { installParentFacade, installTreeFacade } from './tree-facade.js';
 
@@ -153,7 +154,8 @@ export function createLiveLayer(env, record) {
 
   function watchCanvas() {
     const RO = /** @type {any} */ (env.window).ResizeObserver;
-    const resize = new RO(() => syncPresentation(env, record, layerEl));
+    // the observation an observe() always delivers, and any other that reports the box this layer already measured, has nothing to sync (mount just did)
+    const resize = new RO((/** @type {ResizeObserverEntry[]} */ entries) => { if (!sameContentRect(entries, record.contentBox)) syncPresentation(env, record, layerEl); });
     resize.observe(canvas);
     const attrs = new MutationObserver((records) => {
       if (records.some((r) => !OWN_ATTRS.has(/** @type {string} */ (r.attributeName)))) presentation();

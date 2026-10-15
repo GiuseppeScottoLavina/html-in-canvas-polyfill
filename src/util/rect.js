@@ -31,3 +31,12 @@ export function roundOutRect(r, scale = 1) {
   const y = Math.floor(r.y * scale);
   return { x, y, width: Math.ceil((r.x + r.width) * scale) - x, height: Math.ceil((r.y + r.height) * scale) - y };
 }
+
+/**
+ * Does the last ResizeObserver entry report exactly the content box already measured (css px, physical width / height)? A different or fractional rounding just answers false.
+ * @param {ResizeObserverEntry[]} entries @param {{width: number, height: number}|null|undefined} box @returns {boolean}
+ */
+export function sameContentRect(entries, box) {
+  const r = entries[entries.length - 1]?.contentRect;
+  return !!r && !!box && r.width === box.width && r.height === box.height;
+}

@@ -28,6 +28,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - The two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from native builds on 2026-10-09, remain as deprecated legacy overloads until the pinned WPT revision moves.
 - `options.mode: 'polyfill'` over a usable native implementation steps aside with one warning instead of throwing; a legacy native without the bridge bundle is used as found (one warning) instead of being refused.
 
+- Startup is cheaper: the canvas's custom properties are read from its computed style, a ResizeObserver notification that reports the box already measured is not synced twice, and the style rules for the controls the engines bundle paints on Firefox and Safari moved into that bundle. The minified and gzipped sizes of every classic bundle are a budget checked by `npm run check:bundle` and CI.
+
 ### Removed
 
 - The options `strictResources` and `trace`: they were validated but had no effect. Passing either now throws a `TypeError`, like any unknown option.

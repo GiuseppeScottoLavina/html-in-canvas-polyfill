@@ -141,12 +141,26 @@ function inheritedProps(wanted, canvas, cs, parentStyle) {
   }
 }
 
-/** Custom properties whose value differs from what the layer inherits from the shared parent. */
-/** @param {Map<string, string>} wanted @param {HTMLCanvasElement} canvas @param {Element|null} parent */
-function customProps(wanted, canvas, parent) {
+/**
+ * Custom properties whose value differs from what the layer inherits from the shared parent.
+ * Where the computed style enumerates the custom properties too (its length equals the computedStyleMap size: Chromium), the names come from it and the values from
+ * getPropertyValue: iterating the map built a typed value for every one of ~480 properties, twice, which cost 0.3 to 0.8 ms per call and 3 ms on the first one.
+ * @param {Map<string, string>} wanted @param {HTMLCanvasElement} canvas @param {CSSStyleDeclaration} cs @param {Element|null} parent @param {CSSStyleDeclaration|null} parentStyle
+ */
+function customProps(wanted, canvas, cs, parent, parentStyle) {
   const read = /** @type {any} */ (canvas).computedStyleMap;
   if (typeof read !== 'function') return;
   const own = read.call(canvas);
+  if (own.size === cs.length) {
+    for (let i = cs.length - 1; i >= 0; i--) {
+      const name = cs[i];
+      if (!name.startsWith('--')) continue;
+      const text = cs.getPropertyValue(name);
+      if (parentStyle && parentStyle.getPropertyValue(name) === text) continue;
+      wanted.set(name, text);
+    }
+    return;
+  }
   const above = parent ? /** @type {any} */ (parent).computedStyleMap() : null;
   for (const [name, value] of own) {
     if (!name.startsWith('--')) continue;
@@ -214,7 +228,7 @@ export function syncPresentation(env, record, layerEl) {
     wanted.set(POINTER_VAR, cs.pointerEvents);
     ownProps(wanted, canvas, cs, parentStyle);
     inheritedProps(wanted, canvas, cs, parentStyle);
-    customProps(wanted, canvas, parent);
+    customProps(wanted, canvas, cs, parent, parentStyle);
   } else {
     for (const [name, value] of inlineState(layerEl).written) wanted.set(name, value);
   }

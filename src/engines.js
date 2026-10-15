@@ -5,11 +5,11 @@
  * The package entry (src/index.js) imports it, so bundler users get every engine; the classic core IIFE does not (hic-live-engines.iife.js for Firefox / Safari).
  */
 
-import { consumeSkinPending, onSkinReady, paintNativeControl } from './snapshot/capture/native-controls.js';
+import { ENGINE_CSS, consumeSkinPending, onSkinReady, paintNativeControl } from './snapshot/capture/native-controls.js';
 import { registerEngineSkins } from './snapshot/capture/engine-skins.js';
 import { paintWebkitBars, webkitDarkBars } from './snapshot/capture/webkit-bars.js';
 import { webkitShadowStyle } from './snapshot/capture/webkit-shadow.js';
 
-registerEngineSkins({ paintNativeControl, consumeSkinPending, onSkinReady, webkitShadowStyle, paintWebkitBars, webkitDarkBars });
+registerEngineSkins({ css: ENGINE_CSS, paintNativeControl, consumeSkinPending, onSkinReady, webkitShadowStyle, paintWebkitBars, webkitDarkBars });
 
 export { paintNativeControl, consumeSkinPending, onSkinReady, webkitShadowStyle, paintWebkitBars, webkitDarkBars };

@@ -205,6 +205,17 @@ let skinPending = false;
 /** @type {Set<() => void>} */
 const skinListeners = new Set();
 
+/**
+ * Rules the clones get with this bundle (css-collector.js appends them to its base sheet): a Gecko range, progress or meter drawn here carries its thumb and bar in its own
+ * skin; a WebKit control drawn here carries its thumb, spin button and cancel button in its skin, and the file button takes the refreshed fill.
+ */
+export const ENGINE_CSS = [
+  '[data-hic-range]::-moz-range-thumb{visibility:hidden!important}[data-hic-range]::-moz-range-track,[data-hic-range]::-moz-range-progress,[data-hic-range]::-moz-progress-bar,[data-hic-range]::-moz-meter-bar{background:none!important;border:0!important}',
+  '[data-hic-wk]::-webkit-slider-thumb,[data-hic-wk]::-webkit-inner-spin-button,[data-hic-wk]::-webkit-search-cancel-button{-webkit-appearance:none!important;visibility:hidden!important;box-shadow:none!important}',
+  '[data-hic-wk]::-webkit-progress-bar,[data-hic-wk]::-webkit-progress-value,[data-hic-wk]::-webkit-meter-bar,[data-hic-wk]::-webkit-meter-optimum-value,[data-hic-wk]::-webkit-meter-suboptimum-value,[data-hic-wk]::-webkit-meter-even-less-good-value{-webkit-appearance:none!important;background:none!important;border-color:transparent!important;box-shadow:none!important}',
+  '[data-hic-wk-file]::file-selector-button{-webkit-appearance:none!important;appearance:none!important;background:var(--hic-wk-fb)!important;border-color:transparent!important;border-radius:6px!important;color:var(--hic-wk-fbc)!important;box-sizing:var(--hic-wk-fbs)!important;width:var(--hic-wk-fbw)!important;height:var(--hic-wk-fbh)!important;padding:var(--hic-wk-fbp)!important;border-width:var(--hic-wk-fbb)!important;background-clip:border-box!important}',
+].join('\n');
+
 /** @param {() => void} cb called when a skin a capture used cold has decoded (the capture is retried) @returns {() => void} */
 export function onSkinReady(cb) {
   skinListeners.add(cb);
@@ -587,7 +598,7 @@ function searchField(el, clone, cs, box, p, dark, disabled, decl) {
 }
 
 /**
- * The file input's button (a UA part the clone can only reach through a rule): the refreshed fill and label colour travel as custom properties (css-collector.js BASE_CSS).
+ * The file input's button (a UA part the clone can only reach through a rule): the refreshed fill and label colour travel as custom properties (ENGINE_CSS).
  * @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} cs @returns {boolean}
  */
 function fileButton(src, clone, cs) {

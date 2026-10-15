@@ -97,6 +97,17 @@ That is the floor of a userland approach: a snapshot has to be cloned, serialise
 
 Against the **competitor**, this polyfill is slower on first paint, startup size and memory, and has a higher p50 on some click and focus paths. It is correct in every pixel check of the table (in-field text scrolling, wheel scrolling, resize: 0 vs 537 blank frames), cheaper on large drawables from 500 elements, and has lower typing p95.
 
+## Optimization log
+
+One line per optimization: what changed and the numbers of ours before and after it, measured with this suite on the same machine (p50 unless stated). Runs marked "load" had another
+application above the 15 % CPU threshold during the run; the interleaved A/B figures alternate the two builds in one session, so both see the same load.
+
+- **2026-10-15, startup.** The canvas's custom properties are read from its computed style instead of its typed style map (about 480 typed values built twice per sync), a
+  ResizeObserver notification that reports the content box already measured no longer runs a second presentation sync, and the style rules for the controls the engines
+  bundle paints moved from the core to that bundle. Cold first paint: explainer 65.1 to 63.8 ms, F1 98.0 to 96.4 ms (interleaved A/B, 2 x 20 loads each: explainer 64.2
+  to 61.2 ms, F1 99.0 to 95.1 ms); warm: 90.6 to 87.6 ms and 122.1 to 114.6 ms; first `paint` event after script start 17.8 to 15.5 ms; parse + compile + install 8.5 to
+  8.3 ms; core 260,856 to 259,952 bytes minified, 90,478 to 90,358 gzip. The sizes are now a budget in `scripts/check-bundle.mjs` (load).
+
 ## Caveats
 
 - Native runs on Canary 157 and the polyfills on stable 155: a different browser build. Native latency includes Chrome's own smooth-scroll animation for wheel ticks (the same for all subjects, since all scroll the live element).

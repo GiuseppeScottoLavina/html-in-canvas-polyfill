@@ -13,6 +13,7 @@ import { currentEngine } from '../../util/engine.js';
 
 /**
  * @typedef {Object} EngineSkins  what the engines bundle provides (src/engines.js)
+ * @property {string} css  rules for the controls it paints, appended to every clone's base sheet (css-collector.js)
  * @property {(src: Element, clone: Element) => boolean|Element} paintNativeControl  paint the live look of a native control on its clone (an element when the clone is replaced); false when nothing was done
  * @property {() => boolean} consumeSkinPending  a skin painted since the last call was still decoding (the capture must be retried)
  * @property {(cb: () => void) => () => void} onSkinReady  a skin a capture used cold has decoded
