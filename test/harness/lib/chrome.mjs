@@ -61,9 +61,10 @@ function mergeFeatureFlags(base, extra) {
  * @property {[number,number]} [windowPosition=[0,0]]
  * @property {1|2|number} [dpr] --force-device-scale-factor (real, not emulated); omit for the display's native (2 on Retina)
  * @property {boolean} [nativeDrawElement=false] --enable-blink-features=CanvasDrawElement (native HTML-in-Canvas baseline mode)
- * @property {'default'|'hidden'|'overlay'|'classic'} [scrollbars='default'] 'hidden' = --hide-scrollbars; 'overlay'/'classic' try
- *           Overlay Scrollbar feature toggles (NOT guaranteed on macOS, where the system setting wins) - verify with
- *           `scrollbarProbe()` and use the F5 fixture (::-webkit-scrollbar) when you need classic bars for certain
+ * @property {'default'|'hidden'|'overlay'|'classic'} [scrollbars='default'] 'hidden' = --hide-scrollbars; 'overlay'/'classic' toggle the Overlay
+ *           Scrollbar feature and, on macOS (where the system setting wins over the feature), override "Show scroll bars" for this browser only
+ *           (`-AppleShowScrollBars WhenScrolling|Always`, argument domain). 'default' follows the system setting, which macOS switches to classic bars
+ *           while a mouse is connected ("Automatically based on mouse or trackpad"): pin a mode wherever pixels are compared with another browser.
  * @property {string[]} [extraArgs]
  * @property {string} [url='about:blank']
  * @property {string|null} [colorProfile='srgb'] --force-color-profile; keep 'srgb' for any pixel comparison
@@ -93,7 +94,9 @@ export async function launchChrome(opts = {}) {
     ...(dpr ? [`--force-device-scale-factor=${dpr}`] : []),
     ...(nativeDrawElement ? ['--enable-blink-features=CanvasDrawElement'] : []),
   ];
-  const args = [...mergeFeatureFlags(base, [...scrollbarArgs, ...extraArgs]), url];
+  // the argument domain pair reaches NSUserDefaults; Chrome also opens its value as a URL (http://always/), a tab closed below
+  const macBars = process.platform === 'darwin' ? { overlay: 'WhenScrolling', classic: 'Always' }[scrollbars] : undefined;
+  const args = [...mergeFeatureFlags(base, [...scrollbarArgs, ...extraArgs]), ...(macBars ? ['-AppleShowScrollBars', macBars] : []), url];
   const child = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: false });
   liveChildren.add(child);
   let stderr = ''; child.stderr.on('data', d => { stderr += d; if (stderr.length > 200000) stderr = stderr.slice(-100000); });
@@ -108,7 +111,19 @@ export async function launchChrome(opts = {}) {
   if (!ver) { await browser.close().catch(() => {}); throw new Error('DevTools endpoint did not come up. stderr: ' + stderr.slice(-2000)); }
   browser.version = ver;
   browser.conn = await new CDPConnection(ver.webSocketDebuggerUrl).open();
+  if (macBars) await closeStrayTab(browser, `http://${macBars.toLowerCase()}/`);
   return browser;
+}
+
+/** Close the tab Chrome opened for the value of the argument-domain pair (it shows up a little after the DevTools endpoint). @param {Browser} browser @param {string} stray */
+async function closeStrayTab(browser, stray) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const { targetInfos } = await browser.conn.send('Target.getTargets');
+    const tab = targetInfos.find(t => t.type === 'page' && t.url.startsWith(stray));
+    if (tab) { await browser.conn.send('Target.closeTarget', { targetId: tab.targetId }).catch(() => {}); return; }
+    await sleep(100);
+  }
 }
 
 export class Browser {
@@ -119,7 +134,7 @@ export class Browser {
     let targetId;
     if (reuseFirst) {
       const { targetInfos } = await this.conn.send('Target.getTargets');
-      targetId = targetInfos.find(t => t.type === 'page' && !this.pages.some(p => p.targetId === t.targetId))?.targetId;
+      targetId = targetInfos.find(t => t.type === 'page' && !/^http:\/\/(always|whenscrolling)\//.test(t.url) && !this.pages.some(p => p.targetId === t.targetId))?.targetId;
     }
     if (!targetId) ({ targetId } = await this.conn.send('Target.createTarget', { url }));
     const { sessionId } = await this.conn.send('Target.attachToTarget', { targetId, flatten: true });

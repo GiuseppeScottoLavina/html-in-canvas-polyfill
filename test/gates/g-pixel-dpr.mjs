@@ -7,6 +7,9 @@
 //   origin  the polyfill's canvas does not depend on where the page puts the canvas: the same fixture with the whole page moved by a fraction of a device pixel
 //           (a relative offset of <body> set before the first paint) has the same backing store (delta > 16 on <= 0.05 %). Native has this property (measured: 0.000 %).
 // The plain-DOM pixel oracle (test/unit/snapshot-capture/oracle.driver.mjs) showed > 3 % at DPR 1.25 on F2 / F4 / F5 only because its reference sat on a half device pixel.
+// Scrollbars: both browsers show CLASSIC bars (harness `scrollbars: 'classic'`). Left to the system setting, macOS switches between overlay and classic bars when a mouse
+// is connected or not, and the reference changed under the gate (2026-10-15: f4 0.107 % -> 2.04 % with the same bundle and browsers). Classic bars are the harder case:
+// a gutter of a whole number of device pixels (14.4 css px at DPR 1.25) that the polyfill reproduces as padding, and painted bars.
 // Positive control (sabotage originshift): every draw lands one device pixel to the right when the canvas starts on a fractional device pixel: `pixel` and `origin` go red.
 //   node test/gates/g-pixel-dpr.mjs --dpr=1.25|1.5 (run-all runs both)
 import { runGate, H } from './lib/gate.mjs';
@@ -23,6 +26,8 @@ const CHANGE = {
   f5: "document.querySelector('#sc-text').value = 'line one changed\\nline two'",
 };
 const LIMIT = { f1: 0.022, f2: 0.01, f4: 0.01, f5: 0.01 };
+/** the same scrollbar mode in both browsers, never the system setting (see above) */
+const SCROLLBARS = 'classic';
 /** moves the page by a fraction of a device pixel before the first paint: onto a whole device pixel when the canvas starts on a fractional one, else by half a device pixel */
 const SHIFT = `addEventListener('DOMContentLoaded', () => { const c = document.querySelector('#hic-surface'); if (!c) return; const d = devicePixelRatio; const x = c.getBoundingClientRect().left * d;
   let f = Math.ceil(x - 1e-3) - x; if (f < 1e-3) f = 0.5; document.body.style.position = 'relative'; document.body.style.left = (f / d) + 'px'; window.__shifted = f / d; });`;
@@ -54,7 +59,7 @@ async function nativeReferences() {
   const srv = await H.startServer();
   let browser = null;
   try {
-    browser = await H.launchChrome({ name: 'gate-G-pixel-dpr-native', chrome: 'canary', nativeDrawElement: true, dpr: DPR, windowSize: WINDOW });
+    browser = await H.launchChrome({ name: 'gate-G-pixel-dpr-native', chrome: 'canary', nativeDrawElement: true, dpr: DPR, windowSize: WINDOW, scrollbars: SCROLLBARS });
     const page = await browser.newPage({ reuseFirst: true });
     await page.ensureForeground({ timeout: 2500 }).catch(() => {});
     for (const fx of FIXTURES) {
@@ -110,4 +115,4 @@ runGate('G-pixel-dpr', async (ctx) => {
   const errs = page.errors({ includeWarnings: false }).slice(errors0);
   ctx.check('no page error', errs.length === 0, errs.slice(0, 3), 'surface');
   return { numbers };
-}, { dpr: DPR, windowSize: WINDOW, controlSabotage: ['originshift'], controlClasses: ['pixel', 'origin'] });
+}, { dpr: DPR, windowSize: WINDOW, scrollbars: SCROLLBARS, controlSabotage: ['originshift'], controlClasses: ['pixel', 'origin'] });
