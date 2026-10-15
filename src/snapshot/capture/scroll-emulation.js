@@ -32,8 +32,10 @@ import { inlineCssUrls } from './inline-resources.js';
  * @typedef {Object} ScrollFacts
  * @property {number} sT
  * @property {number} sL
- * @property {number} gv  live width of the vertical bar gutter (0 for overlay bars)
+ * @property {number} gv  live width of the vertical bar gutter (0 for overlay bars), css px, fractional at a fractional DPR (exactGutter)
  * @property {number} gh  live height of the horizontal bar gutter
+ * @property {number} [cw]  width of the scrollport beside the vertical gutter (clientWidth without its rounding), css px
+ * @property {number} [ch]  height of the scrollport above the horizontal gutter
  * @property {boolean} scrollableY
  * @property {boolean} scrollableX
  * @property {boolean} styled  author styled bars (::-webkit-scrollbar)
@@ -77,13 +79,59 @@ export function scrollFacts(src, cs) {
   const sT = src.scrollTop;
   const sL = src.scrollLeft;
   const html = /** @type {HTMLElement} */ (src);
-  const gv = Math.max(0, html.offsetWidth - src.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth));
-  const gh = Math.max(0, html.offsetHeight - src.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth));
+  const bx = px(cs.borderLeftWidth) + px(cs.borderRightWidth), by = px(cs.borderTopWidth) + px(cs.borderBottomWidth);
+  const rv = Math.max(0, html.offsetWidth - src.clientWidth - bx);
+  const rh = Math.max(0, html.offsetHeight - src.clientHeight - by);
   const scrollableY = cs.overflowY !== 'visible' && src.scrollHeight > src.clientHeight;
   const scrollableX = cs.overflowX !== 'visible' && src.scrollWidth > src.clientWidth;
-  if (!sT && !sL && !(scrollableY && gv) && !(scrollableX && gh)) return null;
-  const w = cs.getPropertyValue('width') && (src.ownerDocument.defaultView ?? window).getComputedStyle(src, '::-webkit-scrollbar').width;
-  return { sT, sL, gv, gh, scrollableY, scrollableX, styled: !!w && w !== 'auto' && w !== '0px' && cs.scrollbarWidth === 'auto' };
+  if (!sT && !sL && !(scrollableY && rv) && !(scrollableX && rh)) return null;
+  const bar = cs.getPropertyValue('width') ? (src.ownerDocument.defaultView ?? window).getComputedStyle(src, '::-webkit-scrollbar') : null;
+  const styled = !!bar?.width && bar.width !== 'auto' && bar.width !== '0px' && cs.scrollbarWidth === 'auto';
+  const gv = rv && exactGutter(src, cs, rv, styled ? px(bar.width) : null, 'v');
+  const gh = rh && exactGutter(src, cs, rh, styled ? px(bar.height) : null, 'h');
+  // the scrollport beside the exact gutter (clientWidth rounds it); clientWidth itself when the computed size does not describe the box
+  const bb = borderBoxOf(cs, html);
+  const near = (/** @type {number} */ v, /** @type {number} */ live) => (Math.abs(v - live) < 1 ? v : live);
+  return { sT, sL, gv, gh, cw: near(bb.width - bx - gv, src.clientWidth), ch: near(bb.height - by - gh, src.clientHeight), scrollableY, scrollableX, styled };
+}
+
+/** Visual thickness (css px of the root) of the classic bars of an unstyled probe, per devicePixelRatio and scrollbar-width. @type {Map<string, {v: number, h: number}>} */
+const barProbes = new Map();
+
+/**
+ * The platform's classic bar thickness, measured on a hidden unstyled scroller (cached; `fresh` measures again, after the system switched between overlay and classic bars).
+ * @param {Document} doc @param {string} sw computed scrollbar-width @param {boolean} fresh @returns {{v: number, h: number}}
+ */
+function probeBars(doc, sw, fresh) {
+  const key = `${doc.defaultView?.devicePixelRatio}|${sw}`;
+  let out = fresh ? undefined : barProbes.get(key);
+  if (out) return out;
+  const probe = doc.createElement('div');
+  probe.style.cssText = `all:initial;display:block;position:fixed;left:0;top:0;width:100px;height:100px;overflow:scroll;scrollbar-width:${sw};contain:strict;visibility:hidden;pointer-events:none`;
+  const inner = probe.appendChild(doc.createElement('div'));
+  inner.style.cssText = 'all:initial;display:block;height:100%';
+  doc.documentElement.appendChild(probe);
+  const o = probe.getBoundingClientRect(), i = inner.getBoundingClientRect();
+  probe.remove();
+  out = { v: o.width - i.width, h: o.height - i.height };
+  barProbes.set(key, out);
+  return out;
+}
+
+/**
+ * The exact width of a classic bar gutter, css px of `src`. A classic bar is a whole number of DEVICE pixels (Chrome: 15 px at DPR 1 is floor(15 x 1.25) = 18 device px
+ * = 14.4 px at DPR 1.25), but offsetWidth - clientWidth (`rounded`) rounds it to a whole css px: the clone's scrollport came out up to half a pixel wider, so a fractional
+ * layout inside it (five 1fr grid columns) landed one device pixel away from the page's. Unstyled bars are measured on a probe; author-styled bars (::-webkit-scrollbar,
+ * Chromium only) are floor(width x DPR) device px (measured Chrome 155, DPR 1 to 2). `rounded` is kept when the exact value does not agree with it within 1 px.
+ * @param {Element} src @param {CSSStyleDeclaration} cs @param {number} rounded @param {number|null} styled author bar thickness, null when unstyled @param {'v'|'h'} axis
+ * @returns {number}
+ */
+function exactGutter(src, cs, rounded, styled, axis) {
+  const doc = src.ownerDocument, dpr = doc.defaultView?.devicePixelRatio || 1, zoom = /** @type {any} */ (src).currentCSSZoom ?? 1;
+  const near = (/** @type {number} */ v) => Math.abs(v - rounded) < 1;
+  if (styled !== null) { const v = Math.floor(styled * dpr + 1e-3) / dpr; return zoom === 1 && currentEngine().engine === 'chromium' && near(v) ? v : rounded; }
+  for (const fresh of [false, true]) { const v = probeBars(doc, cs.scrollbarWidth || 'auto', fresh)[axis] / zoom; if (near(v)) return v; }
+  return rounded;
 }
 
 /**
@@ -310,18 +358,17 @@ function paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled = tr
     : `background:${dark ? '#757575' : '#c1c1c1'};border-radius:4px;box-sizing:border-box;`;
   const minThumb = styled ? 20 : 30;
   const sT = scrolled ? f.sT : 0, sL = scrolled ? f.sL : 0;
+  const cw = f.cw ?? src.clientWidth, ch = f.ch ?? src.clientHeight;
   if (f.scrollableY && f.gv) {
-    const len = src.clientHeight;
-    const v = verticalBar(f.gv, src.clientHeight, src.scrollHeight, styled, !!authored, styled ? px(th.minHeight) : 0);
-    box(doc, cloneScroller, `left:${src.clientWidth + sL}px;top:${sT}px;width:${f.gv}px;height:${len}px;${track}`, 'track');
-    box(doc, cloneScroller, `left:${src.clientWidth + sL + v.thumbX}px;top:${sT + v.thumbY(f.sT)}px;width:${v.thumbW}px;height:${v.thumbH}px;${thumb}`, 'thumb');
+    const v = verticalBar(f.gv, ch, src.scrollHeight, styled, !!authored, styled ? px(th.minHeight) : 0);
+    box(doc, cloneScroller, `left:${cw + sL}px;top:${sT}px;width:${f.gv}px;height:${ch}px;${track}`, 'track');
+    box(doc, cloneScroller, `left:${cw + sL + v.thumbX}px;top:${sT + v.thumbY(f.sT)}px;width:${v.thumbW}px;height:${v.thumbH}px;${thumb}`, 'thumb');
   }
   if (f.scrollableX && f.gh) {
-    const len = src.clientWidth;
-    const tl = Math.max(minThumb, len * (src.clientWidth / src.scrollWidth));
-    const tx = (f.sL / (src.scrollWidth - src.clientWidth)) * (len - tl);
-    box(doc, cloneScroller, `left:${sL}px;top:${src.clientHeight + sT}px;width:${len}px;height:${f.gh}px;${track.replace('border-left', 'border-top')}`);
-    box(doc, cloneScroller, `left:${sL + tx}px;top:${src.clientHeight + sT + (styled ? 0 : authored ? 3 : 4)}px;width:${tl}px;height:${styled ? f.gh : f.gh - (authored ? 5 : 7)}px;${thumb}`);
+    const tl = Math.max(minThumb, cw * (src.clientWidth / src.scrollWidth));
+    const tx = (f.sL / (src.scrollWidth - src.clientWidth)) * (cw - tl);
+    box(doc, cloneScroller, `left:${sL}px;top:${ch + sT}px;width:${cw}px;height:${f.gh}px;${track.replace('border-left', 'border-top')}`);
+    box(doc, cloneScroller, `left:${sL + tx}px;top:${ch + sT + (styled ? 0 : authored ? 3 : 4)}px;width:${tl}px;height:${styled ? f.gh : f.gh - (authored ? 5 : 7)}px;${thumb}`);
   }
-  if (f.scrollableX && f.scrollableY && f.gv && f.gh) box(doc, cloneScroller, `left:${src.clientWidth + sL}px;top:${src.clientHeight + sT}px;width:${f.gv}px;height:${f.gh}px;background:${styled ? co.backgroundColor : authored ? authored.track : '#fafafa'};`);
+  if (f.scrollableX && f.scrollableY && f.gv && f.gh) box(doc, cloneScroller, `left:${cw + sL}px;top:${ch + sT}px;width:${f.gv}px;height:${f.gh}px;background:${styled ? co.backgroundColor : authored ? authored.track : '#fafafa'};`);
 }

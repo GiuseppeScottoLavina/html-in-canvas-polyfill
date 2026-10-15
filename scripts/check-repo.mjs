@@ -62,7 +62,8 @@ if (!docsOnly) {
   // The core ceiling is not a hard design limit: it is raised deliberately, one measured reason at a time (conformance fixes, Firefox / Safari support, the performance work).
   // 12650 -> 12700 (2026-10-15): the page-scroll watch that re-measures sticky / fixed drawables (live/geometry-apply.js, live/live-layer.js).
   // 12700 -> 12850 (2026-10-15, measured 12,827): large drawables (row damage from the children that moved, trailing content left out of pruned tiles), the WebGPU fallback order.
-  if (total > 12850) problems.push(`G-size: core is ${total} code lines (> 12850)`);
+  // 12850 -> 12875 (2026-10-16, measured 12,855): the exact classic scrollbar gutter (snapshot/capture/scroll-emulation.js).
+  if (total > 12875) problems.push(`G-size: core is ${total} code lines (> 12875)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

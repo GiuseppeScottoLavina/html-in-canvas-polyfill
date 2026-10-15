@@ -51,12 +51,12 @@ export function paintWebkitBars(win, src, clone, f, dark) {
   let body = '';
   if (f.scrollableY && f.gv) {
     const g = webkitBarGeometry(f.gv, src.clientHeight, src.clientHeight, src.scrollHeight, f.sT);
-    const x = bl + src.clientWidth + g.across;
+    const x = bl + (f.cw ?? src.clientWidth) + g.across;
     body += pill(x, bt + g.laneStart, g.thickness, g.laneLength, c.lane) + pill(x, bt + g.knobStart, g.thickness, g.knobLength, c.knob);
   }
   if (f.scrollableX && f.gh) {
     const g = webkitBarGeometry(f.gh, src.clientWidth, src.clientWidth, src.scrollWidth, f.sL);
-    const y = bt + src.clientHeight + g.across;
+    const y = bt + (f.ch ?? src.clientHeight) + g.across;
     body += pill(bl + g.laneStart, y, g.laneLength, g.thickness, c.lane) + pill(bl + g.knobStart, y, g.knobLength, g.thickness, c.knob);
   }
   if (!body || !(W > 0 && H > 0)) return;
