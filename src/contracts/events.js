@@ -15,6 +15,8 @@ export const BUS = Object.freeze({
   DRAWABLES_CHANGED: 'drawables:changed',
   /** Damage (contracts/types.js). Observers publish it through Scheduler.damage(), not directly. */
   DAMAGE: 'damage',
+  /** {record} a tile landed in the task (microtask checkpoint) that built it (store/decode.js decodedAtOnce); the scheduler may commit and paint it there. Emitted by the store only. */
+  LANDED: 'snapshot:landed',
   /** {record, changed: Element[], removed: Element[]} commitLanded() produced a change set */
   COMMIT: 'snapshot:commit',
   /** {record, contentBox: ContentBox, previous: ContentBox} canvas content box changed (resize) */

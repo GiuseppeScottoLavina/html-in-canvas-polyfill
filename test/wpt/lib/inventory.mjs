@@ -56,6 +56,8 @@ export function listTests() {
         type, refs, fuzzy: metaList(text, 'fuzzy').map(parseFuzzy), long: metaList(text, 'timeout').includes('long'),
         privacy: /\/privacy\//.test(path), worker: root.includes('offscreen'), https: /\.https\./.test(path),
         waitsForReftest: /class=["']?reftest-wait/.test(text),
+        // author-styled scrollbars are part of what the test checks: it runs with the platform scrollbars shown (every other test runs with --hide-scrollbars)
+        scrollbars: /::-webkit-scrollbar/.test(text),
       });
     }
   }

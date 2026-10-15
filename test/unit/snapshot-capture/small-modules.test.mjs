@@ -38,7 +38,8 @@ test('svg markup: viewBox crops at physical-pixel scale, foreignObject covers th
   const svg = buildSvgMarkup('<div>x</div>', '.a{color:red}', { x: 10, y: 20, width: 100, height: 50 }, { width: 300, height: 200 }, 2);
   assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="20 40 200 100">'));
   assert.ok(svg.includes('<foreignObject x="0" y="0" width="600" height="400">'));
-  assert.ok(svg.includes('<style xmlns="http://www.w3.org/1999/xhtml">.a{color:red}</style><div>x</div>'));
+  // the sheet is an SVG <style> before the foreignObject (an XHTML one inside it delays Chromium's image load to a later task)
+  assert.ok(svg.includes('<style>.a{color:red}</style><foreignObject x="0" y="0" width="600" height="400"><div>x</div></foreignObject>'));
   assert.deepEqual(cropPixels({ x: 0, y: 0, width: 10.4, height: 3.2 }, 1.5), { widthPx: 16, heightPx: 5 });
   assert.deepEqual(cropPixels({ x: 0, y: 0, width: 10.2, height: 3 }, 1.5), { widthPx: 16, heightPx: 5 }, 'rounded UP like the surface: 15.3 px was 15, and the whole-frame tile was stretched into the 16 px surface');
 });

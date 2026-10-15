@@ -8,7 +8,6 @@ import { currentEngine } from '../../util/engine.js';
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 /** @typedef {import('../../contracts/types.js').Size} Size */
 
-const XHTML = 'http://www.w3.org/1999/xhtml';
 // Characters XML 1.0 cannot carry: they would make the whole image fail to load.
 const XML_BAD = '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F' + String.fromCharCode(0xfffe, 0xffff) + ']';
 const INVALID_XML = new RegExp(XML_BAD, 'g');
@@ -41,14 +40,16 @@ export function cropPixels(crop, scale) {
  */
 export function buildSvgMarkup(rootHtml, css, crop, frame, scale, mode = 'zoom') {
   const { widthPx, heightPx } = cropPixels(crop, scale);
-  const style = css ? `<style xmlns="${XHTML}">${css.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</style>` : '';
+  // An SVG <style> (a child of the <svg> root) styles the foreignObject HTML exactly like an XHTML one inside it, but Chromium loads the image at once with it
+  // (complete one microtask after `src` is set) while an XHTML <style> delays the load to a later task: that is what lets a tile land, and its paint fire, in the task that built it.
+  const style = css ? `<style>${css.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</style>` : '';
   const k = mode === 'viewBox' ? 1 : scale;
   const box = mode === 'viewBox' ? `${num(widthPx / scale)} ${num(heightPx / scale)}` : `${widthPx} ${heightPx}`;
   // 'transform' (WebKit): the viewBox ORIGIN is ignored for HTML with its own layer too, so a damage-cropped tile showed the frame's top-left and was pasted at the crop
   // position (pieces of the page in the wrong place on focus/caret/typing). The crop offset travels in the root's CSS transform instead (rootTransform) and the viewBox starts at 0 0.
   const origin = mode === 'transform' ? '0 0' : `${num(crop.x * k)} ${num(crop.y * k)}`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}" viewBox="${origin} ${box}">`
-    + `<foreignObject x="0" y="0" width="${num(frame.width * k)}" height="${num(frame.height * k)}">${style}${rootHtml}</foreignObject></svg>`;
+    + `${style}<foreignObject x="0" y="0" width="${num(frame.width * k)}" height="${num(frame.height * k)}">${rootHtml}</foreignObject></svg>`;
   return HAS_INVALID_XML.test(svg) ? svg.replace(INVALID_XML, '') : svg;
 }
 

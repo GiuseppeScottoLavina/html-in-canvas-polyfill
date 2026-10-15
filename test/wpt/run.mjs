@@ -41,13 +41,18 @@ export async function runConfig(configId, tests, { reps = 3, log = console.log, 
   const load = await waitForLoad();
   const watchdog = setTimeout(() => { console.error(`WATCHDOG: configuration ${configId} ran longer than ${WATCHDOG_MS / 60000} min`); process.exit(3); }, WATCHDOG_MS);
   const server = await startWptServer();
-  let session = await new Session(config, polyfillFile ? { polyfillFile } : {}).start();
+  // one browser at a time: a test that needs the other scrollbar mode (inventory `scrollbars`) stops this browser and starts one in that mode
+  let mode = 'hidden';
+  const open = () => new Session(config, { ...(polyfillFile ? { polyfillFile } : {}), scrollbars: mode }).start();
+  let session = await open();
   const doc = { runnerVersion: RUNNER_VERSION, config: session.info(), startedAt: new Date().toISOString(), loadAtStart: load, reps, tests: {} };
-  const restart = async () => { await session.stop(); session = await new Session(config, polyfillFile ? { polyfillFile } : {}).start(); };
+  const restart = async () => { await session.stop(); session = await open(); };
   try {
     let i = 0;
     for (const test of tests) {
       i++; const runs = [];
+      const want = test.scrollbars ? 'default' : 'hidden';
+      if (want !== mode) { mode = want; await restart(); }
       for (let rep = 0; rep < reps; rep++) {
         let r;
         try { r = await runOne(session, server.origin, relaxed ? { ...test, path: test.path + '?relax=1' } : test, { shotDir: shotRoot && rep === 0 ? `${shotRoot}/${test.id.replace(/[^\w.-]+/g, '_')}` : null }); }

@@ -36,6 +36,7 @@ import { createPaintGate } from './paint-gate.js';
  * @property {number} batches  commits merged into `changed` (more than one: the order is no longer the store's)
  * @property {boolean} afterNested  a canvas nested in its drawables fired a paint (its handler may have drawn into the bitmap the snapshot shows): the next paint waits for a fresh snapshot
  * @property {boolean} resized  resize / DPR damage is pending: this tick builds inside the rendering update (see runTick)
+ * @property {number} firedFrame  the tick (frame) in whose interval this canvas last fired a paint: at most one per frame
  */
 
 /** Damage that comes from the user's hands: it may use options.interactionFloorFps. */
@@ -55,6 +56,11 @@ const PUMP_MAIN_THREAD_MS = 4;
 const PUMP_MAIN_THREAD_SHARE = 0.35;
 const PUMP_MAX_IN_FLIGHT = 2;
 const DOCUMENT_POSITION_FOLLOWING = 4;
+/**
+ * Window property (symbol) through which the scheduler of a parent document runs the tick of a same-origin child document that has its own install, so the canvases
+ * of an iframe inside a drawable paint before the canvases that contain the iframe (reverse shadow-including tree order across frames, WPT onpaint-iframe-post-tree-order).
+ */
+const FRAME_TICK = Symbol.for('hic.frame-tick');
 
 /** @param {Node} a @param {Node} b @returns {number} */
 function treeOrder(a, b) {
@@ -66,7 +72,7 @@ function treeOrder(a, b) {
 function createEntry(record) {
   return {
     record, registered: false, hooks: new Set(), dirty: false, interaction: false, hookKeep: false, wake: false,
-    dispatching: false, due: false, committed: false, changed: new Set(), removed: new Set(), batches: 0, afterNested: false, resized: false,
+    dispatching: false, due: false, committed: false, changed: new Set(), removed: new Set(), batches: 0, afterNested: false, resized: false, firedFrame: -1,
   };
 }
 
@@ -104,10 +110,23 @@ export function createScheduler(env, store, hooks) {
   let pumpInteraction = false;
   let urgentQueued = false;
   let lastScrollAt = -Infinity;
+  /** ticks started so far: the id of the current frame interval (a tick and the tasks that follow it until the next tick) */
+  let frameId = 0;
+  /** @type {Set<Entry>} canvases with a tile that landed at once (BUS.LANDED), served by the microtask queued after the landings */
+  const early = new Set();
+  let earlyQueued = false;
   /** @type {MessageChannel|null} created on first use (an install without canvases never opens a port) */
   let pumpChannel = null;
 
   const offCommit = env.bus.on(BUS.COMMIT, onCommit);
+  const offLanded = env.bus.on(BUS.LANDED, (/** @type {{record: CanvasRecord}} */ e) => {
+    const entry = entries.get(e.record);
+    if (!entry?.registered) return;
+    early.add(entry);
+    if (earlyQueued) return;
+    earlyQueued = true;
+    queueMicrotask(serveEarly);
+  });
   const offState = env.bus.on(BUS.CANVAS_STATE, (/** @type {{record: CanvasRecord, state: string}} */ e) => {
     const entry = entries.get(e.record);
     if (entry?.registered && e.state === 'active') resume(entry);
@@ -119,6 +138,23 @@ export function createScheduler(env, store, hooks) {
     entry.dirty = true;
     armTick();
   });
+  /**
+   * Called by the scheduler of the parent document, inside its own tick (the parent's rendering update runs before this document's): run this document's tick now when one
+   * is armed. Returns true while a paint of this document is still owed (held), so the parent holds the canvas that contains the iframe too.
+   * @param {number} now
+   * @returns {boolean}
+   */
+  const tickForParent = (now) => {
+    if (disposed) return false;
+    if (armed) {
+      try { runTick(now); } catch (err) { env.reporter.caught(err, 'schedule.frame-tick'); }
+    }
+    for (const entry of entries.values()) if (entry.registered && isServable(entry) && (entry.record.paint.force || entry.changed.size > 0 || entry.removed.size > 0)) return true;
+    return false;
+  };
+  try {
+    Object.defineProperty(env.window, FRAME_TICK, { value: tickForParent, configurable: true, writable: true, enumerable: false });
+  } catch { /* a frozen or proxied window: frames are then ordered by their own ticks only */ }
   const onVisibility = () => {
     if (env.document.hidden) return;
     for (const entry of entries.values()) if (entry.registered) resume(entry);
@@ -241,6 +277,7 @@ export function createScheduler(env, store, hooks) {
     paint.serial++;
     paint.lastFireAt = env.now();
     paint.everFired = true;
+    entry.firedFrame = frameId;
     counters.paintsFired++;
     entry.dispatching = true;
     try {
@@ -277,6 +314,36 @@ export function createScheduler(env, store, hooks) {
     }
     if (holdsForFreshness(entry, now)) return false;
     if (paint.force || entry.changed.size || entry.removed.size) fire(entry);
+    return true;
+  }
+
+  /** @type {WeakMap<Element, HTMLCollectionOf<HTMLIFrameElement>>} live iframe collections of the layers (cheap to read while the DOM does not change) */
+  const layerFrames = new WeakMap();
+
+  /**
+   * Same-origin iframes inside the drawables of `entry` whose document runs its own install: their ticks run first, so their canvases paint before this one.
+   * Returns true while one of them still owes a paint; this canvas is then held like one that contains a held nested canvas (bounded by options.paintGateMaxWaitMs).
+   * @param {Entry} entry
+   * @param {number} now
+   * @returns {boolean}
+   */
+  function holdsForFrames(entry, now) {
+    const layerEl = entry.record.layer?.element;
+    if (!layerEl?.getElementsByTagName) return false;
+    let frames = layerFrames.get(layerEl);
+    if (!frames) layerFrames.set(layerEl, (frames = layerEl.getElementsByTagName('iframe')));
+    if (!frames.length) return false;
+    let owed = false;
+    for (const frame of frames) {
+      try {
+        const tick = /** @type {any} */ (frame.contentWindow)?.[FRAME_TICK];
+        if (typeof tick === 'function' && tick(now) === true) owed = true;
+      } catch { /* cross-origin: no access, no ordering */ }
+    }
+    if (!owed) return false;
+    const paint = entry.record.paint;
+    paint.holdSince ??= now;
+    if (now - paint.holdSince >= env.options.paintGateMaxWaitMs) { paint.holdSince = null; return false; }
     return true;
   }
 
@@ -390,6 +457,16 @@ export function createScheduler(env, store, hooks) {
     pumpInteraction ||= interaction;
     if (pumpQueued) return;
     pumpQueued = true;
+    // A user-blocking task (Prioritized Task Scheduling) runs right after the rendering update, before the ordinary tasks queued before or during it (an app's setTimeout from
+    // its rAF, the IntersectionObserver delivery): a tile that lands at once is then painted after the frame computed its observations and before the app's next task, as close to
+    // the native paint step as a task can be. Without the API, a MessageChannel task (queue order).
+    const postTask = /** @type {any} */ (env.window).scheduler?.postTask;
+    if (typeof postTask === 'function') {
+      try {
+        postTask.call(/** @type {any} */ (env.window).scheduler, runPumpTask, { priority: 'user-blocking' }).catch(() => {});
+        return;
+      } catch { /* fall through to the channel */ }
+    }
     if (!pumpChannel) {
       const MC = /** @type {typeof MessageChannel} */ ((/** @type {any} */ (env.window)).MessageChannel ?? globalThis.MessageChannel);
       pumpChannel = new MC();
@@ -485,9 +562,60 @@ export function createScheduler(env, store, hooks) {
     });
   }
 
+  /**
+   * May this canvas paint outside the tick, right where its tile landed? Only when nothing could tell the difference from a tick: no paint fired in this frame interval yet
+   * (at most one per frame), no frame cap (the cap gate paces ticks), no paint being dispatched, and no canvas nested in its drawables or around it (their order and
+   * holds are decided across canvases by runTick).
+   * @param {Entry} entry
+   */
+  function canServeEarly(entry) {
+    if (!isServable(entry) || entry.dispatching || entry.firedFrame === frameId) return false;
+    if (effectiveFps(entry.record.frameCap, env.options, 'paint', entry.interaction) > 0) return false;
+    const layerEl = entry.record.layer?.element;
+    for (const other of entries.values()) {
+      if (other === entry || !other.registered) continue;
+      if (layerEl?.contains(other.record.canvas) || other.record.layer?.element.contains(entry.record.canvas)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A tile decoded at once (store/decode.js decodedAtOnce) landed in the task that built it. Its paint does not wait for the next tick: inside the rendering update (the first
+   * snapshot and resize builds run in the tick) it fires in the same frame, like the native paint event; after the frame (the post-frame build task) it fires in that task,
+   * before the tasks the rendering update queued (IntersectionObserver delivery) and a frame earlier than the next tick. The canvas pixels drawn there are presented by the
+   * next frame either way. Same gates as a tick (servePaint); canvases that do not qualify (canServeEarly) wait for the tick as before.
+   */
+  function serveEarly() {
+    earlyQueued = false;
+    if (disposed || !early.size) { early.clear(); return; }
+    const now = env.now();
+    let committed = false;
+    for (const entry of orderedEntries()) {
+      if (!early.has(entry) || !canServeEarly(entry) || !store.hasLanded(entry.record)) continue;
+      try {
+        const serial = entry.record.paint.serial;
+        entry.committed = false;
+        servePaint(entry, now, true);
+        committed ||= entry.committed;
+        if (entry.record.paint.serial !== serial && entry.hooks.size) entry.wake = true;
+      } catch (err) {
+        env.reporter.caught(err, 'schedule.paint');
+      }
+      entry.dirty = true;
+    }
+    early.clear();
+    if (committed) {
+      queueStackingAudit();
+      // the geometry check the store owes after a commit runs in the pump: in the task right after this one, not in a pump that the next tick would leave queued
+      queuePump(false);
+    }
+    armTick();
+  }
+
   /** @param {number} now */
   function runTick(now) {
     armed = false;
+    frameId++;
     noteLateness(now);
     /** @type {Entry[]} */
     const work = [];
@@ -507,7 +635,7 @@ export function createScheduler(env, store, hooks) {
       interaction ||= entry.interaction;
       if (!entry.due) continue;
       try {
-        if (holdsForNested(entry, held, fired, now)) { held.push(entry); continue; }
+        if (holdsForFrames(entry, now) || holdsForNested(entry, held, fired, now)) { held.push(entry); continue; }
         const serial = entry.record.paint.serial;
         if (!servePaint(entry, now, store.hasLanded(entry.record))) held.push(entry);
         else if (entry.record.paint.serial !== serial) fired.push(entry);
@@ -521,7 +649,9 @@ export function createScheduler(env, store, hooks) {
     const resized = now < resizingUntil || work.some((entry) => entry.resized || !entry.record.paint.everFired);
     const pumped = resized ? pump(now, interaction, true) : null;
     if (resized) for (const entry of work) entry.resized = false;
-    else if (work.length) queuePump(interaction);
+    // no pump without something to build: a pump task left queued behind a quiet frame would take the next DOM change BEFORE the rendering update that should observe it
+    // (its tile then lands, and paints, ahead of that frame's IntersectionObserver steps)
+    else if (work.length && (store.needsPump?.() ?? true)) queuePump(interaction);
     for (const entry of work) runHooks(entry, now);
     counters.frames++;
     if (work.some((entry) => entry.committed)) queueStackingAudit();
@@ -650,10 +780,14 @@ export function createScheduler(env, store, hooks) {
       if (disposed) return;
       disposed = true;
       offCommit();
+      offLanded();
       offState();
       offDrawables();
       env.document.removeEventListener('visibilitychange', onVisibility);
       env.window.removeEventListener?.('resize', onWindowResize);
+      try {
+        if (/** @type {any} */ (env.window)[FRAME_TICK] === tickForParent) delete (/** @type {any} */ (env.window))[FRAME_TICK];
+      } catch { /* see install */ }
       phase.cancel();
       if (pumpChannel) {
         pumpChannel.port1.onmessage = null;
@@ -661,6 +795,7 @@ export function createScheduler(env, store, hooks) {
         pumpChannel = null;
       }
       entries.clear();
+      early.clear();
       registeredCount = 0;
       armed = false;
     },

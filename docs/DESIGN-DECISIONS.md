@@ -24,7 +24,7 @@ Each drawable has a retained 2D canvas with immutable versions; a new picture is
 
 ### 6. Paint is asynchronous: about two frames behind the DOM
 
-A snapshot has to be cloned, serialised, parsed, laid out and decoded by the browser (`Image.decode()` is asynchronous) before it can be drawn. `paint` fires at the end of the frame (the ResizeObserver slot, after app rAF callbacks and layout) and only when every drawable has a picture, so a draw inside `paint` never throws for lack of a snapshot. A `canvas.width` write redraws in the same frame from the retained surface. The promise is an effect at the display rate over a source that updates at 30 to 60 Hz, not a 120 Hz source.
+A snapshot has to be cloned, serialised, parsed, laid out and decoded by the browser (`Image.decode()` is asynchronous) before it can be drawn. `paint` fires at the end of the frame (the ResizeObserver slot, after app rAF callbacks and layout) and only when every drawable has a picture, so a draw inside `paint` never throws for lack of a snapshot. A `canvas.width` write redraws in the same frame from the retained surface. On Chromium a snapshot whose image loads at once (no font or image still to fetch) is painted where it lands: in the first frame for the first paint of a canvas, and for a later change in a high-priority task right after the frame, so a change is usually painted one frame after it was made. The promise is an effect at the display rate over a source that updates at 30 to 60 Hz, not a 120 Hz source.
 
 ### 7. Snapshots are built after the frame
 

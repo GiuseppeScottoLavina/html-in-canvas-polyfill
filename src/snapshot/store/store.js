@@ -13,7 +13,7 @@ import { featureById } from '../../contracts/features.js';
 import { inflateRect, intersectRect, roundOutRect, unionRect } from '../../util/rect.js';
 import { createCaretPatch } from './caret-patch.js';
 import { DamageTracker } from './damage.js';
-import { decodeDataUrl, drawTileAtomic, releaseImage } from './decode.js';
+import { decodeDataUrl, decodedAtOnce, drawTileAtomic, releaseImage } from './decode.js';
 import { createPumpState, defaultInteraction, NULL_RESOURCES, planGeometry, requestOf, runPump, sameGeometry } from './pump.js';
 import { rasterSourceFor } from './raster-source.js';
 import { createRunawayGuard } from './runaway.js';
@@ -108,7 +108,7 @@ function groupByEntry(list) {
 }
 
 /**
- * Implements SnapshotStore. Subscribes to BUS.DRAWABLES_CHANGED, RESIZE, DPR, CANVAS_UNMOUNTING; emits BUS.COMMIT and BUS.SOURCE_VERSION from commitLanded, BUS.SURFACE_RESTORED after a context loss.
+ * Implements SnapshotStore. Subscribes to BUS.DRAWABLES_CHANGED, RESIZE, DPR, CANVAS_UNMOUNTING; emits BUS.COMMIT and BUS.SOURCE_VERSION from commitLanded, BUS.LANDED for a tile decoded at once, BUS.SURFACE_RESTORED after a context loss.
  * commitLanded: every tile goes through drawTileAtomic; a result rejected by DamageTracker.accepts is reclaimed (re-damaged), never silently dropped; 'caret' damage is served by caret-patch.js without a build; versions carry layoutOffset from the CaptureResult.
  * isPaintReady(record): not ready ('first-commit') while any eligible drawable that has a CSS box has neither a version nor a placeholder; not ready ('coherence', coherentPaint only) while a build that started from the same damage epoch as a landed one is still in flight.
  * @param {HicEnv} env
@@ -335,6 +335,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
       l.entry.lastNodes = l.result.nodes;
       counters.nodesLast = l.result.nodes;
       landed.push(l);
+      // landed inside the task that built it: the scheduler can paint it now rather than at the next frame
+      if (decodedAtOnce(l.image)) env.bus.emit(BUS.LANDED, { record: l.entry.record });
     },
     fail(job, err, stage) {
       const entry = job.entry;
@@ -885,6 +887,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
       return entry.ovDeferred;
     },
     invalidateAll: (cause) => markAll(entries.values(), cause),
+    needsPump() {
+      if (side.length) return true;
+      for (const entry of entries.values()) if (entry.verifyGeometry || damage.hasPending(entry.el)) return true;
+      return false;
+    },
     pump: (now, budget) => {
       verifyGeometries();
       const out = runPump(env, pumpDeps, now, budget);

@@ -412,6 +412,7 @@ export {};
  * @property {(el: Element, rect: Rect|null, cause: DamageCause) => void} markDamage  (rect in border-box frame; null = whole)
  * @property {(cause: DamageCause) => void} invalidateAll
  * @property {(now: number, budget: PumpBudget) => PumpResult} pump  start builds/decodes that are due; synchronous part bounded by budget.mainThreadMs
+ * @property {() => boolean} [needsPump]  a pump would have something to do: damage waiting for a build, a side build queued, a geometry check owed after a commit (absent: always true)
  * @property {(record?: CanvasRecord) => boolean} hasLanded  at least one decoded result (of `record` when given) is waiting to be committed
  * @property {(record?: CanvasRecord, opts?: {current?: boolean}) => ChangeSet} commitLanded  apply landed results to surfaces in ONE synchronous step, publish new versions. With `record` only that canvas is committed (the others keep their landed results queued: a closed paint gate stays closed). `current`: the paint that follows must show the DOM as it is now, so a whole tile superseded by a DOM mutation is reclaimed instead of committed
  * @property {(record: CanvasRecord) => void} forget  drop every drawable of the record and release its surfaces (content!=drawable, unmount, uninstall)

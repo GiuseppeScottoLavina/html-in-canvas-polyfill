@@ -54,7 +54,7 @@ export function cleanAttributes(el) {
  * @param {string} message
  * @param {string} [hint]
  */
-function addUnsupported(list, src, feature, message, hint) {
+export function addUnsupported(list, src, feature, message, hint) {
   const path = elementPath(src);
   if (!list.some((e) => e.feature === feature && e.path === path)) list.push({ feature, message: `${message}${path ? ` (${path})` : ''}`, hint, path, t: 0, count: 1 });
 }

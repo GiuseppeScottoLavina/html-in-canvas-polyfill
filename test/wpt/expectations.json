@@ -138,11 +138,6 @@
    "reason": "paint-timing",
    "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
   },
-  "onpaint-fires-post-intersection-observation-steps.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-timing",
-   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
-  },
   "onpaint-iframe-nested-invalidation.tentative.html": {
    "category": "deviation",
    "reason": "iframe",
@@ -151,7 +146,7 @@
   "onpaint-iframe-post-tree-order.tentative.html": {
    "category": "deviation",
    "reason": "iframe",
-   "note": "canvases inside iframes need the polyfill in each frame and paint ordering across frames; iframes inside drawables are refused"
+   "note": "the first subtest passes: the parent's tick runs the tick of the same-origin iframe document first (each frame runs its own install). The second one times out: the change is inside the iframe, whose content is refused in a drawable (a child browsing context cannot be captured), so it never repaints the canvases that contain the iframe"
   },
   "onpaint-iframe.tentative.html": {
    "category": "deviation",
@@ -188,7 +183,7 @@
   "onpaint.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest. Not in `stable` (2026-10-14): whether the first two subtests pass depends on whether the initial snapshot has landed before the test's first one-frame wait (strict, 5 reps: 8 / 6 / 6 / 6 / 6 of 12, never below the partial floor of 3); relaxed (300 ms waits), 5 reps: the same 10 subtests pass in every rep (the last one times out under the relaxed waits), native 12 / 12 in every rep: a frame-timing property of the test against an asynchronous snapshot"
+   "note": "a paint fires in the first frame when its snapshot lands at once (Chromium), otherwise >= 2 frames later. 10 of 12 subtests pass in every rep (2026-10-15, 10 reps). 'grandchild changes': the change comes 1 frame after the previous subtest's build and options.maxSnapshotFps (60) holds the next build to the following frame on a 120 Hz display, one frame later than the test's single wait. 'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows (deviation paint-spurious)"
   },
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "deviation",
@@ -394,16 +389,6 @@
    "category": "impossible",
    "reason": "worker-element-image",
    "note": "a worker cannot rasterise the DOM and there is no signal for animated image or video frames: no worker-side source (E4)"
-  },
-  "requestPaint.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-timing",
-   "note": "the first snapshot (and so the first paint of a mounted canvas) lands 2-3 frames after load, the test attaches its handler after one frame and counts that initial paint; stable in 7 of 8 warm repetitions, passes when the page is cold"
-  },
-  "onpaint-fires-post-resize-observer.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-timing",
-   "note": "the first snapshot (and so the first paint of a mounted canvas) lands 2-3 frames after load, the test attaches its handler after one frame and counts that initial paint; stable in 7 of 8 warm repetitions, passes when the page is cold"
   },
   "captureElementImage.tentative.html": {
    "category": "deviation",

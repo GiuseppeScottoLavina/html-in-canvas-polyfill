@@ -11,7 +11,7 @@ import { createTokenCollector } from './css-shake.js';
 import { applyScrollState, scrollFacts } from './scroll-emulation.js';
 import { appendWithStubs, buildShell, shellFactsOf, shellNeedsBox, siblingStub } from './shells.js';
 import {
-  LEAF_TAGS, applyInteractionClasses, cleanAttributes, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, usedColorScheme,
+  LEAF_TAGS, addUnsupported, applyInteractionClasses, cleanAttributes, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, usedColorScheme,
 } from './state-sync.js';
 import { placeholderElement } from './placeholder.js';
 import { addUseTargets } from './svg-refs.js';
@@ -213,7 +213,10 @@ function maybeScroll(ctx, src, clone) {
   const over = ctx.req.scroll?.el === src ? ctx.req.scroll : null;
   const live = scrollFacts(src, cs);
   const f = over ? { ...(live ?? { sL: src.scrollLeft, gv: 0, gh: 0, scrollableY: true, scrollableX: false, styled: false }), sT: over.top } : live;
-  if (f) applyScrollState(ctx.env, src, /** @type {HTMLElement} */ (clone), ctx.req, ctx.scroll, f);
+  if (!f) return;
+  const res = applyScrollState(ctx.env, src, /** @type {HTMLElement} */ (clone), ctx.req, ctx.scroll, f);
+  if (res.pending) markPending(ctx.unsupported);
+  for (const x of res.failed) addUnsupported(ctx.unsupported, src, x.error.feature, x.error.message, x.error.hint);
 }
 
 /** @param {Ctx} ctx @param {Element} src @param {Element} clone */

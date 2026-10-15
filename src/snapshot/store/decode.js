@@ -1,5 +1,5 @@
 /**
- * Image decode of the data: URL (async), the atomic bounded tile commit and image release.
+ * Image decode of the data: URL (async, or at once when the engine loaded it in the building task), the atomic bounded tile commit and image release.
  * Module: snapshot-store (src/snapshot/store/*).
  */
 
@@ -8,8 +8,23 @@ import { typeError } from '../../contracts/errors.js';
 /** A decode that never settles would hold the pipeline (depth 1) forever. */
 const DECODE_TIMEOUT_MS = 4000;
 
+/** @type {WeakSet<HTMLImageElement>} images that were completely available in the microtask after `src` was set */
+const atOnce = new WeakSet();
+
 /**
- * new Image(); decoding=async; src=url; await decode(). Rejects on a broken image or after `timeoutMs` (the pump reports it and keeps the previous version).
+ * The image was completely available in the microtask after its `src` was set, so it landed inside the task (and microtask checkpoint) that built it.
+ * Chromium loads a data: SVG image whose document has no subresource still to fetch at once (the HTML "update the image data" steps run in a microtask; measured: complete and
+ * drawn with the same pixels as after decode()), while `decode()` resolves in a later task. The scheduler may then fire the paint in that same task instead of a frame later.
+ * @param {HTMLImageElement} img
+ * @returns {boolean}
+ */
+export function decodedAtOnce(img) {
+  return atOnce.has(img);
+}
+
+/**
+ * new Image(); decoding=async; src=url; then, when the image is already completely available one microtask later, that image; else await decode().
+ * Rejects on a broken image or after `timeoutMs` (the pump reports it and keeps the previous version).
  * Only data: URLs are accepted: a blob: URL would taint every sink the surface is later copied to.
  * @param {string} url
  * @param {{timeoutMs?: number, create?: () => HTMLImageElement}} [opts]  `create` lets tests substitute the image
@@ -20,6 +35,12 @@ export async function decodeDataUrl(url, opts = {}) {
   const img = opts.create ? opts.create() : new Image();
   img.decoding = 'async';
   img.src = url;
+  await null;
+  // completely available (loaded, with its subresources) and not broken: what decode() would resolve with, without waiting for its task
+  if (img.complete && img.naturalWidth > 0) {
+    atOnce.add(img);
+    return img;
+  }
   /** @type {ReturnType<typeof setTimeout>|undefined} */
   let timer;
   const timeout = new Promise((_, reject) => {

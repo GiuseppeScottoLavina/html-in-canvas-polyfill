@@ -10,9 +10,16 @@
 import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 import { currentEngine } from '../../util/engine.js';
 import { engineSkins } from './engine-skins.js';
+import { inlineCssUrls } from './inline-resources.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
+
+/**
+ * Resources the bars of one scroller referenced: background images of author-styled parts (::-webkit-scrollbar-thumb / -track) still loading (`pending`: the capture is
+ * incomplete and is rebuilt when they arrive) or refused (`failed`: cross-origin without CORS, left out of the picture like every other such image).
+ * @typedef {{pending: boolean, failed: Array<{url: string, error: import('../../contracts/errors.js').HicUnsupportedError}>}} BarResources
+ */
 
 /**
  * Per-capture output of the scroll emulation: marker rules go into one <style> next to the shaken sheet.
@@ -124,13 +131,16 @@ function borderBoxOf(cs, el) {
  * @param {CaptureRequest} req
  * @param {ScrollSink} [sink]
  * @param {ScrollFacts|null} [known]
+ * @returns {BarResources}  the images of author-styled bars that are still loading or were refused
  */
 export function applyScrollState(env, src, cloneScroller, req, sink, known) {
+  /** @type {BarResources} */
+  const res = { pending: false, failed: [] };
   const win = env.window;
   const cs = win.getComputedStyle(src);
   const f = known ?? scrollFacts(src, cs);
-  if (!f) return;
-  if (src.localName === 'select') { listboxScroll(src, cloneScroller); return; }
+  if (!f) return res;
+  if (src.localName === 'select') { listboxScroll(src, cloneScroller); return res; }
   let style = 'scroll-behavior:auto!important;';
   if (f.gv || f.gh) {
     const bb = borderBoxOf(cs, /** @type {HTMLElement} */ (src));
@@ -145,7 +155,8 @@ export function applyScrollState(env, src, cloneScroller, req, sink, known) {
     else if (supportsSnap()) addMarker(win, src, cloneScroller, f, sink, true);
     else { translateChildren(cloneScroller, f); scrolled = false; }
   }
-  if ((f.gv && f.scrollableY) || (f.gh && f.scrollableX)) paintClassicScrollbars(src, cloneScroller, scrolled);
+  if ((f.gv && f.scrollableY) || (f.gh && f.scrollableX)) paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled);
+  return res;
 }
 
 /**
@@ -210,16 +221,43 @@ function box(doc, parent, css, role) {
  * PURE. The vertical classic bar the clone paints (paintClassicScrollbars), in the scrollport's coordinates: the thumb's x offset and width inside the gutter, its length,
  * and its top at a scroll offset. The scroll compositor draws the thumb with the same numbers.
  * @param {number} gutter css px @param {number} clientHeight @param {number} scrollHeight @param {boolean} styled author ::-webkit-scrollbar @param {boolean} authored scrollbar-color
+ * @param {number} [minThumb]  min-height of an author-styled thumb (styledMinThumb), css px; 0 = the engine default
  * @returns {{thumbX: number, thumbW: number, thumbH: number, thumbY: (top: number) => number}}
  */
-export function verticalBar(gutter, clientHeight, scrollHeight, styled, authored) {
+export function verticalBar(gutter, clientHeight, scrollHeight, styled, authored, minThumb = 0) {
   const len = clientHeight;
-  const thumbH = Math.max(styled ? 20 : 30, len * (clientHeight / scrollHeight));
+  // an author-styled thumb is never shorter than its own min-height (nor longer than the track)
+  const thumbH = Math.min(len, Math.max(styled ? minThumb || 20 : 30, len * (clientHeight / scrollHeight)));
   const range = scrollHeight - clientHeight;
   return {
     thumbX: styled ? 0 : authored ? 3 : 4, thumbW: styled ? gutter : gutter - (authored ? 5 : 7), thumbH,
     thumbY: (top) => (range > 0 ? (top / range) * (len - thumbH) : 0),
   };
+}
+
+/**
+ * The min-height of the author-styled thumb of `src` (`::-webkit-scrollbar-thumb { min-height }`), css px; 0 when unset.
+ * @param {Window} win @param {Element} src @returns {number}
+ */
+export function styledMinThumb(win, src) {
+  return px(win.getComputedStyle(src, '::-webkit-scrollbar-thumb').minHeight);
+}
+
+/**
+ * The background image layers of an author-styled bar part as declarations, their url()s inlined as data: URLs (a cross-origin image without CORS becomes an empty image and is
+ * listed in `res.failed`, like the background image of any element). '' without an image.
+ * @param {Pick<CSSStyleDeclaration, 'backgroundImage'|'backgroundSize'|'backgroundPosition'|'backgroundRepeat'|'backgroundOrigin'|'backgroundClip'>} part  computed style of the pseudo-element
+ * @param {string} baseUrl @param {CaptureRequest['resources']} resources @param {BarResources} res
+ * @returns {string}
+ */
+export function barImage(part, baseUrl, resources, res) {
+  const image = part.backgroundImage;
+  if (!image || image === 'none') return '';
+  const r = inlineCssUrls(image, baseUrl, resources);
+  if (r.pending.length) res.pending = true;
+  res.failed.push(...r.failed);
+  return `background-image:${r.css};background-size:${part.backgroundSize};background-position:${part.backgroundPosition};background-repeat:${part.backgroundRepeat};`
+    + `background-origin:${part.backgroundOrigin};background-clip:${part.backgroundClip};`;
 }
 
 /**
@@ -237,12 +275,15 @@ function onDarkBackground(win, src) {
 
 /**
  * Append approximate track/thumb overlays for a scroller whose live gutter is non-overlay (feature classic-scrollbars).
- * Colours of author-styled bars come from the pseudo-element computed styles; unstyled bars use the constants read off the macOS legacy bars (measured on macOS).
+ * Colours and background images of author-styled bars come from the pseudo-element computed styles; unstyled bars use the constants read off the macOS legacy bars (measured on macOS).
+ * @param {HicEnv} env
+ * @param {CaptureRequest} req
+ * @param {BarResources} res
  * @param {Element} src
  * @param {HTMLElement} cloneScroller
  * @param {boolean} [scrolled]  the clone scroller itself shows the scroll offset (marker); false when its children were translated instead (bars sit at the box origin)
  */
-function paintClassicScrollbars(src, cloneScroller, scrolled = true) {
+function paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled = true) {
   const win = src.ownerDocument.defaultView ?? window;
   const cs = win.getComputedStyle(src);
   const f = scrollFacts(src, cs);
@@ -262,16 +303,16 @@ function paintClassicScrollbars(src, cloneScroller, scrolled = true) {
   }
   const dark = !styled && !authored && engine === 'gecko' && onDarkBackground(win, src);
   const track = authored ? `background:${authored.track};` : styled
-    ? `background:${tr.backgroundColor !== 'rgba(0, 0, 0, 0)' ? tr.backgroundColor : bar.backgroundColor};border-left:${tr.borderLeftWidth} ${tr.borderLeftStyle} ${tr.borderLeftColor};`
+    ? `background:${tr.backgroundColor !== 'rgba(0, 0, 0, 0)' ? tr.backgroundColor : bar.backgroundColor};${barImage(tr, env.document.baseURI, req.resources, res)}border-left:${tr.borderLeftWidth} ${tr.borderLeftStyle} ${tr.borderLeftColor};`
     : dark ? 'background:#2e2e2e;border-left:1px solid #333;box-sizing:border-box;' : 'background:#fafafa;border-left:1px solid #e8e8e8;box-sizing:border-box;';
   const thumb = authored ? `background:${authored.thumb};border-radius:99px;box-sizing:border-box;` : styled
-    ? `background:${th.backgroundColor};border:${th.borderTopWidth} ${th.borderTopStyle} ${th.borderTopColor};border-radius:${th.borderTopLeftRadius};box-sizing:border-box;`
+    ? `background:${th.backgroundColor};${barImage(th, env.document.baseURI, req.resources, res)}border:${th.borderTopWidth} ${th.borderTopStyle} ${th.borderTopColor};border-radius:${th.borderTopLeftRadius};box-sizing:border-box;`
     : `background:${dark ? '#757575' : '#c1c1c1'};border-radius:4px;box-sizing:border-box;`;
   const minThumb = styled ? 20 : 30;
   const sT = scrolled ? f.sT : 0, sL = scrolled ? f.sL : 0;
   if (f.scrollableY && f.gv) {
     const len = src.clientHeight;
-    const v = verticalBar(f.gv, src.clientHeight, src.scrollHeight, styled, !!authored);
+    const v = verticalBar(f.gv, src.clientHeight, src.scrollHeight, styled, !!authored, styled ? px(th.minHeight) : 0);
     box(doc, cloneScroller, `left:${src.clientWidth + sL}px;top:${sT}px;width:${f.gv}px;height:${len}px;${track}`, 'track');
     box(doc, cloneScroller, `left:${src.clientWidth + sL + v.thumbX}px;top:${sT + v.thumbY(f.sT)}px;width:${v.thumbW}px;height:${v.thumbH}px;${thumb}`, 'thumb');
   }

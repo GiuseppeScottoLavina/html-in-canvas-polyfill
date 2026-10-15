@@ -80,6 +80,7 @@ export function observeMutations(env, record) {
         continue;
       }
       const drawable = layer.nearestDrawable(element);
+      if (drawable === element && m.type === 'attributes' && m.attributeName === 'style' && onlyZIndex(m.oldValue, element.getAttribute('style'))) continue;
       moved ||= movesDrawables(m, element, drawable);
       if (m.type === 'childList' && textOnly(m)) {
         // text replaced in place (textContent / innerText / a text node added or removed): local like characterData, bounded by damage-rect.js
@@ -100,6 +101,31 @@ export function observeMutations(env, record) {
     }
     damage.flush((drawable, rect) => env.scheduler.damage(record, 'mutation', drawable, rect));
     if (moved) layer.revalidateGeometry();
+  }
+
+  /** @type {CSSStyleDeclaration|null} */
+  let scratchA = null;
+  /** @type {CSSStyleDeclaration|null} */
+  let scratchB = null;
+  /**
+   * The inline style of a drawable changed only its z-index. A drawable is always its own stacking context (isolation:isolate in the layer sheet), so its z-index changes
+   * nothing in its picture: no damage and no paint event (WPT onpaint-zindex). Its hit-test order is the drawing order, applied at every paint.
+   * @param {string|null} before @param {string|null} after @returns {boolean}
+   */
+  function onlyZIndex(before, after) {
+    if (before === after) return false;
+    scratchA ??= env.document.createElement('div').style;
+    scratchB ??= env.document.createElement('div').style;
+    scratchA.cssText = before ?? '';
+    scratchB.cssText = after ?? '';
+    if (scratchA.getPropertyValue('z-index') === scratchB.getPropertyValue('z-index')) return false;
+    for (const [x, y] of [[scratchA, scratchB], [scratchB, scratchA]]) {
+      for (let i = 0; i < x.length; i++) {
+        const prop = x[i];
+        if (prop !== 'z-index' && (x.getPropertyValue(prop) !== y.getPropertyValue(prop) || x.getPropertyPriority(prop) !== y.getPropertyPriority(prop))) return false;
+      }
+    }
+    return true;
   }
 
   /** @param {MutationRecord} m @returns {boolean} only text nodes were added or removed (no element can appear, vanish or carry a drawable) */

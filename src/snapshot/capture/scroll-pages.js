@@ -7,7 +7,7 @@
 
 import { currentEngine } from '../../util/engine.js';
 import { parseColor } from './caret-overlay.js';
-import { parseScrollbarColor, scrollFacts, verticalBar } from './scroll-emulation.js';
+import { parseScrollbarColor, scrollFacts, styledMinThumb, verticalBar } from './scroll-emulation.js';
 
 /** @typedef {import('../../contracts/types.js').LiveLayer} LiveLayer */
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
@@ -121,7 +121,7 @@ export function planScrollPages(doc, layer, scroller, drawable) {
   if (gutterX > 0.5) {
     const f = scrollFacts(s, cs);
     if (!f || !f.scrollableY) return null;
-    const v = verticalBar(f.gv, s.clientHeight, s.scrollHeight, f.styled, !f.styled && !!parseScrollbarColor(cs.scrollbarColor));
+    const v = verticalBar(f.gv, s.clientHeight, s.scrollHeight, f.styled, !f.styled && !!parseScrollbarColor(cs.scrollbarColor), f.styled ? styledMinThumb(win, s) : 0);
     bar = { gutter: { x: port.x + s.clientWidth, y: port.y, width: f.gv, height: s.clientHeight }, ...v };
   }
   return { port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight };

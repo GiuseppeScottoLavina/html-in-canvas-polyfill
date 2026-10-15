@@ -27,11 +27,12 @@ async function handleBinding(page, p) {
 }
 
 export class Session {
-  constructor(config, { polyfillFile = resolveDist(), name } = {}) { this.config = config; this.polyfillFile = polyfillFile; this.name = name ?? `wpt-${config.id}`; this.crashed = false; }
+  /** `scrollbars`: 'hidden' (default, --hide-scrollbars: screenshots without scrollbars) or 'default' for the tests that render author-styled scrollbars (inventory `scrollbars`). */
+  constructor(config, { polyfillFile = resolveDist(), name, scrollbars = 'hidden' } = {}) { this.config = config; this.polyfillFile = polyfillFile; this.name = name ?? `wpt-${config.id}`; this.scrollbars = scrollbars; this.crashed = false; }
 
   async start() {
     this.browser = await launchChrome({
-      chrome: this.config.chrome, name: this.name, nativeDrawElement: this.config.nativeDrawElement, dpr: 1, scrollbars: 'hidden',
+      chrome: this.config.chrome, name: this.name, nativeDrawElement: this.config.nativeDrawElement, dpr: 1, scrollbars: this.scrollbars,
       windowSize: [VIEWPORT.width + 40, VIEWPORT.height + 140],
       extraArgs: ['--ignore-certificate-errors', `--host-resolver-rules=${HOST_RULES}`, '--autoplay-policy=no-user-gesture-required',
         '--disable-popup-blocking', '--force-prefers-no-reduced-motion'],
