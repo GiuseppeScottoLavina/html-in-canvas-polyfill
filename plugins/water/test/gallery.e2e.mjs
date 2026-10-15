@@ -63,4 +63,28 @@ try {
 } finally {
   await g.close();
 }
+
+// prefers-reduced-motion: calm water. Pointer moves and presses raise no ripple, nothing animates while idle, and a click still reaches the drawn field.
+const r = await openGallery('water', { reducedMotion: true });
+try {
+  const page = r.page;
+  const stage = await rectOf(page, '#stage');
+  await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
+  await sleep(800);
+  const still = (await shot(page)).img;
+  const idleFrames = await framesDuring(page, 1000);
+  for (let i = 0; i <= 24; i += 1) { await page.mouseMove(stage.x + stage.w * (0.15 + 0.7 * (i / 24)), stage.y + stage.h * 0.45); await sleep(16); }
+  await sleep(300);
+  const after = changed((await shot(page)).img, still, 16);
+  c.check('reduced motion: no animation while idle (at most 2 effect frames in one second)', idleFrames <= 2, { idleFrames });
+  c.check('reduced motion: pointer moves raise no ripple (the presented pixels stay put, apart from the hover look of the controls)', after.px < 2000, after);
+  await clickOn(page, '#name');
+  await sleep(200);
+  const s = await page.evaluate(`({ active: document.activeElement && document.activeElement.id })`);
+  c.check('reduced motion: a click through the still water focuses the drawn name field', s.active === 'name', s);
+  const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
+  c.check('reduced motion: no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));
+} finally {
+  await r.close();
+}
 c.finish();

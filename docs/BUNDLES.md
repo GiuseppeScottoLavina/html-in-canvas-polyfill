@@ -84,9 +84,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/shatter.iife.js` | 49,296 | 15,209 |
 | `plugins/shatter.iife.min.js` | 28,829 | 12,107 |
 | `plugins/shatter.esm.js` | 46,617 | 14,838 |
-| `plugins/water.iife.js` | 16,762 | 5,929 |
-| `plugins/water.iife.min.js` | 10,506 | 4,871 |
-| `plugins/water.esm.js` | 15,533 | 5,694 |
+| `plugins/water.iife.js` | 16,884 | 5,952 |
+| `plugins/water.iife.min.js` | 10,553 | 4,884 |
+| `plugins/water.esm.js` | 15,651 | 5,717 |
 <!-- sizes:end -->
 
 Size target: the design target for the minified core was 150 KB (gate G-bundle), and **the core in the table above is over it**. The bytes are spread across the whole pipeline (by module group, measured once: `api` about 26 %, `snapshot/capture` 24 %, `live` 20 %, `snapshot/store` 12 %, observers and scheduler 11 %); minifier settings cannot close the gap (mangling every long property name, which is not safe, would still leave about 183 KB), and the code that only some pages need (effects, the plugins, the native bridge, the Gecko / WebKit painters, the WebGL / WebGPU element textures) is already in separate bundles. `npm run check:bundle` therefore prints the target as KNOWN RED and fails on any growth above a recorded ceiling (`scripts/check-bundle.mjs`), which is raised only deliberately, with a measured reason.

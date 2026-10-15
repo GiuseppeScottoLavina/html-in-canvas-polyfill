@@ -26,6 +26,8 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 
 The plugin is `spatial`: it moves pixels, so it supplies `captureInputMapper`. `mapWaterPoint(state, point)` is the JavaScript twin of the displacement in `water.wgsl`; it is exported for tests.
 
+**Reduced motion.** When the user prefers reduced motion (`prefers-reduced-motion: reduce`, read when the plugin is added), the water is calm: the surface keeps its gentle refraction, frozen in time, no ripple starts (not on load, not from the pointer) and nothing animates, so the effect is rendered only when the page or an option changes. Clicks and typing are still remapped through the still surface.
+
 ## Files
 
 | file | |
@@ -33,5 +35,5 @@ The plugin is `spatial`: it moves pixels, so it supplies `captureInputMapper`. `
 | `index.js` | `meta`, `plugin` (the definition), `mapWaterPoint`, `RIPPLE_COUNT`, `GLOBALS_LENGTH` |
 | `water.wgsl` | the shader; inlined into the built bundles |
 | `wgsl.js` | loads `water.wgsl` when the plugin runs from source; the build replaces it |
-| `test/water-math.test.mjs` | Node: the folder contract, the mapper against an independent copy of the formula, options and pointer handling |
+| `test/water-math.test.mjs` | Node: the folder contract, the mapper against an independent copy of the formula, options and pointer handling, the calm mode of reduced motion |
 | `test/water-gpu.browser.test.mjs` | headless Chrome: the mapper against the pixels the GPU produced (`plugins/_shared/gpu-check.mjs`) |

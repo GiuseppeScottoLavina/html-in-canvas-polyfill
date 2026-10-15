@@ -100,11 +100,11 @@ function fakeGpu() {
   return { device, writes, encoder };
 }
 
-async function createWater(options = {}) {
+async function createWater(options = {}, { reduced = false } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const gpu = fakeGpu();
   const listeners = {};
-  const win = { matchMedia: () => ({ matches: false }), PointerEvent: class {} };
+  const win = { matchMedia: (q) => ({ matches: reduced && q === '(prefers-reduced-motion: reduce)' }), PointerEvent: class {} };
   const context = {
     apiVersion: 2, device: gpu.device, format: 'bgra8unorm', requestRender() {},
     canvas: { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: 100, clientHeight: 100, clientLeft: 0, clientTop: 0 },
@@ -179,6 +179,34 @@ test('a pointerdown adds a ripple (non-PointerEvent input is ignored)', async ()
   listeners.pointerdown(ev);
   instance.render(frame(performance.now() + 20));
   assert.ok([11, 15, 19, 23].some((i) => gpu.writes.at(-1)[i] > 0));
+});
+
+test('prefers-reduced-motion: calm water, a still refraction without ripples or animation, and the mapper describes it; control: without it the water moves', async () => {
+  const GAINS = [11, 15, 19, 23];
+  const calm = await createWater({ intensity: 1 }, { reduced: true });
+  assert.equal(calm.instance.continuous, false, 'not rendered every frame: only when the page or an option changes');
+  const t = performance.now();
+  calm.instance.render(calm.frame(t + 100));
+  const a = calm.gpu.writes.at(-1);
+  assert.deepEqual(GAINS.map((i) => a[i]), [0, 0, 0, 0], 'no ripple on load');
+  assert.equal(a[2], 0, 'time is frozen');
+  const press = Object.assign(new calm.win.PointerEvent(), { clientX: 50, clientY: 50 });
+  calm.listeners.pointerdown(press);
+  calm.listeners.pointermove(Object.assign(new calm.win.PointerEvent(), { clientX: 80, clientY: 20 }));
+  calm.instance.render(calm.frame(t + 2400));
+  const b = calm.gpu.writes.at(-1);
+  assert.deepEqual(Array.from(b), Array.from(a), 'a press, a move and 2.3 s later: the very same uniform block (a static picture)');
+  assert.ok(b[4] === 1 && mapWaterPoint(b, { x: 60, y: 40, width: 200, height: 100 }).x !== 60, 'the surface still refracts (a gentle static displacement), and the mapper follows it');
+  const mapper = calm.instance.captureInputMapper();
+  assert.deepEqual(mapper({ x: 60, y: 40, width: 200, height: 100 }), mapWaterPoint(b, { x: 60, y: 40, width: 200, height: 100 }));
+
+  const moving = await createWater({ intensity: 1 });
+  assert.equal(moving.instance.continuous, true);
+  moving.instance.render(moving.frame(t + 100));
+  const c = moving.gpu.writes.at(-1);
+  assert.ok(GAINS.some((i) => c[i] > 0), 'control: ripples on load');
+  moving.instance.render(moving.frame(t + 2400));
+  assert.notEqual(moving.gpu.writes.at(-1)[2], c[2], 'control: time runs');
 });
 
 test('a failed shader fetch is not cached: the next create (e.g. after a device loss) tries again', async () => {

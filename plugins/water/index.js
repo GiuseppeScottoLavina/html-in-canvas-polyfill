@@ -25,7 +25,7 @@ export const meta = Object.freeze({
   title: 'Water',
   description: 'Ripples that follow the pointer; clicks and typing are remapped through the displacement.',
   defaults: Object.freeze({ intensity: 0.28 }),
-  reducedMotion: 'No reduced-motion mode of its own: ripples appear only where the pointer moves or presses.',
+  reducedMotion: 'Calm water: a still surface with a static refraction, no ripples and no animation; clicks and typing are remapped through it.',
 });
 
 export const RIPPLE_COUNT = 4;
@@ -116,7 +116,7 @@ function fillGlobals(globals, frame, ripples, time, intensity) {
 
 
 /**
- * Ripples from the pointer: a drop where it goes down, a faster pointer makes a stronger ripple.
+ * Ripples from the pointer: a drop where it goes down, a faster pointer makes a stronger ripple. None at all when the user prefers reduced motion.
  * @param {EffectPluginContext} context
  * @param {(x: number, y: number, strength: number) => void} drop
  * @param {boolean} reducedMotion
@@ -148,7 +148,7 @@ function listenPointer(context, drop, reducedMotion) {
     last = { x, y, t: now };
   });
   context.listen('pointerdown', (event) => {
-    if (!(event instanceof win.PointerEvent)) return;
+    if (reducedMotion || !(event instanceof win.PointerEvent)) return;
     const { x, y } = unit(/** @type {PointerEvent} */ (event));
     drop(x, y, 1.4);
   });
@@ -229,6 +229,8 @@ export const plugin = Object.freeze({
     let mapperSlot = 0;
     const start = performance.now();
     const win = /** @type {any} */ (context.canvas.ownerDocument.defaultView);
+    // prefers-reduced-motion: calm water. The surface keeps its gentle refraction, frozen at time 0 (a static picture: rendered only when the page or an option changes),
+    // and no ripple ever starts (not on load, not from the pointer); the input mapper reads the same frozen state, so clicks still land where the controls are seen.
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     /** @type {Ripple[]} */
     const ripples = Array.from({ length: RIPPLE_COUNT }, () => ({ x: 0.5, y: 0.5, time: -100, strength: 0 }));
@@ -247,8 +249,10 @@ export const plugin = Object.freeze({
       context.requestRender();
     }
     listenPointer(context, addRipple, reducedMotion);
-    addRipple(0.68, 0.34, 0.75);
-    addRipple(0.24, 0.76, 0.5, 0.28);
+    if (!reducedMotion) {
+      addRipple(0.68, 0.34, 0.75);
+      addRipple(0.24, 0.76, 0.5, 0.28);
+    }
 
     function syncUi() {
       const percent = Math.round(intensity * 100);
@@ -258,13 +262,13 @@ export const plugin = Object.freeze({
 
     return {
       spatial: true,
-      continuous: true,
+      continuous: !reducedMotion,
       setOptions(next) {
         intensity = clamp01(next?.intensity ?? intensity);
         syncUi();
       },
       render(frame) {
-        fillGlobals(globals, frame, ripples, elapsed(frame.now), intensity);
+        fillGlobals(globals, frame, ripples, reducedMotion ? 0 : elapsed(frame.now), intensity);
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
