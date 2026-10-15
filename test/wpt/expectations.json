@@ -343,7 +343,7 @@
   "scale.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
+   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous: mostly not there yet (InvalidStateError, harness TIMEOUT), and when it wins the race the 2x draws resample the 1x snapshot (soft edges, 4,079 px, FAIL; native paints the element at the draw scale, raster-scale-floor): the subtest fails either way (before X-13 it failed earlier, on its shadow root)"
   },
   "shadow-dom-slot-canvas-child.tentative.html": {
    "category": "deviation",

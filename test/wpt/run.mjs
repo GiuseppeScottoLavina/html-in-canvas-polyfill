@@ -12,12 +12,16 @@ import { Session, CONFIGS } from './lib/session.mjs';
 import { runOne, filePasses } from './lib/run-one.mjs';
 
 export const RESULTS_DIR = resolve(PROJECT_ROOT, '.scratch/results');
-export const RUNNER_VERSION = 1;
+/** 2: a test is `stable` when every repetition gives the same per-subtest results (1 also compared the harness status, see `signature`). */
+export const RUNNER_VERSION = 2;
 /** Whole-configuration watchdog: a run that is still going after this long is killed (the harness exit handler terminates our own Chrome only). */
 const WATCHDOG_MS = 40 * 60 * 1000;
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 
-const signature = r => `${r.status}|${r.subtests.map(s => `${s.name}=${s.status}`).join(',')}`;
+// Repetitions are compared by their per-subtest results; the harness status counts only when there is no subtest (crash, no harness). A reftest that throws before
+// takeScreenshot (harness TIMEOUT) and one that draws a wrong picture (FAIL) both FAIL their one subtest: the same result (scale.tentative.html alternates between the two
+// because the polyfill's first snapshot races the test's setTimeout, deviation paint-timing, 2026-10-16).
+const signature = r => (r.subtests.length ? r.subtests.map(s => `${s.name}=${s.status}`).join(',') : r.status);
 
 function load1m() { try { return Number(execFileSync('sysctl', ['-n', 'vm.loadavg'], { encoding: 'utf8' }).trim().replace(/[{}]/g, '').split(/\s+/)[0]); } catch { return 0; } }
 
