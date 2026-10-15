@@ -192,6 +192,8 @@ These are the gates that exist today (`test/gates/g-*.mjs`, helpers in `test/gat
 | ancestor-css-lost, wrapper-vars-lost, last-child-twins-off, child-canvas-redraw-ignored | browser M1 (ancestor CSS, wrapper custom properties), M3, M4 |
 | stacking-audit-never-called | browser M2 |
 | email-caret-missing | a reported regression: type=email caret drawn and blinking (G-f1-form) |
+| page-scroll-unwatched | a sticky drawable stays hit-testable at its drawn place after a trusted page scroll (G-regress-pagescroll) |
+| near-size-resampled | an explicit draw size within 1 px and 1 % of the raster is drawn 1:1, so F1 at DPR 1.25 stays within 2.2 % of native (G-pixel-dpr) |
 
 ### 2.9 Cross-browser gate G-xbrowser (`npm run test:xbrowser`, Firefox and Safari through W3C WebDriver)
 

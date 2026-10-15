@@ -9,6 +9,9 @@
   var q = new URLSearchParams(location.search);
   window.__mode = q.get('mode') || 'poly';
   if (window.__mode === 'poly' && q.get('bundle')) for (const src of q.get('bundle').split(',')) document.write('<script src="' + src + '"><\/script>');
+  // the paint counter (observation only): a capture listener on the window, installed before the canvas exists, so it also sees a first paint that fires
+  // in the first rendering update, before the parser reaches a later script (the paint event does not bubble; capture listeners on ancestors still see it)
+  addEventListener('paint', () => { window.__paints = (window.__paints || 0) + 1; }, true);
 </script>
 </head>
 <body>
@@ -37,10 +40,6 @@
   }).observe(canvas, { box: 'device-pixel-content-box' });
 </script>
 <!-- end of the example -->
-<script>
-  // not part of the example: observation only
-  canvas.addEventListener('paint', () => { window.__paints = (window.__paints || 0) + 1; });
-</script>
 <!-- --><script>if (window.__mode === 'ref') document.write('<div id="twin" style="position:relative;width:400px;height:200px;overflow:hidden;display:inline-block;vertical-align:top"><form id="twinform" style="position:absolute;top:0;margin:0"><label for="name">name:</label> <input id="name"></form></div>');</script>
 <script>
   if (window.__mode === 'ref') {

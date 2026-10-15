@@ -1,7 +1,11 @@
 <!doctype html><html><head><meta charset="utf-8"><title>regress: a 60 Hz counter in proportional digits paints at the display rate (M5)</title>
 <script>var q = new URLSearchParams(location.search); window.__q = q;
   // control: every snapshot decode is held 60 ms (a renderer that paints rarely), so the rate checks must go red
-  if (q.get("slow") === "1") (function (P) { var d = P.decode; P.decode = function () { var img = this; return new Promise(function (r) { setTimeout(r, 60); }).then(function () { return d.call(img); }); }; })(HTMLImageElement.prototype);
+  // slow=1 (positive control): every snapshot image is held 60 ms. A data: SVG that the engine loads at once is used without decode() (store/decode.js), so `complete`
+  // also reads false for it until its held decode() resolved: every tile then takes the slow path.
+  if (q.get("slow") === "1") (function (P) { var d = P.decode; var c = Object.getOwnPropertyDescriptor(P, 'complete'); var held = new WeakSet();
+    Object.defineProperty(P, 'complete', { configurable: true, enumerable: c.enumerable, get: function () { return /^data:image\/svg/.test(this.src) && !held.has(this) ? false : c.get.call(this); } });
+    P.decode = function () { var img = this; return new Promise(function (r) { setTimeout(r, 60); }).then(function () { return d.call(img); }).then(function (v) { held.add(img); return v; }); }; })(HTMLImageElement.prototype);
   if (q.get("bundle")) for (var b of q.get("bundle").split(",")) document.write("<scr" + "ipt src=\"" + b + "\"></scr" + "ipt>");</script>
 <style>body{margin:8px;background:#fff} #c{display:block;width:420px;height:160px}
   #d{width:400px;height:140px;color:#111;display:flex;align-items:center;justify-content:center;gap:12px}
