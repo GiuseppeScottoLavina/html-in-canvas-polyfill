@@ -2,16 +2,18 @@
 // G-hang-stress: the polyfill must never be able to hang a page, and the test harness must never hang on a stuck renderer.
 //
 //   npm run build && npm run test:stress
-//   node scripts/check-hang-stress.mjs [--loads=30] [--throttle=1] [--no-control]
+//   node scripts/check-hang-stress.mjs [--loads=30] [--throttle=1] [--no-control] [--no-probe]
 //
 // Real run: `loads` fresh tabs of examples/basic in HEADLESS Chrome (one browser, one tab at a time), cycling three scenarios
 //   typing   click the drawn field, require focus on the live input, type 11 trusted keys, require the value AND a live main thread
 //   idle     load and wait (the "stalls at idle right after loading" report)
 //   misfocus click that misses the field, then Page.typeText: it must REFUSE (no editable focus) and leave the page alive
 // Every CDP command is bounded (15 s); the first command that gets no answer is a HANG: the browser is SIGKILLed at once (own PIDs only) and the gate fails with the count.
-// Positive control (the gate fails unless it turns red; up to 4 launches because the spin is probabilistic): the same kind of page with the polyfill absent, five raw trusted keys and NO focused editable (the exact
-// sequence the guard refuses above). A headless Chrome 154 renderer spins on it, a bounded command times out, and the watchdog reports the hang. If Chrome stops
-// spinning, the control stays green and the gate says so, because the guard and this control are then obsolete.
+// Watchdog control (the gate fails unless it turns red): a page that blocks its main thread for good (test/examples-smoke/hang-busy.html). A bounded command must time out, the
+// watchdog must report the hang, and the kill must leave no process of that browser behind. It does not depend on any Chrome bug, so the gate can always fail.
+// Chrome spin probe (informational, never fails the gate; up to 4 launches because the spin is probabilistic): five raw trusted keys on a page with no polyfill and NO focused
+// editable, the exact sequence the misfocus guard refuses. Headless Chrome 154 spins a renderer on it; when the probe cannot reproduce that, the result says "not applicable on this
+// Chrome (bug fixed upstream)" with the version, and the guard only keeps typing honest.
 // Result: .scratch/results/hang-stress-<timestamp>.json
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -59,10 +61,33 @@ async function oneLoad(browser, server, scenario) {
   } finally { await page.close().catch(() => {}); }
 }
 
-/** The control: returns true when the stuck renderer was detected by the bounded watchdog. */
-async function controlTurnsRed() {
+/**
+ * Watchdog control: a page that never yields again. Returns {detected, cleaned, ms}: a bounded command timed out (the watchdog reports the hang) and the SIGKILL left no process
+ * of that browser.
+ */
+async function watchdogControl() {
+  const server = await startServer({ files: { '/busy/': resolve(ROOT, 'test/examples-smoke/hang-busy.html') } });
+  const browser = await launch('hang-watchdog');
+  browser.conn.sendTimeoutMs = 4000;
+  const t0 = Date.now();
+  let detected = false;
+  try {
+    const page = await browser.newPage({ reuseFirst: false });
+    await page.navigate(`${server.url}/busy/`);
+    await sleep(600);
+    for (let i = 0; i < 3; i++) { await page.evaluate('performance.now()'); await sleep(250); }
+  } catch (e) { detected = e instanceof H.CdpTimeoutError; }
+  const ms = Date.now() - t0;
+  browser.kill();
+  const report = await browser.close().catch(() => null);
+  await server.close().catch(() => {});
+  return { detected, cleaned: !!report && report.remaining.length === 0, ms };
+}
+
+/** Chrome spin probe: true when this Chrome still spins a renderer on raw trusted keys with no focused editable (the bounded watchdog reports it). */
+async function chromeStillSpins() {
   const server = await startServer({ files: { '/ctl/': resolve(ROOT, 'test/examples-smoke/hang-control.html') } });
-  const browser = await launch('hang-ctl');
+  const browser = await launch('hang-probe');
   browser.conn.sendTimeoutMs = 4000;
   try {
     const page = await browser.newPage({ reuseFirst: false });
@@ -77,10 +102,12 @@ async function controlTurnsRed() {
   finally { browser.kill(); await browser.close().catch(() => {}); await server.close().catch(() => {}); }
 }
 
-const result = { script: 'scripts/check-hang-stress.mjs', startedAt: new Date().toISOString(), loads: LOADS, throttle: THROTTLE, boundMs: BOUND_MS, done: 0, hangs: 0, problems: [], control: null, pass: false };
+const result = { script: 'scripts/check-hang-stress.mjs', startedAt: new Date().toISOString(), loads: LOADS, throttle: THROTTLE, boundMs: BOUND_MS, done: 0, hangs: 0, problems: [], control: null, chromeSpin: null, pass: false };
 const server = await startServer();
 let browser = await launch('hang-stress');
-console.log(`Chrome ${browser.version?.Browser} (headless), ${LOADS} loads of examples/basic, CPU throttle ${THROTTLE}x`);
+const chrome = browser.version?.Browser ?? 'Chrome (unknown version)';
+result.chrome = chrome;
+console.log(`${chrome} (headless), ${LOADS} loads of examples/basic, CPU throttle ${THROTTLE}x`);
 try {
   for (let i = 0; i < LOADS; i++) {
     const scenario = SCENARIOS[i % SCENARIOS.length];
@@ -95,9 +122,19 @@ try {
     }
   }
   if (!process.argv.includes('--no-control')) {
-    for (let attempt = 1; attempt <= 4 && !result.control; attempt++) result.control = await controlTurnsRed(); // the spin is probabilistic (about 5 in 8 launches), so up to 4 launches
-    console.log(`${result.control ? 'ok  ' : 'FAIL'} control (five keys, no focused editable, no polyfill) -> a stuck renderer is detected by the bounded watchdog`);
-    if (!result.control) result.problems.push('control did not turn red: the stuck-renderer watchdog is untested (did Chrome stop spinning? then this guard is obsolete)');
+    result.control = await watchdogControl();
+    const ok = result.control.detected && result.control.cleaned;
+    console.log(`${ok ? 'ok  ' : 'FAIL'} watchdog control (a page that never yields) -> the bounded watchdog reports the hang (${result.control.ms} ms) and the kill leaves no process`);
+    if (!result.control.detected) result.problems.push('watchdog control did not turn red: a page that blocks its main thread was not reported as a hang');
+    else if (!result.control.cleaned) result.problems.push('watchdog control: processes of the killed browser survived');
+  }
+  if (!process.argv.includes('--no-probe')) {
+    let spins = false;
+    for (let attempt = 1; attempt <= 4 && !spins; attempt++) spins = await chromeStillSpins(); // the spin is probabilistic (about 5 in 8 launches on Chrome 154), so up to 4 launches
+    result.chromeSpin = spins ? 'reproduced' : 'not applicable';
+    console.log(spins
+      ? `info Chrome spin probe: reproduced on ${chrome} (raw keys with no focused editable spin the renderer); the misfocus guard is still needed`
+      : `n/a  Chrome spin probe: not applicable on this Chrome (bug fixed upstream): ${chrome} did not spin in 4 launches; the misfocus guard stays as a harness rule`);
   }
 } finally { await browser.close().catch(() => {}); await server.close().catch(() => {}); }
 result.pass = result.hangs === 0 && result.problems.length === 0;

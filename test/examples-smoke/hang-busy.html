@@ -1,0 +1,2 @@
+<!doctype html><meta charset="utf-8"><title>hang watchdog control</title><p>Blocks its main thread for good shortly after load.</p>
+<script>addEventListener('load', () => setTimeout(() => { for (;;) { /* a page that never yields: the stuck renderer the watchdog must detect */ } }, 200));</script>
