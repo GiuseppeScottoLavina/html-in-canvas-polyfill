@@ -153,7 +153,7 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 ## Testing and conformance
 
 - **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 137 files (233 of 375 subtests); native Chrome passes 208 (354) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 479 in Node and 675 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
+- **Unit tests:** 479 in Node and 678 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
 - **Browser gates:** 11 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page (pixels, hit testing, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 37 seeded bugs are caught.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
