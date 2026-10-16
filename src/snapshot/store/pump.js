@@ -390,6 +390,7 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
   const geometryNow = !!budget.urgent && !(record.frameCap > 0 && record.frameCap <= (env.options.maxSnapshotFps || Infinity));
   const hard = env.options.nodeBudget.hard;
   let batch = 0;
+  let paced = false;
   for (const entry of list) {
     if (entry.refused || entry.lost) continue;
     if (!record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); continue; }
@@ -407,9 +408,11 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     if (!state.bucket.canStart()) { later(out, now + state.bucket.waitMs(budget.mainThreadShare)); continue; }
     batch ||= ++state.batchSeq;
     const spent = startBuild(env, deps, entry, now, batch);
-    if (spent !== null) { out.started++; out.spentMs += spent; }
+    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first; }
   }
-  if (batch && out.started) gate.started(now, interval);
+  // first builds use no credit of the rate gate either: the build after the first paint was otherwise held a frame, or not when the first frame was long (a cold
+  // page), and a page that changes the DOM every frame then stayed in either rhythm (WPT onpaint-remove-non-drawable-element passed or failed every subtest by turns)
+  if (paced) gate.started(now, interval);
 }
 
 /**

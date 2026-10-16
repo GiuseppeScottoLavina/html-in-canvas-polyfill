@@ -565,7 +565,7 @@
   "onpaint-iframe-post-tree-order.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,
   "onpaint-remove-drawable-element.tentative.html": 5,
-  "onpaint.tentative.html": 10,
+  "onpaint.tentative.html": 11,
   "offscreen/offscreenCanvas-drawElementImage.tentative.html": 1
  },
  "stable": [

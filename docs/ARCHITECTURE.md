@@ -231,7 +231,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
    `serial++`, `SchedulerHooks.firePaint(record, cs.changed)`; a throwing handler is reported by the platform, never breaks the loop; `requestPaint()` inside the handler sets `force` for the next frame). A force-only paint already fired this frame by `paintNow` is skipped.
 4. `store.pump(now, budget)`: starts due builds (`maxInFlight` 2 per canvas, synchronous part <= `mainThreadMs` 4 ms, total main-thread share incl. decode <= `mainThreadShare`, remaining work -> `moreWork`).
    The FIRST build of a drawable (never built: it holds back every paint of its canvas) is held by neither `maxInFlight` nor `mainThreadMs`, only by the cost bucket, which charges
-   it the fixed 3 ms estimate, not its measured cost: the first snapshot of a canvas is one round (at most 8 drawables), whatever cold compilation or machine load made it cost.
+   it the fixed 3 ms estimate, not its measured cost, and it uses no credit of the snapshot-rate gate: the first snapshot of a canvas is one round (at most 8 drawables), whatever cold
+   compilation or machine load made it cost, and the change right after the first paint is built in the next frame.
    `now` is frame time: the timestamp of the last rendering update plus whole frame periods, so the snapshot-rate gate does not depend on when the post-frame task ran.
    That gate (`min(F, maxSnapshotFps)`) is a credit of builds that grows by one per interval and is capped at one and a half: the long-run rate is the cap, and after a pause two
    builds may start one 120 Hz frame apart, never three (it replaced a phase accumulator whose catch-up allowed that second build or not depending on the phase left by earlier builds).

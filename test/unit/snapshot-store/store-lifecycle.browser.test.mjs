@@ -387,11 +387,12 @@ test('pump: a first build is charged its fixed estimate, not its measured cost: 
   assert.equal(rig.store.pump(t0, budget).started, 0, 'a later build is charged what it measured');
 });
 
-test('pump: the per-canvas frame cap spaces build starts (phase accumulator)', async (t) => {
+test('pump: the per-canvas frame cap spaces build starts', async (t) => {
   const rig = await makeRig(t);
   rig.record.frameCap = 10;
   const a = rig.add('a', 100, 60);
-  const t0 = performance.now();
+  await rig.build(a); // the first build uses no credit of the gate: pace from a later one
+  const t0 = performance.now() + 1000;
   rig.store.markDamage(a, null, 'forced');
   assert.equal(rig.store.pump(t0, rig.budget).started, 1);
   await until(() => rig.store.hasLanded());

@@ -493,37 +493,59 @@ test('the deferred decode start runs before the tasks the page queued earlier (a
   fallback.dispose();
 });
 
+test('first builds use no credit of the snapshot-rate cap: the change right after the first paint is built in the next frame, then the cap paces (WPT onpaint-remove-non-drawable-element)', async (t) => {
+  const rig = await makeRig(t, { options: { maxSnapshotFps: 60 } });
+  const a = rig.add('a', 100, 60);
+  const b = rig.add('b', 100, 60);
+  const frame = 1000 / 120;
+  const t0 = performance.now();
+  rig.store.markDamage(a, null, 'forced');
+  rig.store.markDamage(b, null, 'forced');
+  assert.equal(rig.store.pump(t0, rig.budget).started, 2, 'the first snapshot');
+  await until(() => rig.store.hasLanded());
+  rig.store.commitLanded();
+  rig.store.markDamage(a, A, 'mutation');
+  assert.equal(rig.store.pump(t0 + frame, rig.budget).started, 1, 'one frame later: not held by the cap');
+  await until(() => rig.store.hasLanded());
+  rig.store.commitLanded();
+  rig.store.markDamage(a, A, 'mutation');
+  assert.equal(rig.store.pump(t0 + 2 * frame, rig.budget).started, 0, 'then the cap holds');
+  assert.equal(rig.store.pump(t0 + 3 * frame, rig.budget).started, 1);
+});
+
 test('an in-frame (urgent) resize / DPR re-raster is not held by the snapshot-rate cap; everything else still is', async (t) => {
   const rig = await makeRig(t, { options: { maxSnapshotFps: 60 } });
   const a = rig.add('a', 100, 60);
-  const t0 = performance.now();
+  await rig.build(a); // the first build uses no credit of the gate (see the test above): pace from a later one
+  const t0 = performance.now() + 1000;
   rig.store.markDamage(a, null, 'input');
   rig.store.pump(t0, rig.budget);
-  assert.equal(rig.decodes, 1, 'first build');
+  assert.equal(rig.decodes, 2, 'a build');
   await until(() => rig.store.hasLanded(), 3000, 'landed');
   rig.store.commitLanded();
   const soon = t0 + 1000 / 120;
   rig.store.markDamage(a, null, 'input');
   rig.store.pump(soon, { ...rig.budget, urgent: true });
-  assert.equal(rig.decodes, 1, 'other damage one 120 Hz frame later waits for the 60 fps gate, even in an urgent pump');
+  assert.equal(rig.decodes, 2, 'other damage one 120 Hz frame later waits for the 60 fps gate, even in an urgent pump');
   rig.store.markDamage(a, null, 'resize');
   rig.store.pump(soon, rig.budget);
-  assert.equal(rig.decodes, 1, 'a resize built after the frame (not urgent) waits for the gate too');
+  assert.equal(rig.decodes, 2, 'a resize built after the frame (not urgent) waits for the gate too');
   rig.store.pump(soon, { ...rig.budget, urgent: true });
-  assert.equal(rig.decodes, 2, 'the in-frame resize re-raster starts at once: the retained tile has the wrong geometry');
+  assert.equal(rig.decodes, 3, 'the in-frame resize re-raster starts at once: the retained tile has the wrong geometry');
 });
 
 test('the canvas framecap still holds an in-frame resize re-raster (only maxSnapshotFps is lifted)', async (t) => {
   const rig = await makeRig(t, { options: { maxSnapshotFps: 60 } });
   rig.record.frameCap = 30;
   const a = rig.add('a', 100, 60);
-  const t0 = performance.now();
+  await rig.build(a); // the first build uses no credit of the gate: pace from a later one
+  const t0 = performance.now() + 1000;
   rig.store.markDamage(a, null, 'input');
   rig.store.pump(t0, rig.budget);
-  assert.equal(rig.decodes, 1);
+  assert.equal(rig.decodes, 2);
   await until(() => rig.store.hasLanded(), 3000, 'landed');
   rig.store.commitLanded();
   rig.store.markDamage(a, null, 'resize');
   rig.store.pump(t0 + 1000 / 60, { ...rig.budget, urgent: true });
-  assert.equal(rig.decodes, 1, 'framecap 30: the resize re-raster waits for the author cap');
+  assert.equal(rig.decodes, 2, 'framecap 30: the resize re-raster waits for the author cap');
 });
