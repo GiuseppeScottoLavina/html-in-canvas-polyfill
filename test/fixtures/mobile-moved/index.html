@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile moved drawable</title>
+<!-- The mobile gate (test/mobile): the drawable is drawn AWAY from its layout box (drawElementImage at an offset), so a tap must be routed by the drawn geometry. -->
+<script>
+  var q = new URLSearchParams(location.search);
+  if (q.get('bundle')) for (const src of q.get('bundle').split(',')) document.write('<script src="' + src + '"><\/script>');
+</script>
+<style>
+  html, body { margin: 0; background: #eef1f6; font: 16px/1.35 system-ui, -apple-system, sans-serif; }
+  #c { display: block; width: 340px; height: 300px; margin: 16px auto; background: #fff; }
+  #card { width: 180px; padding: 10px; background: #fdf3d8; border: 1px solid #c9a94b; border-radius: 8px; }
+  #card button { font: inherit; padding: 8px 14px; border: 0; border-radius: 8px; background: #2f6fed; color: #fff; }
+</style></head>
+<body>
+<canvas id="c" content="drawable"><div id="card" drawable><button id="b" type="button">Tap me</button></div></canvas>
+<p id="out">taps: 0</p>
+<script>
+  // drawn 120 css px right and 160 css px down of its layout box (the standard updates the element geometry from the draw, so hit testing follows it)
+  window.OFFSET = { x: 120, y: 160 };
+  var c = document.getElementById('c'), ctx = c.getContext('2d'), card = document.getElementById('card');
+  window.__taps = 0;
+  document.getElementById('b').addEventListener('click', function () { window.__taps++; document.getElementById('out').textContent = 'taps: ' + window.__taps; });
+  c.onpaint = function () { var k = c.width / c.getBoundingClientRect().width; ctx.reset(); ctx.drawElementImage(card, OFFSET.x * k, OFFSET.y * k); window.__drawn = (window.__drawn || 0) + 1; };
+  new ResizeObserver(function (e) { var b = e[0].devicePixelContentBoxSize; c.width = b[0].inlineSize; c.height = b[0].blockSize; }).observe(c, { box: 'device-pixel-content-box' });
+</script>
+</body></html>

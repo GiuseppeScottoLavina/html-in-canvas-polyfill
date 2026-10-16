@@ -7,11 +7,13 @@ import { sleep } from '../harness/lib/util.mjs';
  * Injected at the top of every served HTML page (server `inject`): records console.error/warn, uncaught errors and rejections into window.__XB_LOG,
  * because classic WebDriver has no console log. With ?xbsab=1 (positive control only) it sabotages the page right after parsing: drawElementImage draws
  * nothing and the drawn children stop receiving pointer input. A sound gate must turn red on that page. With ?xbbridge=1 the optional native bridge loads before the page's scripts. With ?xbblock=a,b (targeted positive controls) the events a, b never
- * reach any page listener (stopped at the window in the capture phase; default actions still run).
+ * reach any page listener (stopped at the window in the capture phase; default actions still run). With ?xbua=1 (positive control of the mobile refusal) the page sees a
+ * user agent of a supported version (Chrome/130, Version/26) and no userAgentData.
  */
 export const RECORDER = `<script>(function(){var L=window.__XB_LOG=[];['error','warn'].forEach(function(k){var o=console[k];console[k]=function(){try{L.push({k:k,m:Array.prototype.map.call(arguments,function(a){return a&&a.stack?String(a.stack):String(a)}).join(' ')})}catch(e){}return o.apply(console,arguments)}});
 addEventListener('error',function(e){L.push({k:'exception',m:String(e.message)+' @'+e.filename+':'+e.lineno})});addEventListener('unhandledrejection',function(e){L.push({k:'rejection',m:String(e.reason&&e.reason.stack||e.reason)})});
 var xb=/[?&]xbblock=([^&]*)/.exec(location.search);if(xb)decodeURIComponent(xb[1]).split(',').forEach(function(t){addEventListener(t,function(e){e.stopImmediatePropagation()},true)});
+if(/[?&]xbua=1/.test(location.search)){var ua=navigator.userAgent.replace(/Chrome\\/\\d+/,'Chrome/130').replace(/Version\\/\\d+/,'Version/26');Object.defineProperty(Navigator.prototype,'userAgent',{get:function(){return ua},configurable:true});Object.defineProperty(Navigator.prototype,'userAgentData',{get:function(){return undefined},configurable:true})}
 if(/[?&]xbbridge=1/.test(location.search))document.write('<script src="/dist/hic-live-native-bridge.iife.js"><\\/script>');
 if(/[?&]xbsab=1/.test(location.search))document.addEventListener('DOMContentLoaded',function(){window.__XB_SABOTAGED=true;try{Object.defineProperty(CanvasRenderingContext2D.prototype,'drawElementImage',{value:function(){},configurable:true,writable:true})}catch(e){}
 var s=document.createElement('style');s.textContent='[drawable],[drawable] *{pointer-events:none!important}';document.head.appendChild(s)});})();</script>`;
@@ -28,7 +30,8 @@ export async function pageErrors(s, { warnings = false } = {}) {
  * @returns {Promise<boolean>}
  */
 async function displayP3Shots(s) {
-  if (!s.webkit) return false;
+  // the iOS Simulator's screenshot is already sRGB (measured: the system blue reads back 0,136,255 in both the screenshot and the canvas)
+  if (!s.webkit || s.engine === 'ios') return false;
   s.__p3 ??= await s.evaluate("matchMedia('(color-gamut: p3)').matches");
   return s.__p3;
 }
@@ -49,11 +52,13 @@ export function p3ToSrgb(img) {
 
 /** Viewport screenshot cropped to a css-px rect (viewport coordinates). The crop scale is screenshot width / innerWidth (device pixels on DPR 2). */
 export async function shotRect(s, rect) {
+  // Mobile Safari: the screenshot is the whole device screen; the viewport origin is found with a marker (WdSession.viewportOffset)
+  const off = s.engine === 'ios' ? await s.viewportOffset() : null;
   const iw = await s.evaluate('innerWidth');
   const img = decodePng(await s.screenshot());
   if (await displayP3Shots(s)) p3ToSrgb(img);
-  const k = img.width / iw;
-  return { img: cropImage(img, Math.round(rect.x * k), Math.round(rect.y * k), Math.round(rect.width * k), Math.round(rect.height * k)), scale: k };
+  const k = off ? off.k : img.width / iw;
+  return { img: cropImage(img, Math.round((off?.x ?? 0) + rect.x * k), Math.round((off?.y ?? 0) + rect.y * k), Math.round(rect.width * k), Math.round(rect.height * k)), scale: k };
 }
 
 export const rectOf = (s, sel) => s.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);

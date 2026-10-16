@@ -75,6 +75,43 @@ export class WdSession {
 
   async actions(list) { await this.cmd('POST', '/actions', { actions: list }); await this.cmd('DELETE', '/actions'); }
 
+  /**
+   * Where the page viewport sits in a screenshot, in screenshot pixels {x, y, k} (k = screenshot px per css px). Desktop: the viewport is the screenshot. Mobile Safari: the
+   * screenshot is the whole device screen (status bar, toolbars), so a fixed magenta marker at the viewport origin is located in a screenshot.
+   */
+  async viewportOffset() {
+    const { decodePng } = await import('./png.mjs');
+    if (this.engine !== 'ios') { const iw = await this.evaluate('innerWidth'); const img = decodePng(await this.screenshot()); return { x: 0, y: 0, k: img.width / iw }; }
+    await this.evaluate(`(() => { const m = document.createElement('div'); m.id = '__xb_marker'; m.style.cssText = 'position:fixed;left:0;top:0;width:6px;height:6px;background:#f0f;z-index:2147483647;pointer-events:none'; document.documentElement.appendChild(m); return new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok(true)))); })()`);
+    const img = decodePng(await this.screenshot());
+    await this.evaluate(`(document.getElementById('__xb_marker')?.remove(), new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok(true)))))`);
+    const dpr = await this.evaluate('devicePixelRatio');
+    for (let y = 0; y < img.height; y++) for (let x = 0; x < Math.min(img.width, 64); x++) {
+      const i = (y * img.width + x) * 4; const d = img.data;
+      if (d[i] > 230 && d[i + 1] < 40 && d[i + 2] > 230) return { x, y, k: dpr };
+    }
+    throw new Error('viewport marker not found in the screenshot');
+  }
+
+  /** Trusted touch tap at viewport CSS coordinates (pointerType touch). */
+  tap(x, y, { holdMs = 60 } = {}) {
+    return this.actions([{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' }, actions: [
+      { type: 'pointerMove', duration: 0, origin: 'viewport', x: Math.round(x), y: Math.round(y) }, { type: 'pointerDown', button: 0 }, { type: 'pause', duration: holdMs }, { type: 'pointerUp', button: 0 }] }]);
+  }
+
+  /** Trusted touch press held for `ms` (the long-press selection gesture). */
+  longPress(x, y, ms = 900) { return this.tap(x, y, { holdMs: ms }); }
+
+  /** Trusted touch drag from (x1, y1) to (x2, y2) over `ms` (touch scroll when the start point is in a scroller). */
+  swipe(x1, y1, x2, y2, ms = 400) {
+    // Mobile Safari's driver hangs on a pointerMove with a duration (measured on the iOS 26.4 simulator): the drag is a series of instant moves with pauses
+    const steps = 12, moves = [];
+    for (let i = 1; i <= steps; i++) moves.push({ type: 'pointerMove', duration: 0, origin: 'viewport', x: Math.round(x1 + ((x2 - x1) * i) / steps), y: Math.round(y1 + ((y2 - y1) * i) / steps) }, { type: 'pause', duration: Math.round(ms / steps) });
+    return this.actions([{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' }, actions: [
+      { type: 'pointerMove', duration: 0, origin: 'viewport', x: Math.round(x1), y: Math.round(y1) }, { type: 'pointerDown', button: 0 }, { type: 'pause', duration: 50 },
+      ...moves, { type: 'pause', duration: 50 }, { type: 'pointerUp', button: 0 }] }]);
+  }
+
   /** Trusted primary click at viewport CSS coordinates. */
   click(x, y) {
     return this.actions([{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
@@ -223,6 +260,43 @@ async function launchSafari({ stp = false } = {}) {
     killPids(safariPids.filter((p) => pgrep(pattern).includes(p)), 'SIGKILL');
   };
   return new WdSession({ engine: stp ? 'stp' : 'safari', base, id: v.sessionId, caps: { ...v.capabilities, pids: safariPids }, cleanup });
+}
+
+/**
+ * Mobile Safari in an iOS Simulator through the system safaridriver (`platformName: iOS`, `safari:useSimulator`; needs a full Xcode). The device is booted when it is not,
+ * and shut down again on close only when this call booted it. The simulator's Safari must allow remote automation (Settings > Safari > Advanced > Remote Automation, a setting of
+ * the simulated device, written once with `defaults` inside it when missing). Screenshots are the whole device screen: `viewportOffset()` finds the page viewport in them.
+ * @param {{udid: string}} o
+ */
+export async function launchIosSimulator({ udid }) {
+  const simctl = (...a) => spawnSync('xcrun', ['simctl', ...a], { encoding: 'utf8' });
+  const state = simctl('list', 'devices', '-j');
+  const dev = Object.values(JSON.parse(state.stdout || '{}').devices ?? {}).flat().find((d) => d.udid === udid);
+  if (!dev) throw new EngineUnavailable(`iOS Simulator device ${udid} not found (xcrun simctl list devices)`);
+  const booted = dev.state === 'Booted';
+  if (!booted) { const b = simctl('boot', udid); if (b.status !== 0 && !/current state: Booted/.test(b.stderr)) throw new Error(`simctl boot failed: ${b.stderr}`); simctl('bootstatus', udid, '-b'); }
+  const shutdown = () => { if (!booted) simctl('shutdown', udid); };
+  const auto = simctl('spawn', udid, 'defaults', 'read', 'com.apple.mobilesafari', 'RemoteAutomationEnabled');
+  if (auto.stdout.trim() !== '1') simctl('spawn', udid, 'defaults', 'write', 'com.apple.mobilesafari', 'RemoteAutomationEnabled', '-bool', 'YES');
+  const port = await freePort();
+  const drv = spawn('safaridriver', ['-p', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = ''; drv.stderr.on('data', (d) => { stderr += d; });
+  own([drv.pid]);
+  const base = `http://127.0.0.1:${port}`;
+  await waitHttp(base);
+  let v;
+  try { v = await newSession(base, { browserName: 'Safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceUDID': udid }, 180000); } catch (e) {
+    killPids([drv.pid]); shutdown();
+    // measured with Safari 27.0.1's safaridriver and the iOS 27.0 simulator runtime: no session host is offered although remote automation is on (the iOS 26.4 and
+    // 18.1 runtimes pair); in the simulator, Settings > Apps > Safari > Advanced > Web Inspector / Remote Automation is the place to check
+    if (/session hosts/.test(e.message)) throw new EngineUnavailable(`safaridriver found no Mobile Safari to automate in simulator ${udid} (${e.message.replace(/^.*message":"/, '').replace(/".*$/, '')})`);
+    throw new Error(`${e.message}${stderr ? ' / ' + stderr.trim() : ''}`);
+  }
+  const cleanup = async () => { killPids([drv.pid]); shutdown(); };
+  const s = new WdSession({ engine: 'ios', base, id: v.sessionId, caps: { ...v.capabilities, udid, bootedByUs: !booted }, cleanup });
+  // measured: the simulator's Safari receives trusted keydown / keypress from WebDriver key actions but inserts no text (the plain DOM alike): typing is not drivable
+  s.typeText = async () => false;
+  return s;
 }
 
 /** @param {{engine:'firefox'|'safari'|'stp', width?:number, height?:number, prefs?:object}} o  'stp' = Safari Technology Preview (optional: EngineUnavailable when it cannot run) */

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile fixture</title>
+<!-- The mobile gate (test/mobile): a phone-width drawable with a form, an inner scroller and a field near the bottom (virtual keyboard). ?mode=ref|poly&bundle=... (shared/boot.js) -->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #eef1f6; color: #1d2433; font: 16px/1.35 system-ui, -apple-system, sans-serif; }
+  #top { height: 24px; }
+  #hic-surface { display: block; width: 340px; height: 1000px; margin: 0 auto; background: #fff; }
+  #root { width: 100%; height: 100%; padding: 12px; background: #fff; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  label { display: block; font-size: 14px; color: #475066; margin: 8px 0 4px; }
+  input[type=text] { width: 100%; padding: 8px 10px; font: inherit; border: 1px solid #9aa4b8; border-radius: 8px; background: #fbfcfe; color: #111; }
+  .line { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  button { font: inherit; padding: 8px 16px; border: 0; border-radius: 8px; background: #2f6fed; color: #fff; }
+  #list { height: 200px; overflow: auto; margin: 12px 0; border: 1px solid #c5ccda; border-radius: 8px; }
+  #list .head { position: sticky; top: 0; padding: 6px 10px; background: #2d4470; color: #fff; font-weight: 700; }
+  .row { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-bottom: 1px solid #e3e7ef; }
+  .row:nth-child(even) { background: #f4f6fa; }
+  .badge { min-width: 28px; text-align: center; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+  .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #spacer { height: 330px; color: #7a8399; font-size: 13px; }
+  #bottom { height: 1200px; }
+</style></head>
+<body>
+<div id="top"></div>
+<canvas id="hic-surface" width="340" height="1000" content="drawable" aria-label="Mobile fixture surface">
+  <div id="root" drawable>
+    <h1>Mobile</h1>
+    <label for="name">Name</label><input type="text" id="name" placeholder="Your name">
+    <div class="line"><input type="checkbox" id="consent"><label for="consent" style="margin:0">Agree</label><button id="go" type="button">Send</button></div>
+    <p id="said" style="margin:4px 0;min-height:22px"></p>
+    <div id="list"><div class="head">Rows</div>
+<div class="row" data-i="0"><span class="badge" style="background:hsl(0 65% 42%)">0</span><span class="txt">Row 0 · amber fjord kelp</span></div>
+<div class="row" data-i="1"><span class="badge" style="background:hsl(37 65% 42%)">1</span><span class="txt">Row 1 · amber fjord kelp</span></div>
+<div class="row" data-i="2"><span class="badge" style="background:hsl(74 65% 42%)">2</span><span class="txt">Row 2 · amber fjord kelp</span></div>
+<div class="row" data-i="3"><span class="badge" style="background:hsl(111 65% 42%)">3</span><span class="txt">Row 3 · amber fjord kelp</span></div>
+<div class="row" data-i="4"><span class="badge" style="background:hsl(148 65% 42%)">4</span><span class="txt">Row 4 · amber fjord kelp</span></div>
+<div class="row" data-i="5"><span class="badge" style="background:hsl(185 65% 42%)">5</span><span class="txt">Row 5 · amber fjord kelp</span></div>
+<div class="row" data-i="6"><span class="badge" style="background:hsl(222 65% 42%)">6</span><span class="txt">Row 6 · amber fjord kelp</span></div>
+<div class="row" data-i="7"><span class="badge" style="background:hsl(259 65% 42%)">7</span><span class="txt">Row 7 · amber fjord kelp</span></div>
+<div class="row" data-i="8"><span class="badge" style="background:hsl(296 65% 42%)">8</span><span class="txt">Row 8 · amber fjord kelp</span></div>
+<div class="row" data-i="9"><span class="badge" style="background:hsl(333 65% 42%)">9</span><span class="txt">Row 9 · amber fjord kelp</span></div>
+<div class="row" data-i="10"><span class="badge" style="background:hsl(10 65% 42%)">10</span><span class="txt">Row 10 · amber fjord kelp</span></div>
+<div class="row" data-i="11"><span class="badge" style="background:hsl(47 65% 42%)">11</span><span class="txt">Row 11 · amber fjord kelp</span></div>
+<div class="row" data-i="12"><span class="badge" style="background:hsl(84 65% 42%)">12</span><span class="txt">Row 12 · amber fjord kelp</span></div>
+<div class="row" data-i="13"><span class="badge" style="background:hsl(121 65% 42%)">13</span><span class="txt">Row 13 · amber fjord kelp</span></div>
+<div class="row" data-i="14"><span class="badge" style="background:hsl(158 65% 42%)">14</span><span class="txt">Row 14 · amber fjord kelp</span></div>
+<div class="row" data-i="15"><span class="badge" style="background:hsl(195 65% 42%)">15</span><span class="txt">Row 15 · amber fjord kelp</span></div>
+<div class="row" data-i="16"><span class="badge" style="background:hsl(232 65% 42%)">16</span><span class="txt">Row 16 · amber fjord kelp</span></div>
+<div class="row" data-i="17"><span class="badge" style="background:hsl(269 65% 42%)">17</span><span class="txt">Row 17 · amber fjord kelp</span></div>
+<div class="row" data-i="18"><span class="badge" style="background:hsl(306 65% 42%)">18</span><span class="txt">Row 18 · amber fjord kelp</span></div>
+<div class="row" data-i="19"><span class="badge" style="background:hsl(343 65% 42%)">19</span><span class="txt">Row 19 · amber fjord kelp</span></div>
+<div class="row" data-i="20"><span class="badge" style="background:hsl(20 65% 42%)">20</span><span class="txt">Row 20 · amber fjord kelp</span></div>
+<div class="row" data-i="21"><span class="badge" style="background:hsl(57 65% 42%)">21</span><span class="txt">Row 21 · amber fjord kelp</span></div>
+<div class="row" data-i="22"><span class="badge" style="background:hsl(94 65% 42%)">22</span><span class="txt">Row 22 · amber fjord kelp</span></div>
+<div class="row" data-i="23"><span class="badge" style="background:hsl(131 65% 42%)">23</span><span class="txt">Row 23 · amber fjord kelp</span></div>
+<div class="row" data-i="24"><span class="badge" style="background:hsl(168 65% 42%)">24</span><span class="txt">Row 24 · amber fjord kelp</span></div>
+<div class="row" data-i="25"><span class="badge" style="background:hsl(205 65% 42%)">25</span><span class="txt">Row 25 · amber fjord kelp</span></div>
+<div class="row" data-i="26"><span class="badge" style="background:hsl(242 65% 42%)">26</span><span class="txt">Row 26 · amber fjord kelp</span></div>
+<div class="row" data-i="27"><span class="badge" style="background:hsl(279 65% 42%)">27</span><span class="txt">Row 27 · amber fjord kelp</span></div>
+<div class="row" data-i="28"><span class="badge" style="background:hsl(316 65% 42%)">28</span><span class="txt">Row 28 · amber fjord kelp</span></div>
+<div class="row" data-i="29"><span class="badge" style="background:hsl(353 65% 42%)">29</span><span class="txt">Row 29 · amber fjord kelp</span></div>
+<div class="row" data-i="30"><span class="badge" style="background:hsl(30 65% 42%)">30</span><span class="txt">Row 30 · amber fjord kelp</span></div>
+<div class="row" data-i="31"><span class="badge" style="background:hsl(67 65% 42%)">31</span><span class="txt">Row 31 · amber fjord kelp</span></div>
+<div class="row" data-i="32"><span class="badge" style="background:hsl(104 65% 42%)">32</span><span class="txt">Row 32 · amber fjord kelp</span></div>
+<div class="row" data-i="33"><span class="badge" style="background:hsl(141 65% 42%)">33</span><span class="txt">Row 33 · amber fjord kelp</span></div>
+<div class="row" data-i="34"><span class="badge" style="background:hsl(178 65% 42%)">34</span><span class="txt">Row 34 · amber fjord kelp</span></div>
+<div class="row" data-i="35"><span class="badge" style="background:hsl(215 65% 42%)">35</span><span class="txt">Row 35 · amber fjord kelp</span></div>
+<div class="row" data-i="36"><span class="badge" style="background:hsl(252 65% 42%)">36</span><span class="txt">Row 36 · amber fjord kelp</span></div>
+<div class="row" data-i="37"><span class="badge" style="background:hsl(289 65% 42%)">37</span><span class="txt">Row 37 · amber fjord kelp</span></div>
+<div class="row" data-i="38"><span class="badge" style="background:hsl(326 65% 42%)">38</span><span class="txt">Row 38 · amber fjord kelp</span></div>
+<div class="row" data-i="39"><span class="badge" style="background:hsl(3 65% 42%)">39</span><span class="txt">Row 39 · amber fjord kelp</span></div>
+    </div>
+    <div id="spacer">A field further down: tapping it opens the virtual keyboard, which must not hide it.</div>
+    <label for="late">Late field</label><input type="text" id="late" value="selectable words here">
+  </div>
+</canvas>
+<div id="bottom"></div>
+<script>document.getElementById('go').addEventListener('click', () => { document.getElementById('said').textContent = 'Thanks, ' + document.getElementById('name').value + '.'; });</script>
+<script src="/test/fixtures/shared/boot.js"></script>
+</body></html>

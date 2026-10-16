@@ -103,7 +103,8 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) are not supported there | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
-| older Firefox/Safari, mobile, WebViews | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
+| Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Verified on iOS Simulator / Android Emulator only | MOBILE |
+| older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
 Measured on macOS: Chrome 154 and 155, Chrome Canary 157 (native), Firefox 155.0.1 and Safari 27.0.1. Other Chromium browsers are expected to work and are unverified; nothing was measured on Windows or Linux.
 

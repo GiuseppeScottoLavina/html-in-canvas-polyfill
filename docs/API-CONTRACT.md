@@ -20,7 +20,7 @@ points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/`
 
 | Implemented (supported or limited) | Not implemented (fails loudly, section 9) |
 |---|---|
-| `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27, other engines, mobile, an engine lacking a required platform feature |
+| `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27 (desktop) or < 26 (iOS), other engines, web views, Firefox for Android, an engine lacking a required platform feature |
 | `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | shadow DOM, iframes/objects/embeds, top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
 | `ctx.drawElementImage` (all 4 overloads) on `CanvasRenderingContext2D` and main-thread `OffscreenCanvasRenderingContext2D` | cross-origin resources that cannot be inlined (section 9.2) |
 | `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas | a worker as a source or sink of `ElementImage` (use `toImageBitmap()`; `postMessage` of one throws a loud, actionable error) |
@@ -76,9 +76,11 @@ The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `i
 Gate G-bridged-translation runs these rows on Chrome 154 with the flag; the unit tests run them on fake native shapes (`test/unit/api-core/_page-env.mjs`: the measured current, previous and legacy shapes, and the shape of Safari Technology Preview 254 with its HTML-in-Canvas flag, read from its binary).
 A legacy build without the geometry methods (Safari Technology Preview 254: no `updateElementGeometry` / `clearElementGeometry`) is bridged all the same: only the methods that exist are wrapped, and the matrix a draw returns goes to the polyfill's CSS rule alone.
 
-Browser gate (only evaluated for `absent`/`forcePolyfill`): desktop Chromium >= 130 (only 154 and Canary 157 measured), Firefox >= 155 or
-Safari >= 27 (the measured majors, G-xbrowser), AND every required platform feature present (CSS anchor positioning, ResizeObserver,
-`HTMLImageElement.decode`, constructable stylesheets; a missing one is named in the message). Anything else: `install()` throws
+Browser gate (only evaluated for `absent`/`forcePolyfill`): Chromium >= 130 on desktop and Chrome for Android (only 154 and Canary 157 measured on desktop; Android only as an
+emulator stand-in), Firefox >= 155 or Safari >= 27 on desktop (the measured majors, G-xbrowser), Safari >= 26 on iOS / iPadOS (iPadOS detected from a `Macintosh` agent with
+more than one touch point; G-mobile on the iOS Simulator) and the other iOS browsers (WebKit, no version in their agent: decided by the features), AND every required platform
+feature present (CSS anchor positioning, ResizeObserver, `HTMLImageElement.decode`, constructable stylesheets; a missing one is named in the message). Android WebView, in-app
+iOS web views (no `Safari/` token) and Firefox for Android are refused with that reason (`docs/guides/MOBILE.md`). Anything else: `install()` throws
 `HicUnsupportedError('browser')` (default `onUnsupportedBrowser: 'throw'`); `'warn'` logs once and installs nothing.
 `options.mode`: `'auto'` (default) as above; `'native-only'` never runs the renderer (throws where `auto` would run the polyfill or refuse);
 `'polyfill'` runs the polyfill when native is `absent`; over a usable native it steps aside like `auto`, with one `console.warn` and a
@@ -421,6 +423,6 @@ Limited rows that change observable layout or structure: `tree-identity` (parent
 `container-queries`, `shadow-canvas`, `nested-canvas`, `export-resolution`, `context-loss`, `print-find`.
 
 ## 10. Options (`HicOptions`)
-Typedef with defaults: `contracts/types.js` (`HicOptions`, `ResolvedOptions`). Options include `coherentPaint` (true), `coherenceMaxWaitMs` (50), `paintGateMaxWaitMs` (400), `parentFacade` (true), `stackingAudit` ('report'), `maxTotalSurfaceBytes` (512 MiB). `window` / `document` options allow installing into
+Typedef with defaults: `contracts/types.js` (`HicOptions`, `ResolvedOptions`). Options include `coherentPaint` (true), `coherenceMaxWaitMs` (50), `paintGateMaxWaitMs` (400), `parentFacade` (true), `stackingAudit` ('report'), `maxTotalSurfaceBytes` (512 MiB). On a phone or tablet (the browser gate's `mobile`), options the page did not set default to `maxDpr` 3, `maxSurfacePixels` 16,777,216 and `maxTotalSurfaceBytes` 256 MiB (128 MiB when `navigator.deviceMemory <= 2`): `options.js` `MOBILE_BUDGETS`, rationale and the unverified status in `docs/guides/MOBILE.md`. `window` / `document` options allow installing into
 another realm (tests). `autoDiscover:false` disables the document-wide canvas scan and the document MutationObserver; canvases are then managed only through
 `installed.adopt(canvas)`.

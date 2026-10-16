@@ -20,7 +20,7 @@ Classic script: one `console.warn` (`[hic-live-polyfill] not installed (<feature
 
 | feature | message (start) | cause | remedy |
 |---|---|---|---|
-| `browser` | `unsupported browser: <reason>` | not desktop Chromium >= 130, Firefox >= 155 or Safari >= 27 (mobile, WebView, an older version), or a required platform feature is missing (named in the reason) | use a current desktop Chrome, Edge, Firefox or Safari (source: `native-detect.js` `browserGate`) |
+| `browser` | `unsupported browser: <reason>` | not Chromium >= 130 (desktop or Chrome for Android), Firefox >= 155 or Safari >= 27 on desktop, or Safari >= 26 on iOS / iPadOS (other iOS browsers are WebKit and are decided by the features); an Android WebView, an in-app iOS web view, Firefox for Android, an older version; or a required platform feature is missing (named in the reason) | use a current Chrome, Edge, Firefox or Safari, or open the page in the device's browser instead of an app's web view (source: `native-detect.js` `browserGate`; mobile: `docs/guides/MOBILE.md`) |
 | `browser` | `install() needs a browser window and found none` | called without a `window` | run it in a page, or pass `options.window` |
 | `browser` | `mode "native-only" needs a native HTML-in-Canvas implementation and this browser has none` | `options.mode: 'native-only'` on a browser without native | use `mode: 'auto'` |
 | `partial-native` | `this browser has a native HTML-in-Canvas implementation without its core (missing: ...)` | the native build lacks `content` (and `layoutSubtree`), `onpaint` or 2D `drawElementImage` | update the browser or remove the experimental flag (`forcePolyfill` replaces it in tests only) |

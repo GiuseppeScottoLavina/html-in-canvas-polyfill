@@ -133,6 +133,7 @@
     "test:wpt": "node test/wpt/gate.mjs",
     "test:frameworks": "node test/frameworks/run.mjs",
     "test:xbrowser": "node test/xbrowser/run.mjs",
+    "test:mobile": "node test/mobile/run.mjs",
     "prepack": "node scripts/build.mjs --quiet"
   },
   "devDependencies": {

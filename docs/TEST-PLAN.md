@@ -225,6 +225,22 @@ no console error; control: the sabotaged draw must turn `pixel` red); `broken` m
 Oracle: `shiftTolerant` <= 5 % of pixels over 16 and <= 1 % over 100, a pixel may match the reference one device row above or below; both images non-blank
 (>= 0.2 % non-dominant pixels); strict fraction reported. A run passes only when every scenario passes AND its control turned every declared class red; `--no-control` never passes.
 
+### 2.10 Mobile gate G-mobile (`npm run test:mobile`; iOS Simulator and Android Emulator only, no physical device)
+
+`node test/mobile/run.mjs [--platform=ios,android] [--only=...] [--no-control] [--ios-devices=...] [--ipad=...] [--ios-old=...] [--avd=...] [--no-stand-in]`. Devices run one at a time
+and are shut down afterwards: iPhone 17 on the newest iOS 26.x simulator (required) and on iOS >= 27 (optional, SKIPPED when `safaridriver` cannot pair with it), an iPad on iOS
+26.x (classification, explainer), an iPhone on iOS 18.x (refusal), then the AVD. iOS: Mobile Safari through the system `safaridriver` (`platformName: iOS`,
+`safari:useSimulator`); trusted touch taps and holds are WebDriver touch pointer actions; a touch drag wedges the driver and key actions insert no text (the plain page alike),
+so touch scroll, typing through keys, the virtual keyboard, rotation and long-press are skipped there with the reason (typing goes in through `execCommand` after a trusted
+tap; rotation is replaced by a canvas resize). Screenshots are the whole device screen: crops are located with a marker drawn into the page in the same screenshot, and only
+from the upper half of the viewport (the toolbar's blur covers the bottom). Android: the emulator starts headless, Chrome is driven over `adb forward ... chrome_devtools_remote`;
+taps and drags are CDP touch events, typing is the IME (`adb input text`), long press, keyboard taps and rotation go through the OS. When the image's Chrome is older than 130
+the polyfill scenarios run as a labelled stand-in (the anchor-positioning flag and a Chromium 130 user agent) and the refusal runs on the real agent. At a fractional DPR the
+crop origin is searched over +-1 device pixel. Scenarios: gate, explainer (pixels, tap focus, typing, raster scale = device DPR up to 3), form (taps on field, checkbox,
+button), moved (a drawable drawn away from its layout box), touchScroll, rotation, keyboard, selection, controls (F6 `?narrow=1`, 62 regions, iOS look; informative on the
+Android stand-in), unsupported (an older browser refused with the version named; control: the same page with a supported user agent). Positive controls: the RECORDER sabotage
+(`?xbsab=1`), the accent / outline sabotage for controls and `?xbua=1` for the refusal. Results: `.scratch/results/mobile-<ts>.json`.
+
 ## 3. Reporting
 
 `npm run test:gates` (`test/gates/run-all.mjs [--only=ids] [--no-control] [--dpr=N] [--wait-quiet=S]`) runs gates sequentially (ONE browser at a time), prints a table, writes `.scratch/results/<gate>-<timestamp>.json` with the numbers listed in section 0.8, and
