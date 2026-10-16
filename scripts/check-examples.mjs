@@ -340,7 +340,8 @@ const SCENARIOS = {
     }
     await run.step('interact', 'click + type in the name field reaches the live input (effect off)', async () => {
       if (mode === 'effect' && !(await pick('off'))) return { ok: false, reason: 'off not selected' };
-      await page.evaluate(`window.scrollTo(0, 0)`);
+      await page.evaluate(`window.scrollTo(0, 0); document.getElementById('name').scrollIntoView({ block: 'nearest' })`);   // in the viewport whatever the notice above the canvas takes
+      await sleep(150);
       const c = await centerOf(page, '#name');
       await page.click(c.x, c.y); await sleep(200);
       await typeText(page, 'x');
