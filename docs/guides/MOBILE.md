@@ -45,6 +45,7 @@ reached the drawable is rastered at a lower scale and reported (`surface-size`),
 - **Typing.** The virtual keyboard and the IME type into the live field; the canvas follows. On Android, tapping a field near the bottom opens the keyboard and the browser
   pans the visual viewport so the field stays visible (measured: 811 -> 451 px).
 - **Selection.** A long press selects a word in the live field; the system selection handles and menu belong to the live element and line up with the drawn copy.
+- **Selecting text drawn outside fields.** The desktop gesture (a double click on the canvas itself, row `selection-through-canvas`) is a mouse gesture and was not measured with touch; on a phone, long-press a drawn field instead.
 - **Scrolling.** A finger drag over a drawn scroller scrolls the live scroller, not the page; a drag over the canvas outside drawn scrollers scrolls the page.
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
 - **Effects.** The effect plugins re-target touch input like mouse input (unit-tested with touch pointer events), but neither simulator has a WebGPU adapter, so effects
