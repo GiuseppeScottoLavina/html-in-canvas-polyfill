@@ -156,9 +156,9 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 ## Testing and conformance
 
 - **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 143 files (245 of 375 subtests); native Chrome passes 209 (355) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 487 in Node and 698 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
-- **Browser gates:** 14 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 39 seeded bugs are caught.
-- **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine.
+- **Unit tests:** 488 in Node and 706 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
+- **Browser gates:** 14 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 42 seeded bugs are caught.
+- **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
 - **Phones (simulators and emulators):** `npm run test:mobile` drives Mobile Safari in the iOS Simulator and Chrome in the Android Emulator: taps on moved drawables, typing, touch scroll, the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
 
