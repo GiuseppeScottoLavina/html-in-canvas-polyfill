@@ -499,24 +499,143 @@ export async function inactive(ctx) {
 export const NATIVE_SURFACE = `import('/src/api/native-detect.js').then((m) => { const native = m.probeNative(window); const gate = m.browserGate(window);
   return { native, gate, decision: m.decideMode(native, gate, { mode: 'auto', forcePolyfill: false }) }; })`;
 
+/** The native-flag pages load the optional bridge before the core (docs/BUNDLES.md): a legacy native build is bridged, a current one is used as found. */
+const NATIVE_BUNDLE = '/dist/hic-live-native-bridge.iife.js,/dist/hic-live-polyfill.iife.js';
+const nativeMode = (s) => s.evaluate('window.__HIC__ ? (window.__HIC__.error ? "error: " + window.__HIC__.error.message : window.__HIC__.installed.mode) : "no __HIC__"');
+const stepsAside = (m) => m === 'native' || m === 'native-bridged';
+
 /**
- * Only for an engine with a usable NATIVE implementation (Safari Technology Preview with its HTML-in-Canvas flag): every example installs without throwing, steps
- * aside (mode native or native-bridged; the bridge bundle is loaded through ?xbbridge=1), draws a non-blank canvas natively and logs no error.
+ * Native flag on (Safari Technology Preview with Debug > WebKit Internal Features > HTML-in-Canvas): install() never refuses the usable native and never throws,
+ * with or without the bridge bundle; without it a legacy build is used as found (mode native, one warning, no error).
+ */
+export async function nativeSurface(ctx) {
+  const { s } = ctx; const P = '/test/fixtures/explainer/index.html';
+  ctx.numbers.nativeSurface = {};
+  for (const [label, bundle, want] of [['core only', '/dist/hic-live-polyfill.iife.js', ['native']], ['bridge + core', NATIVE_BUNDLE, ['native', 'native-bridged']]]) {
+    await s.navigate(url(ctx, P, { mode: 'poly', bundle })); await until(s, 'document.readyState === "complete"'); await sleep(600);
+    const m = await nativeMode(s);
+    const r = await s.evaluate('window.__HIC__ && window.__HIC__.installed ? { kind: window.__HIC__.installed.native.kind, probe: window.__HIC__.installed.native.probe, errors: window.__HIC__.installed.report().errors.length } : null');
+    ctx.numbers.nativeSurface[label] = { mode: m, ...r };
+    ctx.check(`native surface, ${label}: install steps aside without throwing (mode ${want.join(' or ')})`, want.includes(m) && r?.errors === 0, ctx.numbers.nativeSurface[label], 'surface');
+    await noErrors(ctx, `native surface, ${label}`);
+  }
+}
+
+/**
+ * The WICG explainer example on the native implementation through the bridge: drawn natively (canvas backing store vs the plain-DOM twin, same oracle as the
+ * polyfill scenarios), typing into its field repaints the canvas (the bridge requests the paints the build does not fire on its own).
+ * The click is not asserted: the example draws the form 100 grid px right of its layout box and a legacy build without geometry methods keeps hit testing
+ * at the layout box (docs/SUPPORT-MATRIX.md); where the drawn field is hit is recorded.
+ */
+export async function nativeExplainer(ctx) {
+  const { s } = ctx; const P = '/test/fixtures/explainer/index.html';
+  await s.navigate(url(ctx, P, { mode: 'ref' })); await until(s, 'window.__ready === true');
+  const twin = await rectOf(s, '#twin'); const inputR = await rectOf(s, '#name');
+  const refRest = (await shotRect(s, twin)).img;
+  await s.navigate(url(ctx, P, { mode: 'poly', bundle: NATIVE_BUNDLE }));
+  await until(s, '(window.__paints || 0) >= 1').catch(() => null); await sleep(800);
+  const m = await nativeMode(s); ctx.numbers.nativeExplainerMode = m;
+  ctx.check('native explainer: install steps aside (mode native or native-bridged)', stepsAside(m), { mode: m }, 'surface');
+  const rest = await readCanvas(s, 'canvas');
+  judge(ctx, 'nativeExplainerRest', oracle(rest, refRest));
+  const k = rest.width / twin.width; const region = devRect(inputR, twin, k, 2);
+  ctx.numbers.nativeExplainerHitAtDrawn = await s.evaluate(`(() => { const e = document.elementFromPoint(${center(inputR).x}, ${center(inputR).y}); return e && (e.id || e.localName); })()`);
+  await s.evaluate('document.getElementById("name").focus()');
+  if ((await s.evaluate('document.activeElement && document.activeElement.id')) === 'name') await s.typeText('hello', { intervalMs: 120 });
+  await sleep(700);
+  const value = await s.evaluate('document.getElementById("name").value');
+  const typed = await readCanvas(s, 'canvas');
+  const changed = regionChanged(rest, typed, region);
+  ctx.numbers.nativeExplainerTyping = { value, countOver16: changed };
+  ctx.check('native explainer: typing reaches the field once per key and the native canvas repaints its pixels', value === 'hello' && changed > 8, ctx.numbers.nativeExplainerTyping, 'typing');
+  await noErrors(ctx, 'native explainer');
+}
+
+/**
+ * The published contact form (examples/form) on the native implementation: it draws the form at its layout box, so a legacy build that keeps hit testing at the
+ * layout box hits the drawn controls. Non-blank native pixels, trusted clicks focus and toggle the drawn controls, typing reaches the fields and repaints the
+ * native canvas where the field is drawn. (The rich F1 fixture is not compared with its twin here: Safari Technology Preview 254 leaves most of it undrawn,
+ * a native rendering limit recorded in docs/SUPPORT-MATRIX.md.)
+ */
+export async function nativeForm(ctx) {
+  const { s } = ctx;
+  await s.navigate(url(ctx, '/examples/form/index.html', { xbbridge: 1 }));
+  await until(s, 'document.readyState === "complete"'); await sleep(1500);
+  const m = await nativeMode(s); ctx.numbers.nativeFormMode = m;
+  ctx.check('native form: install steps aside (mode native or native-bridged)', stepsAside(m), { mode: m }, 'surface');
+  const box = await s.evaluate('(() => { const c = document.getElementById("stage"); const r = c.getBoundingClientRect(); return { x: r.left + c.clientLeft, y: r.top + c.clientTop, width: c.clientWidth, height: c.clientHeight }; })()');
+  const R = {}; for (const id of ['name', 'email', 'message', 'consent']) R[id] = await rectOf(s, '#' + id);
+  const rest = await readCanvas(s, '#stage');
+  ctx.numbers.nativeFormRest = { nonDominant: +pixelStats(rest).nonDominantFraction.toFixed(4) };
+  ctx.check('native form: the form is drawn natively (non-blank canvas)', pixelStats(rest).nonBlank, ctx.numbers.nativeFormRest, 'pixel');
+  const k = rest.width / box.width;
+  await s.click(center(R.name).x, center(R.name).y); await sleep(200);
+  const focused = (await s.evaluate('document.activeElement && document.activeElement.id')) === 'name';
+  ctx.check('native form: a trusted click on the drawn name field focuses it', focused, null, 'hit');
+  if (focused) await s.typeText('Ada Lovelace', { intervalMs: 50 });
+  // the textarea is not hit-testable at its layout box on Safari Technology Preview 254 (elementFromPoint answers the canvas; native, docs/SUPPORT-MATRIX.md): recorded
+  ctx.numbers.nativeFormTextareaHit = await s.evaluate(`(() => { const e = document.elementFromPoint(${center(R.message).x}, ${center(R.message).y}); return e && (e.id || e.localName); })()`);
+  await s.click(center(R.email).x, center(R.email).y); await sleep(150);
+  if ((await s.evaluate('document.activeElement && document.activeElement.id')) === 'email') await s.typeText('ada@example.com', { intervalMs: 50 });
+  const before = await s.evaluate('document.getElementById("consent").checked');
+  await s.click(center(R.consent).x, center(R.consent).y); await sleep(700);
+  const v = await s.evaluate('({ name: document.getElementById("name").value, email: document.getElementById("email").value, consent: document.getElementById("consent").checked })');
+  ctx.numbers.nativeFormValues = v;
+  ctx.check('native form: typed values reach the live fields exactly (no doubled insertion)', v.name === 'Ada Lovelace' && v.email === 'ada@example.com', v, 'typing');
+  ctx.check('native form: a trusted click on the drawn checkbox toggles it', v.consent !== before, { before, after: v.consent }, 'hit');
+  const after = await readCanvas(s, '#stage');
+  const ch = regionChanged(rest, after, devRect(R.name, box, k, 2));
+  ctx.numbers.nativeFormNameRegion = ch;
+  ctx.check('native form: typing repaints the native canvas where the name field is drawn', ch > 8, { countOver16: ch }, 'typing');
+  await noErrors(ctx, 'native form');
+}
+
+/** install() over the native implementation patches only through its ledger: uninstall restores every descriptor and the DOM (the mirrored layoutsubtree included). */
+export async function nativeUninstall(ctx) {
+  const { s } = ctx;
+  await s.navigate(new URL(`/test/fixtures/identity/index.html?bundle=${encodeURIComponent(NATIVE_BUNDLE)}`, ctx.srv.url).href);
+  await until(s, 'typeof HicLivePolyfill === "object" && document.readyState === "complete"');
+  const IDX = IDENTITY_EXPR.replace("['Reflect', Reflect]", "['Reflect', window.Reflect]");
+  const before = await s.evaluate(IDX, { timeoutMs: 60000 });
+  const volatile = new Set(diffIdentity(before, await s.evaluate(IDX, { timeoutMs: 60000 })).map((d) => d.where));
+  const real = (list) => list.filter((d) => !volatile.has(d.where));
+  const m = await s.evaluate('window.__id.install()');
+  await sleep(500);
+  const during = await s.evaluate(IDX, { timeoutMs: 60000 });
+  await s.evaluate('window.__id.uninstall()');
+  if (ctx.control) await s.evaluate('HTMLCanvasElement.prototype.__xbLeak = 1');
+  await sleep(300);
+  const after = await s.evaluate(IDX, { timeoutMs: 60000 });
+  const changed = real(diffIdentity(before, during)).length; const left = real(diffIdentity(before, after));
+  ctx.numbers.nativeUninstall = { mode: m, changedByInstall: changed, leftAfterUninstall: left.length, first: left.slice(0, 3) };
+  ctx.check('native uninstall: the bridge patches the platform, uninstall restores every descriptor and the DOM exactly', stepsAside(m) && (m === 'native' || changed > 3) && left.length === 0, ctx.numbers.nativeUninstall, 'identity');
+}
+
+/**
+ * The published examples on the native implementation: every one installs without throwing, steps aside (mode native or native-bridged; the bridge bundle
+ * is loaded through ?xbbridge=1), draws a non-blank canvas natively and logs no error.
  */
 export async function nativeExamples(ctx) {
   const { s } = ctx;
   for (const ex of ['basic', 'form', 'scroll-and-resize', 'water-form']) {
     await s.navigate(url(ctx, `/examples/${ex}/index.html`, { xbbridge: 1 }));
     await until(s, 'document.readyState === "complete"'); await sleep(1500);
-    const m = await s.evaluate('window.__HIC__ ? (window.__HIC__.error ? "error: " + window.__HIC__.error.message : window.__HIC__.installed.mode) : "no __HIC__"');
-    ctx.numbers[`native_${ex}`] = { mode: m };
-    ctx.check(`native ${ex}: install steps aside without throwing (mode native or native-bridged)`, m === 'native' || m === 'native-bridged', { mode: m }, 'surface');
+    const m = await nativeMode(s);
     const img = await readCanvas(s, 'canvas[content="drawable"]').catch((e) => ({ error: String(e) }));
-    ctx.check(`native ${ex}: the canvas is drawn natively (non-blank)`, !img.error && pixelStats(img).nonBlank, img.error ?? null, 'pixel');
+    const nonBlank = !img.error && pixelStats(img).nonBlank;
+    ctx.numbers[`native_${ex}`] = { mode: m, nonBlank, nonDominant: img.error ? null : +pixelStats(img).nonDominantFraction.toFixed(4) };
+    ctx.check(`native ${ex}: install steps aside without throwing (mode native or native-bridged)`, stepsAside(m), { mode: m }, 'surface');
+    // scroll-and-resize: Safari Technology Preview 254 draws its tall app element on the first paint after the update that rendered it and blank on every later
+    // draw until the element is repainted (measured on a page without the polyfill, docs/SUPPORT-MATRIX.md); recorded, not asserted, on that build only
+    const knownNativeDefect = ex === 'scroll-and-resize' && /Technology Preview/.test(s.version) && /^27\./.test(s.caps.browserVersion ?? '');
+    if (!knownNativeDefect) ctx.check(`native ${ex}: the canvas is drawn natively (non-blank)`, nonBlank, img.error ?? null, 'pixel');
     await noErrors(ctx, `native ${ex}`);
   }
 }
 
+/** Run instead of SCENARIOS on an engine whose native implementation is usable. */
+export const NATIVE_SCENARIOS = { nativeSurface, nativeExplainer, nativeForm, nativeUninstall, nativeExamples };
+
 export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, unsupported, uninstall, decodeTiming };
-export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeExamples: ['pixel'] };
+export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
 export { KEYS };

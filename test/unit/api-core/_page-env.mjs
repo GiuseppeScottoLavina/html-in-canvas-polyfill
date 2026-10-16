@@ -157,25 +157,25 @@ export function diffDescriptors(/** @type {Map<string, PropertyDescriptor>} */ a
  *                HTMLCanvasElement and OffscreenCanvas, ElementImage with close() only.
  *  - 'previous': the 2026-10-07 shape of the pinned WPT revision: `content`, ElementImage.width/height, no getElementImageDefaultSize.
  *  - 'legacy'   (or `legacy: true`): Chrome 154 and 155 with the flag: layoutSubtree, no content, drawElementImage returns a DOMMatrix, ElementImage.width/height.
- *  - 'webkit-stp': Safari Technology Preview 254 (WebKit 22627.1.2.1) with Develop > Feature Flags > HTML-in-Canvas (`HTMLInCanvasEnabled`). The names are the
- *                binding names in that build's WebCore (read from the binary on 2026-10-16; the flag is off by default, so the behaviour is NOT observed):
- *                layoutSubtree, onpaint, requestPaint, captureElementImage, getElementTransform, drawElementImage, ElementImage, texElementImage2D,
- *                copyElementImageToTexture; NO content, updateElementGeometry, clearElementGeometry, getElementImageDefaultSize, onelementgeometryupdate,
- *                ElementGeometryUpdateEvent, texElementSubImage2D, drawElementImageToTexture, OffscreenCanvas methods. What drawElementImage returns is
- *                unknown: `drawReturns` 'matrix' (the Chrome 154 legacy behaviour, default) or 'undefined' (the current standard).
+ *  - 'webkit-stp': Safari Technology Preview 254 (WebKit 22627.1.2.1) with Debug > WebKit Internal Features > HTML-in-Canvas (`HTMLInCanvasEnabled`),
+ *                measured live through its safaridriver on 2026-10-16: layoutSubtree, onpaint, requestPaint, captureElementImage, getElementTransform (two
+ *                arguments), 2D and Offscreen 2D drawElementImage, ElementImage (width/height/close), texElementImage2D, copyElementImageToTexture; NO content,
+ *                updateElementGeometry, clearElementGeometry, getElementImageDefaultSize, onelementgeometryupdate, ElementGeometryUpdateEvent,
+ *                texElementSubImage2D, drawElementImageToTexture. drawElementImage returns an identity DOMMatrix wherever it draws (`drawReturns` 'identity',
+ *                the default for this shape); 'matrix' (Chrome 154) and 'undefined' (the standard) are kept as variants.
  * `omit` removes names (as in native-detect.js). drawElementImage throws like the platform (TypeError for a non-Element without the ElementImage
  * shape, InvalidStateError for an element of a canvas that is not connected) unless `inert` (a stub that returns without throwing).
  * Every native method records its calls in `w.__native`.
  * @param {any} w
- * @param {{legacy?: boolean, shape?: 'current'|'previous'|'legacy'|'webkit-stp', omit?: string[], inert?: boolean, drawReturns?: 'matrix'|'undefined'}} [options]
+ * @param {{legacy?: boolean, shape?: 'current'|'previous'|'legacy'|'webkit-stp', omit?: string[], inert?: boolean, drawReturns?: 'matrix'|'identity'|'undefined'}} [options]
  */
-export function defineFakeNative(w, { legacy = false, shape = legacy ? 'legacy' : 'current', omit = [], inert = false, drawReturns = 'matrix' } = {}) {
+export function defineFakeNative(w, { legacy = false, shape = legacy ? 'legacy' : 'current', omit = [], inert = false, drawReturns = shape === 'webkit-stp' ? 'identity' : 'matrix' } = {}) {
   const stp = shape === 'webkit-stp';
   const isLegacy = shape === 'legacy' || stp;
   /** @type {any[][]} */
   const calls = (w.__native = []);
   const STP_ABSENT = ['updateElementGeometry', 'clearElementGeometry', 'OffscreenCanvas.updateElementGeometry', 'OffscreenCanvas.clearElementGeometry',
-    'OffscreenCanvasRenderingContext2D.drawElementImage', 'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture'];
+    'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture'];
   const has = (/** @type {string} */ name) => !omit.includes(name) && !(stp && STP_ABSENT.includes(name));
   const def = (/** @type {object} */ obj, /** @type {string} */ key, /** @type {PropertyDescriptor} */ d, name = key) => {
     if (has(name)) Object.defineProperty(obj, key, { configurable: true, enumerable: true, ...d });
@@ -214,8 +214,9 @@ export function defineFakeNative(w, { legacy = false, shape = legacy ? 'legacy' 
           if (!element && !(el && typeof el === 'object' && ('close' in el || 'width' in el))) throw new w.TypeError("The provided value is not of type '(Element or ElementImage)'.");
           if (element && !el.isConnected) throw new w.DOMException('The element can only be drawn into its nearest ancestor <canvas>.', 'InvalidStateError');
         }
-        calls.push(['drawElementImage', el, dx, dy]);
-        return isLegacy && !(stp && drawReturns === 'undefined') ? new w.DOMMatrix([1, 0, 0, 1, dx, dy]) : undefined;
+        calls.push(['drawElementImage', el, dx, dy, ...[...arguments].slice(3)]);
+        if (!isLegacy || (stp && drawReturns === 'undefined')) return undefined;
+        return stp && drawReturns === 'identity' ? new w.DOMMatrix() : new w.DOMMatrix([1, 0, 0, 1, dx, dy]);
       },
     }, `${cls}.drawElementImage`);
   }

@@ -4,8 +4,9 @@
 //   node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=explainer,form,clickEffect,controls,resize,scroll,unsupported,uninstall,decodeTiming] [--no-control] [--bundle-file=/abs/x.js]
 // One browser at a time. Safari is skipped (and reported NOT RUN, which fails the gate) when remote automation is not enabled on the machine.
 // Safari Technology Preview ('stp') is OPTIONAL: SKIPPED (the gate still passes) when it is not installed or its remote automation is not allowed. Its native surface
-// is read first: absent -> the polyfill scenarios, as on Safari; usable (its HTML-in-Canvas feature flag on) -> the native scenario (the examples step aside and
-// draw natively); broken -> the refusal must name the missing core.
+// is read first: absent -> the polyfill scenarios, as on Safari, and the native-flag scenarios are reported SKIPPED with the reason; usable (its HTML-in-Canvas
+// internal feature on) -> NATIVE_SCENARIOS (install steps aside, the explainer and the form drawn natively through the bridge against their plain-DOM twins,
+// clicks, typing and repaint, uninstall identity, the examples); broken -> the refusal must name the missing core.
 // Writes .scratch/results/xbrowser-<engine>-<ts>.json (+ diff PNGs under .scratch/results/xbrowser-<ts>/), prints one table, exits 1 on any failure.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -16,7 +17,7 @@ import { startServer } from '../harness/server.mjs';
 import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg, sleep } from '../harness/lib/util.mjs';
 import { RECORDER } from './lib.mjs';
-import { SCENARIOS, CONTROL_CLASSES, NATIVE_SURFACE, nativeExamples } from './scenarios.mjs';
+import { SCENARIOS, CONTROL_CLASSES, NATIVE_SURFACE, NATIVE_SCENARIOS } from './scenarios.mjs';
 
 const engines = (arg('engine') ?? 'firefox,safari,stp').split(',');
 const OPTIONAL = new Set(['stp']);
@@ -94,7 +95,11 @@ try {
         if (kind === 'broken') {
           const ok = E.nativeSurface.decision.mode === 'refused' && /without its core/.test(E.nativeSurface.decision.refusal?.message ?? '');
           scenarios = { nativeRefusal: (ctx) => ctx.check('native broken: the refusal names the missing core (API-CONTRACT 2)', ok, E.nativeSurface.decision, 'surface') };
-        } else if (kind !== 'absent') scenarios = { nativeExamples };
+        } else if (kind !== 'absent') scenarios = NATIVE_SCENARIOS;
+        else {
+          E.nativeFlag = 'SKIPPED: the native HTML-in-Canvas surface is absent (the internal feature is off); the polyfill scenarios run instead. To cover the native-flag mode: Debug menu > WebKit Internal Features > HTML-in-Canvas (docs/SUPPORT-MATRIX.md)';
+          console.log(`[${engine}] native-flag scenarios ${E.nativeFlag}`);
+        }
       }
       E.real = await runOnce(s, srv, engine, false, scenarios);
       if (!noControl) E.control = await runOnce(s, srv, engine, true, scenarios);

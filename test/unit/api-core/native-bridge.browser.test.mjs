@@ -226,11 +226,12 @@ test('mutation check: without the bridge a standard caller would see the native 
   assert.equal(String(m), 'matrix(1, 0, 0, 1, 1, 1)', 'control: the raw fake native returns the matrix');
 });
 
-// Safari Technology Preview 254 with its HTML-in-Canvas feature flag (names read from the binary, test/unit/api-core/_page-env.mjs shape 'webkit-stp'):
+// Safari Technology Preview 254 with its HTML-in-Canvas internal feature (measured live 2026-10-16, test/unit/api-core/_page-env.mjs shape 'webkit-stp'):
 // a legacy shape WITHOUT updateElementGeometry / clearElementGeometry. The bridge used to throw "cannot wrap updateElementGeometry", so install fell back to
-// mode native and content="drawable" canvases were not drawable at all.
-for (const drawReturns of /** @type {const} */ (['matrix', 'undefined'])) {
-  test(`Safari Technology Preview shape (drawElementImage returns ${drawReturns}): native-bridged, content mirrored, draws pass through, no internal error`, t => {
+// mode native and content="drawable" canvases were not drawable at all. Measured since: drawElementImage returns an identity matrix wherever it draws and ANY
+// css transform on a drawn child (identity included) makes that build draw nothing for it, so the bridge must not write its transform rule there.
+for (const drawReturns of /** @type {const} */ (['identity', 'matrix', 'undefined'])) {
+  test(`Safari Technology Preview shape (drawElementImage returns ${drawReturns}): native-bridged, content mirrored, draws pass through, no transform written, no internal error`, t => {
     const w = makeFrame(t, '<canvas id="c" content="drawable" width="300" height="100"><div id="d" style="width:50px;height:20px"></div></canvas>');
     const calls = defineFakeNative(w, { shape: 'webkit-stp', drawReturns });
     assert.equal('updateElementGeometry' in w.HTMLCanvasElement.prototype, false, 'control: the shape has no geometry methods');
@@ -248,7 +249,9 @@ for (const drawReturns of /** @type {const} */ (['matrix', 'undefined'])) {
     assert.equal(c.getContext('2d').drawElementImage(d, 100, 50), undefined, 'a standard caller gets undefined');
     assert.equal(calls.filter((x) => x[0] === 'drawElementImage').length, 1, 'the native draw ran');
     assert.deepEqual(installed.report().errors, [], 'no internal error after a draw (there is no updateElementGeometry to call)');
-    assert.equal(String(c.getElementTransform(d)), drawReturns === 'matrix' ? 'matrix(1, 0, 0, 1, 100, 50)' : 'matrix(1, 0, 0, 1, 0, 0)', 'the one-argument form answers');
+    assert.equal(d.hasAttribute('data-hic-hit'), false, 'no transform rule: a css transform on a drawn child makes this build draw nothing');
+    assert.equal(matrixOf(w, d), 'none');
+    assert.equal(String(c.getElementTransform(d)), 'matrix(1, 0, 0, 1, 0, 0)', 'the one-argument form answers the geometry hit testing really has (the layout box)');
     assert.equal('updateElementGeometry' in w.HTMLCanvasElement.prototype, false, 'nothing is invented that cannot be built from native API');
     const gl = w.document.createElement('canvas').getContext('webgl');
     if (gl) assert.equal(typeof gl.texElementSubImage2D, 'function', 'texElementSubImage2D built over texElementImage2D');
@@ -256,3 +259,82 @@ for (const drawReturns of /** @type {const} */ (['matrix', 'undefined'])) {
     assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)), []);
   });
 }
+
+test('Safari Technology Preview shape: a draw without a destination size gets the standard size (border box x grid scale), a sized or legacy draw is passed as is', t => {
+  // that build draws a sizeless element at css px as grid px (half size on a DPR 2 grid); the standard draws the border box at the grid scale
+  const w = makeFrame(t, '<canvas id="c" content="drawable" width="300" height="100" style="width:150px;height:50px;border:2px solid #000;padding:3px"><div id="d" style="width:50px;height:20px"></div></canvas>'
+    + '<canvas id="l" layoutsubtree width="300" height="100" style="width:150px;height:50px"><div id="e" style="width:50px;height:20px"></div></canvas>');
+  const calls = defineFakeNative(w, { shape: 'webkit-stp' });
+  const installed = installWith({ window: w }, fakeServices());
+  t.cleanup(() => installed.uninstall());
+  const c = w.document.getElementById('c'); const d = w.document.getElementById('d');
+  // canvas children have no layout box in an engine without the native API (the page's Chrome): give the drawn one the box a native build lays out
+  d.getBoundingClientRect = () => new w.DOMRect(0, 0, 50, 20);
+  const draws = () => calls.filter((x) => x[0] === 'drawElementImage').map((x) => x.slice(2));
+  c.getContext('2d').drawElementImage(d, 10, 5);
+  c.getContext('2d').drawElementImage(d, 10, 5, { preserveElementGeometry: true });
+  c.getContext('2d').drawElementImage(d, 10, 5, 40, 30);
+  const l = w.document.getElementById('l');
+  l.getContext('2d').drawElementImage(w.document.getElementById('e'), 10, 5);
+  assert.deepEqual(draws(), [[10, 5, 100, 40], [10, 5, 100, 40], [10, 5, 40, 30], [10, 5]], 'grid scale 300 / 150 css px of content box (border and padding excluded)');
+});
+
+test('Safari Technology Preview shape: the bridge requests the paints the build does not fire, after the change is rendered; none on the Chrome 154 shape; stopped by uninstall', async t => {
+  const frames = (/** @type {any} */ w, n) => new Promise((ok) => { const step = (/** @type {number} */ k) => (k ? w.requestAnimationFrame(() => step(k - 1)) : ok(undefined)); step(n); });
+  const w = makeFrame(t, '<canvas id="c" content="drawable" width="300" height="100" style="width:150px;height:50px"><div id="d" style="width:50px;height:20px">x</div></canvas><canvas id="f" width="10" height="10"></canvas>');
+  const calls = defineFakeNative(w, { shape: 'webkit-stp' });
+  const installed = installWith({ window: w }, fakeServices());
+  const requests = () => calls.filter((x) => x[0] === 'requestPaint');
+  const c = w.document.getElementById('c');
+  assert.equal(requests().length, 0, 'not in the task that activated the canvas: its children are not rendered yet');
+  await frames(w, 3);
+  const first = requests().length;
+  assert.ok(first >= 1, 'a first paint is requested once the drawable content was rendered');
+  assert.ok(requests().every((x) => x[1] === undefined), 'requestPaint is called with no argument');
+  w.document.getElementById('d').textContent = 'y';
+  await settle();
+  assert.equal(requests().length, first, 'a change is not requested in the same frame (the build would draw the previous rendering)');
+  await frames(w, 3);
+  const afterText = requests().length;
+  assert.ok(afterText > first, 'a text change inside the drawable is followed by a paint request');
+  c.width = 400;
+  await settle();
+  assert.equal(requests().length, afterText + 1, 'a grid resize is requested at once (it clears the bitmap; the children rendering is unchanged)');
+  w.document.getElementById('f').setAttribute('width', '20');
+  await frames(w, 3);
+  const settled = requests().length;
+  installed.uninstall();
+  w.document.getElementById('d').textContent = 'z';
+  await frames(w, 3);
+  assert.equal(requests().length, settled, 'no request after uninstall');
+
+  const w2 = makeFrame(t, '<canvas id="c" content="drawable" width="300" height="100"><div id="d">x</div></canvas>');
+  const calls2 = defineFakeNative(w2, { legacy: true });
+  const installed2 = installWith({ window: w2 }, fakeServices());
+  t.cleanup(() => installed2.uninstall());
+  w2.document.getElementById('d').textContent = 'y';
+  await frames(w2, 3);
+  assert.equal(calls2.filter((x) => x[0] === 'requestPaint').length, 0, 'the Chrome 154 shape fires its paints itself: nothing is requested');
+});
+
+test('a native build in an engine without the device-pixel ResizeObserver box: the explainer sizing line does not throw (modes native and native-bridged), restored on uninstall', t => {
+  for (const shape of /** @type {const} */ (['webkit-stp', 'current'])) {
+    const w = makeFrame(t, '<canvas id="c" content="drawable"></canvas>');
+    // Safari's ResizeObserver: the box is rejected, entries have no devicePixelContentBoxSize
+    const observe = w.ResizeObserver.prototype.observe;
+    Object.defineProperty(w.ResizeObserver.prototype, 'observe', { configurable: true, writable: true, value(/** @type {any} */ target, /** @type {any} */ options) {
+      if (options?.box === 'device-pixel-content-box') throw new w.TypeError('Type error');
+      return observe.call(this, target, options);
+    } });
+    delete w.ResizeObserverEntry.prototype.devicePixelContentBoxSize;
+    defineFakeNative(w, { shape });
+    const box = () => new w.ResizeObserver(() => {}).observe(w.document.getElementById('c'), { box: 'device-pixel-content-box' });
+    assert.throws(box, 'Type error');
+    const installed = installWith({ window: w }, fakeServices());
+    assert.equal(installed.mode, shape === 'current' ? 'native' : 'native-bridged');
+    box();
+    assert.equal('devicePixelContentBoxSize' in w.ResizeObserverEntry.prototype, true);
+    installed.uninstall();
+    assert.throws(box, 'Type error'); // uninstall restores the engine
+  }
+});

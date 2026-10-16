@@ -43,7 +43,9 @@ const LIMITS = {
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
-  'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB, gzip: 4.5 * KB },
+  // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
+  //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
+  'hic-live-native-bridge.iife.min.js': { target: 14 * KB, ceiling: 14 * KB, gzip: 5.5 * KB },
   // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
   // 38.5 -> 42 KB, gzip 15 -> 16.25 KB (+3,509 / +1,244 bytes, 2026-10-16, measured 41,804 / 16,038): the iOS control look (system tint, pill buttons and pop-ups from the computed
   //   style, the colour-well hue ring, medium-style date pills, no spin button, popup labels pinned) and the iOS classification of the engine

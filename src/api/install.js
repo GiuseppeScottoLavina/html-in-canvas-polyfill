@@ -278,6 +278,9 @@ function installNative(env, native, mode, services, ledger, undo, setAdoption) {
     undo.push(bridge.dispose);
     setAdoption(bridge);
   }
+  // a native build in an engine without the device-pixel ResizeObserver box (Safari Technology Preview with its HTML-in-Canvas feature) would make the
+  // explainer's own sizing line throw: completed as in mode polyfill (feature-detected: nothing is patched where the engine has it; ledger-restored)
+  installDevicePixelBox(env, ledger);
   return composed.effects;
 }
 

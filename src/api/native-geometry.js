@@ -9,8 +9,11 @@
  *  - getElementTransform needs two arguments (the standard one-argument form throws "Overload resolution failed").
  * So the standard behaviour is rebuilt with one polyfill-owned adopted stylesheet rule per drawn element (`[data-hic-hit="k"]{transform: ... !important}`),
  * never with the author's style attribute.
- * A legacy build may lack the geometry methods altogether (Safari Technology Preview 254's flagged WebKit has no updateElementGeometry / clearElementGeometry,
- * read from its binary): only the methods that exist are wrapped, and a draw's matrix then goes to the rule alone.
+ * A legacy build may lack the geometry methods altogether: Safari Technology Preview 254 with Debug > WebKit Internal Features > HTML-in-Canvas, measured live
+ * 2026-10-16 (no updateElementGeometry / clearElementGeometry). There drawElementImage returns an identity matrix wherever it draws, the children stay
+ * hit-testable at their layout boxes, ANY css transform on a drawn child (an identity matrix included) makes the build draw nothing for it, and a draw
+ * without a destination size draws css px as grid px (half size on a DPR 2 grid). So on that shape the bridge writes no transform rule (hit testing stays
+ * at the layout box) and gives a sizeless draw the standard size (the border box at the canvas grid scale).
  */
 
 import { MARK } from '../contracts/events.js';
@@ -93,6 +96,25 @@ export function installLegacyTranslation(env, ledger, isStandardCaller) {
   }
 
   const canvasProto = win.HTMLCanvasElement.prototype;
+  const nativeGeometry = typeof Object.getOwnPropertyDescriptor(canvasProto, 'updateElementGeometry')?.value === 'function';
+
+  /**
+   * (element, dx, dy[, options]) -> (element, dx, dy, dw, dh) with the standard default size: the border box in css px times the canvas grid scale.
+   * @param {HTMLCanvasElement} canvas @param {Element} el @param {unknown[]} args @returns {unknown[]}
+   */
+  function withStandardSize(canvas, el, args) {
+    const last = args[args.length - 1];
+    const options = args.length > 3 && !!last && typeof last === 'object';
+    if (args.length - 1 - (options ? 1 : 0) !== 2) return args;
+    const box = el.getBoundingClientRect();
+    const outer = canvas.getBoundingClientRect();
+    const cs = win.getComputedStyle(canvas);
+    const px = (/** @type {string} */ v) => parseFloat(v) || 0;
+    const cw = outer.width - px(cs.borderLeftWidth) - px(cs.borderRightWidth) - px(cs.paddingLeft) - px(cs.paddingRight);
+    const ch = outer.height - px(cs.borderTopWidth) - px(cs.borderBottomWidth) - px(cs.paddingTop) - px(cs.paddingBottom);
+    return [el, args[1], args[2], box.width * (cw > 0 ? canvas.width / cw : 1), box.height * (ch > 0 ? canvas.height / ch : 1)];
+  }
+
   /** @param {object} proto @param {string} key @param {(orig: Function) => Function} wrapper  wrap a method only where this build has it */
   const wrapIfPresent = (proto, key, wrapper) => { if (typeof Object.getOwnPropertyDescriptor(proto, key)?.value === 'function') ledger.wrap(proto, key, wrapper); };
 
@@ -129,7 +151,7 @@ export function installLegacyTranslation(env, ledger, isStandardCaller) {
     /** @type {unknown} */
     let result;
     try {
-      result = orig.apply(this, args);
+      result = orig.apply(this, !nativeGeometry && isElement(target) && isStandardCaller(canvas) ? withStandardSize(canvas, target, args) : args);
     } catch (err) {
       // Reported only when the native call really failed: Chrome 154 with the flag draws deeper descendants fine.
       if (isElement(target) && target.parentElement !== canvas) {
@@ -142,6 +164,7 @@ export function installLegacyTranslation(env, ledger, isStandardCaller) {
       throw err;
     }
     if (!isStandardCaller(canvas)) return result;
+    if (!nativeGeometry) return undefined;
     const options = args.length >= 4 ? args[args.length - 1] : null;
     const preserve = !!options && typeof options === 'object' && /** @type {{preserveElementGeometry?: unknown}} */ (options).preserveElementGeometry === true;
     if (!preserve && isElement(target) && result) {

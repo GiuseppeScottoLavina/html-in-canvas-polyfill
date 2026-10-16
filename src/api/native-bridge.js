@@ -10,6 +10,7 @@
 import { EVENTS } from '../contracts/events.js';
 import { ElementGeometryUpdateEvent, getEventHandler, setEventHandler } from './paint-event.js';
 import { installLegacyTranslation } from './native-geometry.js';
+import { installPaintDriver } from './native-paint.js';
 
 /** @typedef {import('../contracts/types.js').HicEnv} HicEnv */
 /** @typedef {import('../contracts/types.js').NativeState} NativeState */
@@ -64,8 +65,9 @@ export function fromLegacyGpuArgs(source, target) {
  * for parser-created and cloned canvases. The polyfill only removes a `layoutsubtree` attribute that it added itself.
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
+ * @param {(canvas: Element) => void} onDrawable  a canvas is (or became) content="drawable"
  */
-function installContentMirror(env, ledger) {
+function installContentMirror(env, ledger, onDrawable) {
   const win = /** @type {Window & typeof globalThis} */ (env.window);
   const mirrored = new WeakSet();
   /** @type {Set<WeakRef<Element>>} the canvases whose attribute this bridge wrote, so uninstall can take it back */
@@ -76,6 +78,7 @@ function installContentMirror(env, ledger) {
   /** @param {Element} canvas */
   function mirror(canvas) {
     if (isDrawable(canvas)) {
+      onDrawable(canvas);
       if (canvas.hasAttribute('layoutsubtree')) return;
       canvas.setAttribute('layoutsubtree', '');
       mirrored.add(canvas);
@@ -242,14 +245,21 @@ function fillTexSubImage(env, cls, hasLegacyUpload, ledger) {
  *   adoptRoot = watch a shadow root for `content` attributes (the bridge has no root scope of its own); dispose = stop observers and remove the bridge's stylesheet and attributes (descriptors are restored by the ledger)
  */
 export function installNativeBridge(env, native, ledger) {
-  const mirror = native.missing.includes('content') ? installContentMirror(env, ledger) : null;
+  /** @type {ReturnType<typeof installPaintDriver>|null} */
+  let painter = null;
+  const mirror = native.missing.includes('content') ? installContentMirror(env, ledger, (canvas) => painter?.watch(canvas)) : null;
+  // the legacy WebKit shape (no geometry methods) fires `paint` only from requestPaint() (measured, native-paint.js): the bridge requests the standard's paints
+  if (mirror && native.kind === 'legacy' && native.missing.includes('updateElementGeometry')) {
+    painter = installPaintDriver(env, (canvas) => mirror.isDrawable(canvas));
+    for (const canvas of env.document.querySelectorAll('canvas[content]')) if (mirror.isDrawable(canvas)) painter.watch(canvas);
+  }
   fillGaps(env, native, ledger);
   const translation = native.kind === 'legacy' && mirror
     ? installLegacyTranslation(env, ledger, (canvas) => mirror.isDrawable(canvas))
     : null;
-  env.reporter.deviation('legacy-native-bridge', `native kind "${native.kind}", gaps: ${native.gaps.join(', ') || 'none'}`);
+  env.reporter.deviation('legacy-native-bridge', `native kind "${native.kind}", gaps: ${native.gaps.join(', ') || 'none'}${painter ? '; paints requested (the build fires paint only from requestPaint)' : ''}`);
   return {
     adoptRoot: (root) => mirror?.watch(root),
-    dispose() { mirror?.dispose(); translation?.dispose(); },
+    dispose() { painter?.dispose(); mirror?.dispose(); translation?.dispose(); },
   };
 }

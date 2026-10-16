@@ -208,8 +208,12 @@ parent process's macOS privacy context and cannot open its profile). Safari need
 15-minute watchdog. Results: `.scratch/results/xbrowser-<engine>-<ts>.json`, failing images in `.scratch/results/xbrowser-<ts>/`.
 Safari Technology Preview (`stp`) is optional: it is driven by its own `safaridriver` inside the app bundle and reported SKIPPED (the gate still passes) when it is not installed or
 its Develop > Allow Remote Automation is off. The runner first reads its native surface with the polyfill's own probe on a page without the polyfill: `absent` runs the Safari
-scenarios; a usable native (its internal feature HTML-in-Canvas on: Debug menu > WebKit Internal Features, `docs/SUPPORT-MATRIX.md`) runs `nativeExamples` (four examples with the bridge bundle: mode `native` or `native-bridged`, a non-blank canvas,
-no console error; control: the sabotaged draw must turn `pixel` red); `broken` must be refused with the missing core named.
+scenarios and reports the native-flag scenarios SKIPPED with the reason (the internal feature is off); a usable native (its internal feature HTML-in-Canvas on: Debug menu > WebKit Internal Features,
+`docs/SUPPORT-MATRIX.md`) runs the native-flag scenarios instead: `nativeSurface` (install with the core alone and with bridge + core: mode `native` / `native-bridged`, never a throw, no
+error), `nativeExplainer` (the explainer drawn natively through the bridge against its plain-DOM twin, typing repaints the field; control: `pixel`, `typing`), `nativeForm` (the contact form
+example: non-blank native canvas, trusted clicks focus and toggle the drawn controls, typed values exact, the name field repainted; control: `pixel`, `hit`, `typing`), `nativeUninstall`
+(identity of every descriptor and the DOM after uninstall; control: a leaked property, `identity`) and `nativeExamples` (four examples: mode, non-blank canvas, no console error; the
+scroll-and-resize canvas is recorded, not asserted, on Technology Preview 27.x: a native limit; control: `pixel`); `broken` must be refused with the missing core named.
 
 | scenario | asserts (same engine, plain-DOM twin) | control (sabotaged page: drawElementImage draws nothing, drawn children pointer-dead) |
 |---|---|---|
