@@ -88,7 +88,7 @@ test('createHost without WebGPU rejects with HicUnsupportedError("effect-plugins
 
 test('a scheduler tick while the GPU is still opening does not touch the missing presenter (works without a GPU)', async (t) => {
   // the frame hook is registered by the constructor, the presenter only exists after the async adapter/device request: a tick in between threw
-  // "Cannot read properties of null (reading 'syncSize')" into effects:frame (seen in most runs of examples/water-form)
+  // "Cannot read properties of null (reading 'syncSize')" into effects:frame (seen in most runs of the water example page)
   const rig = makeRig({ paint });
   rig.commit();
   let release = () => {};
@@ -106,7 +106,7 @@ test('a scheduler tick while the GPU is still opening does not touch the missing
 
 test('navigator.gpu without an adapter, or with a device request that fails: createHost rejects and the canvas still gives the 2D fallback a context (works without a GPU)', async (t) => {
   // the presenter claimed the 'webgpu' context before requestAdapter(): with no adapter (simulators, blocklisted GPUs) the canvas was locked
-  // to WebGPU, getContext('2d') returned null and the documented fallback of examples/water-form and examples/plugins drew nothing
+  // to WebGPU, getContext('2d') returned null and the documented fallback of the effect example pages drew nothing
   const real = Object.getOwnPropertyDescriptor(navigator, 'gpu');
   t.cleanup(() => { if (real) Object.defineProperty(navigator, 'gpu', real); else delete navigator.gpu; });
   const cases = {

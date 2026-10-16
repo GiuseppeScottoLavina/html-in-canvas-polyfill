@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // The water plugin in the plugin gallery (examples/plugins/?effect=water) in headless Chrome with trusted input (CDP): pointer moves
 // raise ripples (the presented pixels change), a click through the rippling picture focuses the drawn name field and typing reaches it,
-// the frame cap bounds the effect frames, the action drop from the gallery's button (handle.trigger), no console error. `--record` also writes media/water.webp.
+// the frame cap bounds the effect frames, the action drop from the gallery's button (handle.trigger), no console error. `--record` also
+// writes media/water.webp and the README's hero, docs/media/hero.webp.
 //   npm run build && node plugins/water/test/gallery.e2e.mjs [--record]     (`npm run test:plugins` runs every gallery e2e)
 import { join } from 'node:path';
 import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
@@ -63,6 +64,21 @@ try {
     const frames = await stop();
     const bytes = writeWebp(frames, join(ROOT, 'plugins/water/media/water.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 480, fps: 15, quality: 40 });
     c.check('recording: media/water.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
+    // the README's hero (docs/media/hero.webp): the pointer raises ripples, a click through them focuses the name field and the typing shows in the drawn form
+    await page.evaluate(`(() => { document.getElementById('name').value = 'Ada'; document.activeElement && document.activeElement.blur(); })()`);
+    await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
+    await sleep(1500);
+    const stopHero = await startRecording(page);
+    await sweep(50, 30);
+    await clickOn(page, '#name');
+    await sleep(300);
+    await page.typeText(' Lovelace', { intervalMs: 90 });
+    await sleep(300);
+    await sweep(30, 30);
+    await sleep(600);
+    const heroFrames = await stopHero();
+    const hero = writeWebp(heroFrames, join(ROOT, 'docs/media/hero.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 800, fps: 15, quality: 45 });
+    c.check('recording: docs/media/hero.webp under 1.5 MB', hero < 1.5 * 1024 * 1024, { screencastFrames: heroFrames.length, bytes: hero });
   }
   const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
   c.check('no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));

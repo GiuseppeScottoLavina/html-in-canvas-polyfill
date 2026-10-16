@@ -617,7 +617,7 @@ export async function nativeUninstall(ctx) {
  */
 export async function nativeExamples(ctx) {
   const { s } = ctx;
-  for (const ex of ['basic', 'form', 'scroll-and-resize', 'water-form']) {
+  for (const ex of ['basic', 'form', 'scroll-and-resize', 'effect-plugin']) {
     await s.navigate(url(ctx, `/examples/${ex}/index.html`, { xbbridge: 1 }));
     await until(s, 'document.readyState === "complete"'); await sleep(1500);
     const m = await nativeMode(s);

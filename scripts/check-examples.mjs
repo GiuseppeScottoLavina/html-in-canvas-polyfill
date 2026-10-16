@@ -10,10 +10,11 @@
 //   3. the live layer is invisible (computed opacity 0), so a screenshot cannot show the live DOM instead of the canvas
 //   4. the canvas is NOT BLANK (2D canvases: backing-store readback; WebGL / WebGPU canvases: compositor screenshot)
 //   5. the key interaction works with TRUSTED input: typing reaches the live field AND changes the canvas pixels (basic, form,
-//      webgl-texture), the frame cap slider changes canvas.frameCap (water-form, plugins), wheel scroll + a viewport resize (scroll-and-resize),
+//      webgl-texture), the frame cap slider changes canvas.frameCap (effect-plugin, plugins), wheel scroll + a viewport resize (scroll-and-resize),
+//      effect-plugin's submit runs the disintegrate actions (handle.trigger 'out', then 'in') and the form re-forms with the page's answer,
 //      the gallery (plugins) lists every plugin of dist/plugins/manifest.json, applies each one (its controls mount, the pixels change) and "Effect off" removes it;
 //      a trusted double click on a word of its static text shows the selection on the canvas and a click elsewhere removes it (with an effect, with "Effect off", and on the 2D path)
-//   water-form and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects),
+//   effect-plugin and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects),
 //   and a third time with navigator.gpu present but requestAdapter() resolving null (simulators, blocklisted GPUs): the same 2D fallback must draw
 //   (the canvas must not have been claimed by a 'webgpu' context before the adapter was known)
 // Smoke pages (test/examples-smoke/, served by the harness server) run the code the documentation shows:
@@ -40,8 +41,8 @@ const withControl = !process.argv.includes('--no-control');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve(ROOT, '.scratch/results', `examples-${stamp}`);
 const VIEW = { width: 1100, height: 800 };
-const NAMES = ['basic', 'form', 'plugins', 'water-form', 'scroll-and-resize', 'webgl-texture'];
-const DIST_FILES = [...['hic-live-polyfill', 'hic-live-engines', 'hic-live-gpu', 'hic-live-effects'].map((n) => `dist/${n}.iife.min.js`), 'dist/plugins/manifest.json', 'dist/plugins/water.iife.min.js'];
+const NAMES = ['basic', 'form', 'plugins', 'effect-plugin', 'scroll-and-resize', 'webgl-texture'];
+const DIST_FILES = [...['hic-live-polyfill', 'hic-live-engines', 'hic-live-gpu', 'hic-live-effects'].map((n) => `dist/${n}.iife.min.js`), 'dist/plugins/manifest.json', 'dist/plugins/water.iife.min.js', 'dist/plugins/disintegrate.iife.min.js'];
 
 // ------------------------------------------------------------------------------------------------------------------------------------
 // Defects of src/ that this script found and does not hide. Each entry is printed on every run as KNOWN RED and recorded in the result file;
@@ -212,48 +213,65 @@ const SCENARIOS = {
     });
   },
 
-  async ['water-form'](run, opts) {
+  async ['effect-plugin'](run, opts) {
     const { page } = run;
-    const pathOk = await H.until(() => page.evaluate(`window.__waterForm ? window.__waterForm.mode : null`), run.fast ? 2500 : 15000);
+    const pathOk = await H.until(() => page.evaluate(`document.getElementById('status').dataset.path || null`), run.fast ? 2500 : 15000);
     run.numbers.path = pathOk === 'effect' ? 'webgpu-effect' : pathOk === '2d' ? '2d-fallback' : 'unknown';
     run.notes.push(`presentation path exercised: ${run.numbers.path}${pathOk === '2d' ? (opts.noGpu ? ' (navigator.gpu hidden on purpose: this run exercises the fallback, not the effect)' : opts.noAdapter ? ' (requestAdapter() returns null on purpose: this run exercises the fallback, not the effect)' : ' (no WebGPU adapter in this headless Chrome, so the effect itself was NOT exercised)') : ''}`);
     if (opts.noGpu) run.check('install', 'with navigator.gpu hidden the page takes the 2D fallback path', pathOk === '2d', { path: run.numbers.path });
     if (opts.noAdapter) run.check('install', 'with no WebGPU adapter the page takes the 2D fallback path', pathOk === '2d', { path: run.numbers.path });
     const kind = pathOk === 'effect' ? 'gpu' : '2d';
-    const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!window.__waterForm` });
+    const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!document.getElementById('status').dataset.path` });
     if (!first || opts.generic) return;
-    if (pathOk === 'effect') await sleep(3600); // the plugin starts two ripples (3.2 s lifetime): wait until they are gone so the pointer map is the identity
+    if (pathOk === 'effect') await sleep(3600); // the water plugin starts two ripples (3.2 s lifetime): wait until they are gone so the pointer map is near the identity
     await run.step('interact', 'click + type in the name field reaches the live input', async () => {
-      const c = await centerOf(page, '#name');
+      const c = await centerOf(page, 'input[name=name]');
       await page.click(c.x, c.y); await sleep(200);
       await typeText(page, 'x');
-      const state = await page.evaluate(`({ value: document.getElementById('name').value, active: document.activeElement && document.activeElement.id })`);
+      const state = await page.evaluate(`({ value: document.querySelector('input[name=name]').value, active: document.activeElement && document.activeElement.name })`);
       return { ok: state.value === 'Adax', ...state };
     });
     await run.step('interact', 'the frame cap slider changes canvas.frameCap (keyboard, trusted)', async () => {
-      await page.evaluate(`document.getElementById('fps-cap').focus()`);
+      await page.evaluate(`document.getElementById('cap').focus()`);
       await page.key('Home'); await sleep(150);
-      const at15 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, attr: document.getElementById('stage').getAttribute('framecap'), label: document.getElementById('fps-cap-value').textContent })`);
-      for (let i = 0; i < 3; i++) await page.key('ArrowRight');
-      await sleep(150);
-      const at30 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, attr: document.getElementById('stage').getAttribute('framecap') })`);
-      return { ok: at15.prop === 15 && at15.attr === '15' && at30.prop === 30 && at30.attr === '30', at15, at30 };
+      const at15 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, label: document.getElementById('cap-value').textContent })`);
+      await page.key('ArrowRight'); await sleep(150);
+      const at30 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, label: document.getElementById('cap-value').textContent })`);
+      const native = run.numbers.mode !== 'polyfill';   // the property is this library's extension: over a native implementation the page only assigns it
+      return { ok: (native || (at15.prop === 15 && at30.prop === 30)) && at15.label === '15' && at30.label === '30', at15, at30, native };
     });
     if (pathOk === 'effect') {
       await run.step('interact', 'the effect renders at about the cap (15 and 30 fps, page-side count of effectframe, +-30 %)', async () => {
         await page.evaluate(`window.__ef = 0; document.getElementById('stage').addEventListener('effectframe', () => { window.__ef += 1; })`);
         const rate = async (seconds) => { await page.evaluate('window.__ef = 0'); await sleep(seconds * 1000); return (await page.evaluate('window.__ef')) / seconds; };
-        await page.evaluate(`document.getElementById('fps-cap').focus()`); await page.key('Home'); await sleep(300);
+        await page.evaluate(`document.getElementById('cap').focus()`); await page.key('Home'); await sleep(300);
         const r15 = await rate(2);
-        for (let i = 0; i < 3; i++) await page.key('ArrowRight');
-        await sleep(300);
+        await page.key('ArrowRight'); await sleep(300);
         const r30 = await rate(2);
         run.numbers.effectFrameRates = { cap15: r15, cap30: r30 };
+        await page.key('End'); await sleep(200);
         return { ok: Math.abs(r15 - 15) <= 4.5 && Math.abs(r30 - 30) <= 9, cap15: r15, cap30: r30 };
       });
-      await run.step('surface', 'the presented frame is still not blank after interaction', async () => {
+      await run.step('interact', 'a trusted click on Send runs the disintegrate actions: the form turns to dust (frame differs 500 ms later), then re-forms with the page\'s answer', async () => {
+        const before = await canvasImage(page, '#stage', 'gpu');
+        const send = await centerOf(page, '#form button');
+        await page.click(send.x, send.y);
+        await sleep(500);
+        const mid = H.compareImages(await canvasImage(page, '#stage', 'gpu'), before).countOver16;
+        const answered = await H.until(() => page.evaluate(`/^Thanks, Adax\./.test(document.getElementById('result').textContent) || null`), 8000);
+        await sleep(2000);   // the way back (1.2 s)
         const img = await canvasImage(page, '#stage', 'gpu'); run.shots.after = img;
-        return { ok: H.pixelStats(img).nonBlank };
+        const back = H.compareImages(img, before).countOver16;
+        return { ok: mid > 3000 && !!answered && H.pixelStats(img).nonBlank && back > 30 && back < 0.2 * img.width * img.height, midChangedPixels: mid, answered: !!answered, changedAfterPixels: back };
+      });
+    } else {
+      await run.step('interact', 'the 2D path: Send writes the answer into the drawn form (no effect, no action)', async () => {
+        const send = await centerOf(page, '#form button');
+        await page.click(send.x, send.y);
+        const answered = await H.until(() => page.evaluate(`/^Thanks, Adax\./.test(document.getElementById('result').textContent) || null`), 4000);
+        const diff = await changedFrom(page, '#stage', '2d', first, 30);
+        run.shots.after = diff.img ?? first;
+        return { ok: !!answered && !diff.timedOut, answered: !!answered, changedPixels: diff.countOver16 };
       });
     }
   },
@@ -579,14 +597,14 @@ async function main() {
       for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name}: ${c.name}`); }
     }
     // ---- the 2D fallback of the effect pages (a browser without WebGPU), same checks except the GPU-only ones
-    for (const name of ['plugins', 'water-form'].filter((n) => names.includes(n))) {
+    for (const name of ['plugins', 'effect-plugin'].filter((n) => names.includes(n))) {
       const run = await runExample(browser, server, name, { noGpu: true, tag: 'no-gpu' });
       const s = summarize(run); s.example = `${name} (navigator.gpu hidden)`; result.examples.push(s);
       console.log(`${s.ok ? 'ok  ' : 'FAIL'} ${name}, no WebGPU  (${run.checks.filter((c) => c.ok).length}/${run.checks.length} checks)  note: ${run.notes.join('; ')}`);
       for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name} no-gpu: ${c.name}`); }
     }
     // ---- the same fallback when navigator.gpu exists but returns no adapter (iOS / Android simulators, blocklisted GPUs)
-    for (const name of ['plugins', 'water-form'].filter((n) => names.includes(n))) {
+    for (const name of ['plugins', 'effect-plugin'].filter((n) => names.includes(n))) {
       const run = await runExample(browser, server, name, { noAdapter: true, tag: 'no-adapter' });
       const s = summarize(run); s.example = `${name} (no WebGPU adapter)`; result.examples.push(s);
       console.log(`${s.ok ? 'ok  ' : 'FAIL'} ${name}, no WebGPU adapter  (${run.checks.filter((c) => c.ok).length}/${run.checks.length} checks)  note: ${run.notes.join('; ')}`);

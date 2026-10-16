@@ -8,9 +8,9 @@ A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in
 
 **Live demo:** [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/)
 
-[![A live HTML form drawn into a canvas under a WebGPU water effect; the name field is clicked and typed into through the effect](docs/media/water-form.webp)](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/water-form/)
+[![A live HTML form drawn into a canvas under the WebGPU water plugin of the gallery; the name field is clicked and typed into through the ripples](docs/media/hero.webp)](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=water)
 
-*The [water-form](examples/water-form/) example: an ordinary HTML form inside a canvas, drawn through a WebGPU ripple plugin. The click and the typing go to the real `<input>`. Recorded in headless Chrome. More effects over the same form: the [plugin gallery](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/).*
+*The [plugin gallery](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=water) with the water plugin: an ordinary HTML form inside a canvas, drawn through a WebGPU ripple effect. The click and the typing go to the real `<input>`. Recorded in headless Chrome (`plugins/water/test/gallery.e2e.mjs --record`). Seven more effects over the same form are one click away in the gallery; the smallest page that uses them is [examples/effect-plugin](examples/effect-plugin/).*
 
 ## Why
 
@@ -128,11 +128,11 @@ The browser itself lays out and paints the HTML; the polyfill only takes picture
 > **Note.** The frame cap and the effect plugins are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them. They work only while this polyfill provides the API; on top of a native implementation they are not supported ([what was checked](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 - **Frame cap:** `<canvas content="drawable" framecap="30">` or `canvas.frameCap = 60` bounds `paint` events, effect frames and snapshot builds for that canvas (0 = display rate).
-- **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. The plugins are not part of the polyfill: the water ripple of the demo is one example plugin in [plugins/](plugins/), with a template for new ones and a [gallery](examples/plugins/) that applies each to one live form. [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) builds another one step by step.
+- **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. A plugin may declare actions that page code runs through its handle (`await handle.trigger('play')` resolves with the state the plugin rests in). The plugins are not part of the polyfill: the water ripple of the demo is one example plugin in [plugins/](plugins/), with a template for new ones and a [gallery](examples/plugins/) that applies each to one live form; [examples/effect-plugin](examples/effect-plugin/) is the smallest page that uses them. [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) is the reference for using and writing plugins.
 
 ## Example plugins
 
-Eight example effect plugins, each applied to the same live form in the [plugin gallery](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/) (desktop Chrome with WebGPU). Under each of them the form stays live: a click is mapped through the effect to the element the user sees there (and swallowed where the effect shows no element), typing goes to the real field, and each plugin states what it does when the user prefers reduced motion.
+Eight example effect plugins, each applied to the same live form in the [plugin gallery](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/) (desktop Chrome with WebGPU). Under each of them the form stays live: a click is mapped through the effect to the element the user sees there (and swallowed where the effect shows no element), typing goes to the real field, and each plugin states what it does when the user prefers reduced motion. Five have actions that page code runs with `handle.trigger`: disintegrate (`out`, `in`, `play`), shatter (`impact`, `crack`, `out`, `in`, `play`), glitch (`burst`), page-curl (`peek`) and water (`drop`); the gallery shows them as buttons.
 
 <table>
 <tr>

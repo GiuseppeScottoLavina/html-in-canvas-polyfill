@@ -15,7 +15,7 @@ npm run build                   # writes dist/ (classic IIFE bundles and dist/es
 npm run demo                    # http://127.0.0.1:8765/examples/
 ```
 
-Open `http://127.0.0.1:8765/examples/` in a supported browser and try, in this order: `basic` (the WICG explainer example), `form`, `plugins` (the effect gallery) and `water-form` (both need WebGPU for the effects; they say which path they took), `scroll-and-resize`, `webgl-texture`. Each example folder has a README. `npm run test:examples` runs all of them in headless Chrome as a smoke test.
+Open `http://127.0.0.1:8765/examples/` in a supported browser and try, in this order: `basic` (the WICG explainer example), `form`, `plugins` (the effect gallery) and `effect-plugin` (the smallest page with effects; both need WebGPU for the effects and say which path they took), `scroll-and-resize`, `webgl-texture`. Each example folder has a README. `npm run test:examples` runs all of them in headless Chrome as a smoke test.
 
 `npm run demo` serves only `/examples` and `/dist` (everything else is 403). To try your own page, put it in a new folder such as `examples/mine/index.html` and load `../../dist/hic-live-polyfill.iife.min.js`, or open the file directly from disk (`file://` works; the built files make no network request). The snippets in this guide say `dist/...`, which is right only for a page next to `dist/`.
 
@@ -89,11 +89,12 @@ Two more classic scripts, after the core: the effects host and a plugin (the wat
 // do NOT call canvas.getContext() first: the host owns the canvas bitmap and its 'webgpu' context
 const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
 const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.28 });
+await water.trigger('drop', { point: { x: 120, y: 80 } });   // an action of the plugin: resolves 'calm' once the ripple has died out
 ```
 
 The source element (`form` here) must have exactly the size of the canvas content box (for example `width` and `height` in CSS on both, `box-sizing: border-box`). The host stretches the source over the whole canvas and maps pointer input back through that stretch, so a smaller or larger source is drawn distorted and clicks land beside what the user sees; `createHost` prints one `console.warn` with both sizes when they differ by more than 1 CSS pixel. The complete page is in [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) section 7.
 
-`createHost` rejects with `HicUnsupportedError('effect-plugins')` when there is no WebGPU; keep a 2D `drawElementImage` fallback and decide before any `getContext` call (`examples/water-form/index.html` does). All the plugins over one form: `examples/plugins/`. Writing your own plugin: [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) and [`plugins/_template/`](../../plugins/_template/).
+`createHost` rejects with `HicUnsupportedError('effect-plugins')` when there is no WebGPU; keep a 2D `drawElementImage` fallback and decide before any `getContext` call (`examples/effect-plugin/index.html` does, in about 30 lines that also set the frame cap and run a transition with `handle.trigger`). All the plugins over one form, with their actions: `examples/plugins/`. Writing your own plugin: [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) and [`plugins/_template/`](../../plugins/_template/).
 
 ## 5. What happens in other browsers
 

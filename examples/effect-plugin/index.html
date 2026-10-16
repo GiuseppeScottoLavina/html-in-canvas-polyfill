@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>effect-plugin: a live form under two effect plugins</title>
+<!-- 1. The polyfill (it installs while this tag runs). The engines bundle draws form controls on Firefox and Safari. -->
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<!-- 2. The effects host (window.HTMLInCanvasEffects), then the plugins: each registers window.HicLivePlugins.<name>. -->
+<script src="../../dist/hic-live-effects.iife.min.js"></script>
+<script src="../../dist/plugins/water.iife.min.js"></script>
+<script src="../../dist/plugins/disintegrate.iife.min.js"></script>
+<style>
+  body { margin: 1.5rem; font: 15px/1.5 system-ui, sans-serif; }
+  #stage { display: block; width: 560px; height: 340px; max-width: 100%; }
+  /* the drawn source has exactly the size of the canvas: the host maps input through that size */
+  #form { box-sizing: border-box; width: 560px; height: 340px; padding: 32px; display: grid; gap: 12px; align-content: start;
+          color: #e8f6ff; background: linear-gradient(150deg, #0b2440, #23164a); }
+  #form h2 { margin: 0; }
+  #form input { width: 260px; padding: 6px 8px; font: inherit; }
+  #form button { justify-self: start; padding: 8px 18px; font: inherit; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Effect plugins on a live form</h1>
+<p id="status">Starting.</p>
+<canvas id="stage" width="560" height="340" content="drawable">
+  <form id="form" drawable>
+    <h2>Contact</h2>
+    <label>Name <input name="name" value="Ada" required></label>
+    <label>Email <input name="email" type="email" value="ada@example.com" required></label>
+    <button>Send</button>
+    <output id="result"></output>
+  </form>
+</canvas>
+<p><label>Frame cap <input id="cap" type="range" min="15" max="120" step="15" value="60"></label> <output id="cap-value"></output> fps</p>
+<script>
+(async () => {
+  const canvas = document.getElementById('stage'), form = document.getElementById('form'), status = document.getElementById('status');
+  let host = null;
+  try {
+    // The effects run while the polyfill provides the API (not over a native implementation) and need WebGPU.
+    if (window.__HIC__?.installed?.mode !== 'polyfill') throw new Error('the effects need the polyfill');
+    if (!navigator.gpu) throw new Error('this browser has no WebGPU');
+    host = await HTMLInCanvasEffects.createHost(canvas, form);   // it owns the canvas: no getContext() before this
+  } catch (error) {
+    const ctx = canvas.getContext('2d');                         // the standard 2D path, without effects
+    canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(form, 0, 0); };
+    status.textContent = `No effects here (${error.message}): the form is drawn in 2D.`;
+  }
+  // The frame cap (an extension of this library): at most this many effect frames per second.
+  const cap = document.getElementById('cap');
+  cap.oninput = () => { canvas.frameCap = Number(cap.value); document.getElementById('cap-value').textContent = cap.value; };
+  cap.oninput();
+  let dust = null;
+  if (host) {
+    // Two plugins, in chain order: water ripples, then the disintegrate transition (run by our own submit handler below).
+    await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.3 });
+    dust = await host.addPlugin(HicLivePlugins.disintegrate.plugin, { onSubmit: 'off' });
+    status.textContent = 'Move the pointer over the form for ripples, click a field and type, then Send.';
+  }
+  status.dataset.path = host ? 'effect' : '2d';
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (dust) await dust.trigger('out');                         // resolves 'out' once the form has turned to dust
+    document.getElementById('result').textContent = `Thanks, ${form.elements.name.value}. (Nothing was sent.)`;
+    if (dust) await dust.trigger('in');                          // re-forms the form as it is now: resolves 'in'
+  });
+})();
+</script>
+</body>
+</html>

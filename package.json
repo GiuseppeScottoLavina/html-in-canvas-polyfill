@@ -96,7 +96,7 @@
     "examples/README.md",
     "examples/basic",
     "examples/form",
-    "examples/water-form",
+    "examples/effect-plugin",
     "examples/plugins",
     "examples/scroll-and-resize",
     "examples/webgl-texture",
