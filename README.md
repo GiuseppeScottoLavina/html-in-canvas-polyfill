@@ -91,7 +91,7 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
 | Safari 27+ desktop | polyfill runs; measured on 27.0.1 (macOS) |
 | Safari on iOS / iPadOS 26+, other iOS browsers (WebKit) | polyfill runs with phone budgets and the iOS control look; verified on the iOS Simulator (iOS 26.4, iPhone and iPad), not on a device |
-| Chrome for Android 130+ | polyfill runs; verified on the Android Emulator only, and only as a stand-in (its image ships Chrome 124, run with the anchor-positioning flag) |
+| Chrome for Android 130+ | polyfill runs with phone budgets; verified on the Android Emulator with Chromium 158, not on a device (Chromium 158 ships HTML-in-Canvas natively: the polyfill steps aside there; its own path was forced for the test) |
 | older Firefox and Safari, Chrome for Android < 130, iOS < 26, Android WebView, in-app iOS web views, Firefox for Android | refused with one console warning |
 
 Nothing was measured on Windows or Linux, or on a physical phone ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).

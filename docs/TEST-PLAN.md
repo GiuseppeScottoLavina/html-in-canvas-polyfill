@@ -208,7 +208,7 @@ parent process's macOS privacy context and cannot open its profile). Safari need
 15-minute watchdog. Results: `.scratch/results/xbrowser-<engine>-<ts>.json`, failing images in `.scratch/results/xbrowser-<ts>/`.
 Safari Technology Preview (`stp`) is optional: it is driven by its own `safaridriver` inside the app bundle and reported SKIPPED (the gate still passes) when it is not installed or
 its Develop > Allow Remote Automation is off. The runner first reads its native surface with the polyfill's own probe on a page without the polyfill: `absent` runs the Safari
-scenarios; a usable native (its HTML-in-Canvas feature flag on) runs `nativeExamples` (four examples with the bridge bundle: mode `native` or `native-bridged`, a non-blank canvas,
+scenarios; a usable native (its internal feature HTML-in-Canvas on: Debug menu > WebKit Internal Features, `docs/SUPPORT-MATRIX.md`) runs `nativeExamples` (four examples with the bridge bundle: mode `native` or `native-bridged`, a non-blank canvas,
 no console error; control: the sabotaged draw must turn `pixel` red); `broken` must be refused with the missing core named.
 
 | scenario | asserts (same engine, plain-DOM twin) | control (sabotaged page: drawElementImage draws nothing, drawn children pointer-dead) |
@@ -227,18 +227,21 @@ Oracle: `shiftTolerant` <= 5 % of pixels over 16 and <= 1 % over 100, a pixel ma
 
 ### 2.10 Mobile gate G-mobile (`npm run test:mobile`; iOS Simulator and Android Emulator only, no physical device)
 
-`node test/mobile/run.mjs [--platform=ios,android] [--only=...] [--no-control] [--ios-devices=...] [--ipad=...] [--ios-old=...] [--avd=...] [--no-stand-in]`. Devices run one at a time
+`node test/mobile/run.mjs [--platform=ios,android] [--only=...] [--no-control] [--ios-devices=...] [--ipad=...] [--ios-old=...] [--avd=...] [--android-package=...] [--no-stand-in]`. Devices run one at a time
 and are shut down afterwards: iPhone 17 on the newest iOS 26.x simulator (required) and on iOS >= 27 (optional, SKIPPED when `safaridriver` cannot pair with it), an iPad on iOS
 26.x (classification, explainer), an iPhone on iOS 18.x (refusal), then the AVD. iOS: Mobile Safari through the system `safaridriver` (`platformName: iOS`,
 `safari:useSimulator`); trusted touch taps and holds are WebDriver touch pointer actions; a touch drag wedges the driver and key actions insert no text (the plain page alike),
 so touch scroll, typing through keys, the virtual keyboard, rotation and long-press are skipped there with the reason (typing goes in through `execCommand` after a trusted
 tap; rotation is replaced by a canvas resize). Screenshots are the whole device screen: crops are located with a marker drawn into the page in the same screenshot, and only
-from the upper half of the viewport (the toolbar's blur covers the bottom). Android: the emulator starts headless, Chrome is driven over `adb forward ... chrome_devtools_remote`;
-taps and drags are CDP touch events, typing is the IME (`adb input text`), long press, keyboard taps and rotation go through the OS. When the image's Chrome is older than 130
-the polyfill scenarios run as a labelled stand-in (the anchor-positioning flag and a Chromium 130 user agent) and the refusal runs on the real agent. At a fractional DPR the
+from the upper half of the viewport (the toolbar's blur covers the bottom). Android: the emulator starts headless, the newest installed browser (Chromium from a snapshot's `ChromePublic.apk`, else the image's Chrome) is driven over
+`adb forward ... chrome_devtools_remote` (tabs through `Target.createTarget`; first-run screens dismissed through uiautomator, no command-line flags); taps and drags are CDP
+touch events, typing is the IME (`adb input text`), long press, keyboard taps and rotation go through the OS. When the browser implements HTML-in-Canvas natively (Chromium 158),
+`nativeFirst` checks that the plain bundles step aside and that the native result passes the explainer's pixels, tap and typing, and the polyfill scenarios load
+`test/mobile/force-polyfill.js` after the core (`install({ forcePolyfill: true })`). The refusal runs on a browser below 130 (the image's Chrome 124). When no installed browser is
+130+, the polyfill scenarios run as a labelled stand-in on the old Chrome (the anchor-positioning flag and a Chromium 130 user agent). At a fractional DPR the
 crop origin is searched over +-1 device pixel. Scenarios: gate, explainer (pixels, tap focus, typing, raster scale = device DPR up to 3), form (taps on field, checkbox,
-button), moved (a drawable drawn away from its layout box), touchScroll, rotation, keyboard, selection, controls (F6 `?narrow=1`, 62 regions, iOS look; informative on the
-Android stand-in), unsupported (an older browser refused with the version named; control: the same page with a supported user agent). Positive controls: the RECORDER sabotage
+button), moved (a drawable drawn away from its layout box), touchScroll, rotation, keyboard, selection, controls (F6 `?narrow=1`, 62 regions, iOS look / Chromium's Android theme;
+the scrolled light listbox has its own 4 % structural bound on Android; informative on the stand-in), unsupported (an older browser refused with the version named; control: the same page with a supported user agent). Positive controls: the RECORDER sabotage
 (`?xbsab=1`), the accent / outline sabotage for controls and `?xbua=1` for the refusal. Results: `.scratch/results/mobile-<ts>.json`.
 
 ## 3. Reporting

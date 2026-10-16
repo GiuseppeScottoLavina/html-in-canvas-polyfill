@@ -76,8 +76,8 @@ The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `i
 Gate G-bridged-translation runs these rows on Chrome 154 with the flag; the unit tests run them on fake native shapes (`test/unit/api-core/_page-env.mjs`: the measured current, previous and legacy shapes, and the shape of Safari Technology Preview 254 with its HTML-in-Canvas flag, read from its binary).
 A legacy build without the geometry methods (Safari Technology Preview 254: no `updateElementGeometry` / `clearElementGeometry`) is bridged all the same: only the methods that exist are wrapped, and the matrix a draw returns goes to the polyfill's CSS rule alone.
 
-Browser gate (only evaluated for `absent`/`forcePolyfill`): Chromium >= 130 on desktop and Chrome for Android (only 154 and Canary 157 measured on desktop; Android only as an
-emulator stand-in), Firefox >= 155 or Safari >= 27 on desktop (the measured majors, G-xbrowser), Safari >= 26 on iOS / iPadOS (iPadOS detected from a `Macintosh` agent with
+Browser gate (only evaluated for `absent`/`forcePolyfill`): Chromium >= 130 on desktop and Chrome for Android (only 154 and Canary 157 measured on desktop; Android: Chromium 158 on
+the Android Emulator, with the polyfill forced over its native API), Firefox >= 155 or Safari >= 27 on desktop (the measured majors, G-xbrowser), Safari >= 26 on iOS / iPadOS (iPadOS detected from a `Macintosh` agent with
 more than one touch point; G-mobile on the iOS Simulator) and the other iOS browsers (WebKit, no version in their agent: decided by the features), AND every required platform
 feature present (CSS anchor positioning, ResizeObserver, `HTMLImageElement.decode`, constructable stylesheets; a missing one is named in the message). Android WebView, in-app
 iOS web views (no `Safari/` token) and Firefox for Android are refused with that reason (`docs/guides/MOBILE.md`). Anything else: `install()` throws
