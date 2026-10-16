@@ -52,40 +52,44 @@ test('CostBudget: refills at the share, goes negative on overspend and says how 
   assert.ok(b.level <= 0.35 * 60 + 1e-9, 'capped, no unbounded credit');
 });
 
-test('PhaseGate: phase-accumulator pacing without drift and resync after a long stall', () => {
+test('PhaseGate: a new gate allows one start, then paces at the interval (a few ms early is fine); a stream on a 120 Hz display builds every second frame', () => {
   const g = new PhaseGate();
   const interval = 1000 / 60;
+  const frame = 1000 / 120;
   assert.equal(g.isDue(0, interval), true);
   g.started(0, interval);
   assert.equal(g.isDue(5, interval), false);
   assert.equal(g.isDue(interval - 1, interval), true, 'tolerance of a few ms');
-  g.started(17, interval);
-  g.started(33, interval);
-  assert.ok(Math.abs(g.next - 3 * interval) < 1e-9, 'the phase advances by whole intervals');
-  g.started(1000, interval);
-  assert.equal(g.next, 1000 + interval, 'a stall of more than two intervals resynchronises');
+  assert.ok(Math.abs(g.dueAt(interval) - (interval - 3)) < 1e-9);
+  const starts = [];
+  for (let i = 2; i < 40; i++) if (g.isDue(i * frame, interval)) { g.started(i * frame, interval); starts.push(i); }
+  assert.deepEqual(starts.slice(-6).map((n, k, all) => (k ? n - all[k - 1] : 2)), [2, 2, 2, 2, 2, 2], `every second frame: ${starts}`);
   assert.equal(g.isDue(1, 0), true, 'interval 0 = uncapped');
 });
 
-test('PhaseGate: in frame time (whole 120 Hz frames), a pause of exactly two intervals resynchronises whatever the float noise; a shorter one keeps the phase (WPT onpaint)', () => {
+test('PhaseGate: after a pause the change right after a build is built one frame later, then the stream settles at the cap; the credit never grows past it (WPT onpaint)', () => {
   const interval = 1000 / 60;
   const frame = 1000 / 120;
-  for (const noise of [-1e-9, 0, 1e-9]) {
-    const g = new PhaseGate();
-    g.started(0, interval);
-    const at = 3 * interval + noise; // 6 frames: two intervals after the slot at 16.7 ms
-    g.started(at, interval);
-    assert.ok(Math.abs(g.next - (at + interval)) < 1e-6, `resynchronised (noise ${noise})`);
-    assert.equal(g.isDue(at + frame, interval), false, 'not due one frame later');
-    assert.equal(g.isDue(at + 2 * frame, interval), true, 'due two frames later');
+  for (const pause of [3, 4, 5, 6, 40, 1000]) {
+    for (const noise of [-1e-9, 0, 1e-9]) {
+      const g = new PhaseGate();
+      g.started(0, interval);
+      const at = pause * frame + noise;
+      assert.equal(g.isDue(at, interval), true);
+      g.started(at, interval);
+      assert.equal(g.isDue(at + frame, interval), true, `pause ${pause} frames: the next frame may build`);
+      g.started(at + frame, interval);
+      assert.equal(g.isDue(at + 2 * frame, interval), false, `pause ${pause}: then the cap holds`);
+      assert.equal(g.isDue(at + 3 * frame, interval), true);
+    }
   }
-  const g = new PhaseGate();
-  g.started(0, interval);
-  g.started(3 * frame, interval);
-  assert.ok(Math.abs(g.next - 2 * interval) < 1e-6, 'a start one frame late keeps the phase');
+  const slow = new PhaseGate();
+  slow.started(0, 100);
+  slow.started(5000, 100);
+  assert.equal(slow.isDue(5020, 100), false, 'a 10 fps cap gets no extra build after a pause (the extra credit is half a 60 Hz interval)');
 });
 
-test('PhaseGate: a capped stream on a 144 Hz display still averages the cap (the phase is kept)', () => {
+test('PhaseGate: a capped stream on a 144 Hz display still averages the cap', () => {
   const interval = 1000 / 60;
   const frame = 1000 / 144;
   const g = new PhaseGate();
@@ -94,7 +98,7 @@ test('PhaseGate: a capped stream on a 144 Hz display still averages the cap (the
     const now = i * frame + 0.7;
     if (g.isDue(now, interval)) { g.started(now, interval); builds++; }
   }
-  assert.ok(builds >= 116 && builds <= 121, `${builds} builds in 2 s`);
+  assert.ok(builds >= 116 && builds <= 122, `${builds} builds in 2 s`);
 });
 
 test('sameGeometry compares size, scale, pixel size and ink origin', () => {

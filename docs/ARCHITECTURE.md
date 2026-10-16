@@ -233,6 +233,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
    The FIRST build of a drawable (never built: it holds back every paint of its canvas) is held by neither `maxInFlight` nor `mainThreadMs`, only by the cost bucket, which charges
    it the fixed 3 ms estimate, not its measured cost: the first snapshot of a canvas is one round (at most 8 drawables), whatever cold compilation or machine load made it cost.
    `now` is frame time: the timestamp of the last rendering update plus whole frame periods, so the snapshot-rate gate does not depend on when the post-frame task ran.
+   That gate (`min(F, maxSnapshotFps)`) is a credit of builds that grows by one per interval and is capped at one and a half: the long-run rate is the cap, and after a pause two
+   builds may start one 120 Hz frame apart, never three (it replaced a phase accumulator whose catch-up allowed that second build or not depending on the phase left by earlier builds).
    A long build defers its decode start to the next task, a `scheduler.postTask` user-blocking task like the post-frame pump, so the tile still lands before the app's queued tasks.
    Ordering 3-before-4 means DOM writes made in the paint handler are captured by the build started in the same frame, and the capture reads freshly laid-out DOM (no forced layout).
 5. Frame hooks (`addFrameHook`: the effect host renders here, after the new source version is committed); a hook returning `true` keeps ticking.

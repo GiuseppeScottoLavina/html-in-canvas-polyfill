@@ -2,7 +2,7 @@
  * Starts builds (sync part bounded by PumpBudget) and tracks in-flight decodes.
  * Module: snapshot-store (src/snapshot/store/*).
  *
- * Pacing, in one place: per canvas a phase-accumulator gate (frameCap, maxSnapshotFps, interaction floor), per drawable ONE build in flight (measured: two in flight
+ * Pacing, in one place: per canvas a build-credit gate (frameCap, maxSnapshotFps, interaction floor), per drawable ONE build in flight (measured: two in flight
  * was not better when measured), and one install-wide main-thread budget. A tile costs its synchronous build PLUS its decode wall PLUS its commit draw (decode is not
  * off-thread, ADR-D.8); the budget is a token bucket that refills at `mainThreadShare` ms per ms, so the long-run share is bounded and a build is only ever delayed, never starved.
  */
@@ -176,10 +176,18 @@ export class CostBudget {
   }
 }
 
-/** Phase-accumulator pacing of build starts of one canvas. */
+/**
+ * Pacing of the build starts of one canvas: a credit of builds that grows by one per interval, so the long-run rate is the cap (also on a display whose frame
+ * period does not divide the interval), capped at one and a half builds (less for a cap below 60 fps): after a pause two builds may start one 120 Hz frame apart
+ * (a change right after the build that followed the pause is built in the next frame), never three, and a stream settles at the cap. It replaces a phase accumulator whose catch-up (next due up to two intervals in the past) gave that extra build
+ * or not depending on the phase left by earlier builds, which the frame of the canvas's first build and any dropped frame decided (WPT onpaint changed between loads).
+ * Times are the scheduler's frame time, so the credit moves in whole frames.
+ */
 export class PhaseGate {
   constructor() {
-    this.next = -Infinity;
+    /** builds of credit at `at` (one build: a new gate allows one start, then paces) */
+    this.credit = 1;
+    this.at = -Infinity;
   }
 
   /** @param {number} interval @returns {number} */
@@ -187,25 +195,27 @@ export class PhaseGate {
     return Math.min(3, interval * 0.3);
   }
 
-  /** @param {number} now @param {number} interval ms, 0 = uncapped @returns {boolean} */
-  isDue(now, interval) {
-    return interval <= 0 || now >= this.next - PhaseGate.tolerance(interval);
+  /** @param {number} now @param {number} interval @returns {number} the credit at `now` */
+  level(now, interval) {
+    const cap = 1 + 0.5 * Math.min(1, 1000 / 60 / interval);
+    return Number.isFinite(this.at) ? Math.min(cap, this.credit + Math.max(0, now - this.at) / interval) : this.credit;
   }
 
-  /**
-   * Keeps the phase across a stream; a start more than two intervals late (less the tolerance, so a pause of exactly two intervals, 4 frames at 120 Hz in the
-   * scheduler's frame time, is not decided by float noise) resynchronises.
-   * @param {number} now @param {number} interval
-   */
+  /** @param {number} now @param {number} interval ms, 0 = uncapped @returns {boolean} */
+  isDue(now, interval) {
+    return interval <= 0 || this.level(now, interval) >= 1 - PhaseGate.tolerance(interval) / interval;
+  }
+
+  /** @param {number} now @param {number} interval */
   started(now, interval) {
     if (interval <= 0) return;
-    const late = now - this.next;
-    this.next = !Number.isFinite(this.next) || late > 2 * interval - PhaseGate.tolerance(interval) ? now + interval : this.next + interval;
+    this.credit = this.level(now, interval) - 1;
+    this.at = now;
   }
 
   /** @param {number} interval @returns {number} performance.now() at which the next start is allowed */
   dueAt(interval) {
-    return this.next - PhaseGate.tolerance(interval);
+    return this.at + (1 - PhaseGate.tolerance(interval) / interval - this.credit) * interval;
   }
 }
 

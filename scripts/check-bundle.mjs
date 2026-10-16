@@ -39,9 +39,9 @@ const LIMITS = {
   // 267.5 -> 269 KB, gzip 93.25 -> 93.75 KB (+1,684 / +555 bytes, 2026-10-16, measured 268,824 / 93,565): fixes found on real Chromium 158 for Android (a listbox shows
   //   its selected option after the move into the layer, checkbox / radio zoom back to the device scale, the indeterminate look at the live size and its dark dash, the
   //   Android listbox thumb)
-  // 269 -> 269.25 KB (+297 bytes, 2026-10-16, measured 269,121 / 93,677): paint timing that machine load cannot reorder (a deferred decode start in a user-blocking
-  //   task, the first build of every drawable in one round charged its fixed estimate, builds paced in frame time) and changedElements without a drawable removed during
-  //   a held paint (WPT onpaint flakes)
+  // 269 -> 269.25 KB (+421 bytes, 2026-10-16, measured 269,245 / 93,735): paint timing that machine load cannot reorder (a deferred decode start in a user-blocking
+  //   task, the first build of every drawable in one round charged its fixed estimate, builds paced in frame time by a credit of builds) and changedElements without a
+  //   drawable removed during a held paint (WPT onpaint flakes)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 269.25 * KB, gzip: 93.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },

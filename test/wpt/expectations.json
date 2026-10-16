@@ -176,7 +176,7 @@
   "onpaint.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "a paint fires in the first frame when its snapshot lands at once (Chromium), otherwise >= 2 frames later. 10 of 12 subtests pass in every rep (2026-10-16: 20 reps, 10 fresh-browser runs, quiet and with an idle Android Emulator). 'grandchild changes': the change comes 1 frame after the previous subtest's build and options.maxSnapshotFps (60) holds the next build to the following frame on a 120 Hz display, one frame later than the test's single wait. 'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows (deviation paint-spurious). Two machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler), and the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames. Residual: the gate's phase is set by the frame of the first build, so a dropped frame while the page loads can still move one build a frame (1 in 100 fresh-browser loads of this file in a loop, none in the 20-rep runs)"
+   "note": "11 of 12 subtests pass in every rep (2026-10-16: 50 fresh-browser loads x 5 reps, and 3-rep full runs). 'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows (deviation paint-spurious). Three machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler); the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames; and its phase accumulator allowed a second build one frame after the first or not depending on the phase that the frame of the first build and dropped frames had left ('grandchild changes' or 'child transform' and 'drawing operations' failed by turns). Builds are now paced in frame time by a credit of builds"
   },
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "deviation",
@@ -564,7 +564,7 @@
   "draw-element-image-get-image-data.tentative.html": 1,
   "onpaint-iframe-post-tree-order.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,
-  "onpaint-remove-drawable-element.tentative.html": 3,
+  "onpaint-remove-drawable-element.tentative.html": 5,
   "onpaint.tentative.html": 10,
   "offscreen/offscreenCanvas-drawElementImage.tentative.html": 1
  },
