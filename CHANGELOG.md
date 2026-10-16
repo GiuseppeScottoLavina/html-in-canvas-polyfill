@@ -41,6 +41,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 ### Removed
 
 - The options `strictResources` and `trace`: they were validated but had no effect. Passing either now throws a `TypeError`, like any unknown option.
+- The `profiling` option of `HTMLInCanvasEffects.createHost`: it was accepted but had no effect.
 - Plugin ABI 1 and its adapter (the `sourceSnapshotSerial` frame field): `definePlugin` accepts `apiVersion: 2` only.
 - The `./src/*` package export. The public API is the documented entry points of `exports`; the modules under `src/` are internal.
 - The module-level `trigger(canvas, action)` and `settled(canvas)` of the disintegrate and shatter plugins (also `HicLivePlugins.<name>.trigger`) and the `trigger` option of the glitch plugin, in favour of the actions on the effect handle (`handle.trigger`, `handle.settled`).
