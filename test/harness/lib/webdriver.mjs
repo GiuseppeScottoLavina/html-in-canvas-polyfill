@@ -287,8 +287,10 @@ export async function launchIosSimulator({ udid }) {
   let v;
   try { v = await newSession(base, { browserName: 'Safari', platformName: 'iOS', 'safari:useSimulator': true, 'safari:deviceUDID': udid }, 180000); } catch (e) {
     killPids([drv.pid]); shutdown();
-    // measured with Safari 27.0.1's safaridriver and the iOS 27.0 simulator runtime: no session host is offered although remote automation is on (the iOS 26.4 and
-    // 18.1 runtimes pair); in the simulator, Settings > Apps > Safari > Advanced > Web Inspector / Remote Automation is the place to check
+    // measured 2026-10-16 with the safaridriver of Safari 27.0.1 and of Technology Preview 254 (Xcode 27 ships none) and the iOS 27.0 simulator runtime: no session host
+    // is offered (the iOS 26.4 and 18.1 runtimes pair), although remote automation and the developer extras were on inside it (com.apple.WebInspector,
+    // com.apple.mobilesafari), the system Automation Mode was on and Mobile Safari was running and connected to the simulator's webinspectord: the driver never asks the
+    // device to launch Safari. It needs a safaridriver that lists iOS 27 simulators
     if (/session hosts/.test(e.message)) throw new EngineUnavailable(`safaridriver found no Mobile Safari to automate in simulator ${udid} (${e.message.replace(/^.*message":"/, '').replace(/".*$/, '')})`);
     throw new Error(`${e.message}${stderr ? ' / ' + stderr.trim() : ''}`);
   }

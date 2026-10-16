@@ -4,7 +4,7 @@
 //   node test/mobile/run.mjs [--platform=ios,android] [--only=gate,explainer,...] [--no-control] [--ios-devices=UDID,UDID] [--ipad=UDID|none] [--ios-old=UDID|none]
 //                            [--avd=hicmobile] [--android-package=org.chromium.chrome|com.android.chrome] [--no-stand-in]
 // Devices, one at a time (each is shut down before the next boots): iPhone 17 on the newest iOS 26.x (required) and on the newest iOS >= 27 runtime (optional: SKIPPED
-// when safaridriver cannot pair with it, as Safari 27.0.1's driver and the iOS 27.0 runtime measured on 2026-10-16) (all scenarios), an iPad on iOS 26.x
+// when safaridriver cannot pair with it: no driver offers the iOS 27.0 runtime, measured 2026-10-16, docs/guides/MOBILE.md) (all scenarios), an iPad on iOS 26.x
 // (classification: iPadOS sends a desktop UA), an iPhone on iOS 18.x (refusal: Safari 18 is below the minimum 26), then the AVD (ANDROID_AVD_HOME or --avd-home) with
 // its newest installed browser (Chromium from a snapshot's ChromePublic.apk, else the image's own Chrome); the refusal runs on a browser below 130 (the image's Chrome 124).
 // When no installed browser is 130+ the polyfill scenarios run as a labelled STAND-IN on the old Chrome (test/mobile/android.mjs).
