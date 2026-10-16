@@ -16,6 +16,7 @@ import { launchEngine, EngineUnavailable } from '../harness/lib/webdriver.mjs';
 import { startServer } from '../harness/server.mjs';
 import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg, sleep } from '../harness/lib/util.mjs';
+import { SCROLLBAR_PROBE_EXPR } from '../harness/lib/env.mjs';
 import { RECORDER } from './lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, NATIVE_SURFACE, NATIVE_SCENARIOS } from './scenarios.mjs';
 
@@ -47,24 +48,47 @@ async function waitLoad() {
   return +loadavg()[0].toFixed(2);
 }
 
+/**
+ * The platform scrollbar gutter of the current page, css px (0: overlay bars; null: no page to ask). macOS "Show scroll bars: Automatically" switches between overlay
+ * and classic bars whenever a pointing device comes or goes (a mouse waking up, a Universal Control link to another Mac dropping), and a classic gutter widens every
+ * textarea and listbox: a twin laid out before the switch and a polyfill page laid out after it differ by a gutter (measured 2026-10-16, Safari 27.0.1: the f6
+ * progress, meter and colour controls 17 css px to the right, the Universal Control link dropped as the scenario started). Safari cannot be launched with its
+ * own scrollbar setting (safaridriver starts it), so the gate measures the gutter around every scenario instead.
+ */
+const scrollbarGutter = async (s) => (await s.evaluate(SCROLLBAR_PROBE_EXPR).catch(() => null))?.verticalGutterPx ?? null;
+/** A scenario whose scrollbars changed while it ran compared pages laid out with different bars; it runs again, at most this often, and fails if they never held. */
+const SCROLLBAR_ATTEMPTS = 3;
+
 async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
   const rows = []; const numbers = {};
   for (const [name, fn] of Object.entries(scenarios)) {
     if (only && !only.includes(name)) continue;
     if (control && !(CONTROL_CLASSES[name] ?? []).length) continue;
-    const checks = [];
-    const ctx = {
-      s, srv, bundle: BUNDLE, control, numbers,
-      check: (label, ok, data, cls) => { checks.push({ label, ok: !!ok, cls, data }); if (!control) console.log(`  ${ok ? 'ok  ' : 'FAIL'} [${engine}] ${label}${ok ? '' : ' ' + JSON.stringify(data)?.slice(0, 300)}`); },
-      save: (n, img) => writeFileSync(join(pngDir, `${engine}${control ? '-control' : ''}-${n}.png`), encodePng(img)),
-    };
-    // a test window that lost activation (another app came to the front on this shared machine) draws macOS controls in their inactive look and drops trusted
-    // clicks: re-activate it through WebDriver (switch to its own handle) before every scenario and record when it was not active
-    try { const h = await s.cmd('GET', '/window'); await s.cmd('POST', '/window', { handle: h }); } catch { /* engines without window switching */ }
-    if (!(await s.evaluate('document.hasFocus()').catch(() => true))) numbers[`${name}WindowInactive`] = true;
-    const t0 = Date.now(); let threw = null;
-    try { await fn(ctx); } catch (e) { threw = String(e.stack ?? e).slice(0, 600); if (!control) console.log(`  FAIL [${engine}] ${name} threw: ${threw}`); }
-    rows.push({ scenario: name, checks, threw, ms: Date.now() - t0 });
+    for (let attempt = 1; ; attempt++) {
+      const checks = [];
+      const ctx = {
+        s, srv, bundle: BUNDLE, control, numbers,
+        check: (label, ok, data, cls) => { checks.push({ label, ok: !!ok, cls, data }); if (!control) console.log(`  ${ok ? 'ok  ' : 'FAIL'} [${engine}] ${label}${ok ? '' : ' ' + JSON.stringify(data)?.slice(0, 300)}`); },
+        save: (n, img) => writeFileSync(join(pngDir, `${engine}${control ? '-control' : ''}-${n}.png`), encodePng(img)),
+      };
+      // a test window that lost activation (another app came to the front on this shared machine) draws macOS controls in their inactive look and drops trusted
+      // clicks: re-activate it through WebDriver (switch to its own handle) before every scenario and record when it was not active
+      try { const h = await s.cmd('GET', '/window'); await s.cmd('POST', '/window', { handle: h }); } catch { /* engines without window switching */ }
+      if (!(await s.evaluate('document.hasFocus()').catch(() => true))) numbers[`${name}WindowInactive`] = true;
+      const barsBefore = await scrollbarGutter(s);
+      const t0 = Date.now(); let threw = null;
+      try { await fn(ctx); } catch (e) { threw = String(e.stack ?? e).slice(0, 600); if (!control) console.log(`  FAIL [${engine}] ${name} threw: ${threw}`); }
+      const barsAfter = await scrollbarGutter(s);
+      const barsHeld = barsBefore === null || barsAfter === null || barsBefore === barsAfter;
+      if (!barsHeld) {
+        (numbers.scrollbarChanges ??= []).push({ scenario: name, control, attempt, gutterBefore: barsBefore, gutterAfter: barsAfter, at: new Date().toISOString() });
+        console.log(`  [${engine}]${control ? ' (control)' : ''} ${name}: the system scrollbars changed during the scenario (gutter ${barsBefore} -> ${barsAfter} css px), attempt ${attempt} of ${SCROLLBAR_ATTEMPTS}`);
+        if (attempt < SCROLLBAR_ATTEMPTS) continue;
+        checks.push({ label: `${name}: the system scrollbars held during one of ${SCROLLBAR_ATTEMPTS} attempts (twin and polyfill page laid out with the same bars)`, ok: false, cls: 'environment', data: numbers.scrollbarChanges.filter((c) => c.scenario === name) });
+      }
+      rows.push({ scenario: name, checks, threw, ms: Date.now() - t0, attempts: attempt, gutter: barsAfter });
+      break;
+    }
   }
   return { rows, numbers };
 }

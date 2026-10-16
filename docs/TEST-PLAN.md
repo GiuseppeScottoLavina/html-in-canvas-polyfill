@@ -220,6 +220,9 @@ scroll-and-resize canvas is recorded, not asserted, on Technology Preview 27.x: 
 | explainer | API installed; canvas vs twin at rest and after typing; click focuses the live input; typed value exact (no doubled insertion); canvas changes; canvas readable; WebGL `texElementSubImage2D` and WebGPU `drawElementImageToTexture` upload non-blank pixels; no page error | pixel, hit, typing red |
 | form (F1) | twin oracle; click focuses the name field; typed values exact in input and textarea; checkbox toggles; canvas changes | pixel, hit, typing red |
 | clickEffect (F1) | water effect ON (intensity 0) and 2D: a trusted click in the type=email field focuses it, changes <= 0.5 % of the surface OUTSIDE the field (+8 css px) vs the pre-click frame (misplaced tiles / focus ring), 2D twin oracle with the field patched out, email caret blinks (>= 2 states) | misplaced piece injected after the click + pointer-dead: hit, misplaced red |
+| controls (F6) | each of the 62 control regions (light, dark, accent-color, disabled, indeterminate, listboxes, classic scroller bars) against the same region of the twin: <= 15 % over 16 and <= 1.5 % over 100 per region; the whole surface by the twin oracle | live controls restyled after capture: control-look red |
+| interaction (F6) | hover, pressed (read while held) and focus states of the interactive controls under the same trusted input as the twin, per region | the pointer and focus events never reach the polyfill: interaction-look red |
+| inactive (F6) | a popup window takes the activation (`document.hasFocus()` false): every region against the twin in the inactive-window look, then again with the window key | blur/focus never reach the polyfill: inactive-look red |
 | resize (F3) | twin oracle at 1400 and 800 px; 0 blank frames during a 12-step window resize (in-page sampler after every rendering update); backing store = device-pixel content box; a click 120 ms after the last resize lands on the drawn button | pixel, blank, hit red |
 | scroll (F2) | trusted wheel over the drawn list scrolls the live list to 300 and 900 px (page stays at 0); twin oracle at equal scrollTop (sticky header pinned) | pixel, scroll red |
 | unsupported | iframe child: report entry, exactly one console.error, `hicunsupported` event; canvas paints; sibling input takes typing | supported content: report red |
@@ -228,6 +231,11 @@ scroll-and-resize canvas is recorded, not asserted, on Technology Preview 27.x: 
 
 Oracle: `shiftTolerant` <= 5 % of pixels over 16 and <= 1 % over 100, a pixel may match the reference one device row above or below; both images non-blank
 (>= 0.2 % non-dominant pixels); strict fraction reported. A run passes only when every scenario passes AND its control turned every declared class red; `--no-control` never passes.
+Scrollbars: macOS "Show scroll bars: Automatically" switches between overlay and classic bars when a pointing device comes or goes (a mouse, a Universal Control link to
+another Mac), and a classic gutter widens textareas and listboxes, so a twin and a polyfill page laid out on either side of a switch differ by a gutter (measured: Safari
+27.0.1, the f6 controls after the textarea 17 css px to the right, the Universal Control link dropped as the scenario started). Safari is started by `safaridriver` and cannot
+be given its own scrollbar setting, so the runner measures the platform gutter before and after every scenario; a scenario during which it changed runs again (at most 3
+attempts, each change recorded in `numbers.scrollbarChanges`) and fails with an `environment` check if the bars never held.
 
 ### 2.10 Mobile gate G-mobile (`npm run test:mobile`; iOS Simulator and Android Emulator only, no physical device)
 
