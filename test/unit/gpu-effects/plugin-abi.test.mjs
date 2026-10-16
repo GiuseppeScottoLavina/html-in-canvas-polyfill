@@ -42,7 +42,7 @@ test('validateInstance: render is required, optional members must be functions, 
   const def = definePlugin(base());
   assert.throws(() => validateInstance(null, def), TypeError);
   assert.throws(() => validateInstance({}, def), /render/);
-  for (const name of ['resize', 'setOptions', 'captureInputMapper', 'mountUI', 'destroy']) {
+  for (const name of ['resize', 'setOptions', 'captureInputMapper', 'mountUI', 'settled', 'destroy']) {
     assert.throws(() => validateInstance({ render() {}, [name]: 1 }, def), new RegExp(name));
   }
   assert.throws(() => validateInstance({ render() {}, continuous: 'yes' }, def), /continuous/);
@@ -67,4 +67,30 @@ test('captureMapper hands the frame to the instance unchanged and checks the res
   assert.equal(captureMapper(inst, v2, frame), mapper);
   assert.equal(seen[0], frame);
   assert.throws(() => captureMapper({ ...inst, captureInputMapper: () => 5 }, v2, {}), /must return a function/);
+});
+
+test('actions: a non-empty list of unique lowercase words, frozen in a copy; anything else is a TypeError', () => {
+  const list = ['out', 'in', 'play'];
+  const def = definePlugin({ ...base(), actions: list });
+  assert.deepEqual([...(def.actions ?? [])], ['out', 'in', 'play']);
+  assert.ok(Object.isFrozen(def.actions));
+  list.push('later');
+  assert.equal(def.actions?.length, 3, 'later edits of the input do not reach the definition');
+  assert.equal(definePlugin(base()).actions, undefined, 'no actions: the field is absent');
+  assert.throws(() => definePlugin({ ...base(), actions: [] }), /non-empty array/);
+  assert.throws(() => definePlugin({ ...base(), actions: 'play' }), /non-empty array/);
+  assert.throws(() => definePlugin({ ...base(), actions: ['Play'] }), /lowercase word/);
+  assert.throws(() => definePlugin({ ...base(), actions: ['play', 3] }), /lowercase word/);
+  assert.throws(() => definePlugin({ ...base(), actions: ['two words'] }), /lowercase word/);
+  assert.throws(() => definePlugin({ ...base(), actions: ['play', 'play'] }), /twice/);
+});
+
+test('an instance of a definition with actions must provide runAction and settled; runAction without declared actions is a TypeError', () => {
+  const withActions = definePlugin({ ...base(), actions: ['burst'] });
+  assert.throws(() => validateInstance({ render() {} }, withActions), /declares the actions burst and must provide runAction/);
+  assert.throws(() => validateInstance({ render() {}, runAction() { return null; } }, withActions), /settled/);
+  assert.throws(() => validateInstance({ render() {}, settled() { return null; } }, withActions), /runAction/);
+  assert.throws(() => validateInstance({ render() {}, runAction: 1, settled() { return null; } }, withActions), /runAction/);
+  assert.doesNotThrow(() => validateInstance({ render() {}, runAction() { return null; }, settled() { return null; } }, withActions));
+  assert.throws(() => validateInstance({ render() {}, runAction() { return null; } }, definePlugin(base())), /declares no `actions`/);
 });

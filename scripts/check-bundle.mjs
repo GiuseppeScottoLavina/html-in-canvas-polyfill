@@ -44,7 +44,9 @@ const LIMITS = {
   //   drawable removed during a held paint (WPT onpaint flakes)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 269.25 * KB, gzip: 93.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
-  'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },
+  // 27.25 -> 30.25 KB, gzip 10.75 -> 11.5 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
+  //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
+  'hic-live-effects.iife.min.js': { target: 30.25 * KB, ceiling: 30.25 * KB, gzip: 11.5 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
@@ -61,18 +63,18 @@ const LIMITS = {
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
 /**
- * Per plugin: the measured minified size (2026-10-14) plus a small margin, so that growth is a decision, not an accident. disintegrate and
+ * Per plugin: the measured minified size (2026-10-14; 2026-10-16 for the plugins with actions) plus a small margin, so that growth is a decision, not an accident. disintegrate and
  * shatter are above the 16 KB default: most of each is its WGSL, inlined by the build (shatter also builds its crack pattern on the CPU).
  */
 const PLUGIN_LIMITS = {
   crt: 14 * KB, // 13,669; 10.5 -> 14 KB: the arcade look (glow rings, aperture grille, glass), the presets and their picker
   disintegrate: 26.5 * KB, // 25,807; 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
-  glitch: 13.5 * KB, // 13,269
+  glitch: 13.75 * KB, // 13,510; 13.5 -> 13.75 KB: the action 'burst' (handle.trigger) in place of the `trigger` option
   'holo-card': 12.75 * KB, // 12,358
   'liquid-glass': 12.25 * KB, // 11,810
   'page-curl': 33.5 * KB, // 32,375; 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
   shatter: 29 * KB, // 28,363; 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
-  water: 10.75 * KB, // 10,479; 10.5 -> 10.75 KB: meta.reducedMotion
+  water: 11.75 * KB, // 11,623; 10.5 -> 10.75 KB: meta.reducedMotion; 10.75 -> 11.75 KB: the action 'drop' (handle.trigger, settled when calm)
 };
 const problems = [];
 const known = [];

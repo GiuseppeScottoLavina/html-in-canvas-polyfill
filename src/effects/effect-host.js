@@ -108,6 +108,7 @@ class HostRuntime {
       gpu: () => this.presenter,
       viewport: () => this.presenter.viewport(),
       requestRender: () => this.requestRender(),
+      reducedMotion: () => !!(/** @type {any} */ (env.window)).matchMedia?.('(prefers-reduced-motion: reduce)').matches,
       reportError: (error, slot, phase) => this.reportPluginError(error, slot, phase),
     });
     const hook = (/** @type {number} */ now, /** @type {{frameCap: number, due: boolean}} */ info) => this.onFrame(now, info);

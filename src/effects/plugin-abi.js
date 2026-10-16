@@ -12,13 +12,30 @@ import { typeError } from '../contracts/errors.js';
 /** @typedef {import('../contracts/types.js').EffectPresentationFrame} EffectPresentationFrame */
 /** @typedef {import('../contracts/types.js').InputMapper} InputMapper */
 
-const OPTIONAL_METHODS = ['resize', 'setOptions', 'captureInputMapper', 'mountUI', 'destroy'];
+const OPTIONAL_METHODS = ['resize', 'setOptions', 'captureInputMapper', 'mountUI', 'runAction', 'settled', 'destroy'];
+/** An action name: a lowercase word (it becomes a button label, a log entry, an option value). */
+const ACTION_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** Definitions already validated and frozen by definePlugin (so a second call is the identity). */
 const defined = new WeakSet();
 
 /**
- * Validate (type string, apiVersion 2, version number, create function), freeze. TypeError on invalid input.
+ * @param {EffectPluginDefinition} def
+ * @returns {ReadonlyArray<string>|undefined}  the validated, frozen copy of `def.actions`
+ */
+function readActions(def) {
+  const list = /** @type {unknown} */ (def.actions);
+  if (list === undefined) return undefined;
+  if (!Array.isArray(list) || list.length === 0) throw typeError(`definePlugin(${def.type}): \`actions\` must be a non-empty array of action names when present`);
+  for (const name of list) {
+    if (typeof name !== 'string' || !ACTION_RE.test(name)) throw typeError(`definePlugin(${def.type}): an action name is a lowercase word (${ACTION_RE}), got ${JSON.stringify(name)}`);
+  }
+  if (new Set(list).size !== list.length) throw typeError(`definePlugin(${def.type}): \`actions\` lists a name twice`);
+  return Object.freeze([...list]);
+}
+
+/**
+ * Validate (type string, apiVersion 2, version number, create function, optional outputCapabilities and actions), freeze. TypeError on invalid input.
  * @param {EffectPluginDefinition} def
  * @returns {EffectPluginDefinition}
  * @throws TypeError
@@ -42,10 +59,12 @@ export function definePlugin(def) {
     if (direct !== undefined && direct !== true) throw typeError(`definePlugin(${def.type}): directCanvasRenderAttachment must be true or absent`);
     if (direct === true) outputCapabilities = Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) });
   }
+  const actions = readActions(def);
   /** @type {EffectPluginDefinition} */
   const out = Object.freeze({
     type: def.type, apiVersion: def.apiVersion, version: def.version,
     ...(outputCapabilities ? { outputCapabilities } : {}),
+    ...(actions ? { actions } : {}),
     create: def.create,
   });
   defined.add(out);
@@ -53,7 +72,8 @@ export function definePlugin(def) {
 }
 
 /**
- * A spatial instance MUST provide captureInputMapper (TypeError); render is required.
+ * A spatial instance MUST provide captureInputMapper, and an instance of a definition with actions runAction and settled (TypeError);
+ * render is required.
  * @param {unknown} instance
  * @param {EffectPluginDefinition} def
  * @returns {EffectPluginInstance}
@@ -72,6 +92,10 @@ export function validateInstance(instance, def) {
   if (inst.spatial === true && typeof inst.captureInputMapper !== 'function') {
     throw typeError(`plugin "${def.type}" is spatial and must provide captureInputMapper(frame): without it pointer input cannot follow the displaced pixels`);
   }
+  if (def.actions && (typeof inst.runAction !== 'function' || typeof inst.settled !== 'function')) {
+    throw typeError(`plugin "${def.type}" declares the actions ${def.actions.join(', ')} and must provide runAction(action, options, info) and settled()`);
+  }
+  if (!def.actions && inst.runAction !== undefined) throw typeError(`plugin "${def.type}" has runAction but its definition declares no \`actions\``);
   return /** @type {EffectPluginInstance} */ (instance);
 }
 

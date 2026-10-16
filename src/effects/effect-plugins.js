@@ -1,11 +1,18 @@
 /**
- * The plugins of one effect host: creation, handles, option/enable/UI state, re-creation after device loss.
+ * The plugins of one effect host: creation, handles, option/enable/UI state, actions (trigger / settled), re-creation after device loss.
  * Module: gpu-effects (src/effects/**).
+ *
+ * Actions (API-CONTRACT 7.3.1): handle.trigger(action, options) validates the name against the definition's `actions`, resolves the
+ * handle's previous pending trigger with null (superseded), calls instance.runAction and resolves with the state it resolves. A pending
+ * trigger also resolves null when the plugin is removed, disabled or failed, or its instance is destroyed by a GPU device loss.
+ * handle.settled() waits on instance.settled(); its waiters survive a device loss (they wait on the re-created instance) and resolve null
+ * on removal, disable or failure.
  */
 
 import { invalidState, typeError } from '../contracts/errors.js';
 import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi.js';
 
+/** @typedef {import('../contracts/types.js').EffectActionState} EffectActionState */
 /** @typedef {import('../contracts/types.js').EffectHandle} EffectHandle */
 /** @typedef {import('../contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../contracts/types.js').EffectPluginInstance} EffectPluginInstance */
@@ -24,6 +31,10 @@ import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi
  * @property {Set<() => void>} removers  listeners added through context.listen
  * @property {Set<{root: Element, dispose: (() => void)|null}>} mounts
  * @property {EffectHandle} handle
+ * @property {((state: EffectActionState) => void)|null} pending  resolves the newest trigger() of the handle that has not settled
+ * @property {Set<(state: EffectActionState) => void>} waiters  settled() calls that wait
+ * @property {number} generation  bumped when the instance is torn down: answers of an older instance are ignored
+ * @property {Promise<void>|null} recreating  set while the instance is created again after a device loss
  */
 
 /** @typedef {{instance: EffectPluginInstance, def: EffectPluginDefinition, slot: Slot}} Stage */
@@ -34,8 +45,11 @@ import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi
  * @property {() => {adapter: any, device: any, format: string}} gpu  the CURRENT device (changes after a device loss)
  * @property {() => EffectViewport} viewport
  * @property {() => void} requestRender
+ * @property {() => boolean} reducedMotion  prefers-reduced-motion: reduce, now
  * @property {(error: unknown, slot: Slot, phase: string) => void} reportError  effecterror + report entry; does not throw
  */
+
+const NO_ACTIONS = Object.freeze(/** @type {string[]} */ ([]));
 
 /**
  * @param {HicEnv} env
@@ -57,6 +71,7 @@ export function createPluginSet(env, canvas, source, io) {
     return buildPluginContext(slot.def, {
       canvas, source, adapter, device, format,
       requestRender: io.requestRender,
+      trigger: (action, options) => ownTrigger(slot, action, options),
       viewport: io.viewport,
       // Pointer events land on the live layer (a sibling of the canvas), not on the canvas, so listen on both.
       listen(type, listener, options) {
@@ -95,7 +110,82 @@ export function createPluginSet(env, canvas, source, io) {
   function fail(slot, error, phase) {
     slot.failed = true;
     stageCache = null;
+    release(slot);
     io.reportError(error, slot, phase);
+  }
+
+  /** The pending trigger and every settled() waiter of `slot` resolve null (removed, disabled, failed). @param {Slot} slot */
+  function release(slot) {
+    dropPending(slot);
+    for (const resolve of [...slot.waiters]) { slot.waiters.delete(resolve); resolve(null); }
+  }
+
+  /** @param {Slot} slot */
+  function dropPending(slot) {
+    const resolve = slot.pending;
+    slot.pending = null;
+    resolve?.(null);
+  }
+
+  /** Wait on the current instance's settled() for `resolve` (a waiter of an instance torn down meanwhile is attached again by recreate). @param {Slot} slot @param {(state: EffectActionState) => void} resolve */
+  function attach(slot, resolve) {
+    const instance = slot.instance;
+    if (!instance) return;
+    const generation = slot.generation;
+    const done = (/** @type {EffectActionState|undefined} */ state) => { if (slot.generation === generation && slot.waiters.delete(resolve)) resolve(state ?? null); };
+    const failed = (/** @type {unknown} */ error) => { io.reportError(error, slot, 'settled'); done(null); };
+    try { Promise.resolve(instance.settled?.()).then(done, failed); } catch (error) { failed(error); }
+  }
+
+  /** @param {Slot} slot @param {string} method */
+  function declared(slot, method) {
+    const names = slot.def.actions ?? NO_ACTIONS;
+    if (!names.length) throw typeError(`${method}: the plugin "${slot.def.type}" declares no actions`);
+    return names;
+  }
+
+  /**
+   * handle.trigger (API-CONTRACT 7.3.1). Synchronous up to runAction, so triggers keep their order.
+   * @param {Slot} slot @param {unknown} action @param {unknown} options
+   * @returns {Promise<EffectActionState>}
+   */
+  async function trigger(slot, action, options) {
+    const names = declared(slot, 'trigger');
+    if (typeof action !== 'string' || !names.includes(action)) {
+      throw typeError(`trigger: unknown action ${JSON.stringify(action) ?? String(action)} of the plugin "${slot.def.type}"; its actions are ${names.map((n) => `'${n}'`).join(', ')}`);
+    }
+    if (options !== undefined && (options === null || typeof options !== 'object')) throw typeError('trigger: `options` must be an object');
+    if (!slot.instance && slot.recreating && !slot.removed) await slot.recreating;
+    if (slot.removed) throw invalidState('trigger: the plugin was removed');
+    if (slot.failed) throw invalidState(`trigger: the plugin "${slot.def.type}" failed and was disabled (see the effecterror event)`);
+    if (!slot.enabled) throw invalidState('trigger: the plugin is disabled (setEnabled(false))');
+    const instance = slot.instance;
+    if (!instance) throw invalidState('trigger: the plugin is not created yet');
+    dropPending(slot);
+    const result = instance.runAction?.(action, Object.freeze({ ...options }), Object.freeze({ reducedMotion: io.reducedMotion() }));
+    io.requestRender();
+    return new Promise((resolve, reject) => {
+      const mine = (/** @type {EffectActionState} */ state) => { if (slot.pending === mine) slot.pending = null; resolve(state); };
+      slot.pending = mine;
+      Promise.resolve(result).then(
+        (state) => { if (slot.pending === mine) mine(state ?? null); },
+        (error) => { if (slot.pending === mine) { slot.pending = null; reject(error); } },
+      );
+    });
+  }
+
+  /** A trigger from the plugin itself (its UI, a submit): nobody awaits it, so a failure is reported. @param {Slot} slot @param {string} action @param {Record<string, unknown>} [options] */
+  function ownTrigger(slot, action, options) {
+    const run = trigger(slot, action, options);
+    run.catch((error) => io.reportError(error, slot, 'action'));
+    return run;
+  }
+
+  /** @param {Slot} slot @returns {Promise<EffectActionState>} */
+  function settled(slot) {
+    try { declared(slot, 'settled'); } catch (error) { return Promise.reject(error); }
+    if (slot.removed || slot.failed || !slot.enabled) return Promise.resolve(null);
+    return new Promise((resolve) => { slot.waiters.add(resolve); attach(slot, resolve); });
   }
 
   /** @param {Slot} slot @param {{root: Element, dispose: (() => void)|null}} mount */
@@ -107,6 +197,7 @@ export function createPluginSet(env, canvas, source, io) {
       getOptions: () => slot.options,
       setOptions: (/** @type {Record<string, unknown>} */ patch) => slot.handle.setOptions(patch),
       requestRender: io.requestRender,
+      trigger: (/** @type {string} */ action, /** @type {Record<string, unknown>|undefined} */ options) => ownTrigger(slot, action, options),
     };
     const dispose = instance.mountUI(mount.root, ui);
     mount.dispose = typeof dispose === 'function' ? dispose : null;
@@ -123,6 +214,8 @@ export function createPluginSet(env, canvas, source, io) {
 
   /** Drop the live instance (UI, listeners, destroy()) but keep the slot. @param {Slot} slot */
   function teardownInstance(slot) {
+    slot.generation += 1;
+    dropPending(slot);
     unmountAll(slot);
     for (const remove of [...slot.removers]) remove();
     const instance = slot.instance;
@@ -138,6 +231,7 @@ export function createPluginSet(env, canvas, source, io) {
     const at = slots.indexOf(slot);
     if (at >= 0) slots.splice(at, 1);
     teardownInstance(slot);
+    release(slot);
     slot.mounts.clear();
     stageCache = null;
     io.requestRender();
@@ -159,6 +253,7 @@ export function createPluginSet(env, canvas, source, io) {
       setEnabled(enabled) {
         slot.enabled = !!enabled;
         if (enabled) slot.failed = false;
+        else release(slot);
         stageCache = null;
         io.requestRender();
       },
@@ -174,6 +269,9 @@ export function createPluginSet(env, canvas, source, io) {
           d?.();
         };
       },
+      get actions() { return slot.def.actions ?? NO_ACTIONS; },
+      trigger: (action, options) => trigger(slot, action, options),
+      settled: () => settled(slot),
       remove() { removeSlot(slot); },
     };
   }
@@ -195,6 +293,7 @@ export function createPluginSet(env, canvas, source, io) {
         id: `${def.type}-${++serial}`, def, options: Object.freeze({ ...options }),
         enabled: true, failed: false, removed: false, instance: null,
         removers: new Set(), mounts: new Set(), handle: /** @type {any} */ (null),
+        pending: null, waiters: new Set(), generation: 0, recreating: null,
       };
       slot.handle = makeHandle(slot);
       slots.push(slot);
@@ -228,12 +327,18 @@ export function createPluginSet(env, canvas, source, io) {
       for (const slot of [...slots]) {
         if (slot.removed || slot.failed) continue;
         teardownInstance(slot);
-        try {
-          slot.instance = await createInstance(slot);
-          for (const m of slot.mounts) mountOn(slot, m);
-        } catch (error) {
-          fail(slot, error, 'recreate');
-        }
+        const again = async () => {
+          try {
+            slot.instance = await createInstance(slot);
+            for (const m of slot.mounts) mountOn(slot, m);
+            for (const resolve of slot.waiters) attach(slot, resolve);
+          } catch (error) {
+            fail(slot, error, 'recreate');
+          }
+        };
+        slot.recreating = again();
+        await slot.recreating;
+        slot.recreating = null;
       }
       stageCache = null;
     },

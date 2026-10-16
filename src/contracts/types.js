@@ -639,6 +639,16 @@ export {};
  * @property {() => void} requestRender
  * @property {() => EffectViewport} viewport
  * @property {(type: string, listener: EventListenerOrEventListenerObject, options?: AddEventListenerOptions|boolean) => () => void} listen  auto-removed on detach
+ * @property {(action: string, options?: Record<string, unknown>) => Promise<EffectActionState>} trigger  runs one of the plugin's own declared
+ *   actions through the host, exactly as EffectHandle.trigger (a submit handler of the plugin uses it); a failure is reported as effecterror (phase 'action')
+ */
+/**
+ * @typedef {string|null} EffectActionState  the state a plugin rests in after an action (a name the plugin documents, such as 'in', 'out',
+ *   'cracked'); null when the action did not complete (superseded by a newer action, plugin removed, disabled or failed, GPU device lost)
+ */
+/**
+ * @typedef {Object} EffectActionInfo  what the host hands to EffectPluginInstance.runAction with each action
+ * @property {boolean} reducedMotion  prefers-reduced-motion: reduce, read when the action was triggered
  */
 /**
  * @typedef {Object} EffectPluginUIContext
@@ -646,6 +656,8 @@ export {};
  * @property {() => Readonly<Record<string, unknown>>} getOptions
  * @property {(patch: Record<string, unknown>) => void} setOptions
  * @property {() => void} requestRender
+ * @property {(action: string, options?: Record<string, unknown>) => Promise<EffectActionState>} trigger  EffectHandle.trigger, for the plugin's
+ *   own buttons; a failure is reported as effecterror (phase 'action')
  */
 /**
  * @typedef {Object} EffectPluginInstance
@@ -656,6 +668,11 @@ export {};
  * @property {(options: Readonly<Record<string, unknown>>) => void} [setOptions]
  * @property {(frame: EffectPresentationFrame) => InputMapper} [captureInputMapper]
  * @property {(root: Element, ui: EffectPluginUIContext) => void | (() => void)} [mountUI]
+ * @property {(action: string, options: Readonly<Record<string, unknown>>, info: EffectActionInfo) => EffectActionState | Promise<EffectActionState>} [runAction]
+ *   REQUIRED when the definition declares `actions`: start `action` (a declared name; the host has validated it) and resolve, once the
+ *   frame that shows its end state was rendered, with the state the plugin then rests in; null when the plugin superseded or cancelled it
+ * @property {() => EffectActionState | Promise<EffectActionState>} [settled]  REQUIRED with `actions`: resolves once nothing of the plugin
+ *   moves any more (at once when nothing moves), with the state it rests in
  * @property {() => void} [destroy]
  */
 /**
@@ -664,6 +681,8 @@ export {};
  * @property {2} apiVersion
  * @property {number} version
  * @property {{directCanvasRenderAttachment?: true}} [outputCapabilities]
+ * @property {ReadonlyArray<string>} [actions]  the names EffectHandle.trigger accepts (lowercase words, unique, at least one); the instance
+ *   then implements runAction and settled
  * @property {(context: EffectPluginContext, options: Readonly<Record<string, unknown>>) => EffectPluginInstance | Promise<EffectPluginInstance>} create
  */
 /**
@@ -711,6 +730,9 @@ export {};
  * @property {(patch: Record<string, unknown>) => void} setOptions
  * @property {(enabled: boolean) => void} setEnabled
  * @property {(root: Element) => () => void} mountUI
+ * @property {ReadonlyArray<string>} actions  the actions the plugin declares (empty when it has none)
+ * @property {(action: string, options?: Record<string, unknown>) => Promise<EffectActionState>} trigger  runs a declared action (API-CONTRACT 7.3.1)
+ * @property {() => Promise<EffectActionState>} settled  resolves once nothing of the plugin moves, with the state it rests in
  * @property {() => void} remove
  */
 /**

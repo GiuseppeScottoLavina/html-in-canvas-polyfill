@@ -10,15 +10,17 @@ function rig() {
   const env = { registry: { get: () => ({ layer }) } };
   const errors = [];
   let renders = 0;
+  let reduced = false;
   let gpu = { adapter: 'a1', device: 'd1', format: 'bgra8unorm' };
   const io = {
     gpu: () => gpu,
     viewport: () => ({ width: 10, height: 10, cssWidth: 10, cssHeight: 10, dpr: 1 }),
     requestRender: () => { renders += 1; },
+    reducedMotion: () => reduced,
     reportError: (error, slot, phase) => errors.push({ error, type: slot.def.type, phase }),
   };
   const set = createPluginSet(env, canvas, {}, io);
-  return { set, errors, listeners, renders: () => renders, setGpu: (g) => { gpu = g; } };
+  return { set, errors, listeners, renders: () => renders, setGpu: (g) => { gpu = g; }, setReduced: (v) => { reduced = v; } };
 }
 
 /** A plugin that records its life. */
@@ -184,4 +186,208 @@ test('destroy tears everything down and add() afterwards rejects', async () => {
   assert.equal(set.count, 0);
   assert.equal(log.filter((l) => l[0] === 'destroy').length, 1);
   await assert.rejects(set.add(recorder(log)), /destroyed/);
+});
+
+/**
+ * A plugin with actions whose runs the test finishes by hand: `runs` records each runAction call ({action, options, info, resolve,
+ * reject}); settled() resolves with `state` once `rest()` is called (at once when nothing is running).
+ */
+function actor(log = [], over = {}) {
+  /** @type {any[]} */ const runs = [];
+  /** @type {((s: string) => void)[]} */ const waiters = [];
+  const st = { state: 'idle', moving: false, instances: 0 };
+  const def = definePlugin({
+    type: 'actor', apiVersion: 2, version: 1, actions: ['go', 'stop'],
+    create(ctx) {
+      st.instances += 1;
+      st.context = ctx;
+      const me = st.instances;
+      return {
+        render() {},
+        runAction(action, options, info) {
+          log.push(['run', me, action]);
+          st.moving = true;
+          return new Promise((resolve, reject) => runs.push({ action, options, info, resolve, reject, instance: me }));
+        },
+        settled() { return st.moving ? new Promise((r) => waiters.push(r)) : st.state; },
+        mountUI(root, ui) { st.ui = ui; },
+        destroy() { log.push(['destroy', me]); },
+        ...over,
+      };
+    },
+  });
+  const rest = (state) => { st.state = state; st.moving = false; for (const r of waiters.splice(0)) r(state); };
+  return { def, runs, st, rest };
+}
+
+test('actions: the handle lists them; trigger runs the instance with frozen options and the reduced-motion reading, and resolves with its state', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  assert.deepEqual([...h.actions], ['go', 'stop']);
+  const before = r.renders();
+  const p = h.trigger('go', { speed: 2 });
+  assert.equal(a.runs.length, 1, 'runAction is called synchronously: triggers keep their order');
+  assert.equal(r.renders(), before + 1, 'a frame is requested');
+  assert.deepEqual({ ...a.runs[0].options }, { speed: 2 });
+  assert.ok(Object.isFrozen(a.runs[0].options));
+  assert.deepEqual(a.runs[0].info, { reducedMotion: false });
+  a.runs[0].resolve('gone');
+  assert.equal(await p, 'gone');
+  r.setReduced(true);
+  const q = h.trigger('stop');
+  assert.deepEqual(a.runs[1].info, { reducedMotion: true }, 'prefers-reduced-motion is read at each trigger');
+  assert.deepEqual({ ...a.runs[1].options }, {}, 'no options: an empty object');
+  a.runs[1].resolve(undefined);
+  assert.equal(await q, null, 'a plugin that resolves nothing: null');
+});
+
+test('trigger: an unknown action, a plugin without actions and bad options are TypeErrors that name what is accepted', async () => {
+  const r = rig();
+  const h = await r.set.add(actor().def);
+  await assert.rejects(h.trigger('jump'), (e) => e instanceof TypeError && /unknown action "jump" of the plugin "actor"; its actions are 'go', 'stop'/.test(e.message));
+  await assert.rejects(h.trigger(/** @type {any} */ (undefined)), /unknown action undefined/);
+  await assert.rejects(h.trigger('go', /** @type {any} */ (5)), /options.*must be an object/);
+  await assert.rejects(h.trigger('go', /** @type {any} */ (null)), TypeError);
+  const plain = await r.set.add(recorder([]));
+  assert.deepEqual([...plain.actions], []);
+  await assert.rejects(plain.trigger('go'), (e) => e instanceof TypeError && /the plugin "rec" declares no actions/.test(e.message));
+  await assert.rejects(plain.settled(), (e) => e instanceof TypeError && /settled: the plugin "rec" declares no actions/.test(e.message));
+  assert.equal(r.errors.length, 0, 'a page error is a rejection, not an effecterror');
+});
+
+test('trigger: a newer trigger resolves the older one with null at once, also when the plugin finishes the older one later', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  const first = h.trigger('go');
+  const second = h.trigger('stop');
+  assert.equal(await first, null, 'superseded');
+  a.runs[0].resolve('late');
+  a.runs[1].resolve('stopped');
+  assert.equal(await second, 'stopped');
+  const third = h.trigger('go');
+  a.runs[2].resolve(null);
+  assert.equal(await third, null, 'superseded inside the plugin (its own submit, setOptions): the plugin resolves null');
+});
+
+test('trigger: a plugin error rejects with that error and leaves the plugin running; a failing trigger of the plugin itself is reported', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  const p = h.trigger('go');
+  a.runs[0].reject(new RangeError('too fast'));
+  await assert.rejects(p, RangeError);
+  assert.equal(h.enabled, true);
+  assert.equal(r.errors.length, 0);
+  const thrower = actor([], { runAction() { throw new TypeError('bad point'); } });
+  const t = await r.set.add(thrower.def);
+  await assert.rejects(t.trigger('go'), /bad point/);
+  assert.equal(t.enabled, true, 'a throwing runAction does not disable the plugin');
+  h.mountUI({});
+  const own = a.st.ui.trigger('go');
+  a.runs.at(-1).reject(new Error('plugin bug'));
+  await assert.rejects(own, /plugin bug/);
+  await Promise.resolve();
+  assert.deepEqual(r.errors.map((e) => [e.type, e.phase]), [['actor', 'action']], 'the UI trigger failed: reported, since nobody awaits it');
+  const ctxRun = a.st.context.trigger('nope');
+  await assert.rejects(ctxRun, /unknown action/);
+  await Promise.resolve();
+  assert.equal(r.errors.length, 2, 'the context trigger of the plugin itself is reported too');
+});
+
+test('the plugin\'s own triggers (context.trigger, ui.trigger) go through the handle: they supersede a page trigger', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  h.mountUI({});
+  const page = h.trigger('go');
+  const ui = a.st.ui.trigger('stop');
+  assert.equal(await page, null);
+  a.runs[1].resolve('stopped');
+  assert.equal(await ui, 'stopped');
+  const page2 = h.trigger('go');
+  const own = a.st.context.trigger('stop');
+  assert.equal(await page2, null);
+  a.runs[3].resolve('stopped');
+  assert.equal(await own, 'stopped');
+});
+
+test('settled: waits on the instance, resolves with its state; at once when nothing moves', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  assert.equal(await h.settled(), 'idle', 'nothing moves');
+  h.trigger('go');
+  let seen = null;
+  const s = h.settled().then((v) => { seen = v; });
+  await Promise.resolve();
+  assert.equal(seen, null);
+  a.rest('far');
+  await s;
+  assert.equal(seen, 'far');
+});
+
+test('removal: the pending trigger and every settled() waiter resolve null; later calls reject (trigger) or resolve null (settled)', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  const p = h.trigger('go');
+  const s = h.settled();
+  h.remove();
+  assert.equal(await p, null);
+  assert.equal(await s, null);
+  a.runs[0].resolve('late');
+  await assert.rejects(h.trigger('go'), (e) => e.name === 'InvalidStateError' && /removed/.test(e.message));
+  assert.equal(await h.settled(), null);
+  const b = actor();
+  const h2 = await r.set.add(b.def);
+  const p2 = h2.trigger('go');
+  r.set.destroy();
+  assert.equal(await p2, null, 'host.destroy() removes every plugin');
+});
+
+test('disable and failure: the pending trigger and the waiters resolve null; trigger then rejects, settled resolves null', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  const p = h.trigger('go');
+  const s = h.settled();
+  h.setEnabled(false);
+  assert.equal(await p, null);
+  assert.equal(await s, null);
+  await assert.rejects(h.trigger('go'), /disabled/);
+  assert.equal(await h.settled(), null);
+  h.setEnabled(true);
+  const q = h.trigger('go');
+  const w = h.settled();
+  r.set.fail(r.set.stages()[0].slot, new Error('render threw'));
+  assert.equal(await q, null);
+  assert.equal(await w, null);
+  await assert.rejects(h.trigger('go'), (e) => e.name === 'InvalidStateError' && /failed/.test(e.message));
+});
+
+test('device loss: the pending trigger resolves null; settled() waits on the re-created instance; a trigger during the re-creation runs on the new instance', async () => {
+  const r = rig();
+  const log = [];
+  const a = actor(log);
+  const h = await r.set.add(a.def);
+  const p = h.trigger('go');
+  const s = h.settled();
+  r.setGpu({ adapter: 'a2', device: 'd2', format: 'bgra8unorm' });
+  const recreating = r.set.recreate();
+  const during = h.trigger('stop');
+  assert.equal(await p, null, 'the action died with the old device');
+  await recreating;
+  assert.equal(a.st.instances, 2);
+  assert.deepEqual(log.filter((l) => l[0] === 'run').map((l) => [l[1], l[2]]), [[1, 'go'], [2, 'stop']], 'the trigger made during the re-creation ran on the new instance');
+  let seen = 'pending';
+  s.then((v) => { seen = v; });
+  a.runs[0].resolve('old');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(seen, 'pending', 'the waiter does not take the answer of the destroyed instance');
+  a.runs[1].resolve('stopped');
+  a.rest('stopped');
+  assert.equal(await during, 'stopped');
+  assert.equal(await s, 'stopped', 'the waiter got the state of the re-created instance');
 });

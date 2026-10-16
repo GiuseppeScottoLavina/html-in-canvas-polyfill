@@ -66,7 +66,8 @@ if (!docsOnly) {
   // 12875 -> 13000 (2026-10-16, measured 12,964): phones and tablets (mobile browser gate, phone budgets, the iOS control look in the WebKit painter).
   // 13000 -> 13150 (2026-10-16, measured 13,119; 13,015 before this step): the Android fixes (listbox selection, toggle zoom, the indeterminate look, the listbox thumb) and
   // the native bridge for Safari Technology Preview's HTML-in-Canvas internal feature (paint requests, standard draw size, device-pixel box in the native modes).
-  if (total > 13150) problems.push(`G-size: core is ${total} code lines (> 13150)`);
+  // 13150 -> 13250 (2026-10-16, measured 13,225; 13,133 before this step): plugin actions in the effects host (handle.trigger / settled, the declared `actions` of ABI v2).
+  if (total > 13250) problems.push(`G-size: core is ${total} code lines (> 13250)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
