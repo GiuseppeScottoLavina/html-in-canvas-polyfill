@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.1.0-preview.1] - unreleased
+## [Unreleased]
+
+## [0.1.0-preview.1] - 2026-10-16
 
 First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` under the npm dist-tag `next`.
 
@@ -33,9 +35,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - Following the specification change of 2026-10-08 (whatwg/html#11588), `ElementImage` has `close()` only: its size is `canvas.getElementImageDefaultSize(elementImage)`. There is no deprecated `width` / `height` alias, because native Chrome has none and code that relied on it would pass on the polyfill and fail natively.
 - The two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from native builds on 2026-10-09, remain as deprecated legacy overloads until the pinned WPT revision moves.
 - `options.mode: 'polyfill'` over a usable native implementation steps aside with one warning instead of throwing; a legacy native without the bridge bundle is used as found (one warning) instead of being refused.
-
 - Startup is cheaper: the canvas's custom properties are read from its computed style, a ResizeObserver notification that reports the box already measured is not synced twice, and the style rules for the controls the engines bundle paints on Firefox and Safari moved into that bundle. The minified and gzipped sizes of every classic bundle are a budget checked by `npm run check:bundle` and CI.
-
 - Large drawables: a change that resizes an element inside an unchanged parent repaints the children of that parent that moved instead of the whole drawable, and a partial tile leaves the trailing content of a large block or inline flow below it out of its snapshot. A 60 Hz counter next to 2,000 elements paints at the display rate (59/s, was 27/s).
 
 ### Removed
@@ -60,7 +60,6 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - Selecting static text inside the canvas (double or triple click, drag, select all) did not show on the canvas until something else repainted it, and clearing the selection did not show either; with an effect plugin the picture stayed unchanged until the effect was switched. A selection change now repaints the drawables where the old and the new highlight are.
 - A text or style change on an element whose text-shadow, box-shadow or outline reached further than 24 css px past its box (`options.inkMargin`) left the old shadow on the canvas: a counter with a glow or an offset shadow on a transparent background showed ghosts of older digits. The repainted area now includes the ink the element paints outside its box, before and after the change.
 - A counter changing at 60 Hz in a font with proportional digits (Georgia, Impact) reached only a few canvas paints per second, and often none, while one with tabular digits painted at the display rate. Its box changes width on most changes, which makes every change a whole-drawable rebuild, and the rebuild in flight was discarded each time a newer change arrived, so few ever reached the canvas. A whole-drawable rebuild overtaken by a DOM change is now committed (it is a complete, newer picture) and the latest state is rebuilt after it; a resize or device pixel ratio change still discards it, and so does a paint that must show the page as it is now (`requestPaint()`, the first paint), so a child canvas drawn right before `requestPaint()` is in that paint.
-
 - The first paint of a canvas landed two or three frames after it was mounted, and a change was painted at the earliest in the frame after its snapshot decoded. On Chromium a snapshot whose image loads at once (the snapshot's sheet is now an SVG `<style>`) is painted where it lands: the first paint in the first frame, a later change in a high-priority task right after the frame that saw it (after that frame's IntersectionObserver entries, before the app's next task). Fixes the official WPT files `onpaint-fires-post-resize-observer`, `requestPaint` (both were flaky), `onpaint-fires-post-intersection-observation-steps` and most of `onpaint`.
 - The canvases inside a same-origin iframe in a drawable painted after the canvas that contains the iframe; the parent's tick now runs the iframe document's tick first (WPT `onpaint-iframe-post-tree-order`, first subtest).
 - A z-index-only change of a drawable's inline style repainted it (a drawable is always its own stacking context, so its picture does not change).
@@ -77,8 +76,9 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - The picture lags the DOM by one to two frames, except for the typing and scrolling shortcuts above.
 - The children of a drawable canvas are relocated into a live layer next to it; some CSS selectors and live collections can see that layer.
 - The core bundle is about 92 KB gzipped, over its original size target.
-- Iframes, cross-origin resources without CORS, native UI (select popups, date pickers, IME composition), workers and mobile browsers are not supported.
+- Iframes, cross-origin resources without CORS, native UI (select popups, date pickers, IME composition), workers, web views inside apps and Firefox for Android are not supported. Phones and tablets were verified on the iOS Simulator and the Android Emulator only.
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.1...HEAD
 [0.1.0-preview.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/releases/tag/v0.1.0-preview.1

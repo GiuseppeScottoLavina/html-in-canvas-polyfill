@@ -46,10 +46,10 @@ All scripts are classic `<script src>` tags (no `type=module`, no `import`), mak
 | `hic-live-engines.iife(.min).js` | registers on `Symbol.for('hic.engine-skins')` | nothing; any order with the core (looked up at capture time) |
 | `hic-live-gpu.iife(.min).js` | registers on `Symbol.for('hic.gpu-patches')` | nothing; before the core (install uses it) or after it (it replaces the stubs of the installed core) |
 | `esm/index.js` (+ chunks) | exports `install`, `getInstalled`, `HicUnsupportedError`, `FEATURES`, `featureById`, `EVENTS`, `EXT`, `VERSION`; not minified (the consumer's bundler does it); carries the engines and GPU code (bundler users get every engine and the texture methods) | nothing |
-| `esm/effects.js` | exports `installEffects(win)`, `createLateEffects`, `installEffectsGlobal`, `definePlugin`; no side effect | the core, installed |
+| `esm/effects.js` | exports `installEffects(win)`, `createLateEffects`, `installEffectsGlobal`, `definePlugin`, `NO_TARGET`, `isNoTarget`; no side effect | the core, installed |
 | `plugins/<name>.esm.js` | the exports of `plugins/<name>/index.js` (`meta`, `plugin`, ...), WGSL inlined; no import | `effects.js` to use it |
 | `plugins/manifest.json` | name, title, description, version, defaults and file names of every plugin (read by `examples/plugins/`) | |
-| `esm/native-bridge.js` | registers the bridge when imported (listed in `sideEffects`) | import it before `install()` runs |
+| `esm/native-bridge.js` | registers the bridge when imported (listed in `sideEffects`); exports `installNativeBridge` | import it before `install()` runs |
 
 Sizes of the last build. This block is rewritten by `npm run build` from `dist/sizes.json`; do not edit it by hand.
 
@@ -133,7 +133,7 @@ Native bridge, with the evidence for "separate script, not lazy":
 2. A legacy or nearly complete native is refused unless the bridge bundle is loaded (above).
 3. The classic core's `FEATURES` has no `summary` / `reason` (above).
 4. A built plugin never fetches its `.wgsl` files (they are inlined at build time). Served as source (`plugins/<name>/index.js`) it fetches each one once through its `wgsl.js`, the only module the build swaps.
-5. `package.json` `exports`: `.` is `dist/esm/index.js`; `./effects`, `./native-bridge` are the ESM entries; `./plugins/<name>` is a plugin's ES module (types in `dist/types/plugins/<name>/`), `./plugins/<name>/iife` and `./plugins/<name>/iife/min` its classic files, `./plugins/manifest.json` the list; `./iife`, `./iife/effects`, `./iife/native-bridge`, `./iife/engines`, `./iife/gpu` (each with a `/min` twin) are the classic files. The sources under `src/` ship for reference and source maps but are not an entry point: they are internal and change without notice. The plugin subpaths are patterns, so a new plugin needs no change to `package.json`.
+5. `package.json` `exports`: `.` is `dist/esm/index.js`; `./effects`, `./native-bridge` are the ESM entries; `./plugins/<name>` is a plugin's ES module (types in `dist/types/plugins/<name>/`), `./plugins/<name>/iife` and `./plugins/<name>/iife/min` its classic files, `./plugins/manifest.json` the list; `./iife`, `./iife/effects`, `./iife/native-bridge`, `./iife/engines`, `./iife/gpu` (each with a `/min` twin) are the classic files. The sources under `src/` ship for reference (the readable `.iife.js` and ESM builds are not minified; no source maps are published) but are not an entry point: they are internal and change without notice. The plugin subpaths are patterns, so a new plugin needs no change to `package.json`.
 
 ## Checks
 
