@@ -1,12 +1,14 @@
 // Node tests of the disintegrate plugin (dust): the folder contract, the timeline, the timing invariants, the dust grid and the background
 // estimate's size, the sweep, options, the uniform layout of disintegrate.wgsl, and a fake GPU: no GPU object per frame, nothing frozen
 // (the live page is sampled), the background estimate made when a transition starts and again only when the page changes, the draws
-// (the page, then one grain per dust cell), the mappers, triggers, submit wiring, reduced motion, destroy.
+// (the page, then one grain per dust cell), the mappers, the actions through the effect handle (plugins/_shared/node-host.mjs), submit
+// wiring, reduced motion, destroy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { readFileSync } from 'node:fs';
-import { BG_CELL, HOLD_MS, LIFE, MAX_GRAINS, NO_TARGET, SWEEP_END, UNIFORM_FLOATS, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf, trigger } from '../index.js';
+import { ACTIONS, BG_CELL, HOLD_MS, LIFE, MAX_GRAINS, NO_TARGET, SWEEP_END, UNIFORM_FLOATS, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf } from '../index.js';
+import { nodeHandle } from '../../_shared/node-host.mjs';
 import { findInvalid, sourcePointOnCanvas } from '../../_lib/transition.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
@@ -179,34 +181,33 @@ function fakeGpu() {
   return { device, created, draws, writes, encoder, estimates: () => estimates };
 }
 
-/** @param {Record<string, unknown>} options */
-async function instance(options) {
+/** The plugin behind the real effect handle, over the fake GPU. @param {Record<string, unknown>} options @param {{reducedMotion?: boolean}} [o] */
+async function instance(options, { reducedMotion = false } = {}) {
   const gpu = fakeGpu();
   const realFetch = globalThis.fetch;
   globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
   const source = Object.assign(new EventTarget(), { invalid: false, querySelectorAll() { return this.invalid ? [{ localName: 'input' }] : []; } });
-  const canvas = /** @type {any} */ ({ clientWidth: 400, clientHeight: 200, clientLeft: 0, clientTop: 0, getBoundingClientRect: () => ({ left: 0, top: 0 }), ownerDocument: { defaultView: { matchMedia: () => ({ matches: false }) } } });
-  let renders = 0;
-  const context = /** @type {any} */ ({ apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, source, requestRender: () => { renders += 1; }, listen: () => () => {}, viewport: () => ({}) });
+  const canvas = /** @type {any} */ (Object.assign(new EventTarget(), { clientWidth: 400, clientHeight: 200, clientLeft: 0, clientTop: 0, getBoundingClientRect: () => ({ left: 0, top: 0 }), ownerDocument: { defaultView: { matchMedia: () => ({ matches: false }) } } }));
   try {
-    const inst = /** @type {any} */ (await plugin.create(context, { duration: 1000, durationIn: 1000, ...options }));
+    const h = await nodeHandle(plugin, { duration: 1000, durationIn: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion });
+    const inst = h.inst;
     const sourceTexture = { width: 800, height: 400 };
     const sourceView = {}, destinationView = {};   // the host keeps its views across frames
     const frame = (/** @type {number} */ now, version = 1) => ({ now, width: 800, height: 400, cssWidth: 400, cssHeight: 200, dpr: 2, sourceReady: true, sourceVersion: version, sourceTexture, sourceView, destinationView, encoder: gpu.encoder });
-    return { inst, gpu, canvas, source, frame, requests: () => renders };
+    return { inst, handle: h.handle, errors: h.errors, gpu, canvas, source, frame, requests: h.requests };
   } finally {
     globalThis.fetch = realFetch;
   }
 }
 
 test('instance: no GPU object per frame; nothing frozen; the background estimate when a transition starts, and again only when the page changes (at most every 250 ms)', async () => {
-  const { inst, gpu, canvas, frame } = await instance({});
+  const { inst, gpu, handle, frame } = await instance({});
   inst.render(frame(0));
   const before = { ...gpu.created };
   for (let k = 1; k <= 50; k += 1) inst.render(frame(k * 8));
   assert.deepEqual(gpu.created, before, 'idle frames');
   assert.equal(gpu.estimates(), 0, 'idle: no estimate');
-  trigger(canvas, 'play');
+  handle.trigger('play');
   assert.equal(gpu.created.submit, before.submit, 'no copy of the picture: the transition samples the live page');
   inst.render(frame(500));
   assert.equal(gpu.estimates(), 1, 'the estimate of the page when the transition starts');
@@ -223,11 +224,11 @@ test('instance: no GPU object per frame; nothing frozen; the background estimate
 });
 
 test('instance: identity mapper when assembled, blocked while it moves; continuous only while animating; the page then the dust drawn', async () => {
-  const { inst, canvas, frame, gpu } = await instance({});
+  const { inst, handle, frame, gpu } = await instance({});
   inst.render(frame(0));
   assert.equal(inst.continuous, false);
   assert.equal(inst.captureInputMapper(frame(0)), identityMapper);
-  const done = trigger(canvas, 'play');
+  const done = handle.trigger('play');
   assert.equal(inst.continuous, true);
   inst.render(frame(10));
   assert.equal(inst.captureInputMapper(frame(10)), blockedMapper, 'g = 0 but the transition has started: blocked');
@@ -239,21 +240,21 @@ test('instance: identity mapper when assembled, blocked while it moves; continuo
   inst.render(frame(2100));
   assert.equal(inst.captureInputMapper(frame(2100)), identityMapper);
   assert.deepEqual(gpu.draws.at(-1), [3], 'assembled: the full-screen pass');
-  assert.equal(await done, true);
+  assert.equal(await done, 'in', 'the play ends assembled');
   assert.equal(inst.continuous, false);
 });
 
 test('instance: the way out and the way back have their own lengths (play: out, no pause, in)', async () => {
-  const { inst, canvas, frame } = await instance({ duration: 1000, durationIn: 400 });
+  const { inst, handle, frame } = await instance({ duration: 1000, durationIn: 400 });
   inst.render(frame(0));
-  const done = trigger(canvas, 'play');
+  const done = handle.trigger('play');
   inst.render(frame(100));            // the clock starts here
   inst.render(frame(1100));           // the way out ends: the way back starts at once
   inst.render(frame(1300));
   assert.equal(inst.captureInputMapper(frame(1300)), blockedMapper, 'half way back');
   inst.render(frame(1510));
   assert.equal(inst.captureInputMapper(frame(1510)), identityMapper, 'back after 400 ms');
-  assert.equal(await done, true);
+  assert.equal(await done, 'in');
 });
 
 test('instance: the intro starts dissolved and waits for the first snapshot; state option and reduced motion', async () => {
@@ -274,27 +275,63 @@ test('instance: the intro starts dissolved and waits for the first snapshot; sta
   assert.equal(st.inst.continuous, false, 'an unrelated option does not replay the state');
   const rm = await instance({ reducedMotion: true });
   rm.inst.render(rm.frame(0));
-  trigger(rm.canvas, 'out');
+  rm.handle.trigger('out');
   rm.inst.render(rm.frame(10)); rm.inst.render(rm.frame(500));
   assert.deepEqual(rm.gpu.draws.at(-1), [3], 'reduced motion: the page only (the content fades), no dust');
   assert.ok(rm.gpu.writes.at(-1)[5] < 1, 'the crossfade');
 });
 
-test('instance: submit wiring (valid only by default in the gallery), destroy resolves pending triggers', async () => {
-  const { inst, source, canvas, frame } = await instance({ onSubmit: 'valid' });
+test('instance: submit wiring (valid only by default in the gallery); a submit supersedes a pending trigger; removal resolves it null', async () => {
+  const { inst, handle, source, frame, errors } = await instance({ onSubmit: 'valid' });
   inst.render(frame(0));
+  /** @type {any[]} */ const runs = [];
+  const run = inst.runAction;
+  inst.runAction = (/** @type {any[]} */ ...a) => { runs.push(a); return run(...a); };   // what the host calls
   source.invalid = true;
   source.dispatchEvent(new Event('submit'));
   assert.equal(inst.continuous, false, 'an invalid form does not play');
   source.invalid = false;
   source.dispatchEvent(new Event('submit'));
-  assert.equal(inst.continuous, true, 'a valid one does');
-  const pending = trigger(canvas, 'out');
-  inst.destroy();
-  assert.equal(await pending, false);
-  assert.equal(await trigger(canvas, 'out'), false, 'no instance on the canvas any more');
-  await assert.rejects(Promise.resolve().then(async () => {
-    const again = await instance({});
-    return trigger(again.canvas, /** @type {any} */ ('sideways'));
-  }), /unknown action/);
+  assert.equal(inst.continuous, true, 'a valid one plays');
+  assert.deepEqual(runs.map((a) => [a[0], a[2]]), [['play', { reducedMotion: false }]], 'the submit plays through the host (context.trigger), like handle.trigger');
+  const pageRun = handle.trigger('in');
+  assert.equal(runs.length, 2);
+  inst.render(frame(10)); inst.render(frame(2000));
+  assert.equal(await pageRun, 'in', 'a page trigger supersedes the play of the submit');
+  const pending = handle.trigger('out');
+  handle.remove();
+  assert.equal(await pending, null, 'removed: the pending trigger resolves null');
+  await assert.rejects(handle.trigger('out'), /removed/);
+  assert.equal(errors.length, 0);
+  const again = await instance({});
+  assert.deepEqual([...again.handle.actions], ['out', 'in', 'play']);
+  assert.deepEqual([...ACTIONS], [...(plugin.actions ?? [])]);
+  await assert.rejects(again.handle.trigger('sideways'), /unknown action "sideways" of the plugin "disintegrate"; its actions are 'out', 'in', 'play'/);
+});
+
+test('actions: out ends \'out\', in ends \'in\'; settled() waits for the end state, at once at rest; the host\'s reduced-motion reading crossfades', async () => {
+  const { inst, handle, frame } = await instance({});
+  inst.render(frame(0));
+  assert.equal(await handle.settled(), 'in', 'at rest: at once');
+  const out = handle.trigger('out');
+  let rest = 'pending';
+  handle.settled().then((v) => { rest = v; });
+  inst.render(frame(10)); inst.render(frame(600));
+  await Promise.resolve();
+  assert.equal(rest, 'pending', 'still moving');
+  inst.render(frame(1020));
+  assert.equal(await out, 'out');
+  await Promise.resolve();
+  assert.equal(rest, 'out', 'settled() resolved with the frame that drew the end state');
+  const back = handle.trigger('in');
+  inst.render(frame(1100)); inst.render(frame(2200));
+  assert.equal(await back, 'in');
+  const calm = await instance({}, { reducedMotion: true });
+  calm.inst.render(calm.frame(0));
+  const fade = calm.handle.trigger('out');
+  calm.inst.render(calm.frame(10)); calm.inst.render(calm.frame(500));
+  assert.deepEqual(calm.gpu.draws.at(-1), [3], 'prefers-reduced-motion as the host read it: the page only, no dust');
+  assert.ok(calm.gpu.writes.at(-1)[5] < 1, 'the crossfade');
+  calm.inst.render(calm.frame(1100));
+  assert.equal(await fade, 'out', 'the crossfade ends in the same state');
 });

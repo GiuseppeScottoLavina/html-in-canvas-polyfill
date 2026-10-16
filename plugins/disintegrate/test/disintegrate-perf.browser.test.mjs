@@ -5,7 +5,7 @@
 // everything the GPU does). Chrome quantises timestamps (100 us without developer features), so small passes read coarse.
 import { assert } from '/test/unit/lib/t.js';
 import { gpuTest } from '/plugins/_shared/gpu-check.mjs';
-import { plugin, trigger } from '/plugins/disintegrate/index.js';
+import { plugin } from '/plugins/disintegrate/index.js';
 
 const CSS = { w: 1100, h: 620 }, DPR = 2, W = CSS.w * DPR, H = CSS.h * DPR;
 
@@ -44,7 +44,7 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
   const t0 = performance.now();
   let index = 0;
   for (let i = 0; i < FRAMES; i += 1) {
-    if (i === 20) trigger(canvas, 'play');
+    if (i === 20) inst.runAction?.('play', {}, { reducedMotion: false });   // what handle.trigger('play') calls
     const real = device.createCommandEncoder();
     let births = 0;   // frames that also make the background estimate (two small passes before the frame's own)
     const encoder = new Proxy(real, { get: (target, key) => (key === 'beginRenderPass' ? (/** @type {any} */ d) => { if (!d.timestampWrites && !('timestampWrites' in d)) births += 1; return target.beginRenderPass(d); } : typeof target[key] === 'function' ? target[key].bind(target) : target[key]) });

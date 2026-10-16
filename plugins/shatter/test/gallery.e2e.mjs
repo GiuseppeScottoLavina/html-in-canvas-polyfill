@@ -3,12 +3,13 @@
 // Idle click-through and typing; a Submit with an invalid email cracks the glass from the Submit button, and the form stays usable through
 // the cracked pane (a trusted click focuses the field drawn there, typing shows through the cracks); a second invalid Submit breaks the
 // pane (a click during the fall changes nothing: NO_TARGET), it comes back showing the error state and usable; the Strike button cracks it
-// again and a valid Submit heals it; then the gallery check of every plugin. --record writes media/shatter.webp: two invalid submits.
+// again and a valid Submit heals it; the actions from the gallery's buttons (handle.trigger, handle.settled); then the gallery check of
+// every plugin. --record writes media/shatter.webp: two invalid submits.
 //   npm run build && node plugins/shatter/test/gallery.e2e.mjs [--record]
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pixelStats } from '../../../test/harness/index.mjs';
-import { ROOT, checklist, clickOn, compareImages, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, checklist, clickOn, compareImages, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('shatter gallery e2e');
 const g = await openGallery('shatter', { width: 1100, height: 1000 });
@@ -18,8 +19,8 @@ const active = () => page.evaluate('document.activeElement && document.activeEle
 const value = (/** @type {string} */ id) => page.evaluate(`document.getElementById(${JSON.stringify(id)}).value`);
 const feedback = () => page.evaluate(`document.getElementById('form-feedback').dataset.state + ' ' + document.getElementById('email').className`);
 const changed = async (/** @type {any} */ img) => compareImages((await shot(page)).img, img).countOver16;
-/** what the pane shows once nothing moves ('intact', 'cracked', 'gone'): the plugin's own signal, resolved after the frame of the end state */
-const rest = () => page.evaluate(`HicLivePlugins.shatter.settled(document.getElementById('stage'))`);
+/** what the pane shows once nothing moves ('intact', 'cracked', 'gone'): handle.settled() of the effect handle, resolved after the frame of the end state */
+const rest = () => page.evaluate(`window.__gallery.handle.settled()`);
 try {
   c.check('the gallery is ready with the plugin applied', true, await page.evaluate('({ mode: window.__gallery.mode, active: window.__gallery.active })'));
   c.check('the intro ends: the host stops rendering (idle, not continuous)', await idle(page));
@@ -89,11 +90,23 @@ try {
   // form; modelled with requestSubmit): a fixed form must not stay behind cracked glass
   await clickOn(page, '#effect-controls .hic-shatter-ui button');
   await sleep(100);
-  const running = await page.evaluate(`(() => { const s = HicLivePlugins.shatter.settled(document.getElementById('stage')); let done = false; s.then(() => { done = true; }); return new Promise((ok) => setTimeout(() => ok(!done), 0)); })()`);
+  const running = await page.evaluate(`(() => { const s = window.__gallery.handle.settled(); let done = false; s.then(() => { done = true; }); return new Promise((ok) => setTimeout(() => ok(!done), 0)); })()`);
   await page.evaluate(`document.getElementById('demo-form').requestSubmit()`);
   const quick = await rest();
   const quickDiff = await changed(healed);
   c.check('a valid submit (keyboard) while the cracks still run heals the glass too', running && quick === 'intact' && quickDiff < 0.03 * area, { running, state: quick, changedPixels: quickDiff });
+
+  // the actions of the effect handle, as a page uses them (the gallery's buttons call handle.trigger)
+  await actionChecks(page, (n, ok, d) => c.check(n, ok, d), [
+    { action: 'crack', state: 'cracked', midMs: 120, minChanged: 2000 },
+    // the cracks close from the far edge: a third of the way in, the front has not moved much yet
+    { action: 'in', state: 'intact', midMs: 350, minChanged: 2000 },
+    { action: 'out', state: 'gone', midMs: 350, minChanged: 0.15 * area },
+    // the shards fly back from below the canvas: the first part of the way back shows the empty backdrop
+    { action: 'in', state: 'intact', midMs: 1200, minChanged: 0.15 * area },
+    { action: 'impact', state: 'cracked', midMs: 120, minChanged: 2000 },
+    { action: 'impact', state: 'intact', midMs: 350, minChanged: 0.15 * area },
+  ], { older: 'crack', newer: 'in', state: 'intact' });
 
   // what scripts/check-examples.mjs asks of every plugin of the gallery: picked after "Effect off", its controls mount and the presented
   // pixels 900 ms later differ from "Effect off" (here: the intro), and the frame is not blank

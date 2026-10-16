@@ -6,7 +6,7 @@
 // and is shown by the re-formed page.
 //   npm run build && node plugins/disintegrate/test/gallery.e2e.mjs [--record]     (--record also writes media/disintegrate.webp)
 import { runTransitionGalleryE2E } from '../../_shared/transition-e2e.mjs';
-import { clickOn, compareImages, framesDuring, idle, rectOf, shot, sleep } from '../../_shared/gallery-e2e.mjs';
+import { actionChecks, clickOn, compareImages, framesDuring, idle, rectOf, shot, sleep } from '../../_shared/gallery-e2e.mjs';
 
 /** the live counter of the plugin's controls, on (trusted click on its checkbox) @param {any} page */
 async function counterOn(page) {
@@ -32,6 +32,13 @@ await runTransitionGalleryE2E({
     for (let k = 0; k < 8; k += 1) { lums.push(lum((await shot(page)).img)); await sleep(200); }
     c.check('no frame of the transition is dark: the page stays, only its content turns to dust', Math.min(...lums) > 0.6 * quietLum, { idle: Math.round(quietLum), during: lums.map(Math.round) });
     c.check('and it ends', await idle(page));
+
+    // the actions of the effect handle, as a page uses them (the gallery's buttons call handle.trigger)
+    await actionChecks(page, (n, ok, d) => c.check(n, ok, d), [
+      { action: 'out', state: 'out', midMs: 450, minChanged: 3000 },
+      { action: 'in', state: 'in', midMs: 450, minChanged: 3000 },
+      { action: 'play', state: 'in', midMs: 450, minChanged: 3000 },
+    ], { older: 'out', newer: 'in', state: 'in' });
 
     // live content: the counter runs, the form burns, text is typed into the name field WHILE it burns
     await counterOn(page);

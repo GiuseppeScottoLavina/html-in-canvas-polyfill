@@ -6,7 +6,7 @@
 import { assert, sleep } from '/test/unit/lib/t.js';
 import { gpuAvailable, gpuTest } from '/plugins/_shared/gpu-check.mjs';
 import { CONTROLS, DURATION, H, W, diff, diffNear, paint, transitionRig } from '/plugins/_shared/transition-gpu-rig.mjs';
-import { plugin, trigger } from '/plugins/disintegrate/index.js';
+import { plugin } from '/plugins/disintegrate/index.js';
 import { isNoTarget } from '/src/effects/no-target.js';
 
 console.error(`disintegrate-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
@@ -15,7 +15,7 @@ const { reference, start } = transitionRig(plugin, { duration: DURATION, duratio
 
 gpuTest('idle: the presented frame equals the host passthrough bit for bit, and the mapper is the identity', async (t) => {
   const ref = await reference(t);
-  const { rig, mappers } = await start(t, { intro: false });
+  const { rig, handle, mappers } = await start(t, { intro: false });
   rig.tick(performance.now());
   const d = diff(rig.snap(), ref);
   assert.equal(d.max, 0, `idle frame differs from the passthrough by up to ${d.max} levels`);
@@ -35,10 +35,10 @@ const inContent = (/** @type {number} */ x, /** @type {number} */ y, m = 0) => C
 
 gpuTest('play: mid-transition frames are non-blank, never dark (the page stays), differ from each other and from the source; the end frame is the source', async (t) => {
   const ref = await reference(t);
-  const { rig, mappers } = await start(t, { intro: false });
+  const { rig, handle, mappers } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  const done = trigger(rig.canvas, 'play');
+  const done = handle.trigger('play');
   rig.tick(t0 + 10);                                  // the clock of the transition starts here
   const shots = [];
   for (const at of [0.15, 0.3, 0.45, 0.7, 0.9, 1.2, 1.5, 1.8]) { rig.tick(t0 + 10 + DURATION * at); shots.push(rig.snap()); }
@@ -53,7 +53,7 @@ gpuTest('play: mid-transition frames are non-blank, never dark (the page stays),
   assert.ok(isNoTarget(midMapper({ x: 120, y: 60, width: W, height: H })), 'input blocked mid-transition (NO_TARGET)');
   for (let now = t0 + 10 + DURATION * 1.8; now <= t0 + 10 + DURATION * 2.2; now += 8.33) rig.tick(now);
   rig.tick(t0 + 10 + DURATION * 2.3);
-  assert.equal(await done, true, 'the play promise resolves true');
+  assert.equal(await done, 'in', 'the play promise resolves with the end state, assembled');
   const end = diff(rig.snap(), ref);
   assert.equal(end.max, 0, `reassembled frame differs from the source by up to ${end.max} levels`);
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 }, 'identity again');
@@ -61,10 +61,10 @@ gpuTest('play: mid-transition frames are non-blank, never dark (the page stays),
 
 gpuTest('the background stays: while the content turns to dust, the page around it is untouched (apart from dust passing over it); the content is gone', async (t) => {
   const ref = await reference(t);
-  const { rig } = await start(t, { intro: false });
+  const { rig, handle } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'out');
+  handle.trigger('out');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.62);               // every pixel of content has eroded by 0.5
   const img = rig.snap();
@@ -83,10 +83,10 @@ gpuTest('the background stays: while the content turns to dust, the page around 
 });
 
 gpuTest('the dust keeps the colour of its pixel: the orange button leaves orange dust where there was none', async (t) => {
-  const { rig } = await start(t, { intro: false });
+  const { rig, handle } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'out');
+  handle.trigger('out');
   rig.tick(t0 + 10);
   let orange = 0;
   for (const at of [0.45, 0.55, 0.65]) {
@@ -107,10 +107,10 @@ gpuTest('the dust keeps the colour of its pixel: the orange button leaves orange
 
 gpuTest('frame-cap independence: the frame at 400 ms is the same at 120 Hz and at a 15 fps cap', async (t) => {
   const run = async (/** @type {number} */ every) => {
-    const { rig, host } = await start(t, { intro: false });
+    const { rig, host, handle } = await start(t, { intro: false });
     const t0 = performance.now();
     rig.tick(t0);
-    trigger(rig.canvas, 'out');
+    handle.trigger('out');
     for (let k = 0; k <= 48; k += 1) rig.tick(t0 + 10 + k * 8.33, k % every === 0 || k === 48);
     const img = rig.snap();
     host.destroy();
@@ -123,7 +123,7 @@ gpuTest('frame-cap independence: the frame at 400 ms is the same at 120 Hz and a
 });
 
 gpuTest('input: a click on a control is swallowed mid-transition and reaches it when idle (positive control)', async (t) => {
-  const { rig } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
+  const { rig, handle } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
   const btn = /** @type {HTMLButtonElement} */ (rig.layerEl.querySelector('#btn'));
   const txt = /** @type {HTMLInputElement} */ (rig.layerEl.querySelector('#txt'));
   let clicks = 0;
@@ -142,7 +142,7 @@ gpuTest('input: a click on a control is swallowed mid-transition and reaches it 
   press();
   assert.equal(clicks, 1, 'idle: the click reaches the button');
   txt.focus();
-  trigger(rig.canvas, 'play');
+  handle.trigger('play');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.4);
   press();
@@ -152,10 +152,10 @@ gpuTest('input: a click on a control is swallowed mid-transition and reaches it 
 
 gpuTest('prefers-reduced-motion: the content fades into the page, nothing moves, the background is untouched', async (t) => {
   const ref = await reference(t);
-  const { rig } = await start(t, { intro: false, reducedMotion: true });
+  const { rig, handle } = await start(t, { intro: false, reducedMotion: true });
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'out');
+  handle.trigger('out');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.5);
   const img = rig.snap();
@@ -173,26 +173,28 @@ gpuTest('prefers-reduced-motion: the content fades into the page, nothing moves,
   assert.ok(dimmer > 0.8 * light, 'the content is half way to the background');
 });
 
-gpuTest('device loss mid-transition: the plugin comes back assembled (no intro), with the identity mapper; the pending promise resolves false', async (t) => {
+gpuTest('device loss mid-transition: the plugin comes back assembled (no intro), with the identity mapper; the pending trigger resolves null, settled() then reports the new instance at rest', async (t) => {
   const ref = await reference(t);
-  const { rig, devices, mappers } = await start(t, { intro: true });
+  const { rig, handle, devices, mappers } = await start(t, { intro: true });
   const t0 = performance.now();
   for (let now = t0; now <= t0 + DURATION + 100; now += 50) rig.tick(now);   // the intro, to its end
-  const pending = trigger(rig.canvas, 'out');
+  const pending = handle.trigger('out');
   rig.tick(t0 + DURATION + 150);
   rig.tick(t0 + DURATION + 450);
   devices[0].destroy();
   for (let i = 0; i < 200 && devices.length < 2; i += 1) await sleep(10);
   assert.equal(devices.length, 2, 'created again on a new device');
-  assert.equal(await pending, false);
+  assert.equal(await pending, null, 'the action died with the device');
+  const rest = handle.settled();
   rig.tick(performance.now());
+  assert.equal(await rest, 'in', 'the re-created instance is assembled');
   assert.equal(diff(rig.snap(), ref).max, 0, 'assembled frame right after the recovery');
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 5, y: 6, width: W, height: H }), { x: 5, y: 6 });
 });
 
 gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submit plays, an invalid one does not', async (t) => {
   const ref = await reference(t);
-  const { rig, host } = await start(t, { intro: true, onSubmit: 'valid' }, { html: CONTROLS });
+  const { rig, host, handle } = await start(t, { intro: true, onSubmit: 'valid' }, { html: CONTROLS });
   const t0 = performance.now();
   rig.tick(t0);
   const first = rig.snap();
@@ -218,10 +220,10 @@ gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submi
 
 gpuTest('the diagonal sweep: early on the content at the top left has started to erode, the far corner is untouched', async (t) => {
   const ref = await reference(t);
-  const { rig } = await start(t, { intro: false });
+  const { rig, handle } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'out');
+  handle.trigger('out');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.12);
   const early = rig.snap();
@@ -238,10 +240,10 @@ gpuTest('live: the dust keeps sampling the page, so a change made after it blew 
   // rectangle: on the dust that carries it away. Control: two runs without the change are identical, so every differing pixel is the change.
   const recolour = (/** @type {CanvasRenderingContext2D} */ ctx) => { paint(ctx); ctx.fillStyle = '#ff2a6a'; ctx.fillRect(40, 40, 120, 40); };
   const run = async (/** @type {boolean} */ change) => {
-    const { rig, host } = await start(t, { intro: false });
+    const { rig, host, handle } = await start(t, { intro: false });
     const t0 = performance.now();
     rig.tick(t0);
-    trigger(rig.canvas, 'out');
+    handle.trigger('out');
     rig.tick(t0 + 10);
     for (let now = t0 + 10; now <= t0 + 150; now += 16) rig.tick(now);
     if (change) rig.commit(null, recolour);

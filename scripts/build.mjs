@@ -10,7 +10,7 @@
 //   effect plugins, discovered by convention (every plugins/<name>/ with an index.js, <name> not starting with '_'; plugins/README.md):
 //     dist/plugins/<name>.iife.js, .iife.min.js   classic; registers window.HicLivePlugins.<name> = {meta, plugin, ...the other exports}
 //     dist/plugins/<name>.esm.js                  the module, for bundlers
-//     dist/plugins/manifest.json                  name, title, description, reducedMotion, defaults and files of every plugin (the gallery reads it)
+//     dist/plugins/manifest.json                  name, title, description, reducedMotion, version, defaults, actions and files of every plugin (the gallery reads it)
 //     dist/types/plugins/<name>/index.d.ts
 //   The .wgsl files of a plugin are inlined: its wgsl.js loader is replaced by a module that returns them as strings. What a plugin imports
 //   from plugins/_lib/ and src/effects/no-target.js is bundled into it.
@@ -129,7 +129,7 @@ for (const p of plugins) {
     Object.assign(files, { esm: `${p.name}.esm.js` });
   }
   const { meta, plugin } = await import(pathToFileURL(join(p.dir, 'index.js')).href);
-  manifest.push({ name: meta.name, title: meta.title, description: meta.description, ...(meta.reducedMotion ? { reducedMotion: meta.reducedMotion } : {}), version: plugin.version, defaults: meta.defaults ?? {}, files });
+  manifest.push({ name: meta.name, title: meta.title, description: meta.description, ...(meta.reducedMotion ? { reducedMotion: meta.reducedMotion } : {}), version: plugin.version, defaults: meta.defaults ?? {}, actions: plugin.actions ?? [], files });
 }
 writeFileSync(join(pluginDist, 'manifest.json'), JSON.stringify({ plugins: manifest }, null, 1) + '\n');
 

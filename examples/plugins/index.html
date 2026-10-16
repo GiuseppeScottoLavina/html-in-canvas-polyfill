@@ -39,8 +39,12 @@
   #about p b { color: #dff3ff; font-weight: 600; }
   #about code { font: 12px/1.5 ui-monospace, monospace; color: #9cf5ff; overflow-wrap: anywhere; }
   #about a { grid-column: 2; grid-row: 1; align-self: start; color: #9cf5ff; white-space: nowrap; }
+  #about .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .25rem; }
+  #about .actions button { padding: .2rem .7rem; font: 12px/1.5 ui-monospace, monospace; color: #dff3ff; cursor: pointer; border: 1px solid rgba(121, 239, 255, .45); border-radius: 8px; background: #0b2a40; }
+  #about .actions button:focus-visible { outline: 2px solid #79efff; outline-offset: 2px; }
+  #about .actions output { font: 12px/1.5 ui-monospace, monospace; color: #8fb4c8; }
 
-  /* ---- inside the canvas: ordinary HTML (the form of examples/water-form) ---- */
+  /* ---- inside the canvas: ordinary HTML ---- */
   #demo-form { box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 26px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, .9fr) minmax(300px, 1.1fr); gap: 22px;
     font: 14px/1.45 system-ui, sans-serif; color: #edfaff; background: radial-gradient(circle at 18% 18%, rgba(68, 135, 255, .16), transparent 40%), radial-gradient(circle at 84% 78%, rgba(149, 92, 255, .14), transparent 42%), #03101c; }
   .hero, .card { box-sizing: border-box; min-width: 0; padding: 26px; border: 1px solid rgba(178, 230, 255, .14); border-radius: 22px; background: linear-gradient(150deg, rgba(8, 25, 48, .8), rgba(4, 13, 28, .6)); }
@@ -89,7 +93,7 @@
 </head>
 <body>
 <h1>Effect plugins</h1>
-<p class="note">Pick an effect: it is applied to the same live HTML form drawn inside the canvas below, and the form stays usable through it. The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>.</p>
+<p class="note">Pick an effect: it is applied to the same live HTML form drawn inside the canvas below, and the form stays usable through it. Effects with actions list them under their description: each button calls <code>handle.trigger(action)</code> and shows the state it resolves with. The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>.</p>
 
 <ul id="picker" aria-label="Effect"></ul>
 <section id="about" aria-live="polite" aria-label="The selected effect"><h2 id="about-title">Effect off</h2></section>
@@ -135,7 +139,8 @@
   const form = document.getElementById('demo-form');
   const $ = (id) => document.getElementById(id);
   const hic = window.__HIC__;
-  const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [] });
+  // window.__gallery: what the page shows, for its tests: the effect handle of the selected plugin and the last action it ran
+  const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [], handle: null, lastAction: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const showMotion = () => { $('m-motion').textContent = reduceMotion.matches ? 'reduce (the panel above says what the selected effect does then)' : 'no preference'; };
@@ -161,6 +166,35 @@
     const link = Object.assign(document.createElement('a'), { href: SOURCE + p.name, textContent: 'Source and README', target: '_blank', rel: 'noopener' });
     about.replaceChildren(title, link, Object.assign(document.createElement('p'), { textContent: p.description }),
       line('Reduced motion', p.reducedMotion || 'not stated by the plugin'), line('Options passed here (meta.defaults)', JSON.stringify(p.defaults), true));
+    if (p.actions && p.actions.length) about.append(actionButtons(p.actions));
+  }
+
+  // ---- actions: handle.trigger(action) resolves with the state the plugin rests in afterwards, or null when a newer action superseded it ----
+  function actionButtons(names) {
+    const row = Object.assign(document.createElement('p'), { className: 'actions' });
+    const result = Object.assign(document.createElement('output'), { id: 'action-state', textContent: 'handle.trigger(action) ->' });
+    row.append(Object.assign(document.createElement('b'), { textContent: 'Actions:' }));
+    for (const name of names) {
+      const button = Object.assign(document.createElement('button'), { type: 'button', textContent: name });
+      button.dataset.action = name;
+      button.addEventListener('click', async () => {
+        const handle = current;
+        if (!handle) return;
+        const run = (state.lastAction = { action: name, done: false, state: undefined, error: null });
+        result.textContent = 'handle.trigger(' + JSON.stringify(name) + ') running';
+        try {
+          run.state = await handle.trigger(name);
+          result.textContent = 'handle.trigger(' + JSON.stringify(name) + ') -> ' + (run.state === null ? 'null (superseded)' : JSON.stringify(run.state));
+        } catch (error) {
+          run.error = error.message;
+          result.textContent = 'handle.trigger(' + JSON.stringify(name) + ') failed: ' + error.message;
+        }
+        run.done = true;
+      });
+      row.append(button);
+    }
+    row.append(result);
+    return row;
   }
 
   // The frame cap and the effects are extensions of this library: they run only while the polyfill provides the API (mode 'polyfill').
@@ -256,7 +290,7 @@
   async function select(name) {
     const mine = ++serial;
     for (const [key, button] of buttons) button.setAttribute('aria-pressed', String(key === name));
-    if (current) { current.remove(); current = null; }                          // removing a plugin also disposes its mounted UI
+    if (current) { current.remove(); current = null; state.handle = null; }       // removing a plugin also disposes its mounted UI
     $('effect-controls').replaceChildren();
     const url = new URL(location.href);
     if (name === 'off') url.searchParams.delete('effect'); else url.searchParams.set('effect', name);
@@ -274,7 +308,7 @@
       if (mine !== serial) return;                                              // another choice was made meanwhile
       const handle = await host.addPlugin(entry.plugin, { ...p.defaults });
       if (mine !== serial) { handle.remove(); return; }
-      current = handle;
+      current = state.handle = handle;
       handle.mountUI($('effect-controls'));                                     // the plugin's own controls, as HTML inside the drawn form
       state.active = name;
       $('m-effect').textContent = p.title + ' plugin running';

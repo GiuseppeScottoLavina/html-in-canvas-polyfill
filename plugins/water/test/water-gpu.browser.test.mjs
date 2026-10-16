@@ -1,6 +1,7 @@
-// The water input mapper against the pixels the GPU really produced (not against its own formula), through the shared plugin kit.
+// The water input mapper against the pixels the GPU really produced (not against its own formula), through the shared plugin kit; the
+// action 'drop' through the effect handle.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, markerScene, presentOnce } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, markerScene, presentOnce } from '/plugins/_shared/gpu-check.mjs';
 import { plugin } from '/plugins/water/index.js';
 
 console.error(`water-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
@@ -49,4 +50,33 @@ gpuTest('a mapper stays valid for the frame it was captured for while later fram
   assert.ok(before <= 5);
   const newest = agreement(first, /** @type {any} */ (mappers.at(-1)), scene).wrong;
   assert.ok(newest > 100, 'while the newest mapper describes a different frame (positive control)');
+});
+
+gpuTest('the action drop through the effect handle: once the water is calm, a drop moves pixels around its point, the frame agrees with its mapper, it resolves calm', async (t) => {
+  const { rig, handle, mappers } = await presentOnce(t, plugin, { intensity: 1 }, { scene });
+  let now = performance.now() + 100;
+  const tick = (/** @type {number} */ n = 1) => { for (let i = 0; i < n; i += 1) { rig.tick(now); now += 50; } };
+  const later = () => new Promise((r) => setTimeout(r, 0));
+  let calm = null;
+  handle.settled().then((v) => { calm = v; });
+  for (let i = 0; i < 120 && calm === null; i += 1) { tick(); await later(); }
+  assert.equal(calm, 'calm', 'the ripples of the page load die out');
+  tick();
+  const quiet = rig.snap();
+  tick(5);
+  const quietLater = rig.snap();
+  const idle = changedPixels(quietLater, quiet);
+  let state = null;
+  handle.trigger('drop', { point: { x: 240, y: 160 }, strength: 2 }).then((v) => { state = v; });
+  tick(5);
+  const img = rig.snap();
+  const moved = changedPixels(img, quietLater);
+  let near = 0;
+  for (let y = 100; y < 220; y += 1) for (let x = 180; x < 300; x += 1) { const k = (y * img.width + x) * 4; if (Math.abs(img.data[k] - quietLater.data[k]) > 16) near += 1; }
+  console.error(`water action: idle drift ${idle} px in 250 ms, the drop ${moved} px (${near} within 60 px of its point)`);
+  assert.ok(moved > 5 * idle + 500 && near > 60, `the drop moved pixels: ${moved} (idle ${idle}), near its point ${near}`);
+  const a = agreement(img, /** @type {any} */ (mappers.at(-1)), scene);
+  assert.ok(a.wrong <= 5, `the frame of the drop disagrees with its mapper on ${a.wrong} px`);
+  for (let i = 0; i < 120 && state === null; i += 1) { tick(); await later(); }
+  assert.equal(state, 'calm', 'it resolves once the ripple has died out');
 });

@@ -1,6 +1,8 @@
 /**
- * PLUGIN TEMPLATE (plugins/README.md): the smallest complete spatial effect plugin. It shifts the picture right by `offset` CSS pixels.
- * Copy this folder to plugins/<name>/, rename `meta.name` and `plugin.type` to <name>, and replace the shader and the mapper.
+ * PLUGIN TEMPLATE (plugins/README.md): the smallest complete spatial effect plugin. It shifts the picture right by `offset` CSS pixels,
+ * and has one action: `handle.trigger('shift', { offset })` moves the picture and resolves 'still' once a frame shows it.
+ * Copy this folder to plugins/<name>/, rename `meta.name` and `plugin.type` to <name>, and replace the shader, the mapper and the action
+ * (or drop `actions`, `runAction` and `settled` when the plugin has nothing to trigger).
  *
  * Contract of a plugin folder: index.js exports `meta` and `plugin`; it imports only files of its own folder, plugins/_lib/ and
  * src/effects/no-target.js (NO_TARGET, the mapper's answer for "no element here"); .wgsl files are loaded
@@ -44,6 +46,8 @@ export const plugin = Object.freeze({
   version: 1,
   // the pass only writes its destination as a same-format colour attachment (it never samples or reads it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
+  // the names handle.trigger accepts; the host checks them, so runAction only sees these
+  actions: Object.freeze(['shift']),
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('offset.wgsl'), label: 'template-plugin' });
@@ -60,6 +64,8 @@ export const plugin = Object.freeze({
     const bindGroups = new WeakMap();   // one per source view: the host may replace the source texture on resize
     let offset = clampOffset(options?.offset ?? meta.defaults.offset);
     let rendered = offset;              // the offset of the last rendered frame, frozen into its mapper
+    /** @type {((state: string|null) => void)[]} */ const waiters = [];   // settled() calls waiting for the next frame
+    const settled = () => (rendered === offset ? 'still' : new Promise((resolve) => { waiters.push(resolve); }));
 
     return {
       spatial: true,       // pixels move: the host requires captureInputMapper
@@ -67,6 +73,14 @@ export const plugin = Object.freeze({
         if (next?.offset !== undefined) offset = clampOffset(next.offset);
         context.requestRender();   // not `continuous`: the host renders only when the source changed or on request
       },
+      // the action 'shift': resolve with the state the plugin rests in once a frame shows it (the host handles validation and superseding)
+      runAction(_action, actionOptions) {
+        if (actionOptions.offset !== undefined) offset = clampOffset(actionOptions.offset);
+        context.requestRender();
+        return settled();
+      },
+      // resolves once nothing moves: here, once the frame with the current offset was rendered
+      settled,
       render(frame) {
         rendered = offset;
         data[0] = frame.width; data[1] = frame.height; data[2] = frame.cssWidth; data[3] = offset;
@@ -84,6 +98,7 @@ export const plugin = Object.freeze({
         });
         if (frame.sourceReady) { pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); }
         pass.end();
+        for (const resolve of waiters.splice(0)) resolve('still');
       },
       // called each time a frame is PRESENTED: freeze what that frame used, a later render must not change this mapper
       captureInputMapper() {
@@ -102,7 +117,10 @@ export const plugin = Object.freeze({
         root.append(label);
         return () => { range.removeEventListener('input', onInput); label.remove(); };
       },
-      destroy() { uniforms.destroy?.(); },
+      destroy() {
+        for (const resolve of waiters.splice(0)) resolve(null);   // removed before its frame: null
+        uniforms.destroy?.();
+      },
     };
   },
 });

@@ -6,12 +6,17 @@
  * It evaluates the uniform block that was submitted for the presented frame, so it describes exactly those pixels. The test
  * test/water-gpu.browser.test.mjs checks the twin against the pixels the GPU actually produced.
  *
- * The module has no dependency: `plugin` is a plain, frozen definition that `host.addPlugin` validates (docs/guides/EFFECTS-PLUGINS.md).
+ * Action 'drop' (`handle.trigger('drop', { point, strength })`): a drop falls at `point` (canvas CSS px, default the centre) with
+ * `strength` (0.08 to 2, default 1.2). It resolves 'calm' once no ripple is left; `handle.settled()` does the same. With reduced motion no
+ * ripple starts, so it resolves 'calm' at once.
+ *
+ * `plugin` is a plain, frozen definition that `host.addPlugin` validates (docs/guides/EFFECTS-PLUGINS.md).
  */
 
 import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
+import { actionPoint } from '../_lib/action.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectPluginContext} EffectPluginContext */
@@ -29,6 +34,8 @@ export const meta = Object.freeze({
 });
 
 export const RIPPLE_COUNT = 4;
+/** The actions of `handle.trigger`: drop starts a ripple. */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['drop']));
 /** floats in the uniform block: resolution(2) time ready | params(4) | ripples(4 x vec4) */
 export const GLOBALS_LENGTH = 8 + RIPPLE_COUNT * 4;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
@@ -91,6 +98,14 @@ export function mapWaterPoint(state, point) {
  * @property {number} time  start, seconds on the plugin clock (a delayed ripple starts in the future)
  * @property {number} strength
  */
+
+/**
+ * No ripple is running or waiting to start at `time` (seconds on the plugin clock). PURE.
+ * @param {Ripple[]} ripples @param {number} time
+ */
+export function calmAt(ripples, time) {
+  return ripples.every((r) => !(r.strength > 0) || time - r.time >= RIPPLE_LIFETIME_S);
+}
 
 /**
  * The uniform block of one frame.
@@ -211,7 +226,8 @@ function createPipeline(device, code, format) {
 export const plugin = Object.freeze({
   type: 'water',
   apiVersion: 2,
-  version: 2,
+  version: 3,
+  actions: ACTIONS,
   // The pass only writes its destination as a same-format colour attachment; it never samples or reads it back.
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
@@ -254,6 +270,12 @@ export const plugin = Object.freeze({
       addRipple(0.24, 0.76, 0.5, 0.28);
     }
 
+    /** @type {((state: string|null) => void)[]} */ const waiters = [];
+    /** drops of the action, started by the next frame on the frame clock @type {{x: number, y: number, strength: number}[]} */ const drops = [];
+    /** the plugin clock (seconds) of the last rendered frame */
+    let clock = 0;
+    const wait = () => (!drops.length && calmAt(ripples, clock) ? 'calm' : new Promise((resolve) => { waiters.push(resolve); }));
+
     function syncUi() {
       const percent = Math.round(intensity * 100);
       if (uiRange && uiRange.value !== String(percent)) uiRange.value = String(percent);
@@ -267,8 +289,27 @@ export const plugin = Object.freeze({
         intensity = clamp01(next?.intensity ?? intensity);
         syncUi();
       },
+      runAction(_action, options, info) {
+        // the one action, 'drop'; with reduced motion no ripple ever starts (calm water)
+        const at = actionPoint(options.point, 'water');
+        const strength = options.strength === undefined ? 1.2 : Number(options.strength);
+        if (!Number.isFinite(strength)) throw new TypeError('water: `strength` must be a finite number (0.08 to 2)');
+        if (!reducedMotion && !info.reducedMotion) {
+          const w = Math.max(1, context.canvas.clientWidth), h = Math.max(1, context.canvas.clientHeight);
+          drops.push({ x: at ? at.x / w : 0.5, y: at ? at.y / h : 0.5, strength });
+          context.requestRender();
+        }
+        return wait();
+      },
+      settled: wait,
       render(frame) {
-        fillGlobals(globals, frame, ripples, reducedMotion ? 0 : elapsed(frame.now), intensity);
+        const time = reducedMotion ? 0 : elapsed(frame.now);
+        clock = time;
+        for (const d of drops.splice(0)) {
+          ripples[rippleIndex++ % RIPPLE_COUNT] = { x: Math.min(1, Math.max(0, d.x)), y: Math.min(1, Math.max(0, d.y)), time, strength: Math.min(2, Math.max(0.08, d.strength)) };
+        }
+        fillGlobals(globals, frame, ripples, time, intensity);
+        if (waiters.length && calmAt(ripples, time)) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
@@ -297,7 +338,10 @@ export const plugin = Object.freeze({
           syncUi();
         });
       },
-      destroy() { uniformBuffer.destroy?.(); },
+      destroy() {
+        for (const resolve of waiters.splice(0)) resolve(null);
+        uniformBuffer.destroy?.();
+      },
     };
   },
 });

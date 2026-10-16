@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { GLOBALS_LENGTH, RIPPLE_COUNT, plugin as WaterEffectPlugin, mapWaterPoint } from '../index.js';
+import { ACTIONS, GLOBALS_LENGTH, RIPPLE_COUNT, calmAt, plugin as WaterEffectPlugin, mapWaterPoint } from '../index.js';
+import { nodeHandle } from '../../_shared/node-host.mjs';
 
 contractTest(import.meta.url);
 
@@ -223,4 +224,57 @@ test('a failed shader fetch is not cached: the next create (e.g. after a device 
     assert.equal(typeof inst.render, 'function');
     assert.equal(calls, 2);
   } finally { globalThis.fetch = realFetch; }
+});
+
+test('the action drop, through the effect handle: a ripple at the point on the next frame; it resolves \'calm\' when no ripple is left; bad options reject; reduced motion starts none', async () => {
+  globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const GAINS = [11, 15, 19, 23];
+  const make = async (/** @type {boolean} */ reducedMotion) => {
+    const gpu = fakeGpu();
+    const win = { matchMedia: () => ({ matches: reducedMotion }), PointerEvent: class {} };   // the plugin's own reading agrees with the host's
+    const canvas = Object.assign(new EventTarget(), { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: 200, clientHeight: 100, clientLeft: 0, clientTop: 0 });
+    const h = await nodeHandle(WaterEffectPlugin, { shader: '// wgsl', intensity: 1 }, { device: gpu.device, canvas, source: {}, reducedMotion });
+    const frame = (/** @type {number} */ now) => ({ now, width: 200, height: 100, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder });
+    return { ...h, gpu, frame };
+  };
+  const w = await make(false);
+  assert.deepEqual([...w.handle.actions], ['drop']);
+  assert.deepEqual([...ACTIONS], [...(WaterEffectPlugin.actions ?? [])]);
+  const t0 = performance.now();
+  let first = 'pending';
+  w.handle.settled().then((v) => { first = v; });
+  w.inst.render(w.frame(t0 + 1000));
+  await flush();
+  assert.equal(first, 'pending', 'the two ripples of the page load still run');
+  w.inst.render(w.frame(t0 + 4000));
+  await flush();
+  assert.equal(first, 'calm', 'calm once they have died out');
+  await assert.rejects(w.handle.trigger('drop', { point: { x: 'left' } }), /water: `point`/);
+  await assert.rejects(w.handle.trigger('drop', { strength: NaN }), /strength/);
+  const drop = w.handle.trigger('drop', { point: { x: 150, y: 25 }, strength: 1.5 });
+  let state = 'pending';
+  drop.then((v) => { state = v; });
+  w.inst.render(w.frame(t0 + 4100));
+  const u = w.gpu.writes.at(-1);
+  const slot = GAINS.findIndex((i) => u[i] > 0);
+  assert.ok(slot >= 0, 'a ripple started on this frame');
+  assert.deepEqual([u[8 + slot * 4], u[9 + slot * 4]], [0.75, 0.25], 'at the point (canvas CSS px -> 0..1 of the canvas)');
+  assert.equal(u[11 + slot * 4], 1.5, 'with its strength, age 0');
+  w.inst.render(w.frame(t0 + 6000));
+  await flush();
+  assert.equal(state, 'pending', 'the ripple still runs');
+  w.inst.render(w.frame(t0 + 4100 + 3300));
+  assert.equal(await drop, 'calm');
+  assert.equal(calmAt([{ x: 0, y: 0, time: 1, strength: 1 }], 3), false);
+  assert.equal(calmAt([{ x: 0, y: 0, time: 1, strength: 1 }], 4.3), true);
+  const pending = w.handle.trigger('drop');
+  w.handle.remove();
+  assert.equal(await pending, null, 'removed: null');
+  const still = await make(true);
+  still.inst.render(still.frame(t0));
+  assert.equal(await still.handle.trigger('drop', { point: { x: 10, y: 10 } }), 'calm', 'reduced motion (as the host read it): no ripple, calm at once');
+  still.inst.render(still.frame(t0 + 100));
+  assert.deepEqual(GAINS.map((i) => still.gpu.writes.at(-1)[i]), [0, 0, 0, 0]);
+  still.handle.remove();
 });

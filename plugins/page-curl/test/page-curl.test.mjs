@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
-import { NO_TARGET, PEEK_MS, UNIFORM_FLOATS, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, plugin, poseState } from '../index.js';
+import { ACTIONS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
+import { nodeHandle } from '../../_shared/node-host.mjs';
 
 const W = 480;
 const H = 320;
@@ -193,6 +194,8 @@ function fakeEnv({ reduced = false, timers = false } = {}) {
     ownerDocument: doc, clientWidth: W, clientHeight: H,
     getBoundingClientRect: () => ({ left: 10, top: 20, width: W, height: H }),
     setPointerCapture: (/** @type {number} */ id) => captured.push(id), releasePointerCapture: (/** @type {number} */ id) => captured.push(-id),
+    // context.listen of the real host (plugins/_shared/node-host.mjs) listens here
+    addEventListener: (/** @type {string} */ type, /** @type {any} */ fn) => layerListeners.set(type, fn), removeEventListener() {},
   };
   let renders = 0;
   const layerListeners = new Map();
@@ -444,4 +447,58 @@ test('auto-peek: until the first drag the dog-ear opens now and then on its own 
   for (let now = 0; now <= 5000; now += 16) still.render(reduced.frame(now));
   assert.equal(reduced.pending.length, 0, 'reduced motion: no auto-peek');
   assert.ok(last(reduced)[9] > 0, 'reduced motion: the dog-ear is still there');
+});
+
+test('the action peek, through the effect handle: the dog-ear opens and closes once, also after the first drag stopped the auto-peek; it resolves \'rest\'; a held corner and reduced motion do not peek', async (t) => {
+  const env = fakeEnv();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
+  t.after(() => { globalThis.fetch = realFetch; });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const { handle, inst } = await nodeHandle(plugin, { ...meta.defaults, autoPeek: 0 }, { device: env.context.device, canvas: env.context.canvas, source: {} });
+  assert.deepEqual([...handle.actions], ['peek']);
+  assert.deepEqual([...ACTIONS], [...(plugin.actions ?? [])]);
+  await assert.rejects(handle.trigger('turn'), /unknown action "turn" of the plugin "page-curl"; its actions are 'peek'/);
+  inst.render(env.frame(0));
+  const rest = last(env)[9];
+  assert.equal(await handle.settled(), 'rest', 'at rest: at once');
+  /** frames from `from` to `to`; the largest pull drawn @param {number} from @param {number} to */
+  const run = (from, to) => { let max = 0; for (let now = from; now <= to; now += 16) { inst.render(env.frame(now)); max = Math.max(max, last(env)[9]); } return max; };
+  const peek = handle.trigger('peek');
+  let state = 'pending';
+  peek.then((v) => { state = v; });
+  const max = run(100, 100 + PEEK_MS / 2);
+  await flush();
+  assert.equal(state, 'pending', 'it peeks: not at rest yet');
+  const max2 = Math.max(max, run(100 + PEEK_MS / 2 + 16, 100 + PEEK_MS + 900));
+  assert.ok(max2 > rest * 2, `the dog-ear peeks open: pull ${rest} -> ${max2}`);
+  assert.equal(await peek, 'rest');
+  assert.ok(Math.abs(last(env)[9] - rest) < 0.05, 'and closes again');
+  assert.equal(peekOnce(PEEK_MS / 2), 1);
+  env.fire('pointerdown', W - 4, 4);
+  env.fire('pointermove', 300, 100);
+  run(3000, 3300);
+  let held = 'pending';
+  handle.trigger('peek').then((v) => { held = v; });
+  run(3316, 3600);
+  await flush();
+  assert.equal(held, 'pending', 'a corner is held: no peek, it waits for the rest');
+  env.fire('pointerup', 300, 100);
+  run(3616, 7000);
+  await flush();
+  assert.equal(held, 'rest', 'released and sprung back: rest');
+  const after = handle.trigger('peek');
+  assert.ok(run(7100, 7100 + PEEK_MS + 900) > rest * 2, 'the action peeks also after the first drag (the auto-peek stopped there)');
+  assert.equal(await after, 'rest');
+  const pending = handle.trigger('peek');
+  handle.remove();
+  assert.equal(await pending, null, 'removed: null');
+  const calmEnv = fakeEnv();
+  const calm = await nodeHandle(plugin, { ...meta.defaults, autoPeek: 0 }, { device: calmEnv.context.device, canvas: calmEnv.context.canvas, source: {}, reducedMotion: true });
+  calm.inst.render(calmEnv.frame(0));
+  const calmRest = last(calmEnv)[9];
+  assert.equal(await calm.handle.trigger('peek'), 'rest', 'reduced motion (as the host read it): nothing opens, it resolves at once');
+  for (let now = 16; now <= PEEK_MS; now += 16) calm.inst.render(calmEnv.frame(now));
+  assert.equal(last(calmEnv)[9], calmRest, 'the dog-ear stays still');
+  calm.handle.remove();
 });

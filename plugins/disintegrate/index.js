@@ -11,8 +11,9 @@
  * every point, so the host swallows the press: nothing is focused or activated (../_lib/transition.js). Keyboard input is not mapped by the
  * host and still reaches the focused field.
  *
- * Triggers: `trigger(canvas, 'out' | 'in' | 'play')` (exported), `handle.setOptions({ state: 'out' | 'in' })`, the Burn button of mountUI,
- * and, with `onSubmit`, the submit of the form inside the source. With prefers-reduced-motion the same triggers crossfade the content.
+ * Actions (the effect handle: `handle.trigger('out' | 'in' | 'play')`, `handle.settled()`; states 'in' and 'out'), also run by the
+ * "Turn to dust" button of mountUI and, with `onSubmit`, by the submit of the form inside the source; `handle.setOptions({ state })` sets
+ * the end state declaratively. With prefers-reduced-motion the same actions crossfade the content.
  */
 
 import { wgsl } from './wgsl.js';
@@ -30,7 +31,7 @@ export const meta = Object.freeze({
   title: 'Disintegrate',
   description: 'The live content of the form turns to dust of its own colours and blows away while the page stays, then flies back into its new state. On Submit.',
   defaults: Object.freeze({ onSubmit: 'valid', intro: true }),
-  reducedMotion: 'With reduced motion the same triggers fade the content into the page and back; nothing moves.',
+  reducedMotion: 'With reduced motion the same actions fade the content into the page and back; nothing moves.',
 });
 
 /** floats in the uniform block (disintegrate.wgsl `Uniforms`) */
@@ -48,21 +49,11 @@ export const HOLD_MS = 0;
 /** the clear colour of the host's passthrough: an assembled frame is then identical to the frame without the plugin */
 export const HOST_BACKDROP = Object.freeze([0.004, 0.018, 0.034]);
 
+/** The actions of `handle.trigger`: out turns the content to dust and leaves it gone, in re-forms it, play does both. */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['out', 'in', 'play']));
+
 /** canvases where a device was lost: the plugin is created again on the new device without replaying its intro */
 const lostOn = new WeakSet();
-/** @type {WeakMap<HTMLCanvasElement, (action: 'out'|'in'|'play') => Promise<boolean>>} */
-const controllers = new WeakMap();
-
-/**
- * Start a transition of the disintegrate plugin running on `canvas`.
- * @param {HTMLCanvasElement} canvas
- * @param {'out'|'in'|'play'} [action]  out: turn to dust and stay gone; in: re-form; play: out, a short pause, in
- * @returns {Promise<boolean>}  true when that end state is reached; false when superseded, or when no instance runs on the canvas
- */
-export function trigger(canvas, action = 'play') {
-  const run = controllers.get(canvas);
-  return run ? run(action) : Promise.resolve(false);
-}
 
 /**
  * The dust grid over the page: square cells of `size` css px, at most MAX_GRAINS (cells grow beyond). PURE.
@@ -155,9 +146,10 @@ const UI_CSS = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:
 export const plugin = Object.freeze({
   type: 'disintegrate',
   apiVersion: /** @type {const} */ (2),
-  version: 3,
+  version: 4,
   // every pass that touches the destination only writes it as a same-format colour attachment (the dust's blending never samples it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
+  actions: ACTIONS,
   async create(context, initialOptions) {
     const { device, format, canvas, source } = context;
     const module = device.createShaderModule({ code: await wgsl('disintegrate.wgsl') });
@@ -238,11 +230,15 @@ export const plugin = Object.freeze({
     /** the play in progress: its promise, and whether its way back has started */
     /** @type {{resolve: (done: boolean) => void, back: boolean, start: number}|null} */ let playing = null;
 
-    /** @param {'out'|'in'|'play'} action */
-    function request(action) {
-      if (action !== 'out' && action !== 'in' && action !== 'play') return Promise.reject(new TypeError('disintegrate: unknown action ' + action));
+    /** the end state: 'out' (dissolved, gone) or 'in' (assembled) */
+    const resting = () => (timeline.phase === 'gone' ? 'out' : 'in');
+    const inMotion = () => timeline.animating || playing !== null;
+    /** @type {((state: string|null) => void)[]} */ const waiters = [];
+
+    /** @param {'out'|'in'|'play'} action @param {boolean} [reduced]  prefers-reduced-motion as the host read it */
+    function request(action, reduced) {
       if (destroyed) return Promise.resolve(false);
-      crossfade = s.reducedMotion ?? !!media?.matches;
+      crossfade = s.reducedMotion ?? reduced ?? !!media?.matches;
       // a play turns at g = 1 at full strength; an 'out' fades the dust as it ends gone, an 'in' from gone fades it in
       turning = action === 'play';
       // the way out and the way back have their own lengths (the timeline takes the length of a run when the run starts), so a play is
@@ -259,13 +255,12 @@ export const plugin = Object.freeze({
       run.then((ok) => { if (!ok && playing === play) { playing = null; resolve(false); } });
       return done;
     }
-    controllers.set(canvas, request);
     if (timeline.phase === 'gone' && s.state === 'in') request('in');   // the intro: re-form from dust once the first snapshot is there
 
-    const onSubmit = (/** @type {Event} */ event) => {
+    const onSubmit = () => {
       if (s.onSubmit === 'off' || !timeline.assembled) return;
       if (s.onSubmit === 'valid' && findInvalid(source, s.invalidSelector)) return;
-      request('play');
+      context.trigger('play');   // through the host, like handle.trigger: it supersedes a pending trigger of the page
     };
     source.addEventListener('submit', onSubmit);
     device.lost?.then?.(() => { if (!destroyed) lostOn.add(canvas); });
@@ -279,6 +274,10 @@ export const plugin = Object.freeze({
         if (s.state !== stateOption) { stateOption = s.state; request(s.state); }
         context.requestRender();
       },
+      runAction(action, _options, info) {
+        return request(/** @type {'out'|'in'|'play'} */ (action), info.reducedMotion).then((done) => (done ? resting() : null));
+      },
+      settled() { return inMotion() ? new Promise((resolve) => { waiters.push(resolve); }) : resting(); },
       render(/** @type {EffectRenderFrame} */ frame) {
         // the clock of a play's way out starts at its first ready frame (as the timeline's does)
         if (playing && !playing.back && Number.isNaN(playing.start) && frame.sourceReady) playing.start = frame.now;
@@ -292,6 +291,7 @@ export const plugin = Object.freeze({
           timeline.advance(Math.min(frame.now, play.start + s.duration));
           amount = timeline.advance(frame.now);
         }
+        if (playing && playing.back && timeline.assembled) playing = null;   // the play ended in this frame (its promise follows the timeline's)
         assembledFrame = timeline.assembled;
         if (gridOf[0] !== frame.cssWidth || gridOf[1] !== frame.cssHeight || gridOf[2] !== s.particleSize) {
           gridOf[0] = frame.cssWidth; gridOf[1] = frame.cssHeight; gridOf[2] = s.particleSize;
@@ -332,6 +332,7 @@ export const plugin = Object.freeze({
         }
         pass.end();
         attachment.view = null;
+        if (waiters.length && frame.sourceReady && !inMotion()) { const state = resting(); for (const resolve of waiters.splice(0)) resolve(state); }
       },
       // the mapper of the frame just presented: two constant functions, so it is frozen by construction
       captureInputMapper() { return assembledFrame ? identityMapper : blockedMapper; },
@@ -360,7 +361,7 @@ export const plugin = Object.freeze({
           counter.hidden = !live.checked;
           if (live.checked) { t0 = performance.now(); show(); timer = win2?.setInterval?.(show, 50) ?? 0; }
         };
-        const onBurn = () => { trigger(canvas, 'play'); };
+        const onBurn = () => { ui.trigger('play'); };
         const onSize = () => ui.setOptions({ particleSize: Number(size.value) / 10 });
         const onWind = () => ui.setOptions({ wind: Number(wind.value) / 100 });
         const onLive = () => { ui.setOptions({ liveCounter: live.checked }); sync(); };
@@ -384,8 +385,8 @@ export const plugin = Object.freeze({
         destroyed = true;
         timeline.cancel();
         if (playing) { const p = playing; playing = null; p.resolve(false); }
+        for (const resolve of waiters.splice(0)) resolve(null);
         source.removeEventListener('submit', onSubmit);
-        if (controllers.get(canvas) === request) controllers.delete(canvas);
         uniforms.destroy?.();
         est?.down.destroy?.(); est?.bg.destroy?.();
       },

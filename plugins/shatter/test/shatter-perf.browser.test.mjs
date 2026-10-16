@@ -5,7 +5,7 @@
 // for everything the GPU does, not only this pass. Chrome quantises timestamps (100 us without developer features), so small passes read coarse.
 import { assert } from '/test/unit/lib/t.js';
 import { gpuTest } from '/plugins/_shared/gpu-check.mjs';
-import { plugin, trigger } from '/plugins/shatter/index.js';
+import { plugin } from '/plugins/shatter/index.js';
 
 const CSS = { w: 1100, h: 620 }, DPR = 2, W = CSS.w * DPR, H = CSS.h * DPR;
 
@@ -43,8 +43,8 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a crack and a who
   const t0 = performance.now();
   let index = 0;
   for (let i = 0; i < FRAMES; i += 1) {
-    if (i === 20) trigger(canvas, 'impact', { x: 580, y: 400 });   // cracks (450 ms = 54 frames)
-    if (i === 100) trigger(canvas, 'impact');                      // breaks
+    if (i === 20) inst.runAction?.('impact', { point: { x: 580, y: 400 } }, { reducedMotion: false });   // cracks (450 ms = 54 frames)
+    if (i === 100) inst.runAction?.('impact', {}, { reducedMotion: false });                      // breaks
     const encoder = device.createCommandEncoder();
     const k = i;
     const frame = {

@@ -1,8 +1,9 @@
 // The page-curl plugin on the real GPU (headless Chrome, the real effects host): its input mapper against the pixels the GPU produced
 // (plugins/_shared/gpu-check.mjs) with the identity and a pose 20 px away as controls, the back of the sheet (paper with the source showing
-// through, mirrored), the dog-ear at rest, the spring back to the plain source, a device loss mid-drag, and the GPU time.
+// through, mirrored), the dog-ear at rest, the spring back to the plain source, the action 'peek' through the effect handle, a device loss
+// mid-drag, and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { UNIFORM_FLOATS, isNoTarget, mapCurlPoint, meta, plugin, poseState, stateOf, unproject } from '/plugins/page-curl/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -122,6 +123,15 @@ gpuTest('released: the sheet springs back and the presented frame is the plain s
   assert.deepEqual(flat({ x: 478, y: 318, width: W, height: H }), { x: 478, y: 318 });
 });
 
+
+gpuTest('the action peek through the effect handle: the dog-ear opens and closes, every checked frame agrees with its mapper, it resolves rest on the dog-ear', async (t) => {
+  const r = await runActionOnGpu(t, plugin, DARK, 'peek', undefined, { scene, maxMs: 5000, checkEvery: 8 });
+  console.error(`page-curl action: ${r.frames} frames, ${r.checked} checked, at most ${r.maxChanged} px changed, worst mapper ${r.worst?.wrong} px wrong`);
+  assert.equal(r.state, 'rest');
+  assert.ok(r.maxChanged > 1000, `the dog-ear opened: ${r.maxChanged} px changed`);
+  assert.ok(r.worst !== null && r.checked >= 5 && r.worst.wrong <= 5, `a frame of the peek disagrees with its mapper on ${r.worst?.wrong} px`);
+  assert.ok(changedPixels(r.last, r.first) <= 20, `back on the dog-ear: ${changedPixels(r.last, r.first)} px differ from the first frame`);
+}, { timeout: 20000 });   // about 100 frames on the frame clock, and the mapper of every 8th judged on 150,000 pixels
 
 gpuTest('device loss mid-drag: the host re-creates the plugin on a new device, the old instance is destroyed, the new one presents the flat page with an identity mapper', async (t) => {
   const { spy, log } = lossSpy(plugin);

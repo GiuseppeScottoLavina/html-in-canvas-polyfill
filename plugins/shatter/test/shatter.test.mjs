@@ -1,11 +1,12 @@
 // Node tests of the shatter plugin: the folder contract, the crack geometry (an exact partition of the canvas, fans that are never inside
 // out), the mapper of the cracked pane (the inverse of the offsets and of the bending along the cracks), the physics twin, options, uniforms,
 // and what the instance does with a recording fake GPU (no GPU object per frame, one pattern per crack, the two impacts, the mappers, the
-// impact point, submit wiring, destroy).
+// impact point, submit wiring, destroy), the actions through the effect handle (plugins/_shared/node-host.mjs).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { blockedMapper, CRACK_MS, crackFront, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions, settled, trigger } from '../index.js';
+import { ACTIONS, actionPoint, blockedMapper, CRACK_MS, crackFront, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions } from '../index.js';
+import { nodeHandle } from '../../_shared/node-host.mjs';
 import { BEVEL, buildShards, crackedLayout, crackedSource, HEAL, MAX_POLY, MAX_SHARDS, MAX_VERTICES, mulberry32, polygonCentroid, SHARD_FLOATS, shardPoint, SPAN, spiderweb, VERTEX_FLOATS } from '../shards.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
@@ -185,8 +186,8 @@ function fakeGpu() {
   return { device, created, writes, draws, encoder: { beginRenderPass: () => pass } };
 }
 
-/** @param {Record<string, unknown>} options */
-async function instance(options) {
+/** The plugin behind the real effect handle, over the fake GPU. @param {Record<string, unknown>} options @param {{reducedMotion?: boolean}} [o] */
+async function instance(options, { reducedMotion = false } = {}) {
   const gpu = fakeGpu();
   const realFetch = globalThis.fetch;
   globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
@@ -196,15 +197,16 @@ async function instance(options) {
     querySelectorAll() { return this.invalid ? [field] : []; },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 480, height: 320 }),
   });
-  const canvas = /** @type {any} */ ({ clientWidth: 480, clientHeight: 320, clientLeft: 0, clientTop: 0, getBoundingClientRect: () => ({ left: 0, top: 0 }), ownerDocument: { defaultView: { matchMedia: () => ({ matches: false }) } } });
-  /** @type {Record<string, Function>} */ const listeners = {};
-  const context = /** @type {any} */ ({ apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, source, requestRender() {}, listen: (/** @type {string} */ type, /** @type {Function} */ fn) => { listeners[type] = fn; return () => {}; }, viewport: () => ({}) });
+  const canvas = /** @type {any} */ (Object.assign(new EventTarget(), { clientWidth: 480, clientHeight: 320, clientLeft: 0, clientTop: 0, getBoundingClientRect: () => ({ left: 0, top: 0 }), ownerDocument: { defaultView: { matchMedia: () => ({ matches: false }) } } }));
+  /** a pointer press on the canvas, as context.listen hears it @param {number} clientX @param {number} clientY */
+  const press = (clientX, clientY) => canvas.dispatchEvent(Object.assign(new Event('pointerdown'), { clientX, clientY }));
   try {
-    const inst = /** @type {any} */ (await plugin.create(context, { duration: 1000, ...options }));
+    const h = await nodeHandle(plugin, { duration: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion });
+    const inst = h.inst;
     const sourceTexture = { width: 960, height: 640 };
     const sourceView = {}, destinationView = {};
     const frame = (/** @type {number} */ now) => ({ now, width: 960, height: 640, cssWidth: 480, cssHeight: 320, dpr: 2, sourceReady: true, sourceTexture, sourceView, destinationView, encoder: gpu.encoder });
-    return { inst, gpu, canvas, source, frame, listeners };
+    return { inst, handle: h.handle, errors: h.errors, gpu, canvas, source, frame, press };
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -212,21 +214,26 @@ async function instance(options) {
 
 /** crack patterns built (the shards part of the uniform buffer was written) @param {any} gpu */
 const patterns = (gpu) => gpu.writes.filter((/** @type {any} */ w) => w.offset === HEADER_FLOATS * 4).length;
+/** every pending promise reaction has run (the host's handle adds a few promise steps between the plugin and the page) */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+/** @param {any} gpu */
+const impactOfGpu = (gpu) => gpu.writes.filter((/** @type {any} */ w) => w.offset === 0).at(-1).impact;
 /** @param {any} x */
-const impactOf = (x) => x.gpu.writes.filter((/** @type {any} */ w) => w.offset === 0).at(-1).impact;
+const impactOf = (x) => impactOfGpu(x.gpu);
 
 test('instance: the first impact cracks (blocked while the cracks run, then the inverse mapper of the pane), the second breaks it', async () => {
-  const { inst, gpu, canvas, frame } = await instance({});
+  const { inst, gpu, handle, frame } = await instance({});
   inst.render(frame(0));
   const idle = { ...gpu.created };
   assert.equal(inst.captureInputMapper(frame(0)), identityMapper);
-  const cracked = trigger(canvas, 'impact', { x: 120, y: 90 });
+  const cracked = handle.trigger('impact', { point: { x: 120, y: 90 } });
   inst.render(frame(10));
   assert.equal(inst.captureInputMapper(frame(10)), blockedMapper, 'the cracks start running: blocked');
   inst.render(frame(10 + CRACK_MS / 2));
   assert.equal(inst.continuous, true);
   inst.render(frame(20 + CRACK_MS));
-  assert.equal(await cracked, true);
+  assert.equal(await cracked, 'cracked');
+  assert.deepEqual(impactOfGpu(gpu), [120, 90], 'at the point of the action');
   assert.equal(inst.continuous, false, 'cracked and still: the host renders only when the page changes');
   const m = inst.captureInputMapper(frame(0));
   assert.ok(m !== identityMapper && m !== blockedMapper, 'the mapper of the cracked pane');
@@ -238,13 +245,13 @@ test('instance: the first impact cracks (blocked while the cracks run, then the 
   assert.deepEqual(base, [3], 'the picture in place, dimmed (seen inside the open cracks)');
   assert.equal(pane[1], 1, 'then the pane: one copy of each shard');
   assert.equal(patterns(gpu), 1, 'one pattern per crack');
-  const broken = trigger(canvas, 'impact');
+  const broken = handle.trigger('impact');
   for (let k = 0; k <= 400; k += 1) {
     inst.render(frame(700 + k * 8.33));
     if (k === 20) assert.equal(inst.captureInputMapper(frame(0)), blockedMapper, 'falling: blocked');
     if (k === 60) assert.equal(gpu.draws.at(-2)[1], 3, 'three copies per shard while it falls (the motion blur)');
   }
-  assert.equal(await broken, true);
+  assert.equal(await broken, 'intact', 'the second impact breaks the pane, it flies back: intact');
   assert.equal(patterns(gpu), 1, 'the fall breaks the pattern that cracked');
   assert.equal(inst.captureInputMapper(frame(0)), identityMapper, 'back in place, cracks closed: the identity');
   assert.deepEqual(gpu.draws.at(-1), [3], 'and the full-screen passthrough');
@@ -262,19 +269,19 @@ test('instance: the impact point is the last pointer press, else the centre of t
   assert.deepEqual(impactOf(field), [350, 110], 'from the centre of the invalid field (keyboard submit)');
   const press = await instance({ onSubmit: 'invalid' });
   press.inst.render(press.frame(0));
-  press.listeners.pointerdown({ clientX: 50, clientY: 60 });
+  press.press(50, 60);
   press.source.invalid = true;
   press.source.dispatchEvent(new Event('submit'));
   press.inst.render(press.frame(10)); press.inst.render(press.frame(20));
   assert.deepEqual(impactOf(press), [50, 60], 'from the pointer press (the Submit button)');
   const option = await instance({ impact: { x: 400, y: 30 } });
   option.inst.render(option.frame(0));
-  trigger(option.canvas, 'crack');
+  option.handle.trigger('crack');
   option.inst.render(option.frame(10)); option.inst.render(option.frame(20));
   assert.deepEqual(impactOf(option), [400, 30], 'the impact option');
   const api = await instance({});
   api.inst.render(api.frame(0));
-  trigger(api.canvas, 'out');
+  api.handle.trigger('out');
   api.inst.render(api.frame(10)); api.inst.render(api.frame(20));
   assert.deepEqual(impactOf(api), [240, 160], 'the canvas centre');
 });
@@ -309,52 +316,92 @@ test('instance: submit wiring: invalid cracks, invalid again breaks it, a valid 
 });
 
 test('instance: a valid submit while the cracks still run heals them (a fixed form never stays behind cracked glass); settled() reports the end state', async () => {
-  const { inst, source, canvas, frame } = await instance({ onSubmit: 'invalid' });
+  const { inst, source, handle, frame } = await instance({ onSubmit: 'invalid' });
   inst.render(frame(0));
-  assert.equal(await settled(canvas), 'intact', 'nothing moves: at once');
+  assert.equal(await handle.settled(), 'intact', 'nothing moves: at once');
   source.invalid = true;
   source.dispatchEvent(new Event('submit'));
   inst.render(frame(10));
   inst.render(frame(10 + CRACK_MS / 3));                   // the cracks are a third of the way out
   /** @type {any[]} */ const seen = [];
-  settled(canvas).then((v) => seen.push(v));
+  handle.settled().then((v) => seen.push(v));
   source.invalid = false;
   source.dispatchEvent(new Event('submit'));                // fixed and submitted again, before the cracks have finished
   assert.equal(inst.continuous, true, 'the cracks turn back');
   inst.render(frame(10 + CRACK_MS / 3 + 50));
-  await Promise.resolve();
+  await flush();
   assert.deepEqual(seen, [], 'not settled while they close');
   inst.render(frame(10 + CRACK_MS * 2));
-  await Promise.resolve();
+  await flush();
   assert.deepEqual(seen, ['intact'], 'settled after the frame that draws the intact pane');
   assert.equal(inst.captureInputMapper(frame(0)), identityMapper);
   source.invalid = true;
   source.dispatchEvent(new Event('submit'));
   inst.render(frame(2000)); inst.render(frame(2010 + CRACK_MS));
-  assert.equal(await settled(canvas), 'cracked');
-  inst.destroy();
-  assert.equal(await settled(canvas), null, 'no instance any more');
+  assert.equal(await handle.settled(), 'cracked');
+  handle.remove();
+  assert.equal(await handle.settled(), null, 'removed: null');
 });
 
 test('instance: reduced motion: nothing cracks; an impact crossfades', async () => {
-  const { inst, canvas, frame, gpu } = await instance({ reducedMotion: true });
+  const { inst, handle, frame, gpu } = await instance({ reducedMotion: true });
   inst.render(frame(0));
-  assert.equal(await trigger(canvas, 'crack'), false, 'no crack');
+  assert.equal(await handle.trigger('crack'), 'intact', 'no crack: it resolves with the state it rests in');
   inst.render(frame(10));
   assert.equal(inst.captureInputMapper(frame(0)), identityMapper);
-  trigger(canvas, 'impact');
+  handle.trigger('impact');
   inst.render(frame(20)); inst.render(frame(500));
   assert.deepEqual(gpu.draws.at(-1), [3], 'the full-screen crossfade');
   assert.equal(patterns(gpu), 0, 'no crack pattern');
   assert.equal(inst.captureInputMapper(frame(0)), blockedMapper, 'input blocked while it fades');
 });
 
-test('instance: destroy resolves the pending trigger and unhooks the canvas; an unknown action rejects', async () => {
-  const { inst, canvas, frame } = await instance({ onSubmit: 'always' });
+test('instance: removal resolves the pending trigger null; an unknown action or a bad point rejects', async () => {
+  const { inst, handle, frame, errors } = await instance({ onSubmit: 'always' });
   inst.render(frame(0));
-  await assert.rejects(trigger(canvas, /** @type {any} */ ('sideways')), /unknown action/);
-  const pending = trigger(canvas, 'out');
-  inst.destroy();
-  assert.equal(await pending, false);
-  assert.equal(await trigger(canvas, 'in'), false);
+  assert.deepEqual([...handle.actions], ['impact', 'crack', 'out', 'in', 'play']);
+  assert.deepEqual([...ACTIONS], [...(plugin.actions ?? [])]);
+  await assert.rejects(handle.trigger('sideways'), /unknown action "sideways" of the plugin "shatter"; its actions are 'impact', 'crack', 'out', 'in', 'play'/);
+  await assert.rejects(handle.trigger('crack', { point: { x: NaN, y: 2 } }), (e) => e instanceof TypeError && /point/.test(e.message));
+  await assert.rejects(handle.trigger('crack', { point: 'centre' }), TypeError);
+  assert.equal(inst.continuous, false, 'a rejected action changes nothing');
+  const pending = handle.trigger('out');
+  handle.remove();
+  assert.equal(await pending, null);
+  await assert.rejects(handle.trigger('in'), /removed/);
+  assert.equal(errors.length, 0);
+});
+
+test('actions: crack and out end in their states; in heals; play round-trips; a submit supersedes a pending page trigger; actionPoint', async () => {
+  const { inst, handle, source, frame } = await instance({ onSubmit: 'invalid' });
+  inst.render(frame(0));
+  const crack = handle.trigger('crack');
+  inst.render(frame(10)); inst.render(frame(20 + CRACK_MS));
+  assert.equal(await crack, 'cracked');
+  const heal = handle.trigger('in');
+  inst.render(frame(600)); inst.render(frame(610 + CRACK_MS));
+  assert.equal(await heal, 'intact', 'in closes the cracks');
+  const out = handle.trigger('out');
+  for (let k = 0; k <= 200; k += 1) inst.render(frame(1200 + k * 8.33));
+  assert.equal(await out, 'gone');
+  assert.equal(await handle.settled(), 'gone');
+  const back = handle.trigger('in');
+  for (let k = 0; k <= 200; k += 1) inst.render(frame(3000 + k * 8.33));
+  assert.equal(await back, 'intact');
+  const play = handle.trigger('play');
+  let rest = 'pending';
+  handle.settled().then((v) => { rest = v; });
+  for (let k = 0; k <= 400; k += 1) inst.render(frame(5000 + k * 8.33));
+  assert.equal(await play, 'intact', 'out, a pause, in');
+  assert.equal(rest, 'intact');
+  const page = handle.trigger('crack');
+  inst.render(frame(9000));
+  source.invalid = false;
+  source.dispatchEvent(new Event('submit'));                // the form is valid: the running cracks close (the plugin's own 'in')
+  assert.equal(await page, null, 'the submit acts through the host (context.trigger): the page trigger is superseded');
+  inst.render(frame(9010)); inst.render(frame(9020 + CRACK_MS));
+  assert.equal(await handle.settled(), 'intact');
+  assert.deepEqual(actionPoint(undefined, 'shatter'), null);
+  assert.deepEqual(actionPoint({ x: 1, y: 2, z: 3 }, 'shatter'), { x: 1, y: 2 });
+  assert.throws(() => actionPoint({ x: 1 }, 'shatter'), /shatter: `point`/);
 });

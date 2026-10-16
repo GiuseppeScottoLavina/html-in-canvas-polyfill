@@ -5,9 +5,9 @@
  * A controlled digital glitch: RGB channel split, block displacement, scanline tearing, pixel-sorting streaks, grain and scanlines.
  *   mode 'ambient'  subtle and continuous: a faint split, grain and scanlines, and every ~1.7 s a micro-glitch of 70-160 ms
  *   mode 'burst'    nothing until triggered
- * Either mode plays a burst (~0.5 s, the pattern changes every 45 ms) when triggered: when an element of the drawn page starts to match
- * `watch` (by default a validation error: [aria-invalid="true"], .invalid, [data-state="error"]), on an `invalid` event in the page, when
- * the `trigger` option changes, or from the Burst button of mountUI.
+ * Either mode plays a burst (~0.5 s, the pattern changes every 45 ms): the action 'burst' (`handle.trigger('burst')`, resolves 'idle'
+ * when the burst has ended; also the Burst button of mountUI), and on its own when an element of the drawn page starts to match `watch`
+ * (by default a validation error: [aria-invalid="true"], .invalid, [data-state="error"]) or an `invalid` event fires in the page.
  *
  * Input mapper (`mapGlitchPoint`): the block table is the only layer that moves the page. Outside the displaced blocks the mapper is the
  * identity; inside a block it is the exact inverse of that block's offset (wrapped around the page, like the shader), so a click on a
@@ -42,6 +42,8 @@ export const PATTERN_MS = 45;
 export const AMBIENT_CYCLE_MS = 1700;
 export const DEFAULT_WATCH = '[aria-invalid="true"], .invalid, [data-state="error"]';
 export const MODES = Object.freeze(['ambient', 'burst']);
+/** The actions of `handle.trigger`: burst plays one burst now (bursts closer than 250 ms are one). */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['burst']));
 
 const MAPPER_SLOTS = 4;
 const TRIGGER_DEBOUNCE_MS = 250;
@@ -227,12 +229,11 @@ const UI_CSS = `
   `;
 
 /**
- * The plugin's controls: mode, intensity, and a button that plays a burst.
+ * The plugin's controls: mode, intensity, and a button that plays a burst (the action 'burst', through the host).
  * @param {Element} root
- * @param {{getOptions: () => Readonly<Record<string, unknown>>, setOptions: (patch: Record<string, unknown>) => void}} ui
- * @param {() => void} burst
+ * @param {{getOptions: () => Readonly<Record<string, unknown>>, setOptions: (patch: Record<string, unknown>) => void, trigger: (action: string) => Promise<unknown>}} ui
  */
-function mountGlitchUi(root, ui, burst) {
+function mountGlitchUi(root, ui) {
   const doc = root.ownerDocument;
   injectStyle(doc, 'glitch', UI_CSS);
   const n = ++uiSerial;
@@ -251,6 +252,7 @@ function mountGlitchUi(root, ui, burst) {
   output.textContent = `${range.value}%`;
   const onMode = () => ui.setOptions({ mode: select.value });
   const onRange = () => { output.textContent = `${range.value}%`; ui.setOptions({ intensity: Number(range.value) / 100 }); };
+  const burst = () => { ui.trigger('burst'); };
   select.addEventListener('change', onMode);
   range.addEventListener('input', onRange);
   button.addEventListener('click', burst);
@@ -282,7 +284,8 @@ async function createPipeline(device, code, format) {
 export const plugin = Object.freeze({
   type: 'glitch',
   apiVersion: /** @type {const} */ (2),
-  version: 1,
+  version: 2,
+  actions: ACTIONS,
   // the pass only writes its destination as a same-format colour attachment (it never samples or reads it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
@@ -306,30 +309,33 @@ export const plugin = Object.freeze({
       burstAt: -1, burstSerial: 0, reduced: !!win?.matchMedia?.('(prefers-reduced-motion: reduce)').matches, split: true, sort: true, noise: true,
     };
     let watch = DEFAULT_WATCH;
-    /** @type {unknown} */ let trigger;
     let burstPending = false;
+    /** a burst was asked for and has not ended (it ends at the first frame BURST_MS after its first one) */
+    let bursting = false;
     let lastTrigger = -Infinity;
     let endTimer = /** @type {any} */ (0);
+    /** @type {((state: string|null) => void)[]} */ const waiters = [];
+    const wait = () => (bursting ? new Promise((resolve) => { waiters.push(resolve); }) : 'idle');
 
     function burst() {
       const now = performance.now();
-      if (now - lastTrigger < TRIGGER_DEBOUNCE_MS) return;
+      if (now - lastTrigger < TRIGGER_DEBOUNCE_MS) return;   // one burst per validation pass: the running one
       lastTrigger = now;
       burstPending = true;   // the burst starts on the next frame, on the frame clock
+      bursting = true;
       context.requestRender();
     }
 
-    /** @param {Readonly<Record<string, unknown>>|undefined} o @param {boolean} first */
-    function applyOptions(o, first) {
+    /** @param {Readonly<Record<string, unknown>>|undefined} o */
+    function applyOptions(o) {
       if (!o) return;
       if (o.mode !== undefined) params.mode = MODES.includes(String(o.mode)) ? String(o.mode) : 'ambient';
       if (o.intensity !== undefined) params.intensity = clampNum(o.intensity, 0, 1, params.intensity);
       if (o.seed !== undefined) params.seed = Math.trunc(clampNum(o.seed, -1e9, 1e9, 1));
       for (const key of /** @type {const} */ (['split', 'sort', 'noise'])) if (o[key] !== undefined) params[key] = o[key] !== false;
       if (o.watch !== undefined) watch = typeof o.watch === 'string' ? o.watch : '';
-      if ('trigger' in o && !Object.is(o.trigger, trigger)) { if (!first) burst(); trigger = o.trigger; }
     }
-    applyOptions(initialOptions, true);
+    applyOptions(initialOptions);
 
     // validation errors in the drawn page start a burst: `invalid` events, and elements that start to match `watch`
     const onInvalid = () => burst();
@@ -346,7 +352,9 @@ export const plugin = Object.freeze({
 
     return {
       spatial: true,   // not `continuous`: frames are requested while the picture changes (ambient mode, a burst), none otherwise
-      setOptions(next) { applyOptions(next, false); context.requestRender(); },
+      setOptions(next) { applyOptions(next); context.requestRender(); },
+      runAction() { burst(); return wait(); },   // the one action, 'burst': resolves 'idle' once the burst has ended
+      settled: wait,
       render(frame) {
         if (burstPending) { burstPending = false; params.burstAt = frame.now; params.burstSerial += 1; }
         params.width = frame.width; params.height = frame.height; params.cssWidth = frame.cssWidth; params.cssHeight = frame.cssHeight;
@@ -355,6 +363,10 @@ export const plugin = Object.freeze({
         else if (params.reduced && params.burstAt >= 0 && frame.now - params.burstAt < BURST_MS && !endTimer) {
           // the steady reduced-motion burst: no frame until the one that removes it
           endTimer = setTimeout(() => { endTimer = 0; context.requestRender(); }, BURST_MS - (frame.now - params.burstAt) + 1);
+        }
+        if (bursting && !burstPending && frame.now - params.burstAt >= BURST_MS) {
+          bursting = false;
+          for (const resolve of waiters.splice(0)) resolve('idle');
         }
         device.queue.writeBuffer(uniforms, 0, globals);
         let bindGroup = bindGroups.get(frame.sourceView);
@@ -377,9 +389,10 @@ export const plugin = Object.freeze({
         mapperStates[mapperSlot].set(globals);
         return mappers[mapperSlot];
       },
-      mountUI(root, ui) { return mountGlitchUi(root, ui, burst); },
+      mountUI(root, ui) { return mountGlitchUi(root, ui); },
       destroy() {
         clearTimeout(endTimer);
+        for (const resolve of waiters.splice(0)) resolve(null);
         observer?.disconnect();
         source.removeEventListener('invalid', onInvalid, true);
         uniforms.destroy?.();

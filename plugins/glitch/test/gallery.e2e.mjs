@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // Gallery click-through of the glitch plugin in headless Chrome with trusted input (CDP), on examples/plugins/?effect=glitch:
 // the ambient mode animates within the frame cap and keeps the form usable, a Submit with an invalid email (the gallery's own
-// validation, unchanged) plays a burst, the Burst button of the plugin's controls plays one, burst mode at rest presents no frame,
+// validation, unchanged) plays a burst, the Burst button of the plugin's controls plays one, burst mode at rest presents no frame, the
+// action burst from the gallery's button (handle.trigger),
 // and prefers-reduced-motion. `--record` also writes media/glitch.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/glitch/test/gallery.e2e.mjs [--record]
 import { join } from 'node:path';
-import { ROOT, changed, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record');
 /** @type {{name: string, ok: boolean, detail: unknown}[]} */
@@ -70,6 +71,8 @@ async function main() {
     await sleep(400);
     const rest = await framesDuring(page, 1000);
     check('burst mode at rest presents no effect frame (nothing moves, nothing is focused)', rest <= 2, { framesPerSecond: rest });
+    // the action of the effect handle, as a page uses it (the gallery's button calls handle.trigger('burst'))
+    await actionChecks(page, check, [{ action: 'burst', state: 'idle', midMs: 90, minChanged: 0.03 * area }], { older: 'burst', newer: 'burst', state: 'idle' });
     const errors = await page.evaluate('window.__e2e.errors');
     check('no effecterror', errors.length === 0, errors);
 
@@ -106,6 +109,9 @@ async function main() {
     check('prefers-reduced-motion: ambient presents no frame at rest; a burst is one steady colour frame for its length and one frame that ends it, then the page as before',
       rest <= 2 && during.px > 0.005 * c.w * c.h && burstFrames <= 3 && after.px < 0.002 * c.w * c.h,
       { framesAtRest: rest, burstPx: during.px, framesDuringAndAfterBurst: burstFrames, afterPx: after.px });
+    const t0 = Date.now();
+    const state = await r.page.evaluate(`window.__gallery.handle.trigger('burst')`);
+    check('prefers-reduced-motion: the action burst plays the steady burst and resolves idle when it ends', state === 'idle' && Date.now() - t0 >= BURST_MS - 50, { state, ms: Date.now() - t0 });
   } finally {
     await r.close();
   }

@@ -52,8 +52,8 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 |---|---|---|
 | `hic-live-polyfill.iife.js` | 529,497 | 131,892 |
 | `hic-live-polyfill.iife.min.js` | 269,244 | 93,733 |
-| `hic-live-effects.iife.js` | 55,804 | 15,940 |
-| `hic-live-effects.iife.min.js` | 27,037 | 10,540 |
+| `hic-live-effects.iife.js` | 61,423 | 17,236 |
+| `hic-live-effects.iife.min.js` | 30,091 | 11,525 |
 | `hic-live-native-bridge.iife.js` | 31,709 | 8,628 |
 | `hic-live-native-bridge.iife.min.js` | 13,857 | 5,307 |
 | `hic-live-engines.iife.js` | 67,293 | 20,006 |
@@ -61,32 +61,32 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-gpu.iife.js` | 20,067 | 5,539 |
 | `hic-live-gpu.iife.min.js` | 10,469 | 4,015 |
 | `esm/index.js` | 591,034 | 157,342 |
-| `esm/effects.js` | 47,432 | 13,593 |
+| `esm/effects.js` | 52,785 | 14,873 |
 | `esm/native-bridge.js` | 21,963 | 5,809 |
 | `plugins/crt.iife.js` | 19,920 | 7,291 |
 | `plugins/crt.iife.min.js` | 13,766 | 6,152 |
 | `plugins/crt.esm.js` | 18,624 | 7,045 |
-| `plugins/disintegrate.iife.js` | 39,025 | 12,372 |
-| `plugins/disintegrate.iife.min.js` | 25,813 | 10,186 |
-| `plugins/disintegrate.esm.js` | 36,826 | 12,031 |
-| `plugins/glitch.iife.js` | 21,962 | 7,611 |
-| `plugins/glitch.iife.min.js` | 13,297 | 6,108 |
-| `plugins/glitch.esm.js` | 20,298 | 7,342 |
+| `plugins/disintegrate.iife.js` | 39,558 | 12,506 |
+| `plugins/disintegrate.iife.min.js` | 25,983 | 10,267 |
+| `plugins/disintegrate.esm.js` | 37,323 | 12,160 |
+| `plugins/glitch.iife.js` | 22,590 | 7,787 |
+| `plugins/glitch.iife.min.js` | 13,510 | 6,195 |
+| `plugins/glitch.esm.js` | 20,869 | 7,510 |
 | `plugins/holo-card.iife.js` | 19,758 | 6,974 |
 | `plugins/holo-card.iife.min.js` | 12,513 | 5,729 |
 | `plugins/holo-card.esm.js` | 18,344 | 6,736 |
 | `plugins/liquid-glass.iife.js` | 19,530 | 6,615 |
 | `plugins/liquid-glass.iife.min.js` | 11,932 | 5,304 |
 | `plugins/liquid-glass.esm.js` | 18,049 | 6,359 |
-| `plugins/page-curl.iife.js` | 50,820 | 15,264 |
-| `plugins/page-curl.iife.min.js` | 32,437 | 12,648 |
-| `plugins/page-curl.esm.js` | 48,125 | 14,910 |
-| `plugins/shatter.iife.js` | 49,240 | 15,168 |
-| `plugins/shatter.iife.min.js` | 28,829 | 12,107 |
-| `plugins/shatter.esm.js` | 46,561 | 14,796 |
-| `plugins/water.iife.js` | 16,828 | 5,913 |
-| `plugins/water.iife.min.js` | 10,553 | 4,884 |
-| `plugins/water.esm.js` | 15,595 | 5,678 |
+| `plugins/page-curl.iife.js` | 51,960 | 15,562 |
+| `plugins/page-curl.iife.min.js` | 32,899 | 12,874 |
+| `plugins/page-curl.esm.js` | 49,178 | 15,198 |
+| `plugins/shatter.iife.js` | 49,418 | 15,254 |
+| `plugins/shatter.iife.min.js` | 28,892 | 12,170 |
+| `plugins/shatter.esm.js` | 46,715 | 14,879 |
+| `plugins/water.iife.js` | 18,862 | 6,486 |
+| `plugins/water.iife.min.js` | 11,623 | 5,327 |
+| `plugins/water.esm.js` | 17,507 | 6,231 |
 <!-- sizes:end -->
 
 Size target: the design target for the minified core was 150 KB (gate G-bundle), and **the core in the table above is over it**. The bytes are spread across the whole pipeline (by module group, measured once: `api` about 26 %, `snapshot/capture` 24 %, `live` 20 %, `snapshot/store` 12 %, observers and scheduler 11 %); minifier settings cannot close the gap (mangling every long property name, which is not safe, would still leave about 183 KB), and the code that only some pages need (effects, the plugins, the native bridge, the Gecko / WebKit painters, the WebGL / WebGPU element textures) is already in separate bundles. `npm run check:bundle` therefore prints the target as KNOWN RED and fails on any growth above a recorded ceiling (`scripts/check-bundle.mjs`), which is raised only deliberately, with a measured reason.

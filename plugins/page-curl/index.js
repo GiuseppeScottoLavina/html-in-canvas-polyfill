@@ -13,6 +13,9 @@
  * layer. Every other pointer goes through the host's interposer and this plugin's input mapper (`mapCurlPoint`): the identity on the flat
  * page, the exact page point on the front of the roll that faces the reader, NO_TARGET on the back of the sheet (the roll, the folded
  * flap, the dog-ear) and on the page underneath.
+ *
+ * Action 'peek' (`handle.trigger('peek')`): the dog-ear opens and closes once now, as a hint that the page can be turned, also after the
+ * auto-peek stopped (the first drag stops it). It resolves 'rest' once the sheet lies still again; `handle.settled()` does the same.
  */
 
 import { NO_TARGET, isNoTarget } from '../../src/effects/no-target.js';
@@ -53,6 +56,10 @@ const INK = 0.3;             // the front's ink seen through the paper
 const HOVER_FRACTION = 0.6;   // hover lift (CSS px per axis), as a fraction of the hot zone, on top of the dog-ear
 const PEEK_DELAY_MS = 1500;   // first auto-peek after the first frame
 export const PEEK_MS = 1800;  // one auto-peek: the dog-ear opens and closes (sin^2)
+/** The actions of `handle.trigger`: peek opens and closes the dog-ear once now. */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['peek']));
+/** the peek of the action at `t` ms after its first frame: 0 .. 1 .. 0 over PEEK_MS. PURE. @param {number} t */
+export const peekOnce = (t) => (t >= 0 && t < PEEK_MS ? Math.sin((Math.PI * t) / PEEK_MS) ** 2 : 0);
 // springs (omega rad/s, zeta): the hand pulls the corner; released, the paper springs back; the rest pose eases in
 const DRAG = Object.freeze([30, 0.8]);
 const RELEASE = Object.freeze([13, 0.86]);
@@ -288,7 +295,8 @@ const RELEASING = 2;
 export const plugin = Object.freeze({
   type: 'page-curl',
   apiVersion: /** @type {const} */ (2),
-  version: 2,
+  version: 3,
+  actions: ACTIONS,
   // every pass that touches the destination only writes it as a colour attachment (the MSAA resolve); nothing samples it
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
@@ -405,6 +413,9 @@ export const plugin = Object.freeze({
     let born = -1;
     let dragged = false;
     let peekTimer = 0;
+    /** the peek of the action: -1 none, -2 asked for (it starts at the next frame), else its first frame's time */
+    let peekFrom = -1;
+    /** @type {((state: string|null) => void)[]} */ const waiters = [];
     /** @type {Element|null} */ let surface = null;
     let cursor = '';
     /** @type {Element} */ let captureEl = canvas;
@@ -520,8 +531,11 @@ export const plugin = Object.freeze({
       } else {
         const hint = hintCorner(corner);
         const want = phase === RELEASING ? active : hover ?? hint;
-        const peek = phase === IDLE && !hover && peeking() ? peekAt(now - born, autoPeek) : 0;
-        moving = peek > 0;
+        if (peekFrom === -2) peekFrom = now;
+        if (peekFrom >= 0 && now - peekFrom >= PEEK_MS) peekFrom = -1;
+        const manual = peekFrom >= 0 ? peekOnce(now - peekFrom) : 0;
+        const peek = phase === IDLE && !hover ? Math.max(peeking() ? peekAt(now - born, autoPeek) : 0, manual) : 0;
+        moving = peek > 0 || peekFrom >= 0;
         if (want !== active) {
           // another corner is wanted: lay this one flat first
           [gx, gy] = cornerAt(active, w, h);
@@ -566,14 +580,25 @@ export const plugin = Object.freeze({
       peekTimer = win.setTimeout(() => { peekTimer = 0; wake(); }, Math.max(16, wait));
     }
 
+    /** nothing moves: the last frame rested and no peek is asked for or playing */
+    const still = () => resting && phase === IDLE && peekFrom === -1;
+    const wait = () => (still() ? 'rest' : new Promise((resolve) => { waiters.push(resolve); }));
+
     return {
       spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift, auto-peek), none at rest
       setOptions(next) { applyOptions(next); wake(); },
+      runAction(_action, _options, info) {
+        // the one action, 'peek'; nothing opens with reduced motion or while a corner is held or springs back: the state it rests in next
+        if (!reducedMotion && !info.reducedMotion && phase === IDLE) { peekFrom = -2; stopPeekTimer(); wake(); }
+        return wait();
+      },
+      settled: wait,
       render(frame) {
         const w = frame.cssWidth, h = frame.cssHeight;
         pageWidth = w; pageHeight = h;
         const moving = step(frame.now, w, h);
         if (moving) { stopPeekTimer(); context.requestRender(); } else schedulePeek(frame.now);
+        if (waiters.length && still()) for (const resolve of waiters.splice(0)) resolve('rest');
         globals[0] = frame.width; globals[1] = frame.height;
         poseState(globals, w, h, active, sx.x, sy.x, radius);
         globals[12] = shadow; globals[13] = frame.sourceReady ? 1 : 0; globals[14] = INK; globals[15] = ROWS;
@@ -633,6 +658,7 @@ export const plugin = Object.freeze({
       },
       mountUI(root, ui) { return mountCurlUi(root, ui); },
       destroy() {
+        for (const resolve of waiters.splice(0)) resolve(null);
         for (const [type, fn] of documentListeners) doc.removeEventListener(type, fn, true);
         if (pointerId >= 0) { try { captureEl.releasePointerCapture(pointerId); } catch { /* gone */ } }
         stopPeekTimer();

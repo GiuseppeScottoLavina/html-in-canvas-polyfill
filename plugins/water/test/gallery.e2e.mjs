@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // The water plugin in the plugin gallery (examples/plugins/?effect=water) in headless Chrome with trusted input (CDP): pointer moves
 // raise ripples (the presented pixels change), a click through the rippling picture focuses the drawn name field and typing reaches it,
-// the frame cap bounds the effect frames, no console error. `--record` also writes media/water.webp.
+// the frame cap bounds the effect frames, the action drop from the gallery's button (handle.trigger), no console error. `--record` also writes media/water.webp.
 //   npm run build && node plugins/water/test/gallery.e2e.mjs [--record]     (`npm run test:plugins` runs every gallery e2e)
 import { join } from 'node:path';
-import { ROOT, changed, checklist, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('water gallery e2e');
 const g = await openGallery('water');
@@ -41,6 +41,12 @@ try {
   const at30 = await framesDuring(page, 1000);
   await page.evaluate(`document.getElementById('stage').frameCap = 120`);
   c.check('frame cap 30: at most about 30 effect frames per second', at30 >= 15 && at30 <= 33, { framesPerSecond: at30 });
+
+  // the action of the effect handle, as a page uses it (the gallery's button calls handle.trigger('drop'); a drop at the centre)
+  await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
+  await sleep(3500);   // the ripples of the pointer die out
+  await actionChecks(page, (n, ok, d) => c.check(n, ok, d), [{ action: 'drop', state: 'calm', midMs: 250, minChanged: 1500 }],
+    { older: 'drop', newer: 'drop', state: 'calm' }, { continuous: true });
 
   if (process.argv.includes('--record')) {
     await page.evaluate(`document.getElementById('name').value = 'Ada'`);
@@ -82,6 +88,11 @@ try {
   await sleep(200);
   const s = await page.evaluate(`({ active: document.activeElement && document.activeElement.id })`);
   c.check('reduced motion: a click through the still water focuses the drawn name field', s.active === 'name', s);
+  const calmFrame = (await shot(page)).img;
+  const dropped = await page.evaluate(`window.__gallery.handle.trigger('drop')`);
+  await sleep(300);
+  const afterDrop = changed((await shot(page)).img, calmFrame, 16);
+  c.check('reduced motion: the action drop starts no ripple and resolves calm at once', dropped === 'calm' && afterDrop.px < 2000, { state: dropped, ...afterDrop });
   const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
   c.check('reduced motion: no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));
 } finally {

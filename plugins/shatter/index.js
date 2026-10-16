@@ -11,20 +11,23 @@
  * gone or fly back, it BLOCKS pointer input: it returns NO_TARGET (the effects ABI value for "no element here") for every point, so the host
  * swallows the press. Keyboard input is not mapped by the host and still reaches the focused field.
  *
- * Triggers: `trigger(canvas, 'impact' | 'crack' | 'out' | 'in' | 'play', point?)` (exported), `handle.setOptions({ state })`, the Strike
- * button of mountUI, and, with `onSubmit`, the submit of the form inside the source. With prefers-reduced-motion nothing cracks or moves: a
- * second impact crossfades to the backdrop and back.
+ * Actions (the effect handle: `handle.trigger('impact' | 'crack' | 'out' | 'in' | 'play', { point })`, `handle.settled()`; states
+ * 'intact', 'cracked' and 'gone'), also run by the Strike button of mountUI and, with `onSubmit`, by the submit of the form inside the
+ * source; `handle.setOptions({ state })` sets the end state declaratively. With prefers-reduced-motion nothing cracks or moves: a second
+ * impact crossfades to the backdrop and back.
  */
 
 import { wgsl } from './wgsl.js';
 import { buildShards, crackedLayout, crackedSource, HEAL, MAX_SHARDS, MAX_VERTICES, SHARD_FLOATS, SPAN, VERTEX_FLOATS } from './shards.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor, sourcePointOnCanvas } from '../_lib/transition.js';
 import { injectStyle } from '../_lib/ui.js';
+import { actionPoint } from '../_lib/action.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectRenderFrame} EffectRenderFrame */
 
 export { NO_TARGET, blockedMapper, createTimeline, identityMapper } from '../_lib/transition.js';
+export { actionPoint } from '../_lib/action.js';
 
 /** What the plugin gallery and the build read (plugins/README.md). */
 export const meta = Object.freeze({
@@ -54,36 +57,14 @@ const DEFAULT_EDGE = Object.freeze([0.85, 0.96, 1]);
 export const CRACK_DIM = 0.5;
 
 const lostOn = new WeakSet();
+/**
+ * The actions of `handle.trigger`. impact: crack an intact pane, or break a cracked one (as 'play'); crack: crack and stay cracked; out:
+ * break and stay gone; in: fly back and close the cracks (also heals a cracked pane); play: out, a short pause, in. Option `point`: the
+ * impact point in canvas CSS px (default: the last pointer press, else the `impact` option, else the centre).
+ */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['impact', 'crack', 'out', 'in', 'play']));
 /** @typedef {'impact'|'crack'|'out'|'in'|'play'} Action */
-/** @type {WeakMap<HTMLCanvasElement, (action: Action, point?: {x: number, y: number}|null) => Promise<boolean>>} */
-const controllers = new WeakMap();
-/** @type {WeakMap<HTMLCanvasElement, () => Promise<'intact'|'cracked'|'gone'|null>>} */
-const settlers = new WeakMap();
 
-/**
- * Resolves once nothing of the shatter plugin on `canvas` moves any more, with what the pane then shows: 'intact', 'cracked' or 'gone'
- * (null when no instance runs there or it is removed first). When something moves, it resolves after the frame that draws the end state
- * was rendered; when nothing moves, at once. A deterministic signal for tests and page code (no polling, no timeout).
- * @param {HTMLCanvasElement} canvas
- * @returns {Promise<'intact'|'cracked'|'gone'|null>}
- */
-export function settled(canvas) {
-  const wait = settlers.get(canvas);
-  return wait ? wait() : Promise.resolve(null);
-}
-
-/**
- * Start a transition of the shatter plugin running on `canvas`.
- * @param {HTMLCanvasElement} canvas
- * @param {Action} [action]  impact: crack an intact pane, or break a cracked one ('play'); crack: crack and stay cracked; out: break and stay
- *   gone; in: fly back and close the cracks (also heals a cracked pane); play: out, a short pause, in
- * @param {{x: number, y: number}|null} [point]  impact point in canvas css px (default: the last pointer press, else the `impact` option, else the centre)
- * @returns {Promise<boolean>}  true when that end state is reached; false when superseded, or when no instance runs on the canvas
- */
-export function trigger(canvas, action = 'play', point = null) {
-  const run = controllers.get(canvas);
-  return run ? run(action, point) : Promise.resolve(false);
-}
 
 /** @param {Readonly<Record<string, unknown>>} o */
 export function readOptions(o) {
@@ -149,7 +130,8 @@ const UI_CSS = `.hic-shatter-ui{display:grid;grid-template-columns:auto 1fr;gap:
 export const plugin = Object.freeze({
   type: 'shatter',
   apiVersion: /** @type {const} */ (2),
-  version: 2,
+  version: 3,
+  actions: ACTIONS,
   // every pass only writes its destination as a same-format colour attachment (the shard and debris blending never samples it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
@@ -206,7 +188,8 @@ export const plugin = Object.freeze({
 
     const win = /** @type {any} */ (canvas.ownerDocument.defaultView);
     const media = win?.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
-    const reduced = () => s.reducedMotion ?? !!media?.matches;
+    /** @param {boolean} [host]  prefers-reduced-motion as the host read it for an action */
+    const reduced = (host) => s.reducedMotion ?? host ?? !!media?.matches;
     let s = readOptions(initialOptions ?? {});
     const recovering = lostOn.has(canvas);
     lostOn.delete(canvas);
@@ -262,15 +245,17 @@ export const plugin = Object.freeze({
       layoutPending = true;
     };
 
-    /** @param {Action} action @param {{x: number, y: number}|null} [point] */
-    function request(action, point = null) {
-      if (!['impact', 'crack', 'out', 'in', 'play'].includes(action)) return Promise.reject(new TypeError('shatter: unknown action ' + action));
+    /**
+     * @param {Action} action @param {{x: number, y: number}|null} [point] @param {boolean} [hostReduced]
+     * @returns {Promise<boolean>|null}  true when the end state is reached, false when superseded; null: nothing started (a crack with reduced motion or while shards fall)
+     */
+    function request(action, point = null, hostReduced = undefined) {
       if (destroyed) return Promise.resolve(false);
-      const calm = reduced();
+      const calm = reduced(hostReduced);
       let done;
       if (action === 'impact') action = calm || !fall.assembled || cracked() || cracks.animating ? 'play' : 'crack';
       if (action === 'crack') {
-        if (calm || !fall.assembled) return Promise.resolve(false);           // nothing cracks with reduced motion, nor while shards fall
+        if (calm || !fall.assembled) return null;                              // nothing cracks with reduced motion, nor while shards fall
         if (intact()) newPattern(point);
         done = cracks.request('out');
       } else if (action === 'in') {
@@ -288,12 +273,11 @@ export const plugin = Object.freeze({
       context.requestRender();
       return done;
     }
-    controllers.set(canvas, request);
     /** @type {((state: 'intact'|'cracked'|'gone'|null) => void)[]} */ const waiters = [];
     const restingState = () => (!fall.assembled ? 'gone' : cracks.phase === 'gone' ? 'cracked' : 'intact');
     const moving = () => cracks.animating || fall.animating;
+    /** resolves once nothing moves, after the frame that draws the end state was rendered; at once when nothing moves */
     const wait = () => (moving() ? new Promise((resolve) => { waiters.push(resolve); }) : Promise.resolve(restingState()));
-    settlers.set(canvas, wait);
     if (fall.phase === 'gone' && s.state === 'in') { crossfade = reduced(); request('in'); }   // the intro: the shards fly into place
 
     context.listen('pointerdown', (event) => {
@@ -308,12 +292,12 @@ export const plugin = Object.freeze({
       const bad = findInvalid(source, s.invalidSelector);
       const match = s.onSubmit === 'always' || (s.onSubmit === 'invalid' ? !!bad : !bad);
       // the form was fixed: the glass heals, also while its cracks are still running (they close from where they are)
-      if (!match) { if (!cracks.assembled && cracks.phase !== 'in') request('in'); return; }
+      if (!match) { if (!cracks.assembled && cracks.phase !== 'in') context.trigger('in'); return; }
       if (cracks.animating) return;                                                // a second impact while the cracks run changes nothing
       const recent = performance.now() - pointer.t < POINTER_MS;
       const el = bad ?? /** @type {any} */ (event).submitter;
       const at = !recent && el?.getBoundingClientRect ? sourcePointOnCanvas(source.getBoundingClientRect(), el.getBoundingClientRect(), { width: canvas.clientWidth, height: canvas.clientHeight }) : null;
-      request('impact', at);
+      context.trigger('impact', at ? { point: at } : undefined);   // through the host, like handle.trigger
     };
     source.addEventListener('submit', onSubmit);
     device.lost?.then?.(() => { if (!destroyed) lostOn.add(canvas); });
@@ -327,6 +311,11 @@ export const plugin = Object.freeze({
         if (s.state !== stateOption) { stateOption = s.state; request(s.state === 'cracked' ? 'crack' : s.state); }
         context.requestRender();
       },
+      runAction(action, options, info) {
+        const run = request(/** @type {Action} */ (action), actionPoint(options.point, 'shatter'), info.reducedMotion);
+        return run ? run.then((done) => (done ? restingState() : null)) : wait();   // nothing started: the state it rests in
+      },
+      settled: wait,
       render(/** @type {EffectRenderFrame} */ frame) {
         lastTexture = frame.sourceTexture;
         lastView = frame.sourceView;
@@ -398,7 +387,7 @@ export const plugin = Object.freeze({
         const count = /** @type {HTMLInputElement} */ (box.querySelector('input'));
         count.value = String(readOptions(ui.getOptions()).cracks);
         const button = /** @type {HTMLButtonElement} */ (box.querySelector('button'));
-        const onStrike = () => { trigger(canvas, 'impact'); };   // the impact: the pointer press on this button; a second strike breaks the pane
+        const onStrike = () => { ui.trigger('impact'); };   // the impact: the pointer press on this button; a second strike breaks the pane
         const onCount = () => ui.setOptions({ cracks: Number(count.value) });
         button.addEventListener('click', onStrike);
         count.addEventListener('input', onCount);
@@ -410,9 +399,7 @@ export const plugin = Object.freeze({
         fall.cancel();
         cracks.cancel();
         for (const resolve of waiters.splice(0)) resolve(null);
-        if (settlers.get(canvas) === wait) settlers.delete(canvas);
         source.removeEventListener('submit', onSubmit);
-        if (controllers.get(canvas) === request) controllers.delete(canvas);
         uniforms.destroy?.();
         vertexBuffer.destroy?.();
         frozen?.destroy?.();

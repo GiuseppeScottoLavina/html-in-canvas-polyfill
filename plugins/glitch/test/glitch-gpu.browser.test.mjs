@@ -1,8 +1,9 @@
 // The glitch input mapper against the pixels the GPU really produced (plugins/_shared/gpu-check.mjs): the displacement alone with the
 // shared check, then every layer on (split, sort streaks, grain, scanlines) read on the green channel, which the split does not move;
-// a wrong-mapper control (the next pattern of the same burst); the ambient mode; the GPU time of the pass.
+// a wrong-mapper control (the next pattern of the same burst); the ambient mode; the action 'burst' through the effect handle; the GPU
+// time of the pass.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { HEADER_FLOATS, PATTERN_MS, UNIFORM_FLOATS, fillGlitchFrame, mapGlitchPoint, meta, plugin } from '/plugins/glitch/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -100,10 +101,20 @@ gpuTest('device loss mid-burst: the host re-creates the plugin on a new device, 
   assert.ok(real.bright > 2000 && real.wrong <= 5 && id.wrong >= 200, `after recovery: mapper ${real.wrong}, identity ${id.wrong}`);
 });
 
+gpuTest('the action burst through the effect handle: a burst plays, every checked frame agrees with its mapper, it resolves idle and burst mode is at rest again', async (t) => {
+  const r = await runActionOnGpu(t, plugin, { ...BURST, split: false, sort: false, noise: false }, 'burst', undefined, { scene, maxMs: 2000, checkEvery: 3 });
+  console.error(`glitch action: ${r.frames} frames, ${r.checked} checked, at most ${r.maxChanged} px changed, worst mapper ${r.worst?.wrong} px wrong`);
+  assert.equal(r.state, 'idle');
+  assert.ok(r.frames >= 25 && r.frames <= 40, `the burst lasts about ${520} ms: ${r.frames} frames at 60 Hz`);
+  assert.ok(r.maxChanged > 300, `the burst moved pixels: ${r.maxChanged}`);
+  assert.ok(r.worst !== null && r.checked >= 5 && r.worst.wrong <= 5, `a frame of the burst disagrees with its mapper on ${r.worst?.wrong} px`);
+  assert.ok(changedPixels(r.last, r.first) <= 5, 'the frame that resolves it is the page at rest');
+});
+
 gpuTest('GPU time of the pass at 2200x1240 (1100x620 CSS px, DPR 2), 240 burst frames with every layer on; the template pass as baseline', async () => {
   const base = await measurePassGpuTime(template, { offset: 24 });
   // the clock advances 2 ms per frame so that all 240 measured frames fall inside the 520 ms burst (the most expensive frames)
-  const m = await measurePassGpuTime(plugin, { ...BURST }, { clockMs: 2, before: (_canvas, instance) => instance.setOptions({ ...BURST, trigger: 1 }) });
+  const m = await measurePassGpuTime(plugin, { ...BURST }, { clockMs: 2, before: (_canvas, instance) => { instance.runAction?.('burst', {}, { reducedMotion: false }); } });
   if (!m || !base) { console.error('glitch GPU time: timestamp-query not available, NOT measured'); return; }
   console.error(`glitch GPU time (${m.adapter}): back-to-back ${m.throughputMs.toFixed(3)} ms/frame (template ${base.throughputMs.toFixed(3)}); pass timestamps median ${m.medianMs.toFixed(3)} ms, p95 ${m.p95Ms.toFixed(3)} ms, max ${m.maxMs.toFixed(3)} ms; template pass median ${base.medianMs.toFixed(3)} ms, p95 ${base.p95Ms.toFixed(3)} ms (${m.width}x${m.height}, 120 Hz budget ${m.budgetMs.toFixed(2)} ms)`);
   assert.ok(m.p95Ms < m.budgetMs / 2 && m.throughputMs < m.budgetMs / 2, `p95 ${m.p95Ms} ms / back-to-back ${m.throughputMs} ms: more than half of the 120 Hz frame`);

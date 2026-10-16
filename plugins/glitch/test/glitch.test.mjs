@@ -1,12 +1,13 @@
 // Node tests of the glitch plugin: the folder contract, the block generator, the mapper against an independent port of the shader's
-// block loop, the frame function (bursts, ambient micro-glitches, reduced motion, the same picture at every frame cap), the triggers
-// and the render path (no allocation per frame).
+// block loop, the frame function (bursts, ambient micro-glitches, reduced motion, the same picture at every frame cap), the triggers,
+// the action 'burst' through the effect handle (plugins/_shared/node-host.mjs) and the render path (no allocation per frame).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import {
-  AMBIENT_CYCLE_MS, BURST_MS, HEADER_FLOATS, MAX_BLOCKS, PATTERN_MS, UNIFORM_FLOATS, fillBlocks, fillGlitchFrame, hash01, mapGlitchPoint, meta, plugin,
+  ACTIONS, AMBIENT_CYCLE_MS, BURST_MS, HEADER_FLOATS, MAX_BLOCKS, PATTERN_MS, UNIFORM_FLOATS, fillBlocks, fillGlitchFrame, hash01, mapGlitchPoint, meta, plugin,
 } from '../index.js';
+import { nodeHandle } from '../../_shared/node-host.mjs';
 
 const W = 480;
 const H = 320;
@@ -183,21 +184,66 @@ async function created(t, env, options) {
   return plugin.create(/** @type {any} */ (env.context), options);
 }
 
-test('triggers: an `invalid` event in the page and a change of the `trigger` option start a burst on the next frame (not the initial value)', async (t) => {
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test('triggers: an `invalid` event in the page and the action \'burst\' start a burst on the next frame; the action resolves \'idle\' at the frame that ends it', async (t) => {
   const env = fakeEnv();
-  const inst = await created(t, env, { mode: 'burst', intensity: 1, trigger: 0 });
+  const inst = await created(t, env, { mode: 'burst', intensity: 1 });
   inst.render(env.frame(100));
-  assert.equal(env.writes.at(-1)[8], 0, 'burst mode at rest; the initial trigger value is not a trigger');
+  assert.equal(env.writes.at(-1)[8], 0, 'burst mode at rest');
+  assert.equal(await inst.settled(), 'idle', 'nothing plays: at once');
   env.source.dispatchEvent(new Event('invalid'));
   inst.render(env.frame(200));
   assert.ok(env.writes.at(-1)[8] > 0, 'the burst started on this frame');
   inst.render(env.frame(200 + BURST_MS + 1));
   assert.equal(env.writes.at(-1)[8], 0);
   await new Promise((r) => setTimeout(r, 260));   // the triggers are debounced (one burst per validation pass)
-  inst.setOptions({ mode: 'burst', intensity: 1, trigger: 1 });
+  let state = 'pending';
+  Promise.resolve(inst.runAction('burst', {}, { reducedMotion: false })).then((v) => { state = v; });
   inst.render(env.frame(2000));
-  assert.ok(env.writes.at(-1)[8] > 0);
+  assert.ok(env.writes.at(-1)[8] > 0, 'the action played a burst');
+  inst.render(env.frame(2000 + BURST_MS - 1));
+  await flush();
+  assert.equal(state, 'pending', 'still playing');
+  inst.render(env.frame(2000 + BURST_MS));
+  await flush();
+  assert.equal(state, 'idle', 'resolved with the frame that ends the burst');
+  inst.setOptions({ mode: 'burst', intensity: 1, trigger: 1 });
+  inst.render(env.frame(3000));
+  assert.equal(env.writes.at(-1)[8], 0, 'an option named `trigger` is no trigger: actions go through handle.trigger');
   inst.destroy();
+});
+
+test('the action through the effect handle: \'burst\' only; a newer trigger supersedes; removal resolves null; reduced motion ends on the timer frame', async (t) => {
+  const env = fakeEnv();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
+  t.after(() => { globalThis.fetch = realFetch; });
+  const { handle, inst } = await nodeHandle(plugin, { mode: 'burst', intensity: 1 }, { device: env.context.device, canvas: env.context.canvas, source: env.source });
+  assert.deepEqual([...handle.actions], ['burst']);
+  assert.deepEqual([...ACTIONS], [...(plugin.actions ?? [])]);
+  await assert.rejects(handle.trigger('play'), /unknown action "play" of the plugin "glitch"; its actions are 'burst'/);
+  inst.render(env.frame(0));
+  const first = handle.trigger('burst');
+  const second = handle.trigger('burst');
+  assert.equal(await first, null, 'superseded by the newer trigger (the bursts are one: debounced)');
+  inst.render(env.frame(10));
+  inst.render(env.frame(10 + BURST_MS));
+  assert.equal(await second, 'idle');
+  await new Promise((r) => setTimeout(r, 260));
+  const pending = handle.trigger('burst');
+  handle.remove();
+  assert.equal(await pending, null);
+  const calm = fakeEnv({ reduced: true });
+  const c = await nodeHandle(plugin, { mode: 'ambient', intensity: 1 }, { device: calm.context.device, canvas: calm.context.canvas, source: calm.source, reducedMotion: true });
+  c.inst.render(calm.frame(0));
+  const steady = c.handle.trigger('burst');
+  c.inst.render(calm.frame(16));
+  assert.ok(calm.writes.at(-1)[10] > 0 && calm.writes.at(-1)[8] === 0, 'reduced motion: colour only, no block');
+  await new Promise((r) => setTimeout(r, BURST_MS + 30));   // the plugin asks for the frame that ends the steady burst
+  c.inst.render(calm.frame(16 + BURST_MS));
+  assert.equal(await steady, 'idle');
+  c.handle.remove();
 });
 
 test('a mapper keeps the blocks of its own frame (frozen slots; the gesture snapshot copies)', async (t) => {

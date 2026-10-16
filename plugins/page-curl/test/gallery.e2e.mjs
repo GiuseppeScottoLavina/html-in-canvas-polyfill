@@ -3,13 +3,14 @@
 // the affordances (the hint label, the dog-ear at rest, the auto-peek until the first drag, the hover lift and the grab cursor), the flat
 // page takes clicks and typing, a drag of the dog-eared corner curls the page and NOTHING of the drag reaches the form (no pointer/mouse
 // event, no click, no focus change, no selection), typing DURING the drag reaches the focused field and changes the curled sheet (the page
-// stays live), the release springs back to the dog-ear and clicks map again, the frame cap, and prefers-reduced-motion. `--record` also
+// stays live), the release springs back to the dog-ear and clicks map again, the action peek from the gallery's button (handle.trigger),
+// the frame cap, and prefers-reduced-motion. `--record` also
 // writes media/page-curl.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/page-curl/test/gallery.e2e.mjs [--record]
 import { join } from 'node:path';
-import { ROOT, changed, drag, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, drag, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record');
 /** @type {{name: string, ok: boolean, detail: unknown}[]} */
@@ -137,6 +138,8 @@ async function main() {
       { releaseFrames, restPaper, restAfter });
     const quiet = await framesDuring(page, 5600);
     check('after the first drag the auto-peek stops: no frame in 5.6 s at rest (one peek period is 5 s)', quiet <= 2, { frames: quiet });
+    // the action of the effect handle, as a page uses it (the gallery's button calls handle.trigger('peek')): the hint comes back on demand
+    await actionChecks(page, check, [{ action: 'peek', state: 'rest', midMs: 900, minChanged: 1000 }], { older: 'peek', newer: 'peek', state: 'rest' });
 
     await page.evaluate(`document.getElementById('stage').frameCap = 30`);
     await sleep(300);
@@ -169,6 +172,9 @@ async function main() {
     const back = changed((await shot(r.page)).img, flat).px;
     check('prefers-reduced-motion: the drag still curls (it follows the hand); the release lays the page back at once, without animation frames',
       curled > 0.08 * c.w * c.h && frames <= 3 && back < 0.002 * c.w * c.h, { curledPx: curled, framesAfterRelease: frames, differingPx: back });
+    const state = await r.page.evaluate(`window.__gallery.handle.trigger('peek')`);
+    const later = await framesDuring(r.page, 1000);
+    check('prefers-reduced-motion: the action peek opens nothing and resolves rest at once', state === 'rest' && later <= 2, { state, frames: later });
   } finally {
     await r.close();
   }

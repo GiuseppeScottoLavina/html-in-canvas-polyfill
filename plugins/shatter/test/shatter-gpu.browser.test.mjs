@@ -6,7 +6,7 @@ import { assert, sleep } from '/test/unit/lib/t.js';
 import { checkMapperAgainstGpu, gpuAvailable, gpuTest } from '/plugins/_shared/gpu-check.mjs';
 import { nonDominantShare } from '/test/unit/gpu-effects/lib/rig.mjs';
 import { CONTROLS, DURATION, H, W, diff, diffNear, transitionRig } from '/plugins/_shared/transition-gpu-rig.mjs';
-import { plugin, trigger } from '/plugins/shatter/index.js';
+import { plugin } from '/plugins/shatter/index.js';
 import { isNoTarget } from '/src/effects/no-target.js';
 
 console.error(`shatter-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
@@ -15,7 +15,7 @@ const { reference, start } = transitionRig(plugin, { duration: DURATION });
 
 gpuTest('idle: the presented frame equals the host passthrough bit for bit, and the mapper is the identity', async (t) => {
   const ref = await reference(t);
-  const { rig, mappers } = await start(t, { intro: false });
+  const { rig, handle, mappers } = await start(t, { intro: false });
   rig.tick(performance.now());
   const d = diff(rig.snap(), ref);
   assert.equal(d.max, 0, `idle frame differs from the passthrough by up to ${d.max} levels`);
@@ -30,7 +30,7 @@ gpuTest('cracked pane: the mapper agrees with the GPU pixels (the inverse of the
 });
 
 gpuTest('a click through the cracked glass reaches the control drawn there; while the cracks run it is swallowed', async (t) => {
-  const { rig, mappers } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
+  const { rig, handle, mappers } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
   const btn = /** @type {HTMLButtonElement} */ (rig.layerEl.querySelector('#btn'));
   let clicks = 0;
   btn.addEventListener('click', () => { clicks += 1; });
@@ -45,7 +45,7 @@ gpuTest('a click through the cracked glass reaches the control drawn there; whil
   };
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'crack', { x: 120, y: 90 });
+  handle.trigger('crack', { point: { x: 120, y: 90 } });
   rig.tick(t0 + 10);
   rig.tick(t0 + 100);
   press();
@@ -60,15 +60,15 @@ gpuTest('a click through the cracked glass reaches the control drawn there; whil
 
 gpuTest('the second impact breaks the pane: mid frames non-blank, moving, input blocked; it ends on the source with the identity', async (t) => {
   const ref = await reference(t);
-  const { rig, mappers } = await start(t, { intro: false });
+  const { rig, handle, mappers } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  await Promise.all([trigger(rig.canvas, 'impact', { x: 300, y: 120 }), (async () => { rig.tick(t0 + 10); rig.tick(t0 + 600); })()]);
+  await Promise.all([handle.trigger('impact', { point: { x: 300, y: 120 } }), (async () => { rig.tick(t0 + 10); rig.tick(t0 + 600); })()]);
   const cracked = rig.snap();
   const dc = diff(cracked, ref);
   console.error(`shatter cracked pane vs source: ${dc.over} px`);
   assert.ok(dc.over > 500 && dc.over < 0.25 * W * H, 'cracked: crack lines and shifted pieces, the form still there');
-  const done = trigger(rig.canvas, 'impact');
+  const done = handle.trigger('impact');
   rig.tick(t0 + 700);                                  // the clock of the fall starts here
   const shots = [];
   // physics 0.31, 0.48 and 0.65 s (the fall starts at 0.17 s): on this small canvas most shards have fallen out by 0.8 s
@@ -82,7 +82,7 @@ gpuTest('the second impact breaks the pane: mid frames non-blank, moving, input 
   // out (1000 ms) + hold (300 ms) + in (1000 ms); step at 120 Hz to the end
   for (let now = t0 + 700 + 400; now <= t0 + 700 + 2400; now += 8.33) rig.tick(now);
   rig.tick(t0 + 3200);
-  assert.equal(await done, true, 'the play promise resolves true');
+  assert.equal(await done, 'intact', 'the play promise resolves with the end state: intact');
   const end = diff(rig.snap(), ref);
   assert.equal(end.max, 0, `reassembled frame differs from the source by up to ${end.max} levels (the cracks closed too)`);
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 }, 'identity again');
@@ -90,10 +90,10 @@ gpuTest('the second impact breaks the pane: mid frames non-blank, moving, input 
 
 gpuTest('frame-cap independence: the frame at 400 ms is the same at 120 Hz and at a 15 fps cap', async (t) => {
   const run = async (/** @type {number} */ every) => {
-    const { rig, host } = await start(t, { intro: false });
+    const { rig, host, handle } = await start(t, { intro: false });
     const t0 = performance.now();
     rig.tick(t0);
-    trigger(rig.canvas, 'out');
+    handle.trigger('out');
     for (let k = 0; k <= 48; k += 1) rig.tick(t0 + 10 + k * 8.33, k % every === 0 || k === 48);
     const img = rig.snap();
     host.destroy();
@@ -106,7 +106,7 @@ gpuTest('frame-cap independence: the frame at 400 ms is the same at 120 Hz and a
 });
 
 gpuTest('input: a click on a control is swallowed mid-transition and reaches it when idle (positive control)', async (t) => {
-  const { rig } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
+  const { rig, handle } = await start(t, { intro: false }, { interposer: true, html: CONTROLS });
   const btn = /** @type {HTMLButtonElement} */ (rig.layerEl.querySelector('#btn'));
   const txt = /** @type {HTMLInputElement} */ (rig.layerEl.querySelector('#txt'));
   let clicks = 0;
@@ -125,7 +125,7 @@ gpuTest('input: a click on a control is swallowed mid-transition and reaches it 
   press();
   assert.equal(clicks, 1, 'idle: the click reaches the button');
   txt.focus();
-  trigger(rig.canvas, 'play');
+  handle.trigger('play');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.4);
   press();
@@ -135,13 +135,13 @@ gpuTest('input: a click on a control is swallowed mid-transition and reaches it 
 
 gpuTest('prefers-reduced-motion: a crossfade, no pixel moves (each pixel is the source mixed with the backdrop)', async (t) => {
   const ref = await reference(t);
-  const { rig } = await start(t, { intro: false, reducedMotion: true });
+  const { rig, handle } = await start(t, { intro: false, reducedMotion: true });
   const t0 = performance.now();
   rig.tick(t0);
-  assert.equal(await trigger(rig.canvas, 'crack'), false, 'nothing cracks');
+  assert.equal(await handle.trigger('crack'), 'intact', 'nothing cracks: it resolves at once with the state it rests in');
   rig.tick(t0 + 5);
   assert.equal(diff(rig.snap(), ref).max, 0, 'the frame is the source');
-  trigger(rig.canvas, 'impact');
+  handle.trigger('impact');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + DURATION * 0.5);
   const img = rig.snap();
@@ -154,18 +154,18 @@ gpuTest('prefers-reduced-motion: a crossfade, no pixel moves (each pixel is the 
   assert.ok(diff(img, ref).over > 1000, 'and it is not the source (positive control)');
 });
 
-gpuTest('device loss mid-transition: the plugin comes back assembled (no intro), with the identity mapper; the pending promise resolves false', async (t) => {
+gpuTest('device loss mid-transition: the plugin comes back assembled (no intro), with the identity mapper; the pending trigger resolves null', async (t) => {
   const ref = await reference(t);
-  const { rig, devices, mappers } = await start(t, { intro: true });
+  const { rig, handle, devices, mappers } = await start(t, { intro: true });
   const t0 = performance.now();
   for (let now = t0; now <= t0 + DURATION + 100; now += 50) rig.tick(now);   // the intro, to its end
-  const pending = trigger(rig.canvas, 'out');
+  const pending = handle.trigger('out');
   rig.tick(t0 + DURATION + 150);
   rig.tick(t0 + DURATION + 450);
   devices[0].destroy();
   for (let i = 0; i < 200 && devices.length < 2; i += 1) await sleep(10);
   assert.equal(devices.length, 2, 'created again on a new device');
-  assert.equal(await pending, false);
+  assert.equal(await pending, null, 'the action died with the device');
   rig.tick(performance.now());
   assert.equal(diff(rig.snap(), ref).max, 0, 'assembled frame right after the recovery');
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 5, y: 6, width: W, height: H }), { x: 5, y: 6 });
@@ -173,7 +173,7 @@ gpuTest('device loss mid-transition: the plugin comes back assembled (no intro),
 
 gpuTest('intro and submit wiring: the shards fly together; an invalid submit cracks, a second one breaks it, a valid one heals the cracks', async (t) => {
   const ref = await reference(t);
-  const { rig } = await start(t, { intro: true, onSubmit: 'invalid' }, { html: CONTROLS });
+  const { rig, handle } = await start(t, { intro: true, onSubmit: 'invalid' }, { html: CONTROLS });
   const t0 = performance.now();
   rig.tick(t0);
   assert.ok(nonDominantShare(rig.snap()) < 0.01, 'the intro starts with every shard gone (only the backdrop)');
@@ -208,12 +208,12 @@ gpuTest('intro and submit wiring: the shards fly together; an invalid submit cra
 
 gpuTest('the cracks start at the pointer: first crack lines only near it, then the shards near it move first', async (t) => {
   const ref = await reference(t);
-  const { rig } = await start(t, { intro: false, pieces: 40 });
+  const { rig, handle } = await start(t, { intro: false, pieces: 40 });
   const t0 = performance.now();
   rig.tick(t0);
   const r = rig.canvas.getBoundingClientRect();
   rig.layerEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + 380, clientY: r.top + 80 }));
-  trigger(rig.canvas, 'crack');
+  handle.trigger('crack');
   rig.tick(t0 + 10);
   rig.tick(t0 + 10 + 25);                            // 25 ms of the 450 ms the cracks take: they have run about 70 px
   const crack = rig.snap();
@@ -221,7 +221,7 @@ gpuTest('the cracks start at the pointer: first crack lines only near it, then t
   rig.tick(t0 + 600);
   const cracked = rig.snap();
   const farLater = diffNear(cracked, ref, 80, 260, 60);
-  trigger(rig.canvas, 'impact');
+  handle.trigger('impact');
   rig.tick(t0 + 610);
   rig.tick(t0 + 610 + DURATION * (0.25 / 1.7));     // physics 250 ms: the fall started at 170 ms, near the impact first
   const early = rig.snap();
@@ -234,10 +234,10 @@ gpuTest('the cracks start at the pointer: first crack lines only near it, then t
 
 gpuTest('after a play from an off-centre impact the last frame equals the source at every sampled pixel and the mapper is the identity', async (t) => {
   const ref = await reference(t);
-  const { rig, mappers } = await start(t, { intro: false });
+  const { rig, handle, mappers } = await start(t, { intro: false });
   const t0 = performance.now();
   rig.tick(t0);
-  trigger(rig.canvas, 'play', { x: 100, y: 100 });
+  handle.trigger('play', { point: { x: 100, y: 100 } });
   for (let now = t0 + 10; now <= t0 + 2500; now += 33) rig.tick(now);
   const img = rig.snap();
   const m = /** @type {any} */ (mappers.at(-1));

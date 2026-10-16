@@ -95,6 +95,67 @@ export async function idle(page, quietMs = 400, timeoutMs = 10000) {
   }
 }
 
+/**
+ * A trusted click on the gallery's button of a plugin action (each calls handle.trigger(action) and records window.__gallery.lastAction);
+ * the button sits above the canvas, so the page is scrolled to it and then back to the canvas.
+ * @param {any} page @param {string} action
+ */
+export async function clickAction(page, action) {
+  const selector = `#about button[data-action="${action}"]`;
+  await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: 'center' })`);
+  await sleep(80);
+  await clickOn(page, selector);
+  await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'start' })`);
+}
+
+/** The result of the last gallery action button once its trigger settled: {action, state, error}, or null after `timeoutMs`. @param {any} page */
+export async function actionResult(page, timeoutMs = 10000) {
+  const t = Date.now();
+  for (;;) {
+    const r = await page.evaluate('window.__gallery.lastAction');
+    if (r && r.done) return r;
+    if (Date.now() - t > timeoutMs) return null;
+    await sleep(50);
+  }
+}
+
+/**
+ * The actions of the selected plugin, as a page uses them: each step clicks the gallery's button of the action (trusted input; the button
+ * calls handle.trigger) and checks that the presented frame changed while it ran (unless `moves: false`), that it resolves with the
+ * expected state and that the host goes idle again. Then, from page script on window.__gallery.handle: an unknown action rejects with a
+ * TypeError that lists the plugin's actions, a newer trigger resolves the pending one with null, and settled() reports the state at rest.
+ * @param {any} page
+ * @param {(name: string, ok: boolean, detail?: unknown) => unknown} check
+ * @param {{action: string, state: string, moves?: boolean, midMs?: number, minChanged?: number}[]} steps
+ * @param {{older: string, newer: string, state: string}} supersede  two actions triggered back to back, and the state the newer one ends in
+ * @param {{continuous?: boolean}} [o]  continuous: the plugin renders every frame (water), so the host never goes idle and that is not checked
+ */
+export async function actionChecks(page, check, steps, supersede, { continuous = false } = {}) {
+  const actions = await page.evaluate('window.__gallery.handle ? [...window.__gallery.handle.actions] : []');
+  const buttons = await page.evaluate(`[...document.querySelectorAll('#about button[data-action]')].map((b) => b.dataset.action)`);
+  check('the gallery lists the actions of the effect handle as buttons', actions.length > 0 && JSON.stringify(actions) === JSON.stringify(buttons), { actions, buttons });
+  for (const { action, state, moves = true, midMs = 150, minChanged = 300 } of steps) {
+    if (!continuous) await idle(page);
+    const before = (await shot(page)).img;
+    await clickAction(page, action);
+    if (moves) {
+      await sleep(midMs);
+      const px = compareImages((await shot(page)).img, before).countOver16;
+      check(`action '${action}' (the gallery's button, a trusted click): the frame ${midMs} ms later differs`, px > minChanged, { changedPixels: px });
+    }
+    const r = await actionResult(page);
+    check(`action '${action}': handle.trigger resolves '${state}'`, !!r && r.action === action && r.state === state && !r.error, r);
+    if (!continuous) check(`action '${action}': the host goes idle again`, await idle(page));
+  }
+  const unknown = await page.evaluate(`window.__gallery.handle.trigger('no-such-action').then(() => 'resolved', (e) => e.name + ': ' + e.message)`);
+  check('an unknown action rejects with a TypeError that lists the actions of the plugin', /^TypeError: .*unknown action "no-such-action".*its actions are/.test(unknown), unknown);
+  const pair = await page.evaluate(`(async () => { const h = window.__gallery.handle; const a = h.trigger(${JSON.stringify(supersede.older)}); const b = h.trigger(${JSON.stringify(supersede.newer)}); return [await a, await b]; })()`);
+  check(`a newer trigger resolves the pending one with null ('${supersede.older}' -> null, '${supersede.newer}' -> '${supersede.state}')`, pair[0] === null && pair[1] === supersede.state, pair);
+  if (!continuous) await idle(page);
+  const rest = await page.evaluate('window.__gallery.handle.settled()');
+  check(`handle.settled() reports the state at rest ('${supersede.state}')`, rest === supersede.state, rest);
+}
+
 /** Trusted mouse drag along a path (CDP Input.dispatchMouseEvent), with an optional callback after each step. */
 export async function drag(/** @type {any} */ page, /** @type {number[][]} */ path, { stepMs = 16, onStep = /** @type {any} */ (null), release = true, hover = true } = {}) {
   const [x0, y0] = path[0];

@@ -138,6 +138,56 @@ export async function checkMapperAgainstGpu(t, plugin, options, { maxWrong = 5, 
   return verdict;
 }
 
+/** pixels whose largest channel difference exceeds 16 levels @param {ImageData} a @param {ImageData} b */
+export function changedPixels(a, b) {
+  let n = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i + 1] - b.data[i + 1]), Math.abs(a.data[i + 2] - b.data[i + 2])) > 16) n += 1;
+  }
+  return n;
+}
+
+/**
+ * An action of `plugin` through the real host and its effect handle (handle.trigger): one frame over the marker scene, the trigger, then a
+ * frame every `stepMs` on the frame clock until the trigger resolves (at most `maxMs`). Every `checkEvery`-th frame is read back: the
+ * largest number of pixels that changed against the first frame, and, for a spatial plugin, the agreement of that frame's mapper with
+ * its pixels (the worst one is returned: input must follow the pixels while the action plays too). `last` is the frame presented when the
+ * trigger resolved.
+ * @param {any} t
+ * @param {any} plugin
+ * @param {Record<string, unknown>} options  addPlugin options
+ * @param {string} action
+ * @param {Record<string, unknown>} [actionOptions]
+ * @param {{scene?: ReturnType<typeof markerScene>, stepMs?: number, maxMs?: number, checkEvery?: number}} [o]
+ */
+export async function runActionOnGpu(t, plugin, options, action, actionOptions, { scene = markerScene(), stepMs = 1000 / 60, maxMs = 6000, checkEvery = 6 } = {}) {
+  const { rig, handle, img: first, mappers } = await presentOnce(t, plugin, options, { scene });
+  /** @type {{done: boolean, state: unknown, error: unknown}} */ const out = { done: false, state: undefined, error: null };
+  handle.trigger(action, actionOptions).then((state) => { out.state = state; out.done = true; }, (error) => { out.error = error; out.done = true; });
+  const t0 = performance.now() + 100;   // after the frame of presentOnce
+  let maxChanged = 0, frames = 0, checked = 0;
+  /** @type {ReturnType<typeof agreement>|null} */ let worst = null;
+  let last = first;
+  for (let now = t0; now <= t0 + maxMs && !out.done; now += stepMs) {
+    rig.tick(now);
+    frames += 1;
+    const img = rig.snap();   // read back in the task that presented it
+    last = img;
+    if (frames % checkEvery === 0) {
+      maxChanged = Math.max(maxChanged, changedPixels(img, first));
+      const mapper = mappers.at(-1);
+      if (typeof mapper === 'function') {
+        const a = agreement(img, /** @type {any} */ (mapper), scene);
+        checked += 1;
+        if (!worst || a.wrong > worst.wrong) worst = a;
+      }
+    }
+    await new Promise((r) => setTimeout(r, 0));   // the trigger resolves in a later microtask than the frame that ends the action
+  }
+  if (out.error) throw out.error;
+  return { ...out, frames, checked, maxChanged, worst, handle, rig, first, last };
+}
+
 /** The definition, wrapped to record the device of every create() and to count destroy() of its instances (device-loss tests). @param {any} def */
 export function lossSpy(def) {
   const log = { devices: /** @type {any[]} */ ([]), destroyed: 0 };
