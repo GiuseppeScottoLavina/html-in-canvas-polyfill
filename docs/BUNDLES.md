@@ -60,7 +60,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-engines.iife.min.js` | 42,215 | 16,187 |
 | `hic-live-gpu.iife.js` | 20,067 | 5,539 |
 | `hic-live-gpu.iife.min.js` | 10,469 | 4,015 |
-| `esm/index.js` | 589,968 | 156,981 |
+| `esm/index.js` | 590,078 | 157,013 |
 | `esm/effects.js` | 47,432 | 13,593 |
 | `esm/native-bridge.js` | 16,310 | 4,452 |
 | `plugins/crt.iife.js` | 19,976 | 7,328 |
