@@ -116,7 +116,7 @@
   "ink-overflow.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
+   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root). A race by construction, so the file is not in the stable list: the result depends on whether all five first snapshots (each superseded once by the color-grid custom element) have landed when the page draws, about 100 ms after load. Until 2026-10-16 the polyfill always lost it (TIMEOUT in every rep); since its first snapshot is one round it wins it on a warm load (fresh-browser loop: first load TIMEOUT 7 of 7, later loads PASS 8 of 8) and in full runs lost, half won (FAIL) or won (PASS) rep 1 while reps 0 and 2 timed out. The worst repetition is reported, so it never reads as a pass"
   },
   "invalidation-during-onpaint.tentative.html": {
    "category": "deviation",
@@ -171,7 +171,7 @@
   "onpaint-remove-non-drawable-element.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+   "note": "passes every subtest since 2026-10-16 (the first snapshot uses no credit of the snapshot-rate gate, so the rebuild after the first paint is in the next frame); before, the test's one-frame waits (rAF + setTimeout(0)) caught the paint only on a cold first load, and the file passed 4/4 or 0/4 by turns. Kept for the paint-timing deviation should a slower machine miss the single frame"
   },
   "onpaint.tentative.html": {
    "category": "deviation",
@@ -485,6 +485,7 @@
   "onpaint-fires-post-resize-observer.tentative.html",
   "onpaint-invalidation-crash.tentative.html",
   "onpaint-outside-invalidation-crash.tentative.html",
+  "onpaint-remove-non-drawable-element.tentative.html",
   "onpaint-scroll-crash.tentative.html",
   "onpaint-zindex.tentative.html",
   "percent-sizing.tentative.html",
@@ -642,7 +643,6 @@
   "hit-test/z-index.tentative.html",
   "iframe-local.tentative.html",
   "iframe.tentative.html",
-  "ink-overflow.tentative.html",
   "inline-drawable.tentative.html",
   "inline-fixed-containment.tentative.html",
   "inline-fragments-drawable.tentative.html",
