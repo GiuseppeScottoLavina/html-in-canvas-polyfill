@@ -47,7 +47,9 @@ const LIMITS = {
   // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
   // 38.5 -> 42 KB, gzip 15 -> 16.25 KB (+3,509 / +1,244 bytes, 2026-10-16, measured 41,804 / 16,038): the iOS control look (system tint, pill buttons and pop-ups from the computed
   //   style, the colour-well hue ring, medium-style date pills, no spin button, popup labels pinned) and the iOS classification of the engine
-  'hic-live-engines.iife.min.js': { target: 42 * KB, ceiling: 42 * KB, gzip: 16.25 * KB },
+  // 42 -> 42.25 KB (+411 bytes, 2026-10-16, measured 42,215): the search field's magnifier is probed from layout (Safari Technology Preview 254 has none) instead of
+  //   assumed from Safari >= 27
+  'hic-live-engines.iife.min.js': { target: 42.25 * KB, ceiling: 42.25 * KB, gzip: 16.25 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
 };

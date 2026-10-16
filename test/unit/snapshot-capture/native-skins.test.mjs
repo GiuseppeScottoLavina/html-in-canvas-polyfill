@@ -163,3 +163,21 @@ test('native interaction states: Gecko themes hover on fields and toggles and pr
   assert.equal(pressOnThumb(range, 0.5, 24, false), true);
   assert.equal(pressOnThumb(/** @type {any} */ ({}), 0.5, 24, false), true, 'unknown press point: thumb');
 });
+
+test('search magnifier: probed from layout, not from the version (Safari 27.0.1 scrolls a long value 30 px further than a text field: magnifier; Technology Preview 254, also Version/27.0: 13 px, cancel only); once per document', async () => {
+  const { laysOutMagnifier } = await import('../../../src/snapshot/capture/native-controls.js');
+  const fakeDoc = (/** @type {number} */ search, /** @type {number} */ text) => {
+    let probes = 0;
+    const doc = /** @type {any} */ ({
+      body: { appendChild() {} },
+      createElement: () => { probes++; const f = /** @type {any} */ ({ style: {}, remove() {} }); Object.defineProperty(f, 'scrollWidth', { get: () => (f.type === 'search' ? search : text) }); return f; },
+      get probes() { return probes; },
+    });
+    return doc;
+  };
+  const safari = fakeDoc(1392, 1362), stp = fakeDoc(1375, 1362);
+  assert.equal(laysOutMagnifier(safari), true);
+  assert.equal(laysOutMagnifier(stp), false);
+  assert.equal(laysOutMagnifier(stp), false);
+  assert.equal(stp.probes, 2, 'cached per document');
+});

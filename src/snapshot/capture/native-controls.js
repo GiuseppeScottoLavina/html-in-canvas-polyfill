@@ -638,9 +638,32 @@ function listboxBar(src, cs, dark) {
   return { svg: geckoListboxBar(g, thumb, dark, rtl), decl: `padding-${side.toLowerCase()}:${(parseFloat(/** @type {any} */ (cs)['padding' + side]) || 0) + gv}px!important;` };
 }
 
+/** Per document: does this WebKit lay out the search field's magnifier decoration? @type {WeakMap<Document, boolean>} */
+const magnifiers = new WeakMap();
+
 /**
- * A search field: capsule skin, the cancel glyph at the content end when there is a value, and on Safari >= 27 the magnifier decoration at the content start (1 em wide plus a
- * 0.36 em margin), which the image document does not lay out: the clone's start padding grows by as much.
+ * Measured, not assumed from the version: Safari 27.0.1 lays the magnifier out (a long value scrolls 30 px further in a search field than in a text field at 13 px: the
+ * 17.7 px decoration plus the cancel button), Safari Technology Preview 254 (also Version/27.0) does not (13 px: the cancel button alone). Probed once per document.
+ * @param {Document} doc @returns {boolean}
+ */
+export function laysOutMagnifier(doc) {
+  let v = magnifiers.get(doc);
+  if (v !== undefined) return v;
+  const scroll = (/** @type {string} */ type) => {
+    const f = doc.createElement('input');
+    f.type = type; f.value = 'x'.repeat(80);
+    f.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;width:60px;font:13px/1 system-ui;padding:0;direction:ltr';
+    (doc.body ?? doc.documentElement).appendChild(f);
+    const w = f.scrollWidth; f.remove(); return w;
+  };
+  v = scroll('search') - scroll('text') > 19.5; // 1.5 em: more than the cancel button alone
+  magnifiers.set(doc, v);
+  return v;
+}
+
+/**
+ * A search field: capsule skin, the cancel glyph at the content end when there is a value, and where the engine lays it out (Safari 27.0.1, not Technology Preview 254) the
+ * magnifier decoration at the content start (1 em wide plus a 0.36 em margin), which the image document does not lay out: the clone's start padding grows by as much.
  * @param {HTMLInputElement} el @param {Element} clone @param {CSSStyleDeclaration} cs @param {{w: number, h: number}} box @param {Palette} p @param {boolean} dark @param {boolean} disabled
  * @param {string} decl @returns {boolean}
  */
@@ -649,7 +672,7 @@ function searchField(el, clone, cs, box, p, dark, disabled, decl) {
   const ios = currentEngine().os === 'ios';
   // iOS shows the cancel button only while the field is focused, and the magnifier from iOS 26 on (measured on the iOS 26.4 simulator)
   const extra = el.value && (!ios || el.matches(':focus')) ? cancelGlyph({ x: c.x + c.w - em, y: c.y + c.h / 2 - em / 2, size: em }, dark, disabled) : '';
-  const magnifier = (ios || (currentEngine().major ?? 0) >= 27) && cs.direction === 'ltr' ? { x: c.x, y: c.y + c.h / 2 - em / 2 } : undefined;
+  const magnifier = (ios || laysOutMagnifier(el.ownerDocument)) && cs.direction === 'ltr' ? { x: c.x, y: c.y + c.h / 2 - em / 2 } : undefined;
   clone.setAttribute('data-hic-wk', '');
   const skin = ios ? iosBox(el.ownerDocument, cs, box.w, box.h, (magnifier ? magnifierGlyph(magnifier, em, dark, disabled) : '') + extra)
     : searchSkin(box.w, box.h, { bg: rgbaOf(el.ownerDocument, cs.backgroundColor), disabled, em, dark, magnifier }, p, extra);
