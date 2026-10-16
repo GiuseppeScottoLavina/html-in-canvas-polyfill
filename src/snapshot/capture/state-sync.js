@@ -314,18 +314,46 @@ function textareaAsDiv(src, clone) {
 export { usedColorScheme } from './color-scheme.js';
 
 /**
- * `indeterminate` is a JS property: it does not survive serialisation, so the clone shows the mixed state the way the engine draws it (accent fill, white dash) through `appearance:none` (which also moves the baseline: the 3 px offset keeps the line box).
+ * `indeterminate` is a JS property: it does not survive serialisation, so the clone shows the mixed state the way the engine draws it (accent fill, white or dark dash) through `appearance:none` (which also moves the baseline: the 3 px offset keeps the line box).
+ * The look is that of a 13 px desktop checkbox, scaled to the live box (Chrome for Android's checkboxes are 16 px).
  * @param {HTMLInputElement} src @param {Element} clone
  */
 function paintIndeterminate(src, clone) {
   const fill = src.disabled ? '#d1d1d1' : accentOf(src);
+  const cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src);
+  // the dash is dark on the default dark-scheme fill (measured Chrome 155 desktop and Chromium 158 Android: #3b3b3b on #99c8ff)
+  const dash = fill === '#99c8ff' ? '#3b3b3b' : '#fff';
+  const side = (/** @type {string} */ v) => (parseFloat(v) || 0);
+  const w = cs.boxSizing === 'border-box' ? side(cs.width) : side(cs.width) + side(cs.paddingLeft) + side(cs.paddingRight) + side(cs.borderLeftWidth) + side(cs.borderRightWidth);
+  const h = cs.boxSizing === 'border-box' ? side(cs.height) : side(cs.height) + side(cs.paddingTop) + side(cs.paddingBottom) + side(cs.borderTopWidth) + side(cs.borderBottomWidth);
+  const f = (w > 0 ? w : 13) / 13;
+  const n = (/** @type {number} */ v) => +(v * f).toFixed(3);
   clone.removeAttribute('checked');
-  appendInlineStyle(clone, `appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;width:13px!important;height:13px!important;border-radius:2px!important;border:0!important;vertical-align:-3px!important;background-color:${fill}!important;background-image:linear-gradient(#fff,#fff)!important;background-size:8px 2px!important;background-position:center!important;background-repeat:no-repeat!important;`);
+  appendInlineStyle(clone, `appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;width:${w > 0 ? w : 13}px!important;height:${h > 0 ? h : 13}px!important;border-radius:${n(2)}px!important;border:0!important;vertical-align:${n(-3)}px!important;background-color:${fill}!important;background-image:linear-gradient(${dash},${dash})!important;background-size:${n(8)}px ${n(2)}px!important;background-position:center!important;background-repeat:no-repeat!important;`);
 }
 
-/** @param {HTMLInputElement} src @param {Element} clone */
-function syncInput(src, clone) {
+/**
+ * Chromium draws a checkbox / radio inside the image at the image's zoom, and at a zoom a little off the device scale its theme draws the box smaller (measured on
+ * Chromium 158 Android at DPR 2.625: 40 device px at zoom 2.62632, the canvas grid scale of a 380 css px canvas 998 px wide, against 42 in the page; a size a hair
+ * above a whole device pixel is drawn smaller, a size at or just below it is not). A zoom on the
+ * control brings its own scale back to the page's (devicePixelRatio) when the raster scale is within 1 % of it. Other engines and other scales: unchanged.
+ * @param {HTMLInputElement} src @param {Element} clone @param {number} scale
+ */
+function matchToggleZoom(src, clone, scale) {
+  const win = src.ownerDocument.defaultView ?? window;
+  const dpr = win.devicePixelRatio;
+  if (scaleMode() !== 'zoom' || !(dpr > 0) || !(scale > 0) || dpr === scale || Math.abs(dpr / scale - 1) > 0.01) return;
+  const own = parseFloat(win.getComputedStyle(src).zoom) || 1;
+  // the root's zoom reaches the image with 6 significant digits; the product must not land a hair ABOVE the page's scale (16 px x 2.6250042 drew 40 px, 2.625 x 16 = 42),
+  // so the control's zoom is rounded down
+  const root = Number(scale.toPrecision(6));
+  appendInlineStyle(clone, `zoom:${Math.floor(((own * dpr) / root) * 1e5) / 1e5}!important;`);
+}
+
+/** @param {HTMLInputElement} src @param {Element} clone @param {number} scale */
+function syncInput(src, clone, scale) {
   const type = (src.type || 'text').toLowerCase();
+  if (type === 'checkbox' || type === 'radio') matchToggleZoom(src, clone, scale);
   if (type === 'checkbox' && src.indeterminate) paintIndeterminate(src, clone);
   else if (type === 'checkbox' || type === 'radio') {
     clone.toggleAttribute('checked', src.checked);
@@ -369,7 +397,7 @@ export function syncNodeState(env, src, clone, req, unsupported) {
   switch (ln) {
     case 'iframe': case 'frame': case 'object': case 'embed':
       return refuse(unsupported, src, 'iframe', `<${ln}> cannot be captured`, 'Replace it with an <img> or draw it outside the drawable.');
-    case 'input': syncInput(/** @type {HTMLInputElement} */ (src), clone); break;
+    case 'input': syncInput(/** @type {HTMLInputElement} */ (src), clone, req.scale); break;
     case 'textarea': {
       const ta = /** @type {HTMLTextAreaElement} */ (src);
       if (ta.scrollHeight > ta.clientHeight || ta.scrollWidth > ta.clientWidth || ta.offsetWidth > ta.clientWidth + 2 * ta.clientLeft) { const div = textareaAsDiv(ta, clone); const skins = skinsFor(env, req); if (skins) { skins.paintNativeControl(ta, div); if (skins.consumeSkinPending()) markPending(unsupported); } return div; }

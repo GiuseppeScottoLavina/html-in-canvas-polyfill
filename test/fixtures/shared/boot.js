@@ -60,6 +60,9 @@
     while (canvas.firstChild) d.appendChild(canvas.firstChild);
     d.querySelectorAll(':scope > [drawable]').forEach(function (c) { c.removeAttribute('drawable'); });
     canvas.replaceWith(d);
+    // a listbox parsed into a laid-out page shows its selected option (the engine scrolls it into view); the twin's selects were fallback content without a box while
+    // the page parsed, so they are parsed again here to get the plain page's scroll position from the engine itself
+    d.querySelectorAll('select').forEach(function (sel) { if (sel.multiple || sel.size > 1) sel.outerHTML = sel.outerHTML; });
     F.refReady = F.ready = true;
     return;
   }

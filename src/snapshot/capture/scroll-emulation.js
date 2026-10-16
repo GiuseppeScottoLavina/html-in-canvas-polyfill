@@ -208,6 +208,21 @@ export function applyScrollState(env, src, cloneScroller, req, sink, known) {
 }
 
 /**
+ * Chrome for Android keeps a thin overlay thumb on a scrollable listbox select (it does not fade; measured Chromium 158, DPR 2.625: 4 css px wide, grey 128 at 50 %
+ * alpha, flush with the inner right border, length and offset in proportion to the scrollport), which an SVG image never draws. It becomes a background layer of the
+ * clone (under the selected option's highlight, where the page draws it over). Skipped when the select has its own background image.
+ * @param {Element} src @param {HTMLElement} clone @param {CSSStyleDeclaration} cs @param {number} top  the scroll offset drawn
+ * @param {{engine: string, os: string}} [info]  the engine (tests pass Android on a desktop browser)
+ */
+export function listboxThumb(src, clone, cs, top, info = currentEngine()) {
+  const { engine, os } = info;
+  const ch = src.clientHeight, sh = src.scrollHeight;
+  if (engine !== 'chromium' || os !== 'android' || cs.backgroundImage !== 'none' || cs.overflowY === 'hidden' || !(sh > ch) || ch <= 0) return;
+  const g = 'rgba(128,128,128,0.5)';
+  appendInlineStyle(clone, `background-image:linear-gradient(${g},${g})!important;background-size:4px ${(ch * ch) / sh}px!important;background-position:right 0 top ${(top * ch) / sh}px!important;background-repeat:no-repeat!important;background-origin:padding-box!important;`);
+}
+
+/**
  * A listbox select renders only its options (no marker box, no bar boxes), and the image document scrolls the selected option into view on its own. The live offset is set
  * with snapping instead: the clone is a mandatory snap container whose only snap area is the first option at or below the live scrollport top, `scroll-padding-top` being
  * that option's distance from it (measured in Firefox 157 and Safari 27: snapping wins over the selected-option scroll in the image).

@@ -2,11 +2,12 @@
 // G-mobile: the polyfill on phones, VERIFIED ON SIMULATORS / EMULATORS ONLY (no physical device): Mobile Safari in the iOS Simulator (safaridriver, full Xcode) and Chrome
 // in the Android Emulator (adb + Chrome DevTools Protocol). Each scenario has a positive control (the sabotaged page must turn every declared check class red).
 //   node test/mobile/run.mjs [--platform=ios,android] [--only=gate,explainer,...] [--no-control] [--ios-devices=UDID,UDID] [--ipad=UDID|none] [--ios-old=UDID|none]
-//                            [--avd=hicmobile] [--no-stand-in]
+//                            [--avd=hicmobile] [--android-package=org.chromium.chrome|com.android.chrome] [--no-stand-in]
 // Devices, one at a time (each is shut down before the next boots): iPhone 17 on the newest iOS 26.x (required) and on the newest iOS >= 27 runtime (optional: SKIPPED
 // when safaridriver cannot pair with it, as Safari 27.0.1's driver and the iOS 27.0 runtime measured on 2026-10-16) (all scenarios), an iPad on iOS 26.x
-// (classification: iPadOS sends a desktop UA), an iPhone on iOS 18.x (refusal: Safari 18 is below the minimum 26), then the AVD (ANDROID_AVD_HOME or --avd-home) with its
-// own Chrome. When that Chrome is older than 130 the polyfill scenarios run as a labelled STAND-IN (test/mobile/android.mjs) and the refusal runs on the real agent.
+// (classification: iPadOS sends a desktop UA), an iPhone on iOS 18.x (refusal: Safari 18 is below the minimum 26), then the AVD (ANDROID_AVD_HOME or --avd-home) with
+// its newest installed browser (Chromium from a snapshot's ChromePublic.apk, else the image's own Chrome); the refusal runs on a browser below 130 (the image's Chrome 124).
+// When no installed browser is 130+ the polyfill scenarios run as a labelled STAND-IN on the old Chrome (test/mobile/android.mjs).
 // Writes .scratch/results/mobile-<ts>.json (+ failing crops under .scratch/results/mobile-<ts>/), prints one table, exits 1 on any failure.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -17,7 +18,7 @@ import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RECORDER } from '../xbrowser/lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, unsupported, gate, explainer } from './scenarios.mjs';
-import { launchAndroid, plainTab, AndroidUnavailable } from './android.mjs';
+import { launchAndroid, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
 
 const platforms = (arg('platform') ?? 'ios,android').split(',');
 const only = arg('only')?.split(',');
@@ -125,11 +126,21 @@ try {
   }
   if (platforms.includes('android')) {
     const label = 'Android Emulator';
-    await device(label, () => launchAndroid({ avd: arg('avd') ?? 'hicmobile', avdHome: arg('avd-home') ?? process.env.ANDROID_AVD_HOME, serverPorts: [port], standIn: !process.argv.includes('--no-stand-in') }), async (s, D) => {
+    await device(label, () => launchAndroid({ avd: arg('avd') ?? 'hicmobile', avdHome: arg('avd-home') ?? process.env.ANDROID_AVD_HOME, serverPorts: [port], standIn: !process.argv.includes('--no-stand-in'), pkg: arg('android-package') }), async (s, D) => {
+      D.browsers = s.browsers;
       if (s.standIn) D.standInNote = `Chrome ${s.chromeVersion} with the anchor-positioning flag and a Chromium ${130} user agent: a stand-in for Chrome for Android >= 130, NOT a verification of it`;
-      if (s.chromeMajor >= 130 || s.standIn) await full(s, D, label, 'android', SCENARIOS, { standIn: s.standIn });
-      if (s.chromeMajor < 130) {
-        const t = await plainTab(s);
+      if (s.chromeMajor >= 130 || s.standIn) {
+        // a usable native implementation (Chromium 158 ships it without a flag): the polyfill scenarios force the polyfill's path, nativeFirst checks the step-aside
+        await s.navigate(new URL('/test/fixtures/mobile/index.html?mode=ref&iso=0', srv.url).href);
+        D.native = await s.evaluate(`import('/src/api/native-detect.js').then((m) => { const n = m.probeNative(window); return { kind: n.kind, usable: m.nativeUsable(n), probe: n.probe, missing: n.missing }; })`);
+        const forced = !!D.native?.usable;
+        await full(s, D, label, 'android', SCENARIOS, { standIn: s.standIn, forced, plainBundle: BUNDLES.android, bundle: forced ? `${BUNDLES.android},/test/mobile/force-polyfill.js` : BUNDLES.android });
+      }
+      // the refusal on a real browser below 130: the same one (stand-in run: its real agent in a second tab) or the image's own Chrome 124 after a Chromium run
+      const old = s.chromeMajor < 130 ? null : (s.browsers ?? []).find((b) => b.major < 130);
+      if (s.chromeMajor < 130 || old) {
+        const t = old ? await openPackage(s, old.pkg) : await plainTab(s);
+        if (old) D.refusalBrowser = t.version;
         try { await full(t, D, label + ' (real agent)', 'android', { unsupported }); } finally { await t.close(); }
       }
     });

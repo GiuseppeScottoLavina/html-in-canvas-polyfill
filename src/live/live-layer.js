@@ -44,6 +44,25 @@ function rememberFocus(layerEl, root) {
 }
 
 /**
+ * A listbox select (size > 1 or multiple) laid out while the page loads shows its selected option: every engine scrolls it into view once the select has a box
+ * (measured Chrome 155 desktop and Chromium 158 Android: scrollTop 34 for the 5th of 6 options in a size-3 list). Children of a canvas are fallback content without a
+ * box while the page parses, so a select moved into the layer kept scrollTop 0 and showed its first options (G-mobile controls on Android). Once mounted, each such
+ * select whose first selected option lies outside its scrollport is scrolled the nearest way, as the engine does.
+ * @param {HTMLElement} layerEl
+ */
+function revealSelectedOptions(layerEl) {
+  if (!layerEl.isConnected) return;
+  for (const sel of /** @type {NodeListOf<HTMLSelectElement>} */ (layerEl.querySelectorAll('select'))) {
+    if (!(sel.multiple || sel.size > 1) || sel.selectedIndex < 0 || sel.scrollTop !== 0 || sel.scrollHeight <= sel.clientHeight) continue;
+    const r = sel.getBoundingClientRect();
+    const o = sel.options[sel.selectedIndex].getBoundingClientRect();
+    const k = r.height > 0 ? sel.offsetHeight / r.height : 1; // the layer may be scaled (transform mode)
+    const bottom = (o.bottom - r.top) * k - sel.clientTop;
+    if (bottom > sel.clientHeight) sel.scrollTop = bottom - sel.clientHeight;
+  }
+}
+
+/**
  * Factory for the LiveLayer typedef. mount() is idempotent and SYNCHRONOUS (also callable from the content setter / setAttribute patch and from registry.ensure(canvas), so a getBoundingClientRect() right after `canvas.content='drawable'` already sees laid-out children):
  * create the <hic-layer>, relocate logical children in order, insert after the canvas, set data-hic-canvas, install facade (+ parent facade), event bridge, a11y link (aria-owns, ADR-M), ancestor clip (ADR-L), syncPresentation; the style handle comes from env.roots.style(record.root).
  * unmount() is the exact inverse (children back in original order, aria-owns and generated ids restored). While mounted, calling mount() again re-homes the layer: it follows a canvas that was moved (new parent / tree scope) or removes the layer while the canvas is disconnected.
@@ -198,6 +217,7 @@ export function createLiveLayer(env, record) {
     a11y.update(topLevelElements());
     refreshDrawables(true);
     teardown.push(watchCanvas());
+    revealSelectedOptions(layerEl);
   }
 
   function installParentFacadeIfWanted() {

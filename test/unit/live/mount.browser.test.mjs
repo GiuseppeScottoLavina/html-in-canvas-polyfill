@@ -235,3 +235,17 @@ test('children-layout: direct children are blockified and shrink-to-fit like nat
   await frames(1);
   assert.ok(vroot.querySelector('#v').getBoundingClientRect().height < 120, 'vertical: the inline size (height) shrinks to fit too');
 });
+
+test('a listbox select moved from the canvas (fallback, no box while parsing) shows its selected option, as the engine does at load; one already in view stays at 0', async (t) => {
+  const { managed } = setup({ t });
+  const opts = (sel) => [1, 2, 3, 4, 5, 6].map((i) => `<option${i === sel ? ' selected' : ''}>Option ${i}</option>`).join('');
+  const { root, canvas } = page(`<div drawable><select size="3" id="far">${opts(5)}</select><select size="3" id="near">${opts(1)}</select><select multiple size="2" id="multi">${opts(4)}</select></div>`);
+  const far = root.querySelector('#far');
+  assert.equal(far.scrollTop, 0, 'precondition: fallback content has no box');
+  managed(canvas);
+  const box = far.getBoundingClientRect(), opt = far.options[4].getBoundingClientRect();
+  assert.ok(far.scrollTop > 0, `scrolled: ${far.scrollTop}`);
+  assert.ok(Math.abs(opt.bottom - (box.top + far.clientTop + far.clientHeight)) < 1, 'the selected option ends at the scrollport bottom (nearest)');
+  assert.equal(root.querySelector('#near').scrollTop, 0);
+  assert.ok(root.querySelector('#multi').scrollTop > 0, 'multiple: the first selected option');
+});

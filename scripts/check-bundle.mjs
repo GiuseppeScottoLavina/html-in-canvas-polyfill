@@ -36,7 +36,10 @@ const LIMITS = {
   //   device pixels, measured on a probe; F4 at DPR 1.25 / 1.5 against native 2.0 / 1.2 % -> 0.005 %)
   // 265.5 -> 267.5 KB, gzip 92.35 -> 93.25 KB (+1,859 / +735 bytes, 2026-10-16, measured 267,140 / 93,010): phones and tablets (mobile browser gate: iOS / iPadOS / Android
   //   classification, web views refused; phone surface budgets; the snapshot raster scale in the report)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 267.5 * KB, gzip: 93.25 * KB },
+  // 267.5 -> 269 KB, gzip 93.25 -> 93.75 KB (+1,684 / +555 bytes, 2026-10-16, measured 268,824 / 93,565): fixes found on real Chromium 158 for Android (a listbox shows
+  //   its selected option after the move into the layer, checkbox / radio zoom back to the device scale, the indeterminate look at the live size and its dark dash, the
+  //   Android listbox thumb)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 269 * KB, gzip: 93.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
