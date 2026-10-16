@@ -38,10 +38,11 @@ const common = { bundle: true, target: 'chrome130', legalComments: 'none', logLe
  * the plugin folder as inlined strings.
  * @param {{name: string, dir: string, wgsl: string[]}} p
  */
+// the virtual module's path is relative: esbuild prints it in a comment of the readable bundles, which are published (an absolute path leaked the build machine's)
 const inlineWgsl = (p) => ({
   name: 'plugin-inline-wgsl',
   setup(/** @type {any} */ b) {
-    b.onResolve({ filter: /^\.\/wgsl\.js$/ }, (/** @type {any} */ a) => (a.importer.startsWith(p.dir + sep) ? { path: join(p.dir, 'wgsl.js'), namespace: 'plugin-wgsl' } : undefined));
+    b.onResolve({ filter: /^\.\/wgsl\.js$/ }, (/** @type {any} */ a) => (a.importer.startsWith(p.dir + sep) ? { path: `plugins/${p.name}/wgsl.js`, namespace: 'plugin-wgsl' } : undefined));
     b.onLoad({ filter: /.*/, namespace: 'plugin-wgsl' }, () => ({
       contents: `const files = { ${p.wgsl.map((f) => `${JSON.stringify(f)}: ${JSON.stringify(readFileSync(join(p.dir, f), 'utf8'))}`).join(', ')} };\n`
         + `export async function wgsl(file) { if (!Object.hasOwn(files, file)) throw new Error('${p.name}: no ' + file + ' in the plugin folder'); return files[file]; }\n`,

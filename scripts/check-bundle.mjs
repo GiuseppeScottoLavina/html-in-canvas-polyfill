@@ -6,7 +6,7 @@
 //   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + each plugin of dist/plugins/, native bridge + core:
 //      the globals exist and work, the page made NO request beyond its own scripts (server log + Resource Timing), and the minified FEATURES agree with src/contracts/features.js
 // --allow-size: the 150 KB target is a KNOWN RED (printed, does not fail); the ratchet still fails. Used by `npm test` and CI until the target is met (docs/BUNDLES.md).
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Script } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
@@ -105,6 +105,16 @@ for (const file of iifes) {
   // static import/export and import.meta already fail to parse as a script; a dynamic import() parses, so look for it in the code (comments removed)
   if (dynamicImport(text)) problems.push(`G-bundle: ${file} contains a dynamic import()`);
 }
+
+// every published file is free of the build machine's paths (esbuild names a virtual module by its path in a comment: plugin-wgsl:/Users/... shipped in every plugin bundle)
+/** @param {string} text @returns {boolean} */
+const buildPath = (text) => text.includes(root) || /(?:^|[\s"'`(:])(?:\/Users\/|\/home\/|[A-Z]:\\Users\\)[^\s"'`]/.test(text);
+for (const entry of readdirSync(join(root, 'dist'), { recursive: true, withFileTypes: true })) {
+  if (!entry.isFile() || !/\.(js|mjs|json|ts|map)$/.test(entry.name)) continue;
+  const rel = join(entry.parentPath, entry.name).slice(join(root, 'dist').length + 1);
+  if (buildPath(readFileSync(join(entry.parentPath, entry.name), 'utf8'))) problems.push(`G-bundle: dist/${rel} contains a path of the build machine`);
+}
+if (!buildPath(`// plugin-wgsl:${root}/plugins/water/wgsl.js`) || !buildPath('// x:/Users/someone/p.js') || buildPath('const userAgent = navigator.userAgent; // /Users is a word')) problems.push('G-bundle: the build-path check failed its own positive controls');
 
 // positive controls of the static checks: a module and a dynamic import must be seen, an oversize bundle must be a problem
 let moduleParses = true;
