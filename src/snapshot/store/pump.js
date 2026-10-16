@@ -108,6 +108,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {DOMMatrixReadOnly|null} translation
  * @property {number} ovSeq  Entry.ovSeq when the build started: the tile shows every overlaid value up to it
  * @property {Map<Element, number>|null} scTops  scrollTop of every composed scroller when the build read the DOM (scroll-compose.js)
+ * @property {boolean} first  the first build of the drawable (never measured): charged its fixed estimate only, see pumpRecord
  */
 
 /**
@@ -191,11 +192,15 @@ export class PhaseGate {
     return interval <= 0 || now >= this.next - PhaseGate.tolerance(interval);
   }
 
-  /** @param {number} now @param {number} interval */
+  /**
+   * Keeps the phase across a stream; a start more than two intervals late (less the tolerance, so a pause of exactly two intervals, 4 frames at 120 Hz in the
+   * scheduler's frame time, is not decided by float noise) resynchronises.
+   * @param {number} now @param {number} interval
+   */
   started(now, interval) {
     if (interval <= 0) return;
     const late = now - this.next;
-    this.next = !Number.isFinite(this.next) || late > 2 * interval ? now + interval : this.next + interval;
+    this.next = !Number.isFinite(this.next) || late > 2 * interval - PhaseGate.tolerance(interval) ? now + interval : this.next + interval;
   }
 
   /** @param {number} interval @returns {number} performance.now() at which the next start is allowed */
@@ -382,8 +387,13 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);
     if (wait > 0) { later(out, now + wait); continue; }
     if (!due && !(geometryNow && (deps.damage.hasPendingCause(entry.el, 'resize') || deps.damage.hasPendingCause(entry.el, 'dpr')))) { later(out, gate.dueAt(interval)); continue; }
-    if ((deps.inFlight.get(record.id) ?? 0) >= budget.maxInFlight) continue;
-    if (out.started > 0 && out.spentMs >= budget.mainThreadMs) { later(out, now); continue; }
+    // The FIRST build of a drawable (never built, so it has no snapshot and holds back every paint of its canvas: paint gate 'first-commit') is not deferred by
+    // maxInFlight or by the measured time of this pump, only by the cost bucket, which charges it the fixed DEFAULT_TILE_COST_MS (store.js settleCost): at most
+    // 8 first builds per round (bucket cap 21 ms), a number that does not depend on how long cold builds took. Deferring them only delayed the first paint (8 drawables:
+    // 4 rounds two frames apart) and made the frame it landed in depend on machine load (WPT onpaint-remove-drawable-element).
+    const first = entry.costEma === null;
+    if (!first && (deps.inFlight.get(record.id) ?? 0) >= budget.maxInFlight) continue;
+    if (!first && out.started > 0 && out.spentMs >= budget.mainThreadMs) { later(out, now); continue; }
     if (!state.bucket.canStart()) { later(out, now + state.bucket.waitMs(budget.mainThreadShare)); continue; }
     batch ||= ++state.batchSeq;
     const spent = startBuild(env, deps, entry, now, batch);
@@ -420,7 +430,7 @@ function startBuild(env, deps, entry, now, batch) {
   const est = entry.costEma ?? DEFAULT_TILE_COST_MS;
   deps.state.bucket.spend(est);
   /** @type {Job} */
-  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, translation: null, ovSeq: entry.ovSeq, scTops: null };
+  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null };
   const scrollers = host.scrollers?.(entry) ?? [];
   if (scrollers.length) job.scTops = new Map(scrollers.map((s) => [s, /** @type {HTMLElement} */ (s).scrollTop]));
   const t0 = env.now();

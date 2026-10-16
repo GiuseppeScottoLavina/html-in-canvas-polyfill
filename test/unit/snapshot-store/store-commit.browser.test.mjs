@@ -466,6 +466,33 @@ test('a build whose synchronous part is long starts its decode in the next task 
   assert.equal(tasks.length, 0);
 });
 
+test('the deferred decode start runs before the tasks the page queued earlier (a user-blocking task), so whether a build took 3.5 ms does not reorder its paint', async (t) => {
+  const { createNextTask } = await import('/src/snapshot/store/store.js');
+  const errors = [];
+  const next = createNextTask(window, (e) => errors.push(e));
+  t.cleanup(() => next.dispose());
+  const order = [];
+  // the WPT pattern: the page's one-frame wait queues a setTimeout from its rAF callback; the post-frame build defers its decode after that
+  await new Promise((resolve) => requestAnimationFrame(() => {
+    setTimeout(() => { order.push('page task'); resolve(); }, 0);
+    next(() => order.push('decode 1'));
+    next(() => order.push('decode 2'));
+  }));
+  await sleep(20);
+  assert.deepEqual(order, ['decode 1', 'decode 2', 'page task'], 'WPT onpaint: the deferred decode landed after the test installed its next handler');
+  assert.deepEqual(errors, []);
+  // without the Prioritized Task Scheduling API (Safari): one MessageChannel task per batch
+  const fallback = createNextTask(/** @type {any} */ ({ MessageChannel }), (e) => errors.push(e));
+  const ran = [];
+  fallback(() => ran.push(1));
+  fallback(() => { throw new Error('reported, not thrown'); });
+  fallback(() => ran.push(2));
+  await sleep(20);
+  assert.deepEqual(ran, [1, 2]);
+  assert.equal(errors.length, 1);
+  fallback.dispose();
+});
+
 test('an in-frame (urgent) resize / DPR re-raster is not held by the snapshot-rate cap; everything else still is', async (t) => {
   const rig = await makeRig(t, { options: { maxSnapshotFps: 60 } });
   const a = rig.add('a', 100, 60);

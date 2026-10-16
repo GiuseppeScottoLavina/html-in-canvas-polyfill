@@ -245,13 +245,16 @@ export function createScheduler(env, store, hooks) {
 
   /**
    * changedElements: the committed drawables in tree order, plus the drawable ancestor of every removed NESTED drawable (a removed top-level drawable lists nothing).
+   * A drawable committed while the paint was held and no longer a drawable of the canvas when it fires is left out: it is not rendered in the canvas any more
+   * (WPT onpaint-remove-drawable-element reported a removed element whose tile had been committed during a coherence hold).
    * @param {Entry} entry
    * @returns {Element[]}
    */
   function changedElements(entry) {
-    const out = new Set(entry.changed);
-    let added = false;
     const layer = entry.record.layer;
+    const current = entry.changed.size && layer ? new Set(layer.drawableElements()) : null;
+    const out = new Set(current ? [...entry.changed].filter((el) => current.has(el)) : entry.changed);
+    let added = false;
     for (const el of entry.removed) {
       const parent = el.parentNode;
       const ancestor = parent && layer ? layer.nearestDrawable(parent) : null;
@@ -438,12 +441,16 @@ export function createScheduler(env, store, hooks) {
   }
 
   /**
+   * The store paces builds (snapshot-rate gate, cost bucket) in FRAME time: the timestamp of the last rendering update plus whole frame periods, not the time the
+   * post-frame task happened to run. That delay varies by milliseconds with the frame's work and the machine load, and the gate compared it with thresholds that
+   * fall on whole 120 Hz frames: whether a change was built one or two frames later flipped run to run (WPT onpaint).
    * @param {number} now
    * @param {boolean} interaction
    * @param {boolean} [urgent]
    * @returns {PumpResult|null}
    */
   function pump(now, interaction, urgent = false) {
+    if (lastTickAt >= 0 && framePeriod < Infinity && now >= lastTickAt) now = lastTickAt + Math.floor((now - lastTickAt) / framePeriod) * framePeriod;
     try {
       return store.pump(now, { mainThreadMs: PUMP_MAIN_THREAD_MS, mainThreadShare: PUMP_MAIN_THREAD_SHARE, maxInFlight: PUMP_MAX_IN_FLIGHT, interaction, urgent });
     } catch (err) {

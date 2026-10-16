@@ -344,6 +344,49 @@ test('pump: the main-thread budget counts the tile cost and delays the next buil
   assert.equal(later.started, 1);
 });
 
+test('pump: drawables without a snapshot are all built in the first pump whatever maxInFlight and the measured time (each one holds back the first paint); with a snapshot both apply again', async (t) => {
+  const rig = await makeRig(t);
+  const els = ['a', 'b', 'c', 'd', 'e'].map((id) => rig.add(id, 40, 30));
+  const budget = { ...rig.budget, mainThreadMs: 1, maxInFlight: 2 };
+  rig.deferDecode = true;
+  for (const el of els) {
+    rig.script.push({ busyMs: 2 });
+    rig.store.markDamage(el, null, 'forced');
+  }
+  assert.equal(rig.pump(budget).started, 5, 'five first builds in one pump (WPT onpaint-remove-drawable-element: 8 drawables took 4 rounds two frames apart)');
+  while (rig.pending.length) await rig.release();
+  await until(() => rig.store.hasLanded());
+  assert.equal(rig.store.commitLanded().changed.length, 5);
+  for (const el of els) rig.store.markDamage(el, null, 'input');
+  assert.equal(rig.pump({ ...budget, mainThreadMs: 1000 }).started, 2, 'maxInFlight caps the builds of drawables that have a snapshot');
+  while (rig.pending.length) await rig.release();
+  rig.store.commitLanded();
+  for (const el of els) {
+    rig.script.push({ busyMs: 2 });
+    rig.store.markDamage(el, null, 'input');
+  }
+  assert.equal(rig.pump(budget).started, 1, 'and so does the measured time of the pump');
+});
+
+test('pump: a first build is charged its fixed estimate, not its measured cost: a slow (cold) first snapshot does not hold back the next build', async (t) => {
+  const rig = await makeRig(t);
+  const a = rig.add('a', 40, 30);
+  const budget = { ...rig.budget, mainThreadShare: 0.35 };
+  const t0 = performance.now();
+  rig.script.push({ busyMs: 40 });
+  rig.store.markDamage(a, null, 'forced');
+  assert.equal(rig.store.pump(t0, budget).started, 1);
+  await until(() => rig.store.hasLanded());
+  rig.store.commitLanded();
+  rig.script.push({ busyMs: 40 });
+  rig.store.markDamage(a, A, 'input');
+  assert.equal(rig.store.pump(t0, budget).started, 1, 'the bucket (21 ms) was charged 3 ms, not the 40 ms the first build took');
+  await until(() => rig.store.hasLanded());
+  rig.store.commitLanded();
+  rig.store.markDamage(a, A, 'input');
+  assert.equal(rig.store.pump(t0, budget).started, 0, 'a later build is charged what it measured');
+});
+
 test('pump: the per-canvas frame cap spaces build starts (phase accumulator)', async (t) => {
   const rig = await makeRig(t);
   rig.record.frameCap = 10;
@@ -399,14 +442,19 @@ test('pump: the settled cost (sync build + decode + draw) is charged, not just t
   const rig = await makeRig(t);
   const a = rig.add('a', 100, 60);
   const budget = { ...rig.budget, mainThreadShare: 0.1 };
-  rig.script.push({ busyMs: 25 });
+  const t0 = performance.now();
   rig.store.markDamage(a, null, 'forced');
-  assert.equal(rig.pump(budget).started, 1);
+  assert.equal(rig.store.pump(t0, budget).started, 1, 'the first build (charged its fixed estimate, see the test above) measures a cheap tile');
+  await until(() => rig.store.hasLanded());
+  rig.store.commitLanded();
+  rig.script.push({ busyMs: 25 });
+  rig.store.markDamage(a, A, 'input');
+  assert.equal(rig.store.pump(t0, budget).started, 1);
   await until(() => rig.store.hasLanded());
   rig.store.commitLanded();
   rig.store.markDamage(a, A, 'input');
-  const r = rig.pump(budget);
-  assert.equal(r.started, 0, 'a 25 ms build exhausted a bucket that only expected 3 ms');
+  const r = rig.store.pump(t0, budget);
+  assert.equal(r.started, 0, 'a 25 ms build exhausted a bucket that only expected the cheap tile');
   assert.equal(r.moreWork, true);
 });
 

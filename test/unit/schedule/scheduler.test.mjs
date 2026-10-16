@@ -149,6 +149,32 @@ test('changedElements from two commits that arrived in separate ticks (gate hold
   assert.deepEqual(t.fired[0].changed, [a, b]);
 });
 
+test('a drawable committed while the paint was held and removed before it fires is not reported; one removed and added back is (WPT onpaint-remove-drawable-element)', () => {
+  const t = setup();
+  const a = fakeElement();
+  const b = fakeElement();
+  const record = mounted(t, [a, b]);
+  t.fired.length = 0;
+  t.store.ready = { ready: false, reason: 'coherence' };
+  t.bus.emit(BUS.COMMIT, { record, changed: [a, b], removed: [] });
+  t.scheduler.requestPaint(record);
+  t.run(20);
+  assert.equal(t.fired.length, 0, 'held');
+  record.layer.drawables = [a];
+  t.bus.emit(BUS.COMMIT, { record, changed: [], removed: [b] });
+  t.store.ready = { ready: true, reason: 'ready' };
+  t.run(20);
+  assert.equal(t.fired.length, 1);
+  assert.deepEqual(t.fired[0].changed, [a], 'the removed drawable is not listed');
+  t.fired.length = 0;
+  t.bus.emit(BUS.COMMIT, { record, changed: [], removed: [b] });
+  record.layer.drawables = [a, b];
+  t.bus.emit(BUS.COMMIT, { record, changed: [b], removed: [] });
+  t.scheduler.requestPaint(record);
+  t.run(20);
+  assert.deepEqual(t.fired[0].changed, [b], 'added back and committed: listed');
+});
+
 test('a store that returns the change set without BUS.COMMIT is attributed through the registry', () => {
   const t = setup();
   const a = fakeElement();
@@ -539,6 +565,28 @@ test('the build pump runs in a task AFTER the rendering update, never inside the
   assert.equal(seen.length, 1, 'the tick ran');
   assert.equal(seen[0], before, 'no pump inside the tick (the frame hooks run at its end)');
   assert.equal(t.store.pumps, before + 1, 'the pump ran right after the frame');
+});
+
+test('builds are paced in frame time: a post-frame or input pump gets the last rendering update plus whole frame periods, not the time its task ran (WPT onpaint)', async () => {
+  const t = setup();
+  const el = fakeElement();
+  const record = mounted(t, [el]);
+  t.store.unsettled.add(el);
+  t.scheduler.damage(record, 'mutation', el, null);
+  t.run(50);
+  t.store.unsettled.delete(el);
+  t.run(50);
+  assert.ok(t.scheduler.stats().frames > 3, 'ticks ran back to back: the frame period is known');
+  const frame = 1000 / 120;
+  t.env.now = () => t.clock.t + 3.7;
+  t.scheduler.damage(record, 'mutation', el, null);
+  t.step(frame);
+  const tick = t.clock.t;
+  assert.ok(Math.abs(t.store.lastNow - tick) < 1e-6, `post-frame pump at ${t.store.lastNow}, frame at ${tick} (its task ran 3.7 ms later)`);
+  t.env.now = () => tick + 2 * frame + 1.2;
+  t.scheduler.damage(record, 'focus', el, null, true);
+  await Promise.resolve();
+  assert.ok(Math.abs(t.store.lastNow - (tick + 2 * frame)) < 1e-6, `input pump at ${t.store.lastNow}: two whole frames after the last one`);
 });
 
 test('while the window is being resized every build runs inside the tick (a post-frame build lands a frame late); after a pause, after the frame again', () => {

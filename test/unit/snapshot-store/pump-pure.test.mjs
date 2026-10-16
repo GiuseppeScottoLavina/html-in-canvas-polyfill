@@ -67,6 +67,36 @@ test('PhaseGate: phase-accumulator pacing without drift and resync after a long 
   assert.equal(g.isDue(1, 0), true, 'interval 0 = uncapped');
 });
 
+test('PhaseGate: in frame time (whole 120 Hz frames), a pause of exactly two intervals resynchronises whatever the float noise; a shorter one keeps the phase (WPT onpaint)', () => {
+  const interval = 1000 / 60;
+  const frame = 1000 / 120;
+  for (const noise of [-1e-9, 0, 1e-9]) {
+    const g = new PhaseGate();
+    g.started(0, interval);
+    const at = 3 * interval + noise; // 6 frames: two intervals after the slot at 16.7 ms
+    g.started(at, interval);
+    assert.ok(Math.abs(g.next - (at + interval)) < 1e-6, `resynchronised (noise ${noise})`);
+    assert.equal(g.isDue(at + frame, interval), false, 'not due one frame later');
+    assert.equal(g.isDue(at + 2 * frame, interval), true, 'due two frames later');
+  }
+  const g = new PhaseGate();
+  g.started(0, interval);
+  g.started(3 * frame, interval);
+  assert.ok(Math.abs(g.next - 2 * interval) < 1e-6, 'a start one frame late keeps the phase');
+});
+
+test('PhaseGate: a capped stream on a 144 Hz display still averages the cap (the phase is kept)', () => {
+  const interval = 1000 / 60;
+  const frame = 1000 / 144;
+  const g = new PhaseGate();
+  let builds = 0;
+  for (let i = 0; i < 144 * 2; i++) {
+    const now = i * frame + 0.7;
+    if (g.isDue(now, interval)) { g.started(now, interval); builds++; }
+  }
+  assert.ok(builds >= 116 && builds <= 121, `${builds} builds in 2 s`);
+});
+
 test('sameGeometry compares size, scale, pixel size and ink origin', () => {
   assert.equal(sameGeometry(geo, { ...geo }), true);
   assert.equal(sameGeometry(geo, { ...geo, bw: 100.5 }), false);

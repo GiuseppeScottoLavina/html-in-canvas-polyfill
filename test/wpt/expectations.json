@@ -166,14 +166,7 @@
   "onpaint-remove-drawable-element.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "one-frame wait, see above",
-   "subtests": {
-    "onpaint should fire when a nested element with the drawable": {
-     "category": "deviation",
-     "reason": "paint-spurious",
-     "note": "the removed nested drawable is reported although the drawable ancestor is what changed"
-    }
-   }
+   "note": "one-frame wait, see onpaint.tentative.html. 'report drawable ancestor': the removal is committed and painted (changedElements []) one frame before the rebuilt tile of the drawable ancestor lands, which a second paint then lists. 'becomes display:none': the style change reaches the snapshot a frame after the test's single wait. Deterministic since 2026-10-16 (20 reps, 10 fresh-browser runs, quiet and with an idle Android Emulator): the first snapshot of the 8 drawables is one round, so the first paint is in the first frame; it used to take 4 rounds two frames apart and, depending on machine load, landed just before or just after the third subtest's change and then spilled into the fourth"
   },
   "onpaint-remove-non-drawable-element.tentative.html": {
    "category": "deviation",
@@ -183,7 +176,7 @@
   "onpaint.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "a paint fires in the first frame when its snapshot lands at once (Chromium), otherwise >= 2 frames later. 10 of 12 subtests pass in every rep (2026-10-15, 10 reps). 'grandchild changes': the change comes 1 frame after the previous subtest's build and options.maxSnapshotFps (60) holds the next build to the following frame on a 120 Hz display, one frame later than the test's single wait. 'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows (deviation paint-spurious)"
+   "note": "a paint fires in the first frame when its snapshot lands at once (Chromium), otherwise >= 2 frames later. 10 of 12 subtests pass in every rep (2026-10-16: 20 reps, 10 fresh-browser runs, quiet and with an idle Android Emulator). 'grandchild changes': the change comes 1 frame after the previous subtest's build and options.maxSnapshotFps (60) holds the next build to the following frame on a 120 Hz display, one frame later than the test's single wait. 'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows (deviation paint-spurious). Two machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler), and the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames. Residual: the gate's phase is set by the frame of the first build, so a dropped frame while the page loads can still move one build a frame (1 in 100 fresh-browser loads of this file in a loop, none in the 20-rep runs)"
   },
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "deviation",

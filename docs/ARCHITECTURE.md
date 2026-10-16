@@ -230,6 +230,10 @@ Tick RUN(now), for each canvas record in reverse tree order:
 3. If open and (`record.paint.force || store.hasLanded()`): `cs = store.commitLanded()`; fire when `cs.changed.length || cs.removed.length || force` (`record.paint.force=false` first,
    `serial++`, `SchedulerHooks.firePaint(record, cs.changed)`; a throwing handler is reported by the platform, never breaks the loop; `requestPaint()` inside the handler sets `force` for the next frame). A force-only paint already fired this frame by `paintNow` is skipped.
 4. `store.pump(now, budget)`: starts due builds (`maxInFlight` 2 per canvas, synchronous part <= `mainThreadMs` 4 ms, total main-thread share incl. decode <= `mainThreadShare`, remaining work -> `moreWork`).
+   The FIRST build of a drawable (never built: it holds back every paint of its canvas) is held by neither `maxInFlight` nor `mainThreadMs`, only by the cost bucket, which charges
+   it the fixed 3 ms estimate, not its measured cost: the first snapshot of a canvas is one round (at most 8 drawables), whatever cold compilation or machine load made it cost.
+   `now` is frame time: the timestamp of the last rendering update plus whole frame periods, so the snapshot-rate gate does not depend on when the post-frame task ran.
+   A long build defers its decode start to the next task, a `scheduler.postTask` user-blocking task like the post-frame pump, so the tile still lands before the app's queued tasks.
    Ordering 3-before-4 means DOM writes made in the paint handler are captured by the build started in the same frame, and the capture reads freshly laid-out DOM (no forced layout).
 5. Frame hooks (`addFrameHook`: the effect host renders here, after the new source version is committed); a hook returning `true` keeps ticking.
 6. Re-arm only if: damage pending, builds in flight/landed, `force`, the gate is waiting, a hook asked, or the cap deferred work (there is no timer). Idle page = zero rAF and zero ResizeObserver from the polyfill (the only remaining timer is the caret blink while a text control is focused; the 1 s presentation poll was replaced by events; G-idle).

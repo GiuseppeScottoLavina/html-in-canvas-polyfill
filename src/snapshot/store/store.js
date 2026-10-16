@@ -108,6 +108,35 @@ function groupByEntry(list) {
 }
 
 /**
+ * Run functions in a later task, batched: the deferred decode start of a long build (pump.js SPLIT_DECODE_MS). A user-blocking task (Prioritized Task Scheduling)
+ * like the scheduler's post-frame pump, so the tile still lands before the tasks the page queued earlier (a setTimeout from its rAF callback): with a MessageChannel
+ * task it landed after them, and a paint came before or after the page's next task depending on whether the build took 3.5 ms (machine load decided WPT onpaint).
+ * Without the API, a MessageChannel task.
+ * @param {Window} win
+ * @param {(err: unknown) => void} onError
+ * @returns {((fn: () => void) => void) & {dispose: () => void}}
+ */
+export function createNextTask(win, onError) {
+  /** @type {Array<() => void>} */
+  const queue = [];
+  /** @type {MessageChannel|null} */
+  let channel = null;
+  const run = () => { for (const f of queue.splice(0)) { try { f(); } catch (err) { onError(err); } } };
+  /** @param {() => void} fn */
+  const post = (fn) => {
+    if (queue.push(fn) > 1) return;
+    const sched = /** @type {any} */ (win).scheduler;
+    if (typeof sched?.postTask === 'function') return void sched.postTask(run, { priority: 'user-blocking' }).catch(() => {});
+    if (!channel) {
+      channel = new ((/** @type {any} */ (win)).MessageChannel ?? MessageChannel)();
+      /** @type {MessageChannel} */ (channel).port1.onmessage = run;
+    }
+    /** @type {MessageChannel} */ (channel).port2.postMessage(0);
+  };
+  return Object.assign(post, { dispose() { queue.length = 0; channel?.port1.close(); channel = null; } });
+}
+
+/**
  * Implements SnapshotStore. Subscribes to BUS.DRAWABLES_CHANGED, RESIZE, DPR, CANVAS_UNMOUNTING; emits BUS.COMMIT and BUS.SOURCE_VERSION from commitLanded, BUS.LANDED for a tile decoded at once, BUS.SURFACE_RESTORED after a context loss.
  * commitLanded: every tile goes through drawTileAtomic; a result rejected by DamageTracker.accepts is reclaimed (re-damaged), never silently dropped; 'caret' damage is served by caret-patch.js without a build; versions carry layoutOffset from the CaptureResult.
  * isPaintReady(record): not ready ('first-commit') while any eligible drawable that has a CSS box has neither a version nor a placeholder; not ready ('coherence', coherentPaint only) while a build that started from the same damage epoch as a landed one is still in flight.
@@ -279,7 +308,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
   function settleCost(entry, l, drawMs) {
     const actual = l.syncMs + l.decodeMs + drawMs;
     entry.costEma = entry.costEma === null ? actual : entry.costEma * (1 - COST_EMA_WEIGHT) + actual * COST_EMA_WEIGHT;
-    state.bucket.spend(actual - l.estCost);
+    if (!l.first) state.bucket.spend(actual - l.estCost);
     cloneMs.push(l.result.timings?.cloneMs ?? l.syncMs);
     decodeMs.push(l.decodeMs);
     decodeMainMs.push(l.decodeMs + drawMs);
@@ -341,26 +370,13 @@ export function createSnapshotStore(env, capture, extras = {}) {
     fail(job, err, stage) {
       const entry = job.entry;
       if (!isLive(entry, job.incarnation)) return;
-      state.bucket.spend(job.syncMs - job.estCost);
+      if (!job.first) state.bucket.spend(job.syncMs - job.estCost);
       if (damage.reclaim(entry.el, job.rect, job.generation)) counters.redamaged++;
       noteFailure(entry, err, stage);
     },
   };
 
-  /** @type {Array<() => void>} */
-  const taskQueue = [];
-  /** @type {MessageChannel|null} */
-  let taskChannel = null;
-  /** @param {() => void} fn run in a later task (one MessageChannel message per batch) */
-  function nextTask(fn) {
-    if (!taskChannel) {
-      const MC = /** @type {typeof MessageChannel} */ ((/** @type {any} */ (env.window)).MessageChannel ?? globalThis.MessageChannel);
-      taskChannel = new MC();
-      taskChannel.port1.onmessage = () => { for (const f of taskQueue.splice(0)) { try { f(); } catch (err) { env.reporter.caught(err, 'snapshot-store:next-task'); } } };
-    }
-    if (!taskQueue.length) taskChannel.port2.postMessage(0);
-    taskQueue.push(fn);
-  }
+  const nextTask = createNextTask(env.window, (err) => env.reporter.caught(err, 'snapshot-store:next-task'));
 
   /** @type {import('./pump.js').PumpDeps} */
   const pumpDeps = {
@@ -958,8 +974,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       };
     },
     dispose() {
-      if (taskChannel) { taskChannel.port1.onmessage = null; taskChannel.port1.close(); taskChannel = null; }
-      taskQueue.length = 0;
+      nextTask.dispose();
       for (const off of offs) off();
       for (const l of landed.splice(0, landed.length)) releaseImage(l.image);
       for (const entry of [...entries.values()]) dropEntry(entry, false);

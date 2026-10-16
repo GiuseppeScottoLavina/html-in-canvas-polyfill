@@ -148,7 +148,7 @@ export function createFakeStore(bus) {
       if (store.emitCommit && (change.changed.length || change.removed.length)) bus.emit('snapshot:commit', { record: store.commitRecord, changed: change.changed, removed: change.removed });
       return change;
     },
-    pump(now, budget) { store.pumps++; store.lastBudget = budget; store.calls.push(['pump']); return store.pumpResult; },
+    pump(now, budget) { store.pumps++; store.lastBudget = budget; store.lastNow = now; store.calls.push(['pump']); return store.pumpResult; },
     markDamage(el, rect, cause) { store.calls.push(['markDamage', el, rect, cause]); },
     invalidateAll(cause) { store.calls.push(['invalidateAll', cause]); },
     has: () => true,
