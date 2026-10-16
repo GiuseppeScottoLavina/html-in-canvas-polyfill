@@ -34,13 +34,17 @@ const LIMITS = {
   //   of its unchanged parent that moved, the trailing children below a pruned tile left out of the clone (a 60 Hz counter beside 2,000 cells: 27 -> 59 paints/s)
   // 264.75 -> 265.5 KB, gzip 92.1 -> 92.35 KB (+1,052 / +446 bytes, 2026-10-16, measured 265,281 / 92,275): a classic scrollbar gutter at its exact width (a whole number of
   //   device pixels, measured on a probe; F4 at DPR 1.25 / 1.5 against native 2.0 / 1.2 % -> 0.005 %)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 265.5 * KB, gzip: 92.35 * KB },
+  // 265.5 -> 267.5 KB, gzip 92.35 -> 93.25 KB (+1,859 / +735 bytes, 2026-10-16, measured 267,140 / 93,010): phones and tablets (mobile browser gate: iOS / iPadOS / Android
+  //   classification, web views refused; phone surface budgets; the snapshot raster scale in the report)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 267.5 * KB, gzip: 93.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   'hic-live-effects.iife.min.js': { target: 27.25 * KB, ceiling: 27.25 * KB, gzip: 10.75 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   'hic-live-native-bridge.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB, gzip: 4.5 * KB },
   // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
-  'hic-live-engines.iife.min.js': { target: 38.5 * KB, ceiling: 38.5 * KB, gzip: 15 * KB },
+  // 38.5 -> 42 KB, gzip 15 -> 16.25 KB (+3,509 / +1,244 bytes, 2026-10-16, measured 41,804 / 16,038): the iOS control look (system tint, pill buttons and pop-ups from the computed
+  //   style, the colour-well hue ring, medium-style date pills, no spin button, popup labels pinned) and the iOS classification of the engine
+  'hic-live-engines.iife.min.js': { target: 42 * KB, ceiling: 42 * KB, gzip: 16.25 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
 };

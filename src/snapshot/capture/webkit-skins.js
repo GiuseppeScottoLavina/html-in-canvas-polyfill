@@ -171,19 +171,21 @@ export const THUMB = { w: 24, h: 16, shadow: 2 };
  * paintSliderTrackForVectorBasedControls + paintSliderThumbForVectorBasedControls (horizontal): an 8 px track inset 1 px at the ends, fully rounded, ringed by 1 px of the control
  * background; the fill (tint) from the start to ratio x track width, clipped by the track; a white 24 x 16 pill thumb at ratio x (w - 24) with a 2 px black 24 % shadow. Disabled:
  * track, ring and fill at 40 % alpha (the thumb stays white).
- * @param {number} w @param {number} h @param {{ratio: number, disabled: boolean, tint: Rgba, rtl?: boolean, pressed?: boolean}} s @param {Palette} p @returns {string}
+ * iOS (RenderThemeIOS, measured on the iOS 26.4 simulator): the same with a 4 px track (`track`).
+ * @param {number} w @param {number} h @param {{ratio: number, disabled: boolean, tint: Rgba, rtl?: boolean, pressed?: boolean, track?: number}} s @param {Palette} p @returns {string}
  */
 export function rangeSkin(w, h, s, p) {
   const k = s.disabled ? DISABLED_ALPHA : 1;
   // pressed (measured Safari 27.0.1, light): thumb and fill 8 % darker, track 4.8 % darker
   if (s.pressed && !p.dark) { p = { ...p, opaqueFill: pressedShade(p.opaqueFill, false, 0.048) }; s = { ...s, tint: pressedShade(s.tint, false, 0.08) }; }
   const knob = s.pressed && !p.dark ? pressedShade([255, 255, 255, 1], false, 0.08) : /** @type {Rgba} */ ([255, 255, 255, 1]);
-  const tx = w > 2 ? 1 : 0, tw = w > 2 ? w - 2 : w, ty = h / 2 - 4;
+  const th = s.track ?? 8;
+  const tx = w > 2 ? 1 : 0, tw = w > 2 ? w - 2 : w, ty = h / 2 - th / 2;
   const fw = tw * Math.min(1, Math.max(0, s.ratio));
   const thumbX = (s.rtl ? 1 - s.ratio : s.ratio) * (w - THUMB.w);
   const id = 'c' + Math.round(w * 100);
-  const body = rect(tx - 1, ty - 1, tw + 2, 10, 5, alpha(p.controlBg, k)) + rect(tx, ty, tw, 8, 4, alpha(p.opaqueFill, k))
-    + `<clipPath id="${id}">${rect(tx, ty, tw, 8, 4, [0, 0, 0, 1])}</clipPath><g clip-path="url(#${id})">${rect(s.rtl ? tx + tw - fw : tx, ty, fw, 8, 0, alpha(s.tint, k))}</g>`
+  const body = rect(tx - 1, ty - 1, tw + 2, th + 2, th / 2 + 1, alpha(p.controlBg, k)) + rect(tx, ty, tw, th, th / 2, alpha(p.opaqueFill, k))
+    + `<clipPath id="${id}">${rect(tx, ty, tw, th, th / 2, [0, 0, 0, 1])}</clipPath><g clip-path="url(#${id})">${rect(s.rtl ? tx + tw - fw : tx, ty, fw, th, 0, alpha(s.tint, k))}</g>`
     + `<filter id="f${id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="1" flood-color="#000" flood-opacity="0.24"/></filter>`
     + rect(thumbX, (h - THUMB.h) / 2, THUMB.w, THUMB.h, THUMB.h / 2, knob, ` filter="url(#f${id})"`);
   return svgDoc(w, h, body, THUMB.shadow + 1);
@@ -283,6 +285,31 @@ export function colorWellSkin(w, h, s, p) {
     + rect(i.x + 0.25, i.y + 0.25, i.w - 0.5, i.h - 0.5, Math.max(0, r - 0.25), [0, 0, 0, 0], ` fill-opacity="0" stroke="${css([0, 0, 0, 0.1 * a])}" stroke-width="0.5"`));
 }
 
+/** The iOS colour well ring, measured every 15 degrees clockwise from the top (iOS 26.4 simulator). */
+const IOS_WELL = [[195, 246, 0], [243, 244, 0], [255, 203, 0], [255, 152, 0], [255, 102, 1], [254, 49, 0], [255, 0, 3], [255, 0, 51], [254, 0, 107], [255, 0, 159], [255, 0, 212],
+  [243, 9, 254], [194, 39, 254], [140, 75, 255], [84, 111, 255], [31, 145, 255], [0, 173, 234], [1, 193, 178], [0, 210, 130], [0, 228, 77], [0, 248, 21], [32, 253, 1], [85, 252, 0], [140, 248, 0]];
+
+/**
+ * The iOS colour well (UIColorWell, measured on the iOS 26.4 simulator at 28 x 28 css px): a 3 px hue ring, a 2 px gap of the canvas and the value as a disc inside. The ring
+ * colours are the 24 measured every 15 degrees clockwise from the top (yellow-green at the top, red at 3 o'clock, magenta at the bottom), interpolated over 72 wedges (SVG has
+ * no conic gradient); half alpha when disabled.
+ * @param {number} w @param {number} h @param {{value: Rgba, disabled: boolean}} s @param {Palette} p @returns {string}
+ */
+export function iosColorWellSkin(w, h, s, p) {
+  const a = s.disabled ? 0.5 : 1, cx = w / 2, cy = h / 2, ro = Math.min(w, h) / 2, ri = ro - 3, rs = Math.max(0, ri - 2);
+  let ring = '';
+  const N = 72;
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * 2 * Math.PI - Math.PI / 2, a1 = ((i + 1.15) / N) * 2 * Math.PI - Math.PI / 2;
+    const pt = (/** @type {number} */ r, /** @type {number} */ t) => `${n(cx + r * Math.cos(t))} ${n(cy + r * Math.sin(t))}`;
+    const t = ((i + 0.5) / N) * IOS_WELL.length, j = Math.floor(t) % IOS_WELL.length, f = t - Math.floor(t);
+    const c0 = IOS_WELL[j], c1 = IOS_WELL[(j + 1) % IOS_WELL.length];
+    const rgb = /** @type {Rgba} */ ([0, 1, 2].map((k) => c0[k] + (c1[k] - c0[k]) * f).concat(1));
+    ring += `<path d="M${pt(ro, a0)} A${n(ro)} ${n(ro)} 0 0 1 ${pt(ro, a1)} L${pt(ri, a1)} A${n(ri)} ${n(ri)} 0 0 0 ${pt(ri, a0)} Z" fill="${css(rgb)}"/>`;
+  }
+  return svgDoc(w, h, `<g opacity="${a}">${ring}</g><circle cx="${n(cx)}" cy="${n(cy)}" r="${n(ri)}" fill="${css(p.canvas)}"/><circle cx="${n(cx)}" cy="${n(cy)}" r="${n(rs)}" fill="${css(alpha(s.value, a))}"/>`);
+}
+
 /**
  * paintPlatformResizerForVectorBasedControls: two rounded bars (0.75 and 0.375 of the corner, 7.5 % thick) rotated -45 degrees in secondary-label, in the bottom-right `size` square.
  * @param {number} w @param {number} h @param {number} size @param {Palette} p @returns {string}
@@ -319,9 +346,15 @@ export function searchSkin(w, h, s, p, extra = '') {
   const r = capsule ? h / 2 : Math.min(w, h) * 0.15;
   const k = s.disabled ? 0.5 : 1;
   let body = (s.dark ? '' : rect(0, 0, w, h, r, alpha(p.quinaryLabel, k))) + rect(1, 1, w - 2, h - 2, Math.max(0, r - 1), alpha(s.bg, k));
-  if (s.magnifier) {
-    const sc = s.em / 73;
-    body += `<path transform="translate(${n(s.magnifier.x + s.em / 2 - (73 * sc) / 2)} ${n(s.magnifier.y)}) scale(${n(sc)})" d="${MAGNIFIER}" fill="${css(alpha(s.dark ? [255, 255, 255, 1] : [76, 76, 76, 1], k))}"/>`;
-  }
+  if (s.magnifier) body += magnifierGlyph(s.magnifier, s.em, s.dark, s.disabled);
   return svgDoc(w, h, body + extra);
+}
+
+/**
+ * The search field's magnifier: a 1 em glyph at `at`, #4c4c4c (dark: white), half alpha when disabled.
+ * @param {{x: number, y: number}} at @param {number} em @param {boolean} dark @param {boolean} disabled @returns {string}
+ */
+export function magnifierGlyph(at, em, dark, disabled) {
+  const sc = em / 73;
+  return `<path transform="translate(${n(at.x + em / 2 - (73 * sc) / 2)} ${n(at.y)}) scale(${n(sc)})" d="${MAGNIFIER}" fill="${css(alpha(dark ? [255, 255, 255, 1] : [76, 76, 76, 1], disabled ? 0.5 : 1))}"/>`;
 }

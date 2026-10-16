@@ -14,7 +14,7 @@ import { pressOnThumb } from '../../util/native-states.js';
 import { accentPalette, geckoArrow, geckoBoxSkin, geckoListboxBar, geckoListboxThumb, geckoProgressSkin, geckoRangeSkin, geckoToggleSkin } from './gecko-skins.js';
 import { usedColorScheme } from './color-scheme.js';
 import {
-  THUMB, alpha, buttonSkin, cancelGlyph, css, inactiveTints, luminance, pressedShade, searchSkin, svgDoc, colorWellSkin, foregroundOn, meterSkin, over, popupGlyph, progressSkin, rangeSkin, resizerGlyph, skinUrl, spinGlyph, textFieldSkin,
+  THUMB, alpha, buttonSkin, cancelGlyph, css, inactiveTints, iosColorWellSkin, luminance, magnifierGlyph, pressedShade, searchSkin, svgDoc, colorWellSkin, foregroundOn, meterSkin, over, popupGlyph, progressSkin, rangeSkin, resizerGlyph, skinUrl, spinGlyph, textFieldSkin,
   tintWithContrast, toggleSkin,
 } from './webkit-skins.js';
 
@@ -91,14 +91,23 @@ function paletteOf(doc, dark) {
   doc.documentElement.appendChild(probe);
   /** @type {any} */
   const p = { dark };
+  /** @type {Set<string>} */ const missing = new Set();
   for (const [name, kw] of KEYWORDS) {
     probe.style.color = '';
     probe.style.color = kw;
+    if (!probe.style.color) missing.add(name);
     p[name] = rgbaOf(doc, probe.style.color ? getComputedStyle(probe).color : dark ? 'rgb(255,255,255)' : 'rgb(0,0,0)');
   }
+  // iOS / iPadOS WebKit has no control-accent keyword (measured on the iOS 26.4 simulator: unsupported, so the probe fell back to the label colour and every
+  // checked control was black): its controls are tinted with the system blue, and its opaque fills have keywords of their own (RenderThemeIOS)
+  const ios = currentEngine().os === 'ios';
+  const kw = (/** @type {string} */ k) => { probe.style.color = ''; probe.style.color = k; return probe.style.color ? rgbaOf(doc, getComputedStyle(probe).color) : null; };
+  if (ios) p.accent = kw('-apple-system-blue') ?? (dark ? [0, 145, 255, 1] : [0, 136, 255, 1]);
+  // iOS has no quinary label either: the rims drawn in it (search field) do not exist there
+  if (ios && missing.has('quinaryLabel')) p.quinaryLabel = [0, 0, 0, 0];
+  p.opaqueFill = (ios && kw('-apple-system-opaque-fill')) || (dark ? [52, 52, 52, 1] : [230, 230, 230, 1]);
+  p.opaqueSecondaryFill = (ios && kw('-apple-system-opaque-secondary-fill')) || (dark ? [47, 47, 47, 1] : [235, 235, 235, 1]);
   probe.remove();
-  p.opaqueFill = dark ? [52, 52, 52, 1] : [230, 230, 230, 1];
-  p.opaqueSecondaryFill = dark ? [47, 47, 47, 1] : [235, 235, 235, 1];
   palettes.set(key, p);
   return p;
 }
@@ -165,13 +174,22 @@ const idleVerdicts = new WeakMap();
  * @param {Element} src @param {CSSStyleDeclaration} cs @returns {boolean}
  */
 function authoredLook(src, cs) {
+  const ua = uaLook(src, cs);
+  let live = lookOf(cs);
+  // iOS rounds a control by its size (RenderThemeIOS adjustRoundBorderRadius: measured 10px on a 20px select, and 1px or "6px 7.5px" on the hidden probe): the radius
+  // is the theme's, so it is left out of the comparison there (an author radius ALONE is not seen as a restyle on iOS)
+  if (currentEngine().os === 'ios') {
+    const parts = live.split('|');
+    parts[4] = ua.split('|')[4];
+    live = parts.join('|');
+  }
   if (src.matches(':hover') || src.matches(':active')) {
     const known = idleVerdicts.get(src);
     if (known !== undefined) return known;
     const shape = (/** @type {string} */ look) => look.split('|').filter((_, i) => i !== 5 && i !== 7).join('|');
-    return shape(lookOf(cs)) !== shape(uaLook(src, cs));
+    return shape(live) !== shape(ua);
   }
-  const v = lookOf(cs) !== uaLook(src, cs);
+  const v = live !== ua;
   idleVerdicts.set(src, v);
   return v;
 }
@@ -286,13 +304,22 @@ function rangeRatio(el) {
  * locale, `field` false for the literal separators.
  * @param {HTMLInputElement} el @returns {{text: string, field: boolean}[]}
  */
-function dateParts(el) {
+function dateParts(el, ios = false) {
   const v = el.value, t = el.type;
   if (!v) return [];
   try {
     let d;
     /** @type {Intl.DateTimeFormatOptions} */
     let o = { year: 'numeric', month: '2-digit', day: '2-digit' };
+    // iOS shows the value as one label in the medium date style and the short time style ("8 Oct 2026", "14:35"; measured on the iOS 26.4 simulator)
+    if (ios) {
+      const time = t === 'time' ? v.split(':').map(Number) : null;
+      d = time ? new Date(2000, 0, 1, time[0], time[1]) : new Date(t === 'month' ? `${v}-01T00:00` : t === 'date' ? `${v}T00:00` : v);
+      if (Number.isNaN(d.getTime())) return [{ text: v, field: false }];
+      /** @type {Intl.DateTimeFormatOptions} */
+      const io = t === 'time' ? { timeStyle: 'short' } : t === 'month' ? { year: 'numeric', month: 'long' } : t === 'datetime-local' ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' };
+      return [{ text: new Intl.DateTimeFormat(undefined, io).format(d), field: false }];
+    }
     if (t === 'time') { const [h, m] = v.split(':').map(Number); d = new Date(2000, 0, 1, h, m); o = { hour: '2-digit', minute: '2-digit' }; } else d = new Date(t === 'month' ? `${v}-01T00:00` : t === 'date' ? `${v}T00:00` : v);
     if (t === 'month') o = { year: 'numeric', month: 'long' };
     if (t === 'datetime-local') o = { ...o, hour: '2-digit', minute: '2-digit' };
@@ -308,11 +335,12 @@ function dateParts(el) {
 function dateStandIn(src, clone, cs, decl) {
   const doc = clone.ownerDocument;
   const gecko = currentEngine().engine === 'gecko';
+  const ios = currentEngine().os === 'ios';
   const box = doc.createElement('span');
   for (const a of ['class', 'id', 'title', 'hidden']) if (src.hasAttribute(a)) box.setAttribute(a, src.getAttribute(a) ?? '');
   const edit = doc.createElement('span');
   appendInlineStyle(edit, gecko ? 'overflow:hidden;flex-grow:1;white-space:nowrap;' : 'display:inline-block;padding:1px;white-space:pre;overflow:hidden;');
-  for (const part of dateParts(src)) {
+  for (const part of dateParts(src, ios)) {
     const span = doc.createElement('span');
     if (part.field) appendInlineStyle(span, gecko ? 'display:inline;padding:1px 3px;text-align:center;' : 'display:inline-block;padding:1px;text-align:center;');
     span.textContent = part.text;
@@ -333,13 +361,36 @@ function dateStandIn(src, clone, cs, decl) {
     box.appendChild(btn);
   }
   appendInlineStyle(box, `${clone.getAttribute('style') ?? ''};display:${cs.display === 'block' ? 'flex' : 'inline-flex'}!important;align-items:center!important;overflow:hidden!important;white-space:nowrap!important;`
-    + (gecko ? 'justify-content:space-between!important;' : '')
+    + (gecko ? 'justify-content:space-between!important;' : ios ? 'justify-content:center!important;' : '')
     + `font-family:${cs.fontFamily}!important;font-size:${cs.fontSize}!important;font-weight:${cs.fontWeight}!important;font-style:${cs.fontStyle}!important;line-height:${cs.lineHeight}!important;font-variant-numeric:${cs.fontVariantNumeric}!important;letter-spacing:${cs.letterSpacing}!important;text-align:${cs.textAlign}!important;vertical-align:${cs.verticalAlign}!important;${decl}`);
   return box;
 }
 
 /** Firefox's datetimebox calendar icon (toolkit/content/widgets/datetimebox.js). */
 const CALENDAR = 'M13.5 2H13V1c0-.6-.4-1-1-1s-1 .4-1 1v1H5V1c0-.6-.4-1-1-1S3 .4 3 1v1h-.5C1.1 2 0 3.1 0 4.5v9C0 14.9 1.1 16 2.5 16h11c1.4 0 2.5-1.1 2.5-2.5v-9C16 3.1 14.9 2 13.5 2zm0 12.5h-11c-.6 0-1-.4-1-1V6h13v7.5c0 .6-.4 1-1 1z';
+
+/**
+ * iOS paints its button-like controls (buttons, popup buttons, date / time pills, search fields) as their computed border and background in a pill (measured on the iOS 26.4
+ * simulator: a 1 px border in the computed border colour, white in light and black in dark, around the computed background), so the skin is drawn from the computed style.
+ * @param {Document} doc @param {CSSStyleDeclaration} cs @param {number} w @param {number} h @param {string} [extra] @returns {string}
+ */
+function iosBox(doc, cs, w, h, extra = '') {
+  const r = Math.min(w, h) / 2, b = cs.borderTopStyle === 'none' ? 0 : parseFloat(cs.borderTopWidth) || 0;
+  const ring = b ? `<rect width="${w}" height="${h}" rx="${r}" fill="${css(rgbaOf(doc, cs.borderTopColor))}"/>` : '';
+  return svgDoc(w, h, `${ring}<rect x="${b}" y="${b}" width="${Math.max(0, w - 2 * b)}" height="${Math.max(0, h - 2 * b)}" rx="${Math.max(0, r - b)}" fill="${css(rgbaOf(doc, cs.backgroundColor))}"/>${extra}`);
+}
+
+/**
+ * iOS draws a listbox select (multiple, or a size) as a popup button too, and its image document does so as well, but fills the label in the system blue whatever the
+ * colour (measured on the iOS 26.4 simulator): only the label colour is pinned. Elsewhere a listbox is left to the image.
+ * @param {Element} src @param {Element} clone @returns {boolean}
+ */
+function iosListText(src, clone) {
+  if (src.localName !== 'select' || currentEngine().os !== 'ios') return false;
+  const color = (src.ownerDocument.defaultView ?? window).getComputedStyle(src).color;
+  appendInlineStyle(clone, `color:${color}!important;-webkit-text-fill-color:${color}!important;`);
+  return true;
+}
 
 /**
  * Draw `src` (a control the live WebKit page paints natively) into `clone` in the refreshed look. No-op for controls drawn by CSS (appearance:none, or a devolvable control with an
@@ -350,8 +401,8 @@ export function paintNativeControl(src, clone) {
   const engine = currentEngine().engine;
   if (engine !== 'webkit' && engine !== 'gecko') return false;
   const kind = controlKind(src, engine);
-  if (!kind) return false;
   const doc = src.ownerDocument;
+  if (!kind) return iosListText(src, clone);
   const cs = (doc.defaultView ?? window).getComputedStyle(src);
   if (cs.display === 'none') return false;
   if (kind === 'file') return engine === 'webkit' && fileButton(src, clone, cs);
@@ -396,6 +447,7 @@ function paintWebkit(src, clone, cs, kind, box) {
   const el = /** @type {HTMLInputElement} */ (src);
   const disabled = src.matches(':disabled');
   const pressed = !disabled && src.matches(':active');
+  const ios = currentEngine().os === 'ios';
   const { w, h } = box;
   let decl = pinBox(cs, box);
   switch (kind) {
@@ -405,7 +457,7 @@ function paintWebkit(src, clone, cs, kind, box) {
       break;
     case 'range':
       clone.setAttribute('data-hic-wk', '');
-      decl += skinDecl(rangeSkin(w, h, { ratio: rangeRatio(el), disabled, tint: inactive?.bar ?? tint, rtl: cs.direction === 'rtl', pressed: pressed && pressOnThumb(el, rangeRatio(el), THUMB.w, cs.direction === 'rtl') }, p), THUMB.shadow + 1, 0);
+      decl += skinDecl(rangeSkin(w, h, { ratio: rangeRatio(el), disabled, tint: inactive?.bar ?? tint, rtl: cs.direction === 'rtl', pressed: pressed && pressOnThumb(el, rangeRatio(el), THUMB.w, cs.direction === 'rtl'), track: ios ? 4 : 8 }, p), THUMB.shadow + 1, 0);
       break;
     case 'progress':
       clone.setAttribute('data-hic-wk', '');
@@ -421,11 +473,15 @@ function paintWebkit(src, clone, cs, kind, box) {
       const submit = !inactive && ((src.localName === 'input' && el.type === 'submit') || (src.localName === 'button' && src.getAttribute('type')?.toLowerCase() === 'submit'));
       const base = submit ? tint : over(p.opaqueSecondaryFill, p.canvas);
       const fill = pressed && kind === 'button' ? pressedShade(base, dark) : base;
-      const fs = parseFloat(cs.fontSize) || 13, inner = popupPadding(fs);
-      const glyph = kind === 'menulist' ? popupGlyph(w, h, fs, (parseFloat(cs.borderRightWidth) || 0) + (parseFloat(cs.paddingRight) || 0) + inner.left, disabled ? p.tertiaryLabel : p.label) : '';
-      decl += skinDecl(buttonSkin(w, h, { fill, disabled }, p, glyph), 0, 6);
+      // iOS (measured on the 26.4 simulator): the padding already reserves the chevron, which sits half an em inside the right border; the pill is fully rounded, no ring
+      const fs = parseFloat(cs.fontSize) || 13, inner = ios ? { top: 0, right: 0, bottom: 0, left: 0 } : popupPadding(fs);
+      const end = (parseFloat(cs.borderRightWidth) || 0) + (ios ? fs / 2 : (parseFloat(cs.paddingRight) || 0) + inner.left);
+      const glyph = kind === 'menulist' ? popupGlyph(w, h, fs, end, disabled ? p.tertiaryLabel : p.label) : '';
+      decl += ios ? skinDecl(iosBox(doc, cs, w, h, glyph), 0, h / 2) : skinDecl(buttonSkin(w, h, { fill, disabled }, p, glyph), 0, 6);
       const text = submit ? alpha(foregroundOn(tint), disabled ? (luminanceIsWhite(foregroundOn(tint)) ? 0.6 : 0.3) : 1) : null;
-      decl += `color:${text ? `rgba(${text.slice(0, 3).join(',')},${text[3]})` : cs.color}!important;`;
+      const ink = text ? `rgba(${text.slice(0, 3).join(',')},${text[3]})` : cs.color;
+      // iOS: the image document fills button and popup labels in the system blue whatever the colour (measured): the fill colour is pinned too
+      decl += `color:${ink}!important;` + (ios ? `-webkit-text-fill-color:${ink}!important;` : '');
       if (kind === 'menulist') {
         const v = (/** @type {string} */ k) => parseFloat(/** @type {any} */ (cs)[k]) || 0;
         decl += `line-height:${cs.lineHeight}!important;padding:${v('paddingTop') + inner.top}px ${v('paddingRight') + inner.right}px ${v('paddingBottom') + inner.bottom}px ${v('paddingLeft') + inner.left}px!important;`;
@@ -435,17 +491,19 @@ function paintWebkit(src, clone, cs, kind, box) {
     case 'color': {
       const pl = parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth), pt = parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth);
       const inset = { x: pl, y: pt, w: w - pl - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth), h: h - pt - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth) };
-      decl += skinDecl(colorWellSkin(w, h, { inset, value: rgbaOf(doc, el.value || '#000'), disabled }, p), 0, Math.min(w, h) / 2) + 'color:transparent!important;-webkit-text-fill-color:transparent!important;';
+      decl += skinDecl((ios ? iosColorWellSkin : colorWellSkin)(w, h, { inset, value: rgbaOf(doc, el.value || '#000'), disabled }, p), 0, Math.min(w, h) / 2) + 'color:transparent!important;-webkit-text-fill-color:transparent!important;';
       break;
     }
     default: { // text, date, textarea
       const bg = rgbaOf(doc, cs.backgroundColor);
       let extra = '';
       if (kind === 'textarea' && cs.resize !== 'none') extra += resizerGlyph(w, h, Math.min(15, w, h), p);
-      if (src.localName === 'input' && el.type === 'number') extra += spinGlyph(contentRect(cs, w, h), disabled, p);
+      if (src.localName === 'input' && el.type === 'number' && !ios) extra += spinGlyph(contentRect(cs, w, h), disabled, p); // iOS has no spin button
       if (src.localName === 'input' && el.type === 'search') return searchField(el, clone, cs, box, p, dark, disabled, decl);
       if (kind === 'textarea' || /** @type {HTMLInputElement} */ (src).type !== 'text') clone.setAttribute('data-hic-wk', '');
-      decl += skinDecl(textFieldSkin(w, h, { bg, disabled }, p, extra), 0, 5) + `color:${cs.color}!important;`;
+      // iOS draws a date / time input as a filled pill (its background colour, no rim) with the value centred
+      decl += (ios && kind === 'date' ? skinDecl(iosBox(doc, cs, w, h), 0, Math.min(w, h) / 2)
+        : skinDecl(textFieldSkin(w, h, { bg, disabled }, p, extra), 0, 5)) + `color:${cs.color}!important;`;
       if (kind === 'textarea') decl += 'resize:none!important;';
       if (kind === 'date') return dateStandIn(el, clone, cs, decl);
     }
@@ -588,10 +646,14 @@ function listboxBar(src, cs, dark) {
  */
 function searchField(el, clone, cs, box, p, dark, disabled, decl) {
   const em = parseFloat(cs.fontSize) || 13, c = contentRect(cs, box.w, box.h);
-  const extra = el.value ? cancelGlyph({ x: c.x + c.w - em, y: c.y + c.h / 2 - em / 2, size: em }, dark, disabled) : '';
-  const magnifier = (currentEngine().major ?? 0) >= 27 && cs.direction === 'ltr' ? { x: c.x, y: c.y + c.h / 2 - em / 2 } : undefined;
+  const ios = currentEngine().os === 'ios';
+  // iOS shows the cancel button only while the field is focused, and the magnifier from iOS 26 on (measured on the iOS 26.4 simulator)
+  const extra = el.value && (!ios || el.matches(':focus')) ? cancelGlyph({ x: c.x + c.w - em, y: c.y + c.h / 2 - em / 2, size: em }, dark, disabled) : '';
+  const magnifier = (ios || (currentEngine().major ?? 0) >= 27) && cs.direction === 'ltr' ? { x: c.x, y: c.y + c.h / 2 - em / 2 } : undefined;
   clone.setAttribute('data-hic-wk', '');
-  let d = decl + skinDecl(searchSkin(box.w, box.h, { bg: rgbaOf(el.ownerDocument, cs.backgroundColor), disabled, em, dark, magnifier }, p, extra), 0, box.h / 2) + `color:${cs.color}!important;`;
+  const skin = ios ? iosBox(el.ownerDocument, cs, box.w, box.h, (magnifier ? magnifierGlyph(magnifier, em, dark, disabled) : '') + extra)
+    : searchSkin(box.w, box.h, { bg: rgbaOf(el.ownerDocument, cs.backgroundColor), disabled, em, dark, magnifier }, p, extra);
+  let d = decl + skinDecl(skin, 0, box.h / 2) + `color:${cs.color}!important;`;
   if (magnifier) d += `padding-left:${(parseFloat(cs.paddingLeft) || 0) + 1.36 * em}px!important;`;
   appendInlineStyle(clone, d);
   return true;
