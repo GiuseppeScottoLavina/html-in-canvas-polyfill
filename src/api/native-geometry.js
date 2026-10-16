@@ -9,6 +9,8 @@
  *  - getElementTransform needs two arguments (the standard one-argument form throws "Overload resolution failed").
  * So the standard behaviour is rebuilt with one polyfill-owned adopted stylesheet rule per drawn element (`[data-hic-hit="k"]{transform: ... !important}`),
  * never with the author's style attribute.
+ * A legacy build may lack the geometry methods altogether (Safari Technology Preview 254's flagged WebKit has no updateElementGeometry / clearElementGeometry,
+ * read from its binary): only the methods that exist are wrapped, and a draw's matrix then goes to the rule alone.
  */
 
 import { MARK } from '../contracts/events.js';
@@ -91,8 +93,10 @@ export function installLegacyTranslation(env, ledger, isStandardCaller) {
   }
 
   const canvasProto = win.HTMLCanvasElement.prototype;
+  /** @param {object} proto @param {string} key @param {(orig: Function) => Function} wrapper  wrap a method only where this build has it */
+  const wrapIfPresent = (proto, key, wrapper) => { if (typeof Object.getOwnPropertyDescriptor(proto, key)?.value === 'function') ledger.wrap(proto, key, wrapper); };
 
-  ledger.wrap(canvasProto, 'updateElementGeometry', (orig) => /** @this {HTMLCanvasElement} */ function (/** @type {unknown[]} */ ...args) {
+  wrapIfPresent(canvasProto, 'updateElementGeometry', (orig) => /** @this {HTMLCanvasElement} */ function (/** @type {unknown[]} */ ...args) {
     const result = orig.apply(this, args);
     const [target, options] = args;
     if (isElement(target)) {
@@ -105,13 +109,13 @@ export function installLegacyTranslation(env, ledger, isStandardCaller) {
     return result;
   });
 
-  ledger.wrap(canvasProto, 'clearElementGeometry', (orig) => /** @this {HTMLCanvasElement} */ function (/** @type {unknown[]} */ ...args) {
+  wrapIfPresent(canvasProto, 'clearElementGeometry', (orig) => /** @this {HTMLCanvasElement} */ function (/** @type {unknown[]} */ ...args) {
     const result = orig.apply(this, args);
     if (isElement(args[0])) guarded(() => clearTransform(/** @type {Element} */ (args[0])), 'bridge.clearElementGeometry');
     return result;
   });
 
-  ledger.wrap(canvasProto, 'getElementTransform', (orig) => /** @this {HTMLCanvasElement} */ function (/** @type {unknown[]} */ ...args) {
+  wrapIfPresent(canvasProto, 'getElementTransform', (orig) => /** @this {HTMLCanvasElement} */ function (/** @type {unknown[]} */ ...args) {
     if (args.length === 1 && isElement(args[0])) {
       const entry = applied.get(args[0]);
       return entry ? win.DOMMatrix.fromMatrix(entry.matrix) : new win.DOMMatrix();
@@ -140,7 +144,13 @@ export function installLegacyTranslation(env, ledger, isStandardCaller) {
     if (!isStandardCaller(canvas)) return result;
     const options = args.length >= 4 ? args[args.length - 1] : null;
     const preserve = !!options && typeof options === 'object' && /** @type {{preserveElementGeometry?: unknown}} */ (options).preserveElementGeometry === true;
-    if (!preserve && isElement(target) && result) guarded(() => /** @type {any} */ (canvas).updateElementGeometry(target, { canvasTransform: /** @type {DOMMatrixInit} */ (result) }), 'bridge.drawElementImage');
+    if (!preserve && isElement(target) && result) {
+      guarded(() => {
+        const update = /** @type {any} */ (canvas).updateElementGeometry;
+        if (typeof update === 'function') update.call(canvas, target, { canvasTransform: /** @type {DOMMatrixInit} */ (result) });
+        else { const matrix = toMatrix(result); if (matrix) setTransform(target, matrix); }
+      }, 'bridge.drawElementImage');
+    }
     return undefined;
   });
 

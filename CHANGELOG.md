@@ -19,6 +19,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - `npm run test:pages`: the GitHub Pages site under its project path in headless Chrome, every example and the gallery with each plugin.
 - Classic `<script>` bundles (readable and minified) and an ES module build with `exports` and TypeScript declarations; no runtime dependencies and no network request on load.
 - Six examples, among them a gallery of the effect plugins over one live form, and a zero-dependency demo server (`npm run demo`); guides for getting started, frameworks (React, Vue, Svelte, Lit), effect plugins, performance and troubleshooting.
+- Safari Technology Preview as an optional engine of `npm run test:xbrowser` (`stp`): skipped with the reason when it is not installed or its remote automation is off; its native surface is read first and decides between the polyfill scenarios and a native-examples scenario.
 - Tests: unit tests in Node and headless Chrome, browser gates with positive controls and a mutation suite, the official WPT HTML-in-Canvas tests at a pinned commit (`docs/CONFORMANCE.md`), Firefox and Safari through WebDriver, and framework apps.
 
 ### Changed
@@ -40,6 +41,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 ### Fixed
 
+- The native bridge threw on a legacy native build without `updateElementGeometry` / `clearElementGeometry` (the shape of Safari Technology Preview 254 with its HTML-in-Canvas feature flag, read from its binary), so install dropped the bridge and `content="drawable"` canvases were not drawable there. Only the methods a build has are wrapped now; regression tests on that shape.
 - At a fractional device pixel ratio (1.25, 1.5), a scroller with classic scrollbars (macOS with a mouse connected, or author-styled `::-webkit-scrollbar`) was drawn with its content up to one device pixel off: the bar gutter, a whole number of device pixels (14.4 css px at 1.25), was reproduced rounded to a whole css px, so fractional layouts inside it (a grid of `1fr` columns) landed elsewhere. The gutter is now measured exactly (F4 against native: 2.0 % -> 0.005 % of pixels).
 - `install()` threw `HicUnsupportedError('partial-native')` on Chrome Canary 157.0.8103.0, which exposes the API by default, because the native probe required `ElementImage.width` / `height`. The probe now decides on the core behaviour only, and Canary 157 installs in mode `native` and draws natively.
 - Selecting static text inside the canvas (double or triple click, drag, select all) did not show on the canvas until something else repainted it, and clearing the selection did not show either; with an effect plugin the picture stayed unchanged until the effect was switched. A selection change now repaints the drawables where the old and the new highlight are.

@@ -225,3 +225,34 @@ test('mutation check: without the bridge a standard caller would see the native 
   const m = w.document.getElementById('c').getContext('2d').drawElementImage(w.document.getElementById('d'), 1, 1);
   assert.equal(String(m), 'matrix(1, 0, 0, 1, 1, 1)', 'control: the raw fake native returns the matrix');
 });
+
+// Safari Technology Preview 254 with its HTML-in-Canvas feature flag (names read from the binary, test/unit/api-core/_page-env.mjs shape 'webkit-stp'):
+// a legacy shape WITHOUT updateElementGeometry / clearElementGeometry. The bridge used to throw "cannot wrap updateElementGeometry", so install fell back to
+// mode native and content="drawable" canvases were not drawable at all.
+for (const drawReturns of /** @type {const} */ (['matrix', 'undefined'])) {
+  test(`Safari Technology Preview shape (drawElementImage returns ${drawReturns}): native-bridged, content mirrored, draws pass through, no internal error`, t => {
+    const w = makeFrame(t, '<canvas id="c" content="drawable" width="300" height="100"><div id="d" style="width:50px;height:20px"></div></canvas>');
+    const calls = defineFakeNative(w, { shape: 'webkit-stp', drawReturns });
+    assert.equal('updateElementGeometry' in w.HTMLCanvasElement.prototype, false, 'control: the shape has no geometry methods');
+    const before = snapshotDescriptors(w);
+    const installed = installWith({ window: w }, fakeServices());
+    assert.equal(installed.mode, 'native-bridged');
+    assert.equal(installed.native.kind, 'legacy');
+    const report = installed.report();
+    assert.deepEqual(report.errors, [], 'no internal error');
+    assert.equal(report.deviations.some((d) => d.id === 'native-step-aside' && /bridge failed/.test(d.detail)), false, 'the bridge was not removed');
+    const c = w.document.getElementById('c');
+    const d = w.document.getElementById('d');
+    assert.equal(c.content, 'drawable');
+    assert.equal(c.hasAttribute('layoutsubtree'), true, 'content="drawable" is mirrored to the native layoutsubtree');
+    assert.equal(c.getContext('2d').drawElementImage(d, 100, 50), undefined, 'a standard caller gets undefined');
+    assert.equal(calls.filter((x) => x[0] === 'drawElementImage').length, 1, 'the native draw ran');
+    assert.deepEqual(installed.report().errors, [], 'no internal error after a draw (there is no updateElementGeometry to call)');
+    assert.equal(String(c.getElementTransform(d)), drawReturns === 'matrix' ? 'matrix(1, 0, 0, 1, 100, 50)' : 'matrix(1, 0, 0, 1, 0, 0)', 'the one-argument form answers');
+    assert.equal('updateElementGeometry' in w.HTMLCanvasElement.prototype, false, 'nothing is invented that cannot be built from native API');
+    const gl = w.document.createElement('canvas').getContext('webgl');
+    if (gl) assert.equal(typeof gl.texElementSubImage2D, 'function', 'texElementSubImage2D built over texElementImage2D');
+    installed.uninstall();
+    assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)), []);
+  });
+}

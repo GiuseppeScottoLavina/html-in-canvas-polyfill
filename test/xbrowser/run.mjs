@@ -1,21 +1,25 @@
 #!/usr/bin/env node
-// G-xbrowser: the most important scenarios on desktop Firefox and Safari through W3C WebDriver (test/harness/lib/webdriver.mjs), each judged against the
+// G-xbrowser: the most important scenarios on desktop Firefox, Safari and (optional) Safari Technology Preview through W3C WebDriver (test/harness/lib/webdriver.mjs), each judged against the
 // plain-DOM twin in the SAME engine, each with a positive control (a sabotaged run that must turn every declared check class red).
-//   node test/xbrowser/run.mjs [--engine=firefox,safari] [--only=explainer,form,clickEffect,controls,resize,scroll,unsupported,uninstall,decodeTiming] [--no-control] [--bundle-file=/abs/x.js]
+//   node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=explainer,form,clickEffect,controls,resize,scroll,unsupported,uninstall,decodeTiming] [--no-control] [--bundle-file=/abs/x.js]
 // One browser at a time. Safari is skipped (and reported NOT RUN, which fails the gate) when remote automation is not enabled on the machine.
+// Safari Technology Preview ('stp') is OPTIONAL: SKIPPED (the gate still passes) when it is not installed or its remote automation is not allowed. Its native surface
+// is read first: absent -> the polyfill scenarios, as on Safari; usable (its HTML-in-Canvas feature flag on) -> the native scenario (the examples step aside and
+// draw natively); broken -> the refusal must name the missing core.
 // Writes .scratch/results/xbrowser-<engine>-<ts>.json (+ diff PNGs under .scratch/results/xbrowser-<ts>/), prints one table, exits 1 on any failure.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { loadavg } from 'node:os';
 import { resolve, join } from 'node:path';
-import { launchEngine } from '../harness/lib/webdriver.mjs';
+import { launchEngine, EngineUnavailable } from '../harness/lib/webdriver.mjs';
 import { startServer } from '../harness/server.mjs';
 import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg, sleep } from '../harness/lib/util.mjs';
 import { RECORDER } from './lib.mjs';
-import { SCENARIOS, CONTROL_CLASSES } from './scenarios.mjs';
+import { SCENARIOS, CONTROL_CLASSES, NATIVE_SURFACE, nativeExamples } from './scenarios.mjs';
 
-const engines = (arg('engine') ?? 'firefox,safari').split(',');
+const engines = (arg('engine') ?? 'firefox,safari,stp').split(',');
+const OPTIONAL = new Set(['stp']);
 const only = arg('only')?.split(',');
 const noControl = process.argv.includes('--no-control');
 const CORE = '/dist/hic-live-polyfill.iife.js';
@@ -42,11 +46,11 @@ async function waitLoad() {
   return +loadavg()[0].toFixed(2);
 }
 
-async function runOnce(s, srv, engine, control) {
+async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
   const rows = []; const numbers = {};
-  for (const [name, fn] of Object.entries(SCENARIOS)) {
+  for (const [name, fn] of Object.entries(scenarios)) {
     if (only && !only.includes(name)) continue;
-    if (control && !CONTROL_CLASSES[name].length) continue;
+    if (control && !(CONTROL_CLASSES[name] ?? []).length) continue;
     const checks = [];
     const ctx = {
       s, srv, bundle: BUNDLE, control, numbers,
@@ -71,6 +75,7 @@ try {
     const load = await waitLoad();
     let s;
     try { s = await launchEngine({ engine, width: 1200, height: 900 }); } catch (e) {
+      if (OPTIONAL.has(engine) && e instanceof EngineUnavailable) { report.engines[engine] = { verdict: 'SKIPPED', reason: e.message }; console.log(`[${engine}] SKIPPED (optional engine): ${e.message}`); continue; }
       report.engines[engine] = { verdict: 'NOT RUN', reason: e.message }; report.pass = false; console.log(`[${engine}] NOT RUN: ${e.message}`); continue;
     }
     const E = report.engines[engine] = { version: s.version, platform: s.caps.platformName, loadAtStart: load, screenLocked: screenLocked() };
@@ -78,16 +83,27 @@ try {
       E.verdict = 'NOT USABLE'; E.reason = `requestAnimationFrame never fired in ${engine} (screen locked: ${E.screenLocked}); Safari suspends rendering behind the lock screen, unlock and rerun`;
       report.pass = false; console.log(`[${engine}] ${E.reason}`); await s.close(); continue;
     }
+    let scenarios = SCENARIOS;
     try {
       console.log(`[${engine}] ${s.version}`);
-      E.real = await runOnce(s, srv, engine, false);
-      if (!noControl) E.control = await runOnce(s, srv, engine, true);
+      if (engine === 'stp') {
+        await s.navigate(new URL('/test/fixtures/explainer/index.html?mode=ref', srv.url).href);
+        E.nativeSurface = await s.evaluate(NATIVE_SURFACE);
+        const kind = E.nativeSurface.native.kind;
+        console.log(`[${engine}] native HTML-in-Canvas: ${kind} (present: ${E.nativeSurface.native.present.join(', ') || 'none'}) -> ${E.nativeSurface.decision.mode}`);
+        if (kind === 'broken') {
+          const ok = E.nativeSurface.decision.mode === 'refused' && /without its core/.test(E.nativeSurface.decision.refusal?.message ?? '');
+          scenarios = { nativeRefusal: (ctx) => ctx.check('native broken: the refusal names the missing core (API-CONTRACT 2)', ok, E.nativeSurface.decision, 'surface') };
+        } else if (kind !== 'absent') scenarios = { nativeExamples };
+      }
+      E.real = await runOnce(s, srv, engine, false, scenarios);
+      if (!noControl) E.control = await runOnce(s, srv, engine, true, scenarios);
     } finally { await s.close(); }
     E.scenarios = {};
     for (const row of E.real.rows) {
       const ok = !row.threw && row.checks.length > 0 && row.checks.every((c) => c.ok);
       let control = noControl ? 'skipped' : 'n/a';
-      const want = CONTROL_CLASSES[row.scenario];
+      const want = CONTROL_CLASSES[row.scenario] ?? [];
       if (!noControl && want.length) {
         const cr = E.control.rows.find((r) => r.scenario === row.scenario);
         const red = new Set((cr?.checks ?? []).filter((c) => !c.ok).map((c) => c.cls));
@@ -107,7 +123,7 @@ try {
 const table = [];
 for (const [engine, E] of Object.entries(report.engines)) {
   if (!E.scenarios) { table.push({ engine, scenario: '-', verdict: E.verdict, control: '', first_failure: E.reason?.slice(0, 100) }); continue; }
-  for (const [sc, r] of Object.entries(E.scenarios)) table.push({ engine: `${engine} ${E.version.split(' ')[1]}`, scenario: sc, verdict: r.pass ? 'PASS' : 'FAIL', control: r.control.slice(0, 40), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 90) });
+  for (const [sc, r] of Object.entries(E.scenarios)) table.push({ engine: `${engine} ${E.version.split(' ').pop()}`, scenario: sc, verdict: r.pass ? 'PASS' : 'FAIL', control: r.control.slice(0, 40), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 90) });
 }
 console.table(table);
 writeFileSync(join(outRoot, `xbrowser-summary-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));

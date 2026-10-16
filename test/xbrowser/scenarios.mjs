@@ -481,7 +481,7 @@ export async function inactive(ctx) {
   await mode(ctx, 'inactive');
   const polyInactiveOk = await deactivate();
   ctx.check('inactive: a popup window took the activation from the test window (document.hasFocus() false on both pages)', refInactiveOk && polyInactiveOk, { refInactiveOk, polyInactiveOk }, 'surface');
-  if (ctx.control && s.engine !== 'safari') { await s.evaluate(`(() => { const st = document.createElement('style'); st.textContent = '[data-ctl] > * { accent-color: #f00 !important; outline: 6px solid #f0f !important; }'; document.head.appendChild(st); return true; })()`); await sleep(800); }
+  if (ctx.control && !s.webkit) { await s.evaluate(`(() => { const st = document.createElement('style'); st.textContent = '[data-ctl] > * { accent-color: #f00 !important; outline: 6px solid #f0f !important; }'; document.head.appendChild(st); return true; })()`); await sleep(800); }
   const polyInactive = await readCanvas(s, '#hic-surface');
   await reactivate(handle);
   const polyActive = await readCanvas(s, '#hic-surface');
@@ -495,6 +495,28 @@ export async function inactive(ctx) {
   await noErrors(ctx, 'inactive');
 }
 
+/** What the engine exposes natively, read on a page WITHOUT the polyfill (the polyfill's own pure probe, src/api/native-detect.js). */
+export const NATIVE_SURFACE = `import('/src/api/native-detect.js').then((m) => { const native = m.probeNative(window); const gate = m.browserGate(window);
+  return { native, gate, decision: m.decideMode(native, gate, { mode: 'auto', forcePolyfill: false }) }; })`;
+
+/**
+ * Only for an engine with a usable NATIVE implementation (Safari Technology Preview with its HTML-in-Canvas flag): every example installs without throwing, steps
+ * aside (mode native or native-bridged; the bridge bundle is loaded through ?xbbridge=1), draws a non-blank canvas natively and logs no error.
+ */
+export async function nativeExamples(ctx) {
+  const { s } = ctx;
+  for (const ex of ['basic', 'form', 'scroll-and-resize', 'water-form']) {
+    await s.navigate(url(ctx, `/examples/${ex}/index.html`, { xbbridge: 1 }));
+    await until(s, 'document.readyState === "complete"'); await sleep(1500);
+    const m = await s.evaluate('window.__HIC__ ? (window.__HIC__.error ? "error: " + window.__HIC__.error.message : window.__HIC__.installed.mode) : "no __HIC__"');
+    ctx.numbers[`native_${ex}`] = { mode: m };
+    ctx.check(`native ${ex}: install steps aside without throwing (mode native or native-bridged)`, m === 'native' || m === 'native-bridged', { mode: m }, 'surface');
+    const img = await readCanvas(s, 'canvas[content="drawable"]').catch((e) => ({ error: String(e) }));
+    ctx.check(`native ${ex}: the canvas is drawn natively (non-blank)`, !img.error && pixelStats(img).nonBlank, img.error ?? null, 'pixel');
+    await noErrors(ctx, `native ${ex}`);
+  }
+}
+
 export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, unsupported, uninstall, decodeTiming };
-export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], unsupported: ['report'], uninstall: ['identity'], decodeTiming: [] };
+export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeExamples: ['pixel'] };
 export { KEYS };

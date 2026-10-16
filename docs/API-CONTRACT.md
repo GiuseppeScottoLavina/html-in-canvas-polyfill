@@ -73,7 +73,8 @@ The bridge is the OPTIONAL bundle `dist/hic-live-native-bridge.iife.js` (ESM: `i
 | events | no `onelementgeometryupdate` (Chrome 154) | `ElementGeometryUpdateEvent` + handler added |
 | size | `ElementImage.width/height`, no `getElementImageDefaultSize` | `HTMLCanvasElement.prototype.getElementImageDefaultSize(element \| ElementImage)` built over them (a capture for an Element), so it returns that build's own numbers: Chrome 155.0.8059.40 reports device pixels, not grid px (400 x 120 for a 200 x 60 css element at DPR 2 on a canvas whose grid equals its css size, measured 2026-10-14); the originating canvas of an `ElementImage` is not checked; the OffscreenCanvas one is not added |
 | `{preserveElementGeometry}` | ignored by legacy native | honoured by skipping the automatic update |
-Gate G-bridged-translation runs these rows on Chrome 154 with the flag; the unit tests run them on fake native shapes (`test/unit/api-core/_page-env.mjs`: the measured current, previous and legacy shapes).
+Gate G-bridged-translation runs these rows on Chrome 154 with the flag; the unit tests run them on fake native shapes (`test/unit/api-core/_page-env.mjs`: the measured current, previous and legacy shapes, and the shape of Safari Technology Preview 254 with its HTML-in-Canvas flag, read from its binary).
+A legacy build without the geometry methods (Safari Technology Preview 254: no `updateElementGeometry` / `clearElementGeometry`) is bridged all the same: only the methods that exist are wrapped, and the matrix a draw returns goes to the polyfill's CSS rule alone.
 
 Browser gate (only evaluated for `absent`/`forcePolyfill`): desktop Chromium >= 130 (only 154 and Canary 157 measured), Firefox >= 155 or
 Safari >= 27 (the measured majors, G-xbrowser), AND every required platform feature present (CSS anchor positioning, ResizeObserver,

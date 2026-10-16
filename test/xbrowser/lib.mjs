@@ -6,12 +6,13 @@ import { sleep } from '../harness/lib/util.mjs';
 /**
  * Injected at the top of every served HTML page (server `inject`): records console.error/warn, uncaught errors and rejections into window.__XB_LOG,
  * because classic WebDriver has no console log. With ?xbsab=1 (positive control only) it sabotages the page right after parsing: drawElementImage draws
- * nothing and the drawn children stop receiving pointer input. A sound gate must turn red on that page. With ?xbblock=a,b (targeted positive controls) the events a, b never
+ * nothing and the drawn children stop receiving pointer input. A sound gate must turn red on that page. With ?xbbridge=1 the optional native bridge loads before the page's scripts. With ?xbblock=a,b (targeted positive controls) the events a, b never
  * reach any page listener (stopped at the window in the capture phase; default actions still run).
  */
 export const RECORDER = `<script>(function(){var L=window.__XB_LOG=[];['error','warn'].forEach(function(k){var o=console[k];console[k]=function(){try{L.push({k:k,m:Array.prototype.map.call(arguments,function(a){return a&&a.stack?String(a.stack):String(a)}).join(' ')})}catch(e){}return o.apply(console,arguments)}});
 addEventListener('error',function(e){L.push({k:'exception',m:String(e.message)+' @'+e.filename+':'+e.lineno})});addEventListener('unhandledrejection',function(e){L.push({k:'rejection',m:String(e.reason&&e.reason.stack||e.reason)})});
 var xb=/[?&]xbblock=([^&]*)/.exec(location.search);if(xb)decodeURIComponent(xb[1]).split(',').forEach(function(t){addEventListener(t,function(e){e.stopImmediatePropagation()},true)});
+if(/[?&]xbbridge=1/.test(location.search))document.write('<script src="/dist/hic-live-native-bridge.iife.js"><\\/script>');
 if(/[?&]xbsab=1/.test(location.search))document.addEventListener('DOMContentLoaded',function(){window.__XB_SABOTAGED=true;try{Object.defineProperty(CanvasRenderingContext2D.prototype,'drawElementImage',{value:function(){},configurable:true,writable:true})}catch(e){}
 var s=document.createElement('style');s.textContent='[drawable],[drawable] *{pointer-events:none!important}';document.head.appendChild(s)});})();</script>`;
 
@@ -27,7 +28,7 @@ export async function pageErrors(s, { warnings = false } = {}) {
  * @returns {Promise<boolean>}
  */
 async function displayP3Shots(s) {
-  if (s.engine !== 'safari') return false;
+  if (!s.webkit) return false;
   s.__p3 ??= await s.evaluate("matchMedia('(color-gamut: p3)').matches");
   return s.__p3;
 }

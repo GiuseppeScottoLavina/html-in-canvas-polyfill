@@ -23,6 +23,14 @@ const LEGACY_154 = [
   'WebGLRenderingContext.texElementSubImage2D', 'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture',
   'WebGLRenderingContext.texElementImage2D', 'WebGL2RenderingContext.texElementImage2D', 'GPUQueue.copyElementImageToTexture',
 ];
+/**
+ * Safari Technology Preview 254 (WebKit 22627.1.2.1) with Develop > Feature Flags > HTML-in-Canvas: the binding names in its WebCore binary (2026-10-16; the flag
+ * is off by default, so the shape is read, not observed live). No content, no geometry methods, no size getter, no current texture names, no OffscreenCanvas names.
+ */
+const WEBKIT_STP = [
+  'layoutSubtree', 'onpaint', 'requestPaint', 'captureElementImage', 'getElementTransform', 'CanvasRenderingContext2D.drawElementImage', 'ElementImage', 'ElementImage.width',
+  'WebGLRenderingContext.texElementImage2D', 'WebGL2RenderingContext.texElementImage2D', 'GPUQueue.copyElementImageToTexture',
+];
 /** @param {string[]} present @param {string[]} [applicable] @param {any} [probe] */
 const classify = (present, applicable = ALL, probe = 'ok') => classifyNative({ present, applicable, browserMajor: 157, probe });
 
@@ -81,6 +89,21 @@ test('Chrome 154 + flag (measured legacy shape): legacy, content and the event n
   assert.equal(s.fillable, false, 'legacy is bridged by kind, not by fillable');
   assert.deepEqual(s.legacyNames.sort(), [...LEGACY_NAMES].sort());
   assert.equal(decideMode(s, BAD, opts()).mode, 'native-bridged');
+});
+
+test('Safari Technology Preview 254 + HTML-in-Canvas flag (binary names): legacy, never refused, whatever the probe and the browser gate say', () => {
+  for (const probe of ['ok', 'inert', 'unexpected', 'skipped']) {
+    const s = classify(WEBKIT_STP, ALL, probe);
+    assert.equal(s.kind, 'legacy', probe);
+    assert.ok(s.missing.includes('content') && s.missing.includes('updateElementGeometry') && s.missing.includes('clearElementGeometry'));
+    assert.deepEqual(s.gaps, ['onelementgeometryupdate', 'ElementGeometryUpdateEvent', 'getElementImageDefaultSize', 'WebGLRenderingContext.texElementSubImage2D',
+      'WebGL2RenderingContext.texElementSubImage2D', 'GPUQueue.drawElementImageToTexture'], 'every additive name has its legacy twin');
+    for (const gate of [OK, BAD]) for (const mode of /** @type {const} */ (['auto', 'polyfill', 'native-only'])) {
+      const d = decideMode(s, gate, opts({ mode }));
+      assert.equal(d.refusal, null, `${probe} ${mode}`);
+      assert.equal(d.mode, 'native-bridged');
+    }
+  }
 });
 
 test('every CORE name missing, one at a time: broken, never usable', () => {

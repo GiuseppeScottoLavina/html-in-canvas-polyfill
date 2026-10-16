@@ -11,6 +11,7 @@
 // (`open -n -a Firefox.app --args --marionette -profile <dir> -no-remote`) with a throwaway profile we create in os.tmpdir(), and geckodriver attaches with
 // `--connect-existing`. The Marionette port is fixed per run through the profile's user.js.
 // Safari: safaridriver needs `safaridriver --enable` (admin) and Develop > Allow Remote Automation, done once by an administrator of the machine; `probeSafari()` reports it.
+// Safari Technology Preview ('stp', optional): its own safaridriver inside the app bundle and its own Develop > Allow Remote Automation; EngineUnavailable when missing.
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,6 +47,8 @@ export class WdSession {
   }
 
   get version() { return `${this.caps.browserName} ${this.caps.browserVersion}`; }
+  /** Safari, Safari Technology Preview or Mobile Safari (WebKit engines driven by a safaridriver) */
+  get webkit() { return this.engine === 'safari' || this.engine === 'stp' || this.engine === 'ios'; }
   navigate(url) { return this.cmd('POST', '/url', { url }); }
 
   /** Evaluate an expression (a Promise is awaited). Page exceptions come back as a thrown Error with the page stack. */
@@ -174,6 +177,12 @@ async function launchFirefox({ app = FIREFOX_APP, prefs = {} } = {}) {
 }
 
 const SAFARI_AUTOMATION = 'Safari.app/Contents/MacOS/Safari .*--automation';
+export const STP_APP = '/Applications/Safari Technology Preview.app';
+const STP_DRIVER = `${STP_APP}/Contents/MacOS/safaridriver`;
+const STP_AUTOMATION = 'Safari Technology Preview.app/Contents/MacOS/Safari Technology Preview .*--automation';
+
+/** An optional engine that cannot run on this machine (not installed, or remote automation not enabled): the caller reports it SKIPPED, not failed. */
+export class EngineUnavailable extends Error {}
 
 /** Can a safaridriver session be created? Returns {ok, reason}. Never changes a setting. */
 export async function probeSafari() {
@@ -182,31 +191,43 @@ export async function probeSafari() {
   try { const s = await launchSafari(); const version = s.version; await s.close(); return { ok: true, version }; } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-async function launchSafari() {
-  if (pgrep(SAFARI_AUTOMATION).length) throw new Error('an automation Safari is already running (not ours): refusing to start a second one');
+/**
+ * Safari (the system safaridriver) or Safari Technology Preview (its own safaridriver, an optional engine). Remote automation must have been allowed once by
+ * the owner of the machine (Safari: `safaridriver --enable` + Develop > Allow Remote Automation; Technology Preview: its own Develop > Allow Remote Automation).
+ * @param {{stp?: boolean}} [o]
+ */
+async function launchSafari({ stp = false } = {}) {
+  const pattern = stp ? STP_AUTOMATION : SAFARI_AUTOMATION;
+  if (stp && !existsSync(STP_DRIVER)) throw new EngineUnavailable(`Safari Technology Preview is not installed (${STP_APP})`);
+  if (pgrep(pattern).length) throw new Error(`an automation ${stp ? 'Safari Technology Preview' : 'Safari'} is already running (not ours): refusing to start a second one`);
   const port = await freePort();
-  const drv = spawn('safaridriver', ['-p', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const drv = spawn(stp ? STP_DRIVER : 'safaridriver', ['-p', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = ''; drv.stderr.on('data', (d) => { stderr += d; });
   own([drv.pid]);
   const base = `http://127.0.0.1:${port}`;
   await waitHttp(base);
   let v;
-  try { v = await newSession(base, { browserName: 'safari' }, 30000); } catch (e) {
+  try { v = await newSession(base, { browserName: stp ? 'Safari Technology Preview' : 'safari' }, 30000); } catch (e) {
     killPids([drv.pid]);
+    // a refused session can leave the browser it launched behind: stop the automation instance (never a normal window of the owner)
+    for (let i = 0; i < 20 && pgrep(pattern).length; i++) { killPids(pgrep(pattern)); await sleep(150); }
+    if (stp && /remote automation/i.test(e.message)) {
+      throw new EngineUnavailable('remote automation is not allowed in Safari Technology Preview: open it, tick Settings > Advanced > Show features for web developers, then Develop > Allow Remote Automation (once, by the owner of the machine)');
+    }
     throw new Error(`${e.message}${stderr ? ' / ' + stderr.trim() : ''}. Run \`safaridriver --enable\` once (admin password) and tick Safari > Settings > Advanced > Show features for web developers, then Develop > Allow Remote Automation.`);
   }
-  const safariPids = pgrep(SAFARI_AUTOMATION); own(safariPids);
+  const safariPids = pgrep(pattern); own(safariPids);
   const cleanup = async () => {
     killPids([drv.pid]);
-    for (let i = 0; i < 30 && safariPids.some((p) => pgrep(SAFARI_AUTOMATION).includes(p)); i++) await sleep(100);
-    killPids(safariPids.filter((p) => pgrep(SAFARI_AUTOMATION).includes(p)), 'SIGKILL');
+    for (let i = 0; i < 30 && safariPids.some((p) => pgrep(pattern).includes(p)); i++) await sleep(100);
+    killPids(safariPids.filter((p) => pgrep(pattern).includes(p)), 'SIGKILL');
   };
-  return new WdSession({ engine: 'safari', base, id: v.sessionId, caps: { ...v.capabilities, pids: safariPids }, cleanup });
+  return new WdSession({ engine: stp ? 'stp' : 'safari', base, id: v.sessionId, caps: { ...v.capabilities, pids: safariPids }, cleanup });
 }
 
-/** @param {{engine:'firefox'|'safari', width?:number, height?:number, prefs?:object}} o */
+/** @param {{engine:'firefox'|'safari'|'stp', width?:number, height?:number, prefs?:object}} o  'stp' = Safari Technology Preview (optional: EngineUnavailable when it cannot run) */
 export async function launchEngine({ engine, width = 1200, height = 900, prefs } = {}) {
-  const s = engine === 'firefox' ? await launchFirefox({ prefs }) : engine === 'safari' ? await launchSafari() : null;
+  const s = engine === 'firefox' ? await launchFirefox({ prefs }) : engine === 'safari' ? await launchSafari() : engine === 'stp' ? await launchSafari({ stp: true }) : null;
   if (!s) throw new Error(`unknown engine ${engine}`);
   try { await s.setWindowSize(width, height); } catch (e) { await s.close(); throw e; }
   return s;

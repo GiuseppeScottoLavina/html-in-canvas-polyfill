@@ -198,14 +198,18 @@ These are the gates that exist today (`test/gates/g-*.mjs`, helpers in `test/gat
 | gutter-rounded | a classic scrollbar gutter is reproduced at its exact width (a whole number of device pixels, 14.4 css px at DPR 1.25), so F4's grid columns land on native's device pixels (G-pixel-dpr, both browsers with classic bars) |
 | near-size-resampled | an explicit draw size within 1 px and 1 % of the raster is drawn 1:1, so F1 at DPR 1.25 stays within 2.2 % of native (G-pixel-dpr) |
 
-### 2.9 Cross-browser gate G-xbrowser (`npm run test:xbrowser`, Firefox and Safari through W3C WebDriver)
+### 2.9 Cross-browser gate G-xbrowser (`npm run test:xbrowser`, Firefox, Safari and the optional Safari Technology Preview through W3C WebDriver)
 
-`node test/xbrowser/run.mjs [--engine=firefox,safari] [--only=...] [--no-control]`. Driver: `test/harness/lib/webdriver.mjs` (zero deps; navigate, evaluate, viewport
+`node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=...] [--no-control]`. Driver: `test/harness/lib/webdriver.mjs` (zero deps; navigate, evaluate, viewport
 screenshot, trusted pointer click, key typing into the focused element, window resize, wheel). Firefox is started through LaunchServices with a throwaway profile under
 `os.tmpdir()` and geckodriver (`.scratch/geckodriver-dl/`, official 0.37.1 release, sha256 checked) attaches with `--connect-existing` (a child-spawned Firefox inherits the
 parent process's macOS privacy context and cannot open its profile). Safari needs `safaridriver --enable` and Develop > Allow Remote Automation (once, by an administrator) and an UNLOCKED screen
 (Safari suspends rendering updates behind the lock screen; the runner checks requestAnimationFrame first and reports NOT USABLE). Only processes the run started are killed;
 15-minute watchdog. Results: `.scratch/results/xbrowser-<engine>-<ts>.json`, failing images in `.scratch/results/xbrowser-<ts>/`.
+Safari Technology Preview (`stp`) is optional: it is driven by its own `safaridriver` inside the app bundle and reported SKIPPED (the gate still passes) when it is not installed or
+its Develop > Allow Remote Automation is off. The runner first reads its native surface with the polyfill's own probe on a page without the polyfill: `absent` runs the Safari
+scenarios; a usable native (its HTML-in-Canvas feature flag on) runs `nativeExamples` (four examples with the bridge bundle: mode `native` or `native-bridged`, a non-blank canvas,
+no console error; control: the sabotaged draw must turn `pixel` red); `broken` must be refused with the missing core named.
 
 | scenario | asserts (same engine, plain-DOM twin) | control (sabotaged page: drawElementImage draws nothing, drawn children pointer-dead) |
 |---|---|---|
