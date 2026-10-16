@@ -77,10 +77,12 @@ gpuTest('a mapper of the next pattern of the same burst is measurably wrong on t
   assert.ok(good <= 5 && wrong >= 200, `this pattern ${good}, next pattern ${wrong}`);
 });
 
-gpuTest('ambient: whatever the instant (micro-glitch or not), the presented frame agrees with its mapper', async (t) => {
+gpuTest('ambient: whatever the instant (micro-glitch or not), the presented frame agrees with its mapper (green channel)', async (t) => {
+  // read on green, as the all-layers burst test: a micro-glitch block carries its own RGB split, which moves red and blue (a colour
+  // layer, not geometry), so the red channel disagreed with the mapper on a dozen edge pixels at some instants
   for (const offsetMs of [80, 400, 900]) {
     const { img, mapper } = await presentOnce(t, plugin, { ...meta.defaults }, { scene, offsetMs });
-    const real = agreement(img, /** @type {any} */ (mapper), scene);
+    const real = agreement(greenAsRed(img), /** @type {any} */ (mapper), scene);
     assert.ok(real.bright > 2000 && real.wrong <= 5, `ambient at +${offsetMs} ms: ${real.wrong} wrong px`);
   }
 });
