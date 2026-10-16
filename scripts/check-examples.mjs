@@ -20,7 +20,8 @@
 // Smoke pages (test/examples-smoke/, served by the harness server) run the code the documentation shows:
 //   esm-quickstart  README "ES modules": install() from dist/esm/index.js, then the standard pattern
 //   doc-readme-basic, doc-getting-started   the HTML blocks printed in README.md and docs/guides/GETTING-STARTED.md, extracted from the Markdown and run as written
-//   wobble-plugin   docs/guides/EFFECTS-PLUGINS.md: the complete plugin; its captureInputMapper is compared with GPU pixels
+//   wobble-plugin   docs/guides/EFFECTS-PLUGINS.md: the complete plugin (the guide's block must equal the smoke file); its captureInputMapper
+//                   is compared with GPU pixels, and its action runs through handle.trigger
 //                   (control inside the check: the identity mapper must be visibly wrong on the same pixels)
 // Positive controls (the script fails if any of them does not turn red):
 //   C1  the dist path is broken (the polyfill script URL answers 404): every example must report failed checks
@@ -529,8 +530,23 @@ const SMOKE = {
       // the control: the identity mapper (what a plugin without captureInputMapper would give) must be visibly wrong on the same pixels
       return { ok: result.rows >= 20 && result.edgeRangePx >= 20 && result.maxErrorPx <= 2 && result.identityMapperMaxErrorPx >= 8, ...result };
     });
+    await run.step('interact', 'the action of the guide\'s plugin: handle.trigger(\'pulse\') resolves \'calm\' after the pulse, settled() then \'calm\'; an unknown action rejects listing \'pulse\'', async () => {
+      const t0 = Date.now();
+      const state = await page.evaluate(`window.__handle.trigger('pulse', { amplitude: 40, ms: 400 })`);
+      const ms = Date.now() - t0;
+      const rest = await page.evaluate('window.__handle.settled()');
+      const unknown = await page.evaluate(`window.__handle.trigger('shake').then(() => 'resolved', (e) => e.name + ': ' + e.message)`);
+      return { ok: state === 'calm' && ms >= 350 && rest === 'calm' && /^TypeError: .*its actions are 'pulse'$/.test(unknown), state, ms, rest, unknown };
+    });
   },
 };
+
+/** The plugin printed in docs/guides/EFFECTS-PLUGINS.md is the file the wobble smoke page runs: a difference means the guide shows untested code. */
+function guidePluginProblem() {
+  const guide = codeBlockAfter(resolve(ROOT, 'docs/guides/EFFECTS-PLUGINS.md'), '### 16. A complete plugin: horizontal wobble', 'js');
+  const file = readFileSync(resolve(ROOT, 'test/examples-smoke/wobble-plugin/wobble-plugin.js'), 'utf8');
+  return guide.trim() === file.trim() ? null : 'the plugin in docs/guides/EFFECTS-PLUGINS.md section 16 differs from test/examples-smoke/wobble-plugin/wobble-plugin.js';
+}
 
 // ------------------------------------------------------------------------------------------------------------------------------------
 async function runExample(browser, server, name, opts = {}) {
@@ -612,6 +628,10 @@ async function main() {
     }
     // ---- smoke pages of the documentation (served by the harness server, repository root)
     if (!only || only.includes('smoke')) {
+      const drift = guidePluginProblem();
+      result.examples.push({ example: 'smoke:guide-plugin-is-the-tested-file', ok: !drift, checks: [{ cls: 'load', name: 'the plugin printed in the guide is the file the smoke page runs', ok: !drift, detail: drift }] });
+      console.log(`${drift ? 'FAIL' : 'ok  '} smoke: the plugin printed in docs/guides/EFFECTS-PLUGINS.md is test/examples-smoke/wobble-plugin/wobble-plugin.js${drift ? '  ' + drift : ''}`);
+      if (drift) problems.push(drift);
       // Doc snippets, extracted from the Markdown and served under /__docs/ (the harness server refuses dot directories, so a files map is used)
       const docDir = resolve(outDir, 'docs'); mkdirSync(docDir, { recursive: true });
       const polyfillTag = '<script src="/dist/hic-live-polyfill.iife.min.js"></script>\n';

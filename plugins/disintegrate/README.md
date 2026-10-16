@@ -1,26 +1,24 @@
 # disintegrate
 
-An **example** effect plugin: a transition in which the CONTENT of the HTML drawn in a canvas turns to dust and blows away, while the page itself stays, and then flies back into the page's new state. It shows how to use the effects extension of this library (`HTMLInCanvasEffects`, plugin ABI v2). It is **not part of the polyfill**: the polyfill, the frame cap and the effects host work without it, and nothing in `src/` imports it.
+A transition: the CONTENT of the HTML drawn in a canvas (text, field borders and fills, buttons, icons) turns to dust of its own live colours and blows away while the page itself stays, then flies back and settles into the page's new state.
 
-The effects host and this plugin are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them ([docs/guides/EFFECTS-PLUGINS.md](../../docs/guides/EFFECTS-PLUGINS.md)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 ![The gallery form, with its live counter running: the text, fields and buttons turn to dust of their own colours along a diagonal sweep while the panels stay, the dust swirls away, then flies back and settles into the letters, with the text typed meanwhile and the new counter value](media/disintegrate.webp)
 
-`media/disintegrate.webp` was recorded in headless Chrome from the plugin gallery: the "Live counter" of the controls on, Enter in the name field (a valid submit), text typed while the content is dust (`node plugins/disintegrate/test/gallery.e2e.mjs --record`).
+Recorded in headless Chrome from the plugin gallery (`node plugins/disintegrate/test/gallery.e2e.mjs --record`): the "Live counter" of the controls on, Enter in the name field (a valid submit), text typed while the content is dust.
 
-## The point: the page stays live while it turns to dust
+## What it does
 
-A screenshot and a particle shader can fake the dissolve of a still picture. Here nothing is frozen: the page and every grain of dust sample the live page on every frame. A counter keeps counting on the dust that carries it, text typed while the content is dust appears on the dust of its field (keyboard input is not blocked), and the dust settles back into the state the page has by then (the typed text, the success line, the counter's new value). The plugin's controls have a "Live counter" checkbox that shows a running stopwatch inside the form, to make this visible. It applies to any HTML, with no change to it.
+1. **Only the content goes.** Every pixel that differs from the background around it: text, field borders and fills, buttons, icons. The panels, cards and the page behind them stay, so no frame of the transition is dark.
+2. **A diagonal sweep erodes it**, from the top left: the content goes porous (holes at the scale of a few pixels, ragged at a larger one), thins, and is gone.
+3. **Every eroded pixel becomes a grain of dust of its exact live colour**, carried by the wind along swirling paths (the curl of a noise field), half of the grains streaking with their speed, a third leaving as small fragments that crumble on the way.
+4. **No still frame.** The way out takes 1.8 s (the content is gone after about 0.9 s, the dust keeps drifting); a play then turns at once and the dust flies back at full strength.
+5. **The re-forming**: in 1.2 s the dust flies back along the same paths and settles into the letters and fields of the page as it is now.
 
-## What it looks like
+**The page stays live.** The page and every grain sample the live page on every frame: a counter keeps counting on the dust that carries it, text typed while the content is dust appears on the dust of its field (keyboard input is not blocked), and the dust settles into the state the page has by then (the typed text, the success line). It applies to any HTML, with no change to it.
 
-1. **Only the content goes.** Text, field borders and fills, buttons, icons: every pixel that differs from the background around it. The panels, cards and the page behind them stay, so no frame of the transition is dark.
-2. **A diagonal sweep erodes it**, from the top left: the content goes porous (holes open at the scale of a few pixels, ragged at a larger one), thins, and is gone.
-3. **Every eroded pixel becomes a grain of dust of its exact live colour** (light text gives light dust, a cyan button cyan dust), carried by the wind along swirling paths (the curl of a noise field), half of the grains streaking with their speed, a third leaving as small fragments that travel whole for a moment and then crumble.
-4. **No still frame.** The way out takes 1.8 s: the content is gone after about 0.9 s and the dust keeps drifting until the end; a play then turns at once and the dust flies back at full strength (it fades out only when a transition ends gone).
-5. **The re-forming is the climax**: in 1.2 s the dust flies back along the same paths, slowing as it arrives, and settles into the letters and fields of the page as it is now.
-
-## Use
+## Usage
 
 ```html
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
@@ -28,31 +26,25 @@ A screenshot and a particle shader can fake the dissolve of a still picture. Her
 <script src="dist/plugins/disintegrate.iife.min.js"></script>   <!-- window.HicLivePlugins.disintegrate -->
 <script>
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
-  const handle = await host.addPlugin(HicLivePlugins.disintegrate.plugin, { onSubmit: 'valid' });
-  await HicLivePlugins.disintegrate.trigger(canvas, 'play');   // to dust and back
+  const dust = await host.addPlugin(HicLivePlugins.disintegrate.plugin);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await dust.trigger('out');    // 'out': the content is dust
+    showAnswer();                 // change the page while nothing of it is shown
+    await dust.trigger('in');     // 'in': it re-forms, showing the answer
+  });
 </script>
 ```
 
-ES modules: `import { plugin, trigger } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/disintegrate'`.
-
-| how | |
-|---|---|
-| `trigger(canvas, action)` | `'out'` turns the content to dust and stays so, `'in'` re-forms it, `'play'` does both. Returns a promise: `true` when that end state is reached, `false` when another request superseded it, the plugin was removed, or no instance runs on that canvas. |
-| `handle.setOptions({ state: 'out' })` / `{ state: 'in' }` | the same, declaratively. Only a change of `state` starts a transition. |
-| `onSubmit: 'valid'` or `'always'` | a `submit` event inside the source plays the transition (`'valid'`: only when no field matches `invalidSelector` at that moment). The page's own submit handler runs first when it was added before the plugin (the gallery's is), so the form re-forms showing the state the page set. |
-| the "Turn to dust" button of `mountUI` | `'play'` |
-
-## Input
-
-The plugin is `spatial`, so it supplies `captureInputMapper`. Its mapper is one of two constant functions, chosen by the frame that was presented: **assembled** (idle) the identity, the form is fully usable; **while anything moves, is gone or fades** (also the reduced-motion crossfade) pointer input is **blocked**: the mapper returns `NO_TARGET`, so the host swallows the press (no focus change, nothing activated). Keyboard input is not mapped by the host: a key pressed during a transition reaches the element that had the focus. A second submit during a transition does not restart it.
+ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/disintegrate'`. Without code: `onSubmit: 'valid'` plays the transition on every valid submit of the form inside the source.
 
 ## Options
 
-| option | default | |
+| option | default (gallery) | |
 |---|---|---|
 | `duration` | 1800 | ms of the way out (the dust keeps drifting after the content is gone), 300 to 8000 |
 | `durationIn` | 1200 | ms of the way back |
-| `particleSize` | 1.5 | dust cell, 1 to 4 css px; at most 420,000 cells (cells grow beyond) |
+| `particleSize` | 1.5 | dust cell, 1 to 4 CSS px; at most 420,000 cells (cells grow beyond) |
 | `wind` | 1 | 0 to 2: how far the dust travels (0.32 x the larger canvas side at 1) |
 | `direction` | -28 | wind direction in degrees (0 = right, negative = up) |
 | `sweep` | 24 | the direction the erosion sweeps across the page, degrees |
@@ -60,42 +52,59 @@ The plugin is `spatial`, so it supplies `captureInputMapper`. Its mapper is one 
 | `fragments` | 0.3 | share of the dust that leaves as fragments before it crumbles |
 | `sensitivity` | 0.5 | 0 to 1: how little a pixel must differ from its background to count as content |
 | `backdrop` | the host's clear colour | what a transparent pixel of the source shows (`#rrggbb` or `[r, g, b]` 0..1) |
-| `onSubmit` | `'off'` (`'valid'` in the gallery) | `'off'`, `'valid'`, `'always'` |
+| `onSubmit` | `'off'` (`'valid'`) | `'off'`, `'valid'` (only when no field matches `invalidSelector`), `'always'`: a `submit` inside the source plays the transition. The page's own submit handler runs first when it was added before the plugin, so the form re-forms showing what the page set |
 | `invalidSelector` | `:invalid, [aria-invalid="true"], .invalid` | what counts as an invalid field for `onSubmit: 'valid'` |
-| `intro` | false (true in the gallery) | when created, re-form from dust once the first snapshot is there (skipped when re-created after a device loss) |
-| `state` | `'in'` | `'out'` / `'in'`: see above |
+| `intro` | false (true) | when created, re-form from dust once the first snapshot is there (not when re-created after a device loss) |
+| `state` | `'in'` | `'out'` / `'in'`: the end state, declaratively; only a change of `state` starts a transition |
 | `reducedMotion` | follows `prefers-reduced-motion` | `true` / `false` to force it |
 | `seed` | 1 | the pattern of the noise |
 | `liveCounter` | false | the controls start with the "Live counter" on |
 
-`mountUI` adds the "Turn to dust" button, sliders for the dust size and the wind, and the "Live counter" checkbox (a stopwatch, large digits, 20 updates a second, inside the form).
+`mountUI` adds the "Turn to dust" button (the action `play`), sliders for the dust size and the wind, and the "Live counter" checkbox (a stopwatch inside the form, 20 updates a second, to make the liveness visible).
 
-## How it works
+## Actions
 
-- **What is content.** When a transition starts (and again when the page changes, at most every 250 ms), two small passes estimate the background: the source averaged into cells of 8 css px, then, per cell, the dominant colour around it (mean shift over a window of about 260 css px, started from the mean and from four points around, the best supported mode wins), so text, borders and fields smaller than a panel are never taken for its background. A pixel is content in proportion to its colour distance from that estimate.
-- **One clock.** Everything is a function of the dissolve amount `g` and of the pixel: when the sweep reaches it (`erode_g`: the diagonal position, a ragged edge, pores), and where its grain is at its age (`dust_path`: wind, a rising drift, a curl-noise swirl read along the way, a fragment's shared start). A grain lives from its birth until `g = 1`. Nothing is simulated frame by frame, so `g = 0` is the page exactly, and the same instant looks the same at any frame cap (also where a play turns: its way back starts the instant its way out ended, not at the next frame).
-- **Live.** The page pass samples the source of the frame; each grain reads the colour of its home pixel, and whether it is content, in the vertex shader, every frame.
-- **Draws.** The page (full screen: the source where its content has not eroded, the background estimate where it has), then one grain per dust cell as an instanced 4-vertex strip (about 300,000 cells on the gallery canvas; a grain that is not content or not in flight is culled in the vertex shader).
-- **No per-frame allocation.** A frame writes one preallocated `Float32Array` into one uniform buffer and reuses its render pass descriptors; bind groups are cached per source view; the two estimate textures are allocated once per size.
-- **`prefers-reduced-motion: reduce`**: nothing moves; the same triggers fade the content into the page and back, over the same durations.
-- **Device loss.** The host creates the plugin again on the new device with the latest options; the new instance starts assembled, without the intro, and promises of the lost instance resolve `false`.
+`handle.trigger(action)` ([semantics](../../docs/guides/EFFECTS-PLUGINS.md#5-actions-trigger-and-settled)); no options.
 
-## Measured
+| action | | resolves with |
+|---|---|---|
+| `out` | the content turns to dust and stays gone | `'out'` |
+| `in` | the content re-forms, from where it is (a reversal midway is continuous) | `'in'` |
+| `play` | out, then at once in | `'in'` |
 
-On one machine (Apple M1 Max, macOS, headless Chrome, Metal, other work running on the machine), with timestamp queries on the plugin's render pass at 2200x1240 backing pixels (the gallery canvas at DPR 2), frames 8.33 ms apart through a whole play: GPU time p50 0.72 ms, p95 1.11 ms, max 2.4 ms while it moves; the one frame that also makes the background estimate took 2.9 ms from submit to done (wall clock, an upper bound); `render()` on the CPU p95 0.01 ms. One run: it says the effect fits a 120 Hz frame (8.33 ms) on this machine, nothing about others. `test/disintegrate-perf.browser.test.mjs` prints them again and asserts p95 under half the frame.
+`handle.settled()` resolves with `'in'` or `'out'` once nothing moves. A newer action, a submit (`onSubmit`), the "Turn to dust" button or `setOptions({ state })` supersede a pending trigger (it resolves `null`). The action's clock starts at the first frame that renders it, so its length is the same at every frame cap.
 
-`test/gallery.e2e.mjs` (headless Chrome 155, trusted CDP input, the plugin gallery, 2026-10-14): 22 of 22 checks pass, among them: Submit turns the content to dust, presses during the transition are swallowed, the form re-forms with the success line; no frame of a play is darker than 0.6 of the idle page (measured: the luminance stays within 2 levels of it); the counter keeps running and typed text reaches the field while the content is dust, and the re-formed field shows it; no console error.
+## Input
 
-## Files
+The plugin is `spatial`. Its mapper is one of two constant functions, chosen by the presented frame: **assembled** (at rest) the identity, so the form is fully usable; **while anything moves, is gone or fades** (also the reduced-motion crossfade) it returns `NO_TARGET` for every point, so the host swallows a press (no focus change, nothing activated). Keyboard input is not mapped: a key pressed during a transition reaches the element that had the focus. A second submit during a transition does not restart it.
+
+## Reduced motion
+
+With `prefers-reduced-motion: reduce` (read by the host at every `trigger`, and by the plugin for its own triggers), nothing moves: the same actions fade the content into the page and back, over the same durations, and resolve with the same states.
+
+## Performance
+
+On one machine (Apple M1 Max, macOS, headless Chrome, Metal, other work running), timestamp queries on the plugin's pass at 2200x1240 backing pixels (the gallery canvas at DPR 2), frames 8.33 ms apart through a whole play: GPU time p50 0.72 ms, p95 1.11 ms, max 2.4 ms while it moves; the one frame that also makes the background estimate took 2.9 ms from submit to done (wall clock, an upper bound); `render()` on the CPU p95 0.01 ms. One run: it says the effect fits a 120 Hz frame (8.33 ms) on this machine, nothing about others. `test/disintegrate-perf.browser.test.mjs` prints the numbers and asserts p95 under half the frame.
+
+How it stays cheap: everything is a function of the dissolve amount `g` and of the pixel (when the sweep reaches it, where its grain is at its age), so nothing is simulated frame by frame; the page is one full-screen pass and the dust one instanced 4-vertex strip per cell, culled in the vertex shader when not in flight; the background estimate (two small passes: the source averaged into 8 CSS px cells, then the dominant colour around each cell by mean shift over about 260 CSS px) runs when a transition starts and again only when the page changes, at most every 250 ms; a frame writes one preallocated uniform array and reuses its pass descriptors. At rest the instance is not `continuous` and costs nothing.
+
+## Limitations
+
+- Pointer input is blocked while a transition plays (by design: the pieces are not where the controls are).
+- "Content" is what differs from the dominant colour around it: a large picture or a gradient wider than the estimate's window can count as background, and content very close to its background colour (below `sensitivity`) stays.
+- Device loss mid-transition: the plugin comes back at its `state` (assembled by default), without the intro; the pending trigger resolves `null`.
+- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+
+## Files and tests
 
 | file | |
 |---|---|
-| `index.js` | `meta`, `plugin`, `trigger`, and the pure helpers the tests use (`dustGrid`, `bgSize`, `sweepOf`, `readOptions`, `fillUniforms`) |
+| `index.js` | `meta`, `plugin`, `ACTIONS`, and the pure helpers the tests use (`dustGrid`, `bgSize`, `sweepOf`, `readOptions`, `fillUniforms`) |
 | `../_lib/transition.js` | shared with the shatter plugin, bundled into each: the out/in timeline, the two mappers, option parsing, the invalid-field probe (pure) |
 | `disintegrate.wgsl` | the shader: the background estimate (down, mean shift), the page (erosion), the dust, the passthrough and the crossfade |
 | `wgsl.js` | loads the `.wgsl` file when the plugin runs from source; the build replaces it |
 | `media/disintegrate.webp` | the recording above |
-| `test/disintegrate.test.mjs` | Node: the folder contract, the timeline, the timing invariants, the dust grid, the sweep, options, the uniform layout (checked against the WGSL struct), and a fake GPU (no GPU object per frame, nothing frozen, the background estimated at the start and again only when the page changes, the draws, the separate lengths of the way out and back, mappers, triggers, submit wiring, reduced motion, destroy) |
-| `test/disintegrate-gpu.browser.test.mjs` | headless Chrome, real host and GPU: assembled frame = passthrough bit for bit (at rest and after a play); mid-transition frames moving and never dark; **the background stays** (over 85 % of the background pixels unchanged mid-way, the content gone); **the dust keeps the colour of its pixel** (orange dust from the orange button); the diagonal sweep; input blocked through the interposer (identity when idle as the control); 120 Hz vs 15 fps cap; the reduced-motion crossfade (background untouched); device loss; intro and submit wiring; **live**: a change of the page made after its dust blew off shows up on the moving dust (two runs without it are identical, the control) |
+| `test/disintegrate.test.mjs` | Node: the folder contract, the timeline, the timing invariants, the dust grid, the sweep, options, the uniform layout (checked against the WGSL struct), and a fake GPU behind the real handle (no GPU object per frame, nothing frozen, the background estimate, the draws, the lengths of the way out and back, the mappers, the actions and their states, `settled`, superseding by a submit, removal, reduced motion) |
+| `test/disintegrate-gpu.browser.test.mjs` | headless Chrome, real host and GPU: assembled frame = passthrough bit for bit; mid-transition frames moving and never dark; the background stays; the dust keeps the colour of its pixel; the diagonal sweep; input blocked through the interposer; 120 Hz vs 15 fps cap; the reduced-motion crossfade; device loss (the pending trigger resolves `null`, `settled()` reports the new instance); intro and submit wiring; a change of the page shows up on the moving dust |
 | `test/disintegrate-perf.browser.test.mjs` | the GPU time measurement above |
-| `test/gallery.e2e.mjs` | the plugin in the real gallery with trusted input (steps shared with other transitions: `plugins/_shared/transition-e2e.mjs`), plus the "Turn to dust" button, no dark frame, the live counter, typing during the transition and the re-formed state; `--record` writes the media. Needs `npm run build`; `npm run test:plugins` runs every gallery e2e. |
+| `test/gallery.e2e.mjs` | the plugin in the gallery with trusted input: Submit turns the content to dust, presses during the transition are swallowed, the form re-forms with the success line; the "Turn to dust" button, no dark frame; the actions `out`, `in`, `play` from the gallery's buttons, an unknown action, superseding, `settled()`; the live counter and typing during the transition. 34 of 34 checks pass (headless Chrome 155, 2026-10-16). `--record` writes the media; needs `npm run build` |

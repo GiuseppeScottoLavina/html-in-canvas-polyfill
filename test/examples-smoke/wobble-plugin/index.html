@@ -31,7 +31,7 @@
       const host = await HTMLInCanvasEffects.createHost(canvas, document.getElementById('src'), { interposer: true });
       // keep a handle on the plugin instance so the test can call captureInputMapper itself (same call the host makes)
       const def = window.WobblePlugin;
-      const wrapped = HTMLInCanvasEffects.definePlugin({ type: def.type, apiVersion: def.apiVersion, version: def.version, outputCapabilities: def.outputCapabilities,
+      const wrapped = HTMLInCanvasEffects.definePlugin({ type: def.type, apiVersion: def.apiVersion, version: def.version, outputCapabilities: def.outputCapabilities, actions: def.actions,
         async create(context, options) { const inst = await def.create(context, options); window.__instance = inst; return inst; } });
       window.__handle = await host.addPlugin(wrapped, { amplitude: 24 });
       window.__state = { ready: true };

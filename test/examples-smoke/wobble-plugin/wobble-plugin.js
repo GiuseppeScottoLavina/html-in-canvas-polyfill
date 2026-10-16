@@ -1,6 +1,7 @@
 // A complete ABI v2 effect plugin: a horizontal wobble. Classic script; load it after hic-live-effects.iife.min.js.
 // The shader displaces each output pixel sideways; captureInputMapper is the exact inverse-direction twin of that
 // displacement (output point -> the SOURCE point the presented pixel shows), so clicks land on what the user sees.
+// One action, 'pulse': handle.trigger('pulse', { amplitude, ms }) swells the wobble and back, then resolves 'calm'.
 (() => {
   const FREQUENCY = 0.05;   // radians per css px, vertically
   const SPEED = 2.0;        // radians per second
@@ -34,6 +35,7 @@
     apiVersion: 2,
     version: 1,
     outputCapabilities: { directCanvasRenderAttachment: true }, // this pass only writes the destination as a colour attachment
+    actions: ['pulse'],                                         // the names handle.trigger accepts (the host checks them)
     async create(context, options) {
       const { device, format } = context;
       const module = device.createShaderModule({ code: WGSL });
@@ -48,15 +50,31 @@
       const bindGroups = new WeakMap();                      // one bind group per source texture view
       let amplitude = Number(options.amplitude ?? 6);        // css px
       let presented = { t: 0, a: amplitude };                // what the LAST rendered frame used
+      let pulse = null;                                      // the running pulse {from, peak, ms}; from: its first frame
+      const waiters = [];                                    // settled() calls waiting for the pulse to end
+      const settled = () => (pulse ? new Promise((resolve) => waiters.push(resolve)) : 'calm');
 
       return {
         spatial: true,       // pixels move, so the host REQUIRES captureInputMapper
         continuous: true,    // the wobble animates: render every capped frame even if the source did not change
         setOptions(next) { if (next.amplitude !== undefined) amplitude = Number(next.amplitude) || 0; },
+        // The action 'pulse' (handle.trigger): resolve with the state the plugin rests in once the frame that ends it was rendered.
+        runAction(action, actionOptions) {
+          pulse = { from: NaN, peak: Number(actionOptions.amplitude ?? 24), ms: Number(actionOptions.ms ?? 600) };
+          return settled();
+        },
+        settled,                                             // resolves once nothing of the action moves: 'calm'
         render(frame) {
           const t = frame.now / 1000;
-          presented = { t, a: amplitude };
-          device.queue.writeBuffer(uniforms, 0, new Float32Array([t, amplitude, frame.cssWidth, frame.cssHeight, frame.width, frame.height]));
+          let a = amplitude;
+          if (pulse) {
+            if (Number.isNaN(pulse.from)) pulse.from = frame.now;   // the pulse starts at the first frame that renders it
+            const k = (frame.now - pulse.from) / pulse.ms;
+            if (k < 1) a += (pulse.peak - amplitude) * Math.sin(Math.PI * k);
+            else { pulse = null; for (const resolve of waiters.splice(0)) resolve('calm'); }
+          }
+          presented = { t, a };
+          device.queue.writeBuffer(uniforms, 0, new Float32Array([t, a, frame.cssWidth, frame.cssHeight, frame.width, frame.height]));
           let bindGroup = bindGroups.get(frame.sourceView);
           if (!bindGroup) {
             bindGroup = device.createBindGroup({
@@ -76,7 +94,7 @@
           const { t, a } = presented;
           return (point) => wobbleSource(t, a, point);
         },
-        destroy() { uniforms.destroy(); },
+        destroy() { for (const resolve of waiters.splice(0)) resolve(null); uniforms.destroy(); },
       };
     },
   });

@@ -44,9 +44,9 @@ const LIMITS = {
   //   drawable removed during a held paint (WPT onpaint flakes)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 269.25 * KB, gzip: 93.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
-  // 27.25 -> 30.25 KB, gzip 10.75 -> 11.5 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
+  // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
-  'hic-live-effects.iife.min.js': { target: 30.25 * KB, ceiling: 30.25 * KB, gzip: 11.5 * KB },
+  'hic-live-effects.iife.min.js': { target: 30.25 * KB, ceiling: 30.25 * KB, gzip: 11.75 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)

@@ -311,15 +311,20 @@ The frame cap and the effects host are extensions of this library. They are not 
 ### 7.2 Effect plugins: ABI v2
 Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options), NO_TARGET, isNoTarget(point)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
 `definePlugin` validates and freezes a definition: `{type: string, apiVersion: 2, version: number, outputCapabilities?:
-{directCanvasRenderAttachment?: true}, create(context, options)}`. `create` may be async and returns an `EffectPluginInstance`:
-`render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `destroy?`, `spatial?`, `continuous?`
-(`continuous` is read after every frame and may change at runtime; an idle host needs `context.requestRender()` to see it turn true).
-Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial`
-plugin MUST provide `captureInputMapper` (definePlugin throws `TypeError` otherwise). Types: `EffectPluginContext`,
-`EffectRenderFrame`, `EffectPluginInstance` in `contracts/types.js`.
+{directCanvasRenderAttachment?: true}, actions?: string[], create(context, options)}`. `actions`, when present, is a non-empty array of
+unique names matching `/^[a-z][a-z0-9-]{0,31}$/` (frozen copy), else `TypeError`. `create` may be async and returns an `EffectPluginInstance`:
+`render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `runAction?`, `settled?`, `destroy?`, `spatial?`,
+`continuous?` (`continuous` is read after every frame and may change at runtime; an idle host needs `context.requestRender()` to see it
+turn true). Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial` plugin MUST provide
+`captureInputMapper`; a plugin whose definition declares `actions` MUST provide `runAction(action, options, info)` and `settled()`, and
+one without `actions` must not provide `runAction` (`addPlugin` rejects with `TypeError` otherwise, and destroys the instance). The context
+is `{apiVersion, canvas, source, adapter, device, format, requestRender(), viewport(), listen(type, listener, options), trigger(action,
+options?)}`; the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
+Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `EffectPluginInstance`, `EffectActionState`,
+`EffectActionInfo` in `contracts/types.js`.
 
 ### 7.3 Effect host
-`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, profiling, interposer})` -> `EffectHost`
+`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, profiling, interposer})` -> `EffectHost` (`profiling` is accepted and currently has no effect)
 `{pluginCount, addPlugin(def, options) -> EffectHandle, stats(), destroy()}`.
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
@@ -328,10 +333,44 @@ plugin MUST provide `captureInputMapper` (definePlugin throws `TypeError` otherw
   plugin chain each due frame (`continuous` plugins) or on change, and keeps the source geometry in sync so the live element sits
   under the presented pixels (`GeometryApi.update(source, fill transform)`).
 - Presented-frame events on the canvas: `effectframe` (CustomEvent, detail `EffectPresentationFrame`) and `effecterror` (CustomEvent,
-  detail `{error}`); after `effecterror` the canvas keeps the last presented frame (never blank).
-- `EffectHandle`: `{id, type, options, enabled, setOptions(patch), setEnabled(bool), mountUI(root) -> dispose, remove()}`.
+  detail `{error, type, id, phase}`, `phase` one of `create`, `render`, `resize`, `setOptions`, `recreate`, `destroy`, `mountUI-dispose`,
+  `action`, `settled`; `type: 'host', phase: 'recover'` when the device recovery gives up); after `effecterror` the canvas keeps the last
+  presented frame (never blank).
+- `EffectHandle`: `{id, type, options, enabled, actions, setOptions(patch), setEnabled(bool), mountUI(root) -> dispose, trigger(action,
+  options?) -> Promise<EffectActionState>, settled() -> Promise<EffectActionState>, remove()}` (7.3.1).
 - `destroy()`: stops rendering, unregisters the frame hook and the interposer, destroys plugin resources and the device. A WebGPU canvas context cannot
   be released, so the canvas keeps a (cleared) WebGPU context; a later `getContext('2d')` on it returns `null`, as in any browser.
+
+#### 7.3.1 Plugin actions
+`handle.actions` is the frozen list the definition declares (empty without `actions`). `EffectActionState` is a string naming the state
+the plugin rests in (documented by each plugin), or `null`.
+
+`handle.trigger(action, options?)` (an async function; every failure is a rejection, never a synchronous throw):
+1. Rejects `TypeError` when the definition declares no actions (`trigger: the plugin "<type>" declares no actions`), when `action` is not
+   in `actions` (`trigger: unknown action "<action>" of the plugin "<type>"; its actions are '<a>', '<b>'`), or when `options` is neither
+   `undefined` nor an object.
+2. While the plugin is being created again after a device loss, waits for that creation, then continues with the new instance.
+3. Rejects `InvalidStateError` when the plugin was removed, failed (until `setEnabled(true)`), or is disabled.
+4. Resolves the previous pending trigger of the same handle with `null` (superseded), then calls `instance.runAction(action,
+   Object.freeze({...options}), Object.freeze({reducedMotion}))` SYNCHRONOUSLY (triggers keep their order; `reducedMotion` is
+   `matchMedia('(prefers-reduced-motion: reduce)').matches` at the call) and requests a frame.
+5. Resolves with what `runAction` returns or resolves (`undefined` becomes `null`), unless it was superseded first. A plugin resolves
+   after the frame that draws the end state was rendered, and with `null` when it superseded or cancelled the action itself.
+6. Rejects with the plugin's error when `runAction` throws or rejects; the plugin stays enabled and nothing is reported (the caller has
+   the rejection).
+7. The pending trigger resolves `null` when the plugin is removed (`remove()`, `host.destroy()`, `uninstall()`), disabled, or fails, and
+   when its instance is destroyed for a device loss (the action is not replayed on the new instance).
+
+`context.trigger` and `ui.trigger` (the plugin's own triggers: its submit handler, its buttons) run the same steps on the plugin's handle,
+so they supersede a pending page trigger; a rejection is also reported (`effecterror`, phase `action`).
+
+`handle.settled()`: rejects `TypeError` without declared actions; resolves `null` at once when the plugin is removed, failed or disabled;
+otherwise resolves with `instance.settled()` (`undefined` becomes `null`). Pending `settled()` calls resolve `null` on removal, disable
+or failure; across a device loss they are attached to the re-created instance. A throwing or rejecting `instance.settled()` is reported
+(phase `settled`) and resolves `null`.
+
+Verified by `test/unit/gpu-effects/effect-plugins.test.mjs` (every rule above, with a scripted plugin) and, per example plugin, by its
+Node tests through the real handle, its GPU test (`runActionOnGpu`) and its gallery e2e (`actionChecks`, trusted clicks).
 
 ### 7.4 Input mapper and interposer
 `captureInputMapper(frame: EffectPresentationFrame): InputMapper` is called by the host each time a frame is PRESENTED; the host keeps

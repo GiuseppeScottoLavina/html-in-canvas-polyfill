@@ -1,23 +1,66 @@
 # page-curl
 
-An **example** effect plugin: the HTML drawn in a canvas becomes a sheet of paper you can take by a corner and turn. It shows how to use the effects extension of this library (`HTMLInCanvasEffects`, plugin ABI v2). It is **not part of the polyfill**: the polyfill, the frame cap and the effects host work without it, and nothing in `src/` imports it.
+The HTML drawn in a canvas becomes a sheet of paper you can take by a corner and turn: grab a corner and the live page folds and rolls up under your hand in 3D, lit and shadowed, still updating; it springs back on release.
 
-The effects host and this plugin are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them ([docs/guides/EFFECTS-PLUGINS.md](../../docs/guides/EFFECTS-PLUGINS.md)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 ![page-curl in the plugin gallery: the dog-ear peeks, a drag curls the live form in 3D while text is typed into it, the text appears mirrored through the back of the sheet; then the bottom-left corner](media/page-curl.webp)
 
+Recorded in headless Chrome from the plugin gallery (`node plugins/page-curl/test/gallery.e2e.mjs --record`).
+
 ## What it does
 
-It applies to any drawable, with no change to the HTML: the gallery applies it to its form as it is.
+It applies to any drawable, with no change to the HTML.
 
-- **A 3D sheet.** The page is folded along a straight line and rolled around a cylinder under the held corner: the part between the bound edge and the fold stays flat, the roll lifts, the part beyond it lies back side up, with the held corner exactly under the pointer. The sheet is bound along the edge opposite the corner (the left edge for a right-hand corner). Rolling a sheet around a cylinder never stretches it, so the paper keeps its proportions (the tests measure it). A long pull bows the sheet into a larger loop.
-- **Seen and lit.** A camera straight above the page with a little perspective (a lifted point lands farther from the centre, the flat page is drawn one to one), one lamp from the upper left: the roll brightens where it faces the lamp and darkens where it turns away, paper lets a little warm light through, a soft sheen runs along the roll.
-- **Shadows.** The lifted paper casts a soft shadow on the page underneath and on the flat part of the sheet, and its penumbra widens with the height of the paper above what it falls on (sharp where the roll meets the page, soft under the raised flap). A little light is trapped in the wedge between the roll and the page.
-- **The back of the sheet is paper.** Cream paper with a fibre grain, and the page's content showing through it, soft and mirrored, as ink shows through real paper: text, borders and controls of the front darken the back where they lie, in the page's own polarity (light ink on a dark page, dark ink on a light one).
-- **Live.** The sheet samples the live page every frame. Typing into a field while the page is held curled shows the text on the curling sheet (on its front, or mirrored through its back); the flat part stays usable at any time.
-- **Physics-like follow.** The corner follows the pointer on a spring (it has a little weight) and springs back when released. The springs run in fixed steps on the frame clock, so a pose depends on the time only, at any frame cap.
-- **Affordances.** At rest one corner (`corner`, else top-right) is a small dog-ear that peeks open by itself every `autoPeek` seconds until the first drag; hovering a corner lifts it further with a `grab` cursor (`grabbing` while dragging). The plugin's controls show the hint "Drag the top-right corner to turn the page (any corner works)".
-- **The page underneath** is plain paper, faintly ruled (`under`): a plugin receives one source texture, so what lies beneath the sheet is not another live page.
+- **A 3D sheet.** The page is folded along a straight line and rolled around a cylinder under the held corner: the part between the bound edge and the fold stays flat, the roll lifts, the part beyond it lies back side up, with the held corner exactly under the pointer. The sheet is bound along the edge opposite the corner. Rolling never stretches the sheet, so the paper keeps its proportions (the tests measure it). A long pull bows the sheet into a larger loop.
+- **Seen and lit.** A camera straight above the page with a little perspective, one lamp from the upper left: the roll brightens where it faces the lamp and darkens where it turns away, and a soft sheen runs along it.
+- **Shadows.** The lifted paper casts a soft shadow on the page underneath and on the flat part of the sheet, and its penumbra widens with the height of the paper (sharp where the roll meets the page, soft under the raised flap).
+- **The back of the sheet is paper**, with the page's content showing through it, soft and mirrored, as ink shows through real paper.
+- **Live.** The sheet samples the live page every frame: typing into a field while the page is held curled shows the text on the curling sheet; the flat part stays usable at any time.
+- **Physics-like follow.** The corner follows the pointer on a spring and springs back when released. The springs run in fixed steps on the frame clock, so a pose depends on the time only, at any frame cap.
+- **Affordances.** At rest one corner (`corner`, else top-right) is a small dog-ear that peeks open by itself every `autoPeek` seconds until the first drag, and on demand with the action `peek`; hovering a corner lifts it further with a `grab` cursor (`grabbing` while dragging). The plugin's controls show the hint "Drag the top-right corner to turn the page (any corner works)".
+- **The page underneath** is plain paper, faintly ruled (`under`).
+
+## Usage
+
+```html
+<script src="dist/hic-live-polyfill.iife.min.js"></script>
+<script src="dist/hic-live-effects.iife.min.js"></script>
+<script src="dist/plugins/page-curl.iife.min.js"></script>   <!-- window.HicLivePlugins['page-curl'] -->
+<script>
+  const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
+  const curl = await host.addPlugin(HicLivePlugins['page-curl'].plugin, { corner: 'any', radius: 48 });
+  curl.mountUI(document.getElementById('controls'));   // the hint label, corner, roll and shadow controls
+  helpButton.addEventListener('click', () => curl.trigger('peek'));   // show again that the page can be turned
+</script>
+```
+
+ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/page-curl'`.
+
+## Options
+
+| option | default | |
+|---|---|---|
+| `corner` | `'any'` | `'any'`, `'tl'`, `'tr'`, `'bl'`, `'br'`: which corners can be grabbed |
+| `radius` | 48 | 4 to 200 CSS px (slider 12 to 120): the roll radius; a long pull bows it up to 1.9 times larger, a short pull uses a tighter one (at most pull / pi) |
+| `shadow` | 0.85 | 0 to 1: strength of the shadows |
+| `dogEar` | 36 | 0 to 120 CSS px: how far the dog-eared corner is folded at rest (per axis); 0: no dog-ear |
+| `autoPeek` | 5 | seconds between the dog-ear's peeks until the first drag; 0 or `false`: off |
+| `hotZone` | 64 | 16 to 200 CSS px: grab distance from a corner |
+| `under` | `#d1c9bb` | the page underneath (`'#rrggbb'`) |
+| `paper` | `#f6f2e9` | the back of the sheet (`'#rrggbb'`) |
+
+`mountUI` adds the hint label, a corner picker and sliders for the roll and the shadow.
+
+## Actions
+
+`handle.trigger('peek')` ([semantics](../../docs/guides/EFFECTS-PLUGINS.md#5-actions-trigger-and-settled)); no options.
+
+| action | | resolves with |
+|---|---|---|
+| `peek` | the dog-eared corner opens and closes once now (1.8 s, the motion of the auto-peek), also after the first drag stopped the auto-peek | `'rest'`, once the sheet lies still again |
+
+`handle.settled()` resolves with `'rest'` once nothing moves (no drag, no spring, no peek). While a corner is held or springs back, `peek` opens nothing and resolves at the next rest; a newer trigger resolves a pending one with `null`.
 
 ## Input
 
@@ -32,59 +75,34 @@ Every other pointer goes through the host's interposer and this plugin's input m
 | the back of the sheet (the roll, the folded flap, the dog-ear) | `NO_TARGET` |
 | the page underneath | `NO_TARGET` |
 
-`NO_TARGET` is the effects ABI value for "no element here" (`src/effects/no-target.js`, re-exported by this plugin): the host swallows a press there and the mapper chain stops at it. Touch: a touch drag on a corner may be claimed by the browser for scrolling (`pointercancel` releases the page); `touch-action: none` on the drawable keeps it for the plugin.
+`NO_TARGET` is the effects ABI value for "no element here" (re-exported by this plugin): the host swallows a press there and the mapper chain stops at it.
 
-## Use
+## Reduced motion
 
-```html
-<script src="dist/hic-live-polyfill.iife.min.js"></script>
-<script src="dist/hic-live-effects.iife.min.js"></script>
-<script src="dist/plugins/page-curl.iife.min.js"></script>   <!-- window.HicLivePlugins['page-curl'] -->
-<script>
-  const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
-  const curl = await host.addPlugin(HicLivePlugins['page-curl'].plugin, { corner: 'any', radius: 48 });
-  curl.mountUI(document.getElementById('controls'));   // the hint label, corner, roll and shadow controls
-</script>
-```
+With `prefers-reduced-motion: reduce`: the drag still curls the page (it follows the hand, without the spring's lag); the dog-ear stays still (no auto-peek, and `peek` opens nothing and resolves `'rest'` at once); the release lays the page back at once and the hover lift appears without animation.
 
-| option | | |
-|---|---|---|
-| `corner` | `'any'` (default), `'tl'`, `'tr'`, `'bl'`, `'br'` | which corners can be grabbed |
-| `radius` | 4 to 200 CSS px, default 48 (slider 12 to 120) | roll radius; a long pull bows it up to 1.9 times larger; a short pull uses a tighter one (at most pull / pi) |
-| `shadow` | 0 to 1, default 0.85 | strength of the shadows |
-| `dogEar` | 0 to 120 CSS px, default 36 | how far the dog-eared corner is folded at rest (per axis); 0: no dog-ear |
-| `autoPeek` | seconds, default 5; 0 or `false`: off | the dog-ear peeks open every `autoPeek` s until the first drag |
-| `hotZone` | 16 to 200 CSS px, default 64 | grab distance from a corner |
-| `under` | `'#rrggbb'`, default `#d1c9bb` | the page underneath |
-| `paper` | `'#rrggbb'`, default `#f6f2e9` | the back of the sheet |
-
-`prefers-reduced-motion: reduce`: the drag still curls the page (it follows the hand, without the spring's lag); the dog-ear stays still (no auto-peek); the release lays the page back at once and the hover lift appears without animation. Frames are requested only while something moves (drag, release, hover lift, an auto-peek); at rest the plugin costs nothing (one timer for the next auto-peek, until the first drag). After a GPU device loss the host re-creates the plugin with the same options; the gesture in progress is dropped and the page shows flat.
-
-## How it is drawn
-
-`page-curl.wgsl`, per curled frame, all on the GPU, nothing allocated per frame:
-
-1. **The lifted paper as the lamp sees it** (half resolution, max blending): coverage and height of every point of the sheet more than 0.75 px above the page. Only when the fold moved.
-2. **Two soft copies of it** (`blur.wgsl`, separable Gaussian, six passes): sigma about 4 and 24 CSS px. A receiver estimates the height of the paper above it and blends between them: contact hardening.
-3. **The page underneath** (a full-screen pass) and **the sheet**: a triangle strip in the fold's own frame (rows of constant distance from the axis, one every 1.5 px or less across the roll), so the roll's silhouette runs along the rows and stays smooth; 4x MSAA with a depth buffer; the parts of the strip beyond the page are cut in the fragment shader, antialiased by alpha to coverage. The side the reader sees is the triangle's winding (stable where the normal is edge-on). The lifted paper is shaded by its own curvature only (its own half-resolution shadow would draw texels on it).
-
-At rest without any curl (`dogEar: 0`) the pass draws the source unchanged.
-
-## Measured
+## Performance
 
 `test/page-curl-gpu.browser.test.mjs`, headless Chrome on an Apple M1 Max (Metal), 2200x1240 backing pixels (the gallery canvas at DPR 2), the page curled, while other work ran on the machine: 0.81 ms per frame submitted back to back (the one-sample template pass: 0.09 ms), a tenth of the 8.33 ms frame at 120 Hz. One run on one machine.
 
-`test/gallery.e2e.mjs` (headless Chrome 155, trusted CDP input, the plugin gallery, 2026-10-14): 19 of 19 checks pass, among them: the hint names the top-right corner; the dog-ear is visible at rest and peeks open by itself (the paper area at the corner grows 24 times); hovering lifts it with a `grab` cursor; a drag of the dog-ear curls the page with a `grabbing` cursor while the form receives no pointer, mouse, click, focus or `selectstart` event and keeps its focus, value and empty selection; **typing while the page is held curled reaches the focused field and the typed text appears on the curled sheet, mirrored, away from where the field lies flat**; the release presents its animation and ends on the dog-ear; clicks map again; the auto-peek stops after the first drag; at frame cap 30 the drag is presented at 30 frames per second; with reduced motion the dog-ear is still and the release is immediate; no console error.
+Per curled frame, all on the GPU and nothing allocated: the lifted paper as the lamp sees it (half resolution, only when the fold moved), two soft copies of it (six separable Gaussian passes, about 4 and 24 CSS px) for contact-hardening shadows, then the page underneath and the sheet as a triangle strip in the fold's frame (4x MSAA, a depth buffer, the cut edges antialiased by alpha to coverage). At rest without a curl (`dogEar: 0`) the pass draws the source unchanged. Frames are requested only while something moves (drag, release, hover lift, a peek); at rest the plugin costs nothing (one timer for the next auto-peek, until the first drag).
 
-## Files
+## Limitations
+
+- What lies beneath the sheet is plain paper: a plugin receives one source texture, so it is not another live page.
+- A touch drag on a corner may be claimed by the browser for scrolling (`pointercancel` releases the page); `touch-action: none` on the drawable keeps it for the plugin.
+- After a GPU device loss the gesture in progress is dropped and the page shows flat; a pending `peek` resolves `null`.
+- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+
+## Files and tests
 
 | file | |
 |---|---|
-| `index.js` | `meta`, `plugin`, the mapper `mapCurlPoint`, `poseState`, `foldSpan`, `stateOf`, `hotCorner`, `hintCorner`, `hintText`, `peekAt`, `rollFor`, `NO_TARGET`, `isNoTarget` |
+| `index.js` | `meta`, `plugin`, `ACTIONS`, the mapper `mapCurlPoint`, `poseState`, `foldSpan`, `stateOf`, `hotCorner`, `hintCorner`, `hintText`, `peekAt`, `peekOnce`, `rollFor`, `NO_TARGET`, `isNoTarget` |
 | `fold.js` | the shape of the sheet as pure math (fold, normal, the corner's constraints, the camera, the spring) |
 | `page-curl.wgsl`, `blur.wgsl` | the shaders; inlined into the built bundles |
 | `wgsl.js` | loads the `.wgsl` files when the plugin runs from source; the build replaces it |
-| `test/page-curl.test.mjs` | Node: the folder contract; the fold (an isometry, the corner under the pointer, the bound edge flat); the mapper against an independent forward rendering of the sheet (every point splatted through the camera into a z-buffer), 8 poses, every pixel; the grab (which events are taken); the spring that follows the pointer and settles with the corner under it; the release at 120/30/15 fps (the same pose at the same time); reduced motion; frozen mappers; no allocation per frame and the shadow passes only when the fold moved; the dog-ear, hover, grab cursor, auto-peek |
-| `test/page-curl-gpu.browser.test.mjs` | headless Chrome, the real host: `checkMapperAgainstGpu` (identity as positive control), a pose 20 px away as wrong-mapper control, the corner seen under the pointer, the back of the sheet (paper, darker exactly over the mirrored markers of the source), the dog-ear, the spring back to the plain source, device loss, the GPU time |
-| `test/gallery.e2e.mjs` | the gallery click-through with trusted input (`node plugins/page-curl/test/gallery.e2e.mjs [--record]`; `npm run test:plugins` runs every gallery e2e), which also records `media/page-curl.webp` |
 | `media/page-curl.webp` | the recording above |
+| `test/page-curl.test.mjs` | Node: the folder contract; the fold (an isometry, the corner under the pointer, the bound edge flat); the mapper against an independent forward rendering of the sheet, 8 poses, every pixel; the grab; the spring; the release at 120/30/15 fps; reduced motion; frozen mappers; no allocation per frame; the dog-ear, hover, grab cursor, auto-peek; the action `peek` through the real handle (it peeks, also after the first drag, waits while a corner is held, resolves `'rest'`, does nothing with reduced motion, removal) |
+| `test/page-curl-gpu.browser.test.mjs` | headless Chrome, the real host: `checkMapperAgainstGpu` (identity as positive control), a pose 20 px away as wrong-mapper control, the back of the sheet, the dog-ear, the spring back to the plain source, the action `peek` (`runActionOnGpu`: every checked frame agrees with its mapper, it ends on the dog-ear), device loss, the GPU time |
+| `test/gallery.e2e.mjs` | the gallery with trusted input: the hint, the dog-ear and its auto-peek, hover, a drag that the form never sees, typing while the page is held curled, the release, clicks map again, the action `peek` from the gallery's button, an unknown action, superseding, `settled()`, the frame cap, reduced motion (also the action). 26 of 26 checks pass (headless Chrome 155, 2026-10-16). `--record` writes the media; needs `npm run build` |
