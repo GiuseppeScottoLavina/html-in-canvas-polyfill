@@ -45,4 +45,13 @@ If you cannot run them, say so in the pull request. The harness launches its own
 
 ## Pull requests
 
-Describe what the change proves and what it does not, list the commands you ran and the ones you could not, and add a `CHANGELOG.md` entry under the unreleased version. The pull request template has the checklist. Releases (npm, tags) are made by the maintainer.
+Describe what the change proves and what it does not, list the commands you ran and the ones you could not, and add a `CHANGELOG.md` entry under `[Unreleased]`. The pull request template has the checklist.
+
+## Releases
+
+Releases are made by the maintainer. A release is one commit that sets `version` in `package.json` and `src/version.js` (the build checks they are equal) and turns `[Unreleased]` in `CHANGELOG.md` into a dated `[x.y.z] - YYYY-MM-DD` section, tagged `vx.y.z`. Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag names the package version and that the changelog section is dated, repeats the CI checks, publishes to npm with provenance (dist-tag from `publishConfig.tag`: `next` while the versions are previews) and creates the GitHub release with that changelog section as its notes.
+
+npm authentication, in this order of preference:
+
+- Trusted publishing (no secret): on npmjs.com, package settings > Trusted publisher > GitHub Actions, with owner `GiuseppeScottoLavina`, repository `html-in-canvas-polyfill`, workflow `release.yml` and environment `npm`. npm offers this setting once the package exists, so the first version is published with a token or from the maintainer's machine.
+- A granular npm access token with publish rights on the package, stored as the repository (or `npm` environment) secret `NPM_TOKEN`. Remove it once trusted publishing is configured.

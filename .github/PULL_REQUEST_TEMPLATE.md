@@ -15,4 +15,4 @@
 - [ ] No gate was weakened: no threshold raised, band widened, check dropped or error swallowed to get green
 - [ ] Module rules kept: at most 1000 code lines per file, imports between `src/` modules only through `src/contracts/`, no runtime dependency, no network request on load
 - [ ] Docs updated where behaviour changed (`npm run docs:sync` for `src/contracts/features.js`); every claim is backed by a doc, a gate or a file, or marked unverified
-- [ ] `CHANGELOG.md` entry under the unreleased version
+- [ ] `CHANGELOG.md` entry under `[Unreleased]`

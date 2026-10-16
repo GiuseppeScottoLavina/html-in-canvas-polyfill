@@ -1,0 +1,27 @@
+# Weekly update pull requests for the pinned GitHub Actions and the development dependencies.
+# The package has no runtime dependency; test/frameworks pins the framework versions its apps are tested against.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /test/frameworks
+    schedule:
+      interval: monthly
+    groups:
+      frameworks:
+        patterns: ['*']

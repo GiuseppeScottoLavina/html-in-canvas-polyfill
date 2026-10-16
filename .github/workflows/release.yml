@@ -1,0 +1,84 @@
+# Publishes the package to npm with provenance and creates the GitHub release, when the maintainer pushes a version tag (vX.Y.Z or
+# vX.Y.Z-pre.N) that equals package.json "version". Nothing else triggers it. The dist-tag comes from package.json "publishConfig".
+# npm authentication (CONTRIBUTING.md, "Releases"): trusted publishing (OIDC, no secret) once the package is configured on npmjs.com for
+# this repository, this workflow file and the environment "npm"; before that, an npm automation token in the secret NPM_TOKEN.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # npm provenance and trusted publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: The tag names the package version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+          grep -q "^## \[${version}\] - [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$" CHANGELOG.md || { echo "::error::CHANGELOG.md has no dated section for ${version}"; exit 1; }
+
+      - name: Install Chrome (stable)
+        id: chrome
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: stable
+
+      - name: Make Chrome reachable for the test harness
+        # Same as ci.yml: the harness looks for Chrome at the macOS path; Chrome's sandbox needs unprivileged user namespaces.
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo mkdir -p "/Applications/Google Chrome.app/Contents/MacOS"
+          sudo ln -sf "${{ steps.chrome.outputs.chrome-path }}" "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+      - run: npm ci
+
+      - name: Checks (the CI job, on the tagged commit)
+        run: |
+          npm run lint
+          npm run check
+          node test/unit/lib/run-node-tests.mjs
+          node test/unit/run.mjs --chrome="${{ steps.chrome.outputs.chrome-path }}"
+          npm run build
+          node scripts/check-bundle.mjs --no-build --allow-size
+
+      - name: npm 11.5.1 or newer (trusted publishing)
+        run: npm install -g npm@^11.5.1 && npm --version
+
+      - name: Publish to npm with provenance
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: GitHub release with the CHANGELOG section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v head="## [${version}]" 'index($0, head) == 1 { on = 1; next } on && (/^## \[/ || /^\[[^]]+\]: /) { exit } on { print }' CHANGELOG.md > release-notes.md
+          prerelease=""
+          case "${version}" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file release-notes.md ${prerelease}
