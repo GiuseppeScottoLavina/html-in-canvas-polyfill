@@ -324,7 +324,7 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
 `EffectActionInfo` in `contracts/types.js`.
 
 ### 7.3 Effect host
-`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, profiling, interposer})` -> `EffectHost` (`profiling` is accepted and currently has no effect)
+`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer})` -> `EffectHost`
 `{pluginCount, addPlugin(def, options) -> EffectHandle, stats(), destroy()}`.
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.

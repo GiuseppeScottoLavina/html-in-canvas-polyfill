@@ -627,6 +627,8 @@ export {};
  */
 /**
  * @typedef {EffectViewport & EffectPresentationFrame & {sourceReady:boolean, encoder:any, sourceTexture:any, sourceView:any, destinationTexture:any, destinationView:any, profiling?:any}} EffectRenderFrame
+ *   `profiling` is never set by the host: a measurement harness that renders a plugin directly may pass
+ *   `{timestampWrites(label) -> GPURenderPassTimestampWrites}`, which the example plugins add to their own passes
  */
 /**
  * @typedef {Object} EffectPluginContext
@@ -718,7 +720,6 @@ export {};
  * @typedef {Object} EffectHostOptions
  * @property {number} [maxDpr]
  * @property {'low-power'|'high-performance'} [powerPreference]
- * @property {{gpuTimestamps?: 'off'|'if-supported'|'required', sampleEvery?: number, ringSize?: number}} [profiling]
  * @property {boolean} [interposer]  remap pointer input through spatial plugins (default true)
  */
 /**

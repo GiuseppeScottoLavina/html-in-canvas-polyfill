@@ -51,7 +51,6 @@ const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5,
 | `maxDpr` | the polyfill's `maxDpr` option (2.5; 3 on phones) | the canvas backing store is its CSS size times `min(devicePixelRatio, maxDpr)` |
 | `powerPreference` | the browser's | `'low-power'` or `'high-performance'`, passed to `requestAdapter` |
 | `interposer` | `true` | remap pointer input through the spatial plugins (section 14); `false` leaves input to the browser |
-| `profiling` | none | accepted and currently without effect |
 
 `createHost` rejects with:
 
