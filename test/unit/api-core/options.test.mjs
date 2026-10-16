@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_OPTIONS, resolveOptions } from '../../../src/api/options.js';
+import { DEFAULT_OPTIONS, MOBILE_BUDGETS, resolveOptions, withDeviceBudgets } from '../../../src/api/options.js';
 
 test('no options: the defaults, frozen', () => {
   const o = resolveOptions();
@@ -98,4 +98,21 @@ test('undefined members behave as absent', () => {
   const o = resolveOptions({ maxDpr: undefined, mode: undefined, nodeBudget: undefined });
   assert.equal(o.maxDpr, DEFAULT_OPTIONS.maxDpr);
   assert.equal(o.mode, 'auto');
+});
+
+test('mobile budgets: phones and tablets get maxDpr 3, the iOS canvas area limit and 256 MiB (128 MiB at deviceMemory <= 2); desktop is unchanged', () => {
+  const base = resolveOptions();
+  assert.equal(withDeviceBudgets(base, undefined, { mobile: false }), base, 'desktop: the very same object');
+  const m = withDeviceBudgets(base, undefined, { mobile: true });
+  assert.deepEqual([m.maxDpr, m.maxSurfacePixels, m.maxTotalSurfaceBytes], [3, 4096 * 4096, 256 * 1024 * 1024]);
+  assert.ok(Object.isFrozen(m));
+  assert.equal(withDeviceBudgets(base, undefined, { mobile: true }, 2).maxTotalSurfaceBytes, 128 * 1024 * 1024);
+  assert.equal(withDeviceBudgets(base, undefined, { mobile: true }, 4).maxTotalSurfaceBytes, MOBILE_BUDGETS.maxTotalSurfaceBytes);
+  assert.ok(MOBILE_BUDGETS.maxTotalSurfaceBytes < DEFAULT_OPTIONS.maxTotalSurfaceBytes && MOBILE_BUDGETS.maxSurfacePixels < DEFAULT_OPTIONS.maxSurfacePixels);
+});
+
+test('mobile budgets never override an explicit option', () => {
+  const given = { maxDpr: 2, maxTotalSurfaceBytes: 1 << 30 };
+  const m = withDeviceBudgets(resolveOptions(given), given, { mobile: true }, 1);
+  assert.deepEqual([m.maxDpr, m.maxSurfacePixels, m.maxTotalSurfaceBytes], [2, MOBILE_BUDGETS.maxSurfacePixels, 1 << 30]);
 });

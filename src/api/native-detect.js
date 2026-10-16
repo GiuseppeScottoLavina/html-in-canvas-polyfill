@@ -237,11 +237,13 @@ export function probeNative(win) {
   return classifyNative(observe(win));
 }
 
-/** Oldest Chromium major the design is expected to work on (anchor positioning is 125; only 154 and Canary 157 were measured). */
+/** Oldest Chromium major the design is expected to work on (anchor positioning is 125; only 154 and Canary 157 were measured on desktop). Also Chrome for Android. */
 export const MIN_CHROMIUM_MAJOR = 130;
 /** Oldest Firefox and Safari majors: the measured ones (G-xbrowser, 2026-10-09: Firefox 155.0.1, Safari 27.0.1 on macOS); older ones are unverified and refused. */
 export const MIN_FIREFOX_MAJOR = 155;
 export const MIN_SAFARI_MAJOR = 27;
+/** Oldest Safari on iOS / iPadOS: 26, the first with CSS anchor positioning (measured: iOS Simulator 26.4 and 27.0, `npm run test:mobile`). */
+export const MIN_IOS_SAFARI_MAJOR = 26;
 
 /** Platform features the polyfill path cannot run without (checked on every engine, so a gap is named, not guessed from the version). @param {any} win @returns {string[]} */
 export function missingRequirements(win) {
@@ -254,22 +256,38 @@ export function missingRequirements(win) {
   return missing;
 }
 
+/** @typedef {{ok: boolean, major: number|null, engine: string, os: 'desktop'|'ios'|'android', mobile: boolean, reason?: string}} GateResult */
+
 /**
- * Desktop Chromium >= 130, Firefox >= 155 or Safari >= 27, with every required platform feature. Pure function of the user agent and feature probes.
+ * Desktop Chromium >= 130, Firefox >= 155 or Safari >= 27; Chrome for Android >= 130; Safari on iOS / iPadOS >= 26 and the other iOS browsers (WebKit, no version in
+ * their agent: decided by the features); always with every required platform feature. WebViews (Android WebView, in-app WKWebView) and Firefox for Android are refused:
+ * never measured, and a WebView's engine and flags belong to the host app. Pure function of the user agent and feature probes.
  * @param {Window} win
- * @returns {{ok: boolean, major: number|null, engine: string, reason?: string}}
+ * @returns {GateResult}
  */
 export function browserGate(win) {
   const b = readBrowser(win);
-  const no = (/** @type {string} */ reason) => ({ ok: false, major: b.major, engine: b.engine, reason });
-  if (b.mobile) return no('mobile browsers are not supported');
-  const floor = b.engine === 'chromium' ? MIN_CHROMIUM_MAJOR : b.engine === 'gecko' ? MIN_FIREFOX_MAJOR : b.engine === 'webkit' ? MIN_SAFARI_MAJOR : null;
-  const name = b.engine === 'chromium' ? 'Chromium' : b.engine === 'gecko' ? 'Firefox' : 'Safari';
-  if (floor === null) return no('not a Chromium, Firefox or Safari desktop browser');
-  if (b.major === null || b.major < floor) return no(`${name} ${b.major ?? '?'} is older than the supported minimum ${floor}`);
+  /** @param {string} reason @returns {GateResult} */
+  const no = (reason) => ({ ok: false, major: b.major, engine: b.engine, os: b.os, mobile: b.mobile, reason });
+  if (b.webview) return no(`${b.webview === 'ios-webview' ? 'an in-app iOS web view (WKWebView without the Safari token)' : 'Android WebView'} is not supported: open the page in the browser`);
+  /** @type {number|null} */ let floor;
+  let name;
+  if (b.os === 'ios') {
+    if (b.engine !== 'webkit') return no('not a WebKit browser on iOS');
+    name = b.shell ? `${b.shell} (WebKit on iOS)` : 'Safari on iOS';
+    floor = b.shell ? null : MIN_IOS_SAFARI_MAJOR;
+  } else if (b.os === 'android') {
+    if (b.engine !== 'chromium') return no(`${b.engine === 'gecko' ? 'Firefox for Android' : 'this Android browser'} is not supported (only Chrome for Android, Chromium >= ${MIN_CHROMIUM_MAJOR}, is)`);
+    name = 'Chrome for Android'; floor = MIN_CHROMIUM_MAJOR;
+  } else {
+    floor = b.engine === 'chromium' ? MIN_CHROMIUM_MAJOR : b.engine === 'gecko' ? MIN_FIREFOX_MAJOR : b.engine === 'webkit' ? MIN_SAFARI_MAJOR : null;
+    name = b.engine === 'chromium' ? 'Chromium' : b.engine === 'gecko' ? 'Firefox' : 'Safari';
+    if (floor === null) return no('not a Chromium, Firefox or Safari browser');
+  }
+  if (floor !== null && (b.major === null || b.major < floor)) return no(`${name} ${b.major ?? '?'} is older than the supported minimum ${floor}`);
   const missing = missingRequirements(win);
-  if (missing.length) return no(`${name} ${b.major} lacks ${missing.join(', ')}`);
-  return { ok: true, major: b.major, engine: b.engine };
+  if (missing.length) return no(`${name}${b.major === null ? '' : ` ${b.major}`} lacks ${missing.join(', ')}`);
+  return { ok: true, major: b.major, engine: b.engine, os: b.os, mobile: b.mobile };
 }
 
 /**
@@ -297,7 +315,7 @@ export const nativeUsable = (native) => native.kind === 'complete' || native.kin
  */
 export function decideMode(native, gate, opts) {
   const gateRefusal = () => refuse('browser', `unsupported browser: ${gate.reason ?? 'browser gate failed'}`,
-    `use a desktop Chromium-family browser (Chrome, Edge) >= ${MIN_CHROMIUM_MAJOR}, Firefox >= ${MIN_FIREFOX_MAJOR} or Safari >= ${MIN_SAFARI_MAJOR} (docs/SUPPORT-MATRIX.md, Browsers)`);
+    `use a Chromium-family browser (Chrome, Edge) >= ${MIN_CHROMIUM_MAJOR} on desktop or Android, Firefox >= ${MIN_FIREFOX_MAJOR} or Safari >= ${MIN_SAFARI_MAJOR} on desktop, or Safari >= ${MIN_IOS_SAFARI_MAJOR} on iOS / iPadOS (docs/SUPPORT-MATRIX.md, Browsers)`);
   const brokenRefusal = () => refuse('partial-native', `this browser has a native HTML-in-Canvas implementation without its core (missing: ${native.missing.join(', ')})`,
     'update the browser or remove the experimental flag; options.forcePolyfill replaces the native parts (tests only)');
   const usable = nativeUsable(native);

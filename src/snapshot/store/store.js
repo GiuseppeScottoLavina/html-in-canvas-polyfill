@@ -946,14 +946,15 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     stats() {
       const surfaces = new Set();
-      let degraded = 0;
+      let degraded = 0, rasterScale = 0;
       for (const e of entries.values()) {
         if (e.surface) surfaces.add(e.surface);
         if (e.lastNodes > options.nodeBudget.hard) degraded++;
+        if (e.version) rasterScale = Math.max(rasterScale, e.version.scale);
       }
       return {
         ...counters, cloneMsP50: cloneMs.percentile(0.5), cloneMsP95: cloneMs.percentile(0.95), decodeMsP50: decodeMs.percentile(0.5), decodeMsP95: decodeMs.percentile(0.95),
-        decodeMainMsP95: decodeMainMs.percentile(0.95), degraded, surfaces: surfaces.size, surfaceBytes: retainedBytes(), pinnedSurfaces: pins.size, scroll: compositor.stats(),
+        decodeMainMsP95: decodeMainMs.percentile(0.95), degraded, surfaces: surfaces.size, surfaceBytes: retainedBytes(), rasterScale, pinnedSurfaces: pins.size, scroll: compositor.stats(),
       };
     },
     dispose() {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { engineOf } from '../../../src/util/engine.js';
-import { ADDITIVE_NAMES, CORE_NAMES, LEGACY_NAMES, MIN_CHROMIUM_MAJOR, MIN_FIREFOX_MAJOR, MIN_SAFARI_MAJOR, SPEC_NAMES, missingRequirements, browserGate, classifyNative, decideMode, nativeUsable } from '../../../src/api/native-detect.js';
+import { ADDITIVE_NAMES, CORE_NAMES, LEGACY_NAMES, MIN_CHROMIUM_MAJOR, MIN_FIREFOX_MAJOR, MIN_IOS_SAFARI_MAJOR, MIN_SAFARI_MAJOR, SPEC_NAMES, missingRequirements, browserGate, classifyNative, decideMode, nativeUsable } from '../../../src/api/native-detect.js';
 
 const ALL = [...CORE_NAMES, ...SPEC_NAMES, ...LEGACY_NAMES];
 const without = (/** @type {string[]} */ list, /** @type {string[]} */ ...names) => list.filter((n) => !names.includes(n));
@@ -266,14 +266,15 @@ const FIREFOX = (/** @type {number} */ v) => `Mozilla/5.0 (Macintosh; Intel Mac 
 const SAFARI = (/** @type {number} */ v) => `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${v}.0.1 Safari/605.1.15`;
 
 test('browserGate: desktop Chromium >= the minimum passes', () => {
-  assert.deepEqual(browserGate(win(CHROME(154))), { ok: true, major: 154, engine: 'chromium' });
+  assert.deepEqual(browserGate(win(CHROME(154))), { ok: true, major: 154, engine: 'chromium', os: 'desktop', mobile: false });
   assert.equal(browserGate(win(CHROME(MIN_CHROMIUM_MAJOR))).ok, true);
   assert.equal(browserGate(win(CHROME(MIN_CHROMIUM_MAJOR - 1))).ok, false);
 });
 
 test('browserGate: desktop Firefox and Safari at the measured majors pass; older ones are refused as unverified', () => {
-  assert.deepEqual(browserGate(win(FIREFOX(MIN_FIREFOX_MAJOR))), { ok: true, major: MIN_FIREFOX_MAJOR, engine: 'gecko' });
-  assert.deepEqual(browserGate(win(SAFARI(MIN_SAFARI_MAJOR))), { ok: true, major: MIN_SAFARI_MAJOR, engine: 'webkit' });
+  assert.deepEqual(browserGate(win(FIREFOX(MIN_FIREFOX_MAJOR))), { ok: true, major: MIN_FIREFOX_MAJOR, engine: 'gecko', os: 'desktop', mobile: false });
+  assert.deepEqual(browserGate(win(SAFARI(MIN_SAFARI_MAJOR))), { ok: true, major: MIN_SAFARI_MAJOR, engine: 'webkit', os: 'desktop', mobile: false });
+  assert.match(String(browserGate(win(SAFARI(26), { maxTouchPoints: 0 })).reason), /Safari 26 is older/, 'a Mac (no touch points) with Safari 26 is desktop Safari, not iPadOS');
   assert.match(String(browserGate(win(FIREFOX(MIN_FIREFOX_MAJOR - 1))).reason), /Firefox 154 is older than the supported minimum 155/);
   assert.match(String(browserGate(win(SAFARI(MIN_SAFARI_MAJOR - 1))).reason), /Safari 26 is older/);
 });
@@ -288,27 +289,68 @@ test('browserGate: a missing platform feature is named in the refusal, per featu
   assert.deepEqual(missingRequirements(win(FIREFOX(155))), []);
 });
 
-test('browserGate: mobile, iOS and unknown agents are refused with a reason', () => {
-  const android = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36';
-  const ios = 'Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1';
-  const firefoxAndroid = 'Mozilla/5.0 (Android 14; Mobile; rv:155.0) Gecko/155.0 Firefox/155.0';
-  for (const ua of [android, ios, firefoxAndroid, '', 'curl/8.0']) {
+/** Real agents: iOS 26.4 simulator (iPhone 17, iPad: desktop UA + 5 touch points), Android Emulator API 35 (Chrome 124 shipped with the image), and published shapes. */
+const IOS_SAFARI = (/** @type {number} */ v) => `Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${v}.4 Mobile/15E148 Safari/604.1`;
+const IPADOS_SAFARI = (/** @type {number} */ v) => `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${v}.4 Safari/605.1.15`;
+const CHROME_ANDROID = (/** @type {number} */ v) => `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Mobile Safari/537.36`;
+const CRIOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0.7390.96 Mobile/15E148 Safari/604.1';
+const FXIOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/144.0 Mobile/15E148 Safari/605.1.15';
+const EDGIOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/141.0.3537.71 Version/18.0 Mobile/15E148 Safari/604.1';
+const IOS_WEBVIEW = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+const ANDROID_WEBVIEW = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36';
+const FIREFOX_ANDROID = 'Mozilla/5.0 (Android 14; Mobile; rv:155.0) Gecko/155.0 Firefox/155.0';
+
+test('browserGate: Chrome for Android >= the Chromium minimum passes as mobile; older is refused with its version', () => {
+  assert.deepEqual(browserGate(win(CHROME_ANDROID(MIN_CHROMIUM_MAJOR), { maxTouchPoints: 5 })), { ok: true, major: MIN_CHROMIUM_MAJOR, engine: 'chromium', os: 'android', mobile: true });
+  assert.match(String(browserGate(win(CHROME_ANDROID(124))).reason), /Chrome for Android 124 is older than the supported minimum 130/);
+  const desktopSite = win(CHROME(141), { userAgentData: { mobile: false, platform: 'Android', brands: [{ brand: 'Chromium', version: '141' }] } });
+  assert.deepEqual(browserGate(desktopSite), { ok: true, major: 141, engine: 'chromium', os: 'android', mobile: true }, '"Request desktop site" (Linux UA) is still Android');
+  assert.equal(browserGate(win(CHROME_ANDROID(141))).ok, true, 'without userAgentData (the UA alone)');
+  assert.match(String(browserGate(win(CHROME_ANDROID(141), {}, { CSS: { supports: () => false } })).reason), /Chrome for Android 141 lacks CSS anchor positioning/);
+});
+
+test('browserGate: Safari on iOS >= 26 passes; iPadOS (desktop UA + touch points) is iOS, not desktop Safari', () => {
+  assert.deepEqual(browserGate(win(IOS_SAFARI(MIN_IOS_SAFARI_MAJOR))), { ok: true, major: 26, engine: 'webkit', os: 'ios', mobile: true });
+  assert.match(String(browserGate(win(IOS_SAFARI(18))).reason), /Safari on iOS 18 is older than the supported minimum 26/);
+  assert.deepEqual(browserGate(win(IPADOS_SAFARI(26), { maxTouchPoints: 5 })), { ok: true, major: 26, engine: 'webkit', os: 'ios', mobile: true });
+  assert.equal(engineOf({ userAgent: IPADOS_SAFARI(26), maxTouchPoints: 0 }).os, 'desktop', 'control: the same UA on a Mac is desktop');
+  assert.match(String(browserGate(win(IOS_SAFARI(26), {}, { CSS: { supports: () => false } })).reason), /Safari on iOS 26 lacks CSS anchor positioning/);
+});
+
+test('browserGate: Chrome, Firefox and Edge on iOS are WebKit, decided by the features (no WebKit version in their agent)', () => {
+  for (const [ua, shell] of [[CRIOS, 'CriOS'], [FXIOS, 'FxiOS'], [EDGIOS, 'EdgiOS']]) {
+    const e = engineOf({ userAgent: ua, maxTouchPoints: 5 });
+    assert.deepEqual(e, { engine: 'webkit', major: null, mobile: true, os: 'ios', webview: null, shell }, ua);
+    assert.equal(browserGate(win(ua)).ok, true, ua);
+    const g = browserGate(win(ua, {}, { CSS: { supports: () => false } }));
+    assert.equal(g.ok, false); assert.match(String(g.reason), new RegExp(`${shell} \\(WebKit on iOS\\) lacks CSS anchor positioning`));
+  }
+});
+
+test('browserGate: WebViews, Firefox for Android and unknown agents are refused loudly with a reason', () => {
+  assert.match(String(browserGate(win(ANDROID_WEBVIEW)).reason), /Android WebView is not supported/);
+  assert.match(String(browserGate(win(CHROME_ANDROID(141), { userAgentData: { mobile: true, platform: 'Android', brands: [{ brand: 'Android WebView', version: '141' }, { brand: 'Chromium', version: '141' }] } })).reason), /Android WebView/);
+  assert.match(String(browserGate(win(IOS_WEBVIEW)).reason), /in-app iOS web view/);
+  assert.match(String(browserGate(win(FIREFOX_ANDROID)).reason), /Firefox for Android is not supported/);
+  for (const ua of ['', 'curl/8.0', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) Opera Mini']) {
     const g = browserGate(win(ua));
     assert.equal(g.ok, false, ua);
     assert.ok(g.reason && g.reason.length > 10, ua);
   }
-  assert.equal(browserGate(win(CHROME(154), { userAgentData: { mobile: true, brands: [{ brand: 'Chromium', version: '154' }] } })).ok, false);
+  const r = decideMode(classify([]), browserGate(win(ANDROID_WEBVIEW)), opts());
+  assert.equal(r.refusal?.feature, 'browser'); assert.match(String(r.refusal?.message), /unsupported browser: Android WebView/); assert.match(String(r.refusal?.hint), /iOS/);
 });
 
 test('engineOf: Chromium, Gecko, WebKit and other agents', () => {
-  assert.deepEqual(engineOf({ userAgent: FIREFOX(155) }), { engine: 'gecko', major: 155, mobile: false });
-  assert.deepEqual(engineOf({ userAgent: SAFARI(27) }), { engine: 'webkit', major: 27, mobile: false });
-  assert.deepEqual(engineOf({ userAgent: CHROME(154) }), { engine: 'chromium', major: 154, mobile: false });
+  const desk = { mobile: false, os: 'desktop', webview: null, shell: null };
+  assert.deepEqual(engineOf({ userAgent: FIREFOX(155) }), { engine: 'gecko', major: 155, ...desk });
+  assert.deepEqual(engineOf({ userAgent: SAFARI(27) }), { engine: 'webkit', major: 27, ...desk });
+  assert.deepEqual(engineOf({ userAgent: CHROME(154) }), { engine: 'chromium', major: 154, ...desk });
   assert.equal(engineOf({ userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/154.0 Safari/537.36 Edg/154.0' }).engine, 'chromium');
   assert.equal(engineOf(null).engine, 'other');
 });
 
 test('browserGate: the Chromium brand of userAgentData wins over a frozen user agent string', () => {
   const g = browserGate(win('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/154.0.0.0', { userAgentData: { mobile: false, brands: [{ brand: 'Chromium', version: '158' }] } }));
-  assert.deepEqual(g, { ok: true, major: 158, engine: 'chromium' });
+  assert.deepEqual(g, { ok: true, major: 158, engine: 'chromium', os: 'desktop', mobile: false });
 });

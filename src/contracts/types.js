@@ -396,6 +396,7 @@ export {};
  * @property {number} degraded  drawables currently on the degrade ladder
  * @property {number} surfaces
  * @property {number} surfaceBytes
+ * @property {number} rasterScale  the largest raster scale of a committed snapshot (surface px per css px, <= options.maxDpr; 0 before the first commit)
  * @property {number} pinnedSurfaces
  * @property {number} dropped  results discarded as stale
  * @property {number} redamaged  dropped results whose uncovered rect was re-marked as damage (ADR-B)

@@ -18,6 +18,35 @@ export const DEFAULT_OPTIONS = Object.freeze({
   forcePolyfill: false, autoDiscover: true,
 });
 
+/**
+ * Defaults on a phone or tablet (iOS, iPadOS, Android), where the user did not set the option (docs/API-CONTRACT.md section 10, docs/guides/MOBILE.md):
+ *  - maxDpr 3: phones are DPR 3 (iPhone, most Android flagships) and DPR 2.5 upscaled their text by 1.2x (measured on the iOS Simulator, soft text);
+ *  - maxSurfacePixels 16,777,216 (4096 x 4096): WebKit's per-canvas area limit on iOS (HTMLCanvasElement maxCanvasArea), a surface above it fails to allocate;
+ *  - maxTotalSurfaceBytes 256 MiB, 128 MiB when navigator.deviceMemory <= 2: WebKit caps the canvas backing memory of an iOS page at RAM / 4 (iOS 26 runs on
+ *    4 GB+ iPhones: >= 1 GiB), and Chrome for Android runs on 2 GB devices. A quarter of the smallest iOS cap leaves the rest to the page's own canvases.
+ * None of these limits was measured on a real device (simulators and emulators use the Mac's memory): they are unverified.
+ */
+export const MOBILE_BUDGETS = Object.freeze({ maxDpr: 3, maxSurfacePixels: 16777216, maxTotalSurfaceBytes: 268435456, lowMemoryTotalSurfaceBytes: 134217728 });
+
+/**
+ * The budgets of a mobile device class over options the user did not set. Pure.
+ * @param {Readonly<ResolvedOptions>} resolved
+ * @param {HicOptions|undefined} given  the options as passed (an explicit value always wins)
+ * @param {{mobile: boolean}} device
+ * @param {number|undefined} [deviceMemory]  navigator.deviceMemory (GiB, Chromium only)
+ * @returns {Readonly<ResolvedOptions>}
+ */
+export function withDeviceBudgets(resolved, given, device, deviceMemory) {
+  if (!device.mobile) return resolved;
+  const set = (/** @type {string} */ k) => given != null && /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (given))[k] !== undefined;
+  const low = typeof deviceMemory === 'number' && deviceMemory <= 2;
+  /** @type {Record<string, number>} */ const out = {};
+  if (!set('maxDpr')) out.maxDpr = MOBILE_BUDGETS.maxDpr;
+  if (!set('maxSurfacePixels')) out.maxSurfacePixels = MOBILE_BUDGETS.maxSurfacePixels;
+  if (!set('maxTotalSurfaceBytes')) out.maxTotalSurfaceBytes = low ? MOBILE_BUDGETS.lowMemoryTotalSurfaceBytes : MOBILE_BUDGETS.maxTotalSurfaceBytes;
+  return Object.freeze({ ...resolved, ...out });
+}
+
 /** Options that exist on HicOptions but are not part of ResolvedOptions (they live on the env). */
 const ENV_ONLY = new Set(['window', 'document']);
 

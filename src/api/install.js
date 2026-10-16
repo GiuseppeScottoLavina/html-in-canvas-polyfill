@@ -10,7 +10,7 @@ import { HicUnsupportedError } from '../contracts/errors.js';
 import { BUS, EXT } from '../contracts/events.js';
 import { createBus } from '../util/bus.js';
 import { VERSION } from '../version.js';
-import { resolveOptions } from './options.js';
+import { resolveOptions, withDeviceBudgets } from './options.js';
 import { createEnv } from './env.js';
 import { createPatchLedger } from './patch.js';
 import { browserGate, decideMode, nativeUsable, probeNative } from './native-detect.js';
@@ -83,12 +83,15 @@ export function installWith(options, services) {
   const doc = options?.document ?? win.document;
   if (doc.nodeType !== 9) throw new TypeError('option "document" must be a Document');
 
-  const resolved = resolveOptions(options);
+  const given = resolveOptions(options);
   const native = probeNative(win);
-  const decision = decideMode(native, browserGate(win), resolved);
-  if (decision.refusal) return refuse(win, resolved, native, decision.refusal);
+  const gate = browserGate(win);
+  const decision = decideMode(native, gate, given);
+  if (decision.refusal) return refuse(win, given, native, decision.refusal);
   const { mode, notes, warning } = stepAside(native, decision);
   if (warning) /** @type {Window & typeof globalThis} */ (win).console.warn(`[hic-live-polyfill] ${warning}`);
+  // phones and tablets get their own surface budgets where the page did not choose (options.js MOBILE_BUDGETS)
+  const resolved = withDeviceBudgets(given, options, gate, /** @type {any} */ (win).navigator?.deviceMemory);
   if (mode !== 'native-bridged') return build(win, doc, resolved, native, mode, services, notes);
   try {
     return build(win, doc, resolved, native, mode, services, notes);
