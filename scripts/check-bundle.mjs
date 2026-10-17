@@ -157,6 +157,10 @@ if (!process.argv.includes('--skip-browser')) {
           results.push({ name: `${name} [${tag}]`, bad });
         } finally { await page.close(); }
       };
+      // a machine without a WebGPU adapter (headless Linux CI): createHost rejects and reports effect-plugins loudly, as documented; that console error is expected
+      // there and only there (the rejection itself is checked below: it must not be the missing-core message)
+      const noGpu = await (async () => { const page = await browser.newPage({ reuseFirst: false }); try { await page.navigate(`${srv.url}/test/fixtures/bundle-load/index.html`); return await page.evaluate('(async () => !(await navigator.gpu?.requestAdapter().catch(() => null)))()'); } finally { await page.close(); } })();
+      const noGpuError = noGpu ? /unsupported effect-plugins: .*WebGPU (is present but no adapter was returned|is not available)/ : /$^/;
       const fullIds = JSON.stringify(FEATURES.map((x) => [x.id, x.status]));
       await check('core alone', [CORE], `
         const bad = [];
@@ -215,7 +219,7 @@ if (!process.argv.includes('--skip-browser')) {
         __HIC__.installed.uninstall();
         const after = await api.createHost(document.getElementById('c'), document.getElementById('d')).then(() => null, (e) => e);
         if (!after || !/needs the installed polyfill/.test(after.message)) bad.push('after uninstall createHost must reject with the installed-polyfill message, got ' + after);
-        return bad;`);
+        return bad;`, [CORE, EFFECTS], noGpuError);
       // every plugin: it registers itself, the effects host accepts its definition, and it compiles its shaders from inlined strings (no request)
       for (const p of PLUGINS) {
         const PLUGIN = `/dist/plugins/${min ? p.files.min : p.files.iife}`;
