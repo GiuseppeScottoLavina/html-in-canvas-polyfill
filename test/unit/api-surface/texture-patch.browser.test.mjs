@@ -4,6 +4,7 @@ import { installCanvasPatches } from '/src/api/canvas-patch.js';
 import { installOffscreenPatches } from '/src/api/offscreen-patch.js';
 import { createElementImage } from '/src/api/element-image.js';
 import { COLORS, arrange, assertStockBrowser, throwsDom } from './fakes.mjs';
+import { gpuAvailable } from '/test/unit/gpu-effects/lib/rig.mjs';
 
 const near = (rgba, rgb) => rgb.every((v, i) => Math.abs(rgba[i] - v) <= 2) && rgba[3] >= 253;
 
@@ -204,6 +205,11 @@ test('legacyNames:false: no texElementImage2D / copyElementImageToTexture', asyn
 });
 
 // ---------------------------------------------------------------------------------------------- WebGPU
+// The uploads need a device: skipped LOUDLY (test names start with "SKIPPED: no WebGPU") on a machine without an adapter (headless Linux CI); the argument checks
+// that run before any device is touched are tested without one below.
+const GPU = await gpuAvailable();
+const gtest = (/** @type {string} */ name, /** @type {any} */ fn) => (GPU ? test(name, fn) : test.skip(`SKIPPED: no WebGPU - ${name}`, fn));
+
 async function gpu() {
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
@@ -226,7 +232,7 @@ async function readGpu(device, texture, w, h) {
   return (x, y) => Array.from(data.subarray(y * bytesPerRow + x * 4, y * bytesPerRow + x * 4 + 4));
 }
 
-test('webgpu drawElementImageToTexture: natural size, size override, source rect, resample', async (t) => {
+gtest('webgpu drawElementImageToTexture: natural size, size override, source rect, resample', async (t) => {
   const { el, version } = await setup(t);
   const device = await gpu();
   const q = device.queue;
@@ -254,7 +260,7 @@ test('webgpu drawElementImageToTexture: natural size, size override, source rect
   assert.ok(version);
 });
 
-test('webgpu: a direct source with an origin when the surface has no ink, grid scale 2 and 0.5', async (t) => {
+gtest('webgpu: a direct source with an origin when the surface has no ink, grid scale 2 and 0.5', async (t) => {
   const { canvas, el, store } = await setup(t, { version: { ink: 0 } });
   const device = await gpu();
   const tex = gpuTexture(device, 40, 20);
@@ -270,7 +276,7 @@ test('webgpu: a direct source with an origin when the surface has no ink, grid s
   assert.ok(near(h(3, 2), COLORS.tl) && near(h(15, 7), COLORS.br), 'grid scale 0.5 over a 2x surface');
 });
 
-test('webgpu legacy copyElementImageToTexture({source,sx,sy,swidth,sheight},{destination:{texture},width,height})', async (t) => {
+gtest('webgpu legacy copyElementImageToTexture({source,sx,sy,swidth,sheight},{destination:{texture},width,height})', async (t) => {
   const { el } = await setup(t);
   const device = await gpu();
   const tex = gpuTexture(device, 20, 10);
@@ -279,7 +285,27 @@ test('webgpu legacy copyElementImageToTexture({source,sx,sy,swidth,sheight},{des
   assert.ok(near(px(10, 5), COLORS.bl));
 });
 
-test('webgpu errors: argument shape, element not drawable, no snapshot, closed ElementImage', async (t) => {
+// needs the WebGPU interfaces (GPUQueue), not an adapter
+(typeof GPUQueue === 'function' ? test : (/** @type {string} */ n, /** @type {any} */ f) => test.skip(`SKIPPED: no WebGPU API - ${n}`, f))('webgpu errors without a device: argument shape, element not drawable, no snapshot, closed ElementImage (thrown before the queue is used)', async (t) => {
+  const { el, store, record, env, root } = await setup(t);
+  const draw = GPUQueue.prototype.drawElementImageToTexture;
+  assert.equal(typeof draw, 'function', 'installed on GPUQueue.prototype');
+  const queue = Object.create(GPUQueue.prototype); // no device: every case below throws before the platform copy runs
+  const tex = {};
+  assert.throws(() => draw.call(queue, { source: el }), TypeError);
+  assert.throws(() => draw.call(queue, null, { texture: tex }), TypeError);
+  assert.throws(() => draw.call(queue, { source: {} }, { texture: tex }), TypeError);
+  const loose = document.createElement('div');
+  root.append(loose);
+  throwsDom(() => draw.call(queue, { source: loose }, { texture: tex }), 'InvalidStateError');
+  const image = createElementImage(env, record, store.version(el));
+  image.close();
+  throwsDom(() => draw.call(queue, { source: image }, { texture: tex }), 'InvalidStateError');
+  store.drop(el);
+  throwsDom(() => draw.call(queue, { source: el }, { texture: tex }), 'InvalidStateError');
+});
+
+gtest('webgpu errors: argument shape, element not drawable, no snapshot, closed ElementImage', async (t) => {
   const { el, store, record, env, root } = await setup(t);
   const device = await gpu();
   const q = device.queue;
