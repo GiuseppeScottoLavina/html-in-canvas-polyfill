@@ -1,11 +1,11 @@
-# Weekly update pull requests for the pinned GitHub Actions and the development dependencies.
+# Monthly update pull requests for the pinned GitHub Actions and the development dependencies.
 # The package has no runtime dependency; test/frameworks pins the framework versions its apps are tested against.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       actions:
         patterns: ['*']
@@ -13,7 +13,7 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       dev-dependencies:
         dependency-type: development
