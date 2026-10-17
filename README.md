@@ -75,7 +75,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
 | one update in a 1000-element drawable, main thread | 19.2 ms | 40.9 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 97 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 263 KB / 92 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 277 KB / 96 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome with the flag |
 
 The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -94,13 +94,13 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | Chrome for Android 130+ | polyfill runs with phone budgets; verified on the Android Emulator with Chromium 158, not on a device (Chromium 158 ships HTML-in-Canvas natively: the polyfill steps aside there; its own path was forced for the test) |
 | older Firefox and Safari, Chrome for Android < 130, iOS < 26, Android WebView, in-app iOS web views, Firefox for Android | refused with one console warning |
 
-Nothing was measured on Windows or Linux, or on a physical phone ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
+On Linux only headless Chrome was run (the CI unit tests and bundle check, and the text-selection oracle); nothing was measured on Windows or on a physical phone ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
 
 ## Known limitations
 
 - **The picture lags the DOM by one to two frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn; on Chromium a snapshot that needs no font or image to load is painted one frame after the change, others about two. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 92 KB gzipped (263 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 96 KB gzipped (277 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.

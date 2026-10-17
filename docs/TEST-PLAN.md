@@ -36,6 +36,7 @@ Timing thresholds that depend on the decode cost (G-typing, G-throughput, G-larg
 | O-ax | `Accessibility.getFullAXTree` after `Accessibility.enable`: role, name, parent of the nodes of interest (compact dump) | `page.send` |
 | O-order | page-side sequence log of app rAF, app ResizeObserver, microtasks, paint handler, canvas pixels at the end of the frame (`readCanvas` after the frame) | in-page recorder |
 | O-dom-identity | `document.documentElement.outerHTML` + the descriptor table of every patched prototype property (`Object.getOwnPropertyDescriptor` JSON with function identity) before install vs after uninstall | in-page |
+| O-selection | a compositor screenshot of a live drawable holding a real text selection (focus emulation, grayscale text antialiasing) against the tile of the same drawable: <= 1 % of the pixels of the selection region (where the screenshot changes when the selection is made) with a channel delta > 16, in 24 cases (fields and paragraphs, dark and light, author `::selection` rules, line heights, wrapped and two-paragraph selections, contenteditable). Controls: the unselected tile equals the unselected screenshot there, the unselected tile against the selected screenshot fails, and the engine's model of the selected glyphs (HighlightText or their own colour) is the one `selectionForegroundOf` decides | `test/unit/snapshot-capture/selection-oracle.driver.mjs`, run by hand on each platform (not in CI) |
 
 ## 2. Gates
 

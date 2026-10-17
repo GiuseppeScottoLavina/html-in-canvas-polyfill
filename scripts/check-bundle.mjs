@@ -42,7 +42,10 @@ const LIMITS = {
   // 269 -> 269.25 KB (+421 bytes, 2026-10-16, measured 269,245 / 93,735): paint timing that machine load cannot reorder (a deferred decode start in a user-blocking
   //   task, the first build of every drawable in one round charged its fixed estimate, builds paced in frame time by a credit of builds) and changedElements without a
   //   drawable removed during a held paint (WPT onpaint flakes)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 269.25 * KB, gzip: 93.75 * KB },
+  // 269.25 -> 276.75 KB, gzip 93.75 -> 96.25 KB (+7,315 / +2,336 bytes, 2026-10-17, measured 276,560 / 96,071): text selections in the engine's colours on every
+  //   platform (HighlightText glyphs on Linux / Windows / ChromeOS / Android, author ::selection colours found in the CSSOM, selected page text recoloured in the clone,
+  //   the glyph copy of a field, the line box and line-break marks; the macOS-only overlay failed CI on Linux)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 276.75 * KB, gzip: 96.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

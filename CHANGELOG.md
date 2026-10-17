@@ -28,13 +28,14 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 - `npm run test:mobile`: Mobile Safari in the iOS Simulator (`safaridriver`) and Chrome in the Android Emulator (adb and the DevTools protocol): taps on moved drawables, typing, touch scroll, the virtual keyboard, rotation, long-press selection, the iOS control look (62 regions) and the refusal of older browsers, each with a positive control.
 - `report().canvases[].stats.snapshot.rasterScale`: the raster scale of the committed snapshots.
 - Safari Technology Preview as an optional engine of `npm run test:xbrowser` (`stp`): skipped with the reason when it is not installed or its remote automation is off; its native surface is read first. With its HTML-in-Canvas internal feature off it runs the polyfill scenarios and reports the native-flag scenarios skipped; with it on it runs them: install steps aside, the explainer and the contact form drawn natively through the bridge (pixels against the plain-DOM twin, trusted clicks, typing and repaint), uninstall identity and the examples, each with a positive control.
+- Text selections are drawn in the colours the engine paints them, in single-line fields and in page text (labels, paragraphs, contenteditable): the system Highlight under the glyphs, the glyphs in HighlightText where Chromium paints a selection foreground (Linux, Windows, ChromeOS, Android) and in their own colour on macOS, an author `::selection` background and colour on every platform, the highlight over the whole line box and the line-break marks of a multi-line selection. Compared with screenshots of the live page on macOS and Linux by `test/unit/snapshot-capture/selection-oracle.driver.mjs`. Windows is not measured; on Firefox and Safari the selection colour is drawn over the glyphs.
 - Tests: unit tests in Node and headless Chrome, browser gates with positive controls and a mutation suite, the official WPT HTML-in-Canvas tests at a pinned commit (`docs/CONFORMANCE.md`), Firefox and Safari through WebDriver, and framework apps.
 
 ### Known limitations
 
 - The picture lags the DOM by one to two frames, except for the typing and scrolling shortcuts above.
 - The children of a drawable canvas are relocated into a live layer next to it; some CSS selectors and live collections can see that layer.
-- The core bundle is about 92 KB gzipped, over its original size target.
+- The core bundle is about 96 KB gzipped, over its original size target.
 - Iframes, cross-origin resources without CORS, native UI (select popups, date pickers, IME composition), workers, web views inside apps and Firefox for Android are not supported. Phones and tablets were verified on the iOS Simulator and the Android Emulator only.
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.

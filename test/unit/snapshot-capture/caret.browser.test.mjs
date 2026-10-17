@@ -109,9 +109,14 @@ test('m7: an author ::selection background colours the drawn input selection (an
   input.focus();
   input.setSelectionRange(0, 5);
   const sel = await rasterize(m.capture(m.request(m.layerEl.firstElementChild, { interaction: interaction(input) })));
-  const x = 12 + Math.round(spanWidth(input, 'he'));
-  const [r, g, b] = sel.getImageData(x, 12, 1, 1).data;
+  // the most common colour of the selected text row is the author background; the glyphs are drawn over it (not hidden by it)
+  const d = sel.getImageData(12, 12, Math.round(spanWidth(input, 'hello')) - 2, 12).data;
+  const n = new Map();
+  let dark = 0;
+  for (let i = 0; i < d.length; i += 4) { const k = `${d[i]},${d[i + 1]},${d[i + 2]}`; n.set(k, (n.get(k) ?? 0) + 1); if (d[i] < 100 && d[i + 2] < 100) dark++; }
+  const [r, g, b] = [...n.entries()].sort((x, y) => y[1] - x[1])[0][0].split(',').map(Number);
   assert.ok(r > 200 && g < 60 && b > 200, `author selection colour expected, got ${[r, g, b]}`);
+  assert.ok(dark > 10, `the selected glyphs are visible over the author background (${dark} glyph pixels)`);
 });
 
 test('m7 control: without an author ::selection rule the input selection is the system highlight, not magenta', async () => {
@@ -125,38 +130,7 @@ test('m7 control: without an author ::selection rule the input selection is the 
   assert.ok(!(r2 > 200 && g2 < 60 && b2 > 200), 'the system highlight, not the author colour');
 });
 
-/** Highlight as the engine reports it (a canvas probe, no DOM): [r, g, b, a] */
-function systemHighlight() {
-  const c = document.createElement('canvas').getContext('2d');
-  c.fillStyle = 'Highlight';
-  return String(c.fillStyle).match(/[\d.]+/g).map(Number);
-}
-
-for (const [name, bg, fg] of [['dark control (light glyphs)', '#0e1626', '#e8eef7'], ['light control (dark glyphs)', '#ffffff', '#101418']]) {
-  test(`selection colour on a ${name}: the background is backdrop*(1-a)+Highlight*a (what the engine paints under the glyphs) and the glyphs keep their colour`, async () => {
-    const m = mount(`<div class="d" drawable style="background:${bg}"><input class="i" value="hello world" style="background:${bg};color:${fg};border-color:${bg}"></div>`, { css });
-    const input = m.layerEl.querySelector('input');
-    input.focus();
-    const el = m.layerEl.firstElementChild;
-    input.setSelectionRange(3, 3);
-    const plain = await rasterize(m.capture(m.request(el, { interaction: interaction(input) })));
-    input.setSelectionRange(0, 11);
-    const sel = await rasterize(m.capture(m.request(el, { interaction: interaction(input) })));
-    const [hr, hg, hb, ha] = systemHighlight();
-    const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-    const under = hex(bg);
-    const expected = [hr, hg, hb].map((c, k) => Math.round(under[k] * (1 - ha) + c * ha));
-    /** the most common colour of the text row: the background, glyph pixels are a minority */
-    const mode = (img) => { const d = img.getImageData(12, 12, 90, 12).data; const n = new Map(); for (let i = 0; i < d.length; i += 4) { const k = `${d[i]},${d[i + 1]},${d[i + 2]}`; n.set(k, (n.get(k) ?? 0) + 1); } return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0].split(',').map(Number); };
-    const got = mode(sel);
-    assert.ok(got.every((v, k) => Math.abs(v - expected[k]) <= 3), `selection background ${got} expected ${expected}`);
-    // control: the unselected field keeps the plain background there
-    assert.deepEqual(mode(plain), under);
-    // glyph pixels: the darkest/lightest pixel of the text row is as strong as in the unselected tile (glyphs are not tinted)
-    const extreme = (img) => { const d = img.getImageData(12, 12, 90, 14).data; let best = 0; for (let i = 0; i < d.length; i += 4) best = Math.max(best, Math.abs(d[i] - under[0]) + Math.abs(d[i + 1] - under[1]) + Math.abs(d[i + 2] - under[2])); return best; };
-    assert.ok(extreme(sel) >= extreme(plain) * 0.95, `glyph contrast kept: selected ${extreme(sel)} vs plain ${extreme(plain)}`);
-  });
-}
+// The selection colours on dark and light controls, per platform model: selection.browser.test.mjs.
 
 test('email and number inputs (selectionStart null): the caret is still measured, at the end after focus, at a press, after an edit', async () => {
   const { noteCaretEvent, noteCaretPoint } = await import('/src/util/caret-index.js');

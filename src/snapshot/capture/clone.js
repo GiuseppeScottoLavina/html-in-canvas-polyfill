@@ -5,7 +5,8 @@
 
 import { MARK } from '../../contracts/events.js';
 import { inflateRect, intersectRect } from '../../util/rect.js';
-import { buildDocumentSelectionRects, buildSelectionRects, measureCaret } from './caret-overlay.js';
+import { applyFont, buildDocumentSelectionRects, buildSelectionRects, inputSelectionRect, measureCaret, measuringContext, rangeHighlights } from './caret-overlay.js';
+import { rangeRectsIn } from '../../util/selection-rects.js';
 import { ancestorShell, canvasAncestors } from './custom-props.js';
 import { createTokenCollector } from './css-shake.js';
 import { applyScrollState, listboxThumb, scrollFacts } from './scroll-emulation.js';
@@ -16,6 +17,8 @@ import {
 import { placeholderElement } from './placeholder.js';
 import { addUseTargets } from './svg-refs.js';
 import { appendInlineStyle, setInlineStyle } from './inline-style.js';
+import { compositeOver, createSelectionPainter, solidBackdrop } from './selection-paint.js';
+import { currentEngine } from '../../util/engine.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -33,7 +36,7 @@ import { appendInlineStyle, setInlineStyle } from './inline-style.js';
  * @property {{x: number, y: number, width: number, height: number}} frame  the laid-out frame in the drawable's border-box coordinates (border box + ink)
  * @property {{x: number, y: number}|null} layoutOffset  border box of the drawable inside the layer
  * @property {{rect: Rect, color: string}|null} caret
- * @property {string} extraCss     per-capture rules (scroll markers) that go after the shaken sheet
+ * @property {string} extraCss     per-capture rules (scroll markers, the selection wrapper) that go after the shaken sheet
  * @property {CSSStyleDeclaration} layerStyle  computed style of the layer element: the source of the custom properties the root inherits
  */
 
@@ -82,6 +85,18 @@ const n3 = (v) => String(+v.toFixed(3));
  * @property {Set<Element>} topLayer  elements of the drawable (in its own tree scope) rendered in the top layer
  * @property {Node} scope  tree scope of the drawable (document or the canvas's shadow root): elements of other scopes are inside shadow trees of the drawable
  * @property {number} shift  css px by which the descendants of CaptureRequest.scroll.el appear moved in the clone (live scrollTop - rendered scrollTop): live rects are shifted by it before a prune test
+ * @property {PageSelection|null} selection  the page text selection recoloured inside the clone, or null (no selection here, or it is drawn as overlay rectangles)
+ * @property {import('./selection-paint.js').SelectionPainter|null} painter  selection colours of this capture (created on first use)
+ */
+
+/**
+ * @typedef {Object} PageSelection
+ * @property {Range} range  the live selection range
+ * @property {number} k  client px per drawable css px (a scaled ancestor of the layer)
+ * @property {Rect} frame  the drawable's border box in its own frame
+ * @property {{range: Range, el: Element}[]} fallback  selected text that is not wrapped: drawn as overlay rectangles
+ * @property {boolean} wrapped  at least one wrapper was written (its rule goes into extraCss once)
+ * @property {{rects: Rect[], el: Element, background: string, content: number}[]} parts  the wrapped parts in document order (their line fragments in the drawable frame)
  */
 
 /**
@@ -263,7 +278,7 @@ function cloneChildList(ctx, src, clone, window) {
     if (k.nodeType === 3) {
       const text = /** @type {Text} */ (k).data;
       if (/\S/.test(text)) run = null;
-      clone.appendChild(ctx.doc.createTextNode(text));
+      if (!ctx.selection || !appendSelectedText(ctx, src, /** @type {Text} */ (k), clone)) clone.appendChild(ctx.doc.createTextNode(text));
       continue;
     }
     if (k.nodeType !== 1) continue;
@@ -465,9 +480,10 @@ function ancestorsOf(el, canvas, layerEl) {
  * @param {Document} doc  inert document that owns the clone (no custom element upgrades, no resource loads)
  * @param {boolean} [fold]  pruned spacer runs may be merged: true only when the page CSS has no sibling-position selectors
  * @param {boolean} [trunc]  trailing children below a pruned tile may be left out: `fold` and no :has() selector
+ * @param {boolean} [wrapSelection]  the page CSS has no :has() selector: selected page text may be wrapped in the clone (an extra inline element changes no :has() answer)
  * @returns {CloneResult}
  */
-export function cloneDrawable(env, req, doc, fold = false, trunc = false) {
+export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSelection = false) {
   const layer = req.record.layer;
   if (!layer) throw new Error('the canvas has no live layer');
   const el = req.element;
@@ -482,8 +498,9 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false) {
   const ctx = {
     env, req, doc, layer, drawable: el, drawables: new Set(layer.drawableElements()), unsupported: [], tokens: createTokenCollector(), ix: interactionContext(req.interaction, layer.element),
     animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, scope: el.getRootNode(), topLayer: topLayerIn(el),
-    shift: 0,
+    shift: 0, selection: null, painter: null,
   };
+  ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
   if (req.scroll?.hide.length) ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
   // the scroll compositor's classic-bar tiles: the track without its thumb, or the thumb alone on a transparent backdrop
   if (req.scroll?.bars === 'track') ctx.scroll.rules.push('[data-hic-bar=thumb]{visibility:hidden!important}');
@@ -553,20 +570,23 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false) {
 }
 
 /**
- * Selection rectangles go into the tile (inside a zero-size container at the border-box origin); the caret is only measured.
+ * Selection highlights go into the tile (inside a zero-size container at the border-box origin); the caret is only measured.
  * @param {Ctx} ctx @param {Element} root @param {{width: number, height: number}} size @param {{left: number, top: number}} ink
  * @returns {{rect: Rect, color: string}|null}
  */
 function addSelectionAndCaret(ctx, root, size, ink) {
   const live = ctx.env.document;
   const focus = ctx.req.interaction.focus;
-  const rects = buildDocumentSelectionRects(live, ctx.drawable, { x: 0, y: 0, width: size.width, height: size.height });
+  const box0 = { x: 0, y: 0, width: size.width, height: size.height };
+  const rects = ctx.selection
+    ? [...ctx.selection.fallback.flatMap((f) => rangeHighlights(live, f.range, ctx.drawable, box0, f.el)), ...lineBreakMarks(ctx, ctx.selection)]
+    : buildDocumentSelectionRects(live, ctx.drawable, box0);
   /** @type {{rect: Rect, color: string}|null} */
   let caret = null;
   if (focus && ctx.layer.nearestDrawable(focus) === ctx.drawable) {
     const fr = ctx.layer.frameRect(focus);
     if (fr) {
-      rects.push(...buildSelectionRects(live, focus, fr));
+      rects.push(...fieldSelection(ctx, focus, fr));
       caret = measureCaret(live, focus, fr);
     }
   }
@@ -577,4 +597,172 @@ function addSelectionAndCaret(ctx, root, size, ink) {
     root.appendChild(box);
   }
   return caret;
+}
+
+/** @param {Ctx} ctx @returns {import('./selection-paint.js').SelectionPainter} */
+const painterOf = (ctx) => (ctx.painter ??= createSelectionPainter(ctx.env.document));
+
+/** the selected text's wrapper and its rule: every author rule that could reach the element is reset, its pseudo-elements are suppressed */
+const SEL_TAG = 'hic-sel';
+const SEL_RULE = `:is(#${SEL_TAG},${SEL_TAG}){all:unset!important;unicode-bidi:normal!important}:is(#${SEL_TAG},${SEL_TAG})::before,:is(#${SEL_TAG},${SEL_TAG})::after{content:none!important}`;
+/** parents whose text sits in an inline formatting context: an inline wrapper there changes no box (in a flex or grid container it would split an anonymous item) */
+const WRAP_DISPLAY = /^(block|inline|inline-block|list-item|flow-root|table-cell|table-caption)$/;
+
+/**
+ * The page text selection when it is recoloured inside the clone: Chromium (the engine whose selection painting was measured, util/engine.js), a non-collapsed
+ * selection that reaches the drawable, page CSS without :has().
+ * @param {Ctx} ctx @param {Element} el the drawable @param {{width: number, height: number}} size @param {boolean} allowed
+ * @returns {PageSelection|null}
+ */
+function pageSelectionIn(ctx, el, size, allowed) {
+  if (!allowed || currentEngine().engine !== 'chromium') return null;
+  const sel = ctx.env.document.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  if (!range.intersectsNode(el)) return null;
+  const w = el.getBoundingClientRect().width;
+  return { range, k: w > 0 && size.width > 0 ? w / size.width : 1, fallback: [], wrapped: false, parts: [], frame: { x: 0, y: 0, width: size.width, height: size.height } };
+}
+
+/**
+ * Vertical padding that stretches an inline box over the content area of a text run (`content` css px tall) to where the engine's selection highlight reaches
+ * (measured, Chrome 155 on macOS and Linux): over a line box taller than the text, the line box, whose leading the engine splits with the upper half rounded down to
+ * a whole px (a fractional top padding would move the glyphs by one px, measured); over a shorter one, the content area. `1lh` is the used line-height, the font's
+ * normal line spacing (line gap included) for line-height normal, which no script API reports.
+ * @param {number} content
+ * @returns {string}
+ */
+function lineBoxPadding(content) {
+  const lead = `(1lh - ${n3(content)}px)`;
+  const top = `round(down,calc(${lead} / 2),1px)`;
+  return `padding-top:max(0px,${top})!important;padding-bottom:max(0px,calc(${lead} - ${top}))!important;`;
+}
+
+/**
+ * Append the text node `k`, a child of `src`, with its selected part wrapped in an inline element that paints the selection as the engine does: its background is the
+ * selection background (a translucent Highlight composites over the real backdrop, gradients included), the glyphs on it are the selection foreground (or their own
+ * colour), at the positions of the same layout, and the background reaches as far as the engine's (lineBoxPadding). A wrapper is written only where it cannot change
+ * a selector's answer or a box: no sibling-position selector in the page CSS or no element sibling, and a parent in an inline formatting context. Otherwise the part
+ * becomes an overlay rectangle (PageSelection.fallback).
+ * @param {Ctx} ctx @param {Element} src @param {Text} k @param {Element} clone
+ * @returns {boolean} the node was appended
+ */
+function appendSelectedText(ctx, src, k, clone) {
+  const sel = /** @type {PageSelection} */ (ctx.selection);
+  const { range } = sel;
+  if (!range.intersectsNode(k)) return false;
+  const s = range.startContainer === k ? range.startOffset : 0;
+  const e = range.endContainer === k ? range.endOffset : k.length;
+  const parent = k.parentElement;
+  if (s >= e || !parent) return false;
+  const cs = ctx.env.window.getComputedStyle(parent);
+  if (cs.userSelect === 'none') return false;
+  const part = ctx.env.document.createRange();
+  part.setStart(k, s);
+  part.setEnd(k, e);
+  const client = part.getClientRects();
+  const boxes = Array.from(client).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+  if (!boxes.length) return false; // collapsed white space: nothing is painted
+  if (parent !== src || !WRAP_DISPLAY.test(cs.display) || (!ctx.fold && parent.childElementCount > 0)) {
+    sel.fallback.push({ range: part, el: parent });
+    return false;
+  }
+  const paint = painterOf(ctx).paint(parent);
+  const doc = ctx.doc;
+  const text = k.data;
+  if (s > 0) clone.appendChild(doc.createTextNode(text.slice(0, s)));
+  const w = doc.createElement(SEL_TAG);
+  w.appendChild(doc.createTextNode(text.slice(s, e)));
+  const fg = paint.foreground ? `color:${paint.foreground}!important;-webkit-text-fill-color:${paint.foreground}!important;` : '';
+  setInlineStyle(w, `background-color:${paint.background}!important;${lineBoxPadding(boxes[0].height / sel.k)}${fg}`);
+  clone.appendChild(w);
+  if (e < text.length) clone.appendChild(doc.createTextNode(text.slice(e)));
+  ctx.nodes++;
+  if (cs.direction === 'ltr') sel.parts.push({ rects: rangeRectsIn(part, ctx.drawable, sel.frame, client), el: parent, background: paint.background, content: boxes[0].height / sel.k });
+  if (!sel.wrapped) {
+    sel.wrapped = true;
+    ctx.scroll.rules.push(SEL_RULE);
+  }
+  return true;
+}
+
+/**
+ * The engine marks a line break inside the selection: where the selected text goes on on a later line, a space-wide highlight follows the last glyph of the line
+ * (measured, Chrome 155 on macOS and Linux), as tall as the highlight of the text. Drawn as overlay rectangles: nothing is painted there. Left-to-right text only.
+ * @param {Ctx} ctx @param {PageSelection} sel
+ * @returns {Element[]}
+ */
+function lineBreakMarks(ctx, sel) {
+  const frags = sel.parts.flatMap((p) => p.rects.map((r) => ({ r, p })));
+  /** @type {Element[]} */
+  const out = [];
+  const measure = measuringContext(ctx.env.document);
+  for (let i = 0; i + 1 < frags.length && measure; i++) {
+    const { r, p } = frags[i];
+    if (frags[i + 1].r.y < r.y + r.height / 2) continue;
+    const cs = ctx.env.window.getComputedStyle(p.el);
+    applyFont(measure, cs);
+    const space = measure.measureText(' ').width;
+    const mark = ctx.doc.createElement('div');
+    setInlineStyle(mark, `position:absolute;pointer-events:none;z-index:50;left:${n3(r.x + r.width)}px;width:${n3(space)}px;background:${p.background};`
+      + `${lineMetrics(cs)}top:calc(${n3(r.y)}px - max(0px,round(down,calc((1lh - ${n3(p.content)}px) / 2),1px)));height:max(${n3(p.content)}px,1lh)`);
+    out.push(mark);
+  }
+  return out;
+}
+
+/** @param {CSSStyleDeclaration} cs @returns {string} the font and line-height of `cs`: an overlay box with them resolves `1lh` to the same line box */
+const lineMetrics = (cs) => `font-family:${cs.fontFamily};font-size:${cs.fontSize};font-style:${cs.fontStyle};font-weight:${cs.fontWeight};font-stretch:${cs.fontStretch};line-height:${cs.lineHeight};`;
+
+/** a copy of a text field that paints nothing but its glyphs */
+const GLYPHS_ONLY = 'position:absolute!important;right:auto!important;bottom:auto!important;margin:0!important;float:none!important;transform:none!important;translate:none!important;'
+  + 'rotate:none!important;scale:none!important;background:none!important;border-color:transparent!important;border-image:none!important;box-shadow:none!important;outline:none!important;'
+  + 'appearance:none!important;-webkit-appearance:none!important;caret-color:transparent!important;pointer-events:none!important;z-index:51!important;';
+
+/**
+ * The selection of the focused single-line text field. Chromium: the selection background as an opaque rectangle over the field's glyphs (the selection colour composited
+ * over a solid backdrop; translucent over any other backdrop), then the selected glyphs again in the selection foreground: a copy of the field that carries its full
+ * computed style, its value and scroll and paints nothing but the text, clipped to the selection rectangle. The engine lays the copy out like the field, so the glyphs land
+ * where the field's glyphs are (the engine clips the selected glyphs to the same rectangle). Other engines, and a field the copy cannot reproduce (scaled, replaced
+ * by the clone): the selection colour over the glyphs (caret-overlay.js selectionLook).
+ * @param {Ctx} ctx @param {Element} focus @param {Rect} fr  the field's border box in the drawable frame
+ * @returns {Element[]}
+ */
+function fieldSelection(ctx, focus, fr) {
+  const live = ctx.env.document;
+  if (currentEngine().engine !== 'chromium') return buildSelectionRects(live, focus, fr);
+  const rect = inputSelectionRect(live, focus, fr);
+  if (!rect) return [];
+  const cs = ctx.env.window.getComputedStyle(focus);
+  // the inner editor is one line box (1lh: the used line-height, line gap included for normal) centred in the content box
+  const top = fr.y + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
+  const centred = `calc(${n3(top)}px + (${n3(focus.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0))}px - 1lh) / 2)`;
+  const paint = painterOf(ctx).paint(focus);
+  const glyphs = glyphCopy(ctx, /** @type {HTMLInputElement} */ (focus), fr, rect, centred, paint.foreground);
+  if (!glyphs) return buildSelectionRects(live, focus, fr);
+  const under = solidBackdrop(ctx.env.window, focus);
+  const bg = (under && compositeOver(under, paint.background)) ?? paint.background;
+  const back = ctx.doc.createElement('div');
+  setInlineStyle(back, `position:absolute;pointer-events:none;z-index:50;left:${n3(rect.x)}px;top:${centred};width:${n3(rect.width)}px;height:1lh;background:${bg};`
+    + lineMetrics(cs));
+  return [back, glyphs];
+}
+
+/**
+ * @param {Ctx} ctx @param {HTMLInputElement} src @param {Rect} fr @param {Rect} rect the selection rectangle (horizontal extent) @param {string} lineTop  CSS length: the top of the
+ * inner editor's line box in the drawable frame @param {string|null} color  the glyph colour (null: their own)
+ * @returns {Element|null}
+ */
+function glyphCopy(ctx, src, fr, rect, lineTop, color) {
+  if (Math.abs(fr.width - src.offsetWidth) > 0.5 || Math.abs(fr.height - src.offsetHeight) > 0.5) return null;
+  const copy = ctx.doc.importNode(src, false);
+  cleanAttributes(copy);
+  inlineComputed(ctx, src, copy);
+  if (syncNodeState(ctx.env, src, copy, ctx.req, []) !== true) return null;
+  // clipped to the selection: its x extent and the line box (the copy has the field's line-height, so 1lh is the same there)
+  const y = `calc(${lineTop} - ${n3(fr.y)}px)`;
+  const clip = `${y} ${n3(fr.x + fr.width - rect.x - rect.width)}px calc(${n3(fr.height)}px - ${y} - 1lh) ${n3(rect.x - fr.x)}px`;
+  appendInlineStyle(copy, `${GLYPHS_ONLY}left:${n3(fr.x)}px!important;top:${n3(fr.y)}px!important;clip-path:inset(${clip})!important;`
+    + (color ? `color:${color}!important;-webkit-text-fill-color:${color}!important;` : ''));
+  return copy;
 }

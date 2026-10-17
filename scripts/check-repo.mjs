@@ -67,7 +67,9 @@ if (!docsOnly) {
   // 13000 -> 13150 (2026-10-16, measured 13,119; 13,015 before this step): the Android fixes (listbox selection, toggle zoom, the indeterminate look, the listbox thumb) and
   // the native bridge for Safari Technology Preview's HTML-in-Canvas internal feature (paint requests, standard draw size, device-pixel box in the native modes).
   // 13150 -> 13250 (2026-10-16, measured 13,225; 13,133 before this step): plugin actions in the effects host (handle.trigger / settled, the declared `actions` of ABI v2).
-  if (total > 13250) problems.push(`G-size: core is ${total} code lines (> 13250)`);
+  // 13250 -> 13475 (2026-10-17, measured 13,462; 13,225 before this step): text selections in the engine's colours on every platform (the selection foreground,
+  // author ::selection colours, selected page text recoloured in the clone, the glyph copy of a field, the line box and line-break marks; snapshot/capture/selection-paint.js).
+  if (total > 13475) problems.push(`G-size: core is ${total} code lines (> 13475)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

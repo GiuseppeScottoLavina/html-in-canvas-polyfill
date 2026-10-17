@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { engineOf } from '../../../src/util/engine.js';
+import { engineOf, selectionForegroundOf } from '../../../src/util/engine.js';
 import { ADDITIVE_NAMES, CORE_NAMES, LEGACY_NAMES, MIN_CHROMIUM_MAJOR, MIN_FIREFOX_MAJOR, MIN_IOS_SAFARI_MAJOR, MIN_SAFARI_MAJOR, SPEC_NAMES, missingRequirements, browserGate, classifyNative, decideMode, nativeUsable } from '../../../src/api/native-detect.js';
 
 const ALL = [...CORE_NAMES, ...SPEC_NAMES, ...LEGACY_NAMES];
@@ -348,6 +348,23 @@ test('engineOf: Chromium, Gecko, WebKit and other agents', () => {
   assert.deepEqual(engineOf({ userAgent: CHROME(154) }), { engine: 'chromium', major: 154, ...desk });
   assert.equal(engineOf({ userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/154.0 Safari/537.36 Edg/154.0' }).engine, 'chromium');
   assert.equal(engineOf(null).engine, 'other');
+});
+
+test('selectionForegroundOf: Chromium paints selected glyphs in HighlightText except on macOS; Gecko and WebKit keep the glyph colour', () => {
+  const linux = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
+  const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
+  assert.equal(selectionForegroundOf({ userAgent: linux }), true);
+  assert.equal(selectionForegroundOf({ userAgent: windows }), true);
+  assert.equal(selectionForegroundOf({ userAgent: CHROME(155) }), false, 'Chrome on macOS');
+  // userAgentData.platform wins over the reduced user agent string
+  assert.equal(selectionForegroundOf({ userAgent: CHROME(155), userAgentData: { platform: 'Linux', brands: [{ brand: 'Chromium', version: '155' }] } }), true);
+  assert.equal(selectionForegroundOf({ userAgent: windows, userAgentData: { platform: 'macOS', brands: [{ brand: 'Chromium', version: '155' }] } }), false);
+  assert.equal(selectionForegroundOf({ userAgent: CHROME_ANDROID(141), userAgentData: { mobile: true, platform: 'Android', brands: [{ brand: 'Chromium', version: '141' }] } }), true);
+  assert.equal(selectionForegroundOf({ userAgent: FIREFOX(155) }), false);
+  assert.equal(selectionForegroundOf({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0' }), false, 'Firefox on Linux: not measured, glyph colour kept');
+  assert.equal(selectionForegroundOf({ userAgent: SAFARI(27) }), false);
+  assert.equal(selectionForegroundOf({ userAgent: CRIOS, maxTouchPoints: 5 }), false, 'every iOS browser is WebKit');
+  assert.equal(selectionForegroundOf(null), false);
 });
 
 test('browserGate: the Chromium brand of userAgentData wins over a frozen user agent string', () => {

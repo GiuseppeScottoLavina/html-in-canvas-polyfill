@@ -70,3 +70,29 @@ export function currentEngine() {
   current ??= engineOf(typeof navigator === 'undefined' ? null : navigator);
   return current;
 }
+
+/**
+ * Does the engine paint selected text in the selection foreground colour (the system colour HighlightText) when no author `::selection` rule applies?
+ * Selection painting is not observable from script (no API reads the pixels of a selection, and the tile of a clone carries no selection), so no feature probe
+ * exists and the platform decides; this is the only place that makes that decision.
+ *  - Chromium on Linux, Windows, ChromeOS and Android: yes. Its default theme supports selection foreground colours (measured: Chrome 155 on Linux paints the
+ *    selected glyphs #ffffff = HighlightText over the Highlight background, on dark and on light controls; Windows takes HighlightText from the system, not measured).
+ *  - Chromium on macOS: no. Its macOS theme does not support selection foreground colours: the glyphs keep their own colour (measured, Chrome 155).
+ *  - Gecko and WebKit: treated as keeping the glyph colour. Measured on macOS (Firefox, Safari); Firefox on Linux / Windows takes its selection foreground from the
+ *    system theme and is not measured, so it keeps the glyph colour here (docs/SUPPORT-MATRIX.md, row `caret-selection`). Every iOS browser is WebKit.
+ * @param {any} nav  a Navigator (or a test double with userAgent / userAgentData)
+ * @returns {boolean}
+ */
+export function selectionForegroundOf(nav) {
+  if (engineOf(nav).engine !== 'chromium') return false;
+  const platform = String(nav?.userAgentData?.platform ?? '');
+  return platform ? platform !== 'macOS' : !/Macintosh|Mac OS X/.test(String(nav?.userAgent ?? ''));
+}
+
+/** @type {boolean|null} */
+let selectionForeground = null;
+/** selectionForegroundOf() for the running page (cached). @returns {boolean} */
+export function currentSelectionForeground() {
+  selectionForeground ??= selectionForegroundOf(typeof navigator === 'undefined' ? null : navigator);
+  return selectionForeground;
+}

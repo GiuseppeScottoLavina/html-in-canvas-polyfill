@@ -201,9 +201,12 @@ function backdropOf(win, el) {
 }
 
 /**
- * The author's `::selection` background of `el` (an opaque one is painted as is). Without one the engine paints the system Highlight (read through a canvas: a DOM probe would mutate the live page,
- * measured rgba(128,188,254,0.6)) UNDER the glyphs, so the background becomes backdrop*(1-a)+Highlight*a and the glyphs keep their colour. An overlay above the glyphs reproduces that exactly with
- * `lighten` (dark control, light glyphs) or `darken` (light control, dark glyphs) of the blended colour; when the glyph colour is on the wrong side in some channel, a plain alpha overlay (glyphs tinted).
+ * The look of a selection drawn OVER the glyphs, where the capture cannot repaint them (clone.js: engines other than Chromium, page text where a wrapper could change a
+ * selector or a box, a field the glyph copy cannot reproduce). The author's `::selection` background of `el` is painted as is (an opaque one hides the glyphs). Without one
+ * the engine paints the system Highlight (read through a canvas: a DOM probe would mutate the live page; measured rgba(128,188,254,0.6) on macOS) UNDER the glyphs, so the
+ * background becomes backdrop*(1-a)+Highlight*a. The overlay approximates the macOS model, glyphs in their own colour, with `lighten` (dark control, light glyphs) or
+ * `darken` (light control, dark glyphs) of the blended colour (exact on full-coverage glyph pixels, not on their anti-aliased edges); when the glyph colour is on the
+ * wrong side in some channel, a plain alpha overlay (glyphs tinted). Glyphs in the selection foreground (selection-paint.js) are not reproduced here.
  * @param {Document} doc @param {Element} el @returns {string}
  */
 function selectionLook(doc, el) {
@@ -233,27 +236,52 @@ function highlight(doc, r, el) {
 }
 
 /**
- * Selection highlight rectangles (::selection colours) for a non-collapsed selection in the focused control. Single-line inputs are exact, a textarea
- * and contenteditable fall back to their ranges (approximate, row caret-selection).
+ * The selection rectangle of the focused single-line text field in the frame of `frame` (its border box), clipped horizontally to the content box (the inner editor clips the
+ * scrolled text there), or null without a non-collapsed selection. Height: the font's ascent + descent, centred in the content box as the inner editor is.
+ * @param {Document} doc @param {Element} focus @param {Rect} frame
+ * @returns {Rect|null}
+ */
+export function inputSelectionRect(doc, focus, frame) {
+  const ctx = measuringContext(doc);
+  if (!ctx || !(focus instanceof HTMLInputElement) || !SINGLE_LINE.has(focus.type)) return null;
+  const a = focus.selectionStart;
+  const b = focus.selectionEnd;
+  if (a === null || b === null || a === b) return null;
+  const cs = (doc.defaultView ?? window).getComputedStyle(focus);
+  const g = inputMetrics(focus, cs, ctx, frame);
+  const left = frame.x + px(cs.borderLeftWidth) + px(cs.paddingLeft);
+  const right = frame.x + px(cs.borderLeftWidth) + focus.clientWidth - px(cs.paddingRight);
+  const x0 = Math.max(g.x(a), left);
+  const x1 = Math.min(g.x(b), right);
+  return x1 > x0 ? { x: x0, y: g.top, width: x1 - x0, height: g.height } : null;
+}
+
+/**
+ * Selection highlight rectangles (::selection colours) for a non-collapsed selection in the focused control, drawn OVER the glyphs (selectionLook). The capture uses
+ * this where it cannot repaint the selected glyphs (clone.js: engines other than Chromium, a control the clone replaces); textarea and contenteditable are not covered
+ * here (a contenteditable selection is a page selection, row caret-selection).
  * @param {Document} doc
  * @param {Element} focus
  * @param {Rect} frame
  * @returns {Element[]}
  */
 export function buildSelectionRects(doc, focus, frame) {
-  const ctx = measuringContext(doc);
-  if (!ctx || !(focus instanceof HTMLInputElement) || !SINGLE_LINE.has(focus.type)) return [];
-  const a = focus.selectionStart;
-  const b = focus.selectionEnd;
-  if (a === null || b === null || a === b) return [];
-  const cs = (doc.defaultView ?? window).getComputedStyle(focus);
-  const g = inputMetrics(focus, cs, ctx, frame);
-  const x0 = g.x(a);
-  return [highlight(doc, { x: x0, y: g.top, width: g.x(b) - x0, height: g.height }, focus)];
+  const r = inputSelectionRect(doc, focus, frame);
+  return r ? [highlight(doc, r, focus)] : [];
 }
 
 /**
- * Highlight rectangles of a text selection that lives in the page DOM (labels, paragraphs) inside `scope`, in the border-box frame of `scope`.
+ * Highlight rectangles (selectionLook, drawn over the glyphs) of `range` inside `scope`, coloured by the `::selection` style of `el`.
+ * @param {Document} doc @param {Range} range @param {Element} scope  the drawable @param {Rect} frame  the drawable's border box in its own frame @param {Element} el
+ * @returns {Element[]}
+ */
+export function rangeHighlights(doc, range, scope, frame, el) {
+  return rangeRectsIn(range, scope, frame).map((r) => highlight(doc, r, el));
+}
+
+/**
+ * Highlight rectangles of a text selection that lives in the page DOM (labels, paragraphs) inside `scope`, in the border-box frame of `scope`, drawn over the glyphs
+ * (selectionLook). The capture uses this where it cannot recolour the selected text in the clone (clone.js).
  * @param {Document} doc
  * @param {Element} scope  the drawable
  * @param {Rect} frame  the drawable's border box in its own frame ({x:0,y:0,width,height})
@@ -262,5 +290,5 @@ export function buildSelectionRects(doc, focus, frame) {
 export function buildDocumentSelectionRects(doc, scope, frame) {
   const sel = doc.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
-  return rangeRectsIn(sel.getRangeAt(0), scope, frame).map((r) => highlight(doc, r, scope));
+  return rangeHighlights(doc, sel.getRangeAt(0), scope, frame, scope);
 }
