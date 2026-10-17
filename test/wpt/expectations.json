@@ -288,11 +288,6 @@
    "reason": "caret-selection",
    "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
   },
-  "privacy/selection-colors-default.tentative.html": {
-   "category": "deviation",
-   "reason": "caret-selection",
-   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
-  },
   "privacy/selection-painted-overlay-path.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
@@ -517,6 +512,7 @@
   "privacy/pseudos/marker-images-ignored.tentative.https.sub.html",
   "privacy/pseudos/marker-visited-link-currentcolor-ignored.tentative.html",
   "privacy/scrollbar-thumb-images-ignored.tentative.https.sub.html",
+  "privacy/selection-colors-default.tentative.html",
   "privacy/shape-image-png-ignored.tentative.https.sub.html",
   "privacy/shape-image-svg-ignored.tentative.https.sub.html",
   "privacy/subframe-cross-origin-background-image.tentative.https.sub.html",
@@ -643,6 +639,7 @@
   "hit-test/z-index.tentative.html",
   "iframe-local.tentative.html",
   "iframe.tentative.html",
+  "ink-overflow.tentative.html",
   "inline-drawable.tentative.html",
   "inline-fixed-containment.tentative.html",
   "inline-fragments-drawable.tentative.html",
