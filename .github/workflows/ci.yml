@@ -19,7 +19,7 @@ jobs:
   node:
     # the parts that run in Node alone, on every supported major (package.json "engines": >= 22)
     name: node ${{ matrix.node }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -51,7 +51,7 @@ jobs:
         run: npm pack --dry-run
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,7 +69,8 @@ jobs:
 
       - name: Make Chrome reachable for the test harness
         # The harness looks for Chrome at the macOS path (test/harness/lib/chrome.mjs); the unit runner also takes --chrome=<path>.
-        # Ubuntu 23.10+ restricts the unprivileged user namespaces Chrome's sandbox needs; re-allow them instead of using --no-sandbox.
+        # Ubuntu 23.10+ restricts the unprivileged user namespaces Chrome's sandbox needs; re-allow them instead of using --no-sandbox. The sysctl is the one of
+        # Ubuntu 24.04, which is why the runners are pinned to ubuntu-24.04 rather than ubuntu-latest.
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo mkdir -p "/Applications/Google Chrome.app/Contents/MacOS"
