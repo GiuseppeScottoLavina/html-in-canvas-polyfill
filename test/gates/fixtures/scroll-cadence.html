@@ -51,6 +51,10 @@
     // the twin: overlay scrollbars (the gate pins them) take no room, and the snapshot draws none; the twin hides them so a bar that flashes after a scroll is no difference
     const st = document.createElement('style'); st.textContent = '#list { scrollbar-width: none; }'; document.head.append(st);
     const d = document.createElement('div'); d.id = 'stage'; d.style.cssText = 'width:900px;height:560px;background:#fff'; d.append(app); canvas.replaceWith(d); canvas = d;
+    // the twin records the same per-frame offsets (no paints)
+    const R = window.__rec = { on: false, frames: [], samples: [] };
+    R.start = () => { Object.assign(R, { on: true, frames: [] }); const f = (t) => { if (!R.on) return; R.frames.push([t, list.scrollTop, 0]); requestAnimationFrame(f); }; requestAnimationFrame(f); };
+    R.stop = () => { R.on = false; return R.frames; };
     window.__ready = true;
   } else {
     const ctx = canvas.getContext('2d');
