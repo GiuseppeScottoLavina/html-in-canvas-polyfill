@@ -144,11 +144,13 @@ function placeholderFor(ctx, src, feature, message) {
   return placeholderElement(ctx.doc, { feature, message, path }, size);
 }
 
-/** @param {Ctx} ctx @param {Element} src @param {Rect} r @returns {Element} invisible same-size stand-in; keeps tag, class and inline style so selectors and margins still apply */
+/**
+ * @param {Ctx} ctx @param {Element} src @param {Rect} r @returns {Element} invisible same-size stand-in; keeps tag, id, class and inline style so selectors, margins and
+ * grid placement still apply (without its id, a `#bar{grid-column:1/-1}` spacer took one cell and every later grid item moved: a list's column showed the side panel)
+ */
 function spacerFor(ctx, src, r) {
   const sp = ctx.doc.importNode(src, false);
   cleanAttributes(sp);
-  sp.removeAttribute('id');
   sp.setAttribute('data-hic-sp', '');
   appendInlineStyle(sp, `width:${n3(r.width)}px!important;height:${n3(r.height)}px!important`);
   ctx.tokens.add(sp);

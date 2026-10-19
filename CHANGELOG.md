@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- A damage-pruned tile could move every grid item after an element left out of it: the stand-in of that element lost its `id`, and with it an id-based placement (`#bar { grid-column: 1 / -1 }`), so the list column of F2 showed the side panel after a `:hover` change of one row. Stand-ins keep their `id` now.
 - The scroll compositor's classic-scrollbar thumb tile was empty (its capture hid the whole SVG image), so the thumb went missing from composed frames.
 - A large scroller's pages were dropped because the capture reported the node budget (a limited entry).
 
