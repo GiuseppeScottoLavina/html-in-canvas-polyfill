@@ -151,7 +151,7 @@ test('nothing the walk measures outlives a build: mutation, resize, style change
   const list = /** @type {HTMLElement} */ (c.root.querySelector('#list'));
   list.scrollTop = 500;
   const req = () => c.request(el, { rect: { x: 0, y: 120, width: 600, height: 80 }, prune: true });
-  const face = new FontFace('HicParityFont', 'local("Courier New"), local("Courier"), local("Menlo")');
+  const face = new FontFace('HicParityFont', 'local("Courier New"), local("Courier"), local("Menlo"), local("DejaVu Sans Mono"), local("Liberation Mono"), local("Noto Sans Mono")');
   const steps = /** @type {Array<[string, () => void | Promise<void>]>} */ ([
     ['mutation: a row inserted at the top', () => { list.querySelector('ol')?.prepend(Object.assign(document.createElement('li'), { textContent: 'new first row' })); }],
     ['resize: the drawable narrower', () => { el.style.width = '540px'; }],
