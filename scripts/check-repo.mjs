@@ -71,7 +71,10 @@ if (!docsOnly) {
   // author ::selection colours, selected page text recoloured in the clone, the glyph copy of a field, the line box and line-break marks; snapshot/capture/selection-paint.js).
   // 13475 -> 13575 (2026-10-19, measured 13,570; 13,462 before this step): the off-screen pause of the effect host (effects/visibility.js: the IntersectionObserver
   // with its margin, the document's visibility, the scroll check for jumps into view; the paused frame hook and the settle frames of pending actions).
-  if (total > 13575) problems.push(`G-size: core is ${total} code lines (> 13575)`);
+  // 13475 -> 13525 (2026-10-19, measured 13,509; 13,462 before this step): the cheaper clone walk (a per-build frame measurer in live/measure.js and LiveLayer, scroll metrics
+  // read only of scroll containers, one top-layer query, the token collector skipping repeated class / style values).
+  // 13575 / 13525 -> 13625 (2026-10-19, measured 13,617 with both steps above: 13,462 + 108 + 47).
+  if (total > 13625) problems.push(`G-size: core is ${total} code lines (> 13625)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

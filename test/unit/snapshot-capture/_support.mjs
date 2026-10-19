@@ -36,6 +36,7 @@ export function fakeLayer(layerEl) {
       const dr = d.getBoundingClientRect(); const r = el.getBoundingClientRect();
       return { x: r.left - dr.left, y: r.top - dr.top, width: r.width, height: r.height };
     },
+    frameMeasurer() { return (el) => this.frameRect(el); },
     elementAtPoint: () => null, dispose() {},
   };
 }

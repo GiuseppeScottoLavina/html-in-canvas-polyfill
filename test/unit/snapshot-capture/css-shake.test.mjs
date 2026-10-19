@@ -2,8 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTokenCollector, shakeCss } from '../../../src/snapshot/capture/css-shake.js';
 
-/** minimal element stand-in for the token collector */
-const el = (localName, attrs = {}) => ({ localName, attributes: Object.entries(attrs).map(([name, value]) => ({ name, value })) });
+/** minimal element stand-in for the token collector (the part of the Element interface it reads) */
+const el = (localName, attrs = {}) => {
+  const attributes = Object.entries(attrs).map(([name, value]) => ({ name, value }));
+  return { localName, attributes, getAttributeNames: () => attributes.map((a) => a.name), getAttribute: (name) => attributes.find((a) => a.name === name)?.value ?? null };
+};
 const tokensOf = (...els) => { const c = createTokenCollector(); els.forEach((e) => c.add(e)); return c.finish(); };
 
 test('rules survive when the rightmost compound can match, die otherwise', () => {
