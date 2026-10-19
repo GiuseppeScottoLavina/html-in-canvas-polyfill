@@ -117,16 +117,24 @@ test('the canvas pixels are the same with and without the synchronisation; an au
   const row = /** @type {HTMLElement} */ (list.children[3]);
   /** a new snapshot of the current state: a content change, the build, a paint */
   const shot = async (text) => { row.textContent = text; await sleep(250); canvas.requestPaint(); await i.whenPainted(canvas); return ctx.getImageData(0, 0, 300, 200).data; };
-  const diff = (a, b) => { let n = 0; for (let k = 0; k < a.length; k += 4) if (Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]) + Math.abs(a[k + 3] - b[k + 3]) > 8) n++; return n; };
+  // a channel off by more than 24 levels: two builds of the SAME state differ by up to 16 levels in a dozen antialiased pixels of the rounded corners on Linux (measured
+  // without any synchronisation), an added layer that painted would differ by far more (the positive control below)
+  const diff = (a, b) => { let n = 0; for (let k = 0; k < a.length; k += 4) if (Math.max(Math.abs(a[k] - b[k]), Math.abs(a[k + 1] - b[k + 1]), Math.abs(a[k + 2] - b[k + 2]), Math.abs(a[k + 3] - b[k + 3])) > 24) n++; return n; };
   list.scrollTop = 40;
-  const plain = await shot('row A');
+  // the same hover state on both sides (the pointer is over the list): only the synchronisation differs
   over(list);
-  assert.ok(list.hasAttribute('data-hic-scroll'));
-  assert.ok(diff(plain, await shot('row B')) > 0, 'a rebuild while synchronised is drawn (the changed row)');
+  const key = list.getAttribute('data-hic-scroll');
+  assert.ok(key, 'synchronised');
   const synced = await shot('row A');
+  assert.ok(diff(synced, await shot('row B')) > 0, 'a rebuild while synchronised is drawn (the changed row)');
+  list.removeAttribute('data-hic-scroll');
+  assert.equal(getComputedStyle(list).backgroundAttachment, 'scroll', 'the rule no longer applies');
+  const plain = await shot('row A');
+  list.setAttribute('data-hic-scroll', key);
   let ink = 0; for (let k = 3; k < synced.length; k += 4) if (synced[k]) ink++;
   assert.ok(ink > 40000, `the canvas shows the scroller (${ink} px)`);
-  assert.equal(diff(plain, synced), 0, 'nothing of the synchronisation reaches the canvas');
+  const d = diff(plain, synced);
+  assert.equal(d, 0, `nothing of the synchronisation reaches the canvas (${d} pixels differ)`);
   list.classList.add('inset');
   assert.ok(diff(plain, await shot('row A')) > 500, 'an author inset shadow added while synchronised is seen');
 });
