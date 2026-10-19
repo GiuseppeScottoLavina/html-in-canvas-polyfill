@@ -4,6 +4,7 @@
  * Module: live (src/live/*).
  */
 
+import { MARK } from '../contracts/events.js';
 import { createGeometryRules, markOwnedSheet } from './geometry-sheet.js';
 import { currentEngine } from '../util/engine.js';
 
@@ -52,6 +53,7 @@ export function layerCss() {
  * @property {CSSStyleSheet} layerSheet
  * @property {CSSStyleSheet} geometrySheet
  * @property {GeometryRules} rules
+ * @property {GeometryRules} scroll  rules of the scroll synchronisation (scroll-sync.js), in the geometry sheet
  * @property {Map<number, CSSRule>} anchors
  */
 
@@ -72,7 +74,7 @@ function acquire(root) {
     const layerSheet = markOwnedSheet(new CSSSheet());
     layerSheet.replaceSync(layerCss());
     const geometrySheet = new CSSSheet();
-    state = { count: 0, layerSheet, geometrySheet, rules: createGeometryRules(geometrySheet), anchors: new Map() };
+    state = { count: 0, layerSheet, geometrySheet, rules: createGeometryRules(geometrySheet), scroll: createGeometryRules(geometrySheet, MARK.SCROLL_ATTR), anchors: new Map() };
     root.adoptedStyleSheets = [...root.adoptedStyleSheets, layerSheet, geometrySheet];
     perRoot.set(root, state);
   }
@@ -124,6 +126,7 @@ export function installLayerStyle(root) {
     },
     remove,
     geometry: state.rules,
+    scroll: state.scroll,
     dispose() {
       if (disposed) return;
       disposed = true;

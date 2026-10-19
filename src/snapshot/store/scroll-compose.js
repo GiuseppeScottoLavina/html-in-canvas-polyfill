@@ -1,51 +1,72 @@
 /**
- * Scroll compositor, store side. A scroll step of an eligible scroller (snapshot/capture/scroll-pages.js) is shown in the
- * very next rendering update without a build: the scrollport of the retained surface is composed from cached PAGES (the port rendered at other offsets, pinned sticky
- * elements hidden) shifted by whole surface pixels, then every pinned element is drawn from its own tile at its live position. Pages are built ahead in the post-frame
- * pump (side builds). The snapshot stays the authority: a tile always lands when the scrolling stops, and any damage other than this scroller's own scrolling drops the
- * cache (a stale page is never used). Everything the plan cannot vouch for keeps the plain path.
+ * Scroll compositor, store side. A scroll step of an eligible scroller (snapshot/capture/scroll-pages.js) is shown in the very next rendering update without a build:
+ * the scrollport of the retained surface is composed from cached PAGES (the port rendered at other offsets, pinned sticky elements hidden) shifted by whole surface
+ * pixels, then every pinned element is drawn from its own tile at its live position. A rounded scrollport is composed inside its rounded clip, over a BACKDROP tile
+ * (the scroller without its content), from pages and pins rendered with square corners. Pages are built ahead in the post-frame pump (side builds), from the moment
+ * the scroller is seen (the pointer over it, or its first scroll event). The snapshot stays the authority: a tile always lands when the scrolling stops.
+ *
+ * Validity, per scroller: damage that does not reach into the scroller's content box (a counter elsewhere in the drawable) leaves its pages as they are; damage
+ * inside the content box (a :hover row, a row updated by script) marks that part of every page captured before it DIRTY; damage that crosses the scroller's edge,
+ * has no rect, or touches a pinned element drops the cache. A dirty part is never composed: the step falls back to the plain path, whose tile repairs the pages
+ * (its pixels are copied into them), and a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is checked for an obstruction (an
+ * element outside the scroller over the port, which a page must not carry) before the next composition. Everything the plan cannot vouch for keeps the plain path.
  * Module: snapshot-store (src/snapshot/store/*).
  */
+
+import { intersectRect } from '../../util/rect.js';
+import { subtractRects } from './damage.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 /** @typedef {import('../../contracts/types.js').ScrollPlan} ScrollPlan */
 /** @typedef {import('./pump.js').Entry} Entry */
 /** @typedef {import('./pump.js').Geometry} Geometry */
 /** @typedef {HTMLCanvasElement|OffscreenCanvas} Surface */
+/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'}} PageRequest */
 
 /** pages kept per scroller (each one scrollport of surface pixels) */
 const MAX_PAGES = 4;
 /** scrollers with a cache per drawable */
 const MAX_SCROLLERS = 2;
+/** a refused scroller is planned again only after newer damage and at most this often (a scan of its subtree, a hit-test grid) */
+const REPLAN_MS = 1000;
+/** consecutive steps a needed page may stay dirty before it is rebuilt instead of waiting for a tile to repair it */
+const MAX_MISSES = 2;
 
 /**
  * @typedef {Object} Page
  * @property {number} top  scrollTop the page was rendered at (whole surface pixels)
  * @property {Surface|null} pad  null while it is being built
+ * @property {number|null} seq  damage sequence number when its capture read the DOM (null: not captured yet)
+ * @property {Rect[]} dirty  stale parts, CONTENT pixels (x: surface px; y: surface px from the scroll origin, i.e. port row + round(offset * scale))
+ * @property {number[]} dirtySeq  the damage sequence number of each dirty rect
+ * @property {number} misses  steps in a row that needed a dirty part of this page
  */
 
 /**
  * @typedef {Object} Cache  one scroller of one drawable
  * @property {Element} el
- * @property {number} epoch  Entry.scEpoch the cache belongs to
  * @property {Geometry} geo
  * @property {ScrollPlan} plan
  * @property {Rect} portPx  the scrollport in surface pixels (snapped)
  * @property {Page[]} pages
  * @property {Map<Element, {pad: Surface|null, w: number, h: number}>} pins
  * @property {{track: {pad: Surface|null, px: Rect}, thumb: {pad: Surface|null, px: Rect, top: number}}|null} bar  classic bar tiles: the track (thumb hidden) and the thumb alone, captured at offset `top`
+ * @property {{pad: Surface|null, px: Rect}|null} backdrop  a rounded scroller: its padding box (port and classic bar) without the content (border, background, what is behind the corners)
+ * @property {Rect[]} corners  a rounded scroller: the corner squares of its padding box, surface px (the curve and its antialiasing lie inside them)
  * @property {number|null} shown  scrollTop the surface's scrollport shows (null = not known to be one offset)
  * @property {boolean} queued  a composition was promised to the next commit
  * @property {number} last  previous live scrollTop seen (direction of the next page)
+ * @property {Rect[]} unverified  damage rects inside the visible port (frame css) not yet checked for an obstruction
  */
 
 /**
  * @typedef {Object} ComposeDeps
- * @property {(scroller: Element, drawable: Element) => ScrollPlan|null} plan
- * @property {(entry: Entry, rectCss: Rect, geo: Geometry, scroll: {el: Element, top: number, hide: Element[], bars?: 'track'|'thumb'}|null) => string|null} capture  data: URL of a crop, null on failure
+ * @property {(scroller: Element, drawable: Element) => ScrollPlan|null|Iterator<void, ScrollPlan|null, void>} plan  a plan, or the steps that produce it (one post-frame task each)
+ * @property {(entry: Entry, rectCss: Rect, geo: Geometry, scroll: PageRequest) => string|null} capture  data: URL of a crop, null on failure
  * @property {(url: string) => Promise<HTMLImageElement>} decode
  * @property {(w: number, h: number) => Surface} canvas
  * @property {(entry: Entry, run: () => void) => void} schedule  queue a side build for the post-frame pump
+ * @property {() => number} [now]
  */
 
 /** @param {Rect} r @param {Geometry} geo @returns {Rect} css rect of the drawable frame -> whole surface pixels */
@@ -56,14 +77,34 @@ export function snapPx(r, geo) {
   return { x: x0, y: y0, width: Math.round((r.x + r.width + geo.ink.left) * s) - x0, height: Math.round((r.y + r.height + geo.ink.top) * s) - y0 };
 }
 
+/** @param {Rect} r @param {Geometry} geo @returns {Rect} css rect of the drawable frame -> surface pixels, rounded out */
+const outPx = (r, geo) => {
+  const s = geo.scale;
+  const x0 = Math.floor((r.x + geo.ink.left) * s);
+  const y0 = Math.floor((r.y + geo.ink.top) * s);
+  return { x: x0, y: y0, width: Math.ceil((r.x + r.width + geo.ink.left) * s) - x0, height: Math.ceil((r.y + r.height + geo.ink.top) * s) - y0 };
+};
+
 /** @param {Rect} px @param {Geometry} geo @returns {Rect} surface pixels -> css rect of the drawable frame */
 const toCss = (px, geo) => ({ x: px.x / geo.scale - geo.ink.left, y: px.y / geo.scale - geo.ink.top, width: px.width / geo.scale, height: px.height / geo.scale });
 
 /** @param {Rect} a @param {Rect} b */
 const sameRect = (a, b) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
 
+/** @param {Rect} a @param {Rect} b */
+const meets = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+/** @param {Rect} outer @param {Rect} inner */
+const holds = (outer, inner) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
+
+/** @param {ScrollPlan} plan @returns {Rect} the scroller's padding box: the port and a classic vertical bar's gutter */
+const paddingBox = (plan) => (plan.bar ? { ...plan.port, width: plan.port.width + plan.bar.gutter.width } : plan.port);
+
 /** @param {Geometry} a @param {Geometry} b */
 const sameGeo = (a, b) => a.scale === b.scale && a.widthPx === b.widthPx && a.heightPx === b.heightPx && a.ink.left === b.ink.left && a.ink.top === b.ink.top;
+
+/** @param {Element} el @returns {number} */
+const topOf = (el) => /** @type {HTMLElement} */ (el).scrollTop;
 
 /**
  * PURE. Does a set of pages cover the scrollport at `top`? Rows are surface pixels; a page at `p` shows port row j at view row j + round(p * s) - round(top * s).
@@ -81,18 +122,36 @@ export function covers(tops, top, rows, s) {
   return reach >= rows;
 }
 
+/**
+ * PURE. The corner squares of a rounded port (surface px, one pixel of antialiasing margin), clipped to the port.
+ * @param {Rect} portPx @param {NonNullable<ScrollPlan['round']>} round inner radii, css px @param {number} s
+ * @returns {Rect[]}
+ */
+export function cornerSquares(portPx, round, s) {
+  const { x, y, width: w, height: h } = portPx;
+  const size = (/** @type {{x: number, y: number}} */ r) => ({ w: Math.min(w, Math.ceil(r.x * s) + 1), h: Math.min(h, Math.ceil(r.y * s) + 1) });
+  const tl = size(round.tl), tr = size(round.tr), br = size(round.br), bl = size(round.bl);
+  return [
+    { x, y, width: tl.w, height: tl.h }, { x: x + w - tr.w, y, width: tr.w, height: tr.h },
+    { x: x + w - br.w, y: y + h - br.h, width: br.w, height: br.h }, { x, y: y + h - bl.h, width: bl.w, height: bl.h },
+  ].filter((r) => r.width > 1 && r.height > 1);
+}
+
 /** @param {ComposeDeps} deps */
 export function createScrollCompositor(deps) {
+  const now = deps.now ?? (() => performance.now());
   /** @type {WeakMap<Entry, Map<Element, Cache>>} */
   const caches = new WeakMap();
-  /** @type {WeakMap<Entry, {el: Element, epoch: number}>} last scroller that has no plan (not re-planned until the epoch changes) */
+  /** @type {WeakMap<Entry, Map<Element, {at: number, seq: number}>>} scrollers without a plan: planned again after newer damage, at most every REPLAN_MS */
   const refused = new WeakMap();
-  /** @type {WeakSet<Entry>} drawables whose cold scroller is being planned in the pump */
-  const planning = new WeakSet();
+  /** @type {WeakMap<Entry, Set<Element>>} scrollers of a drawable whose plan waits for the pump */
+  const planning = new WeakMap();
   /** @type {WeakMap<Entry, number>} side builds in flight per drawable */
   const inFlight = new WeakMap();
+  /** damage sequence: pages, dirty parts and tiles are ordered by it */
+  let seq = 0;
   /** diagnostics (SnapshotStats.scroll) */
-  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, droppedEpoch: 0, droppedGeometry: 0 };
+  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0 };
 
   /** @param {Entry} entry @returns {Map<Element, Cache>} */
   const mapOf = (entry) => {
@@ -104,13 +163,17 @@ export function createScrollCompositor(deps) {
   /** @param {Entry} entry @param {number} d */
   const track = (entry, d) => inFlight.set(entry, (inFlight.get(entry) ?? 0) + d);
 
-  /** Build a crop and keep it as pixels in `slot.pad` if the cache is still the current one when it lands. @param {Entry} entry @param {Cache} cache @param {Rect} px @param {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb'}|null} scroll @param {{pad: Surface|null}} slot */
+  /**
+   * Build a crop and keep it as pixels in `slot.pad` if the cache is still the current one when it lands.
+   * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {{pad: Surface|null, seq?: number|null}} slot
+   */
   function build(entry, cache, px, scroll, slot) {
     deps.schedule(entry, () => {
       if (mapOf(entry).get(cache.el) !== cache) return;
+      if ('seq' in slot) slot.seq = seq;
       const url = deps.capture(entry, toCss(px, cache.geo), cache.geo, scroll);
       if (!url) { counters.failed++; drop(entry, cache); return; }
-      if (scroll) counters.pages++; else counters.pins++;
+      if ('seq' in slot) counters.pages++; else counters.pins++;
       track(entry, 1);
       deps.decode(url).then((img) => {
         if (mapOf(entry).get(cache.el) === cache) {
@@ -129,43 +192,62 @@ export function createScrollCompositor(deps) {
     if (m.get(cache.el) === cache) m.delete(cache.el);
   }
 
-  /** @param {Entry} entry @param {Element} el @param {number} epoch @returns {Cache|null} */
-  function cacheFor(entry, el, epoch) {
+  /** @param {Cache} c @returns {boolean} the live scroller still has the layout the plan read (fake scrollers of the unit tests have none to check) */
+  function sameLayout(c) {
+    const h = /** @type {HTMLElement} */ (c.el);
+    if (typeof h.scrollHeight !== 'number') return true;
+    return Math.abs(h.scrollHeight - c.plan.scrollHeight) < 0.5 && Math.abs(h.clientHeight - c.plan.port.height) < 0.5 && Math.abs(h.clientWidth - c.plan.port.width) < 0.5;
+  }
+
+  /** @param {Entry} entry @param {Element} el @returns {boolean} a refusal of `el` still stands (no damage since, or too recent) */
+  function stillRefused(entry, el) {
+    const no = refused.get(entry)?.get(el);
+    return !!no && (no.seq === seq || now() - no.at < REPLAN_MS);
+  }
+
+  /** @param {Entry} entry @param {Element} el @param {ScrollPlan|null} plan @returns {Cache|null} */
+  function install(entry, el, plan) {
     const m = mapOf(entry);
-    const known = m.get(el);
+    m.delete(el);
     const geo = /** @type {Geometry} */ (entry.geo);
-    if (known && known.epoch === epoch && sameGeo(known.geo, geo)) return known;
-    if (known) {
-      if (known.epoch !== epoch) counters.droppedEpoch++; else counters.droppedGeometry++;
-      m.delete(el);
-    }
-    const no = refused.get(entry);
-    if (no && no.el === el && no.epoch === epoch) return null;
-    counters.plans++;
-    const plan = deps.plan(el, entry.el);
-    if (!plan) { counters.refusals++; refused.set(entry, { el, epoch }); return null; }
+    const refuse = () => {
+      counters.refusals++;
+      let r = refused.get(entry);
+      if (!r) refused.set(entry, (r = new Map()));
+      r.set(el, { at: now(), seq });
+      return null;
+    };
+    if (!plan) return refuse();
+    refused.get(entry)?.delete(el);
     const portPx = snapPx(plan.port, geo);
     if (portPx.width <= 0 || portPx.height <= 0) return null;
-    const live = /** @type {HTMLElement} */ (el).scrollTop;
+    const live = topOf(el);
+    const round = plan.round ?? null;
+    const shape = round ? /** @type {const} */ ('square') : undefined;
+    const padPx = snapPx(paddingBox(plan), geo);
     /** @type {Cache} */
-    const cache = { el, epoch, geo, plan, portPx, pages: [], pins: new Map(), bar: null, shown: null, queued: false, last: live };
+    const cache = {
+      el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
+      shown: null, queued: false, last: live, unverified: [],
+    };
     if (plan.bar) {
       const b = plan.bar;
       const trackPx = snapPx(b.gutter, geo);
       const thumbPx = snapPx({ x: b.gutter.x + b.thumbX, y: b.gutter.y + b.thumbY(live), width: b.thumbW, height: b.thumbH }, geo);
       cache.bar = { track: { pad: null, px: trackPx }, thumb: { pad: null, px: thumbPx, top: live } };
-      build(entry, cache, trackPx, { el, top: live, hide: [], bars: 'track' }, cache.bar.track);
-      build(entry, cache, thumbPx, { el, top: live, hide: [], bars: 'thumb' }, cache.bar.thumb);
+      build(entry, cache, trackPx, { el, top: live, hide: [], bars: 'track', shape }, cache.bar.track);
+      build(entry, cache, thumbPx, { el, top: live, hide: [], bars: 'thumb', shape }, cache.bar.thumb);
     }
+    if (cache.backdrop) build(entry, cache, padPx, { el, top: live, hide: [], shape: 'backdrop' }, cache.backdrop);
     for (const p of plan.pinned) {
       const r = entry.record.layer?.frameRect(p);
       if (!r) return null;
       const px = snapPx(r, geo);
       const port = portPx;
-      if (px.x < port.x || px.y < port.y || px.x + px.width > port.x + port.width || px.y + px.height > port.y + port.height) { refused.set(entry, { el, epoch }); return null; }
+      if (px.x < port.x || px.y < port.y || px.x + px.width > port.x + port.width || px.y + px.height > port.y + port.height) return refuse();
       const slot = { pad: /** @type {Surface|null} */ (null), w: px.width, h: px.height };
       cache.pins.set(p, slot);
-      build(entry, cache, px, null, slot);
+      build(entry, cache, px, { el, top: live, hide: [], shape }, slot);
     }
     if (m.size >= MAX_SCROLLERS) m.delete(/** @type {Element} */ (m.keys().next().value));
     m.set(el, cache);
@@ -197,54 +279,106 @@ export function createScrollCompositor(deps) {
         cache.pages.splice(far, 1);
       }
       /** @type {Page} */
-      const page = { top: t, pad: null };
+      const page = { top: t, pad: null, seq: null, dirty: [], dirtySeq: [], misses: 0 };
       cache.pages.push(page);
-      build(entry, cache, cache.portPx, { el: cache.el, top: t, hide: cache.plan.pinned }, page);
+      build(entry, cache, cache.portPx, { el: cache.el, top: t, hide: cache.plan.pinned, shape: cache.backdrop ? 'square' : undefined }, page);
     }
   }
 
-  /** @param {Cache} cache @param {number} top @returns {boolean} the port at `top` can be composed now */
-  function ready(cache, top) {
-    for (const pin of cache.pins.values()) if (!pin.pad) return false;
-    if (cache.bar && (!cache.bar.track.pad || !cache.bar.thumb.pad)) return false;
-    return covers(cache.pages.filter((p) => p.pad).map((p) => p.top), top, cache.portPx.height, cache.geo.scale);
+  /**
+   * The pages that compose the port at `top`, farthest first (nearer pages are drawn over them), or null when the clean, decoded pages do not cover it. A page that
+   * is needed and dirty is left out; one that stayed so for MAX_MISSES steps is dropped (the next prefetch rebuilds it).
+   * @param {Cache} c @param {number} top @param {boolean} count  count the misses (a real step, not a readiness probe)
+   * @returns {Page[]|null}
+   */
+  function usable(c, top, count) {
+    for (const pin of c.pins.values()) if (!pin.pad) return null;
+    if (c.bar && (!c.bar.track.pad || !c.bar.thumb.pad)) return null;
+    if (c.backdrop && !c.backdrop.pad) return null;
+    const s = c.geo.scale;
+    const R = c.portPx;
+    const base = Math.round(top * s);
+    /** @type {Page[]} */
+    const clean = [];
+    for (const p of [...c.pages]) {
+      if (!p.pad) continue;
+      const off = Math.round(p.top * s) - base;
+      const y0 = Math.max(0, off), y1 = Math.min(R.height, off + R.height);
+      if (y1 <= y0) continue;
+      const need = { x: R.x, y: base + y0, width: R.width, height: y1 - y0 };
+      if (p.dirty.some((d) => meets(d, need))) {
+        if (count && ++p.misses > MAX_MISSES) { c.pages.splice(c.pages.indexOf(p), 1); counters.dirtyMisses++; }
+        continue;
+      }
+      if (count) p.misses = 0;
+      clean.push(p);
+    }
+    if (!covers(clean.map((p) => p.top), top, R.height, s)) return null;
+    return clean.sort((a, b) => Math.abs(b.top - top) - Math.abs(a.top - top));
+  }
+
+  /**
+   * Damage inside the visible port could be an element outside the scroller drawn over it (a page would carry it along); the plan's hit test says. A plan without
+   * one (unit tests) trusts the rects.
+   * @param {Entry} entry @param {Cache} c @returns {boolean} no obstruction
+   */
+  function verified(entry, c) {
+    if (!c.unverified.length) return true;
+    const rects = c.unverified.splice(0);
+    if (!c.plan.clear || c.plan.clear(rects)) return true;
+    counters.obstructed++;
+    drop(entry, c);
+    return false;
   }
 
   return {
     /**
-     * A scroll event of `scroller` (inside the drawable of `entry`): plan and prefetch; true when the next commit can show the live offset by composition (the caller then
-     * skips the build and asks for the exact tile once the scrolling stops).
-     * @param {Entry} entry @param {Element} scroller @param {number} epoch @returns {boolean}
+     * A scroll event of `scroller` (inside the drawable of `entry`): prefetch; true when the next commit can show the live offset by composition (the caller then
+     * skips the build and asks for the exact tile once the scrolling stops). A scroller without a plan is planned in the next post-frame pump.
+     * @param {Entry} entry @param {Element} scroller @returns {boolean}
      */
-    serve(entry, scroller, epoch) {
+    serve(entry, scroller) {
       if (!entry.surface || !entry.geo || !entry.version || entry.lost) return false;
       const known = mapOf(entry).get(scroller);
-      // a cold scroller takes the plain path; it is planned once the scrolling settles (prepare), never inside a scroll step or right behind it (measured: planning and
-      // page builds right after the first wheel tick of a stream made that tick 170-195 ms late)
-      if (!known || known.epoch !== epoch || !sameGeo(known.geo, entry.geo)) return false;
-      const cache = known;
-      const top = /** @type {HTMLElement} */ (scroller).scrollTop;
-      prefetch(entry, cache, top);
-      if (!ready(cache, top)) return false;
-      cache.queued = true;
+      if (!known || !sameGeo(known.geo, entry.geo) || !sameLayout(known)) { this.prepare(entry, scroller); return false; }
+      const top = topOf(scroller);
+      prefetch(entry, known, top);
+      if (!usable(known, top, false)) return false;
+      known.queued = true;
       return true;
     },
 
     /**
-     * The scrolling of `scroller` settled: plan it and build its first pages in the post-frame pump (side builds), so the next scroll step can be composed.
+     * `scroller` was seen (the pointer is over it, or it scrolled, or its scrolling settled): plan it and build its first pages in the post-frame pump (side builds,
+     * never inside a frame), so its next scroll steps can be composed.
      * @param {Entry} entry @param {Element} scroller
      */
     prepare(entry, scroller) {
-      if (planning.has(entry) || !entry.surface || !entry.geo || entry.lost) return;
+      if (!entry.surface || !entry.geo || entry.lost) return;
       const known = mapOf(entry).get(scroller);
-      if (known && known.epoch === entry.scEpoch && sameGeo(known.geo, entry.geo)) return;
-      planning.add(entry);
-      deps.schedule(entry, () => {
-        planning.delete(entry);
-        if (!entry.surface || !entry.geo || entry.lost) return;
-        const c = cacheFor(entry, scroller, entry.scEpoch);
-        if (c) prefetch(entry, c, /** @type {HTMLElement} */ (scroller).scrollTop);
+      if (known && sameGeo(known.geo, entry.geo) && sameLayout(known)) return;
+      let set = planning.get(entry);
+      if (!set) planning.set(entry, (set = new Set()));
+      if (set.has(scroller) || stillRefused(entry, scroller)) return;
+      set.add(scroller);
+      counters.plans++;
+      /** @param {Iterator<void, ScrollPlan|null, void>|null} steps */
+      const step = (steps) => deps.schedule(entry, () => {
+        if (!entry.surface || !entry.geo || entry.lost || scroller.isConnected === false) { set.delete(scroller); return; }
+        const got = steps ?? deps.plan(scroller, entry.el);
+        /** @type {ScrollPlan|null} */
+        let plan;
+        if (got && typeof (/** @type {any} */ (got).next) === 'function') {
+          const it = /** @type {Iterator<void, ScrollPlan|null, void>} */ (got);
+          const r = it.next();
+          if (!r.done) { step(it); return; }
+          plan = r.value;
+        } else plan = /** @type {ScrollPlan|null} */ (got);
+        set.delete(scroller);
+        const c = install(entry, scroller, plan);
+        if (c) prefetch(entry, c, topOf(scroller));
       });
+      step(null);
     },
 
     /** @param {Entry} entry @returns {boolean} a composition waits for the next commit */
@@ -256,52 +390,77 @@ export function createScrollCompositor(deps) {
     /** @param {Entry} entry @returns {boolean} side builds of the drawable are decoding */
     busy: (entry) => (inFlight.get(entry) ?? 0) > 0,
 
+    /** @returns {number} the damage sequence number (a build records it: its tile shows every change up to it) */
+    seq: () => seq,
+
     /**
-     * Does scroll damage of `rect` leave the pages valid? Yes for the composed scroller's own scrolling, and for any scroller whose box does not reach into a composed
-     * scrollport (a sibling list, or no cache at all: a refused plan must not be re-planned on every scroll step); no for a scroller nested in a composed one.
-     * @param {Entry} entry @param {Rect|null} rect @returns {boolean}
+     * Damage of the drawable (any cause but a caret blink): what it means for each composed scroller. See the file comment.
+     * @param {Entry} entry @param {Rect|null} rect @param {string} cause
      */
-    ownScroll(entry, rect) {
-      if (!rect) return false;
-      for (const c of caches.get(entry)?.values() ?? []) {
-        if (sameRect(c.plan.frame, rect)) continue;
-        const p = c.plan.port;
-        if (rect.x < p.x + p.width && rect.x + rect.width > p.x && rect.y < p.y + p.height && rect.y + rect.height > p.y) return false;
+    damaged(entry, rect, cause) {
+      const m = caches.get(entry);
+      const n = ++seq;
+      for (const c of [...(m?.values() ?? [])]) {
+        // its own scrolling (a step that was not composed)
+        if (cause === 'scroll' && rect && sameRect(c.plan.frame, rect)) continue;
+        // no rect, or one that covers the whole scroller: the scroller itself (or an ancestor) changed, every page may be stale
+        if (!rect || holds(rect, c.plan.frame)) { counters.dropped++; drop(entry, c); continue; }
+        const top = topOf(c.el);
+        const P = c.plan.port;
+        const content = intersectRect(rect, { x: P.x, y: P.y - top, width: P.width, height: Math.max(c.plan.scrollHeight, P.height) });
+        // pages hold scrollport pixels only: a change that reaches none of the content (a counter beside the list) leaves them as they are
+        if (!content) { counters.kept++; continue; }
+        // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
+        // the content box is none of the pages' business, the scroller clips its content to the port)
+        const px = outPx(content, c.geo);
+        const d = { x: px.x, y: px.y - c.portPx.y + Math.round(top * c.geo.scale), width: px.width, height: px.height };
+        for (const p of c.pages) if (p.seq !== null) { p.dirty.push(d); p.dirtySeq.push(n); }
+        const visible = intersectRect(rect, P);
+        if (visible) c.unverified.push(visible);
+        // a pinned element the change reaches is rendered again (no composition until its tile is back)
+        for (const [el, pin] of c.pins) {
+          const r = entry.record.layer?.frameRect(el);
+          if (r && meets(r, rect)) { pin.pad = null; build(entry, c, snapPx(r, c.geo), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
+        }
+        counters.dirtied++;
       }
-      return true;
     },
 
     /**
-     * A tile was drawn: it shows the scrollport at the offset the build read (`top`, null when unknown) if it covers the port, else the port is mixed.
-     * @param {Entry} entry @param {Rect} cropPx @param {number|null} top @param {Element|null} scroller
+     * A tile was drawn into `surface`: it shows the scrollport at the offset the build read (`top`, null when unknown) if it covers the port, else the port is mixed.
+     * Its pixels are exact for every change before its build (`tileSeq`): they repair the dirty parts of the pages they cover (pinned elements and rounded corners
+     * excepted: a page has neither).
+     * @param {Entry} entry @param {Rect} cropPx @param {number|null} top @param {Element|null} scroller @param {number|null} tileSeq @param {Surface|null} surface
      */
-    tileLanded(entry, cropPx, top, scroller) {
+    tileLanded(entry, cropPx, top, scroller, tileSeq, surface) {
       for (const c of caches.get(entry)?.values() ?? []) {
         const p = c.portPx;
         const inside = cropPx.x <= p.x && cropPx.y <= p.y && cropPx.x + cropPx.width >= p.x + p.width && cropPx.y + cropPx.height >= p.y + p.height;
         const touches = cropPx.x < p.x + p.width && cropPx.x + cropPx.width > p.x && cropPx.y < p.y + p.height && cropPx.y + cropPx.height > p.y;
-        if (inside) c.shown = scroller === c.el ? top : /** @type {HTMLElement} */ (c.el).scrollTop;
+        if (inside) c.shown = scroller === c.el ? top : topOf(c.el);
         else if (touches) c.shown = null;
+        if (scroller === c.el && top !== null && tileSeq !== null && surface && touches) repair(entry, c, cropPx, top, tileSeq, surface);
       }
     },
 
     /**
      * Compose every cached scroller whose port does not show its live offset (promised, or a tile drew another offset). Returns the css rects written, and the frames of
      * the scrollers that were promised but cannot be composed (the caller damages them: the plain path takes over).
-     * @param {Entry} entry @param {() => Surface|null} surfaceOf  the writable surface (asked only when a composition happens) @param {number} epoch
+     * @param {Entry} entry @param {() => Surface|null} surfaceOf  the writable surface (asked only when a composition happens)
      * @returns {{dirty: Rect[], fallback: Rect[]}}
      */
-    step(entry, surfaceOf, epoch) {
+    step(entry, surfaceOf) {
       /** @type {Rect[]} */ const dirty = [];
       /** @type {Rect[]} */ const fallback = [];
       for (const c of [...(caches.get(entry)?.values() ?? [])]) {
         const promised = c.queued;
         c.queued = false;
-        if (c.epoch !== epoch || !entry.geo || !sameGeo(c.geo, entry.geo)) { drop(entry, c); if (promised) fallback.push(c.plan.frame); continue; }
-        const top = /** @type {HTMLElement} */ (c.el).scrollTop;
+        if (!entry.geo || !sameGeo(c.geo, entry.geo) || !sameLayout(c)) { counters.droppedGeometry++; drop(entry, c); if (promised) fallback.push(c.plan.frame); continue; }
+        const top = topOf(c.el);
         if (c.shown === top) continue;
-        const surface = ready(c, top) ? surfaceOf() : null;
-        if (!surface || !compose(entry, c, surface, top)) {
+        const pages = verified(entry, c) ? usable(c, top, true) : null;
+        const surface = pages ? surfaceOf() : null;
+        if (!pages || !surface || !compose(entry, c, surface, top, pages)) {
           if (promised || c.shown !== null) { fallback.push(c.plan.frame); counters.fallbacks++; }
           continue;
         }
@@ -321,11 +480,64 @@ export function createScrollCompositor(deps) {
     forget(entry) {
       caches.delete(entry);
       refused.delete(entry);
+      planning.delete(entry);
     },
   };
 
-  /** @param {Entry} entry @param {Cache} c @param {Surface} surface @param {number} top @returns {boolean} */
-  function compose(entry, c, surface, top) {
+  /**
+   * Copy the parts of a landed tile that repair dirty page pixels. The tile shows content pixel row y at surface row y - base(top) + port.y. A pinned element may
+   * have moved by as much as the scroll offset changed since the tile's build: its rect, grown by that, is left out.
+   * @param {Entry} entry @param {Cache} c @param {Rect} cropPx @param {number} top @param {number} tileSeq @param {Surface} surface
+   */
+  function repair(entry, c, cropPx, top, tileSeq, surface) {
+    const s = c.geo.scale;
+    const R = c.portPx;
+    const crop = intersectRect(cropPx, R);
+    if (!crop) return;
+    /** @type {Rect[]} */
+    const out = [...c.corners];
+    const drift = Math.ceil(Math.abs(topOf(c.el) - top) * s) + 1;
+    for (const el of c.pins.keys()) {
+      const r = entry.record.layer?.frameRect(el);
+      if (!r) return;
+      const px = outPx(r, c.geo);
+      out.push({ x: px.x, y: px.y - drift, width: px.width, height: px.height + 2 * drift });
+    }
+    const base = Math.round(top * s);
+    const shift = base - R.y;
+    /** @type {Rect[]} tile pixels that are content, in content pixels */
+    const good = subtractRects(crop, out).map((r) => ({ ...r, y: r.y + shift }));
+    for (const p of c.pages) {
+      if (!p.pad || !p.dirty.length) continue;
+      const ctx = /** @type {CanvasRenderingContext2D} */ (p.pad.getContext('2d'));
+      const pb = Math.round(p.top * s);
+      /** @type {Rect[]} */ const keep = [];
+      /** @type {number[]} */ const keepSeq = [];
+      p.dirty.forEach((d, i) => {
+        if (p.dirtySeq[i] > tileSeq) { keep.push(d); keepSeq.push(p.dirtySeq[i]); return; }
+        const done = [];
+        for (const g of good) {
+          const x = intersectRect(d, g);
+          if (!x) continue;
+          ctx.save();
+          ctx.globalCompositeOperation = 'copy';
+          ctx.beginPath();
+          ctx.rect(x.x - R.x, x.y - pb, x.width, x.height);
+          ctx.clip();
+          ctx.drawImage(surface, x.x, x.y - shift, x.width, x.height, x.x - R.x, x.y - pb, x.width, x.height);
+          ctx.restore();
+          done.push(x);
+          counters.patched++;
+        }
+        for (const left of subtractRects(d, done)) { keep.push(left); keepSeq.push(p.dirtySeq[i]); }
+      });
+      p.dirty = keep;
+      p.dirtySeq = keepSeq;
+    }
+  }
+
+  /** @param {Entry} entry @param {Cache} c @param {Surface} surface @param {number} top @param {Page[]} pages @returns {boolean} */
+  function compose(entry, c, surface, top, pages) {
     const ctx = /** @type {CanvasRenderingContext2D|null} */ (surface.getContext('2d'));
     if (!ctx || ctx.isContextLost?.()) return false;
     const R = c.portPx;
@@ -340,16 +552,36 @@ export function createScrollCompositor(deps) {
       if (px.width !== pin.w || px.height !== pin.h) return false;
       pins.push({ pad: pin.pad, px });
     }
-    const pages = c.pages.filter((p) => p.pad).sort((a, b) => Math.abs(b.top - top) - Math.abs(a.top - top));
+    const round = c.plan.round ?? null;
+    /** clip to the rounded padding box (exact edges, antialiased like the engine's own clip) */
+    const shape = () => {
+      if (!round) return;
+      const P = paddingBox(c.plan);
+      const g = c.geo;
+      const x = (P.x + g.ink.left) * s, y = (P.y + g.ink.top) * s;
+      const sc = (/** @type {{x: number, y: number}} */ r) => ({ x: r.x * s, y: r.y * s });
+      ctx.beginPath();
+      ctx.roundRect(x, y, P.width * s, P.height * s, [sc(round.tl), sc(round.tr), sc(round.br), sc(round.bl)]);
+      ctx.clip();
+    };
     ctx.save();
     try {
       ctx.globalCompositeOperation = 'copy';
+      if (c.backdrop?.pad) {
+        // what lies under the rounded clip (border, background, the parent) where the page does not reach
+        for (const q of c.corners) {
+          ctx.save(); ctx.beginPath(); ctx.rect(q.x, q.y, q.width, q.height); ctx.clip();
+          ctx.drawImage(c.backdrop.pad, c.backdrop.px.x, c.backdrop.px.y);
+          ctx.restore();
+        }
+      }
       for (const p of pages) {
         const off = Math.round(p.top * s) - base;
         const y0 = Math.max(0, off);
         const y1 = Math.min(R.height, off + R.height);
         if (y1 <= y0) continue;
         ctx.save();
+        shape();
         ctx.beginPath();
         ctx.rect(R.x, R.y + y0, R.width, y1 - y0);
         ctx.clip();
@@ -359,12 +591,12 @@ export function createScrollCompositor(deps) {
       if (c.bar && c.plan.bar) {
         // the classic bar: its track as captured, then the thumb at the offset (the clone's own geometry, verticalBar)
         const t = c.bar.track;
-        ctx.save(); ctx.beginPath(); ctx.rect(t.px.x, t.px.y, t.px.width, t.px.height); ctx.clip();
+        ctx.save(); shape(); ctx.beginPath(); ctx.rect(t.px.x, t.px.y, t.px.width, t.px.height); ctx.clip();
         ctx.drawImage(/** @type {Surface} */ (t.pad), t.px.x, t.px.y);
         ctx.restore();
         const h = c.bar.thumb;
         const dy = Math.round((c.plan.bar.thumbY(top) - c.plan.bar.thumbY(h.top)) * s);
-        ctx.save(); ctx.beginPath(); ctx.rect(t.px.x, t.px.y, t.px.width, t.px.height); ctx.clip();
+        ctx.save(); shape(); ctx.beginPath(); ctx.rect(t.px.x, t.px.y, t.px.width, t.px.height); ctx.clip();
         ctx.globalCompositeOperation = 'source-over';
         ctx.drawImage(/** @type {Surface} */ (h.pad), h.px.x, h.px.y + dy);
         ctx.restore();
@@ -374,6 +606,7 @@ export function createScrollCompositor(deps) {
         const x1 = Math.min(R.x + R.width, px.x + px.width), y1 = Math.min(R.y + R.height, px.y + px.height);
         if (x1 <= x0 || y1 <= y0) continue;
         ctx.save();
+        shape();
         ctx.beginPath();
         ctx.rect(x0, y0, x1 - x0, y1 - y0);
         ctx.clip();

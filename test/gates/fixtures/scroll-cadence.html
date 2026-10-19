@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="icon" href="data:,">
+<title>scroll cadence: an inner list drawn into a canvas, and its plain-DOM twin</title>
+<script>
+  // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1
+  var q = new URLSearchParams(location.search); window.__q = q;
+  if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
+</script>
+<style>
+  body { margin: 0; padding: 20px; font: 14px/1.4 Arial, sans-serif; background: #eef1f6; color: #1b2330; }
+  #stage { display: block; width: 900px; height: 560px; background: #fff; }
+  #app { box-sizing: border-box; width: 900px; height: 560px; display: grid; grid-template-columns: 400px 1fr; gap: 16px; padding: 16px; background: linear-gradient(150deg, #0b2440, #23164a); color: #e8f6ff; }
+  #list { min-height: 0; overflow-y: auto; border: 1px solid #c9d1de; background: #fbfcfe; color: #1b2330; }
+  #list.round { border-radius: 12px; }
+  #list header { position: sticky; top: 0; z-index: 1; padding: 10px 12px; font-weight: 700; background: #e6ecf7; border-bottom: 1px solid #c9d1de; }
+  #list ol { margin: 0; padding: 0; list-style: none; }
+  /* whole-pixel rows: a list of fractional rows (36.6 px) shows one row 1 device px off in the plain tile at some offsets (a capture issue of its own, not of scrolling) */
+  #list li { display: flex; gap: 10px; box-sizing: border-box; height: 37px; padding: 8px 12px; border-bottom: 1px solid #e6eaf2; }
+  #list li i { min-width: 30px; text-align: center; border-radius: 6px; color: #fff; font-style: normal; font-weight: 700; }
+  #panel { display: grid; gap: 12px; align-content: start; }
+  #panel h2 { margin: 0; font-size: 26px; }
+  .card { min-height: 70px; padding: 10px 12px; border-radius: 10px; background: linear-gradient(135deg, #2f6df6, #7a4ff0); }
+</style></head>
+<body>
+<canvas id="stage" content="drawable">
+  <div id="app" drawable>
+    <section id="list"><header>Inbox (<span id="count">0</span>)</header><ol id="rows"></ol></section>
+    <section id="panel"><h2>Scroll cadence</h2><div class="card">Pinned notes</div><div class="card">Totals</div></section>
+  </div>
+</canvas>
+<script>
+  const N = +(q.get('rows') || 300);
+  const rows = document.getElementById('rows');
+  const words = ['amber', 'fjord', 'kelp', 'prairie', 'umber', 'harbor', 'meadow', 'reef', 'willow', 'basalt'];
+  for (let i = 0; i < N; i++) {
+    const li = document.createElement('li');
+    li.innerHTML = '<i></i><span></span>';
+    li.firstChild.textContent = String(i);
+    li.firstChild.style.background = 'hsl(' + ((i * 37) % 360) + ' 60% 42%)';
+    li.lastChild.textContent = 'Row ' + i + ' ' + words[i % 10] + ' ' + words[(i * 3) % 10] + ' notes';
+    rows.append(li);
+  }
+  document.getElementById('count').textContent = N;
+  const list = document.getElementById('list');
+  if (q.get('round') === '1') list.classList.add('round');
+  if (q.get('hover') === '1') { const st = document.createElement('style'); st.textContent = '#list li:hover { background: #cfdcf8; }'; document.head.append(st); }
+  let canvas = document.getElementById('stage');
+  const app = document.getElementById('app');
+  window.__paints = 0;
+  if (!q.get('bundle')) {
+    // the twin: overlay scrollbars (the gate pins them) take no room, and the snapshot draws none; the twin hides them so a bar that flashes after a scroll is no difference
+    const st = document.createElement('style'); st.textContent = '#list { scrollbar-width: none; }'; document.head.append(st);
+    const d = document.createElement('div'); d.id = 'stage'; d.style.cssText = 'width:900px;height:560px;background:#fff'; d.append(app); canvas.replaceWith(d); canvas = d;
+    // the twin records the same per-frame offsets (no paints)
+    const R = window.__rec = { on: false, frames: [], samples: [] };
+    R.start = () => { Object.assign(R, { on: true, frames: [] }); const f = (t) => { if (!R.on) return; R.frames.push([t, list.scrollTop, 0]); requestAnimationFrame(f); }; requestAnimationFrame(f); };
+    R.stop = () => { R.on = false; return R.frames; };
+    window.__ready = true;
+  } else {
+    const ctx = canvas.getContext('2d');
+    // the recorder (gate): per paint, optionally a copy of the canvas as drawn, with the scroller offset at that moment
+    const R = window.__rec = { on: false, frames: [], samples: [], every: 0, max: 0 };
+    canvas.onpaint = () => {
+      window.__paints++;
+      ctx.reset();
+      ctx.drawElementImage(app, 0, 0);
+      if (R.on && R.every && R.samples.length < R.max && window.__paints % R.every === 0) {
+        const copy = new OffscreenCanvas(canvas.width, canvas.height);
+        copy.getContext('2d').drawImage(canvas, 0, 0);
+        R.samples.push({ t: performance.now(), top: list.scrollTop, hov: R.hov ? R.hov() : -1, copy });
+      }
+    };
+    new ResizeObserver((e) => { const b = e[0].devicePixelContentBoxSize[0]; canvas.width = b.inlineSize; canvas.height = b.blockSize; }).observe(canvas, { box: 'device-pixel-content-box' });
+    R.start = (every, max) => {
+      Object.assign(R, { on: true, frames: [], samples: [], every, max });
+      // the hovered row of each frame: during a scroll the engine moves :hover to the row under the still pointer a frame or so after the row arrives there
+      const hov = () => { const h = rows.querySelector('li:hover'); return h ? Array.prototype.indexOf.call(rows.children, h) : -1; };
+      R.hov = hov;
+      const f = (t) => { if (!R.on) return; R.frames.push([t, list.scrollTop, window.__paints, hov()]); requestAnimationFrame(f); };
+      requestAnimationFrame(f);
+    };
+    R.stop = () => { R.on = false; return R.frames; };
+    /** sample i as a PNG data URL (read after the run) */
+    R.png = async (i) => { const b = await R.samples[i].copy.convertToBlob({ type: 'image/png' }); return await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); }); };
+    window.__ready = true;
+  }
+</script>
+</body></html>

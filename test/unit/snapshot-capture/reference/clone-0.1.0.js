@@ -2,6 +2,14 @@
 // drawable per element and reading scroll metrics of boxes that cannot scroll. walk-parity.browser.test.mjs builds every corpus snapshot with this walk and with
 // the current one and requires identical output. Only the imports differ from the released file (the helpers this walk relied on and that have changed since come from
 // frozen copies next to it); never edit its logic.
+//
+// DELIBERATE BEHAVIOUR CHANGES since 0.1.0-preview.1, applied here identically to the current walk, each marked `CHANGED after 0.1.0` and each pinned by its own test
+// (CHANGELOG [0.1.0-preview.2]). Nothing else may be changed here: a parity failure on anything else is a difference of the cheaper walk, to be fixed there.
+//   1. a stand-in (pruned element, nested drawable) keeps its id: id-based grid placement and margins still apply (prune-parity.browser.test.mjs, "keeps its id").
+//   2. the classic-bar thumb tile hides the clone root's content, not every element: `*` hid the SVG / foreignObject and the tile was empty
+//      (scroll-pages.browser.test.mjs, "classic scrollbar ... thumb sprite").
+//   3. the scroll compositor's `shape` request option: 'square' corners for the pages of a rounded scroller, 'backdrop' (the scroller without its content)
+//      (scroll-pages.browser.test.mjs, "rounded scrollport").
 /**
  * State-synced clone of one drawable (docs/ARCHITECTURE.md ADR-D.1).
  * Module: snapshot-capture (src/snapshot/capture/*).
@@ -153,7 +161,7 @@ function placeholderFor(ctx, src, feature, message) {
 function spacerFor(ctx, src, r) {
   const sp = ctx.doc.importNode(src, false);
   cleanAttributes(sp);
-  sp.removeAttribute('id');
+  // CHANGED after 0.1.0 (1): the stand-in keeps its id (was: sp.removeAttribute('id'))
   sp.setAttribute('data-hic-sp', '');
   appendInlineStyle(sp, `width:${n3(r.width)}px!important;height:${n3(r.height)}px!important`);
   ctx.tokens.add(sp);
@@ -229,6 +237,9 @@ function cloneElement(ctx, src) {
     appendInlineStyle(clone, 'visibility:hidden!important');
     clone.setAttribute('data-hic-hide', '');
   }
+  // CHANGED after 0.1.0 (3): the shape of a rounded scroller's pages
+  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'square') appendInlineStyle(clone, 'border-radius:0!important');
+  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'backdrop') clone.setAttribute('data-hic-hide', '');
   if (ctx.animated?.has(src)) freezeAnimations(src, /** @type {HTMLElement} */ (clone));
   ctx.tokens.add(clone);
   if (!replaced && !LEAF_TAGS.has(ln)) cloneChildren(ctx, src, clone);
@@ -506,10 +517,12 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
     shift: 0, selection: null, painter: null,
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
-  if (req.scroll?.hide.length) ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
+  // CHANGED after 0.1.0 (3): the backdrop hides the scroller's content
+  if (req.scroll?.hide.length || req.scroll?.shape === 'backdrop') ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
   // the scroll compositor's classic-bar tiles: the track without its thumb, or the thumb alone on a transparent backdrop
   if (req.scroll?.bars === 'track') ctx.scroll.rules.push('[data-hic-bar=thumb]{visibility:hidden!important}');
-  if (req.scroll?.bars === 'thumb') ctx.scroll.rules.push('*{visibility:hidden!important}[data-hic-bar=thumb]{visibility:visible!important}');
+  // CHANGED after 0.1.0 (2): scoped to the clone root (was: '*{visibility:hidden!important}...', which hid the svg / foreignObject too)
+  if (req.scroll?.bars === 'thumb') ctx.scroll.rules.push(`.${MARK.CLS_ROOT},.${MARK.CLS_ROOT} *{visibility:hidden!important}[data-hic-bar=thumb]{visibility:visible!important}`);
   const animations = live.getAnimations ? live.getAnimations() : [];
   if (animations.length) ctx.animated = new Set(animations.map((a) => /** @type {KeyframeEffect|null} */ (a.effect)).filter((e) => e && !e.pseudoElement).map((e) => /** @type {Element} */ (e?.target)));
 

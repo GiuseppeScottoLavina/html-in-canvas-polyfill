@@ -25,9 +25,10 @@ const KEY_PATTERN = /^[A-Za-z0-9_-]+$/;
  * set() inserts the rule on first use and later only calls rule.style.setProperty(name, value, 'important') for the declarations that changed (no sheet re-parse, no style attribute, no cssText pollution, no CSP style-src issue).
  * remove() deletes the rule. owns(sheet) is how the stylesheet observer and the CSS collector skip the polyfill's own sheets.
  * @param {CSSStyleSheet} sheet  constructed sheet already adopted into the root
+ * @param {string} [attr]  the attribute whose value selects a rule (default data-hic-hit; the scroll synchronisation of scroll-sync.js uses its own)
  * @returns {GeometryRules}
  */
-export function createGeometryRules(sheet) {
+export function createGeometryRules(sheet, attr = 'data-hic-hit') {
   markOwnedSheet(sheet);
   /** @type {Map<string, {rule: CSSStyleRule, written: Map<string, string>}>} */
   const rules = new Map();
@@ -35,7 +36,7 @@ export function createGeometryRules(sheet) {
   /** @param {string} key */
   function insert(key) {
     if (!KEY_PATTERN.test(key)) throw new TypeError(`invalid geometry key "${key}"`);
-    const index = sheet.insertRule(`[data-hic-hit="${key}"]{}`, sheet.cssRules.length);
+    const index = sheet.insertRule(`[${attr}="${key}"]{}`, sheet.cssRules.length);
     const entry = { rule: /** @type {CSSStyleRule} */ (sheet.cssRules[index]), written: new Map() };
     rules.set(key, entry);
     return entry;

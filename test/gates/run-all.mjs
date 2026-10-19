@@ -24,7 +24,7 @@ const finalSelection = selected.length || !only ? selected : files.filter((f) =>
 if (only && !finalSelection.length) { console.error('--only matched no gate: ' + only.join(',')); process.exit(2); }
 
 // gates whose promise is per device-pixel-ratio run once per listed DPR (a real DPR needs its own Chrome launch); `--dpr=` on the command line overrides
-const DPRS = { 'g-regress-capture': [1, 2], 'g-pixel-dpr': [1.25, 1.5] };
+const DPRS = { 'g-regress-capture': [1, 2], 'g-pixel-dpr': [1.25, 1.5], 'g-scroll-cadence': [2, 1.25] };
 const jobs = finalSelection.flatMap((f) => {
   const list = process.argv.some((a) => a.startsWith('--dpr=')) ? [null] : (DPRS[f.replace(/\.mjs$/, '')] ?? [null]);
   return list.map((dpr) => ({ f, dpr }));

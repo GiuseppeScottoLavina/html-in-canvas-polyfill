@@ -18,6 +18,7 @@ import { resetLayerStyle, syncPresentation } from './presentation.js';
 import { sameContentRect } from '../util/rect.js';
 import { auditStacking } from './stacking-audit.js';
 import { installParentFacade, installTreeFacade } from './tree-facade.js';
+import { createScrollSync } from './scroll-sync.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../contracts/types.js').ChildrenChange} ChildrenChange */
@@ -111,6 +112,8 @@ export function createLiveLayer(env, record) {
   const reportedCovers = new WeakSet();
 
   const rules = () => /** @type {LayerStyleHandle} */ (style).geometry;
+  /** @type {ReturnType<typeof createScrollSync>|null} */
+  let scrollSync = null;
 
   /** @type {(() => void)|null} removes the scroll listener of syncScrollWatch */
   let scrollWatch = null;
@@ -217,6 +220,7 @@ export function createLiveLayer(env, record) {
     a11y.update(topLevelElements());
     refreshDrawables(true);
     teardown.push(watchCanvas());
+    scrollSync = createScrollSync(styleRoot, () => style?.scroll ?? null);
     revealSelectedOptions(layerEl);
   }
 
@@ -229,6 +233,8 @@ export function createLiveLayer(env, record) {
 
   function rehome() {
     if (styleRoot !== record.root && style) {
+      scrollSync?.clear();
+      scrollSync = createScrollSync(record.root, () => style?.scroll ?? null);
       const old = style;
       clearGeometry(old.geometry, layerEl);
       old.remove(record.id);
@@ -248,6 +254,8 @@ export function createLiveLayer(env, record) {
     mounted = false;
     scrollWatch?.();
     scrollWatch = null;
+    scrollSync?.clear();
+    scrollSync = null;
     for (const off of teardown.reverse()) off();
     teardown = [];
     if (style) clearGeometry(rules(), layerEl);
@@ -358,6 +366,10 @@ export function createLiveLayer(env, record) {
       childListeners.add(cb);
       return () => { childListeners.delete(cb); };
     },
+    syncScroll(el, on) {
+      if (on) scrollSync?.mark(el); else scrollSync?.unmark(el);
+    },
+    scrollAuthorStyle: (el) => scrollSync?.author(el) ?? null,
     elementAtPoint(point) {
       for (const el of record.root.elementsFromPoint(point.x, point.y)) if (el !== layerEl && layerEl.contains(el)) return el;
       return null;

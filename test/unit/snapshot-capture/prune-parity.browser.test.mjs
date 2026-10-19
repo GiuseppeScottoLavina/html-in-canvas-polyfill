@@ -35,3 +35,14 @@ test('script and style siblings keep counting for :nth-child (attribute-only sta
   assert.deepEqual([...x.getImageData(50, 10, 1, 1).data].slice(0, 3), [0, 0, 255]);
   assert.deepEqual([...x.getImageData(50, 30, 1, 1).data].slice(0, 3), [255, 0, 0]);
 });
+
+test('a pruned grid item keeps its id: an id-placed spacer (#bar spans both columns) leaves every later item in its cell', async () => {
+  const css = '#g{display:grid;grid-template-columns:1fr 80px;width:240px;font:12px sans-serif}#bar{grid-column:1/-1;height:30px;background:#335}#l{height:400px;background:#eef}#s{background:#fdd}';
+  const m = mount('<div id="g" drawable><div id="bar">bar</div><div id="l">list</div><div id="s">side</div></div>', { css, height: 500 });
+  const el = m.layerEl.firstElementChild;
+  const rect = { x: 0, y: 300, width: 240, height: 40 };
+  const full = await rasterize(m.capture(m.request(el, { rect })));
+  const pruned = m.capture(m.request(el, { rect, prune: true }));
+  assert.ok(/data-hic-sp/.test(decodeURIComponent(pruned.url)), 'the bar outside the crop became a spacer');
+  assert.ok(diffFraction(await rasterize(pruned), full) <= 0.002, `the pruned tile shows the list and the side where they are (${(diffFraction(await rasterize(pruned), full) * 100).toFixed(2)} %)`);
+});

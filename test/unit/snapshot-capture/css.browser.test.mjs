@@ -21,7 +21,7 @@ test('collector rewrites pseudo-classes and root selectors, reports which exist,
   const b = createCssCollector(m.env).bundle(m.record, m.resources);
   assert.ok(b.css.includes('a.hic-hover') && b.css.includes('.hic-root.x p.hic-focus-visible') && b.css.includes('.hic-root{'));
   assert.ok(!b.css.includes('pink') && !b.css.includes('width: 9px'));
-  assert.deepEqual(b.pseudo, { hover: true, active: false, focus: false, focusVisible: true, focusWithin: false });
+  assert.deepEqual(b.pseudo, { hover: true, active: false, focus: false, focusVisible: true, focusWithin: false, hoverLayout: false });
   assert.deepEqual(b.pendingUrls, []);
 });
 

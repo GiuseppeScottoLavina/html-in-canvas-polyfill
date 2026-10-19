@@ -33,6 +33,8 @@ const FULL_TILE_SHARE = 0.55;
 const MAX_INK = 2048;
 /** Cost assumed for a drawable that has no measured tile yet, ms. */
 const DEFAULT_TILE_COST_MS = 3;
+/** Damage that may ride along with scroll damage inside the scrolled box without losing its exception (pumpRecord): hover follows the rows that pass under a still pointer. */
+const SCROLL_RIDERS = new Set(['hover']);
 /** Drawables above nodeBudget.hard build at most this often, ms (4 fps). */
 const DEGRADED_INTERVAL_MS = 250;
 /**
@@ -89,7 +91,6 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {boolean} ovDeferred  the pending overlay request deferred the field's snapshot (a failure must damage it)
  * @property {number} caretLiveAt  performance.now() of the last live caret measurement (caretNow): tiles built before it do not replace that caret
  * @property {Element|null|undefined} caretAsk  store.caretNow: undefined = nothing asked; null = drop the caret; an element = measure its caret at the next commit
- * @property {number} scEpoch  bumped by every damage except a caret blink and the composed scrollers' own scrolling (scroll-compose.js cache key)
  */
 
 /**
@@ -108,6 +109,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {DOMMatrixReadOnly|null} translation
  * @property {number} ovSeq  Entry.ovSeq when the build started: the tile shows every overlaid value up to it
  * @property {Map<Element, number>|null} scTops  scrollTop of every composed scroller when the build read the DOM (scroll-compose.js)
+ * @property {number|null} scSeq  the scroll compositor's damage sequence number when the build read the DOM: its tile repairs the pages for every damage up to it
  * @property {boolean} first  the first build of the drawable (never measured): charged its fixed estimate only, see pumpRecord
  */
 
@@ -127,6 +129,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {(landed: Landed) => void} landed
  * @property {(job: Job, err: unknown, stage: 'capture'|'decode') => void} fail
  * @property {(entry: Entry) => Element[]} [scrollers]  composed scrollers of the drawable (their offsets are recorded per build)
+ * @property {() => number} [scrollSeq]  the scroll compositor's damage sequence number (recorded per build)
  */
 
 /**
@@ -385,6 +388,12 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
   let gate = state.gates.get(record.id);
   if (!gate) state.gates.set(record.id, (gate = new PhaseGate()));
   const due = gate.isDue(now, interval);
+  // scroll damage alone (a scroller moved; at most hover inside it changed with it) is held by the framecap and the cost bucket only, not by maxSnapshotFps nor by the node-budget
+  // interval: its tile is the scroller box, cut to the visible rows in a large drawable, and a native scroller presents every frame (measured: a 2000-row list built
+  // 3-4 times per second under DEGRADED_INTERVAL_MS while native drew 67). Any other pending cause keeps every limit. A build started only by this exception takes no
+  // credit of the gate (a scroll stream would otherwise drive the credit far below zero and hold the next change for as many intervals).
+  const capF = buildRate({ ...env.options, maxSnapshotFps: 0 }, record, budget);
+  const scrollDue = gate.isDue(now, Number.isFinite(capF) ? 1000 / capF : 0);
   // a resize / DPR re-raster inside the frame is not held by maxSnapshotFps (the canvas framecap still holds it): the retained tile has the WRONG geometry (stretched), not just
   // older content, and a 60 fps gate on a 120 Hz display phase-locks with the resize steps (every step's tile one frame late: resize convergence bimodal 8 / 16 ms)
   const geometryNow = !!budget.urgent && !(record.frameCap > 0 && record.frameCap <= (env.options.maxSnapshotFps || Infinity));
@@ -395,9 +404,10 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     if (entry.refused || entry.lost) continue;
     if (!record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); continue; }
     if (entry.decoding >= deps.maxPerDrawable) continue;
-    const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);
+    const scrollOnly = scrollDue && deps.damage.pendingScroll(entry.el, SCROLL_RIDERS, env.options.inkMargin + 1);
+    const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard && !scrollOnly ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);
     if (wait > 0) { later(out, now + wait); continue; }
-    if (!due && !(geometryNow && (deps.damage.hasPendingCause(entry.el, 'resize') || deps.damage.hasPendingCause(entry.el, 'dpr')))) { later(out, gate.dueAt(interval)); continue; }
+    if (!due && !scrollOnly && !(geometryNow && (deps.damage.hasPendingCause(entry.el, 'resize') || deps.damage.hasPendingCause(entry.el, 'dpr')))) { later(out, gate.dueAt(interval)); continue; }
     // The FIRST build of a drawable (never built, so it has no snapshot and holds back every paint of its canvas: paint gate 'first-commit') is not deferred by
     // maxInFlight or by the measured time of this pump, only by the cost bucket, which charges it the fixed DEFAULT_TILE_COST_MS (store.js settleCost): at most
     // 8 first builds per round (bucket cap 21 ms), a number that does not depend on how long cold builds took. Deferring them only delayed the first paint (8 drawables:
@@ -408,7 +418,7 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     if (!state.bucket.canStart()) { later(out, now + state.bucket.waitMs(budget.mainThreadShare)); continue; }
     batch ||= ++state.batchSeq;
     const spent = startBuild(env, deps, entry, now, batch);
-    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first; }
+    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first && (due || !scrollOnly); }
   }
   // first builds use no credit of the rate gate either: the build after the first paint was otherwise held a frame, or not when the first frame was long (a cold
   // page), and a page that changes the DOM every frame then stayed in either rhythm (WPT onpaint-remove-non-drawable-element passed or failed every subtest by turns)
@@ -443,9 +453,9 @@ function startBuild(env, deps, entry, now, batch) {
   const est = entry.costEma ?? DEFAULT_TILE_COST_MS;
   deps.state.bucket.spend(est);
   /** @type {Job} */
-  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null };
+  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null, scSeq: null };
   const scrollers = host.scrollers?.(entry) ?? [];
-  if (scrollers.length) job.scTops = new Map(scrollers.map((s) => [s, /** @type {HTMLElement} */ (s).scrollTop]));
+  if (scrollers.length) { job.scTops = new Map(scrollers.map((s) => [s, /** @type {HTMLElement} */ (s).scrollTop])); job.scSeq = host.scrollSeq?.() ?? null; }
   const t0 = env.now();
   /** @type {CaptureResult} */
   let result;

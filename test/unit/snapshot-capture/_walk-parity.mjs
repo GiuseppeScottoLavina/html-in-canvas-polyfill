@@ -2,6 +2,7 @@
 // forms, selections) is built by the current clone walk and by the walk as released (reference/clone-0.1.0.js), on a REAL live layer, and the two must be
 // identical: markup, node count, completeness, CSS tokens, frame, layout offset, caret, extra CSS, unsupported entries. The cheaper walk measures less; it may
 // not answer differently.
+// The reference carries the deliberate behaviour changes made since 0.1.0 (listed in its header, each pinned by its own test); nothing else.
 import { assert, fixture, frames } from '/test/unit/lib/t.js';
 import { setup } from '/test/unit/live/lib.mjs';
 import { cloneDrawable } from '/src/snapshot/capture/clone.js';
@@ -80,6 +81,7 @@ export function* variants(c, el) {
       const top = Math.round(0.61 * (s.scrollHeight - s.clientHeight));
       const sticky = [...s.querySelectorAll('*')].filter((e) => getComputedStyle(e).position === 'sticky');
       for (const bars of [undefined, 'track', 'thumb']) yield [`page of ${s.localName}.${s.className} bars=${bars}`, c.request(el, { scroll: { el: s, top, hide: sticky, bars }, rect: bands()[2], prune: true })];
+      for (const shape of ['square', 'backdrop']) yield [`page of ${s.localName}.${s.className} shape=${shape}`, c.request(el, { scroll: { el: s, top, hide: sticky, shape }, rect: bands()[2], prune: true })];
     }
   }
   // a compositor page asks for a box that does not scroll: the released walk emulated its offset all the same

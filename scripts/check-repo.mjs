@@ -73,8 +73,10 @@ if (!docsOnly) {
   // with its margin, the document's visibility, the scroll check for jumps into view; the paused frame hook and the settle frames of pending actions).
   // 13475 -> 13525 (2026-10-19, measured 13,509; 13,462 before this step): the cheaper clone walk (a per-build frame measurer in live/measure.js and LiveLayer, scroll metrics
   // read only of scroll containers, one top-layer query, the token collector skipping repeated class / style values).
-  // 13575 / 13525 -> 13625 (2026-10-19, measured 13,617 with both steps above: 13,462 + 108 + 47).
-  if (total > 13625) problems.push(`G-size: core is ${total} code lines (> 13625)`);
+  // 13475 -> 13900 (2026-10-19, measured 13,858; 13,460 before this step): inner scrolling at the display rate (live/scroll-sync.js, the per-scroller validity, dirty
+  // page regions and rounded ports of snapshot/store/scroll-compose.js, planning in steps, scroll damage outside maxSnapshotFps, paint-only :hover damage).
+  // 13575 / 13525 / 13900 -> 14025 (2026-10-19, measured 14,012 with the three steps above together: 13,462 + 108 + 47 + 395).
+  if (total > 14025) problems.push(`G-size: core is ${total} code lines (> 14025)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

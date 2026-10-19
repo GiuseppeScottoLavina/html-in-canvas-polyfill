@@ -1,5 +1,6 @@
-// Scroll compositor, store side (scroll-compose.js): pages are built by the pump (never inside the commit), a scroll step is composed by the next commit once the pages
-// cover the live offset, any other damage drops the cache, and a promised composition that cannot happen falls back to ordinary scroll damage.
+// Scroll compositor, store side (scroll-compose.js): pages are built by the post-frame pump (never inside the commit or a frame), a scroll step is composed by the next
+// commit once clean pages cover the live offset; damage beside the scroller keeps the pages, damage inside its content makes that part dirty until a tile repairs it,
+// damage across its edge drops them; a promised composition that cannot happen falls back to ordinary scroll damage.
 import { test, assert } from '/test/unit/lib/t.js';
 import { RGBA, makeRig, until } from './helpers.mjs';
 
@@ -18,12 +19,13 @@ async function warm(rig, a, scroller, colors) {
   rig.script.push(...colors.map((color) => ({ color })));
   const calls = rig.calls.length;
   assert.equal(rig.store.scrollCompose(a, scroller), false, 'cold: no pages yet, the plain path serves this step');
-  rig.pump();
-  assert.equal(rig.calls.length, calls, 'nothing is planned or built behind the first scroll step');
+  assert.equal(rig.calls.length, calls, 'nothing is planned or built inside the scroll step');
   rig.store.scrollSettled(a, scroller);
-  assert.equal(rig.calls.length, calls, 'pages are not built inside the settle callback either');
+  assert.equal(rig.calls.length, calls, 'nor inside the callback that saw the scroller');
+  rig.pump({ ...rig.budget, urgent: true });
+  assert.equal(rig.calls.length, calls, 'nor in a pump inside the rendering update');
   rig.pump();
-  assert.ok(rig.calls.length > calls, 'the pump built the pages');
+  assert.ok(rig.calls.length > calls, 'the post-frame pump planned it and built the pages');
   await until(() => rig.store.isSettled(a), 3000, 'pages decoded');
 }
 
@@ -43,16 +45,57 @@ test('a scroll step is composed from cached pages by the next commit, inside the
   assert.deepEqual(rig.css(a, 80, 30), RGBA.red);
 });
 
-test('damage other than the scroller own scrolling drops the pages; the next step is built as usual', async (t) => {
+test('damage that covers the scroller drops the pages; damage elsewhere keeps them; the next step is built as usual', async (t) => {
   const { rig, a, scroller } = await setup(t);
   await warm(rig, a, scroller, ['lime', 'blue']);
   rig.store.markDamage(a, FRAME, 'scroll');
   scroller.scrollTop = 10;
   assert.equal(rig.store.scrollCompose(a, scroller), true, 'its own scroll damage keeps the pages');
   rig.store.commitLanded();
-  rig.store.markDamage(a, { x: 0, y: 0, width: 5, height: 5 }, 'mutation');
+  rig.store.markDamage(a, { x: 80, y: 0, width: 15, height: 15 }, 'mutation');
+  scroller.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, scroller), true, 'a change beside the scroller (a counter) keeps them');
+  rig.store.commitLanded();
+  assert.ok(rig.store.stats().scroll.kept >= 1);
+  rig.store.markDamage(a, { x: 0, y: 0, width: 90, height: 60 }, 'mutation');
   scroller.scrollTop = 30;
-  assert.equal(rig.store.scrollCompose(a, scroller), false, 'a mutation dropped them: re-planned, cold again');
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'a change that covers the scroller (an ancestor, the scroller itself) dropped them: re-planned, cold again');
+  rig.store.markDamage(a, null, 'stylesheet');
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'damage without a rect drops them too');
+});
+
+test('damage inside the content makes that part of the pages dirty: no composition over it until a tile repairs it', async (t) => {
+  const { rig, a, scroller } = await setup(t);
+  await warm(rig, a, scroller, ['lime', 'blue']);
+  // content row 25..30 (css, at offset 0: frame y 35..40) changes: the page at 0 shows it, the page at 40 does not
+  rig.store.markDamage(a, { x: 10, y: 35, width: 60, height: 5 }, 'hover');
+  scroller.scrollTop = 4;
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'the port at 4 needs the dirty rows of the page at 0');
+  rig.store.commitLanded();
+  assert.ok(rig.store.stats().scroll.dirtied >= 1);
+  // the fallback tile (the scroller at 4, black) lands and repairs the page at 0 where it covers the dirty rows
+  rig.color = 'black';
+  rig.pump();
+  await until(() => rig.store.hasLanded(), 3000, 'the fallback tile');
+  rig.store.commitLanded();
+  assert.ok(rig.store.stats().scroll.patched >= 1, 'the tile repaired the page');
+  scroller.scrollTop = 6;
+  assert.equal(rig.store.scrollCompose(a, scroller), true, 'composed again once repaired');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 20, 30), RGBA.black, 'the repaired rows come from the tile, shifted by 2');
+  assert.deepEqual(rig.css(a, 20, 15), RGBA.lime, 'the rest of the page is untouched');
+});
+
+test('damage elsewhere in the content (rows scrolled out of view) dirties only the pages that show them', async (t) => {
+  const { rig, a, scroller } = await setup(t);
+  await warm(rig, a, scroller, ['lime', 'blue']);
+  // frame y 80..85 at offset 0 = content 70..75: only the page at 40 (content 40..80) shows it
+  rig.store.markDamage(a, { x: 10, y: 80, width: 60, height: 5 }, 'mutation');
+  scroller.scrollTop = 10;
+  assert.equal(rig.store.scrollCompose(a, scroller), true, 'the port at 10 (content 10..50) does not need the dirty rows');
+  rig.store.commitLanded();
+  scroller.scrollTop = 38;
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'the port at 38 (content 38..78) does');
 });
 
 test('a promised composition that cannot happen any more becomes ordinary scroll damage', async (t) => {
