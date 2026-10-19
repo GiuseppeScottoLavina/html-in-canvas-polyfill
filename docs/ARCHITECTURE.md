@@ -336,7 +336,11 @@ Tick RUN(now), for each canvas record in reverse tree order:
     drawable have one, which is why native presents 116. The live scroller under the pointer (and any live scroller from its first scroll event) carries `data-hic-scroll`, and a rule of the polyfill sheet gives it
     `kBackgroundNeedsRepaintOnScroll`: a transparent inset `box-shadow` (keeps the background in the border-box space) and a transparent `background-attachment: local` image after
     the author's own layers. Nothing is visible (the layer is invisible, both paint nothing) and neither reaches a snapshot (polyfill attribute and sheet); the author values are kept
-    in the rule and read by the planner. Released when the pointer has left and the scrolling has settled. Synchronising only at the first scroll event left most of that gesture at
+    in the rule and read by the planner. Side effects kept out of the author's sight: the added bottom layer keeps the author's `background-clip` of the colour; an author
+    transition covering `box-shadow` (`all` included) would animate the added shadow with its `transitionrun` / `transitionstart` / `transitionend` events at every mark and
+    release, so the rule appends `box-shadow` at 0s to the author's transition lists and is released in two style updates (the look first, then the hold); a scroller whose
+    shadow or background is animated is left alone (the rule, `!important`, would hold the animation still) and released when such an animation starts; shadow hosts and
+    slotted scrollers are left alone (their clone copies the computed style). Released when the pointer has left and the scrolling has settled. Synchronising only at the first scroll event left most of that gesture at
     half rate (the input pipeline settles into the alternation), hence the pointer.
   - **Pacing of scroll damage** (`pump.js`): scroll damage alone, or with hover changes inside the scrolled box (rows passing under a still pointer), is held by the framecap and the
     cost bucket but not by `maxSnapshotFps` nor by the node-budget interval (`DamageTracker.pendingScroll`); every other cause keeps every limit, and such a build takes no credit of the gate.

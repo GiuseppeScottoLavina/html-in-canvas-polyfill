@@ -51,7 +51,9 @@ const LIMITS = {
   //   synchronisation of the live scrollers, scroll damage outside maxSnapshotFps, the compositor's per-scroller validity with dirty page regions repaired from tiles,
   //   rounded scrollports, planning on first sight in steps, paint-only :hover damage)
   // 277.75 / 287.75 -> 288.75 KB, gzip 96.5 / 100.25 -> 100.5 KB (2026-10-19, measured 288,530 / 100,436 with both steps above together)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 288.75 * KB, gzip: 100.5 * KB },
+  // 288.75 -> 290.25 KB, gzip 100.5 -> 101 KB (+1,455 / +466 bytes, 2026-10-19, measured 289,985 / 100,902): the scroll synchronisation kept out of the author's sight
+  //   (the transition hold released in two style updates, the clip of the colour layer, no synchronisation of animated, shadow-host or slotted scrollers)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 290.25 * KB, gzip: 101 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

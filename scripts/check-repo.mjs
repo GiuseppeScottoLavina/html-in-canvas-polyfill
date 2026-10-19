@@ -76,7 +76,9 @@ if (!docsOnly) {
   // 13475 -> 13900 (2026-10-19, measured 13,858; 13,460 before this step): inner scrolling at the display rate (live/scroll-sync.js, the per-scroller validity, dirty
   // page regions and rounded ports of snapshot/store/scroll-compose.js, planning in steps, scroll damage outside maxSnapshotFps, paint-only :hover damage).
   // 13575 / 13525 / 13900 -> 14025 (2026-10-19, measured 14,012 with the three steps above together: 13,462 + 108 + 47 + 395).
-  if (total > 14025) problems.push(`G-size: core is ${total} code lines (> 14025)`);
+  // 14025 -> 14075 (2026-10-19, measured 14,053; 14,012 before this step): the scroll synchronisation kept out of the author's sight (the transition hold released in two
+  // style updates, the clip of the colour layer, no synchronisation of animated, shadow-host or slotted scrollers).
+  if (total > 14075) problems.push(`G-size: core is ${total} code lines (> 14075)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
