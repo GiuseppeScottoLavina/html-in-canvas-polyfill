@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Scrolling inside a drawable is presented at the display rate in Chrome. A live scroller under the pointer (or one that scrolls) is given an invisible main-thread repaint reason, so Chrome's compositor waits for the frame that redraws the canvas instead of delivering the scroll offset in every second frame. Measured at 120 Hz with a trusted wheel stream: a 300-row list from 61 to 113 canvas updates per second (native: 116), with a `:hover` style on its rows from 61 to 61-109 (those steps are built, each hovered row being a change, as often as the main-thread budget allows), rounded corners from 60 to 104, 2000 rows from 4 to 95, the F2 fixture from 24 to 81; main-thread time of the plain list from 36 % to 24 % of the stream.
+- The scroll compositor plans a scroller when the pointer reaches it (or at its first scroll event), so the first gesture is composed; it keeps its cached pages when something elsewhere in the drawable changes (a counter beside the list), marks the part of the pages a change inside the list touches as stale until the next tile repairs it, composes rounded scrollports (also with a classic scrollbar) inside their rounded clip, and plans scrollers of up to 20,000 elements in steps.
+- `options.maxSnapshotFps` and the `nodeBudget.hard` interval no longer hold the build of a scroller's own scroll damage (rows hovered by a still pointer may ride along); the framecap and the main-thread budget still do. Every other change keeps both limits (`docs/API-CONTRACT.md` 7.1).
+- `:hover` rules that only change paint (colours, backgrounds, shadows, outlines, opacity) damage the hovered element alone, also the first time it is hovered.
+
+### Fixed
+
+- The scroll compositor's classic-scrollbar thumb tile was empty (its capture hid the whole SVG image), so the thumb went missing from composed frames.
+- A large scroller's pages were dropped because the capture reported the node budget (a limited entry).
+
 ## [0.1.0-preview.1] - 2026-10-17
 
 First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` under the npm dist-tag `next`.

@@ -38,6 +38,8 @@ For a focused single-line text field, each keystroke is drawn into the retained 
 
 A scroll step does not rebuild the scroller: it composes pages of the scrollport rendered at other offsets, plus sticky elements from their own tiles, in the step's own frame; the exact picture follows when scrolling settles. Wheel to pixel went from 51.5 ms to 28.5 ms p50 (native: 36.5 ms, which includes Chrome's smooth-scroll animation).
 
+The canvas can only follow the scroll offset the main thread sees, and during a trackpad scroll Chromium delivers it in every second frame once the page draws per scroll step (its compositor then favours its own latency). While a live scroller is under the pointer or scrolls, the polyfill gives it an invisible main-thread repaint reason, as the scrollers inside a native drawable have, and the compositor waits for each frame: a 300-row list went from 61 to 113 canvas updates per second (native 116), a 2000-row list from 4 to 95. Pages are planned when the pointer reaches a scroller, a change elsewhere in the drawable keeps them, a change inside the list (a hovered row) is repaired from the next tile, and rounded scrollports are composed inside their rounded clip.
+
 ### 10. Form controls on Firefox and Safari are drawn by the polyfill
 
 Gecko does not theme form controls inside an SVG image, and WebKit draws them in its legacy look and ignores `accent-color` there. On those engines an opt-in bundle (`hic-live-engines`) draws checkboxes, radios, ranges, buttons, fields and scrollbars in the engine's own measured look. Chromium draws them itself, so this code stays out of the Chrome core.
