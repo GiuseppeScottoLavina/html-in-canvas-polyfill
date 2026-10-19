@@ -40,6 +40,16 @@ function hash(text) {
 }
 
 /**
+ * The value of the i-th attribute of `el` (`names` = its getAttributeNames()). By name when no other attribute has the same qualified name (a namespaced one may):
+ * getAttribute is several times cheaper than `attributes[i]`, which creates an Attr node.
+ * @param {Element} el @param {string[]} names @param {number} i @returns {string}
+ */
+function valueAt(el, names, i) {
+  const name = names[i];
+  return names.indexOf(name) === i && names.lastIndexOf(name) === i ? /** @type {string} */ (el.getAttribute(name)) : el.attributes[i].value;
+}
+
+/**
  * Accumulates the tokens of the elements that end up in the serialised clone (the clone builder feeds it while it builds).
  * @returns {TokenCollector}
  */
@@ -50,25 +60,33 @@ export function createTokenCollector() {
   const fonts = new Set();
   const vars = new Set();
   let attrNeed = false;
+  // class and style values already collected: adding them again adds nothing (rows of a list repeat the same few)
+  const seenClass = new Set();
+  const seenStyle = new Set();
   return {
     add(el) {
       tags.add(el.localName.toLowerCase());
-      const attrs = el.attributes;
+      // the names, then the values of class / id / style only: reading `attributes[i]` creates an Attr node per attribute
+      const names = el.getAttributeNames();
       let plain = 0;
-      for (let i = 0; i < attrs.length; i++) {
-        const a = attrs[i];
-        const name = a.name;
+      for (let i = 0; i < names.length; i++) {
+        const name = names[i];
         if (name === 'class') {
           plain++;
-          for (const c of a.value.split(/\s+/)) if (c) classes.add(c);
-        } else if (name === 'id') { plain++; ids.add(a.value); } else if (name === 'style') {
+          const v = valueAt(el, names, i);
+          if (seenClass.has(v)) continue;
+          seenClass.add(v);
+          for (const c of v.split(/\s+/)) if (c) classes.add(c);
+        } else if (name === 'id') { plain++; ids.add(valueAt(el, names, i)); } else if (name === 'style') {
           plain++;
-          const v = a.value;
+          const v = valueAt(el, names, i);
+          if (seenStyle.has(v)) continue;
+          seenStyle.add(v);
           collectVarNames(v, vars);
           if (v.includes('font')) for (const m of v.matchAll(/(?:^|;)\s*font(?:-family)?\s*:([^;]*)/gi)) fonts.add(m[1].trim().toLowerCase());
         }
       }
-      if (attrs.length > plain) attrNeed = true;
+      if (names.length > plain) attrNeed = true;
     },
     finish() {
       const sig = hash([[...classes].sort().join(' '), [...ids].sort().join(' '), [...tags].sort().join(' '), [...fonts].sort().join('|'), attrNeed ? 1 : 0].join('\n'));

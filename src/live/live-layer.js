@@ -13,7 +13,7 @@ import { installCanvasSelection } from './canvas-selection.js';
 import {
   appliedMatrixOf, appliedOffsetOf, applyGeometryToElement, applyHitTestOrder, clearGeometry, flushGeometryWrites, revalidateOffsets, revalidateScrolled, scrollMovedElements,
 } from './geometry-apply.js';
-import { borderBoxSize, frameRectOf, inkOverflowOf, isLaidOut, paintInkOf, rectInLayer } from './measure.js';
+import { borderBoxSize, frameMeasurerOf, frameRectOf, inkOverflowOf, isLaidOut, paintInkOf, rectInLayer } from './measure.js';
 import { resetLayerStyle, syncPresentation } from './presentation.js';
 import { sameContentRect } from '../util/rect.js';
 import { auditStacking } from './stacking-audit.js';
@@ -306,6 +306,11 @@ export function createLiveLayer(env, record) {
     frameRect(el) {
       const drawable = nearestDrawableOf(el, layerEl, drawableSet);
       return drawable ? frameRectOf(drawable, el, appliedMatrixOf(drawable, layerEl)) : null;
+    },
+    frameMeasurer(drawable) {
+      /** @type {((el: Element, sized?: boolean) => import('../contracts/types.js').Rect|null)|null} */
+      let measure = null; // the drawable is measured at the first question: a build that prunes nothing asks none
+      return (el, sized) => (nearestDrawableOf(el, layerEl, drawableSet) === drawable ? (measure ??= frameMeasurerOf(drawable, appliedMatrixOf(drawable, layerEl)))(el, sized) : api.frameRect(el));
     },
     applyGeometry(el, geometry, layoutOffset) {
       if (!mounted || !style) return;

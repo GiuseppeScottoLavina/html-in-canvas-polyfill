@@ -51,6 +51,7 @@ export function createDomLayer(layerEl, canvas) {
       const o = d.getBoundingClientRect();
       return { x: r.left - o.left, y: r.top - o.top, width: r.width, height: r.height };
     },
+    frameMeasurer: () => (el) => layer.frameRect(el),
     syncCalls: 0,
     revalidations: 0,
     revalidateGeometry() { layer.revalidations++; },

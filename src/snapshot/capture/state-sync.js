@@ -38,14 +38,22 @@ export function elementPath(el, stop = null) {
  * @param {Element} el
  */
 export function cleanAttributes(el) {
+  // the names first: reading `attributes[i]` creates an Attr node per attribute, and most elements keep all of theirs. From the last one that may go, the walk reads
+  // the live list (a removal by name can shift it)
+  const names = el.getAttributeNames();
+  let i = names.length - 1;
+  while (i >= 0 && !dropped(names[i])) i--;
   const attrs = el.attributes;
-  for (let i = attrs.length - 1; i >= 0; i--) {
+  for (; i >= 0; i--) {
     const a = attrs[i];
     const name = a.name;
     if (a.namespaceURI) continue;
-    if ((name.charCodeAt(0) === 111 && name.charCodeAt(1) === 110) || name === 'autofocus' || !XML_ATTR_NAME.test(name) || (name.startsWith('data-hic-') && !KEEP_HIC_ATTRS.has(name))) el.removeAttribute(name);
+    if (dropped(name)) el.removeAttribute(name);
   }
 }
+
+/** @param {string} name @returns {boolean} an attribute of this name (without a namespace) is not copied into the clone */
+const dropped = (name) => (name.charCodeAt(0) === 111 && name.charCodeAt(1) === 110) || name === 'autofocus' || !XML_ATTR_NAME.test(name) || (name.startsWith('data-hic-') && !KEEP_HIC_ATTRS.has(name));
 
 /**
  * @param {UnsupportedEntry[]} list
@@ -195,6 +203,11 @@ export function topLayerIn(root) {
   /** @type {Set<Element>} */
   const out = new Set();
   if (inTopLayer(root)) out.add(root);
+  // one walk of the subtree for the three; an engine that does not know one of them rejects the list, and each is asked alone
+  try {
+    for (const el of root.querySelectorAll(':modal, :popover-open, :fullscreen')) out.add(el);
+    return out;
+  } catch { /* a pseudo-class unknown to this engine */ }
   for (const sel of [':modal', ':popover-open', ':fullscreen']) {
     try { for (const el of root.querySelectorAll(sel)) out.add(el); } catch { /* selector unknown to this engine */ }
   }

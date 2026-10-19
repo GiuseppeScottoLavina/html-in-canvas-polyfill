@@ -144,6 +144,33 @@ export function frameRectOf(drawable, el, applied) {
 }
 
 /**
+ * frameRectOf(drawable, el, applied) for many `el` of one drawable while the layout does not change (one synchronous capture): the drawable-level reads (author transform,
+ * layer scale, the drawable's own rect) are made once instead of per element, which was most of the cost of a per-row measurement. Same arithmetic, same answers.
+ * The returned function takes `sized`: the caller ignores a rect without area, so the laid-out test is skipped (a box without layout measures 0 x 0, which such a caller
+ * rejects exactly as it rejects null).
+ * @param {Element} drawable
+ * @param {DOMMatrixReadOnly|null} applied
+ * @returns {(el: Element, sized?: boolean) => Rect|null}
+ */
+export function frameMeasurerOf(drawable, applied) {
+  const k = applied ? axisScale(applied) : (hasAuthorTransform(drawable) ? null : { x: 1, y: 1 });
+  if (!k) {
+    const size = borderBoxSize(drawable, applied);
+    return (el) => (size && isLaidOut(el) ? { x: 0, y: 0, width: size.width, height: size.height } : null);
+  }
+  const s = layoutScale(layerOf(drawable));
+  const sx = s.x * k.x;
+  const sy = s.y * k.y;
+  const d = drawable.getBoundingClientRect();
+  return (el, sized = false) => {
+    if (el === drawable) return frameRectOf(drawable, el, applied);
+    if (!sized && !isLaidOut(el)) return null;
+    const r = el.getBoundingClientRect();
+    return { x: (r.x - d.x) / sx, y: (r.y - d.y) / sy, width: r.width / sx, height: r.height / sy };
+  };
+}
+
+/**
  * Border box of `el` relative to the content box origin of its layer, css px, ignoring ancestor scale. Only valid while `el` carries no polyfill transform.
  * @param {HTMLElement} layerEl
  * @param {Element} el

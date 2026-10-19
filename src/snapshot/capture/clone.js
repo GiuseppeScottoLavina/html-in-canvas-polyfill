@@ -87,6 +87,7 @@ const n3 = (v) => String(+v.toFixed(3));
  * @property {number} shift  css px by which the descendants of CaptureRequest.scroll.el appear moved in the clone (live scrollTop - rendered scrollTop): live rects are shifted by it before a prune test
  * @property {PageSelection|null} selection  the page text selection recoloured inside the clone, or null (no selection here, or it is drawn as overlay rectangles)
  * @property {import('./selection-paint.js').SelectionPainter|null} painter  selection colours of this capture (created on first use)
+ * @property {(el: Element, sized?: boolean) => Rect|null} frame  LiveLayer.frameRect of the elements of this drawable, with the drawable-level reads made once (LiveLayer.frameMeasurer)
  */
 
 /**
@@ -155,13 +156,16 @@ function spacerFor(ctx, src, r) {
   return sp;
 }
 
-/** @param {Ctx} ctx @param {Element} k @param {Rect|null} window  extra keep region for children of a long scroller @returns {{r: Rect, cs: CSSStyleDeclaration}|null} set when `k` can be replaced by a spacer */
-function spacerInfo(ctx, k, window) {
-  if (!ctx.keep && !window) return null;
+/**
+ * @param {Ctx} ctx @param {Element} k @param {Rect|null} window  extra keep region for children of a long scroller @param {CSSStyleDeclaration} cs  computed style of `k`
+ * @returns {{r: Rect, cs: CSSStyleDeclaration}|null} set when `k` can be replaced by a spacer
+ */
+function spacerInfo(ctx, k, window, cs) {
   // the style test first: it is cheaper than the frame rect, and rows of inline content (never spacers) are common in large drawables
-  const cs = ctx.env.window.getComputedStyle(k);
-  if (NO_PRUNE_DISPLAY.test(cs.display) || cs.position === 'absolute' || cs.position === 'fixed' || cs.position === 'sticky' || cs.transform !== 'none') return null;
-  const live = ctx.layer.frameRect(k);
+  const position = cs.position;
+  if (NO_PRUNE_DISPLAY.test(cs.display) || position === 'absolute' || position === 'fixed' || position === 'sticky' || cs.transform !== 'none') return null;
+  // a rect without area is never a spacer: the laid-out test is left to its size
+  const live = ctx.frame(k, true);
   const r = live && ctx.shift ? { x: live.x, y: live.y + ctx.shift, width: live.width, height: live.height } : live;
   if (!r || r.width <= 0 || r.height <= 0) return null;
   if ((!ctx.keep || intersectRect(r, ctx.keep)) && (!window || intersectRect(r, window))) return null;
@@ -189,8 +193,8 @@ function extendRun(run, k, info) {
   return true;
 }
 
-/** @param {Ctx} ctx @param {Element} src @returns {Element|null} */
-function cloneElement(ctx, src) {
+/** @param {Ctx} ctx @param {Element} src @param {CSSStyleDeclaration} [known]  computed style of `src`, when the caller has it @returns {Element|null} */
+function cloneElement(ctx, src, known) {
   const ln = src.localName;
   if (src.hasAttribute(MARK.NODE_ATTR)) return null;
   // top-layer elements of the drawable's own tree were found by one query per capture; an element of a shadow tree is asked directly
@@ -198,7 +202,8 @@ function cloneElement(ctx, src) {
   // script/style/link/template never render but they count for :nth-child and sibling combinators: an attribute-only display:none stand-in keeps the indices
   if (SKIP.has(ln) || (scoped ? ctx.topLayer.has(src) : inTopLayer(src))) return siblingStub(ctx.doc, src);
   const html = /** @type {HTMLElement} */ (src);
-  if (html.hidden || html.style?.display === 'none') {
+  // the inline style is read only where there is one (the attribute reflects every CSSOM write): reading `style` builds a declaration object per element
+  if (html.hidden || (src.hasAttribute('style') && html.style?.display === 'none')) {
     const stub = ctx.doc.importNode(src, false);
     cleanAttributes(stub);
     setInlineStyle(stub, 'display:none!important');
@@ -216,7 +221,8 @@ function cloneElement(ctx, src) {
   const replaced = ok !== true;
   if (replaced) clone = /** @type {Element} */ (ok);
   applyInteractionClasses(src, clone, ctx.ix);
-  if (!replaced && (!scoped || styledByShadow(src))) inlineComputed(ctx, src, clone);
+  const cs = known ?? ctx.env.window.getComputedStyle(src);
+  if (!replaced && (!scoped || styledByShadow(src))) inlineComputed(src, clone, cs);
   // backdrop of the optimistic text overlay (text-overlay.js): the field without its text
   if (src === ctx.req.hideText) appendInlineStyle(clone, 'color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important');
   // a page of the scroll compositor: pinned (sticky) elements are drawn from their own tile
@@ -226,16 +232,21 @@ function cloneElement(ctx, src) {
   }
   if (ctx.animated?.has(src)) freezeAnimations(src, /** @type {HTMLElement} */ (clone));
   ctx.tokens.add(clone);
-  if (!replaced && !LEAF_TAGS.has(ln)) cloneChildren(ctx, src, clone);
-  maybeScroll(ctx, src, clone);
+  if (!replaced && !LEAF_TAGS.has(ln)) cloneChildren(ctx, src, clone, cs);
+  maybeScroll(ctx, src, clone, cs);
   return clone;
 }
 
-/** @param {Ctx} ctx @param {Element} src @param {Element} clone */
-function maybeScroll(ctx, src, clone) {
-  if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth)) return;
-  const cs = ctx.env.window.getComputedStyle(src);
+/** form controls whose text or options scroll inside them whatever their computed overflow says */
+const OWN_SCROLLERS = new Set(['input', 'textarea', 'select']);
+
+/** @param {Ctx} ctx @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} cs  computed style of `src` */
+function maybeScroll(ctx, src, clone, cs) {
   const over = ctx.req.scroll?.el === src ? ctx.req.scroll : null;
+  // overflow visible on both axes: not a scroll container, so its scroll offsets are 0 and nothing of it is scrollable (scrollFacts would answer null). The computed style
+  // is a cheaper read than the four scroll metrics, and it is the answer for most elements.
+  if (!over && cs.overflowX === 'visible' && cs.overflowY === 'visible' && !OWN_SCROLLERS.has(src.localName)) return;
+  if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth)) return;
   const live = scrollFacts(src, cs);
   const f = over ? { ...(live ?? { sL: src.scrollLeft, gv: 0, gh: 0, scrollableY: true, scrollableX: false, styled: false }), sT: over.top } : live;
   if (src.localName === 'select') listboxThumb(src, /** @type {HTMLElement} */ (clone), cs, f?.sT ?? src.scrollTop);
@@ -245,31 +256,32 @@ function maybeScroll(ctx, src, clone) {
   for (const x of res.failed) addUnsupported(ctx.unsupported, src, x.error.feature, x.error.message, x.error.hint);
 }
 
-/** @param {Ctx} ctx @param {Element} src @param {Element} clone */
-function cloneChildren(ctx, src, clone) {
+/** @param {Ctx} ctx @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} cs  computed style of `src` */
+function cloneChildren(ctx, src, clone, cs) {
   if (ctx.nodes > ctx.absolute) throw new BudgetExceeded(ctx.nodes);
   /** @type {Rect|null} */
   let window = null;
   const over = ctx.req.scroll?.el === src ? ctx.req.scroll : null;
   if (src.childElementCount > WINDOW_CHILDREN && src.scrollHeight + src.scrollWidth > src.clientHeight + src.clientWidth) {
-    const r = ctx.layer.frameRect(src);
+    const r = ctx.frame(src);
     if (r) window = inflateRect({ x: r.x, y: r.y + (over ? 0 : ctx.shift), width: r.width, height: r.height }, Math.max(r.width, r.height) * 0.6);
   }
   // a page of the scroll compositor renders `src` at another offset: its descendants appear moved by the difference
   const shifted = ctx.shift;
   if (over) ctx.shift = /** @type {HTMLElement} */ (src).scrollTop - over.top;
   try {
-    cloneChildList(ctx, src, clone, window);
+    cloneChildList(ctx, src, clone, window, cs);
   } finally {
     ctx.shift = shifted;
   }
 }
 
-/** @param {Ctx} ctx @param {Element} src @param {Element} clone @param {Rect|null} window */
-function cloneChildList(ctx, src, clone, window) {
+/** @param {Ctx} ctx @param {Element} src @param {Element} clone @param {Rect|null} window @param {CSSStyleDeclaration} srcStyle  computed style of `src` */
+function cloneChildList(ctx, src, clone, window, srcStyle) {
   /** @type {SpacerRun|null} */
   let run = null;
-  const blockParent = ctx.fold && (ctx.keep || window) && /^(block|list-item|flow-root|flex|grid)$/.test(ctx.env.window.getComputedStyle(src).display);
+  const prune = !!(ctx.keep || window);
+  const blockParent = ctx.fold && prune && /^(block|list-item|flow-root|flex|grid)$/.test(srcStyle.display);
   const kids = flatChildren(src);
   const cut = ctx.trunc && ctx.keep && !window && kids.length > TRUNC_MIN_CHILDREN ? truncation(ctx, src, kids) : null;
   const end = cut ? cut.index : kids.length;
@@ -294,7 +306,8 @@ function cloneChildList(ctx, src, clone, window) {
       }
       continue;
     }
-    const info = SKIP.has(el.localName) ? null : spacerInfo(ctx, el, window);
+    const cs = prune && !SKIP.has(el.localName) ? ctx.env.window.getComputedStyle(el) : undefined;
+    const info = cs ? spacerInfo(ctx, el, window, cs) : null;
     if (info) {
       ctx.nodes += 1 + el.getElementsByTagName('*').length;
       if (blockParent && extendRun(run, el, info)) continue;
@@ -304,7 +317,7 @@ function cloneChildList(ctx, src, clone, window) {
       continue;
     }
     run = null;
-    const c = cloneElement(ctx, el);
+    const c = cloneElement(ctx, el, cs);
     if (c) clone.appendChild(c);
   }
   if (!cut) return;
@@ -354,7 +367,7 @@ function truncation(ctx, src, kids) {
   }
   // the first element child whose frame top (live rect shifted like a pruned spacer's) is below the keep region (flow order is top-down), then the checks that make the cut safe
   const bottom = /** @type {Rect} */ (ctx.keep).y + /** @type {Rect} */ (ctx.keep).height;
-  const below = (/** @type {Element} */ el) => { const r = ctx.layer.frameRect(el); return !!r && r.y + ctx.shift >= bottom; };
+  const below = (/** @type {Element} */ el) => { const r = ctx.frame(el); return !!r && r.y + ctx.shift >= bottom; };
   /** @type {number[]} */
   const els = [];
   for (let i = 0; i < kids.length; i++) if (kids[i].nodeType === 1) els.push(i);
@@ -428,12 +441,19 @@ function uniformLine(win, kids, p, at, r) {
  * @param {Element} src @returns {Node[]}
  */
 function flatChildren(src) {
-  if (src.shadowRoot) return Array.from(src.shadowRoot.childNodes);
+  if (src.shadowRoot) return childList(src.shadowRoot);
   if (src.localName === 'slot' && src.getRootNode() instanceof ShadowRoot) {
     const assigned = /** @type {HTMLSlotElement} */ (src).assignedNodes({ flatten: true });
     if (assigned.length) return assigned;
   }
-  return Array.from(src.childNodes);
+  return childList(src);
+}
+
+/** @param {Node} parent @returns {Node[]} its child nodes (a sibling walk: cheaper than copying the live NodeList) */
+function childList(parent) {
+  const out = [];
+  for (let n = parent.firstChild; n; n = n.nextSibling) out.push(n);
+  return out;
 }
 
 /**
@@ -447,9 +467,8 @@ function styledByShadow(src) {
   return !!src.shadowRoot || !!(/** @type {HTMLElement} */ (src).assignedSlot);
 }
 
-/** @param {Ctx} ctx @param {Element} src @param {Element} clone */
-function inlineComputed(ctx, src, clone) {
-  const cs = ctx.env.window.getComputedStyle(src);
+/** @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} cs  computed style of `src` */
+function inlineComputed(src, clone, cs) {
   let text = '';
   for (let i = 0; i < cs.length; i++) {
     const name = cs[i];
@@ -498,7 +517,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   const ctx = {
     env, req, doc, layer, drawable: el, drawables: new Set(layer.drawableElements()), unsupported: [], tokens: createTokenCollector(), ix: interactionContext(req.interaction, layer.element),
     animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, scope: el.getRootNode(), topLayer: topLayerIn(el),
-    shift: 0, selection: null, painter: null,
+    shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el),
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
   if (req.scroll?.hide.length) ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
@@ -757,7 +776,7 @@ function glyphCopy(ctx, src, fr, rect, lineTop, color) {
   if (Math.abs(fr.width - src.offsetWidth) > 0.5 || Math.abs(fr.height - src.offsetHeight) > 0.5) return null;
   const copy = ctx.doc.importNode(src, false);
   cleanAttributes(copy);
-  inlineComputed(ctx, src, copy);
+  inlineComputed(src, copy, ctx.env.window.getComputedStyle(src));
   if (syncNodeState(ctx.env, src, copy, ctx.req, []) !== true) return null;
   // clipped to the selection: its x extent and the line box (the copy has the field's line-height, so 1lh is the same there)
   const y = `calc(${lineTop} - ${n3(fr.y)}px)`;

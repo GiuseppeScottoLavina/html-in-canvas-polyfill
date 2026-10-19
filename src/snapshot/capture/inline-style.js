@@ -22,5 +22,6 @@ export function setInlineStyle(el, cssText) {
  */
 export function appendInlineStyle(el, cssText) {
   const style = /** @type {HTMLElement} */ (el).style;
-  style.cssText = `${style.cssText}${style.cssText && !style.cssText.trimEnd().endsWith(';') ? ';' : ''}${cssText}`;
+  const own = style.cssText;
+  style.cssText = `${own}${own && !own.trimEnd().endsWith(';') ? ';' : ''}${cssText}`;
 }
