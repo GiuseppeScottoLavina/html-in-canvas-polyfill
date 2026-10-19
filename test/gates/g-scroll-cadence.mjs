@@ -7,7 +7,7 @@
 //   compose  the scroll compositor drew the steps (snapshot stats): a scroll is not re-photographed per frame.
 //   pixel    samples of the canvas taken INSIDE paint handlers during the stream each equal the plain-DOM twin at one of the offsets the list had in the frames
 //            just before (a composed frame shows the live offset, a fallback tile a slightly older one; anything else is a wrong frame), and the settled canvas
-//            equals the twin at the final offset. Hover: the twin's pointer rests on the same point, so its hovered row is the one the canvas must show.
+//            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row.
 // Positive control (sabotage stale + nosync + nocompose): only the first draw reaches the canvas, the live scroller is never synchronised, and every scroll
 // scroller under the pointer gets an empty position:fixed child (no plan for it): every class must go red.
 import { runGate, H } from './lib/gate.mjs';
@@ -126,19 +126,26 @@ runGate('G-scroll-cadence', async (ctx) => {
     if (c.compose > 0) ctx.check(`${c.name}: the scroll compositor drew >= ${c.compose * 100} % of them, from the first gesture on`, composed >= c.compose * k.moved, { composed, moved: k.moved, ...numbers[c.name] }, 'compose');
 
     // pixels of the frames the canvas showed during the stream
-    const samples = await page.evaluate('window.__rec.samples.map((s) => ({ t: s.t, top: s.top }))');
+    const samples = await page.evaluate('window.__rec.samples.map((s) => ({ t: s.t, top: s.top, hov: s.hov }))');
     await ctx.focus(ref);
     await ref.mouseMove(geo.at.x - 30, geo.at.y);
     await ref.mouseMove(geo.at.x, geo.at.y);
-    /** @type {Map<number, any>} */
+    // with :hover rows a frame is a pair (offset, hovered row): the twin is put in that state (its pointer on that row), any other case ignores the row
+    const withHover = !!c.params.hover;
+    /** @type {Map<string, any>} */
     const twin = new Map();
-    const twinAt = async (top) => {
-      if (twin.has(top)) return twin.get(top);
+    const twinAt = async (/** @type {number} */ top, /** @type {number} */ hov) => {
+      const key = withHover ? `${top}|${hov}` : `${top}`;
+      if (twin.has(key)) return twin.get(key);
       await ref.evaluate(`document.getElementById('list').scrollTop = ${top}`);
+      if (withHover) {
+        const at = hov < 0 ? { x: geo.at.x + 500, y: geo.at.y } : await ref.evaluate(`(() => { const r = document.getElementById('rows').children[${hov}].getBoundingClientRect(); const l = document.getElementById('list').getBoundingClientRect(); return { x: ${geo.at.x}, y: Math.min(l.bottom - 2, Math.max(l.top + 46, r.top + r.height / 2)) }; })()`);
+        await ref.mouseMove(at.x, at.y);
+      }
       await H.sleep(250);
       const shot = await H.screenshotElement(ref, '#list');
-      twin.set(top, { img: shot.img, top: await ref.evaluate(`document.getElementById('list').scrollTop`) });
-      return twin.get(top);
+      twin.set(key, { img: shot.img, top: await ref.evaluate(`document.getElementById('list').scrollTop`) });
+      return twin.get(key);
     };
     const misses = [];
     let checked = 0;
@@ -147,20 +154,21 @@ runGate('G-scroll-cadence', async (ctx) => {
       const s = samples[i];
       const png = await page.evaluate(`window.__rec.png(${i})`);
       const shot = cropList(H.decodePng(Buffer.from(png.split(',')[1], 'base64')), geo);
-      const cands = [...new Set([s.top, ...frames.filter((f) => f[0] <= s.t && f[0] >= s.t - 45).map((f) => f[1])])];
+      const seen = new Set();
+      const cands = [[s.top, s.hov], ...frames.filter((f) => f[0] <= s.t && f[0] >= s.t - 45).map((f) => [f[1], f[3]])].filter(([t, h]) => { const k = withHover ? `${t}|${h}` : `${t}`; return !seen.has(k) && seen.add(k); });
       let best = null;
-      for (const top of cands) {
-        const tw = await twinAt(top);
+      for (const [top, hov] of cands) {
+        const tw = await twinAt(top, hov);
         const d = H.compareImages(shot, tw.img, { tolerance: TOLERANCE, diffImage: false });
         const f = d.sizeMatch ? d.fraction : 1;
-        if (!best || f < best.fraction) best = { top, fraction: f, corner: d.sizeMatch ? cornerDiff(shot, tw.img, geo.dpr) : 1, sizes: d.sizes, bbox: d.overBBox };
+        if (!best || f < best.fraction) best = { top, hov, fraction: f, corner: d.sizeMatch ? cornerDiff(shot, tw.img, geo.dpr) : 1, sizes: d.sizes, bbox: d.overBBox };
       }
       checked++;
       worstCorner = Math.max(worstCorner, best?.corner ?? 1);
       if (!best || best.fraction > MAX_FRACTION || best.corner > MAX_CORNER) misses.push({ sample: i, top: s.top, cands, best });
     }
     numbers[`${c.name}Samples`] = { checked, worstCorner, misses: misses.slice(0, 4) };
-    if (misses.length && process.argv.includes('--dump')) { const { writeFileSync } = await import('node:fs'); const m0 = misses[0]; const png = await page.evaluate(`window.__rec.png(${m0.sample})`); writeFileSync('/tmp/gsc-canvas.png', Buffer.from(png.split(',')[1], 'base64')); writeFileSync('/tmp/gsc-twin.png', H.encodePng(twin.get(m0.best.top).img)); writeFileSync('/tmp/gsc-crop.png', H.encodePng(cropList(H.decodePng(Buffer.from(png.split(',')[1], 'base64')), geo))); }
+    if (misses.length && process.argv.includes('--dump')) { const { writeFileSync } = await import('node:fs'); const m0 = misses[0]; const png = await page.evaluate(`window.__rec.png(${m0.sample})`); writeFileSync('/tmp/gsc-canvas.png', Buffer.from(png.split(',')[1], 'base64')); writeFileSync('/tmp/gsc-twin.png', H.encodePng(twin.get(withHover ? `${m0.best.top}|${m0.best.hov}` : `${m0.best.top}`).img)); writeFileSync('/tmp/gsc-crop.png', H.encodePng(cropList(H.decodePng(Buffer.from(png.split(',')[1], 'base64')), geo))); }
     ctx.check(`${c.name}: every canvas frame sampled during the stream (${checked}) equals the twin at an offset the list had (tolerance ${TOLERANCE}, <= ${MAX_FRACTION * 100} %; each corner of the list <= ${MAX_CORNER * 100} % above 16)`, checked >= 4 && misses.length === 0, numbers[`${c.name}Samples`], 'pixel');
 
     // the settled canvas at the final offset
@@ -169,6 +177,7 @@ runGate('G-scroll-cadence', async (ctx) => {
     const poly = await H.readCanvas(page, '#stage');
     await ctx.focus(ref);
     await ref.evaluate(`document.getElementById('list').scrollTop = ${fin}`);
+    await ref.mouseMove(geo.at.x, geo.at.y);
     await H.sleep(250);
     const want = await H.screenshotElement(ref, '#stage');
     const d = H.compareImages(H.compositeOver(poly, [255, 255, 255]), want.img, { tolerance: TOLERANCE, diffImage: false });

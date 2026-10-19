@@ -67,13 +67,16 @@
       if (R.on && R.every && R.samples.length < R.max && window.__paints % R.every === 0) {
         const copy = new OffscreenCanvas(canvas.width, canvas.height);
         copy.getContext('2d').drawImage(canvas, 0, 0);
-        R.samples.push({ t: performance.now(), top: list.scrollTop, copy });
+        R.samples.push({ t: performance.now(), top: list.scrollTop, hov: R.hov ? R.hov() : -1, copy });
       }
     };
     new ResizeObserver((e) => { const b = e[0].devicePixelContentBoxSize[0]; canvas.width = b.inlineSize; canvas.height = b.blockSize; }).observe(canvas, { box: 'device-pixel-content-box' });
     R.start = (every, max) => {
       Object.assign(R, { on: true, frames: [], samples: [], every, max });
-      const f = (t) => { if (!R.on) return; R.frames.push([t, list.scrollTop, window.__paints]); requestAnimationFrame(f); };
+      // the hovered row of each frame: during a scroll the engine moves :hover to the row under the still pointer a frame or so after the row arrives there
+      const hov = () => { const h = rows.querySelector('li:hover'); return h ? Array.prototype.indexOf.call(rows.children, h) : -1; };
+      R.hov = hov;
+      const f = (t) => { if (!R.on) return; R.frames.push([t, list.scrollTop, window.__paints, hov()]); requestAnimationFrame(f); };
       requestAnimationFrame(f);
     };
     R.stop = () => { R.on = false; return R.frames; };
