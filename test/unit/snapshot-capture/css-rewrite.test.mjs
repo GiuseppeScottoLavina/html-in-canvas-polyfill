@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseRules, serializeRules, splitSelectorList, mapSelectors, rewriteViewportUnits, rewriteRootSelectors, rewriteInteractionPseudos, detectPseudos,
+  hoverChangesLayout, parseRules, serializeRules, splitSelectorList, mapSelectors, rewriteViewportUnits, rewriteRootSelectors, rewriteInteractionPseudos, detectPseudos,
   dropUnclonableSelectors, rewriteCanvasSelectors, rewriteHostSelectors, rewriteLinkPseudos,
 } from '../../../src/snapshot/capture/css-rewrite.js';
 
@@ -62,8 +62,8 @@ test('pseudo rewrite keeps escaped class names, pseudo-element compounds and att
 });
 
 test('detectPseudos reports which interaction pseudo-classes occur', () => {
-  assert.deepEqual(detectPseudos('a:hover{} b:focus-visible{}'), { hover: true, active: false, focus: false, focusVisible: true, focusWithin: false });
-  assert.deepEqual(detectPseudos('a{} .x\\:hover{}'), { hover: false, active: false, focus: false, focusVisible: false, focusWithin: false });
+  assert.deepEqual(detectPseudos('a:hover{} b:focus-visible{}'), { hover: true, active: false, focus: false, focusVisible: true, focusWithin: false, hoverLayout: false });
+  assert.deepEqual(detectPseudos('a{} .x\\:hover{}'), { hover: false, active: false, focus: false, focusVisible: false, focusWithin: false, hoverLayout: false });
   assert.equal(detectPseudos('a:focus-within{}').focus, false);
   assert.equal(detectPseudos('a:focus-within{}').focusWithin, true);
 });
@@ -98,4 +98,17 @@ test('rewriteLinkPseudos: :link and :any-link become :where(a,area)[href] (same 
   assert.equal(rewriteLinkPseudos('a:link{a:b}:any-link{c:d}.x:not(:link) b{e:f}'), 'a:where(a,area)[href]{a:b}:where(a,area)[href]{c:d}.x:not(:where(a,area)[href]) b{e:f}');
   assert.equal(rewriteLinkPseudos('.a::before{content:":link"}.l:linked{a:b}.hover-link{c:d}'), '.a::before{content:":link"}.l:linked{a:b}.hover-link{c:d}');
   assert.equal(dropUnclonableSelectors(rewriteLinkPseudos('a:visited{a:b}a:link, a:visited{c:d}')), 'a:where(a,area)[href]{c:d}');
+});
+
+test('hoverChangesLayout: only paint properties under :hover are paint-only; a box, a display or a custom property is not', () => {
+  assert.equal(hoverChangesLayout('li:hover{background:#cfdcf8;color:red;border-color:blue;box-shadow:0 0 2px red;outline:1px solid}'), false);
+  assert.equal(hoverChangesLayout('li{padding:4px} li:hover{background-color:red}'), false, 'layout properties outside :hover rules do not count');
+  assert.equal(hoverChangesLayout('li:hover{padding:6px}'), true);
+  assert.equal(hoverChangesLayout('.m:hover .sub{display:block}'), true);
+  assert.equal(hoverChangesLayout('li:hover{--x:1}'), true, 'a custom property can feed anything');
+  assert.equal(hoverChangesLayout('li:hover{border:1px solid red}'), true, 'the border shorthand sets a width');
+  assert.equal(hoverChangesLayout('@media (min-width:1px){li:hover{transform:scale(1.1)}}'), true, 'inside a group rule');
+  assert.equal(hoverChangesLayout('li{&:hover{width:10px}}'), true, 'a nested :hover rule');
+  assert.equal(hoverChangesLayout('li:hover{& b{margin:2px}}'), true, 'a rule nested in a :hover rule');
+  assert.equal(hoverChangesLayout('li{&:hover{color:red}}'), false);
 });

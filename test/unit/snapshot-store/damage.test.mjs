@@ -208,3 +208,40 @@ test('in-flight tiles of an older epoch do not count as covering either', () => 
   d.mark(el, null, 'resize', 3);
   assert.deepEqual(d.reclaim(el, g1.rect, g1.generation), A);
 });
+
+test('pendingScroll: scroll damage alone, or with hover inside the scrolled box; anything else, or hover outside it, is not', () => {
+  const riders = new Set(['hover']);
+  const list = { x: 0, y: 0, width: 100, height: 300 };
+  let { d, el } = fresh();
+  assert.equal(d.pendingScroll(el, riders), false, 'nothing pending');
+  d.mark(el, list, 'scroll', 0);
+  assert.equal(d.pendingScroll(el, riders), true);
+  d.mark(el, { x: 0, y: 40, width: 100, height: 30 }, 'hover', 0);
+  assert.equal(d.pendingScroll(el, riders), true, 'a row under the still pointer rides along');
+  d.mark(el, { x: 120, y: 40, width: 30, height: 30 }, 'hover', 0);
+  assert.equal(d.pendingScroll(el, riders), false, 'hover outside the scrolled box does not');
+  ({ d, el } = fresh());
+  d.mark(el, list, 'scroll', 0);
+  d.mark(el, { x: 0, y: 40, width: 10, height: 10 }, 'mutation', 0);
+  assert.equal(d.pendingScroll(el, riders), false, 'a DOM change keeps every limit');
+  ({ d, el } = fresh());
+  d.mark(el, { x: 0, y: 40, width: 10, height: 10 }, 'hover', 0);
+  assert.equal(d.pendingScroll(el, riders), false, 'hover without scroll');
+  ({ d, el } = fresh());
+  d.mark(el, null, 'scroll', 0);
+  assert.equal(d.pendingScroll(el, riders), false, 'whole-drawable damage');
+  ({ d, el } = fresh());
+  d.mark(el, list, 'scroll', 0);
+  d.take(el);
+  assert.equal(d.pendingScroll(el, riders), false, 'taken');
+});
+
+test('pendingScroll: a rider may reach past the scrolled box by the slack (its ink margin), not further', () => {
+  const riders = new Set(['hover']);
+  const { d, el } = fresh();
+  d.mark(el, { x: 10, y: 10, width: 100, height: 300 }, 'scroll', 0);
+  d.mark(el, { x: -14, y: 40, width: 148, height: 80 }, 'hover', 0);
+  assert.equal(d.pendingScroll(el, riders), false);
+  assert.equal(d.pendingScroll(el, riders, 25), true);
+  assert.equal(d.pendingScroll(el, riders, 23), false);
+});

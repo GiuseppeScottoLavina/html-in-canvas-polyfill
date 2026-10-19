@@ -61,7 +61,7 @@ Texture upload errors on missing or too small storage are GL errors (`gl.getErro
 | `canvas-child` | a `<canvas>` child larger than the size budget, or tainted | draw big canvases outside the drawable; load images with CORS |
 | `video-controls` | `<video controls>`: the control bar is native UI | draw your own controls inside the drawable |
 | `container-queries` | `@container` rules whose container is outside the canvas | put `container-type` on an element inside the canvas |
-| `node-budget` (degrade) | more than `nodeBudget.hard` (3000) nodes: updated at most 4 times per second | split the content into several drawables or render less DOM |
+| `node-budget` (degrade) | more than `nodeBudget.hard` (3000) nodes: updated at most 4 times per second (scrolling inside it is not slowed down) | split the content into several drawables or render less DOM |
 | `node-budget` (absolute) | more than `nodeBudget.absolute` (20000) nodes: refused, placeholder | same |
 | `surface-size` | the drawable does not fit `maxSurfacePixels` / `maxTotalSurfaceBytes` / the canvas dimension limit (raster scale reduced, or refused below 0.25) | lower `maxDpr` or the drawable size, raise the budgets, reduce the number of drawables |
 | `context-loss` | a retained 2D surface lost its context; the drawable is re-rastered (`no action needed`) | none; the page shows the last good frame where it can, recovery up to 3 frames |

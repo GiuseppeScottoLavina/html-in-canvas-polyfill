@@ -17,7 +17,7 @@ export {};
 /**
  * @typedef {Object} NodeBudget
  * @property {number} soft  nodes cloned per commit above which damage-pruned clone + adaptive cadence engage (default 350)
- * @property {number} hard  nodes in ONE drawable above which the drawable is degraded to <= 4 fps and reported (default 3000)
+ * @property {number} hard  nodes in ONE drawable above which the drawable is degraded to <= 4 fps (its inner scrolling excepted) and reported (default 3000)
  * @property {number} absolute nodes in ONE drawable above which capture is refused with HicUnsupportedError('node-budget') (default 20000)
  */
 
@@ -188,6 +188,7 @@ export {};
  * @property {(id: number) => void} add  per-canvas anchor rule
  * @property {(id: number) => void} remove
  * @property {GeometryRules} geometry
+ * @property {GeometryRules} scroll  rules keyed by MARK.SCROLL_ATTR (live/scroll-sync.js)
  * @property {() => void} dispose
  */
 
@@ -318,6 +319,8 @@ export {};
  * @property {(order: Element[]) => void} setHitTestOrder  z-order for hit testing (bottom to top); elements not in `order` lose BUS HIT_ATTR (pointer-events:none)
  * @property {(cb: (c: ChildrenChange) => void) => () => void} onChildrenChanged  logical child list changes (facade writes + relocated MutationObserver)
  * @property {(point: {x:number,y:number}) => Element|null} elementAtPoint  hit test in viewport css px honoring slots (interposer + tests)
+ * @property {(el: Element, on: boolean) => void} [syncScroll]  a live scroller inside a drawable starts (true) or stops (false) scrolling: while on, the compositor waits for the main frame of each scroll step (live/scroll-sync.js; Chromium only, a no-op elsewhere)
+ * @property {(el: Element) => {boxShadow: string, backgroundImage: string, backgroundAttachment: string}|null} [scrollAuthorStyle]  the author's computed values of the properties syncScroll overrides, while it overrides them; null otherwise
  * @property {() => void} dispose
  */
 
@@ -401,7 +404,7 @@ export {};
  * @property {number} dropped  results discarded as stale
  * @property {number} redamaged  dropped results whose uncovered rect was re-marked as damage (ADR-B)
  * @property {number} surfaceRestores  retained surfaces re-rastered after a 2D context loss (ADR-B)
- * @property {{plans: number, refusals: number, pages: number, pins: number, failed: number, composed: number, fallbacks: number, droppedEpoch: number, droppedGeometry: number}} [scroll]  scroll compositor counters (scroll-compose.js)
+ * @property {{plans: number, refusals: number, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number}} [scroll]  scroll compositor counters (scroll-compose.js): `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile
  */
 
 /**
@@ -420,7 +423,7 @@ export {};
  * @property {(el: Element) => boolean} has  the store tracks el (eligible drawable with a CSS box)
  * @property {(el: Element) => boolean} isSettled  no damage pending, nothing building/decoding for el
  * @property {(record: CanvasRecord) => boolean} isFresh  no eligible, laid-out drawable of the canvas has damage waiting for a build or a build in flight (refused, lost and repeatedly failing ones do not count)
- * @property {(drawable: Element, scroller: Element) => void} scrollSettled  the scrolling of `scroller` paused: a scroller the compositor does not know yet is planned and its first pages are built in the next pump
+ * @property {(drawable: Element, scroller: Element) => void} scrollSettled  `scroller` was seen (the pointer is over it, it scrolled, or its scrolling paused): a scroller the compositor does not know yet is planned and its first pages are built in the next post-frame pump
  * @property {(drawable: Element, scroller: Element) => boolean} scrollCompose  a scroll event of `scroller`: true when the next commit shows its live offset by composing cached pages (the caller then asks for the exact tile only once the scrolling stops); false = damage it as usual
  * @property {(drawable: Element, control: Element|null) => void} caretNow  the focus moved: the next commit shows the caret of `control` measured from the live field (null: the drawable loses its caret), before the tile with the focus styles lands
  * @property {(drawable: Element, control: Element) => boolean} overlayText  optimistic text overlay: the next commit paints the live value of the focused field `control` into `drawable`'s surface (no-op without StoreExtras.textOverlay). true: the field's last overlay worked, so its snapshot may wait for the typing to pause (if this one fails, the store damages the field itself)
@@ -468,7 +471,7 @@ export {};
  * @property {boolean} prune          budget.soft exceeded: only clone what intersects `rect` (+ ancestor skeleton + spacers)
  * @property {InteractionSnapshot} interaction  hover/active chains, focus, caret phase at request time (the clone mirrors them as classes)
  * @property {Element} [hideText]     this field is cloned with transparent text: the backdrop tile of the optimistic text overlay
- * @property {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb'}} [scroll]  a PAGE of the scroll compositor: the scroller `el` is rendered at scrollTop `top` instead of its live offset, the `hide` elements (pinned sticky descendants) invisible; `bars`: only the classic bar's track (thumb hidden) or only its thumb (everything else invisible)
+ * @property {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'}} [scroll]  a PAGE of the scroll compositor: the scroller `el` is rendered at scrollTop `top` instead of its live offset, the `hide` elements (pinned sticky descendants) invisible; `bars`: only the classic bar's track (thumb hidden) or only its thumb (everything else invisible); `shape` (a rounded scroller): 'square' renders `el` with square corners (the compositor clips to the rounded port), 'backdrop' renders it without its content (what lies under that clip)
  */
 
 /**
@@ -491,7 +494,7 @@ export {};
  * @typedef {Object} CssBundle  Flattened stylesheet text for one capture (snapshot/css-collector.js). Cached by `key`.
  * @property {string} css
  * @property {string} key       changes whenever css would change (viewport, dpr, stylesheet set/version, color-scheme)
- * @property {{hover:boolean, active:boolean, focus:boolean, focusVisible:boolean, focusWithin:boolean}} pseudo  which interaction pseudo-classes appear in any rule (skip damage for the others)
+ * @property {{hover:boolean, active:boolean, focus:boolean, focusVisible:boolean, focusWithin:boolean, hoverLayout?:boolean}} pseudo  which interaction pseudo-classes appear in any rule (skip damage for the others); `hoverLayout`: a :hover rule sets a property that is not paint-only (absent = assume it does)
  * @property {string[]} pendingUrls  url()s still being fetched (result.complete will be false)
  */
 
@@ -504,7 +507,7 @@ export {};
  * @property {(fn: () => void) => void} [nextTask]  runs a deferred decode start in a later task (tests; default: a MessageChannel task, none when `decode` is given)
  * @property {(control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null} [textOverlay]  plans the optimistic text overlay (Capture.textOverlay); absent = no overlay
  * @property {(control: Element, frame: Rect) => {rect: Rect, color: string}|null} [caretOf]  measures the caret of a focused text control (Capture.caretOf); absent = the caret comes with the next tile
- * @property {(scroller: Element, drawable: Element, layer: LiveLayer) => ScrollPlan|null} [scrollPlan]  plans the scroll compositor (Capture.scrollPlan); absent = every scroll step is built
+ * @property {(scroller: Element, drawable: Element, layer: LiveLayer) => ScrollPlan|null|Iterator<void, ScrollPlan|null, void>} [scrollPlan]  plans the scroll compositor (Capture.scrollPlan: the steps of the plan, one post-frame task each); absent = every scroll step is built
  */
 
 /**
@@ -518,7 +521,7 @@ export {};
  */
 
 /**
- * @typedef {CaptureFn & {resources: ResourceCache, invalidateStyles: () => void, cssBundle: (record: CanvasRecord, resources: ResourceCache) => CssBundle, textOverlay?: (control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null, scrollPlan?: (scroller: Element, drawable: Element, layer: LiveLayer) => ScrollPlan|null, caretOf?: (control: Element, frame: Rect) => {rect: Rect, color: string}|null}} Capture
+ * @typedef {CaptureFn & {resources: ResourceCache, invalidateStyles: () => void, cssBundle: (record: CanvasRecord, resources: ResourceCache) => CssBundle, textOverlay?: (control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null, scrollPlan?: (scroller: Element, drawable: Element, layer: LiveLayer) => Iterator<void, ScrollPlan|null, void>, caretOf?: (control: Element, frame: Rect) => {rect: Rect, color: string}|null}} Capture
  *   What createCapture returns: the CaptureFn plus its resource cache (hand it to the store), a stylesheet-epoch invalidator and the cached CssBundle (the tracker reads `.pseudo`).
  */
 
@@ -545,6 +548,8 @@ export {};
  * @property {{gutter: Rect, thumbX: number, thumbW: number, thumbH: number, thumbY: (top: number) => number}|null} bar  the vertical classic scrollbar the polyfill paints in the gutter (null: overlay bars, no gutter)
  * @property {number} maxTop
  * @property {number} scrollHeight
+ * @property {{tl: {x: number, y: number}, tr: {x: number, y: number}, br: {x: number, y: number}, bl: {x: number, y: number}}|null} [round]  inner radii of a rounded padding box (the port and a classic bar gutter; css px); null/absent = square
+ * @property {(rects: Rect[]) => boolean} [clear]  hit test: true when nothing outside the scroller covers the port inside these rects (frame css px), now
  */
 
 /** @typedef {(req: CaptureRequest) => CaptureResult} CaptureFn  SYNCHRONOUS part of a capture: clone + css + serialise + encode to a data: URL. Decode is the store's job. Must not throw: failures become result.unsupported + a placeholder. */

@@ -224,6 +224,9 @@ function cloneElement(ctx, src) {
     appendInlineStyle(clone, 'visibility:hidden!important');
     clone.setAttribute('data-hic-hide', '');
   }
+  // a rounded scroller: square corners (the compositor clips to the rounded port itself), or its backdrop (the content hidden)
+  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'square') appendInlineStyle(clone, 'border-radius:0!important');
+  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'backdrop') clone.setAttribute('data-hic-hide', '');
   if (ctx.animated?.has(src)) freezeAnimations(src, /** @type {HTMLElement} */ (clone));
   ctx.tokens.add(clone);
   if (!replaced && !LEAF_TAGS.has(ln)) cloneChildren(ctx, src, clone);
@@ -501,10 +504,11 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
     shift: 0, selection: null, painter: null,
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
-  if (req.scroll?.hide.length) ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
+  if (req.scroll?.hide.length || req.scroll?.shape === 'backdrop') ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
   // the scroll compositor's classic-bar tiles: the track without its thumb, or the thumb alone on a transparent backdrop
   if (req.scroll?.bars === 'track') ctx.scroll.rules.push('[data-hic-bar=thumb]{visibility:hidden!important}');
-  if (req.scroll?.bars === 'thumb') ctx.scroll.rules.push('*{visibility:hidden!important}[data-hic-bar=thumb]{visibility:visible!important}');
+  // (scoped to the clone root: a hidden svg / foreignObject would paint nothing at all)
+  if (req.scroll?.bars === 'thumb') ctx.scroll.rules.push(`.${MARK.CLS_ROOT},.${MARK.CLS_ROOT} *{visibility:hidden!important}[data-hic-bar=thumb]{visibility:visible!important}`);
   const animations = live.getAnimations ? live.getAnimations() : [];
   if (animations.length) ctx.animated = new Set(animations.map((a) => /** @type {KeyframeEffect|null} */ (a.effect)).filter((e) => e && !e.pseudoElement).map((e) => /** @type {Element} */ (e?.target)));
 

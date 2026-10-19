@@ -31,7 +31,7 @@ export const WHOLE_RECT = Object.freeze({ x: -1e9, y: -1e9, width: 2e9, height: 
  * @property {number} gen          last generation handed out
  * @property {number} lastCommitted
  * @property {boolean} takenSinceBump  an epoch bump only matters to builds taken before it
- * @property {{whole: boolean, rect: Rect|null, causes: Set<string>, since: number}|null} pending
+ * @property {{whole: boolean, rect: Rect|null, causes: Set<string>, since: number, scroll: Rect|null, others: Rect|null}|null} pending  `scroll` / `others`: the union of the 'scroll' rects and of every other cause's rects
  * @property {Map<number, Tile>} inflight  taken, not yet committed or reclaimed
  * @property {Array<Tile & {gen: number}>} committedTiles  kept only while an older generation is still unresolved
  */
@@ -79,9 +79,11 @@ export class DamageTracker {
 
   /** @param {ElState} s @param {Rect|null} rect null = whole @param {Iterable<string>} causes @param {number} now */
   #addPending(s, rect, causes, now) {
-    const p = s.pending ?? (s.pending = { whole: false, rect: null, causes: new Set(), since: now });
+    const p = s.pending ?? (s.pending = { whole: false, rect: null, causes: new Set(), since: now, scroll: null, others: null });
     if (rect === null) { p.whole = true; p.rect = null; } else if (!p.whole) p.rect = unionRect(p.rect, rect);
-    for (const c of causes) p.causes.add(c);
+    const list = [...causes];
+    for (const c of list) p.causes.add(c);
+    if (rect && list.length === 1 && list[0] === 'scroll') p.scroll = unionRect(p.scroll, rect); else if (rect) p.others = unionRect(p.others, rect);
   }
 
   /** Mark damage; structural causes bump the epoch and widen to the whole drawable. @param {Element} el @param {Rect|null} rect @param {DamageCause} cause @param {number} now */
@@ -116,6 +118,21 @@ export class DamageTracker {
   /** @param {object} el @param {string} cause @returns {boolean} the pending damage includes `cause` */
   hasPendingCause(el, cause) {
     return !!this.states.get(el)?.pending?.causes.has(cause);
+  }
+
+  /**
+   * Scroll damage, alone or with changes that lie inside the scrolled boxes (the rows a stationary pointer hovers as they pass under it): a build of it costs what
+   * the scroll alone costs.
+   * @param {object} el @param {ReadonlySet<string>} riders causes that may ride along @param {number} [slack] css px by which a rider may reach past the scrolled box (its ink margin: the tile grows by it anyway)
+   * @returns {boolean}
+   */
+  pendingScroll(el, riders, slack = 0) {
+    const p = this.states.get(el)?.pending;
+    if (!p || p.whole || !p.scroll || !p.causes.has('scroll')) return false;
+    for (const c of p.causes) if (c !== 'scroll' && !riders.has(c)) return false;
+    const o = p.others;
+    const b = p.scroll;
+    return !o || (o.x >= b.x - slack && o.y >= b.y - slack && o.x + o.width <= b.x + b.width + slack && o.y + o.height <= b.y + b.height + slack);
   }
 
   /**

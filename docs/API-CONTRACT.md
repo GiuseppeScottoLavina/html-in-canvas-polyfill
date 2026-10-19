@@ -294,9 +294,10 @@ The frame cap and the effects host are extensions of this library. They are not 
   setter writes the attribute; values above 240 clamp. A change takes effect on the next tick (<= 1 frame).
   Clamping rules (`src/api/validate.js`): the property is an IDL `unsigned long`, so the setter converts with ToUint32 and then clamps to 240: `300` -> 240, `12.9` -> 12, `NaN`, `'abc'`, `undefined` -> 0 (uncapped), and a negative number wraps modulo 2^32 to a huge value and therefore becomes 240 (`-5` -> 240, not 0). The attribute follows the HTML rules for parsing non-negative integers (leading digits kept, trailing text ignored, clamped to 240): `"999"` -> 240, `"30fps"` -> 30; a missing or non-numeric value (`"abc"`, `"-5"`, `""`) means `options.defaultFrameCap`.
 - Semantics: the effective cap `F` (fps) is an upper bound, per canvas, on (1) `paint` events, (2) effect frames (`effectframe`),
-  and (3) snapshot build starts together with `options.maxSnapshotFps` (default 60): `min(F, maxSnapshotFps)` when both non-zero. One exception to
+  and (3) snapshot build starts together with `options.maxSnapshotFps` (default 60): `min(F, maxSnapshotFps)` when both non-zero. Two exceptions to
   `maxSnapshotFps` only (never to `F`): the re-raster of a canvas resize / DPR change built inside the frame of the change, because the retained tile then has the
-  wrong geometry.
+  wrong geometry; and the build of a scroller's own scroll damage when nothing else is pending for the drawable but hover changes inside that scroller (rows passing
+  under a still pointer), which `nodeBudget.hard` does not slow down either: a native scroller presents every frame, and the main-thread cost bucket still bounds it.
   Frames are paced by a phase accumulator (not "now - last >= interval") so a 60 fps cap on a 120 Hz display renders every second
   rAF, not every 2.5th.
 - **Who honours the cap.** `requestPaint()` is a request, not a bypass: the `paint` it asks for fires on the first tick the cap
@@ -455,7 +456,7 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | placeholder for the element (image) or fallback font, entry |
 | `resource-fetch-failed` | fetch error / undecodable | as above |
 | `worker-element-image` | `postMessage(elementImage, [elementImage])` | `HicUnsupportedError` with the `toImageBitmap()` hint |
-| `node-budget` | a drawable above `nodeBudget.absolute` nodes | placeholder + entry (above `hard`: degraded to <= 4 fps, reported) |
+| `node-budget` | a drawable above `nodeBudget.absolute` nodes | placeholder + entry (above `hard`: degraded to <= 4 fps except for its inner scrolling, reported) |
 
 ### 9.3 Documented deviations (rows with status `deviation`; each is recorded in `report().deviations` when exercised)
 `paint-timing`, `paint-dom-write-timing`, `event-untrusted`, `contain-layout`, `a11y-geometry`, `resize-stale-first`, `css-transform-on-drawable`, `paint-order`.

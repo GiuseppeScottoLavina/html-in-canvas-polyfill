@@ -18,7 +18,7 @@ import { buildSvgDataUrl, cropPixels } from './svg-builder.js';
 import { engineSkins } from './engine-skins.js';
 import { planTextOverlay } from './text-overlay.js';
 import { measureCaret } from './caret-overlay.js';
-import { planScrollPages } from './scroll-pages.js';
+import { planSteps } from './scroll-pages.js';
 
 /** @typedef {import('../../contracts/types.js').Capture} Capture */
 /** @typedef {import('../../contracts/types.js').CaptureFn} CaptureFn */
@@ -177,7 +177,7 @@ export function createCapture(env) {
     }
   }, { resources, invalidateStyles: () => collector.invalidate(), cssBundle: (/** @type {import('../../contracts/types.js').CanvasRecord} */ record, /** @type {ResourceCache} */ resources) => collector.bundle(record, resources),
     textOverlay: (/** @type {Element} */ control, /** @type {Element} */ drawable, /** @type {Rect} */ frame, /** @type {number} */ epoch) => planTextOverlay(env.document, control, drawable, frame, epoch),
-    scrollPlan: (/** @type {Element} */ scroller, /** @type {Element} */ drawable, /** @type {import('../../contracts/types.js').LiveLayer} */ layer) => planScrollPages(env.document, layer, scroller, drawable),
+    scrollPlan: (/** @type {Element} */ scroller, /** @type {Element} */ drawable, /** @type {import('../../contracts/types.js').LiveLayer} */ layer) => planSteps(env.document, layer, scroller, drawable),
     caretOf: (/** @type {Element} */ control, /** @type {Rect} */ frame) => measureCaret(env.document, control, frame) });
   return capture;
 }

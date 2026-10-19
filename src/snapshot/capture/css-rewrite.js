@@ -282,8 +282,38 @@ export function rewriteInteractionPseudos(css) {
  */
 export function detectPseudos(css) {
   const has = (/** @type {string} */ name) => new RegExp(`(?<![\\\\:]):${name}(?![\\w-])`).test(css);
-  return { hover: has('hover'), active: has('active'), focus: has('focus'), focusVisible: has('focus-visible'), focusWithin: has('focus-within') };
+  const hover = has('hover');
+  return { hover, active: has('active'), focus: has('focus'), focusVisible: has('focus-visible'), focusWithin: has('focus-within'), hoverLayout: hover && hoverChangesLayout(css) };
 }
+/** properties that change only how a box paints, never its size or position nor anyone else's */
+const PAINT_ONLY = /^(?:color|background(?:-[a-z-]+)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?-color|outline(?:-[a-z]+)?|box-shadow|text-shadow|text-decoration(?:-[a-z]+)?|text-emphasis-color|opacity|visibility|cursor|fill(?:-opacity)?|stroke(?:-[a-z]+)?|caret-color|accent-color|column-rule-color|-webkit-text-(?:fill|stroke)-color|transition(?:-[a-z]+)?)$/;
+const HOVER = /(?<![\\:]):hover(?![\w-])/;
+
+/**
+ * PURE. Does any :hover rule (a style rule whose selector, or an enclosing nested rule's, has :hover) declare a property outside PAINT_ONLY (a box, a position, a
+ * display, a custom property)? Then a hover change may move other elements.
+ * @param {string} css
+ * @returns {boolean}
+ */
+export function hoverChangesLayout(css) {
+  /** @param {RuleNode[]} nodes @param {boolean} inHover @returns {boolean} */
+  const walk = (nodes, inHover) => nodes.some((r) => {
+    if (r.k === 'group') return walk(/** @type {RuleNode[]} */ (r.kids), inHover);
+    if (r.k !== 'style') return false;
+    const hover = inHover || HOVER.test(r.pre);
+    const inner = parseRules(r.body);
+    if (hover) {
+      for (const d of inner) {
+        if (d.k !== 'stmt') continue;
+        const name = /^\s*(-?-?[\w-]+)\s*:/.exec(d.pre)?.[1]?.toLowerCase();
+        if (name && !PAINT_ONLY.test(name)) return true;
+      }
+    }
+    return walk(inner.filter((d) => d.k !== 'stmt'), hover);
+  });
+  return walk(parseRules(css), false);
+}
+
 
 /**
  * Selectors the clone must not carry: :visited (privacy), ::-webkit-scrollbar* (scrollbars are painted by the polyfill, ADR-E).

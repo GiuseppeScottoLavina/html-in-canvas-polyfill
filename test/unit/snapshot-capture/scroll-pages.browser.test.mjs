@@ -2,8 +2,8 @@
 // header's own tile must equal a capture at the live offset; every scroller the composition cannot reproduce must get no plan.
 import { test, assert, frames } from '/test/unit/lib/t.js';
 import { mount, rasterize, diffFraction } from './_support.mjs';
-import { planScrollPages } from '/src/snapshot/capture/scroll-pages.js';
-import { covers, snapPx } from '/src/snapshot/store/scroll-compose.js';
+import { planScrollPages, planSteps } from '/src/snapshot/capture/scroll-pages.js';
+import { cornerSquares, covers, snapPx } from '/src/snapshot/store/scroll-compose.js';
 
 const S = 2;
 const rows = Array.from({ length: 120 }, (_, i) => `<div class="row" style="${i % 2 ? 'background:#19263d' : ''}"><span class="b" style="background:hsl(${(i * 37) % 360} 70% 45%)">${i}</span><span>Row ${i} amber fjord kelp ${i * 7}</span></div>`).join('');
@@ -84,6 +84,73 @@ for (const [from, to, tops] of [[0, 137, [0, 260]], [500, 380, [260, 500]], [900
   });
 }
 
+// A rounded scroller: the pages and the pinned header are rendered with square corners, the backdrop (the scroller without its content) fills the corners, and the
+// pages are drawn inside the rounded port with the antialiased clip, as the store does (scroll-compose.js compose()).
+for (const [radius, border] of [['14px', '1px solid #5a7bb5'], ['30px 12px', '3px solid #a0b4d8']]) {
+  test(`rounded scrollport (${radius}, border ${border}): square pages + backdrop + rounded clip equal the live capture`, async () => {
+    const rcss = css + `.list{border-radius:${radius};border:${border}}`;
+    const m = mount(html, { css: rcss, width: 440, height: 320 });
+    const list = m.layerEl.querySelector('.list');
+    await frames(2);
+    const stale = await tileOf(m);
+    const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+    assert.ok(plan?.round, 'planned, with the inner radii');
+    const geo = geoOf(m, stale);
+    const R = snapPx(plan.port, geo);
+    const backdrop = await crop(m, R, { el: list, top: list.scrollTop, hide: [], shape: 'backdrop' });
+    const pins = [];
+    for (const p of plan.pinned) { const px = snapPx(m.layer.frameRect(p), geo); pins.push({ px, img: await crop(m, px, { el: list, top: list.scrollTop, hide: [], shape: 'square' }) }); }
+    const tops = [250, 480];
+    const pages = [];
+    for (const t of tops) pages.push({ t, img: await crop(m, R, { el: list, top: t, hide: plan.pinned, shape: 'square' }) });
+    list.scrollTop = 391;
+    await frames(2);
+    const top = list.scrollTop;
+    const want = await tileOf(m);
+    const before = diffFraction(stale, want);
+    const ctx = stale;
+    const base = Math.round(top * S);
+    const shape = () => {
+      const r = plan.round;
+      const sc = (q) => ({ x: q.x * S, y: q.y * S });
+      ctx.beginPath(); ctx.roundRect(plan.port.x * S, plan.port.y * S, plan.port.width * S, plan.port.height * S, [sc(r.tl), sc(r.tr), sc(r.br), sc(r.bl)]); ctx.clip();
+    };
+    ctx.save();
+    ctx.globalCompositeOperation = 'copy';
+    for (const q of cornerSquares(R, plan.round, S)) { ctx.save(); ctx.beginPath(); ctx.rect(q.x, q.y, q.width, q.height); ctx.clip(); ctx.drawImage(backdrop.canvas, R.x, R.y); ctx.restore(); }
+    for (const p of pages) {
+      const off = Math.round(p.t * S) - base;
+      const y0 = Math.max(0, off), y1 = Math.min(R.height, off + R.height);
+      if (y1 <= y0) continue;
+      ctx.save(); shape(); ctx.beginPath(); ctx.rect(R.x, R.y + y0, R.width, y1 - y0); ctx.clip(); ctx.drawImage(p.img.canvas, R.x, R.y + off); ctx.restore();
+    }
+    for (const p of pins) { ctx.save(); shape(); ctx.beginPath(); ctx.rect(p.px.x, p.px.y, p.px.width, p.px.height); ctx.clip(); ctx.drawImage(p.img.canvas, p.px.x, p.px.y); ctx.restore(); }
+    ctx.restore();
+    const got = diffFraction(stale, want);
+    assert.ok(before > 0.05, `control: the stale view differs (${(before * 100).toFixed(2)} %)`);
+    assert.ok(covers(tops, top, R.height, S), 'the pages cover the port');
+    assert.ok(got <= 0.001, `composed vs live capture at ${top}: ${(got * 100).toFixed(3)} % differ (the corners antialiased by the canvas clip)`);
+  });
+}
+
+test('a large scroller (9000 elements) is planned in steps; a change of its subtree between two steps ends the plan', async () => {
+  const many = Array.from({ length: 3000 }, (_, i) => `<div class="row"><span class="b">${i}</span><span>Row ${i}</span></div>`).join('');
+  const m = mount(`<div class="d" drawable><div class="bar">bar</div><div class="list"><div class="head"><span>#</span></div>${many}</div></div>`, { css, width: 440, height: 320 });
+  const list = m.layerEl.querySelector('.list');
+  await frames(1);
+  const it = planSteps(document, m.layer, list, m.layerEl.firstElementChild);
+  let steps = 0, r;
+  while (!(r = it.next()).done) steps++;
+  assert.ok(steps >= 3, `yielded between chunks (${steps})`);
+  assert.ok(r.value?.pinned.length === 1, 'and planned');
+  const again = planSteps(document, m.layer, list, m.layerEl.firstElementChild);
+  again.next();
+  list.append(document.createElement('div'));
+  let last;
+  while (!(last = again.next()).done);
+  assert.equal(last.value, null, 'the subtree changed between steps: no plan');
+});
+
 test('covers(): gaps, edges and pixel rounding', () => {
   assert.equal(covers([0], 0, 100, 2), true);
   assert.equal(covers([0], 10, 100, 2), false);
@@ -95,7 +162,7 @@ test('covers(): gaps, edges and pixel rounding', () => {
 
 const refusals = [
   ['horizontal overflow (a horizontal bar is not composed)', (l) => { const w = l.clientWidth; Object.defineProperty(l, 'scrollWidth', { configurable: true, get: () => w + 40 }); }],
-  ['rounded corners', (l) => { l.style.borderRadius = '8px'; }],
+  ['an ancestor whose rounded clip reaches over the port', (l) => { const d = l.closest('[drawable]'); d.style.borderRadius = '30px'; d.style.overflow = 'hidden'; }],
   ['a fixed-attachment background image', (l) => { l.style.backgroundImage = 'linear-gradient(red, blue)'; }],
   ['a translucent sticky header', (l) => { l.querySelector('.head').style.background = 'rgba(45,68,112,.8)'; }],
   ['a sticky header with a shadow', (l) => { l.querySelector('.head').style.boxShadow = '0 2px 4px black'; }],
@@ -120,6 +187,7 @@ for (const [what, change] of refusals) {
 
 // Classic (non-overlay) scrollbars: headless Chrome hides scrollbars, so this test only measures something in a headed run on a system with classic bars
 // (`node test/unit/run.mjs --headed test/unit/snapshot-capture/scroll-pages.browser.test.mjs` with a mouse attached on macOS, or on Windows); otherwise it checks the plan only.
+// The bound (0.1 %) is below what a missing thumb sprite costs (0.17 %: the thumb-only capture once hid the whole SVG and these tests still passed at 0.2 %).
 test('classic scrollbar: the port from pages + the track tile + the thumb sprite at the live offset equals the live capture', async () => {
   const classic = css.replace('scrollbar-width:none', 'scrollbar-width:auto');
   const m = mount(html, { css: classic, width: 440, height: 320 });
@@ -149,7 +217,59 @@ test('classic scrollbar: the port from pages + the track tile + the thumb sprite
   ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(thumb.canvas, thumbPx.x, thumbPx.y + Math.round((b.thumbY(top) - b.thumbY(live0)) * S));
   ctx.restore();
   const got = diffFraction(stale, want);
-  assert.ok(got <= 0.002, `composed with the classic bar vs live capture: ${(got * 100).toFixed(3)} %`);
+  assert.ok(got <= 0.001, `composed with the classic bar vs live capture: ${(got * 100).toFixed(3)} %`);
+});
+
+test('classic scrollbar in a rounded scroller: square pages, track and thumb inside the rounded padding box over the backdrop equal the live capture', async () => {
+  const classic = css.replace('scrollbar-width:none', 'scrollbar-width:auto') + '.list{border-radius:16px;border:2px solid #a0b4d8}';
+  const m = mount(html, { css: classic, width: 440, height: 320 });
+  const list = m.layerEl.querySelector('.list');
+  await frames(2);
+  const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+  assert.ok(plan?.round, 'planned, rounded');
+  if (!plan.bar) { assert.equal(list.offsetWidth - list.clientWidth - 4, 0, 'no gutter in this run (headless or overlay bars): nothing more to check'); return; }
+  list.scrollTop = 120;
+  await frames(2);
+  const stale = await tileOf(m);
+  const geo = geoOf(m, stale);
+  const b = plan.bar;
+  const pad = { ...plan.port, width: plan.port.width + b.gutter.width };
+  const padPx = snapPx(pad, geo);
+  const trackPx = snapPx(b.gutter, geo);
+  const live0 = list.scrollTop;
+  const thumbPx = snapPx({ x: b.gutter.x + b.thumbX, y: b.gutter.y + b.thumbY(live0), width: b.thumbW, height: b.thumbH }, geo);
+  const track = await crop(m, trackPx, { el: list, top: live0, hide: [], bars: 'track', shape: 'square' });
+  const thumb = await crop(m, thumbPx, { el: list, top: live0, hide: [], bars: 'thumb', shape: 'square' });
+  const backdrop = await crop(m, padPx, { el: list, top: live0, hide: [], shape: 'backdrop' });
+  const R = snapPx(plan.port, geo);
+  const pins = [];
+  for (const p of plan.pinned) { const px = snapPx(m.layer.frameRect(p), geo); pins.push({ px, img: await crop(m, px, { el: list, top: live0, hide: [], shape: 'square' }) }); }
+  const tops = [520, 760];
+  const pages = [];
+  for (const t of tops) pages.push({ t, img: await crop(m, R, { el: list, top: t, hide: plan.pinned, shape: 'square' }) });
+  list.scrollTop = 700;
+  await frames(2);
+  const top = list.scrollTop;
+  const want = await tileOf(m);
+  const ctx = stale;
+  const shape = () => { const r = plan.round; const sc = (q) => ({ x: q.x * S, y: q.y * S }); ctx.beginPath(); ctx.roundRect(pad.x * S, pad.y * S, pad.width * S, pad.height * S, [sc(r.tl), sc(r.tr), sc(r.br), sc(r.bl)]); ctx.clip(); };
+  const base = Math.round(top * S);
+  ctx.save();
+  ctx.globalCompositeOperation = 'copy';
+  for (const q of cornerSquares(padPx, plan.round, S)) { ctx.save(); ctx.beginPath(); ctx.rect(q.x, q.y, q.width, q.height); ctx.clip(); ctx.drawImage(backdrop.canvas, padPx.x, padPx.y); ctx.restore(); }
+  for (const p of pages) {
+    const off = Math.round(p.t * S) - base;
+    const y0 = Math.max(0, off), y1 = Math.min(R.height, off + R.height);
+    if (y1 <= y0) continue;
+    ctx.save(); shape(); ctx.beginPath(); ctx.rect(R.x, R.y + y0, R.width, y1 - y0); ctx.clip(); ctx.drawImage(p.img.canvas, R.x, R.y + off); ctx.restore();
+  }
+  ctx.save(); shape(); ctx.beginPath(); ctx.rect(trackPx.x, trackPx.y, trackPx.width, trackPx.height); ctx.clip(); ctx.drawImage(track.canvas, trackPx.x, trackPx.y);
+  ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(thumb.canvas, thumbPx.x, thumbPx.y + Math.round((b.thumbY(top) - b.thumbY(live0)) * S)); ctx.restore();
+  for (const p of pins) { ctx.save(); shape(); ctx.beginPath(); ctx.rect(p.px.x, p.px.y, p.px.width, p.px.height); ctx.clip(); ctx.drawImage(p.img.canvas, p.px.x, p.px.y); ctx.restore(); }
+  ctx.restore();
+  assert.ok(covers(tops, top, R.height, S), 'the pages cover the port');
+  const got = diffFraction(stale, want);
+  assert.ok(got <= 0.001, `composed rounded port with the classic bar vs live capture: ${(got * 100).toFixed(3)} %`);
 });
 
 test('a vertical classic gutter is planned WITH its bar (track column, thumb geometry of the clone); headless has no gutter, so its layout is stubbed', async () => {

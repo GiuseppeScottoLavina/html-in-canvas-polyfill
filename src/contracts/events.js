@@ -56,6 +56,8 @@ export const MARK = Object.freeze({
   CANVAS_ATTR: 'data-hic-canvas',
   /** on a LIVE drawable that is in the canvas's list of drawn elements (hit-testable, ADR-F); absent = pointer-events:none. Value = a per-root geometry key; the transform/clip live in a rule of the polyfill sheet, never in the style attribute. */
   HIT_ATTR: 'data-hic-hit',
+  /** on a LIVE scroller inside a drawable while it scrolls (Chromium): a rule of the polyfill sheet gives it a main-thread repaint reason, so the compositor waits for the frame that redraws the canvas (live/scroll-sync.js). Value = a per-root rule key. */
+  SCROLL_ATTR: 'data-hic-scroll',
   /** on every polyfill-created node (layer, placeholders, caret overlay) */
   NODE_ATTR: 'data-hic-node',
   /** classes written ONLY into the clone, never into live DOM */

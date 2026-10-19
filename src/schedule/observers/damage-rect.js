@@ -18,6 +18,8 @@ import { inflateRect, unionRect } from '../../util/rect.js';
  * @typedef {Object} RectMemory
  * @property {(layer: LiveLayer, el: Element) => Rect|null} own  frame rect of `el` grown by the ink margin and its painted ink (and by the ink it painted before, which the change may have removed); for changes that stay inside the box (typing, caret, focus ring). Remembers the box for later `reach` calls. null = not laid out
  * @property {(layer: LiveLayer, el: Element) => Rect|null} reach  union of the previous and the current reach of `el`; null (whole drawable) on first sight, when the box changed size or when `el` is not laid out
+ * @property {(layer: LiveLayer, el: Element) => Rect|null} paintReach  for a change that only paints (no rule it triggers sets a layout property, CssBundle.pseudo.hoverLayout): the current reach of `el`, with
+ *   its previous reach moved along with its box (scrolling moved it, the change did not); a first sighting needs no bound. null = not laid out
  */
 
 /** @type {WeakMap<HicEnv, RectMemory>} */
@@ -73,6 +75,16 @@ function createRectMemory(ink) {
       }
       last.set(el, m);
       return prev?.painted ? unionRect(prev.own, m.own) : m.own;
+    },
+    paintReach(layer, el) {
+      const cur = measure(layer, el);
+      const prev = last.get(el);
+      if (cur) last.set(el, cur);
+      else last.delete(el);
+      if (!cur) return null;
+      if (!prev) return cur.reach;
+      const dx = cur.box.x - prev.box.x, dy = cur.box.y - prev.box.y;
+      return unionRect(cur.reach, { ...prev.reach, x: prev.reach.x + dx, y: prev.reach.y + dy });
     },
     reach(layer, el) {
       const cur = measure(layer, el);

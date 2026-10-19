@@ -291,7 +291,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
    child of that ancestor was measured before (no bare text, no generated content, at most 32 children), the rect is the old and new reach of the children that moved; otherwise the ancestor's
    own reach, or the whole drawable when that ancestor is the drawable (`schedule/observers/damage-rect.js`).
 7. **Node budget** (`budget.js`): count nodes while cloning. `> soft` (350 by default per commit): the clone is damage-PRUNED (only subtrees intersecting the crop + ancestor skeleton + spacers) and the cadence adapts so
-   main-thread time stays <= 50 % of the frame period; `> hard` (3000): the drawable is degraded to <= 4 fps, flagged, reported (`node-budget` limited); `> absolute` (20000): refused with a placeholder + entry.
+   main-thread time stays <= 50 % of the frame period; `> hard` (3000): the drawable is degraded to <= 4 fps (its scrollers' own scrolling excepted, ADR-E), flagged, reported (`node-budget` limited); `> absolute` (20000): refused with a placeholder + entry.
    A 1125-node DOM measured ~25.7 ms RunTask per full commit (90 % busy) on the prototype [E5]: pruning and per-drawable surfaces are the lever, not a faster serializer.
    In a pruned tile, the trailing children of a large block / inline flow container that lie below the kept region are left out altogether (`clone.js` truncation): the cut starts a line
    (or the rest of its line is uniform), everything after it is below the region (one Range rect), and the container keeps its live height (and, as a row flex item, its width), so the kept
@@ -322,6 +322,29 @@ Tick RUN(now), for each canvas record in reverse tree order:
   element): native on the live element (wheel, keyboard, touch, scrollbar drag, focus reveal, sticky, anchoring all native); a capture-phase `scroll` listener publishes `scroll` damage on the scroller's box;
   the clone mirrors `scrollTop/Left` (state sync). Strip-translate scrolling (S-b) failed the pixel oracle at 26-28 % and is discarded [E5]. Eligible scrollers are shown in the scroll step's own rendering update by the scroll compositor (cached pages of the scrollport rendered at other offsets + pinned sticky tiles, exact tile after the scrolling stops). Prototype: pixel-exact incl. sticky header, p50 18 ms lag [E5 scroll].
   Large lists are pruned to the visible window (node budget).
+  - **Scroll synchronisation** (`live/scroll-sync.js`, Chromium). The canvas shows the live scroller's MAIN-THREAD offset. During a precise scroll (trackpad, a wheel without
+    smooth scrolling) of a composited scroller Chromium's compositor lets impl latency take priority (`SMOOTHNESS_TAKES_PRIORITY`): it draws the scroll without waiting for the
+    main frame and holds the next main frame while a committed one waits to be drawn, so main-thread content that follows the offset gets a new offset in every second frame.
+    Measured at 120 Hz on Chrome 155 and Canary 158 with a plain page: the scroller's offset changed on the main thread in 116 frames per second, and in 61 as soon as the page
+    drew a canvas (or changed any style) per scroll event; the polyfill's warm compositor was held at the same 60 (60 commits, 129 aborted main frames of 189), whatever it did.
+    A scroller with a main-thread repaint reason switches the compositor to "new content takes priority" and it waits for the main frame: the scrollers inside a native
+    drawable have one, which is why native presents 116. The live scroller under the pointer (and any live scroller from its first scroll event) carries `data-hic-scroll`, and a rule of the polyfill sheet gives it
+    `kBackgroundNeedsRepaintOnScroll`: a transparent inset `box-shadow` (keeps the background in the border-box space) and a transparent `background-attachment: local` image after
+    the author's own layers. Nothing is visible (the layer is invisible, both paint nothing) and neither reaches a snapshot (polyfill attribute and sheet); the author values are kept
+    in the rule and read by the planner. Released when the pointer has left and the scrolling has settled. Synchronising only at the first scroll event left most of that gesture at
+    half rate (the input pipeline settles into the alternation), hence the pointer.
+  - **Pacing of scroll damage** (`pump.js`): scroll damage alone, or with hover changes inside the scrolled box (rows passing under a still pointer), is held by the framecap and the
+    cost bucket but not by `maxSnapshotFps` nor by the node-budget interval (`DamageTracker.pendingScroll`); every other cause keeps every limit, and such a build takes no credit of the gate.
+  - **Compositor validity per scroller** (`scroll-compose.js`). A scroller is planned when it is seen (pointer over it, first scroll event, settle), in the post-frame pump, a large
+    scroller's subtree scan in steps of 2500 elements (`planSteps`). Damage that does not reach the scroller's content box leaves its pages; damage inside it marks those CONTENT
+    pixels dirty in every page captured before it (pages are ordered with damage by a sequence number); damage with no rect, covering the scroller, or crossing a pinned element drops
+    or refreshes. A dirty part is never composed: the step falls back to the plain path, and the fallback tile, copied from the retained surface, repairs the pages it covers (pinned
+    elements, grown by the offset change since its build, and rounded corners excluded); a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is
+    hit-tested (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages.
+  - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
+    the scroller's content ('backdrop': border, background and whatever lies behind the corners); the composition draws the backdrop in the corner squares and the pages inside the
+    antialiased rounded clip of the inner border radii with `copy` (which lerps by the clip coverage): within 0.1 % of a live capture in the unit oracle. Not with a classic
+    bar (its gutter tiles are square), nor under an ancestor's rounded clip that reaches the port.
 - **Scrollbars.** Overlay scrollbars (macOS default): no gutter in the live DOM, hidden in the clone (`scrollbar-width:none`), nothing to paint. Classic scrollbars: the gutter is kept in the clone so layout is exact and the polyfill
   PAINTS an approximation of track and thumb (a scroll-position-dependent overlay, colours from `color-scheme`), feature row `classic-scrollbars`; the prototype ran with scrollbars hidden and measured 3-4 % difference on classic ones [E5];
   gate G-pixel-f5 requires <= 4 %.

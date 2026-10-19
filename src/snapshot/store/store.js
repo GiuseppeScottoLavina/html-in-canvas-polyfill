@@ -184,7 +184,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const entry = {
       el, record, incarnation: 0, surface: null, geo: null, version: null, decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
       notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
-      unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, scEpoch: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
+      unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
     };
     entries.set(el, entry);
     return entry;
@@ -278,7 +278,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       return;
     }
     if (!TYPING_CAUSES.has(cause)) entry.ovEpoch++;
-    if (!(cause === 'scroll' && compositor.ownScroll(entry, rect))) entry.scEpoch++;
+    compositor.damaged(entry, rect, cause);
     if (entry.failures >= 3) entry.failures = 0;
     if (RETRY_CAUSES.has(cause)) entry.refused = false;
     runaway.damage(cause, env.now());
@@ -321,6 +321,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
   const host = {
     entries: () => entries.values(),
     scrollers: (entry) => compositor.scrollers(entry),
+    scrollSeq: () => compositor.seq(),
     usedBytes: (entry) => retainedBytes(entry),
     notLaidOut(entry) {
       if (entry.version) pendingRemoved.set(entry.el, entry.record);
@@ -399,8 +400,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     capture(entry, rectCss, geo, scroll) {
       try {
         const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });
-        const result = capture(scroll ? { ...req, scroll } : req);
-        return result.unsupported?.length || !result.complete ? null : result.url;
+        const result = capture({ ...req, scroll });
+        // a 'limited' entry (node-budget: a large scroller) describes a page that renders like the tiles do
+        return (result.unsupported ?? []).some((u) => featureById(u.feature)?.status !== 'limited') || !result.complete ? null : result.url;
       } catch (err) {
         env.reporter.caught(err, 'snapshot-store:scroll-page');
         return null;
@@ -440,7 +442,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
         noteFailure(entry, err, 'scroll-compose');
         return null;
       }
-    }, entry.scEpoch);
+    });
     for (const r of out.fallback) markDamage(entry.el, r, 'scroll');
     if (!out.dirty.length) return;
     round.wrote = true;
@@ -592,7 +594,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     round.layoutOffset = l.result.layoutOffset ?? round.layoutOffset;
     round.translation = l.translation ?? round.translation;
     round.tileSeq = Math.max(round.tileSeq ?? 0, l.ovSeq ?? 0);
-    for (const sc of compositor.scrollers(entry)) compositor.tileLanded(entry, crop, l.scTops?.get(sc) ?? null, l.scTops?.has(sc) ? sc : null);
+    for (const sc of compositor.scrollers(entry)) compositor.tileLanded(entry, crop, l.scTops?.get(sc) ?? null, l.scTops?.has(sc) ? sc : null, l.scSeq ?? null, target.surface);
     entry.ovTileSeq = Math.max(entry.ovTileSeq, round.tileSeq);
     counters.tiles++;
     if (l.rect === null) counters.fullTiles++;
@@ -911,7 +913,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
     pump: (now, budget) => {
       verifyGeometries();
       const out = runPump(env, pumpDeps, now, budget);
-      runSide(out, budget);
+      // side builds (scroll pages, plans, overlay backdrops) never run in a pump inside the rendering update: they would delay that frame
+      if (!budget.urgent) runSide(out, budget); else if (side.length) { out.moreWork = true; out.nextDueAt = out.nextDueAt ?? env.now(); }
       return out;
     },
     scrollSettled(drawable, scroller) {
@@ -920,7 +923,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     scrollCompose(drawable, scroller) {
       const entry = entries.get(drawable);
-      return !!entry && !!extras.scrollPlan && compositor.serve(entry, scroller, entry.scEpoch);
+      return !!entry && !!extras.scrollPlan && compositor.serve(entry, scroller);
     },
     hasLanded(record) {
       for (const el of pendingChanged) if (!record || entries.get(el)?.record === record) return true;

@@ -33,7 +33,7 @@ Defaults (`src/api/options.js`, `docs/API-CONTRACT.md` section 9.2), counted per
 | option | default | effect |
 |---|---|---|
 | `nodeBudget.soft` | 350 | above it the clone is damage-pruned (only the part near the damage is cloned in full) |
-| `nodeBudget.hard` | 3000 | above it the drawable is updated at most 4 times per second and a `node-budget` entry is reported |
+| `nodeBudget.hard` | 3000 | above it the drawable is updated at most 4 times per second (its inner scrolling excepted) and a `node-budget` entry is reported |
 | `nodeBudget.absolute` | 20000 | above it the capture is refused: a hatched placeholder and a `node-budget` entry |
 
 A drawable that updates often (typing, animation, a slider) should stay well under about 1000 elements, and under a few hundred if you want headroom for the rest of your page: one update of a 2000-element drawable costs about 20 ms of main thread (F4 rows of the comparison), most of it the browser's own style and layout of the page and of the snapshot. A change that keeps its parent's size is repainted from a tile around the children that moved, and the content of a large block below that tile is left out of the snapshot, so a small part that changes often (a counter, a clock) next to a large static part stays cheap. A large static list is better split into several drawables or windowed (render only the visible rows). Counting: `element.getElementsByTagName('*').length + 1`. The F4 fixture (`test/fixtures/f4-large-app`, `nodes=200|500|1000|2000`) is there to measure your own sizes.
@@ -41,7 +41,7 @@ A drawable that updates often (typing, animation, a slider) should stay well und
 ## 4. Frame cap semantics (`docs/API-CONTRACT.md` 7.1)
 
 - `framecap` attribute on the canvas (non-negative integer, 0 to 240, 0 = uncapped = display rate) and the `canvas.frameCap` property that reflects it. A change takes effect within one frame. The default for canvases without the attribute is `options.defaultFrameCap` (0).
-- The effective cap F is an upper bound, per canvas, on: `paint` events, effect frames (`effectframe`), and snapshot build starts (together with `options.maxSnapshotFps`, default 60: the lower non-zero value wins; `maxSnapshotFps` does not hold the re-raster of a canvas resize / DPR change built inside its frame, the framecap does).
+- The effective cap F is an upper bound, per canvas, on: `paint` events, effect frames (`effectframe`), and snapshot build starts (together with `options.maxSnapshotFps`, default 60: the lower non-zero value wins; `maxSnapshotFps` does not hold the re-raster of a canvas resize / DPR change built inside its frame, nor the build of a scroller's own scrolling, the framecap does).
 - Frames are paced by a phase accumulator, so 60 on a 120 Hz display renders every second frame. Measured with the water plugin on a 120 Hz display: caps 30, 60 and 120 gave 30.0, 60.0 and 120.1 Hz, from an independent clock.
 - `requestPaint()` is a request, not a bypass: a capped canvas never paints faster than F. The redraw behind a `canvas.width/height` write is the one exception (one per frame): a cleared bitmap must be redrawn in the same frame.
 - Input-driven updates also honour the cap unless `options.interactionFloorFps` is set; with the default 0, typing latency can be up to one cap period.

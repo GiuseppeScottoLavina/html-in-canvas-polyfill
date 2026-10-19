@@ -115,12 +115,13 @@ export function createInteractionTracker(env, capture) {
    * @param {DamageCause} cause
    * @param {Element[]} own  controls whose pixels change inside their box
    * @param {Element[]} reach  elements whose rules may restyle descendants or overflow
+   * @param {Element[]} [paint]  elements whose rules only paint (memory.paintReach)
    */
-  function publish(record, cause, own, reach) {
+  function publish(record, cause, own, reach, paint = []) {
     const layer = record.layer;
     if (!layer) return;
     const batch = createDamageBatch();
-    for (const [list, measure] of /** @type {const} */ ([[own, memory.own], [reach, memory.reach]])) {
+    for (const [list, measure] of /** @type {const} */ ([[own, memory.own], [reach, memory.reach], [paint, memory.paintReach]])) {
       for (const el of list) {
         const drawable = layer.nearestDrawable(el);
         if (drawable) batch.add(drawable, measure(layer, el));
@@ -154,7 +155,9 @@ export function createInteractionTracker(env, capture) {
     if (next.size) chains.set(record, next);
     else chains.delete(record);
     changed(record, kind, diff);
-    if (pseudoUsage(record)[kind]) publish(record, kind, [], diff);
+    const usage = pseudoUsage(record);
+    // :hover rules that only paint cannot move a sibling: the hovered elements' own reach is the damage, also the first time one is hovered (rows that pass under a still pointer while a list scrolls)
+    if (usage[kind]) publish(record, kind, [], kind === 'hover' && usage.hoverLayout === false ? [] : diff, kind === 'hover' && usage.hoverLayout === false ? diff : []);
     else {
       // the widget theme's own hover / pressed look (Gecko, WebKit pressed buttons) needs no author rule to change the pixels
       const engine = currentEngine().engine;

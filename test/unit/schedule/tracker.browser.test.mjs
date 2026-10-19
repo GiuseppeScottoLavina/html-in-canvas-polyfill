@@ -44,6 +44,18 @@ test('hover damage is published only when a rule uses :hover, as a reach rect of
   assert.equal(s.sink.damage[0].drawable.id, 'd');
 });
 
+test('paint-only :hover rules: an element hovered for the first time damages its own reach, not an ancestor; a rule that changes a box keeps the bound', async t => {
+  const move = (s) => { s.fire(s.$('b1'), 'pointerover'); s.sink.clear(); s.fire(s.$('b2'), 'pointerover'); return s.sink.damage.find((d) => d.cause === 'hover')?.rect; };
+  const paint = setup(t, '.btn:hover{color:red;background:#eee}');
+  const r = move(paint);
+  const b1 = paint.layer.frameRect(paint.$('b1')), b2 = paint.layer.frameRect(paint.$('b2'));
+  const card = paint.layer.frameRect(paint.$('card'));
+  assert.ok(r && r.x <= b1.x && r.x + r.width >= b2.x + b2.width && r.height < card.height + 48 + 1 && r.width < 200, `the two buttons' reach (${JSON.stringify(r)})`);
+  const box = setup(t, '.btn:hover{padding:4px}');
+  const rb = move(box);
+  assert.ok(rb === null || rb.width >= 200, `a :hover rule that sets a box property: b2 is new, bounded by an ancestor or the drawable (${JSON.stringify(rb)})`);
+});
+
 test('without a :hover rule hover damage is skipped, but onChange listeners and the snapshot still follow the pointer', async t => {
   const noRule = setup(t, '.btn{color:red}');
   noRule.fire(noRule.$('b1'), 'pointerover');
