@@ -139,8 +139,8 @@
   const form = document.getElementById('demo-form');
   const $ = (id) => document.getElementById(id);
   const hic = window.__HIC__;
-  // window.__gallery: what the page shows, for its tests: the effect handle of the selected plugin and the last action it ran
-  const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [], handle: null, lastAction: null });
+  // window.__gallery: what the page shows, for its tests: the effects host, the effect handle of the selected plugin and the last action it ran
+  const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [], host: null, handle: null, lastAction: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const showMotion = () => { $('m-motion').textContent = reduceMotion.matches ? 'reduce (the panel above says what the selected effect does then)' : 'no preference'; };
@@ -263,6 +263,7 @@
     notice(why + ' The form below is still drawn ' + (extensions ? 'by the polyfill' : 'by the browser') + ' and fully usable.');
   }
   state.mode = host ? 'effect' : '2d';
+  state.host = host;
 
   let plugins = [];
   try { plugins = (await manifestRequest).plugins; } catch (error) { notice('The plugin list could not be loaded (' + error.message + '). Run `npm run build` first.'); }

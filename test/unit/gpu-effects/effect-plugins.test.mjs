@@ -18,9 +18,11 @@ function rig() {
     requestRender: () => { renders += 1; },
     reducedMotion: () => reduced,
     reportError: (error, slot, phase) => errors.push({ error, type: slot.def.type, phase }),
+    onWait: () => { waits += 1; },
   };
+  let waits = 0;
   const set = createPluginSet(env, canvas, {}, io);
-  return { set, errors, listeners, renders: () => renders, setGpu: (g) => { gpu = g; }, setReduced: (v) => { reduced = v; } };
+  return { set, errors, listeners, renders: () => renders, waits: () => waits, setGpu: (g) => { gpu = g; }, setReduced: (v) => { reduced = v; } };
 }
 
 /** A plugin that records its life. */
@@ -326,6 +328,30 @@ test('settled: waits on the instance, resolves with its state; at once when noth
   a.rest('far');
   await s;
   assert.equal(seen, 'far');
+});
+
+test('unsettled(): true while a trigger or a settled() waiter is pending, each start announced through onWait (the paused host keeps advancing them)', async () => {
+  const r = rig();
+  const a = actor();
+  const h = await r.set.add(a.def);
+  assert.equal(r.set.unsettled(), false, 'nothing pending');
+  assert.equal(await h.settled(), 'idle');
+  await Promise.resolve();
+  assert.equal(r.set.unsettled(), false, 'a settled() that resolves at once leaves nothing pending');
+  const p = h.trigger('go');
+  assert.equal(r.set.unsettled(), true, 'a pending trigger');
+  assert.equal(r.waits(), 2, 'onWait for the settled() call and for the trigger');
+  const s = h.settled();
+  assert.equal(r.waits(), 3);
+  a.runs[0].resolve('far');
+  assert.equal(await p, 'far');
+  assert.equal(r.set.unsettled(), true, 'the settled() waiter is still pending');
+  a.rest('far');
+  assert.equal(await s, 'far');
+  assert.equal(r.set.unsettled(), false, 'everything resolved');
+  h.trigger('go');
+  h.remove();
+  assert.equal(r.set.unsettled(), false, 'a removed plugin leaves nothing pending');
 });
 
 test('removal: the pending trigger and every settled() waiter resolve null; later calls reject (trigger) or resolve null (settled)', async () => {

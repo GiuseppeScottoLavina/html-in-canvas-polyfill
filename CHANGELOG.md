@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- The effect host does no work for a canvas nobody can see: while the canvas is more than half a viewport (or half its scroll container) out of view, or the document is hidden, it renders and uploads nothing, `continuous` plugins included (gallery with water: renderer + GPU process CPU from 29 % to 1 %). It renders again before the canvas scrolls back in, and a jump straight into view is rendered in the frame that shows it. The frame clock keeps running, so an effect resumes at the state it has at that time. A `trigger()` or `settled()` that is pending while the canvas is out of view still resolves: the host renders about 10 frames per second until it settles. `host.stats()` gains `paused`, `pauses` and `offscreenFrames`. No option: the pause cannot be seen.
+
 ## [0.1.0-preview.1] - 2026-10-17
 
 First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` under the npm dist-tag `next`.

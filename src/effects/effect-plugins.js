@@ -47,6 +47,7 @@ import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi
  * @property {() => void} requestRender
  * @property {() => boolean} reducedMotion  prefers-reduced-motion: reduce, now
  * @property {(error: unknown, slot: Slot, phase: string) => void} reportError  effecterror + report entry; does not throw
+ * @property {() => void} [onWait]  a trigger() or settled() promise started waiting (a paused host must keep advancing it)
  */
 
 const NO_ACTIONS = Object.freeze(/** @type {string[]} */ ([]));
@@ -167,6 +168,7 @@ export function createPluginSet(env, canvas, source, io) {
     return new Promise((resolve, reject) => {
       const mine = (/** @type {EffectActionState} */ state) => { if (slot.pending === mine) slot.pending = null; resolve(state); };
       slot.pending = mine;
+      io.onWait?.();
       Promise.resolve(result).then(
         (state) => { if (slot.pending === mine) mine(state ?? null); },
         (error) => { if (slot.pending === mine) { slot.pending = null; reject(error); } },
@@ -185,7 +187,7 @@ export function createPluginSet(env, canvas, source, io) {
   function settled(slot) {
     try { declared(slot, 'settled'); } catch (error) { return Promise.reject(error); }
     if (slot.removed || slot.failed || !slot.enabled) return Promise.resolve(null);
-    return new Promise((resolve) => { slot.waiters.add(resolve); attach(slot, resolve); });
+    return new Promise((resolve) => { slot.waiters.add(resolve); attach(slot, resolve); io.onWait?.(); });
   }
 
   /** @param {Slot} slot @param {{root: Element, dispose: (() => void)|null}} mount */
@@ -315,6 +317,8 @@ export function createPluginSet(env, canvas, source, io) {
       return stageCache;
     },
     hasContinuous() { return this.stages().some((s) => s.instance.continuous === true); },
+    /** Some trigger() or settled() promise has not resolved yet (the paused host keeps rendering slowly until it has). */
+    unsettled() { return slots.some((s) => s.pending !== null || s.waiters.size > 0); },
     /** @param {Slot} slot @param {unknown} error */
     fail(slot, error) { fail(slot, error, 'render'); },
     /** @param {EffectViewport} vp */
