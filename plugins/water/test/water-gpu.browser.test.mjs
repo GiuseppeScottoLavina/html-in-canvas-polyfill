@@ -41,11 +41,11 @@ gpuTest('intensity 0: nothing is displaced and the mapper is the identity up to 
 });
 
 gpuTest('a mapper stays valid for the frame it was captured for while later frames are presented', async (t) => {
-  const { rig, img: first, mappers } = await presentOnce(t, plugin, { intensity: 1 }, { scene, before: dropRipples, offsetMs: 80 });
+  const { rig, img: first, mappers, at } = await presentOnce(t, plugin, { intensity: 1 }, { scene, before: dropRipples, offsetMs: 80 });
   const firstMapper = /** @type {any} */ (mappers.at(-1));
   const before = agreement(first, firstMapper, scene).wrong;
-  const t0 = performance.now();
-  for (let k = 1; k <= 2; k += 1) rig.tick(t0 + 80 + k * 50);
+  // 50 and 100 ms after the first frame on the effect's clock (not after the readback above, whose duration varies with the JIT: 70 to 300 ms)
+  for (let k = 1; k <= 2; k += 1) rig.tick(at + k * 50);
   assert.equal(agreement(first, firstMapper, scene).wrong, before, 'two newer presentations did not change what the first mapper describes');
   assert.ok(before <= 5);
   const newest = agreement(first, /** @type {any} */ (mappers.at(-1)), scene).wrong;

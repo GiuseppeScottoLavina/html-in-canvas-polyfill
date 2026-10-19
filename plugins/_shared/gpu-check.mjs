@@ -75,6 +75,8 @@ export function spyMappers(plugin) {
  * @param {any} plugin  the plugin definition (index.js `plugin`)
  * @param {Record<string, unknown>} options  addPlugin options
  * @param {{scene?: ReturnType<typeof markerScene>, offsetMs?: number, before?: (rig: any) => void}} [o]  `before` runs after addPlugin (e.g. pointer events)
+ * The result's `at` is the frame time of that frame: later frames are ticked relative to it, never to the clock after a slow readback (the effect would then be
+ * shown at an instant that depends on how long the check took).
  */
 export async function presentOnce(t, plugin, options, { scene = markerScene(), offsetMs = 80, before } = {}) {
   const rig = makeRig({ w: scene.w, h: scene.h, paint: scene.paint });
@@ -84,8 +86,9 @@ export async function presentOnce(t, plugin, options, { scene = markerScene(), o
   const { def, mappers } = spyMappers(plugin);
   const handle = await host.addPlugin(def, options);
   before?.(rig);
-  rig.tick(performance.now() + offsetMs);
-  return { rig, host, handle, img: rig.snap(), mapper: mappers.at(-1), mappers };
+  const at = performance.now() + offsetMs;
+  rig.tick(at);
+  return { rig, host, handle, img: rig.snap(), mapper: mappers.at(-1), mappers, at };
 }
 
 /**
