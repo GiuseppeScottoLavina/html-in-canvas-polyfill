@@ -8,7 +8,7 @@ Scope: facts and our own measurements only. Chrome 154.0.8037.98 (no native feat
 
 | | `html-in-canvas-polyfill` | this polyfill (ours) |
 |---|---|---|
-| version | 1.0.1 (npm, 2026-05-09). It is a 1.5 KB wrapper: `import 'three-html-render/polyfill'` + `installHtmlInCanvasPolyfill()`. Its README says "All credits go to repalash/three-html-render". | 0.1.0-preview.1 (preview) |
+| version | 1.0.1 (npm, 2026-05-09). It is a 1.5 KB wrapper: `import 'three-html-render/polyfill'` + `installHtmlInCanvasPolyfill()`. Its README says "All credits go to repalash/three-html-render". | 0.1.0-preview.2 (preview) |
 | real implementation | `three-html-render` 0.1.2 by repalash (npm 2026-04-13; repo last push 2026-04-20, 190 stars, 12 forks, 1 issue/PR ever, 0 open) | this repo |
 | wrapper repo | samdenty/html-in-canvas-polyfill: 3 commits, all on 2026-05-09, 2 stars, 0 issues | |
 | npm downloads (2026-09-12 to 2026-10-11) | 58 (wrapper), 1,512 (three-html-render) | none yet (preview) |
