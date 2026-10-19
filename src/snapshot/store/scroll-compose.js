@@ -21,7 +21,7 @@ import { subtractRects } from './damage.js';
 /** @typedef {import('./pump.js').Entry} Entry */
 /** @typedef {import('./pump.js').Geometry} Geometry */
 /** @typedef {HTMLCanvasElement|OffscreenCanvas} Surface */
-/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'}} PageRequest */
+/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop', memo?: Map<Element, import('../../contracts/types.js').TailMemo>}} PageRequest */
 
 /** pages kept per scroller (each one scrollport of surface pixels) */
 const MAX_PAGES = 4;
@@ -57,6 +57,7 @@ const MAX_MISSES = 2;
  * @property {boolean} queued  a composition was promised to the next commit
  * @property {number} last  previous live scrollTop seen (direction of the next page)
  * @property {Rect[]} unverified  damage rects inside the visible port (frame css) not yet checked for an obstruction
+ * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
  */
 
 /**
@@ -228,7 +229,7 @@ export function createScrollCompositor(deps) {
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [],
+      shown: null, queued: false, last: live, unverified: [], memo: new Map(),
     };
     if (plan.bar) {
       const b = plan.bar;
@@ -281,7 +282,7 @@ export function createScrollCompositor(deps) {
       /** @type {Page} */
       const page = { top: t, pad: null, seq: null, dirty: [], dirtySeq: [], misses: 0 };
       cache.pages.push(page);
-      build(entry, cache, cache.portPx, { el: cache.el, top: t, hide: cache.plan.pinned, shape: cache.backdrop ? 'square' : undefined }, page);
+      build(entry, cache, cache.portPx, { el: cache.el, top: t, hide: cache.plan.pinned, shape: cache.backdrop ? 'square' : undefined, memo: cache.memo }, page);
     }
   }
 
@@ -412,6 +413,7 @@ export function createScrollCompositor(deps) {
         if (!content) { counters.kept++; continue; }
         // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
         // the content box is none of the pages' business, the scroller clips its content to the port)
+        c.memo.clear();
         const px = outPx(content, c.geo);
         const d = { x: px.x, y: px.y - c.portPx.y + Math.round(top * c.geo.scale), width: px.width, height: px.height };
         for (const p of c.pages) if (p.seq !== null) { p.dirty.push(d); p.dirtySeq.push(n); }

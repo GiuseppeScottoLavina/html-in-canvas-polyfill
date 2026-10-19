@@ -23,6 +23,7 @@ import { currentEngine } from '../../util/engine.js';
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
+/** @typedef {import('../../contracts/types.js').TailMemo} TailMemo */
 /** @typedef {import('../../contracts/types.js').UnsupportedEntry} UnsupportedEntry */
 /** @typedef {import('./css-shake.js').ShakeTokens} ShakeTokens */
 
@@ -403,9 +404,7 @@ function truncation(ctx, src, kids) {
   const first = /** @type {Element} */ (kids[index]);
   if (ctx.drawables.has(first)) return null;
   // everything from `first` on (descendants' boxes included) starts no higher than `first` itself
-  range.setStartBefore(first);
-  range.setEndAfter(/** @type {Node} */ (kids[kids.length - 1]));
-  if (range.getBoundingClientRect().top < top - 0.5) return null;
+  if (!tailClear(ctx, src, kids, index, range, top)) return null;
   for (let i = index; i < kids.length; i++) if (kids[i].nodeType === 1 && ctx.ix.focusWithin.has(/** @type {Element} */ (kids[i]))) return null;
   const size = ctx.layer.borderBoxSize(src);
   if (!size) return null;
@@ -415,6 +414,52 @@ function truncation(ctx, src, kids) {
   const w = size.width - (content ? n(cs.paddingLeft) + n(cs.paddingRight) + n(cs.borderLeftWidth) + n(cs.borderRightWidth) : 0);
   const pin = `min-height:${n3(h)}px!important;` + (rowItem ? `width:${n3(w)}px!important;min-width:${n3(w)}px!important;flex:0 0 auto!important;` : '');
   return { index, pin };
+}
+
+/** children per measured block of a TailMemo: one Range rect per block (a Range rect per child cost 30 times more than one over the whole tail) */
+const TAIL_BLOCK = 64;
+
+/**
+ * Does everything from kids[index] on (descendants' boxes included) start no higher than kids[index] itself (its top `top`, viewport px)? One Range rect over the tail. The page
+ * builds of the scroll compositor ask it of one container at many cut points while its layout does not change: with the request's `scroll.memo` the tail is measured once, in
+ * blocks of TAIL_BLOCK children from the last one (the union of the blocks' Range rects is the tail's Range rect; tops are kept relative to the container, which a scroll
+ * moves with its content), and each later cut measures only the rest of its own block. The memo is used only while the cut child and the last one sit where they were
+ * measured relative to the container (else it is measured again); the compositor empties it on every change it is told of.
+ * @param {Ctx} ctx @param {Element} src @param {Node[]} kids @param {number} index @param {Range} range @param {number} top @returns {boolean}
+ */
+function tailClear(ctx, src, kids, index, range, top) {
+  const memo = ctx.req.scroll?.memo;
+  const last = kids.length - 1;
+  if (!memo) {
+    range.setStartBefore(kids[index]);
+    range.setEndAfter(kids[last]);
+    return range.getBoundingClientRect().top >= top - 0.5;
+  }
+  const at = src.getBoundingClientRect().top;
+  /** relative top of the content of kids[a..b] (Infinity: no box with an area, which the engine leaves out of a Range rect) */
+  const span = (/** @type {number} */ a, /** @type {number} */ b) => {
+    range.setStartBefore(kids[a]);
+    range.setEndAfter(kids[b]);
+    const r = range.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 ? r.top - at : Infinity;
+  };
+  // (relative tops in float css px: a scroll by a fractional offset may round their difference by far less than 0.01)
+  const moved = (/** @type {TailMemo} */ m, /** @type {number} */ i) => !Number.isNaN(m.rel[i]) && !(Math.abs(m.rel[i] - (/** @type {Element} */ (kids[i]).getBoundingClientRect().top - at)) < 0.01);
+  let m = memo.get(src);
+  if (!m || m.kids.length !== kids.length || m.kids[index] !== kids[index] || m.kids[last] !== kids[last] || moved(m, index) || moved(m, last)) {
+    const rel = new Float64Array(kids.length).fill(NaN);
+    for (const i of [index, last]) rel[i] = /** @type {Element} */ (kids[i]).getBoundingClientRect().top - at;
+    m = { kids, rel, below: new Float64Array(Math.ceil(kids.length / TAIL_BLOCK) + 1).fill(Infinity), from: Math.ceil(kids.length / TAIL_BLOCK) };
+    memo.set(src, m);
+  }
+  if (Number.isNaN(m.rel[index])) m.rel[index] = /** @type {Element} */ (kids[index]).getBoundingClientRect().top - at;
+  const k = Math.floor(index / TAIL_BLOCK);
+  // below[b]: the lowest relative top of the content from block b to the end
+  for (let b = m.from - 1; b > k; b--) m.below[b] = Math.min(span(b * TAIL_BLOCK, Math.min(last, (b + 1) * TAIL_BLOCK - 1)), m.below[b + 1]);
+  m.from = Math.min(m.from, k + 1);
+  const low = Math.min(span(index, Math.min(last, (k + 1) * TAIL_BLOCK - 1)), m.below[k + 1]);
+  // no box at all: the engine's Range rect is at the viewport origin, as without the memo
+  return (low === Infinity ? -at : low) >= top - at - 0.5;
 }
 
 /**

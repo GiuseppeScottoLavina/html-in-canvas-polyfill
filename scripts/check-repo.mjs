@@ -78,7 +78,8 @@ if (!docsOnly) {
   // 13575 / 13525 / 13900 -> 14025 (2026-10-19, measured 14,012 with the three steps above together: 13,462 + 108 + 47 + 395).
   // 14025 -> 14075 (2026-10-19, measured 14,053; 14,012 before this step): the scroll synchronisation kept out of the author's sight (the transition hold released in two
   // style updates, the clip of the colour layer, no synchronisation of animated, shadow-host or slotted scrollers).
-  if (total > 14075) problems.push(`G-size: core is ${total} code lines (> 14075)`);
+  // 14075 -> 14100 (2026-10-19, measured 14,083; 14,053 before this step): the truncation test measured once per scroller for its pages (clone.js tailClear, the compositor's memo).
+  if (total > 14100) problems.push(`G-size: core is ${total} code lines (> 14100)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

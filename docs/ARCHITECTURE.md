@@ -350,6 +350,11 @@ Tick RUN(now), for each canvas record in reverse tree order:
     or refreshes. A dirty part is never composed: the step falls back to the plain path, and the fallback tile, copied from the retained surface, repairs the pages it covers (pinned
     elements, grown by the offset change since its build, and rounded corners excluded); a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is
     hit-tested (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages.
+  - **Page build cost.** The pages of one scroller cut the same flow container at different rows; the truncation test (one Range rect over the rest of the container, about
+    2.5 ms over 2000 rows) is measured once per scroller in blocks of 64 children (`CaptureRequest.scroll.memo`, `clone.js` `tailClear`), and each page measures only the rest of
+    its own block. The memo lives with the scroller's pages, is emptied by every damage inside the content, and is read only while the cut row and the last row sit where they
+    were measured. A Range rect per child instead cost 30 times more (a 65 ms first build). 2000-row list, trusted wheel stream, headed Chrome 155: page builds p50 6.5 -> 5.2 ms,
+    main thread 28.8 % -> 26.5 %; the per-element `frameRect` reads of the compositor are per pinned element (one or two per build), not per row.
   - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
     the scroller's content ('backdrop': border, background and whatever lies behind the corners); the composition draws the backdrop in the corner squares and the pages inside the
     antialiased rounded clip of the inner border radii with `copy` (which lerps by the clip coverage): within 0.1 % of a live capture in the unit oracle. Not with a classic

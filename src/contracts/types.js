@@ -472,7 +472,16 @@ export {};
  * @property {boolean} prune          budget.soft exceeded: only clone what intersects `rect` (+ ancestor skeleton + spacers)
  * @property {InteractionSnapshot} interaction  hover/active chains, focus, caret phase at request time (the clone mirrors them as classes)
  * @property {Element} [hideText]     this field is cloned with transparent text: the backdrop tile of the optimistic text overlay
- * @property {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'}} [scroll]  a PAGE of the scroll compositor: the scroller `el` is rendered at scrollTop `top` instead of its live offset, the `hide` elements (pinned sticky descendants) invisible; `bars`: only the classic bar's track (thumb hidden) or only its thumb (everything else invisible); `shape` (a rounded scroller): 'square' renders `el` with square corners (the compositor clips to the rounded port), 'backdrop' renders it without its content (what lies under that clip)
+ * @property {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop', memo?: Map<Element, TailMemo>}} [scroll]  a PAGE of the scroll compositor: the scroller `el` is rendered at scrollTop `top` instead of its live offset, the `hide` elements (pinned sticky descendants) invisible; `bars`: only the classic bar's track (thumb hidden) or only its thumb (everything else invisible); `shape` (a rounded scroller): 'square' renders `el` with square corners (the compositor clips to the rounded port), 'backdrop' renders it without its content (what lies under that clip); `memo` (owned by the compositor, emptied by every change it is told of): what the walk measured of the layout for the pages of this scroller (TailMemo)
+ */
+
+/**
+ * @typedef {Object} TailMemo  the truncation test of clone.js (tailClear) for one flow container, measured for many page builds of one scroller (the layout of its content does not
+ * change between them; it is checked at each use)
+ * @property {Node[]} kids  the children it was measured for (same nodes, same order)
+ * @property {Float64Array} rel  tops of the element children asked about, relative to the container's top (NaN: not read); the layout check
+ * @property {Float64Array} below  per block of children: the lowest top, relative to the container, of the content from that block to the last child (Infinity: no box)
+ * @property {number} from  lowest block measured
  */
 
 /**
