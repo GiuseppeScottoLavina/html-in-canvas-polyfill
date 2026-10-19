@@ -69,7 +69,7 @@ if (!docsOnly) {
   // 13150 -> 13250 (2026-10-16, measured 13,225; 13,133 before this step): plugin actions in the effects host (handle.trigger / settled, the declared `actions` of ABI v2).
   // 13250 -> 13475 (2026-10-17, measured 13,462; 13,225 before this step): text selections in the engine's colours on every platform (the selection foreground,
   // author ::selection colours, selected page text recoloured in the clone, the glyph copy of a field, the line box and line-break marks; snapshot/capture/selection-paint.js).
-  // 13475 -> 13525 (2026-10-19, measured 13,501; 13,462 before this step): the cheaper clone walk (a per-build frame measurer in live/measure.js and LiveLayer, scroll metrics
+  // 13475 -> 13525 (2026-10-19, measured 13,509; 13,462 before this step): the cheaper clone walk (a per-build frame measurer in live/measure.js and LiveLayer, scroll metrics
   // read only of scroll containers, one top-layer query, the token collector skipping repeated class / style values).
   if (total > 13525) problems.push(`G-size: core is ${total} code lines (> 13525)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);

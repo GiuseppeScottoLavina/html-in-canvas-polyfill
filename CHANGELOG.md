@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Snapshot builds read less of the live page, with unchanged output: the clone walk measures the drawable once per build instead of once per list row, reads scroll metrics only of scroll containers and form controls, and no longer creates an `Attr` node per attribute or copies child lists. A parity test builds the examples, the test fixtures and edge cases (transforms, sticky, scrollers, rounded boxes, long lists, shadow DOM, forms, selections) with the released walk and the new one and requires identical snapshots. Per build (p50 / p95 ms, headed Chrome 155, DPR 2): an inner-scroll list of 300 rows 2.11 / 2.54 -> 1.52 / 2.06, the F2 list 4.58 / 6.47 -> 2.89 / 3.68, a 60 Hz counter 1.34 / 1.48 -> 1.05 / 1.22, F4 with 200 elements 1.78 / 3.17 -> 1.31 / 2.25, F4 with 2000 elements 8.53 / 10.28 -> 5.38 / 6.36, typing in a textarea 1.53 / 2.52 -> 1.45 / 2.27.
+
 ## [0.1.0-preview.1] - 2026-10-17
 
 First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` under the npm dist-tag `next`.
