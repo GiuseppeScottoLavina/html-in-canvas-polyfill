@@ -56,6 +56,8 @@ A drawable that updates often (typing, animation, a slider) should stay well und
 - Keep the drawable small and static where you can: animations and transitions are re-snapshotted at the cap, frozen at the sampled time (`css-animations`). Prefer an effect plugin for motion over animating the source.
 - Do not read the canvas back every frame (`getImageData`) on a native implementation: it was measured to slow the native path considerably. The polyfill's own retained surfaces are not affected.
 - Use `framecap` deliberately: 30 or 60 for forms, higher only when an effect animates.
+- An effect costs nothing while its canvas is out of view: the effect host pauses more than half a viewport away and when the document is hidden (gallery with the water effect, headless: renderer + GPU process CPU 28.8 % on screen, 1.3 % one viewport away). `paint` events and snapshot builds go on off-screen, as they do natively.
+- Chrome's dropped-frame count during a page scroll over a capped effect reflects the cap, not the effect's work. Measured (headed Chrome 155, 120 Hz, DPR 2, wheel scroll of the gallery with the water effect): cap 60, 66 frames counted as dropped (all of them "presented partial": the scroll moved, the canvas did not, as the cap asks); cap 120, twice the effect frames, 1 dropped; the effect off, 12. Main thread busy 4 to 5 %, no task above 8.33 ms in any of them. The scroll itself is presented every frame; to see the effect move at the display rate, raise the cap.
 - Measure with a trace, not the Long Tasks API (its threshold is 50 ms, six times a 120 Hz frame): `RunTask` on the renderer main thread against 8.33 ms (`test/harness/README.md`).
 
 ## 6. How to measure your own page

@@ -21,11 +21,11 @@ export function builtBundle(name) {
 
 /**
  * Open the gallery with this plugin selected, in a new headless Chrome. `window.__e2e` counts the presented effect frames (`frames`), the
- * time of the last one (`last`, performance.now()) and the effecterror events (`errors`).
+ * time of the last one (`last`, performance.now()) and the effecterror events (`errors`). `initScript` runs before any script of the page.
  * @param {string} name
- * @param {{reducedMotion?: boolean, width?: number, height?: number}} [o]
+ * @param {{reducedMotion?: boolean, width?: number, height?: number, initScript?: string}} [o]
  */
-export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980 } = {}) {
+export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '' } = {}) {
   const bundle = builtBundle(name);
   const server = await startServer();
   const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'] });
@@ -35,6 +35,7 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
     const page = await browser.newPage();
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     if (reducedMotion) await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    if (initScript) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: initScript });
     await page.navigate(`${server.url}/examples/plugins/?effect=${name}`);
     await page.waitForFunction(`!!(window.__gallery && window.__gallery.ready && window.__gallery.active === ${JSON.stringify(name)})`, { timeout: 20000 });
     await page.evaluate(`(() => {

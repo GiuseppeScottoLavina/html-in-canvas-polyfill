@@ -12,6 +12,7 @@ import { createMapperChain } from './input-mapper.js';
 import { createInterposer } from './interposer.js';
 import { captureMapper } from './plugin-abi.js';
 import { createNativeSourceProvider, createStoreSourceProvider } from './source-provider.js';
+import { watchVisibility } from './visibility.js';
 
 /** @typedef {import('../contracts/types.js').EffectHost} EffectHost */
 /** @typedef {import('../contracts/types.js').EffectHostOptions} EffectHostOptions */
@@ -30,9 +31,15 @@ import { createNativeSourceProvider, createStoreSourceProvider } from './source-
 const MAX_LOSSES = 3;
 const LOSS_WINDOW_MS = 10000;
 const FPS_WINDOW = 32;
+/** While the canvas cannot be seen, an action that somebody awaits still advances: one frame every SETTLE_MS (10 per second). */
+const SETTLE_MS = 100;
 
 /**
  * Runs as a Scheduler FrameHook; uploads only when the source version advanced; renders when due; effecterror on plugin failure (plugin disabled, last frame kept). Keeps source geometry in sync via GeometryApi.
+ * OFF-SCREEN PAUSE (ADR-G): while the canvas cannot be seen (visibility.js: outside the viewport by more than VISIBILITY_MARGIN, or the document hidden) nothing is rendered,
+ * continuous plugins included; the frame clock keeps running (`frame.now` is the time of the frame), so on resume a time-based effect shows the state it has at that
+ * time, with nothing replayed. Coming back into the margin renders at once. While paused, an unsettled trigger()/settled() still advances at 1000 / SETTLE_MS frames
+ * per second, so its promise resolves; a hidden document runs no frames at all, so there it resolves on the first frame after the document is shown again.
  * DEVICE LOSS: `device.lost` is handled (ADR-G): keep presenting the last frame, recreate device, source/destination textures and every plugin pipeline (plugin.create is re-run with the same options), report once; gate G-fault-injection (G-device-lost).
  * @param {HicEnv} env
  * @param {{store: SnapshotStore, scheduler: Scheduler, geometry: GeometryApi, tracker: InteractionTracker}} deps
@@ -98,7 +105,11 @@ class HostRuntime {
     this.sizeChecked = false;
     /** @type {number[]} */ this.lossTimes = [];
     /** @type {Float64Array} */ this.frameTimes = new Float64Array(FPS_WINDOW);
-    this.counters = { frames: 0, uploads: 0, pluginErrors: 0, deviceLosses: 0 };
+    this.counters = { frames: 0, uploads: 0, pluginErrors: 0, deviceLosses: 0, pauses: 0, offscreenFrames: 0 };
+    /** @type {import('./visibility.js').VisibilityWatch|null} */ this.visibility = null;
+    /** @type {any} */ this.settleTimer = 0;
+    /** a paused host may render one frame to advance an unsettled action */
+    this.settleDue = false;
     /** @type {Array<() => void>} */ this.cleanups = [];
     this.chain = createMapperChain();
     /** @type {{stats: () => {remapped: number, passedThrough: number}}|null} */ this.interposer = null;
@@ -110,6 +121,7 @@ class HostRuntime {
       requestRender: () => this.requestRender(),
       reducedMotion: () => !!(/** @type {any} */ (env.window)).matchMedia?.('(prefers-reduced-motion: reduce)').matches,
       reportError: (error, slot, phase) => this.reportPluginError(error, slot, phase),
+      onWait: () => { if (!this.isVisible()) this.armSettle(); },
     });
     const hook = (/** @type {number} */ now, /** @type {{frameCap: number, due: boolean}} */ info) => this.onFrame(now, info);
     this.frames = record ? schedulerFrameSource(deps.scheduler, record, hook) : rafFrameSource(env, canvas, hook);
@@ -123,6 +135,9 @@ class HostRuntime {
       bus.on(BUS.RESIZE, (/** @type {{record: unknown}} */ e) => { if (e.record === this.record) invalidate(); }),
       bus.on(BUS.DPR, invalidate),
     );
+    const visibility = watchVisibility(this.env, this.canvas, (visible) => this.onVisibility(visible));
+    this.visibility = visibility;
+    this.cleanups.push(() => visibility.dispose(), () => this.clearSettle());
     if (this.opts.interposer !== false && this.record?.layer) {
       const interposer = createInterposer(this.env, this.record, this.chain, this.deps.tracker);
       this.interposer = interposer;
@@ -150,6 +165,39 @@ class HostRuntime {
     this.frames.wake();
   }
 
+  isVisible() { return this.visibility?.visible ?? true; }
+
+  /** @param {boolean} visible */
+  onVisibility(visible) {
+    if (this.destroyed) return;
+    if (visible) {
+      // render on the next frame: the canvas is still inside the margin, so this fresh frame is presented before it scrolls in
+      this.clearSettle();
+      this.requestRender();
+    } else {
+      this.counters.pauses += 1;
+      this.armSettle();
+    }
+  }
+
+  /** While paused: schedule the next settle frame when some action is unsettled. */
+  armSettle() {
+    if (this.settleTimer || this.destroyed || !this.plugins.unsettled()) return;
+    this.settleTimer = this.env.window.setTimeout(() => {
+      this.settleTimer = 0;
+      // re-checked here: an action that ended on the last settle frame resolves its promise a few microtasks after that frame
+      if (this.destroyed || this.isVisible() || !this.plugins.unsettled()) return;
+      this.settleDue = true;
+      this.frames.wake();
+    }, SETTLE_MS);
+  }
+
+  clearSettle() {
+    if (this.settleTimer) this.env.window.clearTimeout(this.settleTimer);
+    this.settleTimer = 0;
+    this.settleDue = false;
+  }
+
   /**
    * @param {number} now
    * @param {{frameCap: number, due: boolean}} info
@@ -161,9 +209,18 @@ class HostRuntime {
     try {
       const v = this.provider.version();
       const sourceChanged = v !== null && v !== this.uploaded;
-      if (!(sourceChanged || this.renderRequested || this.plugins.hasContinuous())) return false;
+      if (!(sourceChanged || this.renderRequested || this.plugins.hasContinuous() || this.settleDue)) return false;
+      const paused = !this.isVisible();
+      // paused: the work waits for the resume (the source is uploaded and the clock read then), except a settle frame
+      if (paused && !this.settleDue) { this.armSettle(); return false; }
       if (!info.due) return true;
       this.renderFrame(now, info.frameCap);
+      if (paused) {
+        this.counters.offscreenFrames += 1;
+        this.settleDue = false;
+        this.armSettle();
+        return false;
+      }
       return this.renderRequested || this.plugins.hasContinuous();
     } catch (error) {
       this.env.reporter.caught(error, 'effects:frame');
@@ -320,7 +377,7 @@ class HostRuntime {
       const oldest = this.frameTimes[(this.counters.frames - n + 1) % FPS_WINDOW];
       fps = newest > oldest ? ((n - 1) * 1000) / (newest - oldest) : 0;
     }
-    return { ...this.counters, fps, sourceVersion: this.uploaded, ...(this.interposer?.stats() ?? { remapped: 0, passedThrough: 0 }) };
+    return { ...this.counters, fps, paused: !this.isVisible(), sourceVersion: this.uploaded, ...(this.interposer?.stats() ?? { remapped: 0, passedThrough: 0 }) };
   }
 
   /** @returns {EffectHost} */

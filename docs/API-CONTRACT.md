@@ -332,6 +332,12 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
   `SnapshotStore` in polyfill mode, the public native API in native mode, which is not supported: section 7.6), uploads only when `version()` advanced, renders the
   plugin chain each due frame (`continuous` plugins) or on change, and keeps the source geometry in sync so the live element sits
   under the presented pixels (`GeometryApi.update(source, fill transform)`).
+- Off-screen pause (always on, no option): while the canvas does not intersect the viewport enlarged by half its size on each side (and
+  each scroll container around it enlarged the same way: `IntersectionObserver` `scrollMargin: '50%'`, or `rootMargin: '50%'` where
+  `scrollMargin` is missing), or its document is hidden, the host renders and uploads nothing, `continuous` plugins included. Back inside
+  that area it renders on the next frame; a scroll that moves the canvas box from outside to inside it renders in the frame of that
+  scroll (a jump). `frame.now` is the time of the frame and does not stop during a pause; `delta` is the real gap since the previous
+  presented frame. `stats()` reports `paused`, `pauses` and `offscreenFrames`. Without `IntersectionObserver` the host never pauses.
 - Presented-frame events on the canvas: `effectframe` (CustomEvent, detail `EffectPresentationFrame`) and `effecterror` (CustomEvent,
   detail `{error, type, id, phase}`, `phase` one of `create`, `render`, `resize`, `setOptions`, `recreate`, `destroy`, `mountUI-dispose`,
   `action`, `settled`; `type: 'host', phase: 'recover'` when the device recovery gives up); after `effecterror` the canvas keeps the last
@@ -360,6 +366,9 @@ the plugin rests in (documented by each plugin), or `null`.
    the rejection).
 7. The pending trigger resolves `null` when the plugin is removed (`remove()`, `host.destroy()`, `uninstall()`), disabled, or fails, and
    when its instance is destroyed for a device loss (the action is not replayed on the new instance).
+8. While the host is paused off-screen (7.3), a pending trigger or `settled()` still advances: the host renders one frame every 100 ms
+   until no trigger or `settled()` of any of its plugins is pending, so the promise resolves on the plugin's own timeline. A hidden
+   document runs no frames: there it resolves on the first frame after the document is shown again.
 
 `context.trigger` and `ui.trigger` (the plugin's own triggers: its submit handler, its buttons) run the same steps on the plugin's handle,
 so they supersede a pending page trigger; a rejection is also reported (`effecterror`, phase `action`).
@@ -370,7 +379,8 @@ or failure; across a device loss they are attached to the re-created instance. A
 (phase `settled`) and resolves `null`.
 
 Verified by `test/unit/gpu-effects/effect-plugins.test.mjs` (every rule above, with a scripted plugin) and, per example plugin, by its
-Node tests through the real handle, its GPU test (`runActionOnGpu`) and its gallery e2e (`actionChecks`, trusted clicks).
+Node tests through the real handle, its GPU test (`runActionOnGpu`) and its gallery e2e (`actionChecks`, trusted clicks). Rule 8 and the
+off-screen pause: `test/unit/gpu-effects/host-pause.browser.test.mjs`, `visibility.browser.test.mjs` and `plugins/water/test/offscreen.e2e.mjs`.
 
 ### 7.4 Input mapper and interposer
 `captureInputMapper(frame: EffectPresentationFrame): InputMapper` is called by the host each time a frame is PRESENTED; the host keeps

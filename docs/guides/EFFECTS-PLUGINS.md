@@ -74,7 +74,9 @@ try {
 }
 ```
 
-`host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, sourceVersion, remapped, passedThrough}`) and `destroy()`.
+`host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, paused, pauses, offscreenFrames, sourceVersion, remapped, passedThrough}`) and `destroy()`.
+
+The host does no work for a canvas nobody can see. While the canvas is more than half a viewport (or half its scroll container) out of view, or the document is hidden, it renders nothing, `continuous` plugins included, and uploads nothing; `stats().paused` is then `true`. It starts again before the canvas scrolls back in, so the first frame you see is current; a jump straight into view (`scrollTo`, an anchor) is rendered in the frame that shows it. The frame clock does not stop: on resume an effect shows what it shows at that time, nothing is replayed. An action you trigger, or a `settled()` you await, while the canvas is out of view still completes: the host renders about 10 frames per second until it settles (`stats().offscreenFrames`), and in a hidden document, where the browser runs no frames, on the first frame after the document is shown again. There is no option: the pause cannot be seen.
 
 #### 2.1 Size the source like the canvas
 
@@ -300,7 +302,7 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 
 | member | |
 |---|---|
-| `render(frame)` | required. Encode your pass into `frame.encoder`. `frame` has `now` (ms), `delta`, `frameIndex`, `frameCap`, `sourceVersion`, `sourceReady`, `encoder`, `sourceView`/`sourceTexture`, `destinationView`/`destinationTexture`, and `width`, `height` (backing pixels), `cssWidth`, `cssHeight`, `dpr`. When `sourceReady` is false no snapshot has been uploaded yet: write something harmless. |
+| `render(frame)` | required. Encode your pass into `frame.encoder`. `frame` has `now` (ms), `delta`, `frameIndex`, `frameCap`, `sourceVersion`, `sourceReady`, `encoder`, `sourceView`/`sourceTexture`, `destinationView`/`destinationTexture`, and `width`, `height` (backing pixels), `cssWidth`, `cssHeight`, `dpr`. When `sourceReady` is false no snapshot has been uploaded yet: write something harmless. `now` is the time of the frame and keeps running while the host is idle or paused off-screen, so `delta` (the time since the previous presented frame) can be seconds long: clamp it before you integrate anything with it (the example plugins clamp it to 0.1 s). |
 | `spatial` | `true` when your output moves pixels. Then `captureInputMapper` is REQUIRED: `addPlugin` rejects with a `TypeError` when the created instance is `spatial` without it. |
 | `continuous` | `true` to be rendered on every capped frame even when the source did not change (animations). Otherwise the host renders when the source changed or you call `context.requestRender()`. It may change at runtime (a getter, or a property you assign): the host reads it after every frame, so a plugin that animates only now and then is `continuous` only while it animates. A host with nothing to render is idle and reads it again only at its next frame: after switching it to `true`, call `context.requestRender()`. |
 | `captureInputMapper(frame)` | see section 14 |
@@ -349,6 +351,7 @@ definePlugin({ type: 'wobble', apiVersion: 2, version: 1, actions: ['pulse'], cr
 - `action` is one of your declared names (the host has checked it); `options` is a frozen copy of what the page passed (`{}` when nothing); `info.reducedMotion` is `prefers-reduced-motion: reduce` as the host read it for this call.
 - Start the action and return the state your plugin will rest in, or a promise of it. Resolve **after the frame that draws the end state was rendered** (resolve in `render`, after you encoded that frame), so that a page that awaits it and then reads the canvas sees the end state.
 - Start the animation's clock at the first frame that renders it (as the example plugins do: the length of the action is then the same at every frame cap), and call `context.requestRender()` if your instance is not `continuous`.
+- Drive it from `frame.now`, not from a count of frames: while the canvas is out of view the host renders an unsettled action at about 10 frames per second, and after a hidden document is shown again the next frame may already be past the end of the action.
 - Resolve with `null` when your plugin supersedes or cancels the action itself (a submit handler that starts another one).
 - Throw a `TypeError` for options you cannot use (the host rejects the trigger with it; your plugin keeps running).
 - When the action cannot do anything now (reduced motion without a reduced variant, a state where it makes no sense), return what `settled()` returns: the state you rest in next.

@@ -69,7 +69,9 @@ if (!docsOnly) {
   // 13150 -> 13250 (2026-10-16, measured 13,225; 13,133 before this step): plugin actions in the effects host (handle.trigger / settled, the declared `actions` of ABI v2).
   // 13250 -> 13475 (2026-10-17, measured 13,462; 13,225 before this step): text selections in the engine's colours on every platform (the selection foreground,
   // author ::selection colours, selected page text recoloured in the clone, the glyph copy of a field, the line box and line-break marks; snapshot/capture/selection-paint.js).
-  if (total > 13475) problems.push(`G-size: core is ${total} code lines (> 13475)`);
+  // 13475 -> 13575 (2026-10-19, measured 13,570; 13,462 before this step): the off-screen pause of the effect host (effects/visibility.js: the IntersectionObserver
+  // with its margin, the document's visibility, the scroll check for jumps into view; the paused frame hook and the settle frames of pending actions).
+  if (total > 13575) problems.push(`G-size: core is ${total} code lines (> 13575)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

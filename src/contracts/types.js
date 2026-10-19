@@ -737,9 +737,23 @@ export {};
  * @property {() => void} remove
  */
 /**
+ * @typedef {Object} EffectHostStats
+ * @property {number} frames  presented frames
+ * @property {number} fps  presentation rate over the last frames
+ * @property {number} uploads
+ * @property {number} pluginErrors
+ * @property {number} deviceLosses
+ * @property {boolean} paused  the canvas cannot be seen (off-screen or hidden document), so the host renders nothing (ADR-G)
+ * @property {number} pauses  times the host paused
+ * @property {number} offscreenFrames  frames rendered while paused, only to advance an unsettled trigger()/settled()
+ * @property {number|null} sourceVersion
+ * @property {number} remapped
+ * @property {number} passedThrough
+ */
+/**
  * @typedef {Object} EffectHost
  * @property {number} pluginCount
  * @property {(def: EffectPluginDefinition, options?: Record<string, unknown>) => Promise<EffectHandle>} addPlugin
- * @property {() => {frames:number, fps:number, sourceVersion:number|null}} stats
+ * @property {() => EffectHostStats} stats
  * @property {() => void} destroy
  */
