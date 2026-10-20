@@ -158,6 +158,22 @@ test('range drag in isolation: input events per move, one change, value follows 
   assert.deepEqual(log, ['input', 'input', 'input', 'change']);
 });
 
+test('the layer cursor follows the mapped element, not the cursor the interposer itself put on the layer', (t) => {
+  const s = setup(t, (p) => p);
+  s.el('b').style.cursor = 'pointer';
+  const plain = document.createElement('div');
+  plain.dataset.id = 'plain';
+  plain.style.cssText = 'position:absolute;left:300px;top:150px;width:100px;height:60px';
+  s.rig.layerEl.append(plain);
+  s.fire('pointermove', 240, 25);
+  assert.equal(s.rig.layerEl.style.cursor, 'pointer', 'over B: its cursor');
+  s.fire('pointermove', 350, 180);
+  // the plain box has no cursor of its own; read while the layer carried "pointer", it inherited that value and the pointer cursor stuck
+  assert.equal(s.rig.layerEl.style.cursor, 'auto', 'over a box without a cursor: auto, not the inherited pointer');
+  s.fire('pointermove', 240, 25);
+  assert.equal(s.rig.layerEl.style.cursor, 'pointer', 'back over B');
+});
+
 test('dispose removes listeners, hover and cursor', (t) => {
   const s = setup(t, shiftRight);
   s.fire('pointermove', 20, 20);

@@ -77,7 +77,20 @@ export function createInterposer(env, record, chain, tracker) {
     if (next === shown) return;
     shown = next;
     tracker.setMappedTarget(record, next);
-    setCursor(none ? 'default' : el ? win.getComputedStyle(el).cursor : '');
+    setCursor(none ? 'default' : el ? cursorOf(el) : '');
+  }
+
+  /**
+   * The cursor `el` has without the one this interposer put on the layer: an element without a cursor of its own inherits the
+   * layer's, so reading it while the layer carries the previous target's cursor would keep that cursor everywhere.
+   * @param {Element} el
+   */
+  function cursorOf(el) {
+    if (!cursor) return win.getComputedStyle(el).cursor;
+    layerEl.style.removeProperty('cursor');
+    const value = win.getComputedStyle(el).cursor;
+    layerEl.style.setProperty('cursor', cursor);
+    return value;
   }
 
   /** @param {string} value */

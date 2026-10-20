@@ -58,8 +58,8 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 |---|---|---|
 | `hic-live-polyfill.iife.js` | 570,441 | 142,800 |
 | `hic-live-polyfill.iife.min.js` | 290,992 | 101,277 |
-| `hic-live-effects.iife.js` | 66,249 | 18,425 |
-| `hic-live-effects.iife.min.js` | 32,217 | 12,220 |
+| `hic-live-effects.iife.js` | 66,493 | 18,466 |
+| `hic-live-effects.iife.min.js` | 32,358 | 12,251 |
 | `hic-live-native-bridge.iife.js` | 32,004 | 8,739 |
 | `hic-live-native-bridge.iife.min.js` | 13,887 | 5,319 |
 | `hic-live-engines.iife.js` | 67,294 | 20,015 |
@@ -67,7 +67,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-gpu.iife.js` | 20,067 | 5,539 |
 | `hic-live-gpu.iife.min.js` | 10,469 | 4,015 |
 | `esm/index.js` | 630,575 | 168,324 |
-| `esm/effects.js` | 57,056 | 15,956 |
+| `esm/effects.js` | 57,286 | 15,999 |
 | `esm/native-bridge.js` | 21,963 | 5,811 |
 | `plugins/crt.iife.js` | 19,920 | 7,291 |
 | `plugins/crt.iife.min.js` | 13,766 | 6,152 |

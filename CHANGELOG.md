@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- With an effect plugin on, the cursor kept the look of the last control with a cursor of its own (the pointer hand of a button) over every part of the canvas without one. The interposer puts the cursor of the element under the mapped pointer on the live layer, and it read that element's cursor while the layer still carried the previous one, which elements without a cursor of their own inherit. It now reads the cursor without its own.
+
 ## [0.1.0-preview.2] - 2026-10-19
 
 A performance release. Scrolling inside a drawable is presented at the display rate in Chrome, effects do no work while their canvas cannot be seen, and snapshot builds read less of the live page. The API is unchanged; `host.stats()` of the effect host gains three fields.
