@@ -22,7 +22,7 @@
 // printed as KNOWN RED with its reason, and with --allow-known (CI) it does not fail the run; its thresholds are not changed.
 import { parseArgs } from 'node:util';
 import { join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import * as H from '../harness/index.mjs';
 import { oracle } from '../xbrowser/lib.mjs';
@@ -49,16 +49,17 @@ for (const f of ['dist/hic-live-polyfill.iife.js', 'dist/hic-live-polyfill.iife.
 }
 
 /**
- * Gaps of the polyfill this probe measured (Chrome 155, 2026-10-21: Linux in the CI image, macOS with classic bars forced), by check id and platform. Windows shows the
- * same Fluent classic bars as Linux by default and is listed with it. A listed check that PASSES on a listed platform fails the run (KNOWN RED NOW PASSES): the list
- * is the record and must shrink when a gap is fixed.
+ * Gaps of the polyfill this probe measured, by check id and platform (2026-10-21: Chrome 155 on Linux in the CI image and on macOS with classic bars forced, Chrome 156
+ * on the Windows Server 2025 CI runner, all headless). A listed check that PASSES on a listed platform fails the run (KNOWN RED NOW PASSES): the list is the record
+ * and must shrink when a gap is fixed.
  * @type {Record<string, {platforms: string[], reason: string}>}
  */
 const KNOWN = {
   'controls.regions': { platforms: ['linux', 'win32', 'darwin'], reason: 'Chromium includes the classic scrollbar thickness in the intrinsic width of an unsized <textarea> and listbox <select>; the clone in the SVG image has no classic bars, so those controls are drawn about 15 css px narrower than the live ones and the controls after them reflow (drawn away from where they are hit); listbox bars are not painted' },
-  'controls.whole': { platforms: ['linux', 'win32', 'darwin'], reason: 'the reflow of controls.regions moves the rest of the F6 surface' },
+  'controls.whole': { platforms: ['linux', 'darwin'], reason: 'the reflow of controls.regions moves the rest of the F6 surface' },
   'controls.bars': { platforms: ['linux', 'win32', 'darwin'], reason: 'the polyfill paints the macOS legacy bar (light track, thumb from the top of the track) for Chromium on every platform; Chromium on Linux and Windows draws Fluent bars (arrow buttons, the thumb between them, a dark look under color-scheme: dark)' },
   'scrollers.bars': { platforms: ['linux', 'win32', 'darwin'], reason: 'as controls.bars' },
+  'selection.system': { platforms: ['win32'], reason: 'headless Chrome on Windows paints a selection without an author ::selection rule in Chromium\'s default rgba(0, 65, 198, 0.8) (rgb(51, 103, 209) over white, rgb(2, 56, 165) over #0e1626), while the CSS system colour Highlight that the polyfill draws is the Windows accent #0078d4: 54-91 % of the selection\'s pixels differ; the glyphs are HighlightText, as decided. Not measured in a headed Windows Chrome' },
 };
 /** @type {{id?: string, section: string, name: string, ok: boolean, status: 'pass'|'fail'|'known'|'now-passes', detail?: any}[]} */
 const checks = [];
@@ -292,11 +293,24 @@ async function formAtDpr(page, dpr) {
   check(S, 'positive control: the canvas fails against the twin 3 css px off', ctl.sizeMatch && ctl.fraction > 0.03, { over16: ctl.sizeMatch ? pct(ctl.fraction) : null });
 }
 
-/** (a) The selection pixel oracle, in its own browser. */
+/** (a) The selection pixel oracle, in its own browser; its per-case results are judged in three groups. */
 function selection() {
   const driver = join(H.PROJECT_ROOT, 'test/unit/snapshot-capture/selection-oracle.driver.mjs');
-  const r = spawnSync(process.execPath, [driver, `--chrome=${opt.chrome}`, `--out=${join(opt.out, 'selection')}`], { stdio: 'inherit' });
-  check('selection', 'the selection oracle passes (native selection pixels vs the polyfill tile, the engine colour model vs src/util/engine.js)', r.status === 0, { exit: r.status });
+  const out = join(opt.out, 'selection');
+  const file = join(H.PROJECT_ROOT, out, 'results.json');
+  rmSync(file, { force: true });
+  const r = spawnSync(process.execPath, [driver, `--chrome=${opt.chrome}`, `--out=${out}`], { stdio: 'inherit' });
+  /** @type {{facts: any, cases: any[]}|null} */ const res = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  check('selection', 'the selection oracle ran every case', !!res && res.cases.length >= 24, { exit: r.status, cases: res?.cases.length ?? 0 });
+  if (!res) return;
+  facts.selection = res.facts;
+  const bad = (/** @type {any[]} */ list) => list.filter((c) => !c.pixels || !c.controls).map((c) => `${c.name} ${c.over16} %`);
+  const sys = res.cases.filter((c) => !c.author), author = res.cases.filter((c) => c.author);
+  check('selection', `no author ::selection rule (${sys.length} cases): the tile equals the native selection (<= 1 % over 16) and the controls fire`, bad(sys).length === 0, { bad: bad(sys) }, 'selection.system');
+  check('selection', `author ::selection rules (${author.length} cases): the tile equals the native selection (<= 1 % over 16) and the controls fire`, bad(author).length === 0, { bad: bad(author) });
+  const models = res.cases.filter((c) => c.model);
+  check('selection', 'the engine paints the selected glyphs as src/util/engine.js decides (HighlightText or their own colour)', models.length > 0 && models.every((c) => c.model.native === c.model.decided),
+    { decided: res.facts.decided ? 'HighlightText' : 'own colour', engine: [...new Set(models.map((c) => (c.model.native ? 'HighlightText' : 'own colour')))] });
 }
 
 // ---- run (after every declaration above: the helpers are consts)
