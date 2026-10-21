@@ -7,7 +7,7 @@
  * off-thread, ADR-D.8); the budget is a token bucket that refills at `mainThreadShare` ms per ms, so the long-run share is bounded and a build is only ever delayed, never starved.
  */
 
-import { chooseScale, gridRasterScale } from './surfaces.js';
+import { chooseScale } from './surfaces.js';
 import { inflateRect, intersectRect, roundOutRect } from '../../util/rect.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -255,7 +255,7 @@ export function planGeometry(env, record, size, usedBytes, el) {
   const side = (/** @type {number} */ v) => (v > m ? Math.min(Math.ceil(v), MAX_INK) : m);
   /** @type {Insets} */
   const ink = measured ? { left: side(measured.left), top: side(measured.top), right: side(measured.right), bottom: side(measured.bottom) } : { left: m, top: m, right: m, bottom: m };
-  const { scale, reduced } = chooseScale(size, ink, gridRasterScale(record.contentBox, env.window?.devicePixelRatio ?? 0), env.options, usedBytes);
+  const { scale, reduced } = chooseScale(size, ink, record.contentBox.gridScaleX, env.options, usedBytes);
   const snapCeil = (/** @type {number} */ n) => Math.ceil(n - 1e-6);
   return { bw: size.width, bh: size.height, scale, reduced, ink, widthPx: snapCeil((size.width + ink.left + ink.right) * scale), heightPx: snapCeil((size.height + ink.top + ink.bottom) * scale) };
 }

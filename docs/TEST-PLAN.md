@@ -262,7 +262,7 @@ the scrolled light listbox has its own 4 % structural bound on Android; informat
 
 ### 2.11 Platform probe G-platform (`node test/platform/run.mjs`; CI on Linux and Windows, headless)
 
-`node test/platform/run.mjs [--chrome=stable|canary|<path>] [--only=fonts,controls,scrollers,dpr,selection] [--dpr=1.25,1.5] [--allow-known]`. What the platform's own theme
+`node test/platform/run.mjs [--chrome=stable|canary|<path>] [--only=fonts,controls,scrollers,dpr,selection] [--dpr=1.25,1.5] [--scrollbars=classic|overlay] [--allow-known]`. What the platform's own theme
 puts on screen, against native pixels of the same browser: the polyfill's canvas backing store against a compositor screenshot of the plain-DOM twin (fixture `mode=ref`).
 Headless Chrome (one at a time) at a real device pixel ratio (`--force-device-scale-factor`), classic scrollbars forced (the Windows and Linux default), grayscale text
 antialiasing (`--disable-lcd-text`: a canvas never gets subpixel text, native `drawElementImage` included, so ClearType would separate the twin from any canvas). Needs `npm run build`.

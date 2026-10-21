@@ -112,6 +112,11 @@ export function hasBarGutter(src, cs) {
   return h.offsetWidth - src.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth) > 0.5 || h.offsetHeight - src.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth) > 0.5;
 }
 
+/** @type {boolean|null} */
+let webkitBarsSupported = null;
+/** @returns {boolean} the engine styles bars with ::-webkit-scrollbar */
+const webkitBars = () => (webkitBarsSupported ??= typeof CSS !== 'undefined' && CSS.supports('selector(::-webkit-scrollbar)'));
+
 /** Visual thickness (css px of the root) of the classic bars of an unstyled probe, per devicePixelRatio and scrollbar-width. @type {Map<string, {v: number, h: number}>} */
 const barProbes = new Map();
 
@@ -159,7 +164,8 @@ export function pinBarBox(src, clone) {
   const win = src.ownerDocument.defaultView ?? window;
   const cs = win.getComputedStyle(src);
   if (cs.scrollbarWidth === 'none' || cs.display === 'none') return;
-  const styled = cs.scrollbarWidth === 'auto' && px(win.getComputedStyle(src, '::-webkit-scrollbar').width) > 0;
+  // ::-webkit-scrollbar exists in Chromium and WebKit only (elsewhere the pseudo-element's computed style is not a bar's)
+  const styled = cs.scrollbarWidth === 'auto' && webkitBars() && px(win.getComputedStyle(src, '::-webkit-scrollbar').width) > 0;
   const decl = barBoxPin(borderBoxOf(cs, /** @type {HTMLElement} */ (src)), styled ? 1 : probeBars(src.ownerDocument, cs.scrollbarWidth || 'auto', false).v);
   if (decl) appendInlineStyle(clone, decl);
 }

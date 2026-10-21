@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // G-platform: what the platform's own theme puts on screen, pinned against native pixels in headless Chrome. Written for Windows, where CI runs it (Segoe UI, the
 // classic scrollbars of the default theme, fractional device pixel ratios, Highlight / HighlightText from the system), and runnable on every platform.
-//   node test/platform/run.mjs [--chrome=stable|canary|<path>] [--only=fonts,controls,scrollers,dpr,selection] [--dpr=1.25,1.5] [--out=.scratch/platform] [--allow-known]
+//   node test/platform/run.mjs [--chrome=stable|canary|<path>] [--only=fonts,controls,scrollers,dpr,selection] [--dpr=1.25,1.5] [--scrollbars=classic|overlay]
+//                              [--out=.scratch/platform] [--allow-known]
 // Needs the built bundles (npm run build). Every comparison is the polyfill's canvas BACKING STORE against a compositor screenshot of the plain-DOM twin of the
 // same page in the same browser (fixture mode=ref), each with a positive control that must fail:
 //   fonts      the fonts the platform used for the page text (CSS.getPlatformFontsForNode); on Windows system-ui must be Segoe UI
@@ -17,7 +18,8 @@
 //              the canvas not blank; control: the twin 3 css px off
 //   selection  the selection pixel oracle (test/unit/snapshot-capture/selection-oracle.driver.mjs): a real selection painted by the engine vs the polyfill's tile,
 //              and the engine's colour model (glyphs in HighlightText on Windows and Linux, in their own colour on macOS) vs the one src/util/engine.js decides
-// Classic scrollbars are forced (harness `scrollbars: 'classic'`; Windows and Linux show them anyway). LCD text is off (`--disable-lcd-text`): a canvas never gets
+// Classic scrollbars are forced (harness `scrollbars: 'classic'`; Windows and Linux show them anyway); `--scrollbars=overlay` runs the same comparisons with overlay
+// bars (there must be no gutter, there are no bars to compare). LCD text is off (`--disable-lcd-text`): a canvas never gets
 // subpixel text, native drawElementImage included, so ClearType (on by default on Windows) would separate the twin from ANY canvas by the antialiasing alone.
 // Writes <out>/results.json and the PNGs of every failing comparison; exits 1 on any failed check. A gap this probe has measured is listed in KNOWN below: it is
 // printed as KNOWN RED with its reason, and with --allow-known (CI) it does not fail the run; its thresholds are not changed.
@@ -32,11 +34,14 @@ const { values: opt } = parseArgs({
   options: {
     chrome: { type: 'string', default: 'stable' }, only: { type: 'string', default: 'fonts,controls,scrollers,dpr,selection' },
     dpr: { type: 'string', default: '1.25,1.5' }, out: { type: 'string', default: '.scratch/platform' }, 'allow-known': { type: 'boolean', default: false },
+    scrollbars: { type: 'string', default: 'classic' },
   },
 });
 const ONLY = new Set(opt.only.split(','));
 const DPRS = opt.dpr.split(',').map(Number);
 const OUT = join(H.PROJECT_ROOT, opt.out);
+const CLASSIC = opt.scrollbars !== 'overlay';
+if (opt.scrollbars !== 'classic' && opt.scrollbars !== 'overlay') { console.error(`G-platform: --scrollbars=${opt.scrollbars}: classic or overlay`); process.exit(2); }
 mkdirSync(OUT, { recursive: true });
 const BUNDLE = '/dist/hic-live-polyfill.iife.js';
 const F6 = '/test/fixtures/f6-controls/index.html';
@@ -71,7 +76,7 @@ const KNOWN = {
 /** @type {{id?: string, section: string, name: string, ok: boolean, status: 'pass'|'fail'|'known'|'now-passes', detail?: any}[]} */
 const checks = [];
 /** @type {Record<string, any>} */
-const facts = { platform: process.platform };
+const facts = { platform: process.platform, scrollbars: opt.scrollbars };
 const check = (/** @type {string} */ section, /** @type {string} */ name, /** @type {boolean} */ ok, /** @type {any} */ detail, /** @type {string} */ id = '') => {
   const known = KNOWN[id]?.platforms.includes(process.platform) ? KNOWN[id] : null;
   const status = ok ? (known ? 'now-passes' : 'pass') : known ? 'known' : 'fail';
@@ -89,7 +94,7 @@ const save = (/** @type {string} */ name, /** @type {any} */ img) => writeFileSy
  * @param {number} dpr @param {(page: any) => Promise<void>} fn
  */
 async function atDpr(dpr, fn) {
-  const browser = await H.launchChrome({ name: 'platform', chrome: opt.chrome, dpr, windowSize: [1400, 1000], scrollbars: 'classic', extraArgs: ['--headless=new', '--disable-lcd-text'] });
+  const browser = await H.launchChrome({ name: 'platform', chrome: opt.chrome, dpr, windowSize: [1400, 1000], scrollbars: CLASSIC ? 'classic' : 'overlay', extraArgs: ['--headless=new', '--disable-lcd-text'] });
   try {
     facts.browser = browser.version?.Browser;
     const page = await browser.newPage();
@@ -219,7 +224,8 @@ async function scrollers(page, dpr) {
   const ref = { rest: await shot(page, surf, dpr), scrolled: /** @type {any} */ (null) };
   await scrollAll(page, true); await H.sleep(150);
   ref.scrolled = await shot(page, surf, dpr);
-  check(S, 'classic bars: the unstyled scroller has a vertical gutter', geo['v-light'].gv > 0.5, { gutter: +geo['v-light'].gv.toFixed(3), thin: +geo.thin.gv.toFixed(3) });
+  check(S, CLASSIC ? 'classic bars: the unstyled scroller has a vertical gutter' : 'overlay bars: no scroller has a gutter', CLASSIC ? geo['v-light'].gv > 0.5 : ids.every((id) => geo[id].gv < 0.5 && geo[id].gh < 0.5),
+    { gutter: +geo['v-light'].gv.toFixed(3), thin: +geo.thin.gv.toFixed(3) });
   facts[`gutters@${dpr}`] = Object.fromEntries(ids.map((id) => [id, [+geo[id].gv.toFixed(3), +geo[id].gh.toFixed(3)]]));
   await open(page, F7, 'poly');
   const poly = { rest: await canvasOf(page, '#hic-surface'), scrolled: /** @type {any} */ (null) };
@@ -258,12 +264,13 @@ async function scrollers(page, dpr) {
   }
   facts[`scrollers@${dpr}`] = rows;
   check(S, `the scrollports are laid out as in the twin (${PORT_TEXT}), at rest and scrolled`, badPort.length === 0, { bad: badPort });
-  check(S, `the painted bars match the platform's (<= 3 % over 16, <= 1.5 % over 100), at rest and scrolled`, badBar.length === 0, { bad: badBar }, 'scrollers.bars');
+  if (CLASSIC) check(S, `the painted bars match the platform's (<= 3 % over 16, <= 1.5 % over 100), at rest and scrolled`, badBar.length === 0, { bad: badBar }, 'scrollers.bars');
   // positive control: the canvas at rest against the scrolled twin; the scrolled scrollports and their thumbs must fail
   const g = geo['v-light'];
   const portCtl = port(crop(poly.rest, box(g.port, surf, k, poly.rest)), crop(ref.scrolled, box(g.port, surf, k, poly.rest)));
-  const barCtl = region(crop(poly.rest, box(g.vbar, surf, k, poly.rest)), crop(ref.scrolled, box(g.vbar, surf, k, poly.rest)), BAR);
-  check(S, 'positive control: the canvas at rest fails against the scrolled twin (scrollport and thumb)', !portCtl.pass && !barCtl.pass, { port: portCtl.n, bar: [pct(barCtl.shiftTolerant), pct(barCtl.structural)] });
+  const barCtl = g.vbar ? region(crop(poly.rest, box(g.vbar, surf, k, poly.rest)), crop(ref.scrolled, box(g.vbar, surf, k, poly.rest)), BAR) : null;
+  check(S, `positive control: the canvas at rest fails against the scrolled twin (scrollport${CLASSIC ? ' and thumb' : ''})`, !portCtl.pass && (!CLASSIC || (!!barCtl && !barCtl.pass)),
+    { port: portCtl.n, bar: barCtl ? [pct(barCtl.shiftTolerant), pct(barCtl.structural)] : null });
 }
 
 /** (c) examples/form at a fractional DPR against its twin. @param {any} page @param {number} dpr */

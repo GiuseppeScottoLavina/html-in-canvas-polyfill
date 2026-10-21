@@ -80,8 +80,8 @@ if (!docsOnly) {
   // style updates, the clip of the colour layer, no synchronisation of animated, shadow-host or slotted scrollers).
   // 14075 -> 14100 (2026-10-19, measured 14,083; 14,053 before this step): the truncation test measured once per scroller for its pages (clone.js tailClear, the compositor's memo).
   // 14100 -> 14325 (2026-10-21, measured 14,308; 14,090 before this step): Chromium's classic scrollbars as the platform paints them (snapshot/capture/chromium-bars.js, the
-  // bar painter and listbox bar of scroll-emulation.js), the bar-sized intrinsic width of textarea / listbox select pinned in the clone, the raster scale of a grid
-  // rounded from a fractional device-pixel content box (snapshot/store/surfaces.js gridRasterScale).
+  // bar painter and listbox bar of scroll-emulation.js), the bar-sized intrinsic width of textarea / listbox select pinned in the clone, the 1:1 default-size draw of
+  // a grid rounded from a fractional device-pixel content box (api/draw-math.js snapDefaultSize).
   if (total > 14325) problems.push(`G-size: core is ${total} code lines (> 14325)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
