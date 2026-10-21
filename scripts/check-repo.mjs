@@ -89,7 +89,8 @@ if (!docsOnly) {
   // 14575 -> 14600 (2026-10-22, measured 14,579; 14,556 before this step): canvases of declarative shadow roots, paint events in shadow-including tree order (util/tree-order.js).
   // 14600 -> 14900 (2026-10-22, measured 14,880; 14,591 before this step): an ElementImage in a dedicated worker (api/worker-transfer.js and worker-wire.js on the page,
   // api/worker-scope.js in the worker bundle).
-  if (total > 14900) problems.push(`G-size: core is ${total} code lines (> 14900)`);
+  // 14900 -> 14925 (2026-10-22, measured 14,903; 14,881 before this step): the drawable's own backdrop-filter applied by the draw (api/context2d-patch.js).
+  if (total > 14925) problems.push(`G-size: core is ${total} code lines (> 14925)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

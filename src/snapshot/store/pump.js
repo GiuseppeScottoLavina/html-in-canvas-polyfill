@@ -92,6 +92,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {number} caretLiveAt  performance.now() of the last live caret measurement (caretNow): tiles built before it do not replace that caret
  * @property {Element|null|undefined} caretAsk  store.caretNow: undefined = nothing asked; null = drop the caret; an element = measure its caret at the next commit
  * @property {string} blend  computed mix-blend-mode of the drawable, read with its transform-origin when a build starts (SnapshotVersion.blend)
+ * @property {string} backdrop  its computed backdrop-filter, read at the same time (SnapshotVersion.backdrop)
  */
 
 /**
