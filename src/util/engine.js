@@ -84,10 +84,21 @@ export function currentEngine() {
  * @returns {boolean}
  */
 export function selectionForegroundOf(nav) {
-  if (engineOf(nav).engine !== 'chromium') return false;
-  const platform = String(nav?.userAgentData?.platform ?? '');
-  return platform ? platform !== 'macOS' : !/Macintosh|Mac OS X/.test(String(nav?.userAgent ?? ''));
+  return engineOf(nav).engine === 'chromium' && !macPlatformOf(nav);
 }
+
+/**
+ * Does the navigator run on macOS (userAgentData.platform, else the user agent)? Only for what no feature probe can tell: the selection colour model above, and which
+ * classic scrollbar look Chromium paints when the measured bar thicknesses fit both (snapshot/capture/chromium-bars.js).
+ * @param {any} nav @returns {boolean}
+ */
+export function macPlatformOf(nav) {
+  const platform = String(nav?.userAgentData?.platform ?? '');
+  return platform ? platform === 'macOS' : /Macintosh|Mac OS X/.test(String(nav?.userAgent ?? ''));
+}
+
+/** macPlatformOf() for the running page. @returns {boolean} */
+export const currentMacPlatform = () => macPlatformOf(typeof navigator === 'undefined' ? null : navigator);
 
 /** @type {boolean|null} */
 let selectionForeground = null;

@@ -9,6 +9,7 @@ import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 import { scaleMode } from './svg-builder.js';
 import { usedColorScheme } from './color-scheme.js';
 import { engineSkins, skinsFor } from './engine-skins.js';
+import { pinBarBox } from './scroll-emulation.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -415,8 +416,10 @@ export function syncNodeState(env, src, clone, req, unsupported) {
       const ta = /** @type {HTMLTextAreaElement} */ (src);
       if (ta.scrollHeight > ta.clientHeight || ta.scrollWidth > ta.clientWidth || ta.offsetWidth > ta.clientWidth + 2 * ta.clientLeft) { const div = textareaAsDiv(ta, clone); const skins = skinsFor(env, req); if (skins) { skins.paintNativeControl(ta, div); if (skins.consumeSkinPending()) markPending(unsupported); } return div; }
       clone.textContent = ta.value;
+      pinBarBox(ta, clone);
       break;
     }
+    case 'select': if (/** @type {HTMLSelectElement} */ (src).multiple || /** @type {HTMLSelectElement} */ (src).size > 1) pinBarBox(src, clone); break;
     case 'option': clone.toggleAttribute('selected', /** @type {HTMLOptionElement} */ (src).selected); break;
     case 'details': clone.toggleAttribute('open', /** @type {HTMLDetailsElement} */ (src).open); break;
     case 'dialog':

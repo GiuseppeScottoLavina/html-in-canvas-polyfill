@@ -10,6 +10,9 @@
 //      (scroll-pages.browser.test.mjs, "classic scrollbar ... thumb sprite").
 //   3. the scroll compositor's `shape` request option: 'square' corners for the pages of a rounded scroller, 'backdrop' (the scroller without its content)
 //      (scroll-pages.browser.test.mjs, "rounded scrollport").
+//   4. a box with a classic bar gutter that does not scroll (overflow: scroll, a listbox select, scrollbar-gutter: stable) keeps its gutter in the clone. The unit
+//      runner hides scrollbars, so no corpus case has one: it is pinned by G-platform (test/platform/run.mjs, the `always` and `stable` scrollers of F7, the F6
+//      listboxes), run with classic bars.
 /**
  * State-synced clone of one drawable (docs/ARCHITECTURE.md ADR-D.1).
  * Module: snapshot-capture (src/snapshot/capture/*).
@@ -21,7 +24,7 @@ import { applyFont, buildDocumentSelectionRects, buildSelectionRects, inputSelec
 import { rangeRectsIn } from '/src/util/selection-rects.js';
 import { ancestorShell, canvasAncestors } from '/src/snapshot/capture/custom-props.js';
 import { createTokenCollector } from './tokens-0.1.0.js';
-import { applyScrollState, listboxThumb, scrollFacts } from '/src/snapshot/capture/scroll-emulation.js';
+import { applyScrollState, hasBarGutter, listboxThumb, scrollFacts } from '/src/snapshot/capture/scroll-emulation.js';
 import { appendWithStubs, buildShell, shellFactsOf, shellNeedsBox, siblingStub } from '/src/snapshot/capture/shells.js';
 import {
   LEAF_TAGS, addUnsupported, applyInteractionClasses, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, topLayerIn, usedColorScheme,
@@ -249,8 +252,9 @@ function cloneElement(ctx, src) {
 
 /** @param {Ctx} ctx @param {Element} src @param {Element} clone */
 function maybeScroll(ctx, src, clone) {
-  if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth)) return;
   const cs = ctx.env.window.getComputedStyle(src);
+  // CHANGED after 0.1.0 (4): a box with a classic bar gutter that does not scroll keeps its gutter (was: no scroll metric, return)
+  if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth) && !hasBarGutter(src, cs)) return;
   const over = ctx.req.scroll?.el === src ? ctx.req.scroll : null;
   const live = scrollFacts(src, cs);
   const f = over ? { ...(live ?? { sL: src.scrollLeft, gv: 0, gh: 0, scrollableY: true, scrollableX: false, styled: false }), sT: over.top } : live;

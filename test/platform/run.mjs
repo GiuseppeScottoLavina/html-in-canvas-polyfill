@@ -7,10 +7,11 @@
 //   fonts      the fonts the platform used for the page text (CSS.getPlatformFontsForNode); on Windows system-ui must be Segoe UI
 //   controls   every form control of F6 (light, dark, accent-color, disabled, listboxes, unstyled scrollers) in its own region, with the G-xbrowser controls bounds
 //              (<= 15 % of the pixels over 16 and <= 1.5 % over 100, +-1 device row), and the whole surface (<= 5 % / <= 1 %); control: a twin 3 css px off
-//   scrollers  F7, unstyled scrollers with the platform's own bars (vertical, dark, both axes with a corner, thin, scrollbar-gutter: stable, textarea), at DPR 1
-//              and each --dpr, at rest and scrolled: the scrollport is laid out exactly (DPR 1: delta > 6 on <= 2 % of it, the G-scroll-inner region bound;
-//              a fractional DPR: the controls bounds, as the page sets text in device pixels and the image is scaled, so glyph edges differ by their
-//              antialiasing) and the painted bars match the native ones (controls bounds); there must be a gutter (classic bars);
+//   scrollers  F7, unstyled scrollers with the platform's own bars (vertical, dark, both axes with a corner, thin, scrollbar-gutter: stable, textarea,
+//              scrollbar-color, overflow-y: scroll without overflow), at DPR 1 and each --dpr, at rest and scrolled: the scrollport is laid out exactly (DPR 1:
+//              delta > 6 on <= 2 % of it, the G-scroll-inner region bound; a fractional DPR: the controls bounds, as the page sets text in device pixels and
+//              the image is scaled, so glyph edges differ by their antialiasing) and the painted bars match the native ones (<= 3 % over 16, <= 1.5 % over
+//              100); there must be a gutter (classic bars);
 //              control: the twin scrolled, the canvas not
 //   dpr        examples/form at each --dpr (1.25 and 1.5: common Windows laptop scales) against its twin: delta > 16 on <= 3 % (the plain-DOM pixel gate) and
 //              the canvas not blank; control: the twin 3 css px off
@@ -43,6 +44,15 @@ const F7 = '/test/fixtures/f7-system-scrollbars/index.html';
 const FORM_TWIN = '/examples/form/twin.html';
 /** controls bounds of G-xbrowser (test/xbrowser/scenarios.mjs, controls) */
 const REGION = { maxFraction: 0.15, maxStructural: 0.015 };
+/** Scrollbars are drawn with the engine's own geometry and colours: held to <= 3 % of their pixels over 16 (+-1 device row). The controls bounds let a thumb drawn at
+ *  the wrong offset pass (a thumb is 13-16 % of its bar), and then the positive control (the canvas at rest against the scrolled twin) passed too. */
+const BAR = { maxFraction: 0.03, maxStructural: 0.015 };
+/**
+ * A region judged by its pixels: the surface oracle also requires both pictures to be non-blank (more than 8 colours), a guard for a whole surface; a region can be
+ * right with 8 colours or fewer (a crisp checkbox, a scrollbar track or an empty gutter failed with none of their pixels different).
+ * @param {any} a @param {any} b @param {{maxFraction: number, maxStructural: number}} bounds
+ */
+const region = (a, b, bounds) => { const o = oracle(a, b, bounds); return { ...o, pass: !!o.sizeMatch && o.shiftTolerant <= bounds.maxFraction && o.structural <= bounds.maxStructural }; };
 
 for (const f of ['dist/hic-live-polyfill.iife.js', 'dist/hic-live-polyfill.iife.min.js']) {
   if (!existsSync(join(H.PROJECT_ROOT, f))) { console.error(`G-platform: ${f} is missing; run npm run build first`); process.exit(1); }
@@ -55,10 +65,8 @@ for (const f of ['dist/hic-live-polyfill.iife.js', 'dist/hic-live-polyfill.iife.
  * @type {Record<string, {platforms: string[], reason: string}>}
  */
 const KNOWN = {
-  'controls.regions': { platforms: ['linux', 'win32', 'darwin'], reason: 'Chromium includes the classic scrollbar thickness in the intrinsic width of an unsized <textarea> and listbox <select>; the clone in the SVG image has no classic bars, so those controls are drawn about 15 css px narrower than the live ones and the controls after them reflow (drawn away from where they are hit); listbox bars are not painted' },
-  'controls.whole': { platforms: ['linux', 'win32', 'darwin'], reason: 'the reflow of controls.regions moves the rest of the F6 surface' },
-  'controls.bars': { platforms: ['linux', 'win32', 'darwin'], reason: 'the polyfill paints the macOS legacy bar (light track, thumb from the top of the track) for Chromium on every platform; Chromium on Linux and Windows draws Fluent bars (arrow buttons, the thumb between them, a dark look under color-scheme: dark)' },
-  'scrollers.bars': { platforms: ['linux', 'win32', 'darwin'], reason: 'as controls.bars' },
+  // empty since the classic-bar fixes (2026-10-21: the bar-sized intrinsic width of textarea and listbox select pinned in the clone, Chromium's own Fluent and macOS
+  // bar looks painted, listbox bars painted); measured passing on Linux (CI image) and macOS with classic bars, Windows by its CI job
 };
 /** @type {{id?: string, section: string, name: string, ok: boolean, status: 'pass'|'fail'|'known'|'now-passes', detail?: any}[]} */
 const checks = [];
@@ -173,10 +181,10 @@ async function controls(page) {
   const bad = [], caught = [];
   for (const r of rects) {
     const b = box(r, surf, k, poly, 2);
-    const o = oracle(crop(poly, b), crop(ref, b), REGION);
+    const o = region(crop(poly, b), crop(ref, b), REGION);
     per[r.id] = [pct(o.shiftTolerant), pct(o.structural)];
     if (!o.pass) { bad.push(r.id); save(`controls-${r.id}.canvas`, crop(poly, b)); save(`controls-${r.id}.twin`, crop(ref, b)); }
-    if (!oracle(crop(poly, b), crop(off, b), REGION).pass) caught.push(r.id);
+    if (!region(crop(poly, b), crop(off, b), REGION).pass) caught.push(r.id);
   }
   facts.controls = per;
   check('controls', `each of ${rects.length} F6 control regions matches the twin (<= 15 % over 16, <= 1.5 % over 100)`, rects.length > 50 && bad.length === 0, { bad }, 'controls.regions');
@@ -196,7 +204,7 @@ const scrollerGeometry = (page, id) => page.evaluate(`(() => { const e = documen
     vbar: gv > 0.5 ? { x: r.left + bl + e.clientWidth, y: r.top + bt, width: gv, height: e.clientHeight } : null,
     hbar: gh > 0.5 ? { x: r.left + bl, y: r.top + bt + e.clientHeight, width: e.clientWidth, height: gh } : null,
     overflowY: e.scrollHeight > e.clientHeight, overflowX: e.scrollWidth > e.clientWidth }; })()`);
-const SCROLL = { 'v-light': [0, 400], 'v-dark': [0, 400], both: [120, 200], thin: [0, 400], stable: [0, 0], textarea: [0, 120] };
+const SCROLL = { 'v-light': [0, 400], 'v-dark': [0, 400], both: [120, 200], thin: [0, 400], stable: [0, 0], textarea: [0, 120], colored: [0, 400], always: [0, 0] };
 const scrollAll = (/** @type {any} */ page, /** @type {boolean} */ on) => page.evaluate(`(async () => { for (const [id, [l, t]] of Object.entries(${JSON.stringify(SCROLL)})) { const e = document.getElementById(id); e.scrollLeft = ${on} ? l : 0; e.scrollTop = ${on} ? t : 0; }
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); return true; })()`);
 
@@ -242,7 +250,7 @@ async function scrollers(page, dpr) {
       for (const bar of ['vbar', 'hbar']) {
         if (!g[bar]) continue;
         const bb = box(g[bar], surf, k, poly[state]);
-        const o = oracle(crop(poly[state], bb), crop(ref[state], bb), REGION);
+        const o = region(crop(poly[state], bb), crop(ref[state], bb), BAR);
         row[bar] = [pct(o.shiftTolerant), pct(o.structural)];
         if (!o.pass) { badBar.push(`${id}/${state}/${bar}`); save(`scrollers-${dpr}-${id}-${state}-${bar}.canvas`, crop(poly[state], bb)); save(`scrollers-${dpr}-${id}-${state}-${bar}.twin`, crop(ref[state], bb)); }
       }
@@ -250,11 +258,11 @@ async function scrollers(page, dpr) {
   }
   facts[`scrollers@${dpr}`] = rows;
   check(S, `the scrollports are laid out as in the twin (${PORT_TEXT}), at rest and scrolled`, badPort.length === 0, { bad: badPort });
-  check(S, `the painted bars match the platform's (<= 15 % over 16, <= 1.5 % over 100), at rest and scrolled`, badBar.length === 0, { bad: badBar }, 'scrollers.bars');
+  check(S, `the painted bars match the platform's (<= 3 % over 16, <= 1.5 % over 100), at rest and scrolled`, badBar.length === 0, { bad: badBar }, 'scrollers.bars');
   // positive control: the canvas at rest against the scrolled twin; the scrolled scrollports and their thumbs must fail
   const g = geo['v-light'];
   const portCtl = port(crop(poly.rest, box(g.port, surf, k, poly.rest)), crop(ref.scrolled, box(g.port, surf, k, poly.rest)));
-  const barCtl = oracle(crop(poly.rest, box(g.vbar, surf, k, poly.rest)), crop(ref.scrolled, box(g.vbar, surf, k, poly.rest)), REGION);
+  const barCtl = region(crop(poly.rest, box(g.vbar, surf, k, poly.rest)), crop(ref.scrolled, box(g.vbar, surf, k, poly.rest)), BAR);
   check(S, 'positive control: the canvas at rest fails against the scrolled twin (scrollport and thumb)', !portCtl.pass && !barCtl.pass, { port: portCtl.n, bar: [pct(barCtl.shiftTolerant), pct(barCtl.structural)] });
 }
 
