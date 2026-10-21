@@ -112,11 +112,6 @@ export function hasBarGutter(src, cs) {
   return h.offsetWidth - src.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth) > 0.5 || h.offsetHeight - src.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth) > 0.5;
 }
 
-/** @type {boolean|null} */
-let webkitBarsSupported = null;
-/** @returns {boolean} the engine styles bars with ::-webkit-scrollbar */
-const webkitBars = () => (webkitBarsSupported ??= typeof CSS !== 'undefined' && CSS.supports('selector(::-webkit-scrollbar)'));
-
 /** Visual thickness (css px of the root) of the classic bars of an unstyled probe, per devicePixelRatio and scrollbar-width. @type {Map<string, {v: number, h: number}>} */
 const barProbes = new Map();
 
@@ -154,28 +149,27 @@ export function chromiumBarLook(win, src, cs, styled) {
 }
 
 /**
- * Pin the live border box on the clone of a control whose INTRINSIC size includes the scrollbar thickness (an unsized <textarea>, a listbox <select>): engines add a
- * classic or author-styled (::-webkit-scrollbar) bar to the intrinsic width (and a horizontal one to the height) whether or not it shows; the clone has no bars
- * (`scrollbar-width: none`, ::-webkit-scrollbar rules dropped), so the drawn control came out a bar narrower than the live one and the controls after it reflowed (drawn
- * away from where they are hit; Chrome 155 on Linux and macOS with classic bars: 29-32 of the 62 F6 regions). Overlay bars take no room: nothing to do.
+ * Pin the live border box on the clone of a control whose INTRINSIC size includes the scrollbar thickness (an unsized <textarea>, a listbox <select>): Chrome adds the
+ * bar thickness to their intrinsic width (and a horizontal bar's to the height) whether or not a bar shows, the thickness of OVERLAY bars included (macOS: 16 px), and
+ * author-styled (::-webkit-scrollbar) bars too; the clone has no bars (`scrollbar-width: none`, ::-webkit-scrollbar rules dropped), so the drawn control came out a bar
+ * narrower than the live one and the controls after it reflowed (drawn away from where they are hit; Chrome 155: 29-32 of the 62 F6 regions with classic bars on Linux
+ * and macOS, 16 with macOS overlay bars). The live box is the truth for every engine and bar kind.
  * @param {Element} src @param {Element} clone
  */
 export function pinBarBox(src, clone) {
   const win = src.ownerDocument.defaultView ?? window;
   const cs = win.getComputedStyle(src);
-  if (cs.scrollbarWidth === 'none' || cs.display === 'none') return;
-  // ::-webkit-scrollbar exists in Chromium and WebKit only (elsewhere the pseudo-element's computed style is not a bar's)
-  const styled = cs.scrollbarWidth === 'auto' && webkitBars() && px(win.getComputedStyle(src, '::-webkit-scrollbar').width) > 0;
-  const decl = barBoxPin(borderBoxOf(cs, /** @type {HTMLElement} */ (src)), styled ? 1 : probeBars(src.ownerDocument, cs.scrollbarWidth || 'auto', false).v);
+  if (cs.display === 'none') return;
+  const decl = barBoxPin(borderBoxOf(cs, /** @type {HTMLElement} */ (src)));
   if (decl) appendInlineStyle(clone, decl);
 }
 
 /**
- * PURE. The declarations of pinBarBox: the measured border box, '' without bars or without a box.
- * @param {{width: number, height: number}} bb @param {number} bars  thickness of the bars the control would get (0: overlay bars) @returns {string}
+ * PURE. The declarations of pinBarBox: the measured border box, '' without a box.
+ * @param {{width: number, height: number}} bb @returns {string}
  */
-export function barBoxPin(bb, bars) {
-  if (!(bars > 0) || !(bb.width > 0 && bb.height > 0)) return '';
+export function barBoxPin(bb) {
+  if (!(bb.width > 0 && bb.height > 0)) return '';
   return `box-sizing:border-box!important;width:${bb.width}px!important;height:${bb.height}px!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;`;
 }
 

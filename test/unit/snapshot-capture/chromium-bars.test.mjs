@@ -104,11 +104,9 @@ test('colours (measured): Fluent track / thumb / arrows, the macOS track, border
   assert.ok(cornerSvg(look({}), 15, 15).includes('#fcfcfc'));
 });
 
-test('a textarea or listbox select is pinned at its live border box where bars take room, untouched with overlay bars', () => {
-  const box = { width: 182.5, height: 41.25 };
-  assert.equal(barBoxPin(box, 0), '', 'overlay bars (or none): the clone keeps its own intrinsic size');
-  const decl = barBoxPin(box, 15);
+test('a textarea or listbox select is pinned at its live border box (its intrinsic size counts the bar, overlay bars included; the clone has none)', () => {
+  const decl = barBoxPin({ width: 182.5, height: 41.25 });
   assert.ok(decl.includes('width:182.5px!important') && decl.includes('height:41.25px!important') && decl.includes('box-sizing:border-box!important'), decl);
   assert.ok(decl.includes('min-width:0!important') && decl.includes('max-width:none!important'), 'author min / max sizes cannot move it');
-  assert.equal(barBoxPin({ width: 0, height: 20 }, 15), '', 'no box: nothing pinned');
+  assert.equal(barBoxPin({ width: 0, height: 20 }), '', 'no box: nothing pinned');
 });

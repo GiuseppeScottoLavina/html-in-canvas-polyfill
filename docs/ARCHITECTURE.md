@@ -368,8 +368,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
     bar (its gutter tiles are square), nor under an ancestor's rounded clip that reaches the port.
 - **Scrollbars.** Overlay scrollbars (macOS default): no gutter in the live DOM, hidden in the clone (`scrollbar-width:none`), nothing to paint. Classic scrollbars: the gutter is kept in the clone as padding (also on a box that
   reserves it without scrolling: `overflow: scroll`, a listbox, `scrollbar-gutter: stable`) so layout is exact, and the polyfill PAINTS track and thumb (a scroll-position-dependent overlay), feature row `classic-scrollbars`.
-  Engines count the bar thickness in the INTRINSIC size of a `<textarea>` and a listbox `<select>` whether or not it shows; the clone has no bars, so these controls get their live border box pinned
-  (`scroll-emulation.js` pinBarBox; also for author-styled `::-webkit-scrollbar` bars). Chromium's unstyled bars are drawn by `chromium-bars.js` with the engine's own rules in DEVICE pixels: the macOS look
+  Chrome counts the bar thickness in the INTRINSIC size of a `<textarea>` and a listbox `<select>` whether or not it shows (classic, author-styled and even overlay bars); the clone has no bars,
+  so these controls always get their live border box pinned (`scroll-emulation.js` pinBarBox). Chromium's unstyled bars are drawn by `chromium-bars.js` with the engine's own rules in DEVICE pixels: the macOS look
   (Blink ScrollbarThemeMac + NativeThemeMac: no buttons, the thumb inset round(3k) px and by the track border, at least 20 DIP, the track gradient and borders) or the Fluent look of Linux and Windows
   (ScrollbarThemeFluent + NativeThemeFluent: 18 DIP arrow buttons drawn crisp, or Segoe Fluent Icons glyphs where that font is installed, a 9 DIP capsule thumb centred in the bar, colours of the Fluent
   colour mixer); thumb length `round(visible / total x track)` and the truncated position as Blink computes them; light or dark from the scroller's used colour scheme; `scrollbar-width: thin` and

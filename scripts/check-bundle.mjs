@@ -56,7 +56,7 @@ const LIMITS = {
   //   (the transition hold released in two style updates, the clip of the colour layer, no synchronisation of animated, shadow-host or slotted scrollers)
   // 290.25 -> 291.25 KB, gzip 101 -> 101.5 KB (+1,007 / +375 bytes, 2026-10-19, measured 290,992 / 101,277): the truncation test measured once per scroller for its pages
   //   (page builds of a 2000-row list p50 6.5 -> 5.2 ms)
-  // 291.25 -> 300 KB, gzip 101.5 -> 104.75 KB (+8,835 / +3,259 bytes, 2026-10-21, measured 299,827 / 104,536): Chromium's classic scrollbars as the platform paints them
+  // 291.25 -> 300 KB, gzip 101.5 -> 104.75 KB (+8,567 / +3,185 bytes, 2026-10-21, measured 299,559 / 104,462): Chromium's classic scrollbars as the platform paints them
   //   (snapshot/capture/chromium-bars.js: the Fluent look of Linux and Windows with its arrow buttons and the macOS look, the engine's thumb rules in device pixels, the look
   //   measured from the bar thicknesses, listbox bars), the bar-sized intrinsic width of textarea / listbox select and the gutter of boxes that do not scroll kept in the
   //   clone (G-platform: 29-32 of 62 F6 regions and every bar failed on Linux and macOS with classic bars, now none), and the raster scale and 1:1 draw of a grid rounded

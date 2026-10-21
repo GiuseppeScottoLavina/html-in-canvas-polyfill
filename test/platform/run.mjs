@@ -41,6 +41,8 @@ const ONLY = new Set(opt.only.split(','));
 const DPRS = opt.dpr.split(',').map(Number);
 const OUT = join(H.PROJECT_ROOT, opt.out);
 const CLASSIC = opt.scrollbars !== 'overlay';
+/** overlay bars fade about a second after a load or a scroll (the field test waits as long) */
+const OVERLAY_FADE_MS = 1600;
 if (opt.scrollbars !== 'classic' && opt.scrollbars !== 'overlay') { console.error(`G-platform: --scrollbars=${opt.scrollbars}: classic or overlay`); process.exit(2); }
 mkdirSync(OUT, { recursive: true });
 const BUNDLE = '/dist/hic-live-polyfill.iife.js';
@@ -66,12 +68,13 @@ for (const f of ['dist/hic-live-polyfill.iife.js', 'dist/hic-live-polyfill.iife.
 /**
  * Gaps of the polyfill this probe measured, by check id and platform (2026-10-21: Chrome 155 on Linux in the CI image and on macOS with classic bars forced, Chrome 156
  * on the Windows Server 2025 CI runner, all headless). A listed check that PASSES on a listed platform fails the run (KNOWN RED NOW PASSES): the list is the record
- * and must shrink when a gap is fixed.
- * @type {Record<string, {platforms: string[], reason: string}>}
+ * and must shrink when a gap is fixed. An entry with `scrollbars` applies to that bar mode only (--scrollbars).
+ * @type {Record<string, {platforms: string[], scrollbars?: 'classic'|'overlay', reason: string}>}
  */
 const KNOWN = {
   // the classic-bar gaps (controls.regions, controls.whole, controls.bars, scrollers.bars) were fixed on 2026-10-21: the bar-sized intrinsic width of textarea and
   // listbox select pinned in the clone, Chromium's own Fluent and macOS bar looks painted (measured passing on Linux and on macOS with classic bars; Windows by its job)
+  'controls.regions': { platforms: ['darwin'], scrollbars: 'overlay', reason: 'with overlay bars (harness overlay mode, headless Chrome 155) Chrome keeps a thin overlay thumb on a scrollable listbox <select> (7 px, black at 50 %, measured on F6 L-lb / L-lb-sc: 5.05 / 4.97 % of the region over 16, 4.46 / 2.74 % over 100; the dark listboxes pass), which the polyfill does not paint (it paints no overlay bars on desktop; Chrome for Android\'s listbox thumb is drawn)' },
   'selection.system': { platforms: ['win32'], reason: 'headless Chrome on Windows paints a selection without an author ::selection rule in Chromium\'s default rgba(0, 65, 198, 0.8) (rgb(51, 103, 209) over white, rgb(2, 56, 165) over #0e1626), while the CSS system colour Highlight that the polyfill draws is the Windows accent #0078d4: 54-91 % of the selection\'s pixels differ; the glyphs are HighlightText, as decided. Not measured in a headed Windows Chrome' },
 };
 /** @type {{id?: string, section: string, name: string, ok: boolean, status: 'pass'|'fail'|'known'|'now-passes', detail?: any}[]} */
@@ -79,7 +82,8 @@ const checks = [];
 /** @type {Record<string, any>} */
 const facts = { platform: process.platform, scrollbars: opt.scrollbars };
 const check = (/** @type {string} */ section, /** @type {string} */ name, /** @type {boolean} */ ok, /** @type {any} */ detail, /** @type {string} */ id = '') => {
-  const known = KNOWN[id]?.platforms.includes(process.platform) ? KNOWN[id] : null;
+  const entry = KNOWN[id];
+  const known = entry?.platforms.includes(process.platform) && (!entry.scrollbars || entry.scrollbars === opt.scrollbars) ? entry : null;
   const status = ok ? (known ? 'now-passes' : 'pass') : known ? 'known' : 'fail';
   checks.push({ id: id || undefined, section, name, ok: !!ok, status, detail });
   const tag = { pass: 'ok  ', fail: 'FAIL', known: 'KNOWN RED', 'now-passes': 'FAIL (KNOWN RED NOW PASSES)' }[status];
@@ -127,7 +131,8 @@ function formTwin() {
 /** @param {any} page @param {string} path @param {'ref'|'poly'} mode */
 async function open(page, path, mode) {
   await H.openFixture(page, srv, path, { mode, bundle: mode === 'poly' ? BUNDLE : undefined });
-  await H.sleep(mode === 'poly' ? 700 : 300);
+  // overlay bars show in the plain page for about a second after a load or a scroll (the snapshot never shows them): the twin is taken after they faded
+  await H.sleep(mode === 'poly' ? 700 : CLASSIC ? 300 : OVERLAY_FADE_MS);
 }
 
 /** @param {any} page @param {string} sel @returns {Promise<{x: number, y: number, width: number, height: number}>} */
@@ -223,7 +228,7 @@ async function scrollers(page, dpr) {
   /** @type {Record<string, any>} */ const geo = {};
   for (const id of ids) geo[id] = await scrollerGeometry(page, id);
   const ref = { rest: await shot(page, surf, dpr), scrolled: /** @type {any} */ (null) };
-  await scrollAll(page, true); await H.sleep(150);
+  await scrollAll(page, true); await H.sleep(CLASSIC ? 150 : OVERLAY_FADE_MS);
   ref.scrolled = await shot(page, surf, dpr);
   check(S, CLASSIC ? 'classic bars: the unstyled scroller has a vertical gutter' : 'overlay bars: no scroller has a gutter', CLASSIC ? geo['v-light'].gv > 0.5 : ids.every((id) => geo[id].gv < 0.5 && geo[id].gh < 0.5),
     { gutter: +geo['v-light'].gv.toFixed(3), thin: +geo.thin.gv.toFixed(3) });
