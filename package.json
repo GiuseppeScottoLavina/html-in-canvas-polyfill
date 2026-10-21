@@ -100,6 +100,7 @@
     "examples/plugins",
     "examples/scroll-and-resize",
     "examples/webgl-texture",
+    "examples/field-test",
     "CHANGELOG.md"
   ],
   "engines": {
@@ -128,6 +129,7 @@
     "test:examples": "node scripts/check-examples.mjs && node scripts/check-plugins-e2e.mjs",
     "test:plugins": "node scripts/check-plugins-e2e.mjs",
     "test:pages": "node scripts/check-pages.mjs",
+    "test:field": "node scripts/check-field-test.mjs",
     "test:stress": "node scripts/check-hang-stress.mjs",
     "bench:compare": "node test/bench/compare/run.mjs",
     "test:wpt": "node test/wpt/gate.mjs",
