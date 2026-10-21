@@ -50,10 +50,10 @@ Gecko does not theme form controls inside an SVG image, and WebKit draws them in
 
 ### 12. What is refused, and why
 
-Refusals are loud: a hatched placeholder, one console message and a `report()` entry, never a silent gap.
+Refusals are loud: one console message and a `report()` entry, never a silent gap. Content the polyfill cannot capture is a hatched placeholder; content the platform itself leaves out of a canvas is drawn as the platform draws it (measured against the native implementation), so a page looks the same with and without native support.
 
-- Iframes, `<object>`, `<embed>`: a child browsing context cannot be serialised into a `foreignObject`.
-- Cross-origin images, fonts and CSS without CORS: SVG images cannot load external resources, and the read-back rules of the standard forbid leaking them.
+- Iframes, `<object>`, `<embed>`: a child browsing context cannot be serialised into a `foreignObject`. The element's own box (border, background) is drawn without the document, as natively for a cross-origin frame; an `<object>` or `<embed>` that shows a readable image draws the image.
+- Cross-origin images, fonts and CSS without CORS: SVG images cannot load external resources, and the read-back rules of the standard forbid leaking them. As natively, an image element keeps its box without the picture and a filter that would draw such an image is not applied.
 - Workers: no browser rasterises `foreignObject` in a worker, and a userland `ElementImage` cannot be transferable (use `toImageBitmap()`).
 - Mobile browsers, WebViews, Firefox before 155 and Safari before 27: not measured, and the required platform features (CSS anchor positioning, `ResizeObserver`, `HTMLImageElement.decode`, constructable stylesheets) have no fallback.
 - Native UI is not part of any picture: select popups, date pickers, autofill, IME composition UI.

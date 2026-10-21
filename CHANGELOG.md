@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Content the browser itself leaves out of a canvas is now drawn as the browser draws it, measured against the native implementation, instead of as a hatched placeholder: a cross-origin `<img>` or `<picture>` keeps its box (border, background) without the picture, a cross-origin SVG `<image>` draws nothing, an `<iframe>` draws its own box without the document, and an `<object>` or `<embed>` draws the image it shows when that image is readable. The console message and the `report()` entry are unchanged. WPT `privacy/picture-images-ignored`, `embed-image-ignored`, `object-image-ignored`.
+- SVG filters and masks in drawables follow the native read-back rules: an `feImage` inside the drawable is inlined (it drew nothing), a filter whose `feImage` is cross-origin without CORS (or has a URL that does not parse, which made the whole snapshot a placeholder) is not applied at all, a same-origin `feImage` that fails to load keeps the filter with an empty image, and a mask defined outside the drawable masks its element away. WPT `privacy/filtered-div-multi-filters-ignored`, `filtered-div-ref-svg-feimage-ignored`, `filtered-div-ref-svg-mixed-ignored`, `filtered-svg-ref-svg-feimage-ignored`, `svg/svg-pattern-with-feImage-cross-origin-image`, `svg/svg-mask-filter`, `svg/svg-mask-nested-filter`, `svg/svg-mask-visited`.
+
 ## [0.1.0-preview.4] - 2026-10-21
 
 Windows becomes a tested platform, a field test page lets anyone check the polyfill on their own machine, and classic scrollbars and fractional device pixel ratios are drawn like the browser draws them.

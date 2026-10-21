@@ -246,11 +246,12 @@ function syncImage(env, src, clone, req, unsupported) {
     appendInlineStyle(clone, usedSize(cs));
     return true;
   }
-  if (r.state === 'failed') return refuse(unsupported, src, r.error.feature, r.error.message, r.error.hint);
+  // cross-origin without CORS: the platform draws the <img> box (border, background) without the picture (WPT privacy/html-images-ignored, picture-images-ignored); reported
+  if (r.state === 'failed') addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
   clone.removeAttribute('src');
   appendInlineStyle(clone, usedSize(cs));
-  if (r.state === 'pending') { markPending(unsupported); return true; }
-  clone.setAttribute('src', r.url);
+  if (r.state === 'pending') markPending(unsupported);
+  else if (r.state === 'ready') clone.setAttribute('src', r.url);
   return true;
 }
 
@@ -396,6 +397,63 @@ function scrollInputText(src, clone) {
   appendInlineStyle(clone, `text-indent:calc(${cs.textIndent} - ${src.scrollLeft}px)!important;`);
 }
 
+/** An `<embed src>` / `<object data>` the platform shows as an image document: an image MIME type, or no type and an image file extension. */
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)(?:[?#]|$)/i;
+
+/** @param {Element} src embed or object @returns {string} the absolute URL of the image it shows, '' when it is not an image */
+function embeddedImage(src) {
+  const url = src.localName === 'object' ? /** @type {HTMLObjectElement} */ (src).data : /** @type {HTMLEmbedElement} */ (src).src;
+  const type = (src.getAttribute('type') ?? '').trim().toLowerCase();
+  return url && (type ? type.startsWith('image/') : IMAGE_FILE.test(url)) ? url : '';
+}
+
+/**
+ * The element's own box (border, background, padding, margins) without its content, as an element of the same computed style: what the platform draws for a frame, an embed or an
+ * object whose content is not drawn (measured on the native oracle: a cross-origin iframe, embed or object keeps its border and background). An <iframe> or <embed> in an SVG image
+ * paints nothing at all, not even its border, so the box is a <div> (an inline frame becomes an inline-block of the same size).
+ * @param {Element} src @param {Element} clone @param {string} [tag]
+ * @returns {Element}
+ */
+function ownBox(src, clone, tag = 'div') {
+  const cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src);
+  const box = clone.ownerDocument.createElement(tag);
+  for (const a of ['id', 'class', 'title']) if (src.hasAttribute(a)) box.setAttribute(a, src.getAttribute(a) ?? '');
+  let text = '';
+  for (let i = 0; i < cs.length; i++) {
+    const name = cs[i];
+    if (name.startsWith('--') || name.startsWith('transition') || name.startsWith('animation')) continue;
+    const value = cs.getPropertyValue(name);
+    if (value) text += `${name}:${name === 'display' && value === 'inline' ? 'inline-block' : value}!important;`;
+  }
+  appendInlineStyle(box, text);
+  return box;
+}
+
+/**
+ * <iframe>, <frame>, <embed>, <object>. An embed or object that shows a readable image draws it at its natural size from the top left of its content box (an image document);
+ * everything else draws its own box without the content, and is reported: a child document cannot be serialised into the snapshot, and a cross-origin one must never be drawn.
+ * @param {Element} src @param {Element} clone @param {CaptureRequest} req @param {UnsupportedEntry[]} unsupported
+ * @returns {Element}
+ */
+function syncEmbedded(src, clone, req, unsupported) {
+  const ln = src.localName;
+  const image = ln === 'embed' || ln === 'object' ? embeddedImage(src) : '';
+  if (image) {
+    const r = resolveResource(req.resources, image, image.endsWith('.svg') ? 'svg' : 'image');
+    if (r.state === 'ready') {
+      const img = ownBox(src, clone, 'img');
+      appendInlineStyle(img, 'object-fit:none!important;object-position:0 0!important;');
+      img.setAttribute('src', r.url);
+      return img;
+    }
+    if (r.state === 'pending') markPending(unsupported);
+    else addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
+    return ownBox(src, clone);
+  }
+  addUnsupported(unsupported, src, 'iframe', `the content of <${ln}> is not drawn (a child document cannot be captured)`, 'Draw the content as elements of the drawable, or put the frame outside it.');
+  return ownBox(src, clone);
+}
+
 /**
  * Copy the live state of `src` onto `clone`. Returns true when the clone stays, false when src is unsupported (iframe, shadow host, top layer, ...) and the caller must put a placeholder in its place
  * (an entry was pushed to `unsupported`), or the element that replaces the clone (canvas and video frames become an <img>).
@@ -409,8 +467,7 @@ function scrollInputText(src, clone) {
 export function syncNodeState(env, src, clone, req, unsupported) {
   const ln = src.localName;
   switch (ln) {
-    case 'iframe': case 'frame': case 'object': case 'embed':
-      return refuse(unsupported, src, 'iframe', `<${ln}> cannot be captured`, 'Replace it with an <img> or draw it outside the drawable.');
+    case 'iframe': case 'frame': case 'object': case 'embed': return syncEmbedded(src, clone, req, unsupported);
     case 'input': syncInput(/** @type {HTMLInputElement} */ (src), clone, req.scale); break;
     case 'textarea': {
       const ta = /** @type {HTMLTextAreaElement} */ (src);
@@ -433,9 +490,12 @@ export function syncNodeState(env, src, clone, req, unsupported) {
         const href = src.getAttribute('href') ?? src.getAttribute('xlink:href') ?? '';
         if (href && !href.startsWith('data:')) {
           const r = resolveResource(req.resources, new URL(href, env.document.baseURI).href, 'image');
-          if (r.state === 'failed') return refuse(unsupported, src, r.error.feature, r.error.message, r.error.hint);
+          // an image that cannot be read is not drawn, as the platform does (WPT privacy/svg/svg-images-ignored); reported
+          if (r.state === 'failed') addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
           if (r.state === 'pending') markPending(unsupported);
-          clone.setAttribute('href', r.state === 'ready' ? r.url : 'data:,');
+          // without an href the element draws nothing; `data:,` would draw the broken-image icon
+          if (r.state === 'ready') clone.setAttribute('href', r.url);
+          else clone.removeAttribute('href');
           clone.removeAttribute('xlink:href');
         }
       }

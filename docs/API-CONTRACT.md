@@ -433,7 +433,10 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 2. Content the polyfill cannot capture never stalls and never blanks the rest: the offending subtree is replaced in the clone by a
    visible hatched placeholder box (`options.onUnsupportedContent: 'placeholder'`, default), a `Reporter.unsupported()` entry is
    recorded, `console.error` prints ONCE per (feature, path), a `hicunsupported` CustomEvent fires on the canvas, and the commit
-   proceeds. With `'abort'` the commit is dropped, no paint fires, the event still fires.
+   proceeds. With `'abort'` the commit is dropped, no paint fires, the event still fires. Content that the platform itself leaves
+   out of a canvas (an image or frame document that is cross-origin, a filter that would draw a cross-origin image) is drawn as the
+   platform draws it, without a hatched box: the element's own box without the content, or the element unfiltered; it is reported
+   in the same way.
 3. `installed.report()` returns the JSON `HicReport` (mode, native state, browser, per canvas state/drawables/frame cap/stats,
    unsupported entries, exercised deviations, caught internal errors). An unsupported entry's `count` is the number of times the reporter was told about it (typically once per snapshot attempt that meets that content, so a re-capture counts again), NOT the number of offending elements: one iframe can read 3. Internal errors are never swallowed: they land in
    `report().errors` and `console.error` once.
@@ -457,13 +460,13 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `browser` | not Chromium desktop >= 130 | `install()` throws |
 | `partial-native` | a native implementation without its core (no `content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | `install()` throws unless `forcePolyfill`; a usable native is never refused (section 2) |
 | `shadow-dom` | (no longer reported) open shadow roots inside a drawable are drawn in flat-tree order with computed styles inlined (limited) | - |
-| `iframe` | iframe/object/embed in a drawable subtree | placeholder + entry |
+| `iframe` | iframe/frame, or an embed/object that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively for a cross-origin frame; entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |
 | `top-layer-canvas` | a managed canvas became the fullscreen element (its controls take no input), or a `popover` canvas | entry with hint (fullscreen proceeds) / refused at mount |
 | `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | API calls throw `HicUnsupportedError` |
 | `csp-blocked` | CSP without `img-src data:` | entry + hint (snapshots cannot decode) |
 | `top-layer` | (no longer reported) a modal dialog, open popover or fullscreen element inside a drawable is left out of the snapshot, as natively | - |
-| `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | placeholder for the element (image) or fallback font, entry |
+| `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | as natively: an `<img>` / `<picture>` / embed / object draws its box without the picture, an SVG `<image>` draws nothing, a `<filter>` with such an `feImage` is not applied, a font falls back; entry |
 | `resource-fetch-failed` | fetch error / undecodable | as above |
 | `worker-element-image` | `postMessage(elementImage, [elementImage])` | `HicUnsupportedError` with the `toImageBitmap()` hint |
 | `node-budget` | a drawable above `nodeBudget.absolute` nodes | placeholder + entry (above `hard`: degraded to <= 4 fps except for its inner scrolling, reported) |
