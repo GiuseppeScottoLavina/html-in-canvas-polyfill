@@ -144,7 +144,8 @@ const near = (want, have) => Math.abs(want - have) < NEAR_PX && Math.abs(want - 
  * Draws copy surface pixels 1:1 when that is what the call means, because resampling a raster by a factor a hair from 1 blurs every edge by up to half a pixel where the
  * native draw (a vector paint record) stays sharp:
  *   - default size (dw/dh omitted): the destination spans exactly the surface pixels that the store returned, not the fractional `sw * scaleX` (125.625 px at DPR 1.25),
- *     when the canvas grid scale equals the raster scale;
+ *     when the canvas grid scale equals the raster scale, or when it is within 1 px and 1 % of them (a grid of 211 px for a content box of 210.5 device px, rasterised
+ *     at the device pixel ratio: surfaces.js gridRasterScale; resampled by 1.0024 the text of a field-test box was 7.7 % of its pixels away from the page);
  *   - an explicit size within 1 px and 1 % of the raster (the explainer's `el.offsetWidth * devicePixelRatio`: a rounded offsetWidth against a fractional border box at
  *     DPR 1.25 / 1.5 asked for 1472.5 px of a 1473 px raster, and the bilinear resample put the polyfill 2.5 % of the pixels away from native instead of 1.7 %).
  * Only when the source rect was not clipped.
@@ -156,8 +157,11 @@ const near = (want, have) => Math.abs(want - have) < NEAR_PX && Math.abs(want - 
  */
 export function snapDefaultSize(r, clipped, raster, surfaceScale) {
   const unclipped = clipped.src.sw === r.src.sw && clipped.src.sh === r.src.sh;
-  const snapW = unclipped && (r.dwDefaulted ? Math.abs(r.scaleX - surfaceScale) < 1e-6 : near(clipped.dw, raster.sw));
-  const snapH = unclipped && (r.dhDefaulted ? Math.abs(r.scaleY - surfaceScale) < 1e-6 : near(clipped.dh, raster.sh));
+  // a default size is snapped at the raster's own scale, or near it at a scale within 1 % of it; an explicit size when it is near
+  const same = (/** @type {boolean} */ defaulted, /** @type {number} */ scale) => defaulted && Math.abs(scale - surfaceScale) < 1e-6;
+  const close = (/** @type {boolean} */ defaulted, /** @type {number} */ scale) => !defaulted || Math.abs(scale / surfaceScale - 1) <= NEAR_SHARE;
+  const snapW = unclipped && (same(r.dwDefaulted, r.scaleX) || (close(r.dwDefaulted, r.scaleX) && near(clipped.dw, raster.sw)));
+  const snapH = unclipped && (same(r.dhDefaulted, r.scaleY) || (close(r.dhDefaulted, r.scaleY) && near(clipped.dh, raster.sh)));
   return { dw: snapW ? raster.sw : clipped.dw, dh: snapH ? raster.sh : clipped.dh };
 }
 

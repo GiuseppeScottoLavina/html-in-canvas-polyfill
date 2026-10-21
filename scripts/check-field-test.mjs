@@ -38,11 +38,9 @@ mkdirSync(outDir, { recursive: true });
 // it matches ONE check of ONE run (by its exact name), so any other failure still fails the script. Remove the entry when src/ is fixed.
 /** @type {Array<{run: string, check: string, where: string}>} */
 const KNOWN_RED = [
-  // At a device pixel ratio of 1.25 the text inside a scrolled box is drawn at another sub-pixel phase than the plain page draws it (glyph edges
-  // differ by up to about 80 levels on 3-8 % of the box, nothing above 100; the static text of the same page matches at 0 %). Measured 2026-10-21,
-  // headless Chrome 155, --force-device-scale-factor=1.25, scrollTop 60 and wherever the wheel stopped.
-  { run: 'dpr125', check: 'picture.scroller: box A equals box B on screen (verdict pass)', where: 'inner scroll composition at a fractional device pixel ratio (snapshot/store/scroll-compose.js)' },
-  { run: 'dpr125', check: 'scroll-end: box A equals box B where the scrolling stopped', where: 'inner scroll composition at a fractional device pixel ratio (snapshot/store/scroll-compose.js)' },
+  // empty: the scroll box at a device pixel ratio of 1.25 (3.6-8 % of its pixels) was a canvas grid rounded from a content box that is not a whole number of device
+  // pixels (210.5 device px, a grid of 211), rasterised at the grid's scale and drawn resampled by a hair; fixed in src/snapshot/store/surfaces.js gridRasterScale and
+  // src/api/draw-math.js snapDefaultSize.
 ];
 
 /** @typedef {{name: string, ok: boolean, known?: string, detail?: unknown}} Check */
