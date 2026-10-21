@@ -441,7 +441,7 @@ test('a full tile on a pinned surface costs one draw (the new surface), not a fo
 
 test('a build whose synchronous part is long starts its decode in the next task (no task carries clone + SVG document); a short or urgent one at once', async (t) => {
   const tasks = [];
-  const rig = await makeRig(t, { nextTask: (fn) => tasks.push(fn) });
+  const rig = await makeRig(t, { nextTask: (fn) => tasks.push(fn), virtualBusy: true });
   const a = rig.add('a', 100, 60);
   rig.script.push({ busyMs: 5 });
   rig.store.markDamage(a, null, 'input');

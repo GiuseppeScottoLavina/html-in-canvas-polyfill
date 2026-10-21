@@ -68,7 +68,9 @@ export function forceContextLoss(surface) {
  * A SnapshotStore wired to a fake canvas record, a fake live layer, a scripted CaptureFn that returns real SVG data: URLs, and a controllable decoder.
  * Surface geometry: border box w x h, ink 4 css px on every side, raster scale `scale` (default 1), so a css point (x, y) of a drawable is surface pixel ((x+4)*scale, (y+4)*scale).
  * @param {{cleanup: (fn: () => any) => void}} t
- * @param {{scale?: number, options?: Record<string, any>, interaction?: {snapshot: () => any}, textOverlay?: any, scrollPlan?: any, caretOf?: any, nextTask?: any, frameRect?: (el: Element) => any}} [cfg]
+ * @param {{scale?: number, options?: Record<string, any>, interaction?: {snapshot: () => any}, textOverlay?: any, scrollPlan?: any, caretOf?: any, nextTask?: any, frameRect?: (el: Element) => any, virtualBusy?: boolean}} [cfg]
+ * `virtualBusy`: the store's clock (`env.now`) does not see the real time the scripted capture takes, only its `busyMs` (a build's measured synchronous
+ * time is then exactly what the test scripts, whatever the machine's speed).
  */
 export async function makeRig(t, cfg = {}) {
   const { createBus } = await import('/src/util/bus.js');
@@ -103,8 +105,9 @@ export async function makeRig(t, cfg = {}) {
     id: 1, canvas: document.createElement('canvas'), state: 'active', frameCap: 0, layer,
     contentBox: { width: 400, height: 300, gridScaleX: scale, gridScaleY: scale },
   });
+  let hiddenMs = 0;
   const env = /** @type {any} */ ({
-    window, document, options, bus, reporter, now: () => performance.now(),
+    window, document, options, bus, reporter, now: () => performance.now() - hiddenMs,
     registry: { ownerOfDrawable: () => record, get: () => record, all: () => [record] },
   });
 
@@ -118,9 +121,17 @@ export async function makeRig(t, cfg = {}) {
 
   /** @type {import('/src/contracts/types.js').CaptureFn} */
   const capture = (req) => {
+    const started = performance.now();
     calls.push(req);
     const o = script.shift() ?? {};
+    if (cfg.virtualBusy) {
+      try { return scripted(req, o); } finally { hiddenMs += performance.now() - started - (o.busyMs ?? 0); }
+    }
     if (o.busyMs) for (const t0 = performance.now(); performance.now() - t0 < o.busyMs;);
+    return scripted(req, o);
+  };
+  /** @param {any} req @param {any} o */
+  const scripted = (req, o) => {
     const size = sizes.get(req.element);
     const crop = req.rect ?? { x: -req.ink.left, y: -req.ink.top, width: size.width + req.ink.left + req.ink.right, height: size.height + req.ink.top + req.ink.bottom };
     const widthPx = Math.ceil(crop.width * req.scale - 1e-6);
