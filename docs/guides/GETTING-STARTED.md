@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.2`, a preview published under the npm dist-tag `next`, for desktop Chrome, Firefox 155+ and Safari 27+. Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.3`, a preview published under the npm dist-tag `next`, for desktop Chrome, Firefox 155+ and Safari 27+. Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 ## 1. Run the examples (about 3 minutes)
 

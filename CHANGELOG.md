@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.3] - 2026-10-21
+
+A fix release for the effect plugins.
+
 ### Fixed
 
 - With an effect plugin on, the cursor kept the look of the last control with a cursor of its own (the pointer hand of a button) over every part of the canvas without one. The interposer puts the cursor of the element under the mapped pointer on the live layer, and it read that element's cursor while the layer still carried the previous one, which elements without a cursor of their own inherit. It now reads the cursor without its own.
@@ -63,6 +67,7 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.2...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.3...HEAD
+[0.1.0-preview.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.2...v0.1.0-preview.3
 [0.1.0-preview.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.1...v0.1.0-preview.2
 [0.1.0-preview.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/releases/tag/v0.1.0-preview.1
