@@ -56,7 +56,12 @@ const LIMITS = {
   //   (the transition hold released in two style updates, the clip of the colour layer, no synchronisation of animated, shadow-host or slotted scrollers)
   // 290.25 -> 291.25 KB, gzip 101 -> 101.5 KB (+1,007 / +375 bytes, 2026-10-19, measured 290,992 / 101,277): the truncation test measured once per scroller for its pages
   //   (page builds of a 2000-row list p50 6.5 -> 5.2 ms)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 291.25 * KB, gzip: 101.5 * KB },
+  // 291.25 -> 300 KB, gzip 101.5 -> 104.75 KB (+8,747 / +3,234 bytes, 2026-10-21, measured 299,739 / 104,511): Chromium's classic scrollbars as the platform paints them
+  //   (snapshot/capture/chromium-bars.js: the Fluent look of Linux and Windows with its arrow buttons and the macOS look, the engine's thumb rules in device pixels, the look
+  //   measured from the bar thicknesses, listbox bars), the bar-sized intrinsic width of textarea / listbox select and the gutter of boxes that do not scroll kept in the
+  //   clone (G-platform: 29-32 of 62 F6 regions and every bar failed on Linux and macOS with classic bars, now none), and the raster scale of a grid rounded from a
+  //   fractional device-pixel content box (the field test's scroll box at DPR 1.25)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 300 * KB, gzip: 104.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
