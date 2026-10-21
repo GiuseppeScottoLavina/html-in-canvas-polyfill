@@ -182,7 +182,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (known) dropEntry(known, false);
     /** @type {Entry} */
     const entry = {
-      el, record, incarnation: 0, surface: null, geo: null, version: null, decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
+      el, record, incarnation: 0, surface: null, geo: null, version: null, blend: 'normal', decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
       notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
       unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
     };
@@ -357,7 +357,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
       env.reporter.unsupported({ feature: 'surface-size', message: `${describe(entry)} is rasterised at scale ${geo.scale.toFixed(2)} to fit options.maxSurfacePixels / maxTotalSurfaceBytes`, hint: 'raise the budgets or split the drawable', path: describe(entry) }, entry.record.canvas);
     },
     translationOf(entry) {
-      const origin = parseTransformOrigin(env.window.getComputedStyle(entry.el).transformOrigin);
+      const cs = env.window.getComputedStyle(entry.el);
+      entry.blend = cs.mixBlendMode || 'normal';
+      const origin = parseTransformOrigin(cs.transformOrigin);
       return new DOMMatrixReadOnly([1, 0, 0, 1, origin.x, origin.y]);
     },
     landed(l) {
@@ -723,7 +725,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const prev = entry.version;
     const version = newVersion({
       element: prev?.element ?? new WeakRef(entry.el), canvasId: entry.record.id, width: geo.bw, height: geo.bh, canvasWidth: box.width, canvasHeight: box.height,
-      translation: round.translation ?? prev?.translation ?? new DOMMatrixReadOnly(), scale: geo.scale, ink: geo.ink,
+      translation: round.translation ?? prev?.translation ?? new DOMMatrixReadOnly(), blend: entry.blend, scale: geo.scale, ink: geo.ink,
       layoutOffset: round.layoutOffset ?? prev?.layoutOffset ?? null, surface: /** @type {Surface} */ (entry.surface),
       dirty: round.fresh || first ? null : round.dirty ?? null,
     }, t);

@@ -68,7 +68,9 @@ const LIMITS = {
   //   the frame's document as a nested image with its CSS, inlined resources, form state and nested frames) and repainted when their document changes or reloads: 16 WPT subtests
   // 306.75 -> 307.25 KB (+559 bytes, 2026-10-22, measured 307,207 / 106,699): canvases of declarative shadow roots managed, paint events in shadow-including tree order
   //   (util/tree-order.js): WPT onpaint-post-tree-order-shadow-dom
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 307.25 * KB, gzip: 106.75 * KB },
+  // 307.25 -> 307.75 KB, gzip 106.75 -> 107 KB (+489 / +236 bytes, 2026-10-22, measured 307,696 / 106,935): the drawable's own mix-blend-mode composited by the draw
+  //   (SnapshotVersion.blend): WPT css-blend-mode-over-content, css-blend-mode-over-both
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 307.75 * KB, gzip: 107 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

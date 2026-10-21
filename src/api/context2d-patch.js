@@ -20,6 +20,11 @@ import { assertTargetType, defineMethod, globalsOf, resolveElement } from './val
 
 const NO_ORIGIN = IDENTITY16;
 
+/** CSS mix-blend-mode -> 2D globalCompositeOperation (the separable and non-separable blend modes share their names; plus-lighter is `lighter`). */
+/** @type {Record<string, GlobalCompositeOperation>} */
+const BLEND_OPS = Object.fromEntries(['multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion',
+  'hue', 'saturation', 'color', 'luminosity'].map((m) => [m, /** @type {GlobalCompositeOperation} */ (m)]).concat([['plus-lighter', 'lighter']]));
+
 /**
  * The HTMLCanvasElement whose content box the context draws for.
  * @param {Context2D} ctx
@@ -86,7 +91,15 @@ function drawElement(env, geometry, ctx, offscreen, drawImage, ctor, args) {
   if (clipped && raster) {
     const size = snapDefaultSize(r, clipped, raster, version.scale);
     raster = isolatedSource(ctx, raster, size) ?? raster;
-    Reflect.apply(drawImage, ctx, [raster.source, raster.sx, raster.sy, raster.sw, raster.sh, clipped.dx, clipped.dy, size.dw, size.dh]);
+    // the drawable's own mix-blend-mode blends it with what the canvas holds below it (WPT css-blend-mode-over-content): the snapshot is isolated, so the draw composites with it
+    const blend = BLEND_OPS[version.blend ?? 'normal'];
+    const previous = ctx.globalCompositeOperation;
+    if (blend) ctx.globalCompositeOperation = blend;
+    try {
+      Reflect.apply(drawImage, ctx, [raster.source, raster.sx, raster.sy, raster.sw, raster.sh, clipped.dx, clipped.dy, size.dw, size.dh]);
+    } finally {
+      if (blend) ctx.globalCompositeOperation = previous;
+    }
   }
   const stored = !parsed.preserveElementGeometry && !r.degenerate
     ? updateGeometry(env, geometry, ctx, offscreen, record, element, r)

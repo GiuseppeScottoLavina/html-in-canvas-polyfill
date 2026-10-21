@@ -25,6 +25,7 @@ export function newVersion(p, now) {
     canvasWidth: p.canvasWidth,
     canvasHeight: p.canvasHeight,
     translation: p.translation,
+    blend: p.blend ?? 'normal',
     scale: p.scale,
     ink: Object.freeze({ ...p.ink }),
     layoutOffset: p.layoutOffset ? Object.freeze({ x: p.layoutOffset.x, y: p.layoutOffset.y }) : null,
@@ -52,7 +53,7 @@ export function reviseVersion(v, changes, now) {
   return newVersion({
     element: v.element, canvasId: v.canvasId, width: v.width, height: v.height,
     canvasWidth: changes.canvasWidth ?? v.canvasWidth, canvasHeight: changes.canvasHeight ?? v.canvasHeight,
-    translation: v.translation, scale: v.scale, ink: v.ink,
+    translation: v.translation, blend: v.blend, scale: v.scale, ink: v.ink,
     layoutOffset: changes.layoutOffset === undefined ? v.layoutOffset : changes.layoutOffset,
     surface: changes.surface ?? v.surface,
     dirty: changes.dirty ?? null,
