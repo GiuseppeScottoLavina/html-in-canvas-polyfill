@@ -90,8 +90,10 @@ export function scrollFacts(src, cs) {
   const rh = boxed ? Math.max(0, html.offsetHeight - src.clientHeight - by) || 0 : 0;
   const scrollableY = cs.overflowY !== 'visible' && src.scrollHeight > src.clientHeight;
   const scrollableX = cs.overflowX !== 'visible' && src.scrollWidth > src.clientWidth;
-  // a gutter alone counts (overflow: scroll, a listbox select, scrollbar-gutter: stable): the clone has no bars, so it must keep the gutter to lay out as the page does
-  if (!sT && !sL && !rv && !rh) return null;
+  // a gutter alone counts (overflow: scroll, a listbox select, scrollbar-gutter: stable): the clone has no bars, so it must keep the gutter to lay out as the page does.
+  // Not for an <input>: it never shows a bar, and Gecko reports a focused field's client box narrower than its padding box (the clone came out 10 px narrower)
+  const gutterOnly = src.localName !== 'input' && (rv || rh);
+  if (!sT && !sL && !(scrollableY && rv) && !(scrollableX && rh) && !gutterOnly) return null;
   const bar = cs.getPropertyValue('width') ? (src.ownerDocument.defaultView ?? window).getComputedStyle(src, '::-webkit-scrollbar') : null;
   const styled = !!bar?.width && bar.width !== 'auto' && bar.width !== '0px' && cs.scrollbarWidth === 'auto';
   const gv = rv && exactGutter(src, cs, rv, styled ? px(bar.width) : null, 'v');
@@ -108,7 +110,7 @@ export function scrollFacts(src, cs) {
  */
 export function hasBarGutter(src, cs) {
   const h = /** @type {HTMLElement} */ (src);
-  if (!(src.clientWidth > 0 || src.clientHeight > 0)) return false;
+  if (src.localName === 'input' || !(src.clientWidth > 0 || src.clientHeight > 0)) return false;
   return h.offsetWidth - src.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth) > 0.5 || h.offsetHeight - src.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth) > 0.5;
 }
 
