@@ -439,7 +439,7 @@ Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/2
 ### ADR-I: privacy, security, refusals, error model
 
 - Read-back-allowed rendering [spec]: the clone contains only author DOM and same-origin / CORS-approved resources inlined as `data:`; cross-origin images/CSS/fonts without CORS are refused (placeholder + entry), tainted `<canvas>` children refused, iframes/objects refused,
-  `<video>` is poster/current frame only without controls or captions, `:visited` rules dropped, spellcheck/autofill UI and IME UI are never part of the clone, system colors resolve in the clone to defaults (no machine-specific leak beyond what `matchMedia` already exposes),
+  `<video>` is its poster or current frame (repainted at every presented frame while it plays, schedule/observers/video-observer.js) without controls or captions, `:visited` rules dropped, spellcheck/autofill UI and IME UI are never part of the clone, system colors resolve in the clone to defaults (no machine-specific leak beyond what `matchMedia` already exposes),
   text is greyscale-antialiased (SVG image). The retained surface is origin-clean because every input is.
 - The polyfill needs no privileged API; it reads only the live DOM and fetches resources the page could fetch itself.
 - CSP: snapshots are `data:image/svg+xml` images, so a CSP without `img-src data:` fails every decode. The polyfill listens to `securitypolicyviolation`, reports `csp-blocked` with a hint, keeps its sheets in `adoptedStyleSheets` (no `<style>` element, so `style-src` without 'unsafe-inline' is fine) and reports a blocked `onpaint=` attribute (CSP / Trusted Types) instead of ignoring it.

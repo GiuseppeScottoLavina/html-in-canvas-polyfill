@@ -75,7 +75,9 @@ const LIMITS = {
   // 311 -> 311.25 KB (+243 bytes, 2026-10-22, measured 311,062 / 108,197): the text-decoration and text-shadow of an author ::selection rule on selected page text
   // 311.25 -> 311.75 KB, gzip 108.25 -> 108.5 KB (+692 / +258 bytes, 2026-10-22, measured 311,754 / 108,455): the drawable's own backdrop-filter applied to the canvas
   //   content by the draw (context2d-patch.js filterBackdrop): WPT css-backdrop-filter
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 311.75 * KB, gzip: 108.5 * KB },
+  // 311.75 -> 313 KB, gzip 108.5 -> 108.75 KB (+1,120 / +340 bytes, 2026-10-22, measured 312,874 / 108,795): a playing video repaints its drawable at every presented
+  //   frame (schedule/observers/video-observer.js): WPT video, offscreen/video-worker
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 313 * KB, gzip: 108.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

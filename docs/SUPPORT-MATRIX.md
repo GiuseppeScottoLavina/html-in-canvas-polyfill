@@ -130,7 +130,7 @@ WebGPU adapter in either simulator), pinch-zoom on iOS, a Chrome for Android rel
 | `<img>`, CSS images, web fonts, same-origin or CORS | expected | inlined as `data:` |
 | cross-origin images/fonts without CORS | refused | placeholder + report |
 | `<canvas>` child | expected | static bitmap per commit; tainted refused |
-| `<video>` | expected | poster/current frame at snapshot time |
+| `<video>` | measured (WPT `video`, `offscreen/video-worker`) | poster or current frame; a playing video repaints at every presented frame (one `paint` per video frame) |
 | inline `<svg>` | expected | serialised with the clone |
 | iframe, object, embed, shadow DOM inside a drawable, top layer | refused | see unsupported table |
 | nested `canvas[content=drawable]` | limited | managed independently, appears in the outer snapshot as a plain bitmap |
@@ -193,7 +193,7 @@ WebGPU adapter in either simulator), pinch-zoom on iOS, a Chrome for Android rel
 | `hover-active` | :hover/:active/:focus/:focus-visible/:focus-within carried into the snapshot by class rewriting | The clone cannot be hovered; state is tracked on the live layer and mirrored as classes. |
 | `css-animations` | animations/transitions are re-snapshotted at the frame cap, frozen at the sampled time | Clone animations are frozen; each snapshot samples the live computed values. |
 | `canvas-child` | plain <canvas> inside a drawable is captured as a static bitmap per commit (size budget); tainted canvases refused; a script redraw through the 2D or WebGL drawing methods damages the drawable | A canvas bitmap is not serialisable into SVG without a synchronous data: encode. Redraws are noticed by wrapping fillRect/stroke/fillText/drawImage/putImageData/clearRect... and the WebGL draw calls (one wrapper call per call on any canvas); pixels written by other means (ImageBitmapRenderer, OffscreenCanvas commit, width resets) are not noticed until something else damages the drawable. |
-| `video` | <video> shows poster/current frame at snapshot time, not continuously unless the drawable is animated | A video frame must be encoded to a data: URL per commit. |
+| `video` | <video> shows its poster or current frame; a playing video repaints its drawable at every presented frame (requestVideoFrameCallback, else while its time moves), each frame encoded as a JPEG of at most 640 px a side; no controls or captions | A video frame must be encoded to a data: URL per commit. |
 | `video-controls` | <video controls> shows its poster/current frame without the control bar; reported once per element at runtime | The media control bar is native UI of the live element and is not part of the serialised clone. |
 | `node-budget` | above nodeBudget.soft the clone is damage-pruned; above hard the drawable is degraded to <= 4 fps (its inner scrolling excepted) and reported | Clone cost is O(nodes) on the main thread (1125 nodes = ~26 ms per full clone measured on the prototype). |
 | `ink-overflow` | the surface covers the border box plus the measured ink overflow (own CSS transform, box-shadow, outline, descendants overflowing to the right/bottom; at least options.inkMargin, at most 2048 css px per side); descendant shadows and descendants overflowing to the left/top beyond options.inkMargin are clipped | Measuring the full ink overflow of every descendant would cost O(subtree) per snapshot; the measured part is O(1). |

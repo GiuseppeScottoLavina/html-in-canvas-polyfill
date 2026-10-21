@@ -13,6 +13,7 @@ import { observeMutations } from './mutation-observer.js';
 import { observeCanvasResize } from './resize-observer.js';
 import { observeScroll } from './scroll-observer.js';
 import { observeStylesheets } from './stylesheet-observer.js';
+import { observeVideos } from './video-observer.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -21,7 +22,7 @@ import { observeStylesheets } from './stylesheet-observer.js';
 /** @typedef {import('./interaction-tracker.js').TrackerControl} TrackerControl */
 
 /** Per-canvas observers, started in this order. */
-const PER_CANVAS = [observeFrameCap, observeCanvasResize, observeMutations, observeScroll, observeInput, observeAnimations];
+const PER_CANVAS = [observeFrameCap, observeCanvasResize, observeMutations, observeScroll, observeInput, observeAnimations, observeVideos];
 
 /**
  * Subscribes to BUS.CANVAS_MOUNTED/UNMOUNTING; returns the disposer. Every observer publishes damage ONLY through env.scheduler.damage. Canvases that are already active are started at once.
