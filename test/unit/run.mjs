@@ -102,7 +102,9 @@ function expectationMet(/** @type {any} */ r) {
 const srv = await startServer();
 const browser = await launchChrome({
   name: 'unit', chrome: opt.chrome, windowSize: [1000, 800], dpr: 1,
-  extraArgs: opt.headed ? [] : ['--headless=new', '--hide-scrollbars'],
+  // --enable-unsafe-swiftshader: Chrome no longer falls back to software WebGL on its own; a machine without a usable GPU (the Windows CI runner) then has no
+  // WebGL context at all and the texture tests could not run. The flag only allows the fallback: where a GPU works (macOS) it changes nothing.
+  extraArgs: opt.headed ? [] : ['--headless=new', '--hide-scrollbars', '--enable-unsafe-swiftshader'],
 });
 const stop = async () => { await browser.close().catch(() => {}); await srv.close().catch(() => {}); };
 process.once('SIGINT', async () => { await stop(); process.exit(130); });
