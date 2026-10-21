@@ -108,59 +108,64 @@ export function createWorkerTransfer(env, geometry) {
   return {
     post(worker, original, args, isImage) {
       const st = stateOf(worker);
-      const [message, second] = args;
-      const options = second !== null && typeof second === 'object' && !Array.isArray(second) ? second : null;
-      const transfer = /** @type {unknown[]} */ (Array.isArray(second) ? second : Array.isArray(options?.transfer) ? options.transfer : []);
-      /** @type {Array<[number, unknown]>} */
-      const images = [];
-      visitShallow(message, (x, index) => {
-        if (isImage(x)) images.push([index, x]);
-        else if (typeof OffscreenCanvas === 'function' && x instanceof OffscreenCanvas) {
-          const canvas = offscreenPlaceholder(x);
-          const record = canvas && env.registry.get(canvas);
-          if (record) st.log.push({ seq: st.seq, index, canvas: record.id });
-        }
-      });
-      const transferred = transfer.filter(isImage);
-      if (!images.length && !transferred.length) {
-        const out = Reflect.apply(original, worker, args);
-        st.seq++;
-        return out;
-      }
-      const shallow = images.map(([, x]) => x);
-      if (transferred.some((x) => !shallow.includes(x))) throw new DOMException('An ElementImage in the transfer list must also be in the message (as the message or one of its items).', 'DataCloneError');
-      const sent = st.sent;
-      const created = !st.port;
+      // a message that is not delivered (a throw anywhere below) leaves the state as it was: no logged canvases, no offered channel
+      const before = { log: st.log.length, sent: st.sent, port: st.port };
       /** @type {Transferable[]} */
       const extra = [];
-      /** @type {Map<unknown, ImageRecord>} */
-      const records = new Map();
-      for (const image of shallow) {
-        if (records.has(image)) continue;
-        const r = recordOf(image, st, extra);
-        if (!r) throw new DOMException('The ElementImage is closed or its element is gone.', 'DataCloneError');
-        records.set(image, r);
-      }
-      const copy = shallowCopy(message);
-      let top = copy;
-      visitShallow(copy, (x, index, set) => {
-        const r = records.get(x);
-        if (!r) return;
-        if (set) set(r); else if (index === 0) top = r;
-      });
-      const list = [...transfer.filter((x) => !isImage(x)), ...extra];
-      let out;
       try {
-        out = Reflect.apply(original, worker, [top, options ? { ...options, transfer: list } : list]);
+        const out = deliver(st, worker, original, args, isImage, extra);
+        st.seq++;
+        return out;
       } catch (err) {
-        // not delivered: the canvases logged and the channel created for this message are offered again with the next one
-        st.sent = sent;
-        if (created) { st.port?.close(); st.port = null; }
+        st.log.length = before.log;
+        st.sent = before.sent;
+        if (!before.port && st.port) { st.port.close(); st.port = null; }
+        for (const x of extra) /** @type {{close?: () => void}} */ (x).close?.();
         throw err;
       }
-      st.seq++;
-      for (const image of transferred) /** @type {{close: () => void}} */ (image).close();
-      return out;
     },
   };
+
+  /**
+   * @param {WorkerState} st @param {object} worker @param {Function} original @param {IArguments|unknown[]} args @param {(x: unknown) => boolean} isImage
+   * @param {Transferable[]} extra  receives the bitmaps and the channel port created for the message
+   * @returns {unknown}
+   */
+  function deliver(st, worker, original, args, isImage, extra) {
+    const [message, second] = args;
+    const options = second !== null && typeof second === 'object' && !Array.isArray(second) ? second : null;
+    const transfer = /** @type {unknown[]} */ (Array.isArray(second) ? second : Array.isArray(options?.transfer) ? options.transfer : []);
+    /** @type {unknown[]} */
+    const images = [];
+    visitShallow(message, (x, index) => {
+      if (isImage(x)) images.push(x);
+      else if (typeof OffscreenCanvas === 'function' && x instanceof OffscreenCanvas) {
+        const canvas = offscreenPlaceholder(x);
+        const record = canvas && env.registry.get(canvas);
+        if (record) st.log.push({ seq: st.seq, index, canvas: record.id });
+      }
+    });
+    const transferred = transfer.filter(isImage);
+    if (!images.length && !transferred.length) return Reflect.apply(original, worker, args);
+    if (transferred.some((x) => !images.includes(x))) throw new DOMException('An ElementImage in the transfer list must also be in the message (as the message or one of its items).', 'DataCloneError');
+    /** @type {Map<unknown, ImageRecord>} */
+    const records = new Map();
+    for (const image of images) {
+      if (records.has(image)) continue;
+      const r = recordOf(image, st, extra);
+      if (!r) throw new DOMException('The ElementImage is closed or its element is gone.', 'DataCloneError');
+      records.set(image, r);
+    }
+    const copy = shallowCopy(message);
+    let top = copy;
+    visitShallow(copy, (x, index, set) => {
+      const r = records.get(x);
+      if (!r) return;
+      if (set) set(r); else if (index === 0) top = r;
+    });
+    const list = [...transfer.filter((x) => !isImage(x)), ...extra];
+    const out = Reflect.apply(original, worker, [top, options ? { ...options, transfer: list } : list]);
+    for (const image of transferred) /** @type {{close: () => void}} */ (image).close();
+    return out;
+  }
 }

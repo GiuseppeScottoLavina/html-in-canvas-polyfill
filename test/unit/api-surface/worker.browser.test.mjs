@@ -73,3 +73,21 @@ test('preserveElementGeometry: a worker draw leaves the geometry alone (no event
   assert.equal(fired, 0);
   assert.ok(canvas.getElementTransform(a).isIdentity);
 });
+
+test('a message that cannot be delivered (DataCloneError) leaves no trace: the next one still names the canvases and opens the geometry channel', async (t) => {
+  const i = inst(t);
+  const canvas = await mk(t, i);
+  const a = /** @type {HTMLElement} */ (canvas.querySelector('#a') ?? document.getElementById('a'));
+  const { worker, ask } = probe(t);
+  const oc = canvas.transferControlToOffscreen();
+  const bad = canvas.captureElementImage(a);
+  assert.throws(() => worker.postMessage({ canvas: oc, name: 'main', image: bad, f: () => 1 }, [oc, bad]), DOMException);
+  assert.equal(canvas.getElementImageDefaultSize(bad).width, 100, 'not transferred: still usable on the page');
+  assert.deepEqual(await ask({ canvas: oc, name: 'main' }, [oc]), { ok: true });
+  const image = canvas.captureElementImage(a);
+  await ask({ image }, [image]);
+  const event = new Promise((ok) => canvas.addEventListener('elementgeometryupdate', ok, { once: true }));
+  assert.deepEqual((await ask({ cmd: 'draw', on: 'main', args: [10, 5], at: [20, 10] })).px, [255, 0, 0, 255]);
+  await event;
+  assert.deepEqual([canvas.getElementTransform(a).e, canvas.getElementTransform(a).f], [10, 5]);
+});
