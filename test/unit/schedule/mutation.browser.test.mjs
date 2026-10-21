@@ -339,3 +339,19 @@ test('a same-origin frame inside a drawable: a change in its document and a (re)
   await microtasks();
   assert.deepEqual(rig.sink.damage.map((d) => d.drawable.id), ['d1'], 'the NEW document is observed');
 });
+
+test('an <img> that finishes loading damages its drawable (a <picture> source chosen after the snapshot, WPT privacy/picture-images-ignored); control: a load outside every drawable damages nothing', async t => {
+  const rig = createRig({ html: '<div drawable id="d1"><picture><source srcset="/test/unit/snapshot-capture/assets/red.svg"><img id="p" width="40" height="20"></picture></div><img id="out" width="4" height="4">' });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const loaded = new Promise((ok) => rig.layerEl.querySelector('#p').addEventListener('load', ok, { once: true }));
+  await loaded;
+  await microtasks();
+  assert.deepEqual(rig.sink.damage.map((d) => [d.cause, d.drawable.id]), [['mutation', 'd1']]);
+  rig.sink.clear();
+  const out = rig.layerEl.querySelector('#out');
+  const outLoaded = new Promise((ok) => out.addEventListener('load', ok, { once: true }));
+  out.src = '/test/unit/snapshot-capture/assets/red.svg';
+  await outLoaded;
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 0, 'not in a drawable');
+});

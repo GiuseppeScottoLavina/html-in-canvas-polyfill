@@ -195,10 +195,16 @@ export function observeMutations(env, record) {
       frames.set(frame, { doc, mo: frameMo });
     }
   }
-  /** @param {Event} e */
+  /**
+   * A frame that loads (another) document, and an image that finishes loading: an <img> whose source is chosen after the snapshot was taken (a <picture> source,
+   * srcset, lazy loading) had no URL to fetch then and nothing else announces it (WPT privacy/picture-images-ignored drew the snapshot from before the load).
+   * @param {Event} e
+   */
   const onLoad = (e) => {
     const t = /** @type {Element} */ (e.target);
-    if (t.nodeType !== 1 || !/^(iframe|frame|object)$/.test(t.localName)) return;
+    if (t.nodeType !== 1) return;
+    if (t.localName === 'img') { frameChanged(t); return; }
+    if (!/^(iframe|frame|object)$/.test(t.localName)) return;
     watchFrames();
     frameChanged(t);
   };
