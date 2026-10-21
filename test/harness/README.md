@@ -19,7 +19,8 @@ await srv.close();
 ```
 
 ## Rules baked in
-- Profiles: `launchChrome` refuses any `userDataDir` outside `<repo>/.profiles/`. It only ever signals the PID it spawned.
+- Profiles: `launchChrome` refuses any `userDataDir` outside `PROFILES_DIR`: `<repo>/.profiles/`, or `hic-live-polyfill-profiles` under the OS temp directory on Windows. It only ever signals the PID it spawned (on Windows, `taskkill /T` on that PID: its renderers are its children) and stragglers whose command line carries the unique profile path (`ps`; on Windows a CIM query through PowerShell).
+- Chrome: `chrome: 'stable' | 'canary'` is looked up where the platform installs it (`resolveChrome`: the application bundles on macOS; Program Files, Program Files (x86) and the per-user install on Windows; `/opt/google/chrome` and `/usr/bin/google-chrome*` on Linux); `HIC_CHROME_PATH` overrides `stable`, and any other value is an executable path.
 - Measure jank from traces (`RunTask` on `CrRendererMain` vs 8.33 / 16.7 ms), not the Long Tasks API (50 ms threshold).
 - A gate needs a non-blank test (`pixelStats(img).nonBlank`) and a positive control.
 - `--force-color-profile=srgb` is on by default: without it compositor screenshots differ from canvas readback on every pixel.
@@ -29,7 +30,7 @@ await srv.close();
 ## Modules (`lib/`)
 | file | what |
 |---|---|
-| `chrome.mjs` | `launchChrome({chrome:'stable'\|'canary'\|path, dpr:1\|2, windowSize, nativeDrawElement, scrollbars:'default'\|'hidden'\|'overlay'\|'classic', extraArgs})`, `Browser` (newPage, `traceStart/traceStop(file)`, `info`, `close`). `nativeDrawElement` adds `--enable-blink-features=CanvasDrawElement` (native baseline). |
+| `chrome.mjs` | `launchChrome({chrome:'stable'\|'canary'\|path, dpr:1\|2, windowSize, nativeDrawElement, scrollbars:'default'\|'hidden'\|'overlay'\|'classic', extraArgs})`, `Browser` (newPage, `traceStart/traceStop(file)`, `info`, `close`), `resolveChrome`, `chromeCandidates`. `nativeDrawElement` adds `--enable-blink-features=CanvasDrawElement` (native baseline). |
 | `page.mjs` | `Page`: `evaluate`, `navigate`, foreground (`focusState`, `assertForeground`, `ensureForeground`, `requireForeground`), `setInnerSize`, `screenshot`, `measureRaf`, `sampleHeap`/`perfMetrics`/`domCounters` (heap, DOM nodes, listeners), `cpuProfileStart/Stop`, primitive input, `errors()` (console+exceptions+log). |
 | `input.mjs` | Paced input that REPORTS the achieved cadence: `typeKeys`, `pressKeys`, `wheelStream`, `mouseStream`, `mouseDrag`. Each returns `{requestedMs, actual:{p50,p95..}, cadenceOk, effectiveHz, ackMs, pageSaw?}`; `probe:true` also records what the page received. |
 | `window.mjs` | `dragResize` (REAL window drag: `Browser.setWindowBounds` in steps at a cadence, reports page-seen sizes), resize recorder. |
@@ -50,7 +51,7 @@ await srv.close();
 - `poly` canvas `content=drawable` + the polyfill bundle. The bundle is optional at the loader level but REQUIRED for `poly`;
   a missing bundle fails loudly (node side `BUNDLE MISSING`, page side red banner + `__HIC_FIXTURE.fatal`).
 - `native` canvas + the browser's implementation (launch with `nativeDrawElement:true`; Chrome 154 only knows `layoutSubtree`, set automatically).
-- F1 water form (the frozen demo page of an earlier prototype), F2 scroll (page scroll, sticky header, nested scrollers), F3 resize (flex-wrap, media queries at 800/520), F4 large app (`nodes=200|500|1000|2000`, exact element count of `#root` subtree), F5 classic scrollbars (`::-webkit-scrollbar`, 15 px gutters regardless of the OS setting).
+- F1 water form (the frozen demo page of an earlier prototype), F2 scroll (page scroll, sticky header, nested scrollers), F3 resize (flex-wrap, media queries at 800/520), F4 large app (`nodes=200|500|1000|2000`, exact element count of `#root` subtree), F5 classic scrollbars (`::-webkit-scrollbar`, 15 px gutters regardless of the OS setting), F6 form controls, F7 system scrollbars (unstyled scrollers: the platform's own bars; every box edge on whole device pixels at DPR 1, 1.25, 1.5 and 2). F6 and F7 are opened by path (`openFixture(page, srv, '/test/fixtures/f7-system-scrollbars/index.html', ...)`).
 
 ## Self-test
 `node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures] [--chrome=canary] [--waitquiet=ms]`

@@ -321,6 +321,13 @@ Tick RUN(now), for each canvas record in reverse tree order:
   so the redraw from the metadata-only versions lands in the SAME frame (without it every such resize presented one cleared frame; positive control of G-resize-ro). Prototype: resize converged in ~1-2 frames, 0 blank frames,
   0 tasks > 8.33 ms in the traced drag [E5 resize]; an earlier JavaScript-painter approach blanked the canvas for 108-136 ms after every resize.
 - **Fractional DPR** (1.25/1.5, common on Windows): the border box is fractional while the surface is whole pixels (`ceil(border * s)`); default-size draws take the source rect from the SURFACE pixel size, so there is no resampling blur; tiles are rounded to whole surface pixels.
+  The raster scale is the canvas grid's x scale, except where the grid is the content box at device pixels to within one pixel on both axes (`surfaces.js` gridRasterScale): there it
+  is the device pixel ratio. The ResizeObserver `device-pixel-content-box` pattern rounds each axis of a content box that is not a whole number of device pixels on its own (1 px borders
+  are 0.8 css px at DPR 1.25: a 338.4 x 168.4 css px box is 423 x 210.5 device px, a grid of 423 x 211); rasterised at a grid scale every glyph sat up to half a pixel from where the page
+  sets it, and a default-size draw at the other axis' scale stretched the tile by a hair (the field test's scroll box at DPR 1.25: 7.7 % of its pixels over 16 against the plain page).
+  Native draws such a grid exactly as the page (Chrome Canary 158, a 312.4 x 184.4 css px box at DPR 1.25: 0 % over 16 against the plain page, at rest and scrolled; a raster at the
+  grid's x scale: 7.3-8.6 %). A default-size draw within 1 px and 1 % of the raster at a scale within 1 % of it is drawn 1:1 (`snapDefaultSize`). With both, the field test passes and
+  the polyfill matches the page (and native) at 0 % on that box at DPR 1.25 and 1.5, at rest and scrolled (the scroll compositor composes at the raster scale).
   Tiles need no snapping to whole DEVICE pixels of the page: native draws a drawable into the canvas grid, so its canvas does not depend on where the page puts the canvas (measured against Chrome Canary at DPR 1.25 and 1.5: 0.000 % between a fractional and a whole device-pixel origin), and neither does the polyfill's (G-pixel-dpr; polyfill vs native 0.1-0.6 % on F2/F4/F5). The plain-DOM oracle had shown > 3 % at DPR 1.25 only because its reference sat on half a device pixel (the page snaps text there and the screenshot clip resampled); it now moves the reference onto whole device pixels. An explicit draw size within 1 px and 1 % of the raster (`offsetWidth * devicePixelRatio` against a fractional border box) is drawn 1:1 instead of resampled (`snapDefaultSize`): F1 at DPR 1.25 went from 2.3 % to 1.6 % of native; the rest is `zoom:s` layout in the SVG image, which places glyphs slightly differently from native at 125/150 %.
 - **DPR change** (page zoom, monitor move; `matchMedia('(resolution: Ndppx)')` + window resize): `BUS.DPR`; raster scale is recomputed from the grid; old surfaces keep being used until re-rastered (`dpr` damage, whole drawable).
 - **Scroll.** Page scroll moves canvas and layer together natively; no re-snapshot is needed because a drawable's surface does not depend on its page position. Scrolling INSIDE the drawable (a `overflow:auto`
@@ -359,9 +366,18 @@ Tick RUN(now), for each canvas record in reverse tree order:
     the scroller's content ('backdrop': border, background and whatever lies behind the corners); the composition draws the backdrop in the corner squares and the pages inside the
     antialiased rounded clip of the inner border radii with `copy` (which lerps by the clip coverage): within 0.1 % of a live capture in the unit oracle. Not with a classic
     bar (its gutter tiles are square), nor under an ancestor's rounded clip that reaches the port.
-- **Scrollbars.** Overlay scrollbars (macOS default): no gutter in the live DOM, hidden in the clone (`scrollbar-width:none`), nothing to paint. Classic scrollbars: the gutter is kept in the clone so layout is exact and the polyfill
-  PAINTS an approximation of track and thumb (a scroll-position-dependent overlay, colours from `color-scheme`), feature row `classic-scrollbars`; the prototype ran with scrollbars hidden and measured 3-4 % difference on classic ones [E5];
-  gate G-pixel-f5 requires <= 4 %.
+- **Scrollbars.** Overlay scrollbars (macOS default): no gutter in the live DOM, hidden in the clone (`scrollbar-width:none`), nothing to paint. Classic scrollbars: the gutter is kept in the clone as padding (also on a box that
+  reserves it without scrolling: `overflow: scroll`, a listbox, `scrollbar-gutter: stable`) so layout is exact, and the polyfill PAINTS track and thumb (a scroll-position-dependent overlay), feature row `classic-scrollbars`.
+  Chrome counts the bar thickness in the INTRINSIC size of a `<textarea>` and a listbox `<select>` whether or not it shows (classic, author-styled and even overlay bars); the clone has no bars,
+  so these controls always get their live border box pinned (`scroll-emulation.js` pinBarBox). Chromium's unstyled bars are drawn by `chromium-bars.js` with the engine's own rules in DEVICE pixels: the macOS look
+  (Blink ScrollbarThemeMac + NativeThemeMac: no buttons, the thumb inset round(3k) px and by the track border, at least 20 DIP, the track gradient and borders) or the Fluent look of Linux and Windows
+  (ScrollbarThemeFluent + NativeThemeFluent: 18 DIP arrow buttons drawn crisp, or Segoe Fluent Icons glyphs where that font is installed, a 9 DIP capsule thumb centred in the bar, colours of the Fluent
+  colour mixer); thumb length `round(visible / total x track)` and the truncated position as Blink computes them; light or dark from the scroller's used colour scheme; `scrollbar-width: thin` and
+  `scrollbar-color` as the engine applies them. The look is MEASURED: the thicknesses of an unstyled probe at `auto` and `thin` follow round(15k) / round(10k) on Fluent and trunc(15k) / trunc(11k) on
+  macOS (k = the device scale), which differ at every common scale; only an ambiguous measurement (a page zoom) falls back to the platform. A listbox's bar (the clone renders only its options) is a
+  background layer in the gutter. Measured by G-platform (Chrome 155, F6 and F7 at DPR 1, 1.25 and 1.5): every bar region within 0.7 % of native pixels over 16 on Linux and on macOS with classic bars
+  (it was 12-100 % with the macOS legacy constants used everywhere). Safari's bars come from the engines bundle (`webkit-bars.js`), Firefox's from its listbox skin and the constants of
+  `paintClassicScrollbars`. The prototype ran with scrollbars hidden and measured 3-4 % difference on classic ones [E5]; gate G-pixel-f5 requires <= 4 % (author-styled bars).
 
 ### ADR-F: geometry and hit testing
 

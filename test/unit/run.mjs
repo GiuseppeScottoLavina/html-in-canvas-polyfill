@@ -32,7 +32,9 @@ function discover() {
 }
 
 const files = discover();
-if (opt.list) { for (const f of files) console.log(relative(PROJECT_ROOT, f)); process.exit(0); }
+/** repo-relative with forward slashes on every platform: it is also the URL path the host page imports */
+const relPath = (/** @type {string} */ f) => relative(PROJECT_ROOT, f).split(sep).join('/');
+if (opt.list) { for (const f of files) console.log(relPath(f)); process.exit(0); }
 if (!files.length) { console.error('no test files found'); process.exit(1); }
 
 const say = (/** @type {string} */ s) => { if (!opt.quiet) console.log(s); };
@@ -41,12 +43,17 @@ const trimStack = (/** @type {string} */ s) => s.replace(/http:\/\/127\.0\.0\.1:
 
 /** Runs one file in a fresh tab; never throws for test-level problems. */
 async function runFile(browser, srv, file) {
-  const rel = relative(PROJECT_ROOT, file).split(sep).join('/');
+  const rel = relPath(file);
   const page = await browser.newPage({ reuseFirst: false });
   const res = { rel, tests: [], loadError: null, pageErrors: [], hung: false };
   try {
     const q = new URLSearchParams({ file: '/' + rel, timeout: opt.timeout, filter: opt.filter ?? '' });
-    await page.navigate(`${srv.url}/test/unit/lib/host.html?${q}`, { timeout: 30000 }).catch(e => { res.loadError = String(e.message); });
+    const at = srv.requests.length;
+    await page.navigate(`${srv.url}/test/unit/lib/host.html?${q}`, { timeout: 30000 }).catch(e => {
+      // the navigation itself failed: say what the server answered and what the browser printed, so a platform problem can be read from a CI log
+      const served = srv.requests.slice(at).map((/** @type {any} */ x) => `${x.status} ${x.url.split('?')[0]}`).join(', ') || 'no request reached the server';
+      res.loadError = `${e.message} (server: ${served}; browser stderr: ${browser.getStderr().trim().split('\n').slice(-6).join(' | ') || 'empty'})`;
+    });
     const deadline = Date.now() + Number(opt['file-timeout']);
     while (!res.loadError) {
       const st = await Promise.race([page.evaluate('window.__unit?.state ?? "loading"'), sleep(2000).then(() => 'hung')]).catch(() => 'hung');

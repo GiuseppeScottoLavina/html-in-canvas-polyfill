@@ -1,0 +1,28 @@
+name: Field test report
+description: Send the report file of the field test page (no technical knowledge needed).
+labels: [field-test]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for running the field test. Please attach the file the test page downloaded (its name starts with `hic-field-test-`): drag it into the box below, or click the box and use "Paste, drop, or click to add files".
+        The file contains only what the test page lists on its first screen: browser and device information, timings and small pictures of the test boxes.
+  - type: input
+    id: device
+    attributes:
+      label: Your device
+      description: For example "Windows 11 laptop, Dell XPS 13, Chrome", or "iPhone 15, Safari".
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: Report file
+      description: Drag the downloaded .json file here.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything you noticed (optional)
+      description: For example "box A looked blurry", "scrolling stuttered", "a step did not react".

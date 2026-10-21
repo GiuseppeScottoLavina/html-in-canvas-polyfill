@@ -48,11 +48,12 @@ jobs:
           chrome-version: stable
 
       - name: Make Chrome reachable for the test harness
-        # Same as ci.yml: the harness looks for Chrome at the macOS path; Chrome's sandbox needs unprivileged user namespaces.
+        # Same as ci.yml: HIC_CHROME_PATH points the harness at the Chrome installed above; Chrome's sandbox needs unprivileged user namespaces.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo mkdir -p "/Applications/Google Chrome.app/Contents/MacOS"
-          sudo ln -sf "${{ steps.chrome.outputs.chrome-path }}" "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+          echo "HIC_CHROME_PATH=${CHROME_PATH}" >> "$GITHUB_ENV"
 
       - run: npm ci
 
@@ -61,7 +62,7 @@ jobs:
           npm run lint
           npm run check
           node test/unit/lib/run-node-tests.mjs
-          node test/unit/run.mjs --chrome="${{ steps.chrome.outputs.chrome-path }}"
+          node test/unit/run.mjs
           npm run build
           node scripts/check-bundle.mjs --no-build --allow-size
 

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F7 system scrollbars</title>
+<style>
+  /* Unstyled scrollers: the bars are the PLATFORM's own (classic on Windows and Linux, and on macOS with "Show scroll bars: Always"), the gutter is
+     whatever thickness the platform gives them at this DPR. F5 is the author-styled counterpart.
+     Every box edge is a multiple of 4 css px (whole device pixels at DPR 1, 1.25, 1.5 and 2), so the page and the canvas grid snap text the same way. */
+  html, body { margin: 0; background: #e9ebf0; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #hic-surface { display: block; width: 720px; height: 420px; margin: 0; background: #fff; }
+  #root { width: 720px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 12px; padding: 12px; box-sizing: border-box; }
+  .sc { width: 212px; height: 120px; overflow: auto; border: 0; padding: 4px 8px; box-sizing: border-box; background: #f3f5f9; color: #111; }
+  .sc p { margin: 0; white-space: nowrap; }
+  .dark { color-scheme: dark; background: #1e1e1e; color: #eee; }
+  .thin { scrollbar-width: thin; }
+  .stable { overflow: auto; scrollbar-gutter: stable; }
+  textarea.sc { display: block; resize: none; font: inherit; }
+  .colored { scrollbar-color: #c2410c #fde8d8; }
+  .always { overflow-y: scroll; }
+</style></head>
+<body>
+<canvas id="hic-surface" width="720" height="420" content="drawable" aria-label="F7 system scrollbars surface"><div id="root" drawable><div class="sc" data-sc="v-light" id="v-light"><p>line 0 of a scroller<br>line 1 of a scroller<br>line 2 of a scroller<br>line 3 of a scroller<br>line 4 of a scroller<br>line 5 of a scroller<br>line 6 of a scroller<br>line 7 of a scroller<br>line 8 of a scroller<br>line 9 of a scroller<br>line 10 of a scroller<br>line 11 of a scroller<br>line 12 of a scroller<br>line 13 of a scroller<br>line 14 of a scroller<br>line 15 of a scroller<br>line 16 of a scroller<br>line 17 of a scroller<br>line 18 of a scroller<br>line 19 of a scroller<br>line 20 of a scroller<br>line 21 of a scroller<br>line 22 of a scroller<br>line 23 of a scroller<br>line 24 of a scroller<br>line 25 of a scroller<br>line 26 of a scroller<br>line 27 of a scroller<br>line 28 of a scroller<br>line 29 of a scroller</p></div><div class="sc dark" data-sc="v-dark" id="v-dark"><p>line 0 of a scroller<br>line 1 of a scroller<br>line 2 of a scroller<br>line 3 of a scroller<br>line 4 of a scroller<br>line 5 of a scroller<br>line 6 of a scroller<br>line 7 of a scroller<br>line 8 of a scroller<br>line 9 of a scroller<br>line 10 of a scroller<br>line 11 of a scroller<br>line 12 of a scroller<br>line 13 of a scroller<br>line 14 of a scroller<br>line 15 of a scroller<br>line 16 of a scroller<br>line 17 of a scroller<br>line 18 of a scroller<br>line 19 of a scroller<br>line 20 of a scroller<br>line 21 of a scroller<br>line 22 of a scroller<br>line 23 of a scroller<br>line 24 of a scroller<br>line 25 of a scroller<br>line 26 of a scroller<br>line 27 of a scroller<br>line 28 of a scroller<br>line 29 of a scroller</p></div><div class="sc" data-sc="both" id="both"><p>row 0: a line wide enough to overflow the scroller sideways<br>row 1: a line wide enough to overflow the scroller sideways<br>row 2: a line wide enough to overflow the scroller sideways<br>row 3: a line wide enough to overflow the scroller sideways<br>row 4: a line wide enough to overflow the scroller sideways<br>row 5: a line wide enough to overflow the scroller sideways<br>row 6: a line wide enough to overflow the scroller sideways<br>row 7: a line wide enough to overflow the scroller sideways<br>row 8: a line wide enough to overflow the scroller sideways<br>row 9: a line wide enough to overflow the scroller sideways<br>row 10: a line wide enough to overflow the scroller sideways<br>row 11: a line wide enough to overflow the scroller sideways<br>row 12: a line wide enough to overflow the scroller sideways<br>row 13: a line wide enough to overflow the scroller sideways<br>row 14: a line wide enough to overflow the scroller sideways<br>row 15: a line wide enough to overflow the scroller sideways<br>row 16: a line wide enough to overflow the scroller sideways<br>row 17: a line wide enough to overflow the scroller sideways<br>row 18: a line wide enough to overflow the scroller sideways<br>row 19: a line wide enough to overflow the scroller sideways<br>row 20: a line wide enough to overflow the scroller sideways<br>row 21: a line wide enough to overflow the scroller sideways<br>row 22: a line wide enough to overflow the scroller sideways<br>row 23: a line wide enough to overflow the scroller sideways<br>row 24: a line wide enough to overflow the scroller sideways<br>row 25: a line wide enough to overflow the scroller sideways<br>row 26: a line wide enough to overflow the scroller sideways<br>row 27: a line wide enough to overflow the scroller sideways<br>row 28: a line wide enough to overflow the scroller sideways<br>row 29: a line wide enough to overflow the scroller sideways</p></div><div class="sc thin" data-sc="thin" id="thin"><p>line 0 of a scroller<br>line 1 of a scroller<br>line 2 of a scroller<br>line 3 of a scroller<br>line 4 of a scroller<br>line 5 of a scroller<br>line 6 of a scroller<br>line 7 of a scroller<br>line 8 of a scroller<br>line 9 of a scroller<br>line 10 of a scroller<br>line 11 of a scroller<br>line 12 of a scroller<br>line 13 of a scroller<br>line 14 of a scroller<br>line 15 of a scroller<br>line 16 of a scroller<br>line 17 of a scroller<br>line 18 of a scroller<br>line 19 of a scroller<br>line 20 of a scroller<br>line 21 of a scroller<br>line 22 of a scroller<br>line 23 of a scroller<br>line 24 of a scroller<br>line 25 of a scroller<br>line 26 of a scroller<br>line 27 of a scroller<br>line 28 of a scroller<br>line 29 of a scroller</p></div><div class="sc stable" data-sc="stable" id="stable"><p>three short lines<br>that do not overflow<br>but keep a gutter</p></div><textarea class="sc" data-sc="textarea" id="textarea">textarea line 0
+textarea line 1
+textarea line 2
+textarea line 3
+textarea line 4
+textarea line 5
+textarea line 6
+textarea line 7
+textarea line 8
+textarea line 9
+textarea line 10
+textarea line 11
+textarea line 12
+textarea line 13
+textarea line 14
+textarea line 15
+textarea line 16
+textarea line 17
+textarea line 18
+textarea line 19</textarea><div class="sc colored" data-sc="colored" id="colored"><p>line 0 of a scroller<br>line 1 of a scroller<br>line 2 of a scroller<br>line 3 of a scroller<br>line 4 of a scroller<br>line 5 of a scroller<br>line 6 of a scroller<br>line 7 of a scroller<br>line 8 of a scroller<br>line 9 of a scroller<br>line 10 of a scroller<br>line 11 of a scroller<br>line 12 of a scroller<br>line 13 of a scroller<br>line 14 of a scroller<br>line 15 of a scroller<br>line 16 of a scroller<br>line 17 of a scroller<br>line 18 of a scroller<br>line 19 of a scroller<br>line 20 of a scroller<br>line 21 of a scroller<br>line 22 of a scroller<br>line 23 of a scroller<br>line 24 of a scroller<br>line 25 of a scroller<br>line 26 of a scroller<br>line 27 of a scroller<br>line 28 of a scroller<br>line 29 of a scroller</p></div><div class="sc always" data-sc="always" id="always"><p>overflow-y: scroll<br>without overflow</p></div></div></canvas>
+<script src="/test/fixtures/shared/boot.js"></script>
+</body></html>

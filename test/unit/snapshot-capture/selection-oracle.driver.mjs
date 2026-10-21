@@ -7,7 +7,7 @@
 // emulation (a selection of an unfocused page is painted in the inactive colours) and grayscale text antialiasing (`--disable-lcd-text`: with LCD text the page and
 // the SVG-image tile differ by the antialiasing alone, selected or not; the unselected control below shows it).
 // Per case: the selection region (where the native screenshot changes when the selection is made) must have <= 1 % of its pixels with a channel delta > 16, and the
-// unselected tile must equal the unselected screenshot there (the comparison is meaningful). Positive controls: the unselected tile against the selected screenshot
+// unselected tile must equal the unselected screenshot there (the comparison is meaningful). Writes <out>/results.json (per case) and the PNGs. Positive controls: the unselected tile against the selected screenshot
 // must fail, and the platform model the engine shows (the selected glyphs in HighlightText, or in their own colour) must be the one util/engine.js decides.
 import { parseArgs } from 'node:util';
 import { join } from 'node:path';
@@ -49,6 +49,9 @@ const CASES = [
 const srv = await H.startServer();
 const browser = await H.launchChrome({ name: 'selection-oracle', chrome: opt.chrome, extraArgs: ['--headless=new', '--hide-scrollbars', '--disable-lcd-text'] });
 let failed = false;
+/** @type {any[]} per case, written to <out>/results.json (the platform probe reads it) */
+const rows = [];
+let facts = {};
 try {
   const page = await browser.newPage();
   await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -57,6 +60,7 @@ try {
   const nav = await page.evaluate('({ userAgent: navigator.userAgent, userAgentData: navigator.userAgentData ? { platform: navigator.userAgentData.platform, brands: navigator.userAgentData.brands } : undefined })');
   const highlightText = await page.evaluate("(() => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = 'HighlightText'; const v = String(c.fillStyle); return [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16)); })()");
   const decided = selectionForegroundOf(nav);
+  facts = { userAgent: nav.userAgent, highlightText, decided };
   console.log(`${nav.userAgent}\npolyfill model: ${decided ? 'glyphs in HighlightText' : 'glyphs keep their colour'} (HighlightText ${highlightText})`);
 
   /** @param {typeof CASES[number]} c @param {boolean} selected */
@@ -98,15 +102,18 @@ try {
     const control = over16(sel.shot, plain.tile, region);
     let note = '';
     let pass = cmp <= 1 && base === 0 && control > 5;
+    /** @type {{native: boolean, decided: boolean}|null} */ let model = null;
     if (c.model) {
       // which model the engine shows: the selected glyph core is HighlightText, or the field's / paragraph's own colour
       const glyph = farthest(sel.shot, region);
       const own = (c.html.includes(DARK) ? [245, 215, 110] : [122, 16, 32]);
       const native = dist(glyph, highlightText) < dist(glyph, own);
       note = `, engine model: ${native ? 'HighlightText' : 'own colour'} (glyph ${glyph})`;
+      model = { native, decided };
       if (native !== decided) pass = false;
     }
     if (!pass) failed = true;
+    rows.push({ name: c.name, author: !!c.css, pass, pixels: cmp <= 1, controls: base === 0 && control > 5, over16: +cmp.toFixed(2), unselected: +base.toFixed(2), control: +control.toFixed(1), model });
     writeFileSync(join(OUT, `${c.name}.native.png`), H.encodePng(sel.shot));
     writeFileSync(join(OUT, `${c.name}.tile.png`), H.encodePng(sel.tile));
     console.log(`${pass ? 'ok  ' : 'FAIL'} ${c.name}: ${cmp.toFixed(2)} % of the selection over 16 (unselected ${base.toFixed(2)} %, control ${control.toFixed(1)} %)${note}`);
@@ -115,6 +122,7 @@ try {
   await browser.close();
   await srv.close();
 }
+writeFileSync(join(OUT, 'results.json'), JSON.stringify({ facts, cases: rows }, null, 1));
 console.log(failed ? 'selection oracle: FAILED' : 'selection oracle: OK');
 process.exit(failed ? 1 : 0);
 

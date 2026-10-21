@@ -1,6 +1,6 @@
-# Repo checks, types, unit tests (Node 22 and 24, headless Chrome), build, bundle check and package contents.
-# The browser gates, the WPT subset, Firefox/Safari and the framework apps need headed browsers on a real, unlocked
-# screen and run locally on macOS (CONTRIBUTING.md, "Browser gates").
+# Repo checks, types, unit tests (Node 22 and 24, headless Chrome), build, bundle check, the platform probe and package contents, on Linux and on
+# Windows. The browser gates, the WPT subset, Firefox/Safari and the framework apps need headed browsers on a real, unlocked screen and run locally
+# on macOS (CONTRIBUTING.md, "Browser gates").
 name: CI
 
 on:
@@ -68,14 +68,15 @@ jobs:
           chrome-version: stable
 
       - name: Make Chrome reachable for the test harness
-        # The harness looks for Chrome at the macOS path (test/harness/lib/chrome.mjs); the unit runner also takes --chrome=<path>.
+        # HIC_CHROME_PATH points every harness launch at the Chrome installed above (test/harness/lib/chrome.mjs, resolveChrome), not at the one the runner image ships.
         # Ubuntu 23.10+ restricts the unprivileged user namespaces Chrome's sandbox needs; re-allow them instead of using --no-sandbox. The sysctl is the one of
         # Ubuntu 24.04, which is why the runners are pinned to ubuntu-24.04 rather than ubuntu-latest.
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo mkdir -p "/Applications/Google Chrome.app/Contents/MacOS"
-          sudo ln -sf "${{ steps.chrome.outputs.chrome-path }}" "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-          "${{ steps.chrome.outputs.chrome-path }}" --version
+          echo "HIC_CHROME_PATH=${CHROME_PATH}" >> "$GITHUB_ENV"
+          "${CHROME_PATH}" --version
 
       - run: npm ci
 
@@ -89,7 +90,7 @@ jobs:
         run: node test/unit/lib/run-node-tests.mjs
 
       - name: Unit tests (headless Chrome; src and plugins/)
-        run: node test/unit/run.mjs --chrome="${{ steps.chrome.outputs.chrome-path }}"
+        run: node test/unit/run.mjs
 
       - name: Build
         run: npm run build
@@ -97,6 +98,94 @@ jobs:
       - name: Bundle check (sizes, every bundle and plugin bundle loaded in headless Chrome)
         # --allow-size: the 150 KB core target is a documented known miss (docs/BUNDLES.md); the size ceilings still fail.
         run: node scripts/check-bundle.mjs --no-build --allow-size
+
+      - name: Platform probe (fonts, form controls, scrollbars, DPR 1.25 / 1.5, selection vs native pixels)
+        # --allow-known: the gaps listed in KNOWN (test/platform/run.mjs) are printed as KNOWN RED and do not fail; any other failure does, and so does a
+        # known gap that starts to pass.
+        run: node test/platform/run.mjs --allow-known
+
+      - name: Package contents
+        run: npm pack --dry-run
+
+  windows:
+    # The `test` job on Windows: the harness on Windows paths and processes, the build reproducing the recorded bundle sizes byte for byte, and the platform
+    # probe on the Windows theme (Segoe UI, Fluent classic scrollbars, the system selection colours, DPR 1.25 and 1.5) against native pixels.
+    # Headless and without a GPU: the WebGPU tests skip loudly ("SKIPPED: no WebGPU") when the browser offers no adapter.
+    name: windows
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Line endings (the checkout is LF, .gitattributes)
+        run: |
+          if git ls-files --eol | grep -E 'w/(crlf|mixed)'; then echo "::error::files checked out with CRLF line endings"; exit 1; fi
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Chrome (stable)
+        id: chrome
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: stable
+
+      - name: Make Chrome reachable for the test harness
+        # Chrome's sandboxed processes run as AppContainer / restricted tokens, which need read and execute access to the browser's folder; the tool cache
+        # does not grant it ("Sandbox cannot access executable ... Access is denied", navigations aborted at random). Grant it to ALL APPLICATION PACKAGES
+        # and ALL RESTRICTED APPLICATION PACKAGES, as an installed Chrome has, instead of turning the sandbox off.
+        shell: pwsh
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          $dir = Split-Path -Parent $env:CHROME_PATH
+          icacls $dir /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /Q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "HIC_CHROME_PATH=$env:CHROME_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          (Get-Item $env:CHROME_PATH).VersionInfo.ProductVersion
+
+      - run: npm ci
+
+      - name: Lint (repo checks, plugin folder contract)
+        run: npm run lint
+
+      - name: Types
+        run: npm run check
+
+      - name: Unit tests (Node; src and plugins/)
+        run: node test/unit/lib/run-node-tests.mjs
+
+      - name: Unit runner self-test (a failing, hanging or throwing test file is reported)
+        run: npm run test:unit:selftest
+
+      - name: Unit tests (headless Chrome; src and plugins/)
+        run: node test/unit/run.mjs
+
+      - name: Build
+        run: npm run build
+
+      - name: The build reproduces the recorded bundle sizes (docs/BUNDLES.md unchanged)
+        run: git diff --exit-code
+
+      - name: Bundle check (sizes, every bundle and plugin bundle loaded in headless Chrome)
+        run: node scripts/check-bundle.mjs --no-build --allow-size
+
+      - name: Platform probe (Segoe UI, form controls, Fluent scrollbars, DPR 1.25 / 1.5, selection vs native pixels)
+        run: node test/platform/run.mjs --allow-known
+
+      - name: Keep the probe's images when it fails
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: platform-probe-windows
+          path: .scratch/platform
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Package contents
         run: npm pack --dry-run

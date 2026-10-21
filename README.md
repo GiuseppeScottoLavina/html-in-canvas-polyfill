@@ -6,7 +6,7 @@
 
 A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in-canvas): put real, interactive HTML inside `<canvas content="drawable">` and draw it with `ctx.drawElementImage()`, in today's desktop Chrome, Firefox and Safari, and on Chrome for Android and Safari for iOS (verified on simulators and emulators).
 
-**Live demo:** [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/)
+**Live demo:** [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · **Field test:** [check it on your device](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/field-test/) (five minutes, one report file to send back; [what it measures](docs/guides/FIELD-TEST.md))
 
 [![A live HTML form drawn into a canvas under the WebGPU water plugin of the gallery; the name field is clicked and typed into through the ripples](docs/media/hero.webp)](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=water)
 
@@ -94,7 +94,7 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | Chrome for Android 130+ | polyfill runs with phone budgets; verified on the Android Emulator with Chromium 158, not on a device (Chromium 158 ships HTML-in-Canvas natively: the polyfill steps aside there; its own path was forced for the test) |
 | older Firefox and Safari, Chrome for Android < 130, iOS < 26, Android WebView, in-app iOS web views, Firefox for Android | refused with one console warning |
 
-On Linux only headless Chrome was run (the CI unit tests and bundle check, and the text-selection oracle); nothing was measured on Windows or on a physical phone ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
+On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check, and the platform probe: fonts, form controls, scrollbars, DPR 1.25 / 1.5 and the text selection against native pixels); nothing was measured on a physical Windows machine or on a physical phone ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
 
 ## Known limitations
 
@@ -156,13 +156,13 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 ## Testing and conformance
 
 - **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 145 files (253 of 375 subtests); native Chrome passes 209 (355) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 520 in Node and 786 in headless Chrome (the plugin tests included), run in CI with type checks, module-boundary checks and a bundle check.
+- **Unit tests:** 525 in Node and 786 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check.
 - **Browser gates:** 15 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling and its cadence). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 47 seeded bugs are caught.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
 - **Phones (simulators and emulators):** `npm run test:mobile` drives Mobile Safari in the iOS Simulator and Chrome in the Android Emulator: taps on moved drawables, typing, touch scroll, the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
 
-The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless on Linux; the headed browser gates need a real screen and run locally on macOS ([CONTRIBUTING.md](CONTRIBUTING.md)).
+The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless, on Linux and on Windows; the headed browser gates need a real screen and run locally on macOS ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Documentation
 

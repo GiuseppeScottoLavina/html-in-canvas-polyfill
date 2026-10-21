@@ -1,16 +1,80 @@
-// Launch and tear down a headed Chrome that THIS process spawned, with a throwaway profile under <repo>/.profiles/.
+// Launch and tear down a Chrome that THIS process spawned, with a throwaway profile under PROFILES_DIR (<repo>/.profiles/; the OS temp dir on Windows).
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdirSync, rmSync, createWriteStream, statSync, existsSync, realpathSync } from 'node:fs';
-import { dirname, resolve, sep, basename } from 'node:path';
+import { dirname, resolve, sep, basename, win32 } from 'node:path';
 import { CDPConnection } from './cdp-conn.mjs';
 import { Page } from './page.mjs';
 import { sleep, PROFILES_DIR } from './util.mjs';
 
+/** The macOS locations of the two channels (kept as the default of `chrome` on macOS). */
 export const CHROME_APPS = {
   stable: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   canary: '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
 };
+
+/**
+ * Where each channel is installed, per platform, in the order they are tried. On Linux the macOS path comes last: the CI image links the browser there.
+ * @param {NodeJS.Platform} platform @param {Record<string, string|undefined>} env
+ * @returns {{stable: string[], canary: string[]}}
+ */
+export function chromeCandidates(platform = process.platform, env = process.env) {
+  if (platform === 'darwin') return { stable: [CHROME_APPS.stable], canary: [CHROME_APPS.canary] };
+  if (platform === 'win32') {
+    const roots = [env.PROGRAMFILES, env['PROGRAMFILES(X86)'], env.LOCALAPPDATA].filter((r) => !!r).map(String);
+    return {
+      stable: roots.map((r) => win32.join(r, 'Google', 'Chrome', 'Application', 'chrome.exe')),
+      canary: env.LOCALAPPDATA ? [win32.join(env.LOCALAPPDATA, 'Google', 'Chrome SxS', 'Application', 'chrome.exe')] : [],
+    };
+  }
+  return {
+    stable: ['/opt/google/chrome/chrome', '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome', CHROME_APPS.stable],
+    canary: ['/opt/google/chrome-canary/chrome', '/usr/bin/google-chrome-canary', CHROME_APPS.canary],
+  };
+}
+
+/**
+ * The executable for `chrome`: a channel name ('stable', 'canary') or a path. For 'stable', the environment variable HIC_CHROME_PATH wins (CI points it at the
+ * browser it installed, so every script, not only those with a --chrome option, uses that one); else the first installed candidate of the platform. Throws,
+ * naming every place it looked, when there is none.
+ * @param {string} [chrome] @param {{platform?: NodeJS.Platform, env?: Record<string, string|undefined>, exists?: (p: string) => boolean}} [o]
+ * @returns {string}
+ */
+export function resolveChrome(chrome = 'stable', { platform = process.platform, env = process.env, exists = existsSync } = {}) {
+  if (chrome !== 'stable' && chrome !== 'canary') {
+    if (!exists(chrome)) throw new Error(`Chrome executable not found: ${chrome}`);
+    return chrome;
+  }
+  const tried = [...(chrome === 'stable' && env.HIC_CHROME_PATH ? [env.HIC_CHROME_PATH] : []), ...chromeCandidates(platform, env)[chrome]];
+  const found = tried.find((p) => exists(p));
+  if (!found) throw new Error(`Chrome (${chrome}) not found on ${platform}; looked at: ${tried.join(', ') || '(nothing)'}. Pass --chrome=<path> or set HIC_CHROME_PATH.`);
+  return found;
+}
+
+/**
+ * PIDs (never ours) whose command line contains `userDataDir`. The directory name is unique per launch, so the match is exactly the processes of one browser:
+ * `ps` on macOS and Linux, a CIM query through PowerShell on Windows (no `ps` there; `wmic` is gone from current Windows images; the query leaves out its own
+ * PowerShell process, whose command line contains the directory too). [] when listing fails.
+ * @param {string} userDataDir @returns {number[]}
+ */
+export function profileProcesses(userDataDir) {
+  try {
+    if (process.platform === 'win32') {
+      const needle = userDataDir.toLowerCase().replaceAll("'", "''");
+      const script = `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.ToLower().Contains('${needle}') } | ForEach-Object { $_.ProcessId }`;
+      const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 20000, windowsHide: true });
+      return out.split(/\r?\n/).map(Number).filter((p) => p && p !== process.pid);
+    }
+    const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    return out.split('\n').map((l) => l.trim()).filter((l) => l.includes(`--user-data-dir=${userDataDir}`)).map((l) => Number(l.split(/\s+/)[0])).filter((p) => p && p !== process.pid);
+  } catch { return []; }
+}
+
+/** Kill one process we spawned and, on Windows, its whole tree (`taskkill /T`: the renderers and the GPU process are its children). */
+function killTree(/** @type {import('node:child_process').ChildProcess} */ child) {
+  if (process.platform === 'win32' && child.pid) { try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000, windowsHide: true }); } catch { /* gone */ } }
+  try { child.kill('SIGKILL'); } catch { /* gone */ }
+}
 
 /** Trace categories: `disabled-by-default-devtools.timeline` is REQUIRED for RunTask events. */
 export const DEFAULT_TRACE_CATEGORIES = [
@@ -20,7 +84,7 @@ export const DEFAULT_TRACE_CATEGORIES = [
 
 /** Every live child we spawned, so an unexpected Node exit cannot orphan a browser. Only ever our own PIDs. */
 const liveChildren = new Set();
-process.once('exit', () => { for (const c of liveChildren) { try { c.kill('SIGKILL'); } catch { /* gone */ } } });
+process.once('exit', () => { for (const c of liveChildren) killTree(c); });
 
 async function freePort() {
   return new Promise((ok, bad) => {
@@ -29,7 +93,7 @@ async function freePort() {
   });
 }
 
-/** Throws unless `dir` is strictly inside <repo>/.profiles/ (after resolving symlinks of the existing prefix). */
+/** Throws unless `dir` is strictly inside PROFILES_DIR (after resolving symlinks of the existing prefix). */
 export function assertProfilePath(dir) {
   const abs = resolve(dir);
   mkdirSync(PROFILES_DIR, { recursive: true });
@@ -54,8 +118,8 @@ function mergeFeatureFlags(base, extra) {
 
 /**
  * @typedef {object} LaunchOptions
- * @property {'stable'|'canary'|string} [chrome='stable'] channel name or an absolute executable path
- * @property {string} [userDataDir] must be inside <repo>/.profiles/; default is a fresh `<name>-<pid>-<rand>` dir
+ * @property {'stable'|'canary'|string} [chrome='stable'] channel name (found per platform, resolveChrome; HIC_CHROME_PATH overrides 'stable') or an executable path
+ * @property {string} [userDataDir] must be inside PROFILES_DIR (<repo>/.profiles/, the OS temp dir on Windows); default is a fresh `<name>-<pid>-<rand>` dir
  * @property {string} [name='run'] used for the default profile dir name
  * @property {[number,number]} [windowSize=[1400,900]] OUTER window size; inner is smaller by the browser chrome (use Page.setInnerSize for exact)
  * @property {[number,number]} [windowPosition=[0,0]]
@@ -73,8 +137,7 @@ function mergeFeatureFlags(base, extra) {
 export async function launchChrome(opts = {}) {
   const { chrome = 'stable', name = 'run', windowSize = [1400, 900], windowPosition = [0, 0], dpr, nativeDrawElement = false,
     scrollbars = 'default', extraArgs = [], url = 'about:blank', colorProfile = 'srgb' } = opts;
-  const chromePath = CHROME_APPS[chrome] ?? chrome;
-  if (!existsSync(chromePath)) throw new Error(`Chrome executable not found: ${chromePath}`);
+  const chromePath = resolveChrome(chrome);
   const userDataDir = assertProfilePath(opts.userDataDir ?? resolve(PROFILES_DIR, `${name}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`));
   mkdirSync(userDataDir, { recursive: true });
   const port = opts.port || await freePort();
@@ -96,8 +159,13 @@ export async function launchChrome(opts = {}) {
   ];
   // the argument domain pair reaches NSUserDefaults; Chrome also opens its value as a URL (http://always/), a tab closed below
   const macBars = process.platform === 'darwin' ? { overlay: 'WhenScrolling', classic: 'Always' }[scrollbars] : undefined;
-  const args = [...mergeFeatureFlags(base, [...scrollbarArgs, ...extraArgs]), ...(macBars ? ['-AppleShowScrollBars', macBars] : []), url];
-  const child = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: false });
+  // headless Chrome refuses more than one target on its command line, and the value of the pair is one: the page starts on it there (closed below; newPage opens a tab)
+  const headless = extraArgs.some((a) => a.startsWith('--headless'));
+  // Headless runs allow Chrome's software WebGL (--enable-unsafe-swiftshader): Chrome no longer falls back to it on its own, so a machine without a usable GPU
+  // (the Windows CI runner) had no WebGL context at all. The flag only allows the fallback; where a GPU works it changes nothing.
+  const softGl = headless && !extraArgs.includes('--enable-unsafe-swiftshader') ? ['--enable-unsafe-swiftshader'] : [];
+  const args = [...mergeFeatureFlags(base, [...scrollbarArgs, ...extraArgs, ...softGl]), ...(macBars ? ['-AppleShowScrollBars', macBars] : []), ...(macBars && headless ? [] : [url])];
+  const child = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: false, windowsHide: true });
   liveChildren.add(child);
   let stderr = ''; child.stderr.on('data', d => { stderr += d; if (stderr.length > 200000) stderr = stderr.slice(-100000); });
   let exited = false; child.once('exit', () => { exited = true; liveChildren.delete(child); });
@@ -146,11 +214,8 @@ export class Browser {
 
   /** Immediate SIGKILL of this browser and every process of its profile (renderers included), for a browser whose renderer is stuck. Own processes only (matched by the unique --user-data-dir). */
   kill() {
-    try {
-      const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-      for (const l of out.split('\n')) if (l.includes(`--user-data-dir=${this.userDataDir}`)) { const pid = Number(l.trim().split(/\s+/)[0]); if (pid && pid !== process.pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } } }
-    } catch { /* ps unavailable */ }
-    try { this.child.kill('SIGKILL'); } catch { /* gone */ }
+    for (const pid of profileProcesses(this.userDataDir)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+    killTree(this.child);
   }
 
   /** Graceful Browser.close, then SIGTERM, then SIGKILL on the spawned PID only; then sweep stragglers whose command line
@@ -162,27 +227,25 @@ export class Browser {
     if (await waitExit(5000)) report.graceful = true;
     else {
       try { this.child.kill('SIGTERM'); } catch { /* gone */ } report.sigterm = true;
-      if (!(await waitExit(4000))) { try { this.child.kill('SIGKILL'); } catch { /* gone */ } report.sigkill = true; await waitExit(3000); }
+      if (!(await waitExit(4000))) { killTree(this.child); report.sigkill = true; await waitExit(3000); }
     }
     this.conn?.close();
     await sleep(300);
-    const mine = () => {
-      try {
-        const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-        return out.split('\n').map(l => l.trim()).filter(l => l.includes(`--user-data-dir=${this.userDataDir}`)).map(l => Number(l.split(/\s+/)[0])).filter(p => p && p !== process.pid);
-      } catch { return []; }
-    };
-    for (let i = 0; i < 3 && mine().length; i++) {
-      for (const pid of mine()) { try { process.kill(pid, 'SIGTERM'); report.stragglersKilled.push(pid); } catch { /* gone */ } }
+    const mine = () => profileProcesses(this.userDataDir);
+    let left = mine();
+    for (let i = 0; i < 3 && left.length; i++) {
+      for (const pid of left) { try { process.kill(pid, 'SIGTERM'); report.stragglersKilled.push(pid); } catch { /* gone */ } }
       await sleep(1000);
+      left = mine();
     }
-    for (const pid of mine()) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-    await sleep(300);
-    report.remaining = mine();
+    for (const pid of left) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+    if (left.length) { await sleep(300); left = mine(); }
+    report.remaining = left;
     if (rmProfile) {
       // belt and braces: never delete anything that is not a profile dir we created
       assertProfilePath(this.userDataDir);
-      try { rmSync(this.userDataDir, { recursive: true, force: true }); report.profileRemoved = true; } catch { report.profileRemoved = false; }
+      // Windows: files of a process that has just exited can stay locked for a moment (EBUSY / EPERM), hence the retries
+      try { rmSync(this.userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); report.profileRemoved = true; } catch { report.profileRemoved = false; }
     }
     return report;
   }

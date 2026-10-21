@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- CI runs on Windows too (Windows Server 2025, headless Chrome stable, no GPU): repo checks, types, the Node and headless-Chrome unit tests with the runner's self-test, the build (which must reproduce the bundle sizes recorded in `docs/BUNDLES.md`), the bundle check, the platform probe and the package contents, on an LF checkout.
+- A platform probe, `node test/platform/run.mjs` (G-platform, `docs/TEST-PLAN.md` 2.11), run in CI on Linux and Windows: the platform's fonts, every F6 form control, unstyled scrollers with the platform's own bars (fixture F7) at DPR 1, 1.25 and 1.5, the form example at DPR 1.25 and 1.5, and the text-selection oracle, each against native pixels of the same browser with a positive control. Gaps it measured are listed by platform and printed as KNOWN RED.
+- The test harness finds Chrome where macOS, Windows or Linux install it; `--chrome=<path>` (now also for `scripts/check-bundle.mjs`) or `HIC_CHROME_PATH` points it elsewhere. On Windows it finds and stops the processes of the browsers it launched, and keeps their profiles under the OS temp directory.
+- A field test page on the live demo ([examples/field-test/](examples/field-test/), [docs/guides/FIELD-TEST.md](docs/guides/FIELD-TEST.md)): a guided five-minute check that a person without technical knowledge runs on a machine we do not have. It records the environment (browser and platform versions, pixel ratio, colour settings, system colours, scrollbars, fonts, GPU adapter, the polyfill's install result and report), compares the canvas with the same HTML as a plain page through a capture of the tab where the browser allows it (Chrome and Edge on desktop), measures typing latency, inner-scroll update rates, the water effect and a 125 % zoom, and downloads one JSON report with small PNG crops. `npm run test:field` runs it end to end in headless Chrome with a deliberately broken canvas as the positive control; `scripts/field-report.mjs` prints a report and extracts its crops; a "Field test report" issue template takes the file.
+
+### Fixed
+
+- Scrollbars, layout: an unsized `<textarea>` or listbox `<select>` was drawn about 15 css px narrower than it is laid out (Chrome on Linux and Windows, on macOS with classic bars and with overlay bars too, and with author-styled `::-webkit-scrollbar` bars), because Chrome counts the bar thickness in their intrinsic size whether or not a bar shows and the snapshot has no bars; the controls after it reflowed in the canvas, away from where they are hit (29-32 of the 62 regions of the platform probe's form-control page failed with classic bars, 16 with macOS overlay bars). The snapshot now keeps their live size. A box that reserves a bar gutter without scrolling (`overflow: scroll`, a listbox, `scrollbar-gutter: stable`) keeps its gutter too.
+- Classic scrollbars, look: Chrome's bars are drawn as Chrome draws them on the platform: the Fluent bars of Linux and Windows (arrow buttons, the thumb between them, the light and dark colours, Windows' arrow glyphs where its icon font is installed) and the macOS bars (inset thumb, track borders, the dark look), with the engine's thumb length and position rules at every device pixel ratio, `scrollbar-width: thin` and `scrollbar-color`; listbox `<select>` bars are drawn. Which look is measured from the bar thicknesses, not read from the user agent. Platform probe: every bar region of F6 and F7 within 0.7 % of native at DPR 1, 1.25 and 1.5 on Linux and macOS (was 12-100 %).
+- Text drawn a little blurred at a fractional device pixel ratio when the canvas content box is not a whole number of device pixels (a 1 px border is 0.8 css px at DPR 1.25): the ResizeObserver device-pixel pattern rounds each axis on its own, the snapshot was rasterised at the grid's scale and a default-size draw stretched it by a hair to the other axis. Such a canvas is now rasterised at the device pixel ratio, as native draws it, and drawn 1:1. The field test's scroll box at DPR 1.25 (3.6-8 % of its pixels over 16) now matches the plain page.
+
+### Known limitations
+
+- Measured on Windows by the platform probe (headless Chrome 156 on the CI runner): a text selection without an author `::selection` rule is painted by Chrome in its default rgba(0, 65, 198, 0.8), while the polyfill draws the system colour Highlight (#0078d4 there), so the drawn selection is a different blue; the selected glyphs (HighlightText) and author rules match. A headed Windows Chrome was not measured. Row `caret-selection`.
+
 ## [0.1.0-preview.3] - 2026-10-21
 
 A fix release for the effect plugins.

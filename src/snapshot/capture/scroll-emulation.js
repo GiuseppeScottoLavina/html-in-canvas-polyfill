@@ -8,9 +8,11 @@
  */
 
 import { appendInlineStyle, setInlineStyle } from './inline-style.js';
-import { currentEngine } from '../../util/engine.js';
+import { currentEngine, currentMacPlatform } from '../../util/engine.js';
 import { engineSkins } from './engine-skins.js';
 import { inlineCssUrls } from './inline-resources.js';
+import { barColors, barParts, barThemeOf, cornerSvg, hasArrowGlyphs, svgUrl, trackSvg } from './chromium-bars.js';
+import { darkSchemeOf } from './color-scheme.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -69,6 +71,8 @@ function supportsSnap() {
   return snapSupported;
 }
 
+/** @typedef {import('./chromium-bars.js').BarLook} BarLook */
+
 /**
  * Live scroll state of one element, or null when it neither scrolls nor has a scrollbar gutter.
  * @param {Element} src
@@ -80,11 +84,16 @@ export function scrollFacts(src, cs) {
   const sL = src.scrollLeft;
   const html = /** @type {HTMLElement} */ (src);
   const bx = px(cs.borderLeftWidth) + px(cs.borderRightWidth), by = px(cs.borderTopWidth) + px(cs.borderBottomWidth);
-  const rv = Math.max(0, html.offsetWidth - src.clientWidth - bx);
-  const rh = Math.max(0, html.offsetHeight - src.clientHeight - by);
+  // an inline box has no client box (clientWidth / clientHeight 0): no gutter
+  const boxed = src.clientWidth > 0 || src.clientHeight > 0;
+  const rv = boxed ? Math.max(0, html.offsetWidth - src.clientWidth - bx) || 0 : 0;
+  const rh = boxed ? Math.max(0, html.offsetHeight - src.clientHeight - by) || 0 : 0;
   const scrollableY = cs.overflowY !== 'visible' && src.scrollHeight > src.clientHeight;
   const scrollableX = cs.overflowX !== 'visible' && src.scrollWidth > src.clientWidth;
-  if (!sT && !sL && !(scrollableY && rv) && !(scrollableX && rh)) return null;
+  // a gutter alone counts (overflow: scroll, a listbox select, scrollbar-gutter: stable): the clone has no bars, so it must keep the gutter to lay out as the page does.
+  // Not for an <input>: it never shows a bar, and Gecko reports a focused field's client box narrower than its padding box (the clone came out 10 px narrower)
+  const gutterOnly = src.localName !== 'input' && (rv || rh);
+  if (!sT && !sL && !(scrollableY && rv) && !(scrollableX && rh) && !gutterOnly) return null;
   const bar = cs.getPropertyValue('width') ? (src.ownerDocument.defaultView ?? window).getComputedStyle(src, '::-webkit-scrollbar') : null;
   const styled = !!bar?.width && bar.width !== 'auto' && bar.width !== '0px' && cs.scrollbarWidth === 'auto';
   const gv = rv && exactGutter(src, cs, rv, styled ? px(bar.width) : null, 'v');
@@ -93,6 +102,16 @@ export function scrollFacts(src, cs) {
   const bb = borderBoxOf(cs, html);
   const near = (/** @type {number} */ v, /** @type {number} */ live) => (Math.abs(v - live) < 1 ? v : live);
   return { sT, sL, gv, gh, cw: near(bb.width - bx - gv, src.clientWidth), ch: near(bb.height - by - gh, src.clientHeight), scrollableY, scrollableX, styled };
+}
+
+/**
+ * Does `src` reserve a classic bar gutter (overflow: scroll, a listbox, scrollbar-gutter: stable) although it may not scroll? Cheap: two layout reads.
+ * @param {Element} src @param {CSSStyleDeclaration} cs @returns {boolean}
+ */
+export function hasBarGutter(src, cs) {
+  const h = /** @type {HTMLElement} */ (src);
+  if (src.localName === 'input' || !(src.clientWidth > 0 || src.clientHeight > 0)) return false;
+  return h.offsetWidth - src.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth) > 0.5 || h.offsetHeight - src.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth) > 0.5;
 }
 
 /** Visual thickness (css px of the root) of the classic bars of an unstyled probe, per devicePixelRatio and scrollbar-width. @type {Map<string, {v: number, h: number}>} */
@@ -116,6 +135,44 @@ function probeBars(doc, sw, fresh) {
   out = { v: o.width - i.width, h: o.height - i.height };
   barProbes.set(key, out);
   return out;
+}
+
+/**
+ * How Chromium paints the classic bars of `src` (chromium-bars.js), or null: another engine, author-styled bars (::-webkit-scrollbar), no bars, or overlay bars.
+ * @param {Window} win @param {Element} src @param {CSSStyleDeclaration} cs @param {boolean} styled @returns {BarLook|null}
+ */
+export function chromiumBarLook(win, src, cs, styled) {
+  if (styled || currentEngine().engine !== 'chromium' || cs.scrollbarWidth === 'none') return null;
+  const doc = src.ownerDocument, dpr = win.devicePixelRatio || 1;
+  const auto = probeBars(doc, 'auto', false).v, thin = probeBars(doc, 'thin', false).v;
+  if (!(auto > 0)) return null;
+  const { theme, k } = barThemeOf(Math.round(auto * dpr), Math.round(thin * dpr), dpr, currentMacPlatform());
+  return { theme, k, dpr, thin: cs.scrollbarWidth === 'thin', dark: darkSchemeOf(win, src), authored: parseScrollbarColor(cs.scrollbarColor), glyphs: theme === 'fluent' && hasArrowGlyphs(doc) };
+}
+
+/**
+ * Pin the live border box on the clone of a control whose INTRINSIC size includes the scrollbar thickness (an unsized <textarea>, a listbox <select>): Chrome adds the
+ * bar thickness to their intrinsic width (and a horizontal bar's to the height) whether or not a bar shows, the thickness of OVERLAY bars included (macOS: 16 px), and
+ * author-styled (::-webkit-scrollbar) bars too; the clone has no bars (`scrollbar-width: none`, ::-webkit-scrollbar rules dropped), so the drawn control came out a bar
+ * narrower than the live one and the controls after it reflowed (drawn away from where they are hit; Chrome 155: 29-32 of the 62 F6 regions with classic bars on Linux
+ * and macOS, 16 with macOS overlay bars). The live box is the truth for every engine and bar kind.
+ * @param {Element} src @param {Element} clone
+ */
+export function pinBarBox(src, clone) {
+  const win = src.ownerDocument.defaultView ?? window;
+  const cs = win.getComputedStyle(src);
+  if (cs.display === 'none') return;
+  const decl = barBoxPin(borderBoxOf(cs, /** @type {HTMLElement} */ (src)));
+  if (decl) appendInlineStyle(clone, decl);
+}
+
+/**
+ * PURE. The declarations of pinBarBox: the measured border box, '' without a box.
+ * @param {{width: number, height: number}} bb @returns {string}
+ */
+export function barBoxPin(bb) {
+  if (!(bb.width > 0 && bb.height > 0)) return '';
+  return `box-sizing:border-box!important;width:${bb.width}px!important;height:${bb.height}px!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;`;
 }
 
 /**
@@ -188,7 +245,11 @@ export function applyScrollState(env, src, cloneScroller, req, sink, known) {
   const cs = win.getComputedStyle(src);
   const f = known ?? scrollFacts(src, cs);
   if (!f) return res;
-  if (src.localName === 'select') { listboxScroll(src, cloneScroller); return res; }
+  if (src.localName === 'select') {
+    if (f.sT || f.sL || f.scrollableY || f.scrollableX) listboxScroll(src, cloneScroller);
+    if (f.gv) chromiumListboxBar(win, src, cloneScroller, cs, f);
+    return res;
+  }
   let style = 'scroll-behavior:auto!important;';
   if (f.gv || f.gh) {
     const bb = borderBoxOf(cs, /** @type {HTMLElement} */ (src));
@@ -203,8 +264,29 @@ export function applyScrollState(env, src, cloneScroller, req, sink, known) {
     else if (supportsSnap()) addMarker(win, src, cloneScroller, f, sink, true);
     else { translateChildren(cloneScroller, f); scrolled = false; }
   }
-  if ((f.gv && f.scrollableY) || (f.gh && f.scrollableX)) paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled);
+  if (f.gv || f.gh) paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled);
   return res;
+}
+
+/**
+ * Chromium's bar of a listbox select (the clone renders only the options: no bar boxes): the gutter becomes padding (the options end where the bar starts, as live) and
+ * the whole bar (track, buttons, thumb at the scroll offset) one more background layer in it. Other engines: Gecko's skin draws its own (native-controls.js), WebKit
+ * leaves the listbox to the image.
+ * @param {Window} win @param {Element} src @param {HTMLElement} clone @param {CSSStyleDeclaration} cs @param {ScrollFacts} f
+ */
+function chromiumListboxBar(win, src, clone, cs, f) {
+  const look = chromiumBarLook(win, src, cs, f.styled);
+  if (!look || cs.direction === 'rtl') return;
+  const d = look.dpr, ch = f.ch ?? src.clientHeight, T = Math.round(f.gv * d), L = Math.round(ch * d);
+  const parts = barParts(look, { thick: T, len: L, visible: Math.round(src.clientHeight * d), total: Math.round(src.scrollHeight * d), offset: f.sT * d });
+  const t = parts.thumb;
+  const thumb = t ? `<rect x="${t.across}" y="${t.at}" width="${t.thick}" height="${t.len}" rx="${Math.min(t.thick, t.len) / 2}" fill="${barColors(look).thumb}"/>` : '';
+  const url = svgUrl(trackSvg(look, true, T, L, parts.buttons) + thumb, f.gv, ch, d);
+  const list = (/** @type {string} */ own, /** @type {string} */ v) => `${own}, ${v}`;
+  appendInlineStyle(clone, `padding-right:${px(cs.paddingRight) + f.gv}px!important;background-image:${list(url, cs.backgroundImage)}!important;`
+    + `background-size:${list(`${f.gv}px ${ch}px`, cs.backgroundSize)}!important;background-position:${list(`${px(cs.borderLeftWidth) + (f.cw ?? src.clientWidth)}px ${px(cs.borderTopWidth)}px`, cs.backgroundPosition)}!important;`
+    + `background-repeat:${list('no-repeat', cs.backgroundRepeat)}!important;background-origin:${list('border-box', cs.backgroundOrigin)}!important;`
+    + `background-clip:${list('border-box', cs.backgroundClip)}!important;background-attachment:${list('scroll', cs.backgroundAttachment)}!important;background-color:${cs.backgroundColor}!important;`);
 }
 
 /**
@@ -364,6 +446,8 @@ function paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled = tr
     const skins = engineSkins();
     if (skins) { skins.paintWebkitBars(win, src, cloneScroller, f, skins.webkitDarkBars(win, src)); return; }
   }
+  const look = chromiumBarLook(win, src, cs, styled);
+  if (look) { paintChromiumBars(look, src, cloneScroller, cs, f, scrolled); return; }
   const dark = !styled && !authored && engine === 'gecko' && onDarkBackground(win, src);
   const track = authored ? `background:${authored.track};` : styled
     ? `background:${tr.backgroundColor !== 'rgba(0, 0, 0, 0)' ? tr.backgroundColor : bar.backgroundColor};${barImage(tr, env.document.baseURI, req.resources, res)}border-left:${tr.borderLeftWidth} ${tr.borderLeftStyle} ${tr.borderLeftColor};`
@@ -386,4 +470,44 @@ function paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled = tr
     box(doc, cloneScroller, `left:${sL + tx}px;top:${ch + sT + (styled ? 0 : authored ? 3 : 4)}px;width:${tl}px;height:${styled ? f.gh : f.gh - (authored ? 5 : 7)}px;${thumb}`);
   }
   if (f.scrollableX && f.scrollableY && f.gv && f.gh) box(doc, cloneScroller, `left:${cw + sL}px;top:${ch + sT}px;width:${f.gv}px;height:${f.gh}px;background:${styled ? co.backgroundColor : authored ? authored.track : '#fafafa'};`);
+}
+
+/**
+ * Chromium's own classic bars (chromium-bars.js) as boxes of the clone scroller: per bar the track with its buttons (an SVG background in device px), the thumb (a
+ * capsule; `data-hic-bar` roles for the vertical bar, which the scroll compositor moves), and the corner. A bar shows when the box scrolls on its axis or has
+ * `overflow: scroll` (then without a thumb); a gutter of `scrollbar-gutter: stable` alone stays empty, as live.
+ * @param {BarLook} look @param {Element} src @param {HTMLElement} clone @param {CSSStyleDeclaration} cs @param {ScrollFacts} f @param {boolean} scrolled
+ */
+function paintChromiumBars(look, src, clone, cs, f, scrolled) {
+  const doc = clone.ownerDocument, d = look.dpr, c = barColors(look);
+  const dev = (/** @type {number} */ v) => Math.round(v * d);
+  const sT = scrolled ? f.sT : 0, sL = scrolled ? f.sL : 0;
+  const cw = f.cw ?? src.clientWidth, ch = f.ch ?? src.clientHeight;
+  const barY = !!f.gv && (f.scrollableY || cs.overflowY === 'scroll'), barX = !!f.gh && (f.scrollableX || cs.overflowX === 'scroll');
+  const thumb = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ w, /** @type {number} */ h, /** @type {string|undefined} */ role = undefined) => box(doc, clone, `left:${x}px;top:${y}px;width:${w}px;height:${h}px;background:${c.thumb};border-radius:999px;`, role);
+  if (barY) {
+    const T = dev(f.gv), L = dev(ch);
+    const p = barParts(look, { thick: T, len: L, visible: dev(src.clientHeight), total: dev(src.scrollHeight), offset: f.sT * d });
+    box(doc, clone, `left:${cw + sL}px;top:${sT}px;width:${f.gv}px;height:${ch}px;background:${svgUrl(trackSvg(look, true, T, L, p.buttons), f.gv, ch, d)} 0 0/100% 100% no-repeat;`, 'track');
+    if (p.thumb) thumb(cw + sL + p.thumb.across / d, sT + p.thumb.at / d, p.thumb.thick / d, p.thumb.len / d, 'thumb');
+  }
+  if (barX) {
+    const T = dev(f.gh), L = dev(cw);
+    const p = barParts(look, { thick: T, len: L, visible: dev(src.clientWidth), total: dev(src.scrollWidth), offset: f.sL * d });
+    box(doc, clone, `left:${sL}px;top:${ch + sT}px;width:${cw}px;height:${f.gh}px;background:${svgUrl(trackSvg(look, false, T, L, p.buttons), cw, f.gh, d)} 0 0/100% 100% no-repeat;`);
+    if (p.thumb) thumb(sL + p.thumb.at / d, ch + sT + p.thumb.across / d, p.thumb.len / d, p.thumb.thick / d);
+  }
+  if (barX && barY) box(doc, clone, `left:${cw + sL}px;top:${ch + sT}px;width:${f.gv}px;height:${f.gh}px;background:${svgUrl(cornerSvg(look, dev(f.gv), dev(f.gh)), f.gv, f.gh, d)} 0 0/100% 100% no-repeat;`);
+}
+
+/**
+ * PURE. The vertical Chromium bar (paintChromiumBars) in the numbers of verticalBar, for the scroll compositor.
+ * @param {BarLook} look @param {number} gutter css px @param {number} len  the bar's length (the scrollport height beside it), css px @param {number} clientHeight @param {number} scrollHeight
+ * @returns {{thumbX: number, thumbW: number, thumbH: number, thumbY: (top: number) => number}}
+ */
+export function chromiumVerticalBar(look, gutter, len, clientHeight, scrollHeight) {
+  const d = look.dpr;
+  const at = (/** @type {number} */ top) => barParts(look, { thick: Math.round(gutter * d), len: Math.round(len * d), visible: Math.round(clientHeight * d), total: Math.round(scrollHeight * d), offset: top * d }).thumb;
+  const t0 = at(0);
+  return { thumbX: (t0?.across ?? 0) / d, thumbW: (t0?.thick ?? 0) / d, thumbH: (t0?.len ?? 0) / d, thumbY: (top) => (at(top)?.at ?? 0) / d };
 }

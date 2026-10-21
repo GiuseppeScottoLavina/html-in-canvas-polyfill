@@ -4,6 +4,7 @@
  */
 
 import { appendInlineStyle } from './inline-style.js';
+import { darkSchemeOf } from './color-scheme.js';
 
 /** @typedef {import('./scroll-emulation.js').ScrollFacts} ScrollFacts */
 
@@ -16,9 +17,7 @@ const px = (v) => parseFloat(v) || 0;
  * @param {Window} win @param {Element} src @returns {boolean}
  */
 export function webkitDarkBars(win, src) {
-  let scheme = win.getComputedStyle(src).colorScheme;
-  if (!scheme || scheme === 'normal') scheme = src.ownerDocument.querySelector('meta[name="color-scheme" i]')?.getAttribute('content') ?? '';
-  return /\bdark\b/.test(scheme) && (!/\blight\b/.test(scheme) || win.matchMedia('(prefers-color-scheme: dark)').matches);
+  return darkSchemeOf(win, src);
 }
 
 /**

@@ -9,7 +9,7 @@ import { applyFont, buildDocumentSelectionRects, buildSelectionRects, inputSelec
 import { rangeRectsIn } from '../../util/selection-rects.js';
 import { ancestorShell, canvasAncestors } from './custom-props.js';
 import { createTokenCollector } from './css-shake.js';
-import { applyScrollState, listboxThumb, scrollFacts } from './scroll-emulation.js';
+import { applyScrollState, hasBarGutter, listboxThumb, scrollFacts } from './scroll-emulation.js';
 import { appendWithStubs, buildShell, shellFactsOf, shellNeedsBox, siblingStub } from './shells.js';
 import {
   LEAF_TAGS, addUnsupported, applyInteractionClasses, cleanAttributes, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, topLayerIn, usedColorScheme,
@@ -252,7 +252,7 @@ function maybeScroll(ctx, src, clone, cs) {
   // overflow visible on both axes: not a scroll container, so its scroll offsets are 0 and nothing of it is scrollable (scrollFacts would answer null). The computed style
   // is a cheaper read than the four scroll metrics, and it is the answer for most elements.
   if (!over && cs.overflowX === 'visible' && cs.overflowY === 'visible' && !OWN_SCROLLERS.has(src.localName)) return;
-  if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth)) return;
+  if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth) && !hasBarGutter(src, cs)) return;
   const live = scrollFacts(src, cs);
   const f = over ? { ...(live ?? { sL: src.scrollLeft, gv: 0, gh: 0, scrollableY: true, scrollableX: false, styled: false }), sT: over.top } : live;
   if (src.localName === 'select') listboxThumb(src, /** @type {HTMLElement} */ (clone), cs, f?.sT ?? src.scrollTop);

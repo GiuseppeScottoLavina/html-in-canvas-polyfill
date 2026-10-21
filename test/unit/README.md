@@ -39,4 +39,4 @@ substring or error class), `fixture(html, style?)`, `frames(n)`, `microtasks()`,
 `--expect-fail` runs `*.expect-fail.mjs` files instead and exits 0 only if the runner reports each as a problem. The file-name prefix
 states the expected detection: `fail-`, `timeout-`, `pageerror-`, `loaderror-`. These files are never picked up by the normal run.
 
-Chrome: own PID only, throwaway profile under `.profiles/`, removed on exit, unique debugging port, server on 127.0.0.1 with an ephemeral port.
+Chrome: found per platform (`--chrome` or `HIC_CHROME_PATH` for another executable), own PID only, throwaway profile under `.profiles/` (the OS temp directory on Windows), removed on exit, unique debugging port, server on 127.0.0.1 with an ephemeral port.

@@ -56,6 +56,9 @@ function sourceFiles(dir) {
  * @param {string} dir  @param {string} label  @param {string[]} allowed  absolute folders
  */
 function importProblems(dir, label, allowed) {
+  // a folder given with a trailing separator (`C:\\x\\plugins\\demo\\` from a file URL on Windows) would never prefix its own files
+  dir = resolve(dir);
+  allowed = allowed.map((d) => resolve(d));
   const root = resolve(dir, '../..');
   const lib = join(root, PLUGINS_DIR, LIB_DIR);
   const abi = ABI_IMPORTS.map((f) => join(root, f));
