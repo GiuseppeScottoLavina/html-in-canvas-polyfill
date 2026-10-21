@@ -54,7 +54,7 @@ Texture upload errors on missing or too small storage are GL errors (`gl.getErro
 | feature | cause | remedy |
 |---|---|---|
 | `shadow-dom` | a shadow root inside a drawable ("a shadow root inside a drawable cannot be captured") | move the shadow host outside the drawable, or render its content as light DOM |
-| `iframe` | `<iframe>`, `<frame>`, `<object>`, `<embed>` inside a drawable | replace with an `<img>`, or draw it outside the drawable |
+| `iframe` | a cross-origin or sandboxed `<iframe>` / `<frame>` / `<object>`, or an `<embed>` that does not show an image, inside a drawable (drawn as its own box without the document, as natively) | use a same-origin frame (its document is drawn), draw the content as elements of the drawable, or put the frame outside it |
 | `top-layer` | an open modal `<dialog>` or open popover inside a drawable | use a non-modal dialog (`show()`), or render the popover inline |
 | `cross-origin-resource` | image, font, CSS or video frame without CORS and not same-origin ("the server did not allow cross-origin (CORS) access") | serve it with `Access-Control-Allow-Origin` or host it same-origin; load video with `crossorigin="anonymous"` |
 | `resource-fetch-failed` | fetch error, HTTP error, undecodable payload, invalid URL, or larger than the resource cache budget | check URL, network, CSP `connect-src`; shrink the resource |

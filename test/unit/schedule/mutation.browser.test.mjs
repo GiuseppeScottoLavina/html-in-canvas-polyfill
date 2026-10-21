@@ -319,3 +319,23 @@ test('own(): a box-shadow that a state change removes is still covered (the prev
   const again = memory.own(rig.layer, b);
   assert.ok(again.x === box.x - 24 && again.width === box.width + 48, `without ink it is box + ink margin again: ${JSON.stringify(again)}`);
 });
+
+test('a same-origin frame inside a drawable: a change in its document and a (re)load damage the drawable that contains it (WPT onpaint-iframe); a cross-origin frame is not observed', async t => {
+  const rig = createRig({ html: '<div drawable id="d1"><iframe id="f" srcdoc="<p id=x>a</p>"></iframe></div><div drawable id="d2"><span>x</span></div>' });
+  const frame = /** @type {HTMLIFrameElement} */ (rig.layerEl.querySelector('#f'));
+  for (let i = 0; i < 100 && frame.contentDocument?.getElementById('x') == null; i++) await frames(1);
+  t.cleanup(observeMutations(rig.env, rig.record));
+  /** @type {Document} */ (frame.contentDocument).getElementById('x').textContent = 'b';
+  await microtasks();
+  assert.deepEqual(rig.sink.damage.map((d) => [d.cause, d.drawable.id, d.rect]), [['mutation', 'd1', null]], 'a change inside the frame document');
+  rig.sink.clear();
+  const loaded = new Promise((ok) => frame.addEventListener('load', ok, { once: true }));
+  frame.srcdoc = '<p id=y>c</p>';
+  await loaded;
+  await microtasks();
+  assert.ok(rig.sink.damage.some((d) => d.drawable.id === 'd1'), 'the reload damages it');
+  rig.sink.clear();
+  /** @type {Document} */ (frame.contentDocument).getElementById('y').textContent = 'd';
+  await microtasks();
+  assert.deepEqual(rig.sink.damage.map((d) => d.drawable.id), ['d1'], 'the NEW document is observed');
+});

@@ -21,7 +21,7 @@ points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/`
 | Implemented (supported or limited) | Not implemented (fails loudly, section 9) |
 |---|---|
 | `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27 (desktop) or < 26 (iOS), other engines, web views, Firefox for Android, an engine lacking a required platform feature |
-| `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | shadow DOM, iframes/objects/embeds, top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
+| `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | cross-origin frames and objects (drawn as their own box, as natively), top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
 | `ctx.drawElementImage` (all 4 overloads) on `CanvasRenderingContext2D` and main-thread `OffscreenCanvasRenderingContext2D` | cross-origin resources that cannot be inlined (section 9.2) |
 | `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas | a worker as a source or sink of `ElementImage` (use `toImageBitmap()`; `postMessage` of one throws a loud, actionable error) |
 | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `ElementGeometryUpdateEvent` | a managed canvas in a closed shadow root created before install (`adoptRoot` hook) |
@@ -460,7 +460,7 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `browser` | not Chromium desktop >= 130 | `install()` throws |
 | `partial-native` | a native implementation without its core (no `content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | `install()` throws unless `forcePolyfill`; a usable native is never refused (section 2) |
 | `shadow-dom` | (no longer reported) open shadow roots inside a drawable are drawn in flat-tree order with computed styles inlined (limited) | - |
-| `iframe` | iframe/frame, or an embed/object that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively for a cross-origin frame; entry |
+| `iframe` | iframe/frame/object whose document this page cannot read (cross-origin, sandboxed without `allow-same-origin`), or an embed that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively; entry. A same-origin frame or object draws its document (resources inlined, its cross-origin content left out), repainted when that document changes or reloads; no entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |
 | `top-layer-canvas` | a managed canvas became the fullscreen element (its controls take no input), or a `popover` canvas | entry with hint (fullscreen proceeds) / refused at mount |
 | `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | API calls throw `HicUnsupportedError` |

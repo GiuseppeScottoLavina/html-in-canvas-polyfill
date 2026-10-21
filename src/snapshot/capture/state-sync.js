@@ -10,6 +10,7 @@ import { scaleMode } from './svg-builder.js';
 import { usedColorScheme } from './color-scheme.js';
 import { engineSkins, skinsFor } from './engine-skins.js';
 import { pinBarBox } from './scroll-emulation.js';
+import { frameImage, ownBox } from './frame-doc.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -408,30 +409,9 @@ function embeddedImage(src) {
 }
 
 /**
- * The element's own box (border, background, padding, margins) without its content, as an element of the same computed style: what the platform draws for a frame, an embed or an
- * object whose content is not drawn (measured on the native oracle: a cross-origin iframe, embed or object keeps its border and background). An <iframe> or <embed> in an SVG image
- * paints nothing at all, not even its border, so the box is a <div> (an inline frame becomes an inline-block of the same size).
- * @param {Element} src @param {Element} clone @param {string} [tag]
- * @returns {Element}
- */
-function ownBox(src, clone, tag = 'div') {
-  const cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src);
-  const box = clone.ownerDocument.createElement(tag);
-  for (const a of ['id', 'class', 'title']) if (src.hasAttribute(a)) box.setAttribute(a, src.getAttribute(a) ?? '');
-  let text = '';
-  for (let i = 0; i < cs.length; i++) {
-    const name = cs[i];
-    if (name.startsWith('--') || name.startsWith('transition') || name.startsWith('animation')) continue;
-    const value = cs.getPropertyValue(name);
-    if (value) text += `${name}:${name === 'display' && value === 'inline' ? 'inline-block' : value}!important;`;
-  }
-  appendInlineStyle(box, text);
-  return box;
-}
-
-/**
  * <iframe>, <frame>, <embed>, <object>. An embed or object that shows a readable image draws it at its natural size from the top left of its content box (an image document);
- * everything else draws its own box without the content, and is reported: a child document cannot be serialised into the snapshot, and a cross-origin one must never be drawn.
+ * a frame or object whose document this page may read (same-origin) draws it inside its own box (frame-doc.js); everything else draws its own box without the content and is
+ * reported: a cross-origin document must never be drawn.
  * @param {Element} src @param {Element} clone @param {CaptureRequest} req @param {UnsupportedEntry[]} unsupported
  * @returns {Element}
  */
@@ -450,8 +430,17 @@ function syncEmbedded(src, clone, req, unsupported) {
     else addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
     return ownBox(src, clone);
   }
-  addUnsupported(unsupported, src, 'iframe', `the content of <${ln}> is not drawn (a child document cannot be captured)`, 'Draw the content as elements of the drawable, or put the frame outside it.');
-  return ownBox(src, clone);
+  const box = ownBox(src, clone);
+  const state = { pending: false };
+  const page = ln === 'embed' ? null : frameImage(src, clone.ownerDocument, req.resources, state);
+  if (page === 'loading') return box;
+  if (page) {
+    box.appendChild(page);
+    if (state.pending) markPending(unsupported);
+    return box;
+  }
+  addUnsupported(unsupported, src, 'iframe', `the content of <${ln}> is not drawn (its document is cross-origin, sandboxed or not loaded)`, 'Draw the content as elements of the drawable, or use a same-origin frame.');
+  return box;
 }
 
 /**

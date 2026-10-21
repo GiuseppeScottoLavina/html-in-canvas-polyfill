@@ -57,20 +57,26 @@ export class Session {
     return page;
   }
 
-  /** The polyfill runs first in every new document: the page, same-process frames, and (auto-attach) cross-site frames. */
+  /**
+   * The polyfill runs first in every new document: the page, same-process frames, and (auto-attach) cross-site frames at any depth. A target that auto-attaches to a
+   * session is paused until that session lets it run, so the targets attached below a cross-site frame (its own cross-site frames) are handled too: unhandled, they
+   * never loaded (WPT privacy/subframe-cross-origin-frame: the frame's own load events never came).
+   */
   async injectPolyfill(page) {
     const source = readFileSync(this.polyfillFile, 'utf8');
     await page.send('Page.addScriptToEvaluateOnNewDocument', { source });
     const conn = page.conn;
-    conn.on('Target.attachedToTarget', async p => {
+    const watch = (/** @type {string} */ parent) => conn.on('Target.attachedToTarget', async p => {
       const sid = p.sessionId;
+      watch(sid);
       try {
         await conn.send('Page.enable', {}, sid);
         await conn.send('Page.addScriptToEvaluateOnNewDocument', { source }, sid);
         await conn.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sid);
-      } catch { /* the frame went away */ }
+      } catch { /* the frame went away, or a worker (no Page domain) */ }
       conn.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {});
-    }, page.sessionId);
+    }, parent);
+    watch(page.sessionId);
     await page.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
   }
 

@@ -1,5 +1,5 @@
 // G-unsupported: unsupported content fails LOUDLY and never stalls (API-CONTRACT 9, ADR-J).
-//   iframe child, cross-origin image without CORS, a fullscreen canvas (input limit), a popover canvas: exactly one console.error per (feature, path), a `hicunsupported` event, a report
+//   cross-origin iframe child, cross-origin image without CORS, a fullscreen canvas (input limit), a popover canvas: exactly one console.error per (feature, path), a `hicunsupported` event, a report
 //   entry with a count (report() is the subject of this gate, so reading it is not a rule-7 leak), a visible placeholder (CANVAS pixels non-blank), sibling UI still painting and typing
 //   still working, the canvas keeps painting.
 // Positive control: every check is a REAL check against a page where the offending content is swapped for supported content (iframe/xorigin) or where the refused action targets a canvas

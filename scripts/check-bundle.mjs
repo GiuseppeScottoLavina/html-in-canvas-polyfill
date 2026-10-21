@@ -64,7 +64,9 @@ const LIMITS = {
   // 300 -> 302.25 KB, gzip 104.75 -> 105.25 KB (+2,610 / +715 bytes, 2026-10-22, measured 302,241 / 105,203): content the browser leaves out of a canvas drawn as the
   //   browser draws it (the box of a cross-origin image or frame, an embed / object image), SVG filters and masks under the native read-back rules (feImage inlined,
   //   filters with an unreadable feImage dropped, outside masks empty): 11 WPT privacy subtests
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 302.25 * KB, gzip: 105.25 * KB },
+  // 302.25 -> 306.75 KB, gzip 105.25 -> 106.75 KB (+4,407 / +1,307 bytes, 2026-10-22, measured 306,648 / 106,510): same-origin frames drawn (snapshot/capture/frame-doc.js:
+  //   the frame's document as a nested image with its CSS, inlined resources, form state and nested frames) and repainted when their document changes or reloads: 16 WPT subtests
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 306.75 * KB, gzip: 106.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
