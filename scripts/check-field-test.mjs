@@ -2,7 +2,7 @@
 // G-field-test: the field test page (examples/field-test/) runs end to end in HEADLESS Chrome and produces a valid report.
 //
 //   npm run build && npm run test:field
-//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing] [--headed]
+//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing] [--headed] [--scrollbars=overlay|classic]
 //
 // Runs (each in a fresh page of one headless Chrome, trusted input through CDP):
 //   clean    every step with an accepted tab capture (--auto-select-tab-capture-source-by-title picks this tab): the capture calibrates,
@@ -261,6 +261,19 @@ async function runWithoutPolyfill(browser, site, name, setup) {
   return run;
 }
 
+/**
+ * The scrollbar mode of each run, never the system setting: macOS switches between overlay and classic bars on its own (a mouse waking up, a Universal Control link
+ * dropping), and the `clean` run's zoom step then failed about one run in three (4.363 % of box A). Measured cause: the zoom is emulated with
+ * Emulation.setDeviceMetricsOverride, which sets devicePixelRatio to 1.25 and renders at 1.25 but does not change the ResizeObserver device-pixel-content-box (338 device
+ * px for a 338 css px canvas), so the page's canvases keep their 1x backing store and are shown upscaled; whether that matches the plain box depends on its sub-pixel
+ * position, and classic bars give the page a scrollbar that moves the centred layout by half a css pixel (overlay: 0 %, classic: 4.363 %, every run). A real browser zoom
+ * changes the device-pixel-content-box too (a real device scale of 1.25, the dpr125 run, gives this canvas a 423 px grid), so this is an artefact of the emulation, not something a tester sees.
+ * `clean` (with the zoom) runs with overlay bars; `dpr125` (a real device pixel ratio, no zoom) with classic bars, so the classic gutter and scroll box keep their coverage.
+ * --scrollbars=overlay|classic sets every run.
+ * @type {Record<string, 'overlay'|'classic'>}
+ */
+const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay' };
+
 const RUNS = {
   clean: (b, s) => runClean(b, s),
   dpr125: (b, s) => runClean(b, s, { name: 'dpr125', zoom: false }),
@@ -276,7 +289,7 @@ const results = [];
 let failed = 0;
 for (const name of Object.keys(RUNS).filter((n) => !only || only.includes(n))) {
   const site = await startServer(name === 'missing' ? { files: { '/dist/hic-live-polyfill.iife.min.js': join(outDir, 'does-not-exist.js') } } : {});
-  const browser = await H.launchChrome({ name: 'field-test', ...(name === 'dpr125' ? { dpr: 1.25 } : {}), windowSize: [1280, Number(H.arg('wh', 1100))], extraArgs: [...(headed ? [] : ['--headless=new']), `--auto-select-tab-capture-source-by-title=${TITLE}`] });
+  const browser = await H.launchChrome({ name: 'field-test', scrollbars: H.arg('scrollbars') ?? SCROLLBARS[name] ?? 'overlay', ...(name === 'dpr125' ? { dpr: 1.25 } : {}), windowSize: [1280, Number(H.arg('wh', 1100))], extraArgs: [...(headed ? [] : ['--headless=new']), `--auto-select-tab-capture-source-by-title=${TITLE}`] });
   browser.conn.sendTimeoutMs = 60000;
   console.log(`${name}: Chrome ${browser.version?.Browser} (${headed ? 'headed' : 'headless'}), ${site.url}`);
   const t0 = Date.now();
