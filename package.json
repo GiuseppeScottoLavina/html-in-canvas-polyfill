@@ -39,7 +39,9 @@
     "./src/engines-iife.js",
     "./dist/esm/index.js",
     "./src/gpu.js",
-    "./src/gpu-iife.js"
+    "./src/gpu-iife.js",
+    "./src/worker.js",
+    "./dist/esm/worker.js"
   ],
   "main": "./dist/esm/index.js",
   "module": "./dist/esm/index.js",
@@ -57,6 +59,10 @@
       "types": "./dist/types/native-bridge.d.ts",
       "default": "./dist/esm/native-bridge.js"
     },
+    "./worker": {
+      "types": "./dist/types/worker.d.ts",
+      "default": "./dist/esm/worker.js"
+    },
     "./iife": "./dist/hic-live-polyfill.iife.js",
     "./iife/min": "./dist/hic-live-polyfill.iife.min.js",
     "./iife/effects": "./dist/hic-live-effects.iife.js",
@@ -67,6 +73,8 @@
     "./iife/engines/min": "./dist/hic-live-engines.iife.min.js",
     "./iife/gpu": "./dist/hic-live-gpu.iife.js",
     "./iife/gpu/min": "./dist/hic-live-gpu.iife.min.js",
+    "./iife/worker": "./dist/hic-live-worker.iife.js",
+    "./iife/worker/min": "./dist/hic-live-worker.iife.min.js",
     "./plugins/manifest.json": "./dist/plugins/manifest.json",
     "./plugins/*": {
       "types": "./dist/types/plugins/*/index.d.ts",

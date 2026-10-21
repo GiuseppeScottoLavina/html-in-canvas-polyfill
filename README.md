@@ -103,7 +103,7 @@ On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check,
 - **Size.** The core is about 96 KB gzipped (277 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS, as the browser itself leaves them out of a canvas (the element's box without its content) plus one console message, never a silent gap; native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
-- **Not supported:** web views inside apps, Firefox for Android, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
+- **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
 - **Preview.** `0.1.0-preview.4` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works

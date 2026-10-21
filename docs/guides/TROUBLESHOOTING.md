@@ -44,7 +44,7 @@ Option errors are plain `TypeError`s that name the option: `option "<name>" (got
 | `InvalidStateError` | `The element is not a drawable descendant of a canvas with content="drawable".` | texture upload of an element outside a drawable canvas | see above |
 | `InvalidStateError` | `Could not allocate a WxH scratch canvas for the texture upload.` | scratch resample canvas could not be created | smaller rect or `maxDpr` |
 | `HicUnsupportedError('svg-drawable')` | `` `drawable` on an SVG element is not supported by the polyfill. `` | `drawable` on an SVG element | wrap the SVG in an HTML element with `drawable` and draw that |
-| `HicUnsupportedError('worker-element-image')` | `An ElementImage cannot be posted to a <Worker\|MessagePort>: it is not transferable ...` | `postMessage` of an `ElementImage` | `await image.toImageBitmap()` and transfer the `ImageBitmap` |
+| `HicUnsupportedError('worker-element-image')` | `An ElementImage cannot be posted to a <MessagePort\|BroadcastChannel\|ServiceWorker>: only a dedicated Worker running the worker bundle takes one.` | `postMessage` of an `ElementImage` through another carrier | post it to the dedicated Worker itself (it loads `hic-live-worker`), or `await image.toImageBitmap()` and transfer the `ImageBitmap` |
 | rejected promise, `HicUnsupportedError('top-layer-canvas')` | `requestFullscreen() on a canvas with content="drawable" is not supported: its live layer is a sibling ...` | fullscreen on a managed canvas | request fullscreen on an ancestor container |
 
 Texture upload errors on missing or too small storage are GL errors (`gl.getError()`), not exceptions: allocate with `texImage2D` first (`docs/API-CONTRACT.md` 5.3).

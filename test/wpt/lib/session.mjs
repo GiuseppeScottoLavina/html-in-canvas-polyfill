@@ -1,6 +1,6 @@
 // One Chrome per configuration, driven over CDP: launch with the WPT host rules, optional polyfill injection into every
 // new document, the `__wptDrive` input binding of testdriver-vendor.js, crash/dialog handling and a resilient test tab.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { launchChrome } from '../../harness/lib/chrome.mjs';
 import { HOST_RULES } from '../server.mjs';
 import { PROJECT_ROOT, sleep } from '../../harness/lib/util.mjs';
@@ -60,15 +60,23 @@ export class Session {
   /**
    * The polyfill runs first in every new document: the page, same-process frames, and (auto-attach) cross-site frames at any depth. A target that auto-attaches to a
    * session is paused until that session lets it run, so the targets attached below a cross-site frame (its own cross-site frames) are handled too: unhandled, they
-   * never loaded (WPT privacy/subframe-cross-origin-frame: the frame's own load events never came).
+   * never loaded (WPT privacy/subframe-cross-origin-frame: the frame's own load events never came). A dedicated worker runs the worker bundle first, as a page would load
+   * it at the top of its worker (dist/hic-live-worker.iife.js, when it is built).
    */
   async injectPolyfill(page) {
     const source = readFileSync(this.polyfillFile, 'utf8');
+    const workerFile = `${PROJECT_ROOT}/dist/hic-live-worker.iife.js`;
+    const workerSource = existsSync(workerFile) ? readFileSync(workerFile, 'utf8') : null;
     await page.send('Page.addScriptToEvaluateOnNewDocument', { source });
     const conn = page.conn;
     const watch = (/** @type {string} */ parent) => conn.on('Target.attachedToTarget', async p => {
       const sid = p.sessionId;
       watch(sid);
+      if (p.targetInfo?.type === 'worker') {
+        if (workerSource) await conn.send('Runtime.evaluate', { expression: workerSource }, sid).catch(() => {});
+        conn.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {});
+        return;
+      }
       try {
         await conn.send('Page.enable', {}, sid);
         await conn.send('Page.addScriptToEvaluateOnNewDocument', { source }, sid);

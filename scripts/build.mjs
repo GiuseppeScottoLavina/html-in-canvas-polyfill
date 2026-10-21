@@ -6,6 +6,7 @@
 //     hic-live-native-bridge.iife   the native bridge for Chrome 154-156 behind the flag (src/native-bridge.js); loaded BEFORE the core
 //     hic-live-gpu.iife             WebGL / WebGPU element textures (src/gpu-iife.js); before or after the core
 //     hic-live-engines.iife         the Gecko / WebKit painters (form-control skins, WebKit bars and shadows; src/engines-iife.js); Firefox / Safari, any order with the core
+//     hic-live-worker.iife          ElementImage in a dedicated worker (src/worker.js): loaded at the top of the worker, the page runs the core
 //   ESM with the same split for bundler users: dist/esm/{index,effects,native-bridge}.js (+ shared chunks)
 //   effect plugins, discovered by convention (every plugins/<name>/ with an index.js, <name> not starting with '_'; plugins/README.md):
 //     dist/plugins/<name>.iife.js, .iife.min.js   classic; registers window.HicLivePlugins.<name> = {meta, plugin, ...the other exports}
@@ -75,6 +76,7 @@ const IIFES = [
   { name: 'hic-live-native-bridge', entry: 'src/native-bridge.js', plugins: [] },
   { name: 'hic-live-engines', entry: 'src/engines-iife.js', plugins: [] },
   { name: 'hic-live-gpu', entry: 'src/gpu-iife.js', plugins: [] },
+  { name: 'hic-live-worker', entry: 'src/worker.js', plugins: [] },
 ];
 
 mkdirSync(join(root, 'dist'), { recursive: true });
@@ -98,9 +100,9 @@ if (!process.argv.includes('--no-esm')) {
   rmSync(join(root, 'dist/esm'), { recursive: true, force: true });
   await build({
     ...common, format: 'esm', splitting: true, outdir: join(root, 'dist/esm'), chunkNames: 'chunks/[name]-[hash]',
-    entryPoints: { index: join(root, 'src/index.js'), effects: join(root, 'src/effects.js'), 'native-bridge': join(root, 'src/native-bridge.js') },
+    entryPoints: { index: join(root, 'src/index.js'), effects: join(root, 'src/effects.js'), 'native-bridge': join(root, 'src/native-bridge.js'), worker: join(root, 'src/worker.js') },
   });
-  for (const f of ['index.js', 'effects.js', 'native-bridge.js']) measure(`esm/${f}`, join(root, 'dist/esm', f));
+  for (const f of ['index.js', 'effects.js', 'native-bridge.js', 'worker.js']) measure(`esm/${f}`, join(root, 'dist/esm', f));
 }
 
 // ---- effect plugins (plugins/README.md): discovered by convention, each checked against the folder contract before it is built

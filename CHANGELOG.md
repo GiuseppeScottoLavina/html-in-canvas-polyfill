@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- An `ElementImage` can be posted to a dedicated worker and drawn there, as natively: load the new worker bundle at the top of the worker (`importScripts('hic-live-worker.iife.min.js')`, or `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/worker'` in a module worker). The page sends the snapshot's pixels; in the worker `drawElementImage` on the OffscreenCanvas of its canvas, `getElementImageDefaultSize`, `updateElementGeometry` and `clearElementGeometry` work, and the geometry of the worker's draws is applied on the page with one `elementgeometryupdate` per worker turn. Another canvas's or a standalone OffscreenCanvas throws `InvalidStateError`. Posting one through a MessagePort or BroadcastChannel still throws `HicUnsupportedError('worker-element-image')`. WPT `offscreen/canvas-transform-update-worker`, `offscreen/getElementTransform-worker`, `offscreen/offscreenCanvas-drawElementImage-worker`, `draw-element-image-different-canvas` (worker subtest).
+
 ### Fixed
 
 - Content the browser itself leaves out of a canvas is now drawn as the browser draws it, measured against the native implementation, instead of as a hatched placeholder: a cross-origin `<img>` or `<picture>` keeps its box (border, background) without the picture, a cross-origin SVG `<image>` draws nothing, an `<iframe>` draws its own box without the document, and an `<object>` or `<embed>` draws the image it shows when that image is readable. The console message and the `report()` entry are unchanged. WPT `privacy/picture-images-ignored`, `embed-image-ignored`, `object-image-ignored`.

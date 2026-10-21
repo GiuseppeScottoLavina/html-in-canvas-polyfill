@@ -100,14 +100,15 @@ test('postMessage of anything else passes through with identical arguments (Mess
   port1.postMessage(bitmap, [bitmap]);
   assert.ok((await got2) instanceof ImageBitmap, 'the documented alternative works');
 
-  const worker = new Worker('data:text/javascript,onmessage=e=>postMessage(e.data*2)');
+  const worker = new Worker('data:text/javascript,onmessage=e=>{const p=e.data.picture;postMessage(p?{brand:p.__hicElementImage,bitmap:p.bitmap instanceof ImageBitmap,size:[p.width,p.height]}:e.data*2)}');
   t.cleanup(() => worker.terminate());
-  const reply = new Promise((ok) => { worker.onmessage = (e) => ok(e.data); });
+  let reply = new Promise((ok) => { worker.onmessage = (e) => ok(e.data); });
   worker.postMessage(21);
   assert.equal(await reply, 42);
-  let refused;
-  try { worker.postMessage(bitmapSource); } catch (e) { refused = e; }
-  assert.equal(refused?.feature, 'worker-element-image');
+  // a dedicated Worker takes an ElementImage (worker-transfer.js): a worker without the worker bundle sees its record, the pixels as an ImageBitmap
+  reply = new Promise((ok) => { worker.onmessage = (e) => ok(e.data); });
+  worker.postMessage({ picture: bitmapSource });
+  assert.deepEqual(await reply, { brand: 1, bitmap: true, size: [40, 20] });
 });
 
 test('the guard walk is shallow and never invokes getters', async (t) => {

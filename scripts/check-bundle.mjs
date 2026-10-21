@@ -70,7 +70,9 @@ const LIMITS = {
   //   (util/tree-order.js): WPT onpaint-post-tree-order-shadow-dom
   // 307.25 -> 307.75 KB, gzip 106.75 -> 107 KB (+489 / +236 bytes, 2026-10-22, measured 307,696 / 106,935): the drawable's own mix-blend-mode composited by the draw
   //   (SnapshotVersion.blend): WPT css-blend-mode-over-content, css-blend-mode-over-both
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 307.75 * KB, gzip: 107 * KB },
+  // 307.75 -> 311 KB, gzip 107 -> 108.25 KB (+3,123 / +1,183 bytes, 2026-10-22, measured 310,819 / 108,118): an ElementImage posted to a dedicated Worker (the page side:
+  //   api/worker-transfer.js, worker-wire.js; the worker side is its own bundle): 21 WPT subtests (offscreen/*-worker, draw-element-image-different-canvas)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 311 * KB, gzip: 108.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -90,6 +92,8 @@ const LIMITS = {
   //   assumed from Safari >= 27
   'hic-live-engines.iife.min.js': { target: 42.25 * KB, ceiling: 42.25 * KB, gzip: 16.25 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
+  // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922)
+  'hic-live-worker.iife.min.js': { target: 10 * KB, ceiling: 10 * KB, gzip: 4 * KB },
   'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */

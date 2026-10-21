@@ -43,7 +43,7 @@ function stateOf(self) {
 
 /**
  * The spec "element image default size": the snapshot's css size scaled by the CURRENT bitmap size over the bitmap size the snapshot was taken at, in grid px.
- * @param {SnapshotVersion} version
+ * @param {Pick<SnapshotVersion, 'width'|'height'|'canvasWidth'|'canvasHeight'>} version
  * @param {{width: number, height: number}} bitmap  the canvas (or OffscreenCanvas) whose grid the size follows
  * @returns {{width: number, height: number}}
  */
