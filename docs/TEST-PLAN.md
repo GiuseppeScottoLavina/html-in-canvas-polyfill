@@ -278,12 +278,17 @@ antialiasing (`--disable-lcd-text`: a canvas never gets subpixel text, native `d
 Gaps the probe measured are listed in `KNOWN` (`test/platform/run.mjs`) by check and platform, with the reason, and printed as KNOWN RED; `--allow-known` (CI) keeps them
 from failing the run, their thresholds unchanged. A listed check that passes fails the run (the list must shrink when a gap is fixed). Regions (a control, a bar) are judged by
 their pixels alone: the surface oracle's non-blank guard (more than 8 colours) is for a whole surface, and a crisp checkbox or a scrollbar track failed it with none of their pixels
-different. The list is empty since 2026-10-21. Measured that day with Chrome 155 (Linux: the CI image, headless; macOS: classic bars forced), the same on both: the 62 F6 regions
+different. The classic-bar gaps left the list on 2026-10-21. Measured that day with Chrome 155 (Linux: the CI image, headless; macOS: classic bars forced), the same on both: the 62 F6 regions
 (worst 1.9 % over 16, a scrolled listbox; the surface 0.04 %; before the fix 29-32 regions failed and the surface was 14.8 %: an unsized `<textarea>` or listbox `<select>` gets the
 classic bar thickness in its intrinsic width and the snapshot had none, so the controls after it reflowed), every bar of F6 and F7 at DPR 1, 1.25 and 1.5 within 0.7 % over 16
 (before: 12-33 % of a bar's pixels, the dark bar 100 %, as the macOS legacy look was painted for Chromium everywhere), the scrollports at DPR 1 (0 % over 6), 1.25 and 1.5 (at most
-0.4 % over 100), the form example at DPR 1.25 / 1.5 (Linux 1.81 / 2.75 %, macOS 1.57 / 2.51 % over 16), the selection oracle (24 cases). Windows (Fluent bars with the arrows as
-Segoe Fluent Icons glyphs) is measured by the `windows` CI job (`.github/workflows/ci.yml`, Windows Server 2025), which uploads the probe's images when it fails.
+0.4 % over 100), the form example at DPR 1.25 / 1.5 (Linux 1.81 / 2.75 %, macOS 1.57 / 2.51 % over 16), the selection oracle (24 cases). Windows, measured 2026-10-21 by the `windows` CI job (Windows Server 2025, Chrome 156, headless; `.github/workflows/ci.yml`, which uploads the probe's images when it
+fails): `system-ui` text in Segoe UI (Semibold for weight 600); the scrollports exact at DPR 1 and within the bounds at 1.25 / 1.5; the form example at DPR 1.25 / 1.5
+1.48 / 2.52 % over 16; the whole F6 surface 2.32 % over 16 (within its bound: `controls.whole` is not a known gap there); the selected glyphs in HighlightText, as
+decided; the 7 author `::selection` cases at most 0.49 % over 16. Before the classic-bar fixes the job also measured `controls.regions` (16 of 62 regions: the listboxes, and the controls after them), `controls.bars` and `scrollers.bars` (the light F6 bar passed, 1.52 % / 0.19 %; the dark one and every F7 bar failed); they left `KNOWN` with the fix (Fluent bars as on Linux, the arrows as Segoe Fluent Icons glyphs) and the job re-measures them. Still known on Windows: `selection.system`: a selection without an author
+rule is painted in Chromium's default rgba(0, 65, 198, 0.8) (rgb(51, 103, 209) over white), not in the system colour Highlight (#0078d4) that the polyfill draws, so 54-91 %
+of the selection's pixels differ in the 17 such cases. That is headless Chrome; a headed Windows Chrome was not measured and may paint the system colour, so the
+polyfill is not changed on this evidence alone.
 
 ## 3. Reporting
 

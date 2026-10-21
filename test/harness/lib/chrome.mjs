@@ -161,7 +161,10 @@ export async function launchChrome(opts = {}) {
   const macBars = process.platform === 'darwin' ? { overlay: 'WhenScrolling', classic: 'Always' }[scrollbars] : undefined;
   // headless Chrome refuses more than one target on its command line, and the value of the pair is one: the page starts on it there (closed below; newPage opens a tab)
   const headless = extraArgs.some((a) => a.startsWith('--headless'));
-  const args = [...mergeFeatureFlags(base, [...scrollbarArgs, ...extraArgs]), ...(macBars ? ['-AppleShowScrollBars', macBars] : []), ...(macBars && headless ? [] : [url])];
+  // Headless runs allow Chrome's software WebGL (--enable-unsafe-swiftshader): Chrome no longer falls back to it on its own, so a machine without a usable GPU
+  // (the Windows CI runner) had no WebGL context at all. The flag only allows the fallback; where a GPU works it changes nothing.
+  const softGl = headless && !extraArgs.includes('--enable-unsafe-swiftshader') ? ['--enable-unsafe-swiftshader'] : [];
+  const args = [...mergeFeatureFlags(base, [...scrollbarArgs, ...extraArgs, ...softGl]), ...(macBars ? ['-AppleShowScrollBars', macBars] : []), ...(macBars && headless ? [] : [url])];
   const child = spawn(chromePath, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: false, windowsHide: true });
   liveChildren.add(child);
   let stderr = ''; child.stderr.on('data', d => { stderr += d; if (stderr.length > 200000) stderr = stderr.slice(-100000); });

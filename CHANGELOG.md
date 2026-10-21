@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - Classic scrollbars, look: Chrome's bars are drawn as Chrome draws them on the platform: the Fluent bars of Linux and Windows (arrow buttons, the thumb between them, the light and dark colours, Windows' arrow glyphs where its icon font is installed) and the macOS bars (inset thumb, track borders, the dark look), with the engine's thumb length and position rules at every device pixel ratio, `scrollbar-width: thin` and `scrollbar-color`; listbox `<select>` bars are drawn. Which look is measured from the bar thicknesses, not read from the user agent. Platform probe: every bar region of F6 and F7 within 0.7 % of native at DPR 1, 1.25 and 1.5 on Linux and macOS (was 12-100 %).
 - Text drawn a little blurred at a fractional device pixel ratio when the canvas content box is not a whole number of device pixels (a 1 px border is 0.8 css px at DPR 1.25): the ResizeObserver device-pixel pattern rounds each axis on its own, and a default-size draw stretched the snapshot by a hair to the other axis' scale. Such a draw is now copied 1:1. The field test's scroll box at DPR 1.25 (3.6-8 % of its pixels over 16) now matches the plain page.
 
+### Known limitations
+
+- Measured on Windows by the platform probe (headless Chrome 156 on the CI runner): a text selection without an author `::selection` rule is painted by Chrome in its default rgba(0, 65, 198, 0.8), while the polyfill draws the system colour Highlight (#0078d4 there), so the drawn selection is a different blue; the selected glyphs (HighlightText) and author rules match. A headed Windows Chrome was not measured. Row `caret-selection`.
+
 ## [0.1.0-preview.3] - 2026-10-21
 
 A fix release for the effect plugins.

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { checkPluginFolder, checkSharedLib } from '../contract.mjs';
 
 /** a throwaway repository layout: plugins/demo, plugins/other, plugins/_lib, src/effects */
@@ -36,6 +36,9 @@ test('a plugin imports its own files, plugins/_lib/ and src/effects/no-target.js
   const imports = (await checkPluginFolder(join(root, 'plugins/demo'))).filter((p) => p.includes(' imports '));
   assert.deepEqual(imports.map((p) => /imports "([^"]+)"/.exec(p)?.[1]), ['../../src/effects/index.js', '../other/index.js', 'some-package']);
   assert.deepEqual(checkSharedLib(join(root, 'plugins/_lib')), []);
+  // the same folder named with a trailing separator (what a file URL of a folder gives on Windows) finds the same problems, and no others
+  assert.deepEqual(await checkPluginFolder(join(root, 'plugins/demo') + sep), await checkPluginFolder(join(root, 'plugins/demo')));
+  assert.deepEqual(checkSharedLib(join(root, 'plugins/_lib') + sep), []);
 });
 
 test('plugins/_lib/ is held to the same rules: it may not import a plugin or other modules of src/', (t) => {
