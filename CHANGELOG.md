@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+Official WPT HTML-in-Canvas tests (pinned revision): the polyfill passes 182 of 230 files and 307 of 375 subtests (was 145 and 253); every remaining difference from the native implementation has a written reason in `docs/CONFORMANCE.md`.
+
 ### Added
 
 - An `ElementImage` can be posted to a dedicated worker and drawn there, as natively: load the new worker bundle at the top of the worker (`importScripts('hic-live-worker.iife.min.js')`, or `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/worker'` in a module worker). The page sends the snapshot's pixels; in the worker `drawElementImage` on the OffscreenCanvas of its canvas, `getElementImageDefaultSize`, `updateElementGeometry` and `clearElementGeometry` work, and the geometry of the worker's draws is applied on the page with one `elementgeometryupdate` per worker turn. Another canvas's or a standalone OffscreenCanvas throws `InvalidStateError`. Posting one through a MessagePort or BroadcastChannel still throws `HicUnsupportedError('worker-element-image')`. WPT `offscreen/canvas-transform-update-worker`, `offscreen/getElementTransform-worker`, `offscreen/offscreenCanvas-drawElementImage-worker`, `draw-element-image-different-canvas` (worker subtest).
