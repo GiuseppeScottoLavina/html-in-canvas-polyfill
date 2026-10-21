@@ -2,7 +2,7 @@
 
 An effect plugin is a small WebGPU pass that runs over the HTML a canvas draws: the effects host of this library uploads the drawn picture into a texture, runs the plugins in order, presents the result on the canvas, and maps pointer input back through the plugins so that clicks reach the element the user sees.
 
-**The plugins are not part of the polyfill.** Each folder here is an example of the effects extension, built into its own optional bundle; nothing in `src/` imports them. The effects host and the frame cap are themselves extensions of this library: they are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them ([what that means in practice](../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+**The plugins are not part of the polyfill.** Each folder here is an example of the effects extension, built into its own optional bundle; nothing in `src/` imports them. The effects host and the frame cap are themselves extensions of this library: they are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them; the host runs them over the polyfill and over a native implementation alike ([what that means in practice](../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 Using plugins and writing them (ABI v2, actions, the test kit): [docs/guides/EFFECTS-PLUGINS.md](../docs/guides/EFFECTS-PLUGINS.md). Try them: the plugin gallery, [examples/plugins/](../examples/plugins/); the smallest page that uses them: [examples/effect-plugin/](../examples/effect-plugin/).
 

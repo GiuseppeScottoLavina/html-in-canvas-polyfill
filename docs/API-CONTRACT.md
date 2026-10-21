@@ -55,7 +55,7 @@ nor be replaced safely. A failed behavioural probe alone is not a refusal either
 
 | kind | meaning | `HicMode` | what install does |
 |---|---|---|---|
-| `complete` | the core plus every other current name (Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. The extensions are not supported in this mode (section 7.6): no `frameCap` property, no input remapping. |
+| `complete` | the core plus every other current name (Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. It defines only the extension property `canvas.frameCap` (removed by `uninstall()`); the effects host runs over the native implementation (section 7.6). |
 | `partial` | the core works, some other current name is missing (for example the 2026-10-07 shape with `ElementImage.width/height` and no `getElementImageDefaultSize`) | `native`, or `native-bridged` when the bridge is loaded and can build a missing name (`NativeState.fillable`) | uses the native implementation as found; with the bridge, adds only the names it can build from public native API (`gaps`). Never throws. |
 | `legacy` | the core with the earlier `layoutSubtree` instead of `content` (Chrome 154 and 155.0.8059.40 behind `--enable-blink-features=CanvasDrawElement`, measured) | `native-bridged` with the bridge, else `native` | with the bridge: `content` IDL + attribute mirroring to `layoutsubtree`, method aliases, `getElementImageDefaultSize` over `ElementImage.width/height` (section 2.1; row `legacy-native-bridge`). Without it: used as found, one `console.warn` that `content="drawable"` canvases are not drawable in that build and how to load the bridge. Never throws. |
 | `broken` | something native exists but a core name is missing | `refused` | throws `HicUnsupportedError('partial-native')` unless `options.forcePolyfill` (test only). |
@@ -286,7 +286,7 @@ After mounting, the first snapshot is committed one or more frames later (async 
 
 ## 7. Extensions
 
-The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal, native implementations do not provide them, and they are supported only while the polyfill provides the API (mode `polyfill`); section 7.6 has what was observed on top of a native implementation.
+The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal and native implementations do not provide them. They run while the polyfill provides the API (mode `polyfill`) and over a native implementation the installed polyfill stepped aside for (modes `native` and `native-bridged`) that has the members section 7.6 lists; section 7.6 says what differs there.
 
 ### 7.1 Frame cap
 - Attribute `framecap` on the canvas: a non-negative integer, `0..240` (`EXT.FRAME_CAP_MAX`). Missing/invalid -> `options.defaultFrameCap`
@@ -307,7 +307,7 @@ The frame cap and the effects host are extensions of this library. They are not 
   (default 0 = strict cap, input latency can then be up to one cap period). Measured by gate G-f1-form-effect (page-side `effectframe` stamps at 30 / 60 / 120).
 - The promise is "an effect at the cap, over a source updated at most that fast", not a stable 120 Hz source. A 120 Hz effect over
   30-60 Hz source updates is `framecap=120` with source builds limited by `maxSnapshotFps`/pipeline throughput.
-- In mode `native` the `frameCap` property is not defined; the `framecap` attribute bounds effect frames only (feature row `frame-cap`, section 7.6).
+- In the native modes `install()` defines the `frameCap` property too; the cap (attribute or property) bounds the effect frames only, with the same phase rules; the browser's own `paint` events are not throttled (feature row `frame-cap`, section 7.6).
 
 ### 7.2 Effect plugins: ABI v2
 Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options), NO_TARGET, isNoTarget(point)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
@@ -330,9 +330,9 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the
-  `SnapshotStore` in polyfill mode, the public native API in native mode, which is not supported: section 7.6), uploads only when `version()` advanced, renders the
+  `SnapshotStore` in polyfill mode, `GPUQueue.drawElementImageToTexture` in the native modes: section 7.6), uploads only when `version()` advanced, renders the
   plugin chain each due frame (`continuous` plugins) or on change, and keeps the source geometry in sync so the live element sits
-  under the presented pixels (`GeometryApi.update(source, fill transform)`).
+  under the presented pixels (`GeometryApi.update(source, fill transform)`; in the native modes `canvas.updateElementGeometry(source, {canvasTransform})`).
 - Off-screen pause (always on, no option): while the canvas does not intersect the viewport enlarged by half its size on each side (and
   each scroll container around it enlarged the same way: `IntersectionObserver` `scrollMargin: '50%'`, or `rootMargin: '50%'` where
   `scrollMargin` is missing), or its document is hidden, the host renders and uploads nothing, `continuous` plugins included. Back inside
@@ -399,16 +399,40 @@ layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `poi
 the native hit control it prevents the native handling and re-implements the activation: focus, button/link/checkbox/radio/label click
 on `pointerup`, `input[type=range]` value + `input`/`change` events during the gesture, text caret placement. Not re-targeted: select
 popups, drag selection, contenteditable (row `interposer-retarget`). Validated against GPU pixels, not against the mapper itself
-(gate G-interposer-gpu).
+(gate G-interposer-gpu). In the native modes the interposer works on the browser's own hit testing instead (section 7.6).
 
 ### 7.5 Polyfill events and handles
 `hicunsupported` (CustomEvent<UnsupportedEntry> on the canvas), `effectframe`, `effecterror` (above). `window.__HIC__` = debug handle
 `{installed, report(), error?}`; `installed` is a getter that follows the live install (`getInstalled() ?? the first install`), so it stays right after `uninstall()` + `install()`.
 
-### 7.6 On top of a native implementation (not supported)
-Checked on 2026-10-14 with the built core and effects bundles (macOS, Apple M1 Max, 120 Hz, headed and headless; details in `docs/guides/EFFECTS-PLUGINS.md`):
-- Chrome Canary 157.0.8103.0, with or without `--enable-blink-features=CanvasDrawElement`: `install()` steps aside (mode `native`, kind `complete`, probe `ok`) and the page draws natively (a drawable form painted from `onpaint`, `getElementImageDefaultSize` 200 x 60, no console message). No extension exists there: no `frameCap` property, no input remapping.
-- Before this check the same build was refused (`partial-native`, because its `ElementImage` has no `width` / `height`); with a test-only stub that completed `ElementImage` (mode `native`), `createHost` and the water plugin rendered over `GPUQueue.drawElementImageToTexture`; the `frameCap` property was not defined (the `framecap` attribute paced effect frames: 15 and 30.5 per second at 15 and 30); pointer input is not remapped (the interposer needs the polyfill's live layer), so a click on the drawn field reached the canvas, not the field.
+### 7.6 Over a native implementation
+In the modes `native` and `native-bridged` there is no live layer and no snapshot store; `createHost` uses the browser's implementation through the standard API
+(`src/effects/source-provider.js`, `frame-source.js`, `native-geometry.js`, `native-interposer.js`):
+- Requirements: `GPUQueue.prototype.drawElementImageToTexture`, `canvas.updateElementGeometry`, `clearElementGeometry` and `getElementImageDefaultSize`; a missing
+  one rejects `createHost` with `HicUnsupportedError('effect-plugins')` naming it. `source` must be a drawable descendant (`getElementTransform(source)` must not throw),
+  else `InvalidStateError`.
+- Source: `version()` advances on the canvas's `paint` event when `changedElements` names the source, a drawable inside it or one around it (any paint when the build
+  has no `changedElements`; the first paint after creation always; a change of `getElementImageDefaultSize`). The upload is one
+  `drawElementImageToTexture({source}, {texture, size})` of the whole element image (no partial upload: no dirty rect is known), made in the `paint` event, where the
+  element image is fresh (in the animation frame callbacks before it the call returns the previous paint; measured on Chrome Canary 158). The texture has the size
+  `getElementImageDefaultSize(source)` (rounded up); the css size of the source is its border box from a `ResizeObserver`.
+- Frames: an animation frame loop while the host wants frames, plus the `paint` event. `due` is decided once per frame time with the rules of 7.1 (a changed cap
+  starts a new phase); a `paint` in a frame the loop already rendered uploads the source without rendering that frame again, and the next frame shows it. A
+  `ResizeObserver` on the canvas (device-pixel content box) replaces the polyfill's resize and DPR signals.
+- Geometry: `updateElementGeometry(source, {canvasTransform: translate(offset) * scale(fill)})`; `fill` is the stretch of 7.3, `offset` is 0 at rest and when the
+  pointer leaves the canvas. `destroy()` calls `clearElementGeometry(source)`.
+- Interposer: capture listeners on the canvas. At each pointer event the pointer `p` (content-box css px) is mapped to `m` and the offset set to `p - m`, so that the
+  browser hit-tests the element the effect shows under the pointer for the next event: hover, `:active`, the cursor, focus, caret placement and selection are then
+  the browser's own. The event in hand was hit-tested before its shift: its intended element is read with `document.elementsFromPoint` (a list; the one-element
+  `elementFromPoint` keeps a per-point cache that a geometry change does not clear), and a press whose native control differs from it is re-targeted with the rules
+  of 7.4. When a pointer move's native target is not the element shown, the host changes the width of one invisible element of its own (`<hic-hover-sync>`, appended
+  to the root element on first use, removed by `destroy()`) so that the engine recomputes hover and the cursor in the next frame. `NO_TARGET` calls
+  `clearElementGeometry(source)` (the canvas itself is under the pointer) and swallows the press. Ranges are driven by the interposer as in 7.4.
+- Not provided in the native modes: `report()` entries for the canvas (the polyfill does not manage it) and a cap on the browser's own `paint` events.
+- Verified on Chrome Canary 158.0.8112.1 with `--enable-blink-features=CanvasDrawElement` by `npm run test:native-effects` (gates G-native-effects and
+  G-native-interposer with their controls, the water and disintegrate gallery e2e, `examples/effect-plugin`); numbers in `docs/guides/EFFECTS-PLUGINS.md`.
+  The unit tests (`test/unit/gpu-effects/native-*.test.mjs`) run the same code over an emulated native API in any Chrome.
+- Safari Technology Preview's HTML-in-Canvas feature (the `layoutsubtree` draft) has neither the GPU upload nor the geometry methods: `createHost` rejects there.
 
 ## 8. Timing model (summary; full detail in ARCHITECTURE ADR-C)
 - DOM change -> mutation/input/focus/hover observers publish `Damage` -> (next tick, under the cap) clone + serialise + data: URL (main

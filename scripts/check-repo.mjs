@@ -82,7 +82,9 @@ if (!docsOnly) {
   // 14100 -> 14325 (2026-10-21, measured 14,308; 14,090 before this step): Chromium's classic scrollbars as the platform paints them (snapshot/capture/chromium-bars.js, the
   // bar painter and listbox bar of scroll-emulation.js), the bar-sized intrinsic width of textarea / listbox select pinned in the clone, the raster scale and 1:1 draw
   // of a grid rounded from a fractional device-pixel content box (snapshot/store/surfaces.js gridRasterScale, api/draw-math.js snapDefaultSize).
-  if (total > 14325) problems.push(`G-size: core is ${total} code lines (> 14325)`);
+  // 14325 -> 14600 (2026-10-22, measured 14,579; 14,308 before this step): the effects over a browser's own HTML-in-Canvas implementation (effects/native-geometry.js,
+  // effects/native-interposer.js, the native source provider and frame source, the native checks of the effect host, the frameCap property in the native modes).
+  if (total > 14600) problems.push(`G-size: core is ${total} code lines (> 14600)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

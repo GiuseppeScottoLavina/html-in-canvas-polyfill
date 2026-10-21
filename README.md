@@ -85,7 +85,7 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | browser | status |
 |---|---|
 | Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured, with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions are not available there |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured, with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions run over the native implementation (measured on Canary 158.0.8112.1 with the flag) |
 | Chrome 154-155 with the `CanvasDrawElement` flag (the earlier `layoutsubtree` draft) | used as found, with one console warning; load `hic-live-native-bridge.iife.min.js` before the core to bridge `content="drawable"` to it |
 | Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
@@ -125,7 +125,7 @@ The browser itself lays out and paints the HTML; the polyfill only takes picture
 
 ## Two extensions (not part of the standard)
 
-> **Note.** The frame cap and the effect plugins are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them. They work only while this polyfill provides the API; on top of a native implementation they are not supported ([what was checked](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+> **Note.** The frame cap and the effect plugins are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them. They run over this polyfill and over a browser's own implementation that the polyfill steps aside for ([what differs there](docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)).
 
 - **Frame cap:** `<canvas content="drawable" framecap="30">` or `canvas.frameCap = 60` bounds `paint` events, effect frames and snapshot builds for that canvas (0 = display rate).
 - **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. A plugin may declare actions that page code runs through its handle (`await handle.trigger('play')` resolves with the state the plugin rests in). The plugins are not part of the polyfill: the water ripple of the demo is one example plugin in [plugins/](plugins/), with a template for new ones and a [gallery](examples/plugins/) that applies each to one live form; [examples/effect-plugin](examples/effect-plugin/) is the smallest page that uses them. [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) is the reference for using and writing plugins.
@@ -149,7 +149,7 @@ Eight example effect plugins, each applied to the same live form in the [plugin 
 </tr>
 </table>
 
-> **Extensions, not the standard.** The plugins, the effects host they run in and the frame cap are extensions of this library. They are not part of the HTML-in-Canvas proposal and are not available on native implementations: they work only while this polyfill provides the API ([details](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+> **Extensions, not the standard.** The plugins, the effects host they run in and the frame cap are extensions of this library. They are not part of the HTML-in-Canvas proposal and native implementations do not provide them; the bundles of this library run them over the polyfill and over a native implementation alike ([details](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 What each plugin does and how its input mapping works: [plugins/README.md](plugins/README.md). Writing one: [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md).
 

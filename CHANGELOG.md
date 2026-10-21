@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- The effects extension runs over a browser's own HTML-in-Canvas implementation (mode `native`), with the same bundles and the same API: `HTMLInCanvasEffects.createHost` reads the source with the standard `GPUQueue.drawElementImageToTexture` in the canvas's `paint` event, renders one frame per display frame within the frame cap, and remaps pointer input by moving the standard hit-test geometry (`updateElementGeometry`) under the pointer, so the browser's own hover, `:active`, cursor, focus, caret and selection follow the element the user sees. The off-screen pause, plugin actions and device-loss recovery work there too. Measured on Chrome Canary 158 with `--enable-blink-features=CanvasDrawElement`: with no plugin the presented frame equals the browser's 2D `drawElementImage` within 1 level; trusted clicks through the CRT plugin at full curvature and the water plugin at full intensity reach the field the user sees in 45 of 45 and 42 of 42 places where the DOM position would miss. A native implementation without these members (the earlier `layoutsubtree` draft) makes `createHost` reject loudly. Details: `docs/guides/EFFECTS-PLUGINS.md`, `docs/API-CONTRACT.md` 7.6.
+- `install()` defines the extension property `canvas.frameCap` in the native modes too (removed by `uninstall()`); nothing of the standard surface is patched there.
+- `npm run test:native-effects`: gates G-native-effects and G-native-interposer (headed, with positive controls), the water and disintegrate gallery tests and `examples/effect-plugin`, all on Chrome Canary over its native implementation; skipped with a loud message where Canary is not installed. `npm run test:gates:all` runs it.
+
+### Changed
+
+- The examples (`examples/plugins/`, `examples/effect-plugin/`) run the effects over a native implementation instead of falling back to 2D.
+
 ## [0.1.0-preview.4] - 2026-10-21
 
 Windows becomes a tested platform, a field test page lets anyone check the polyfill on their own machine, and classic scrollbars and fractional device pixel ratios are drawn like the browser draws them.

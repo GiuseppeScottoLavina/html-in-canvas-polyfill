@@ -988,7 +988,8 @@
       id: 'effect', title: 'Effect plugin', skippable: true,
       async run(rec, ctx) {
         const mode = report.polyfill?.mode;
-        if (mode !== 'polyfill') { check('effect', 'skipped', `the effect plugins need the polyfill (mode here: ${mode ?? 'none'})`); return 'skipped'; }
+        // the effects run over the polyfill and over a native implementation the installed polyfill stepped aside for (createHost rejects where they cannot)
+        if (mode !== 'polyfill' && mode !== 'native' && mode !== 'native-bridged') { check('effect', 'skipped', `the effect plugins need the installed polyfill (mode here: ${mode ?? 'none'})`); return 'skipped'; }
         ui.show({ meta: ctx.meta, title: 'Effect plugin', html: '<p>Loading the effect...</p>' });
         $('ft-effect-pair').hidden = false;
         const pair = pairs.effect || makePair('effect', 'ft-effect-template');

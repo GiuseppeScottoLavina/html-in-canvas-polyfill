@@ -93,7 +93,7 @@
 </head>
 <body>
 <h1>Effect plugins</h1>
-<p class="note">Pick an effect: it is applied to the same live HTML form drawn inside the canvas below, and the form stays usable through it. An effect's actions are buttons under its description (<code>handle.trigger</code>). The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>.</p>
+<p class="note">Pick an effect: it is applied to the same live HTML form drawn inside the canvas below, and the form stays usable through it. An effect's actions are buttons under its description (<code>handle.trigger</code>). The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>.</p>
 
 <ul id="picker" aria-label="Effect"></ul>
 <section id="about" aria-live="polite" aria-label="The selected effect"><h2 id="about-title">Effect off</h2></section>
@@ -103,7 +103,7 @@
   <form id="demo-form" drawable autocomplete="off" novalidate>
     <section class="hero">
       <div>
-        <p class="eyebrow">Real DOM, drawn by a polyfill</p>
+        <p class="eyebrow">Real DOM, drawn into a canvas</p>
         <h1>Touch the interface.</h1>
         <p class="lede">Every field you see is ordinary HTML inside this canvas. The selected effect is a WebGPU plugin applied to the drawn result; the form keeps its layout, focus, typing and scrolling, and clicks are mapped through the effect to the field you see.</p>
       </div>
@@ -197,11 +197,12 @@
     return row;
   }
 
-  // The frame cap and the effects are extensions of this library: they run only while the polyfill provides the API (mode 'polyfill').
-  // A browser whose own implementation is used (the polyfill stepped aside or refused it) still draws the form, without them.
+  // The frame cap and the effects are extensions of this library: they run over the polyfill's drawing (mode 'polyfill') and over a browser's
+  // own implementation that the installed polyfill stepped aside for (modes 'native', 'native-bridged'), where createHost may still reject.
+  // Without the installed polyfill (refused, or not loaded) a browser with its own implementation still draws the form, without them.
   const mode = hic && hic.installed ? hic.installed.mode : null;
   const nativeApi = !mode && typeof CanvasRenderingContext2D.prototype.drawElementImage === 'function';
-  const extensions = mode === 'polyfill';
+  const extensions = mode === 'polyfill' || mode === 'native' || mode === 'native-bridged';
   $('m-mode').textContent = mode || (nativeApi ? 'polyfill not active, native API' : 'polyfill not installed');
   if (!mode && !nativeApi) {
     $('m-effect').textContent = hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'run `npm run build` first';
@@ -236,12 +237,12 @@
 
   // ---- choose the presentation path BEFORE any getContext: a canvas has one context type for life -------------------------------
   let host = null, why = '';
-  if (!extensions) why = 'The effects and the frame cap are extensions that run only while this polyfill provides the API; here the browser\'s own implementation is used (' + (mode ? 'mode ' + mode : (hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'polyfill not installed')) + ').';
+  if (!extensions) why = 'The effects and the frame cap are extensions that need this polyfill installed; here the browser\'s own implementation is used without it (' + (hic && hic.error ? hic.error.message.replace(/^\[hic-live-polyfill\] /, '') : 'polyfill not installed') + ').';
   else if (!navigator.gpu) why = 'This browser has no WebGPU, so the effects are off.';
   else if (!window.HTMLInCanvasEffects) why = 'The effects bundle is not loaded, so the effects are off.';
   else {
     try {
-      // the host owns the canvas bitmap and its 'webgpu' context: it samples the polyfill's picture of `form`, runs the plugin, presents
+      // the host owns the canvas bitmap and its 'webgpu' context: it samples the drawn picture of `form` (the polyfill's, or the browser's own), runs the plugin, presents
       host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true });
       canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
       let frames = 0, t0 = performance.now();
@@ -260,7 +261,7 @@
       canvas.width = box.inlineSize; canvas.height = box.blockSize;
     }).observe(canvas, { box: 'device-pixel-content-box' });
     $('m-fps').textContent = 'n/a (no effect)';
-    notice(why + ' The form below is still drawn ' + (extensions ? 'by the polyfill' : 'by the browser') + ' and fully usable.');
+    notice(why + ' The form below is still drawn ' + (mode === 'polyfill' ? 'by the polyfill' : 'by the browser') + ' and fully usable.');
   }
   state.mode = host ? 'effect' : '2d';
   state.host = host;

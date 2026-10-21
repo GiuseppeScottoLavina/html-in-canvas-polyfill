@@ -111,12 +111,14 @@ function installContentAndHandlers(env, ledger, proto) {
 }
 
 /**
- * Extensions and legacy names: framecap / frameCap (the schedule module observes the attribute) and layoutSubtree.
+ * The frame cap extension's IDL property `canvas.frameCap`, reflecting the `framecap` attribute. Also defined in the native modes, where it
+ * bounds the effect frames of an effects host (src/effects/frame-source.js reads the attribute); nothing of the standard surface is touched.
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
- * @param {object} proto
  */
-function installExtensions(env, ledger, proto) {
+export function installFrameCapProperty(env, ledger) {
+  const proto = globalsOf(env).HTMLCanvasElement.prototype;
+  if (Object.prototype.hasOwnProperty.call(proto, EXT.FRAME_CAP_PROP)) return;
   defineAccessor(ledger, proto, EXT.FRAME_CAP_PROP,
     /** @this {HTMLCanvasElement} */ function () {
       return parseFrameCap(brand(env, this).getAttribute(EXT.FRAME_CAP_ATTR), env.options.defaultFrameCap);
@@ -124,6 +126,16 @@ function installExtensions(env, ledger, proto) {
     /** @this {HTMLCanvasElement} */ function (v) {
       brand(env, this).setAttribute(EXT.FRAME_CAP_ATTR, String(frameCapFromIdl(v)));
     });
+}
+
+/**
+ * Extensions and legacy names: framecap / frameCap (the schedule module observes the attribute) and layoutSubtree.
+ * @param {HicEnv} env
+ * @param {PatchLedger} ledger
+ * @param {object} proto
+ */
+function installExtensions(env, ledger, proto) {
+  installFrameCapProperty(env, ledger);
   if (!env.options.legacyNames) return;
   defineAccessor(ledger, proto, 'layoutSubtree',
     /** @this {HTMLCanvasElement} */ function () { return brand(env, this).hasAttribute('layoutsubtree'); },
