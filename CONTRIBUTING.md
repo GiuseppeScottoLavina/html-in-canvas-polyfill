@@ -16,7 +16,9 @@ npm run test:pages       # the GitHub Pages site under /html-in-canvas-polyfill/
 npm run demo             # http://127.0.0.1:8765/examples/
 ```
 
-`npm test` and `npm run test:examples` must pass before a pull request. CI runs `npm test`, the build, the bundle check and the package contents on Linux; `test:examples`, `test:plugins` and `test:pages` need WebGPU in headless Chrome for the effect checks and run locally.
+`npm test` and `npm run test:examples` must pass before a pull request. CI runs `npm test`, the build, the bundle check, the platform probe (`node test/platform/run.mjs`: fonts, form controls, scrollbars, DPR 1.25 and 1.5 and the text selection against native pixels) and the package contents on Linux (Ubuntu 24.04) and on Windows (Windows Server 2025), in headless Chrome without a GPU (the WebGPU tests report `SKIPPED: no WebGPU` there); `test:examples`, `test:plugins` and `test:pages` need WebGPU in headless Chrome for the effect checks and run locally.
+
+The harness finds Chrome (stable or Canary) where the platform installs it (macOS, Windows, Linux); `--chrome=<path>` or the environment variable `HIC_CHROME_PATH` points it at another executable. What CI does not cover on Windows: the headed browser gates, a GPU, ClearType (LCD) text in the canvas comparisons, a real display scale, Edge, and Windows 10.
 
 ## Browser gates
 
@@ -30,7 +32,7 @@ npm run test:xbrowser    # Firefox and Safari through WebDriver (quit Safari fir
 npm run test:frameworks  # React, Vue, Svelte and Lit apps (run `npm install` in test/frameworks once)
 ```
 
-If you cannot run them, say so in the pull request. The harness launches its own browsers with throwaway profiles under `.profiles/` and writes results to `.scratch/` (both git-ignored); it never touches a browser it did not start.
+If you cannot run them, say so in the pull request. The harness launches its own browsers with throwaway profiles under `.profiles/` (under the OS temp directory on Windows) and writes results to `.scratch/` (both git-ignored); it never touches a browser it did not start.
 
 ## Rules the codebase keeps
 

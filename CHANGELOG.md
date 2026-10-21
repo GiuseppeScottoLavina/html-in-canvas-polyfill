@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- CI runs on Windows too (Windows Server 2025, headless Chrome stable, no GPU): repo checks, types, the Node and headless-Chrome unit tests with the runner's self-test, the build (which must reproduce the bundle sizes recorded in `docs/BUNDLES.md`), the bundle check, the platform probe and the package contents, on an LF checkout.
+- A platform probe, `node test/platform/run.mjs` (G-platform, `docs/TEST-PLAN.md` 2.11), run in CI on Linux and Windows: the platform's fonts, every F6 form control, unstyled scrollers with the platform's own bars (fixture F7) at DPR 1, 1.25 and 1.5, the form example at DPR 1.25 and 1.5, and the text-selection oracle, each against native pixels of the same browser with a positive control. Gaps it measured are listed by platform and printed as KNOWN RED.
+- The test harness finds Chrome where macOS, Windows or Linux install it; `--chrome=<path>` (now also for `scripts/check-bundle.mjs`) or `HIC_CHROME_PATH` points it elsewhere. On Windows it finds and stops the processes of the browsers it launched, and keeps their profiles under the OS temp directory.
+
+### Known limitations
+
+- Measured by the platform probe (Chrome 155 on Linux, and on macOS with classic scrollbars): an unsized `<textarea>` or listbox `<select>` is drawn about 15 css px narrower than it is laid out when the platform shows classic scrollbars (Chrome counts the bar thickness in their intrinsic width, the snapshot has no classic bars), so the controls after it reflow in the canvas; and the classic bars Chrome paints on Linux and Windows (Fluent: arrow buttons, a dark look) are drawn in the macOS legacy look. Row `classic-scrollbars` of `docs/SUPPORT-MATRIX.md`.
+
 ## [0.1.0-preview.3] - 2026-10-21
 
 A fix release for the effect plugins.
