@@ -72,7 +72,8 @@ const LIMITS = {
   //   (SnapshotVersion.blend): WPT css-blend-mode-over-content, css-blend-mode-over-both
   // 307.75 -> 311 KB, gzip 107 -> 108.25 KB (+3,123 / +1,183 bytes, 2026-10-22, measured 310,819 / 108,118): an ElementImage posted to a dedicated Worker (the page side:
   //   api/worker-transfer.js, worker-wire.js; the worker side is its own bundle): 21 WPT subtests (offscreen/*-worker, draw-element-image-different-canvas)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 311 * KB, gzip: 108.25 * KB },
+  // 311 -> 311.25 KB (+243 bytes, 2026-10-22, measured 311,062 / 108,197): the text-decoration and text-shadow of an author ::selection rule on selected page text
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 311.25 * KB, gzip: 108.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
