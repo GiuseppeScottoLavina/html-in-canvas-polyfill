@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.4] - 2026-10-21
+
+Windows becomes a tested platform, a field test page lets anyone check the polyfill on their own machine, and classic scrollbars and fractional device pixel ratios are drawn like the browser draws them.
+
 ### Added
 
 - CI runs on Windows too (Windows Server 2025, headless Chrome stable, no GPU): repo checks, types, the Node and headless-Chrome unit tests with the runner's self-test, the build (which must reproduce the bundle sizes recorded in `docs/BUNDLES.md`), the bundle check, the platform probe and the package contents, on an LF checkout.
@@ -84,7 +88,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.3...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.4...HEAD
+[0.1.0-preview.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.3...v0.1.0-preview.4
 [0.1.0-preview.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.2...v0.1.0-preview.3
 [0.1.0-preview.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.1...v0.1.0-preview.2
 [0.1.0-preview.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/releases/tag/v0.1.0-preview.1
