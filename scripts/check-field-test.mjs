@@ -39,7 +39,8 @@ mkdirSync(outDir, { recursive: true });
 /** @type {Array<{run: string, check: string, where: string}>} */
 const KNOWN_RED = [
   // empty: the scroll box at a device pixel ratio of 1.25 (3.6-8 % of its pixels) was a canvas grid rounded from a content box that is not a whole number of device
-  // pixels (210.5 device px high, a grid of 211), and the default-size draw stretched the snapshot to that grid by a hair; fixed in src/api/draw-math.js snapDefaultSize.
+  // pixels (210.5 device px high, a grid of 211), rasterised at the grid's scale and stretched to it by a hair; fixed in src/snapshot/store/surfaces.js gridRasterScale
+  // and src/api/draw-math.js snapDefaultSize.
 ];
 
 /** @typedef {{name: string, ok: boolean, known?: string, detail?: unknown}} Check */

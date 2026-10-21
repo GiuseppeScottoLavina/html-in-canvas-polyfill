@@ -97,6 +97,22 @@ export function forkSurface(surface) {
 }
 
 /**
+ * PURE. The scale a canvas grid asks the snapshots to be rasterised at: the device pixel ratio when the grid is the content box in device pixels to within one pixel
+ * on both axes, else the grid's x scale. The ResizeObserver device-pixel-content-box pattern rounds a content box that is not a whole number of device pixels (a 1 px
+ * border is 0.8 css px at DPR 1.25: a 168.4 css px box is 210.5 device px, a grid of 211): rasterised at the grid's 1.25297 instead of the page's 1.25, every glyph sat
+ * up to half a pixel from where the page sets it, and drawn at the other axis' scale the tile was resampled by a hair (both blur text: 7.7 % of a scroll box's pixels
+ * over 16 in the field test at DPR 1.25). Native draws such a grid as the page does: Chrome Canary 158 on a 312.4 x 184.4 css px box at DPR 1.25 (a 391 x 231 grid),
+ * 0 % of the pixels over 16 against the plain page, where a raster at the grid's x scale is 7.3-8.6 %.
+ * @param {{width: number, height: number, gridScaleX: number, gridScaleY: number}} box  content box, css px, and its grid scales
+ * @param {number} dpr
+ * @returns {number}
+ */
+export function gridRasterScale(box, dpr) {
+  const fits = (/** @type {number} */ css, /** @type {number} */ grid) => Math.abs(css * grid - css * dpr) < 1;
+  return dpr > 0 && box.width > 0 && box.height > 0 && box.gridScaleX !== dpr && fits(box.width, box.gridScaleX) && fits(box.height, box.gridScaleY) ? dpr : box.gridScaleX;
+}
+
+/**
  * raster scale = clamp(gridScale, 1, maxDpr), reduced until the surface fits options.maxSurfacePixels AND `usedBytes` of the other surfaces plus this one stay within options.maxTotalSurfaceBytes;
  * `reduced` is the reporting flag (feature surface-size). Throws HicUnsupportedError('surface-size') when even MIN_SCALE does not fit.
  * At DPR 3 one full-canvas drawable (1440x900 css) is 46.7 MB: the total budget, not the per-drawable one, is what bounds 30 drawables.
