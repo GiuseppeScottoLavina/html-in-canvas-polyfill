@@ -374,3 +374,40 @@ test('setState is the only writer: it emits CANVAS_STATE and ignores a no-op', t
   registry.setState(record, 'suspended');
   assert.deepEqual(events, [`state:${record.id}:detached>suspended`]);
 });
+
+test('all() is in shadow-including tree order: a shadow root comes after its host and before the host\'s light children, nested roots included (WPT onpaint-post-tree-order-shadow-dom); compareDocumentPosition alone cannot order different trees', async t => {
+  const host = fixture('<canvas id="before" content="drawable"></canvas><div id="h"><canvas id="light1" content="drawable"></canvas><canvas id="light2" slot="s" content="drawable"></canvas></div><canvas id="after" content="drawable"></canvas>');
+  const shadow = /** @type {HTMLElement} */ (host.querySelector('#h')).attachShadow({ mode: 'open' });
+  shadow.innerHTML = '<slot name="s"><canvas id="fallback" content="drawable"></canvas></slot><div id="inner"></div><canvas id="shadow2" content="drawable"><slot></slot></canvas>';
+  const inner = /** @type {HTMLElement} */ (shadow.querySelector('#inner')).attachShadow({ mode: 'open' });
+  inner.innerHTML = '<canvas id="deep" content="drawable"></canvas>';
+  const { registry, announceRoot } = setup(t);
+  registry.scan(host);
+  announceRoot(shadow);
+  announceRoot(inner);
+  await settle();
+  const name = (/** @type {any} */ r) => r.canvas.id;
+  assert.deepEqual(registry.all().map(name), ['before', 'fallback', 'deep', 'shadow2', 'light1', 'light2', 'after']);
+});
+
+test('a canvas in an OPEN shadow root nobody announced (a declarative root made by the parser) is adopted with its root, which is then observed; a closed one is still refused', async t => {
+  const host = fixture('<div id="o"></div><div id="c"></div>');
+  const open = /** @type {HTMLElement} */ (host.querySelector('#o')).attachShadow({ mode: 'open' });
+  const closed = /** @type {HTMLElement} */ (host.querySelector('#c')).attachShadow({ mode: 'closed' });
+  const inOpen = canvasIn(open.appendChild(document.createElement('div')), '<b></b>');
+  const inClosed = canvasIn(closed.appendChild(document.createElement('div')), '<b></b>');
+  const ctx = setup(t);
+  /** @type {ShadowRoot[]} */
+  const adopted = [];
+  ctx.env.roots.adopt = (/** @type {ShadowRoot} */ root) => { adopted.push(root); ctx.announceRoot(root); };
+  assert.equal(ctx.registry.ensure(inOpen)?.state, 'active', 'managed at once');
+  assert.deepEqual(adopted, [open], 'its root was adopted');
+  assert.equal(ctx.registry.all().filter((r) => r.canvas === inOpen).length, 1, 'one record, not two');
+  const later = document.createElement('canvas');
+  later.setAttribute('content', 'drawable');
+  open.append(later);
+  await settle();
+  assert.equal(ctx.registry.get(later)?.state, 'active', 'the adopted root is observed');
+  assert.equal(ctx.registry.ensure(inClosed), undefined, 'control: a closed root cannot be adopted from its canvas');
+  assert.ok(ctx.reporter.entries().some((e) => e.feature === 'shadow-canvas'));
+});

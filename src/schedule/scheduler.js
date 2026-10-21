@@ -7,6 +7,7 @@ import { BUS, EXT } from '../contracts/events.js';
 import { clampFrameCap, createCapGate, effectiveFps, parseFrameCap } from './frame-cap.js';
 import { createFramePhase } from './frame-phase.js';
 import { createPaintGate } from './paint-gate.js';
+import { shadowIncludingOrder } from '../util/tree-order.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../contracts/types.js').ChangeSet} ChangeSet */
@@ -55,18 +56,11 @@ const LATE_FRAME_FACTOR = 1.5;
 const PUMP_MAIN_THREAD_MS = 4;
 const PUMP_MAIN_THREAD_SHARE = 0.35;
 const PUMP_MAX_IN_FLIGHT = 2;
-const DOCUMENT_POSITION_FOLLOWING = 4;
 /**
  * Window property (symbol) through which the scheduler of a parent document runs the tick of a same-origin child document that has its own install, so the canvases
  * of an iframe inside a drawable paint before the canvases that contain the iframe (reverse shadow-including tree order across frames, WPT onpaint-iframe-post-tree-order).
  */
 const FRAME_TICK = Symbol.for('hic.frame-tick');
-
-/** @param {Node} a @param {Node} b @returns {number} */
-function treeOrder(a, b) {
-  if (a === b) return 0;
-  return a.compareDocumentPosition(b) & DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-}
 
 /** @param {CanvasRecord} record @returns {Entry} */
 function createEntry(record) {
@@ -264,7 +258,7 @@ export function createScheduler(env, store, hooks) {
       }
     }
     const list = [...out];
-    if ((added || entry.batches > 1) && list.length > 1) list.sort(treeOrder);
+    if ((added || entry.batches > 1) && list.length > 1) list.sort(shadowIncludingOrder);
     return list;
   }
 

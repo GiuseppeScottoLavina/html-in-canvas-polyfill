@@ -16,7 +16,8 @@ import { installLayerStyle } from './layer-style.js';
  * walks existing OPEN roots once at creation, emits BUS.ROOT_ADDED for every new root, and hands out one reference-counted LayerStyleHandle per root
  * (anchor names and adopted sheets are tree-scoped, so the layer sheet must live in the same root as the canvas).
  * A canvas whose root is a closed root created before install is refused with feature 'shadow-canvas' (hint: installed.adoptRoot(root)).
- * Declarative shadow roots created by the parser never call attachShadow: whoever discovers one (registry scan) hands it to adopt().
+ * Declarative shadow roots created by the parser never call attachShadow: the document is walked again when it is parsed, and whoever discovers one later (the registry, at
+ * a canvas of an open root nobody announced) hands it to adopt().
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
  * @returns {RootScope}
@@ -58,6 +59,9 @@ export function createRootScope(env, ledger) {
     return root;
   });
   walk(env.document);
+  // declarative shadow roots (<template shadowrootmode>) are attached by the parser without attachShadow: the document is walked again once it is parsed
+  const parsed = () => walk(env.document);
+  if (env.document.readyState === 'loading') env.document.addEventListener('DOMContentLoaded', parsed, { once: true });
 
   return {
     roots() {
@@ -84,6 +88,7 @@ export function createRootScope(env, ledger) {
     },
     dispose() {
       live = false;
+      env.document.removeEventListener('DOMContentLoaded', parsed);
       for (const handle of [...handles]) handle.dispose();
       listeners.clear();
       known.clear();

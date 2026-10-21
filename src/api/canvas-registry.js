@@ -10,6 +10,7 @@
 import { BUS, MARK } from '../contracts/events.js';
 import { refusePopoverCanvas } from './fullscreen-guard.js';
 import { warnLegacyOnce } from './validate.js';
+import { shadowIncludingOrder } from '../util/tree-order.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../contracts/types.js').HicEnv} HicEnv */
@@ -190,13 +191,17 @@ export function createCanvasRegistry(env, createLiveLayer) {
   }
 
   /**
-   * Can a canvas of this scope be managed at all? A shadow root nobody told us about (a closed root created before install) cannot be observed.
+   * Can a canvas of this scope be managed at all? An open shadow root nobody announced (a declarative root created by the parser or by setHTMLUnsafe) is adopted; a closed root
+   * created before install cannot be observed.
    * @param {HTMLCanvasElement} canvas @param {Scope} root @returns {boolean}
    */
   function scopeUsable(canvas, root) {
     if (root.nodeType === 9 || observers.has(root) || !env.options.autoDiscover) return true;
     let known = false;
     try { known = env.roots.roots().includes(root); } catch { /* root scope unavailable: nothing is known */ }
+    if (!known && /** @type {ShadowRoot} */ (root).mode === 'open') {
+      try { env.roots.adopt(/** @type {ShadowRoot} */ (root)); known = env.roots.roots().includes(root); } catch { /* root scope unavailable */ }
+    }
     if (known) { observe(root); return true; }
     if (!failed.has(canvas)) {
       failed.add(canvas);
@@ -242,7 +247,8 @@ export function createCanvasRegistry(env, createLiveLayer) {
       if (!failed.has(canvas)) refusePopover(canvas);
       return false;
     }
-    const rec = record ?? create(canvas);
+    // re-read: adopting the canvas's shadow root above scanned that root, which may have created the record already
+    const rec = records.get(canvas) ?? create(canvas);
     rec.legacy = activation(env, canvas) === 'legacy';
     if (rec.legacy) warnLegacyOnce(env); // also for the attribute in the markup (the DOM-API paths warn in canvas-patch.js; once per install)
     switch (rec.state) {
@@ -323,7 +329,7 @@ export function createCanvasRegistry(env, createLiveLayer) {
     get: (canvas) => records.get(canvas),
     all() {
       const live = [...records.values()].filter((r) => r.state !== 'disposed');
-      return live.sort((a, b) => (a.canvas.compareDocumentPosition(b.canvas) & 4 ? -1 : 1));
+      return live.sort((a, b) => shadowIncludingOrder(a.canvas, b.canvas));
     },
     ownerOfDrawable(el) {
       for (let node = /** @type {Node} */ (el); ;) {

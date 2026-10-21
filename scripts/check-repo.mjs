@@ -86,7 +86,8 @@ if (!docsOnly) {
   // syncEmbedded / ownBox), SVG filters and masks under the native read-back rules (svg-refs.js settleFilterImages, addOutsideMasks).
   // 14400 -> 14575 (2026-10-22, measured 14,556; 14,399 before this step): same-origin frames drawn (snapshot/capture/frame-doc.js) and their documents observed for changes
   // (schedule/observers/mutation-observer.js).
-  if (total > 14575) problems.push(`G-size: core is ${total} code lines (> 14575)`);
+  // 14575 -> 14600 (2026-10-22, measured 14,579; 14,556 before this step): canvases of declarative shadow roots, paint events in shadow-including tree order (util/tree-order.js).
+  if (total > 14600) problems.push(`G-size: core is ${total} code lines (> 14600)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
