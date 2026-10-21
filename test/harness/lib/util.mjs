@@ -1,14 +1,18 @@
 // Shared constants and small pure helpers (no I/O besides path resolution).
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** test/harness */
 export const HARNESS_DIR = resolve(here, '..');
 /** Repository root (two levels above test/harness). */
 export const PROJECT_ROOT = resolve(HARNESS_DIR, '../..');
-/** The ONLY place throwaway Chrome profiles may live. */
-export const PROFILES_DIR = resolve(PROJECT_ROOT, '.profiles');
+/**
+ * The ONLY place throwaway Chrome profiles may live: <repo>/.profiles on macOS and Linux, a directory under the OS temp dir on Windows, where a Chrome that
+ * has just exited (or the virus scanner) can hold profile files open for a moment, and where a profile left behind must not land in the checkout.
+ */
+export const PROFILES_DIR = process.platform === 'win32' ? resolve(tmpdir(), 'hic-live-polyfill-profiles') : resolve(PROJECT_ROOT, '.profiles');
 /** Git-ignored scratch area for traces, screenshots, diff PNGs. */
 export const SCRATCH_DIR = resolve(PROJECT_ROOT, '.scratch');
 

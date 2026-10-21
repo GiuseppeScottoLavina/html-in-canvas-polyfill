@@ -1,5 +1,5 @@
 // G-bundle (docs/TEST-PLAN.md): the built bundles are what they claim to be.
-//   node scripts/check-bundle.mjs [--no-build] [--allow-size] [--skip-browser]
+//   node scripts/check-bundle.mjs [--no-build] [--allow-size] [--skip-browser] [--chrome=stable|canary|<path>]
 //   1. size: core min <= 150 KB (the target), and never above the recorded RATCHET (a regression fails even with --allow-size); every other bundle below its own ceiling;
 //      the five classic bundles also below their gzip budget (level 9). The ceilings and budgets are the measured sizes plus a small margin.
 //   2. static: each IIFE parses as a CLASSIC script (a static import/export or import.meta is a SyntaxError there) and has no dynamic import()
@@ -15,6 +15,7 @@ import { discoverPlugins } from '../plugins/_shared/contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const allowSize = process.argv.includes('--allow-size');
+const chrome = process.argv.find((a) => a.startsWith('--chrome='))?.slice('--chrome='.length) ?? 'stable';
 const KB = 1000; // decimal, as in the 150 KB target
 /**
  * target = the gate threshold; ceiling = the recorded minified size the bundle may not exceed (regression guard); gzip = the recorded gzip (level 9) size it may not exceed.
@@ -148,7 +149,7 @@ if (!process.argv.includes('--skip-browser')) {
   const H = await import(pathToFileURL(join(root, 'test/harness/index.mjs')).href);
   const { FEATURES } = await import(pathToFileURL(join(root, 'src/contracts/features.js')).href);
   const srv = await H.startServer();
-  const browser = await H.launchChrome({ name: 'bundle-check', chrome: 'stable', windowSize: [900, 700], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'] });
+  const browser = await H.launchChrome({ name: 'bundle-check', chrome, windowSize: [900, 700], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'] });
   const results = [];
   try {
     for (const min of [false, true]) {

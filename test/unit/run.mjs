@@ -32,7 +32,9 @@ function discover() {
 }
 
 const files = discover();
-if (opt.list) { for (const f of files) console.log(relative(PROJECT_ROOT, f)); process.exit(0); }
+/** repo-relative with forward slashes on every platform: it is also the URL path the host page imports */
+const relPath = (/** @type {string} */ f) => relative(PROJECT_ROOT, f).split(sep).join('/');
+if (opt.list) { for (const f of files) console.log(relPath(f)); process.exit(0); }
 if (!files.length) { console.error('no test files found'); process.exit(1); }
 
 const say = (/** @type {string} */ s) => { if (!opt.quiet) console.log(s); };
@@ -41,7 +43,7 @@ const trimStack = (/** @type {string} */ s) => s.replace(/http:\/\/127\.0\.0\.1:
 
 /** Runs one file in a fresh tab; never throws for test-level problems. */
 async function runFile(browser, srv, file) {
-  const rel = relative(PROJECT_ROOT, file).split(sep).join('/');
+  const rel = relPath(file);
   const page = await browser.newPage({ reuseFirst: false });
   const res = { rel, tests: [], loadError: null, pageErrors: [], hung: false };
   try {
