@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const out = resolve(root, process.argv.find((a) => a.startsWith('--out='))?.slice(6) ?? '_site');
-const EXAMPLES = ['basic', 'form', 'plugins', 'effect-plugin', 'scroll-and-resize', 'webgl-texture'];
+const EXAMPLES = ['basic', 'form', 'plugins', 'effect-plugin', 'scroll-and-resize', 'webgl-texture', 'field-test'];
 
 const dist = join(root, 'dist');
 const bundles = existsSync(dist) ? readdirSync(dist).filter((f) => /\.iife(\.min)?\.js$/.test(f)) : [];

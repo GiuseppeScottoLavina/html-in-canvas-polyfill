@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML-in-Canvas field test</title>
+<script>
+  // Runs before the polyfill (plain ES5 so that it works in any browser): what the browser offers natively before the polyfill installs,
+  // and every console warning or error of the page (the polyfill reports a refusal with one console.warn).
+  (function () {
+    var boot = window.__fieldTestBoot = { t0: Date.now(), console: [], errors: [], native: {} };
+    try {
+      var c2d = window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype, canvas = window.HTMLCanvasElement && HTMLCanvasElement.prototype;
+      boot.native = {
+        drawElementImage: !!(c2d && 'drawElementImage' in c2d),
+        drawElement: !!(c2d && 'drawElement' in c2d),
+        onpaint: !!(canvas && 'onpaint' in canvas),
+        layoutSubtree: !!(canvas && 'layoutSubtree' in canvas),
+        requestPaint: !!(canvas && 'requestPaint' in canvas),
+        captureElementImage: !!(canvas && 'captureElementImage' in canvas),
+        getElementImageDefaultSize: !!(canvas && 'getElementImageDefaultSize' in canvas),
+        texElementImage2D: !!(window.WebGL2RenderingContext && 'texElementImage2D' in WebGL2RenderingContext.prototype)
+      };
+    } catch (e) { boot.native = { error: String(e) }; }
+    function keep(level, args) {
+      if (boot.console.length >= 60) return;
+      var parts = [];
+      for (var i = 0; i < args.length; i++) { try { parts.push(args[i] instanceof Error ? args[i].name + ': ' + args[i].message : typeof args[i] === 'string' ? args[i] : JSON.stringify(args[i])); } catch (e) { parts.push(String(args[i])); } }
+      boot.console.push({ level: level, t: Date.now() - boot.t0, text: parts.join(' ').slice(0, 500) });
+    }
+    ['warn', 'error'].forEach(function (level) {
+      var original = console[level];
+      console[level] = function () { keep(level, arguments); return original.apply(console, arguments); };
+    });
+    function show(message) {
+      var box = document.getElementById('ft-fatal');
+      if (box) { box.hidden = false; box.lastChild.textContent = message; }
+    }
+    window.addEventListener('error', function (e) {
+      if (boot.errors.length < 30) boot.errors.push({ t: Date.now() - boot.t0, message: String(e.message || e.type).slice(0, 500), source: e.filename ? String(e.filename).replace(/^.*\//, '') + ':' + e.lineno : null });
+      if (!window.__fieldTest) show('The test page could not start in this browser (' + (e.message || 'script error') + '). Please tell us the browser name and version: ' + navigator.userAgent);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      if (boot.errors.length < 30) boot.errors.push({ t: Date.now() - boot.t0, message: 'unhandled rejection: ' + String(e.reason && e.reason.message || e.reason).slice(0, 500) });
+    });
+    window.addEventListener('load', function () {
+      setTimeout(function () { if (!window.__fieldTest) show('The test page could not start in this browser. Please tell us the browser name and version: ' + navigator.userAgent); }, 4000);
+    });
+  })();
+</script>
+<script src="../../dist/hic-live-polyfill.iife.min.js"></script>
+<!-- Firefox / Safari: form controls are drawn by the engines bundle (docs/BUNDLES.md) -->
+<script src="../../dist/hic-live-engines.iife.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1b2330; --muted: #566175; --line: #c9d0db; --bg: #f4f6fa; --card: #fff; --accent: #2f6df6;
+    --pass: #1d7a4a; --warn: #a15c00; --fail: #c7283f;
+    --w: 340px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; margin: .5rem 0; }
+  h2 { font-size: 1.15rem; margin: 0 0 .4rem; }
+  a { color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+  .progress { display: flex; gap: 4px; margin: 8px 0 4px; }
+  .progress span { flex: 1; height: 6px; border-radius: 3px; background: #dde2ea; }
+  .progress span.done { background: var(--pass); }
+  .progress span.skipped { background: #b9c0cc; }
+  .progress span.current { background: var(--accent); }
+  .step-meta { font-size: .85rem; color: var(--muted); }
+  .instructions { font-size: 1.05rem; margin: .4rem 0 .8rem; }
+  .instructions strong { background: #fff3c4; padding: 0 .2em; border-radius: 3px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button.ft { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; min-height: 44px; }
+  button.ft.secondary { background: #fff; color: var(--accent); }
+  button.ft:disabled { opacity: .45; cursor: default; }
+  /* the status and the meter keep their height, so that the test area below never moves while it is measured */
+  .status { margin-top: .6rem; font-size: .95rem; color: var(--muted); height: 3em; overflow: hidden; }
+  .meter[hidden] { display: block; visibility: hidden; }
+  .meter { height: 10px; border-radius: 5px; background: #e5e9f0; overflow: hidden; margin-top: .5rem; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .privacy { font-size: .9rem; }
+  .privacy li { margin: .15rem 0; }
+  #ft-fatal { border-color: var(--fail); color: var(--fail); }
+  .results { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  .results td, .results th { text-align: left; padding: 4px 6px; border-top: 1px solid #e5e9f0; vertical-align: top; }
+  .v-pass { color: var(--pass); font-weight: 600; }
+  .v-warn { color: var(--warn); font-weight: 600; }
+  .v-fail { color: var(--fail); font-weight: 600; }
+  .v-skipped, .v-n\/a, .v-info { color: var(--muted); }
+  footer { font-size: .85rem; color: var(--muted); margin: 24px 0 40px; }
+  footer button { font: inherit; background: none; border: 0; color: var(--accent); text-decoration: underline; cursor: pointer; padding: 0; }
+  pre.selfcheck { white-space: pre-wrap; font-size: .8rem; background: #f0f2f6; padding: 8px; border-radius: 6px; }
+
+  /* The test area: each pair shows the same HTML drawn into a canvas (A) and as the plain page (B). */
+  .pair { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0 16px; }
+  .pair figure { margin: 0; }
+  .pair figcaption { font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+  .frame { display: block; width: var(--w); border: 1px solid var(--line); background: #fff; }
+  canvas.frame { padding: 0; }
+  .twin { overflow: hidden; }
+  /* A hidden copy of box B exactly over box A: shown only for the moment its picture is taken, so that both pictures come from the same
+     screen pixels (a capture that is scaled by a fraction of a pixel then treats both alike). */
+  .slot { position: relative; width: var(--w); }
+  .ghost { position: absolute; left: 0; top: 0; z-index: 1; visibility: hidden; pointer-events: none; }
+  .pair .frame.sample { height: 236px; }
+  .pair .frame.scroll { height: 170px; }
+  .pair .frame.effect { height: 200px; }
+  #ft-effect-pair[hidden] { display: none; }
+
+  /* The sample content. It is styled only by classes so that A and B get identical rules. */
+  .ft-sample { width: calc(var(--w) - 2px); height: 234px; padding: 12px 14px; font: 14px/1.4 system-ui, sans-serif; color: #1b2330; background: #fff; overflow: hidden; }
+  .ft-sample h3 { margin: 0 0 4px; font-size: 17px; }
+  .ft-sample p { margin: 0 0 8px; }
+  .ft-sample label.field { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: #3a4659; }
+  .ft-sample input[type=text] { display: block; width: 100%; margin-top: 2px; padding: 5px 8px; font: 14px/1.3 system-ui, sans-serif; color: #1b2330; border: 1px solid #aeb8c8; border-radius: 6px; background: #fbfcfe; }
+  .ft-sample input[type=text]:focus { outline: 2px solid #2f6df6; outline-offset: 0; border-color: #2f6df6; }
+  .ft-sample .row { display: flex; align-items: center; gap: 14px; font-size: 13px; }
+  .ft-sample .row button { font: 600 13px system-ui, sans-serif; padding: 5px 12px; color: #fff; background: #2f6df6; border: 0; border-radius: 6px; }
+  .ft-nocaret input { caret-color: transparent; }
+  .ft-scroll-sample { width: calc(var(--w) - 2px); height: 168px; padding: 8px; font: 13px/1.5 system-ui, sans-serif; color: #1b2330; background: #fff; }
+  .ft-scroller { height: 152px; overflow: auto; background: #e3e6eb; border-radius: 6px; padding: 4px 10px; }
+  .ft-scroller div:nth-child(odd) { color: #24456e; }
+  .ft-effect-sample { width: calc(var(--w) - 2px); height: 198px; padding: 16px; display: grid; gap: 8px; align-content: start; font: 14px/1.4 system-ui, sans-serif; color: #e8f6ff; background: linear-gradient(150deg, #0b2440, #23164a); }
+  .ft-effect-sample h3 { margin: 0; font-size: 18px; }
+  .ft-effect-sample input { width: 220px; padding: 4px 6px; font: inherit; }
+
+  /* Measurement aids: a full-page calibration card shown for a moment, and the frame marker in a corner. */
+  #ft-calib { position: fixed; inset: 0; z-index: 2147483646; background: #fff; pointer-events: none; }
+  #ft-calib i { position: absolute; width: 16px; height: 16px; background: #000; }
+  #ft-sync { position: fixed; left: 0; bottom: 0; width: 8px; height: 8px; z-index: 2147483647; pointer-events: none; background: #000; }
+  #ft-video { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  @media (max-width: 420px) {
+    :root { --w: 300px; }
+    main { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>HTML-in-Canvas field test</h1>
+  <p class="step-meta">This page checks how well the HTML-in-Canvas polyfill works on your device. It takes about 5 minutes.</p>
+
+  <div class="card" id="ft-fatal" hidden><strong>Something went wrong.</strong> <span></span></div>
+  <noscript><div class="card"><strong>This test needs JavaScript.</strong> Please enable JavaScript for this page and reload it.</div></noscript>
+
+  <section class="card" id="ft-step" aria-live="polite">
+    <div class="progress" id="ft-progress" aria-hidden="true"></div>
+    <p class="step-meta" id="ft-step-meta">Loading the test.</p>
+    <h2 id="ft-step-title">Please wait a moment</h2>
+    <div class="instructions" id="ft-step-text"></div>
+    <div class="buttons" id="ft-step-buttons"></div>
+    <div class="meter" id="ft-meter" hidden><i></i></div>
+    <p class="status" id="ft-status"></p>
+  </section>
+
+  <section id="ft-area" aria-label="Test area">
+    <div class="pair" id="ft-sample-pair">
+      <figure><figcaption>Box A: drawn into a canvas</figcaption>
+        <div class="slot"><canvas id="ft-canvas-sample" class="frame sample" content="drawable"></canvas><div id="ft-ghost-sample" class="frame sample twin ghost" aria-hidden="true"></div></div></figure>
+      <figure><figcaption>Box B: the same HTML as a plain page</figcaption>
+        <div id="ft-twin-sample" class="frame sample twin"></div></figure>
+    </div>
+    <div class="pair" id="ft-scroll-pair">
+      <figure><figcaption>Box A: drawn into a canvas</figcaption>
+        <div class="slot"><canvas id="ft-canvas-scroll" class="frame scroll" content="drawable"></canvas><div id="ft-ghost-scroll" class="frame scroll twin ghost" aria-hidden="true"></div></div></figure>
+      <figure><figcaption>Box B: the same HTML as a plain page</figcaption>
+        <div id="ft-twin-scroll" class="frame scroll twin"></div></figure>
+    </div>
+    <div class="pair" id="ft-effect-pair" hidden>
+      <figure><figcaption>An effect plugin (water) on live HTML</figcaption>
+        <canvas id="ft-canvas-effect" class="frame effect" content="drawable"></canvas></figure>
+    </div>
+  </section>
+
+  <footer>
+    <p>Source and documentation: <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">github.com/GiuseppeScottoLavina/html-in-canvas-polyfill</a>.
+      Nothing on this page is sent anywhere.</p>
+    <p><button type="button" id="ft-selfcheck-button">Self-check (for developers)</button></p>
+    <pre class="selfcheck" id="ft-selfcheck" hidden></pre>
+  </footer>
+</main>
+
+<template id="ft-sample-template">
+  <div class="ft-sample">
+    <h3>Field test sample</h3>
+    <p class="ft-text">Static text with the word <span class="ft-word">Canvas</span>, <b>bold</b>, <i>italic</i> and <u>underlined</u> words.</p>
+    <label class="field">Text field<input class="ft-input" type="text" value="A Canvas word in a field" spellcheck="false" autocomplete="off"></label>
+    <label class="field">Typing test<input class="ft-type" type="text" placeholder="Type here" spellcheck="false" autocomplete="off"></label>
+    <div class="row"><label><input type="checkbox" checked> Checkbox</label><label><input type="radio" checked> Radio</label><button type="button" tabindex="-1">Button</button></div>
+  </div>
+</template>
+<template id="ft-scroll-template">
+  <div class="ft-scroll-sample"><div class="ft-scroller"></div></div>
+</template>
+<template id="ft-effect-template">
+  <form class="ft-effect-sample" onsubmit="return false">
+    <h3>Water ripples</h3>
+    <label>Name <input value="Ada" spellcheck="false" autocomplete="off"></label>
+    <span>Move the pointer over this box.</span>
+  </form>
+</template>
+
+<script src="field-test.js"></script>
+</body>
+</html>

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- A field test page on the live demo ([examples/field-test/](examples/field-test/), [docs/guides/FIELD-TEST.md](docs/guides/FIELD-TEST.md)): a guided five-minute check that a person without technical knowledge runs on a machine we do not have. It records the environment (browser and platform versions, pixel ratio, colour settings, system colours, scrollbars, fonts, GPU adapter, the polyfill's install result and report), compares the canvas with the same HTML as a plain page through a capture of the tab where the browser allows it (Chrome and Edge on desktop), measures typing latency, inner-scroll update rates, the water effect and a 125 % zoom, and downloads one JSON report with small PNG crops. `npm run test:field` runs it end to end in headless Chrome with a deliberately broken canvas as the positive control; `scripts/field-report.mjs` prints a report and extracts its crops; a "Field test report" issue template takes the file.
+
 ## [0.1.0-preview.3] - 2026-10-21
 
 A fix release for the effect plugins.

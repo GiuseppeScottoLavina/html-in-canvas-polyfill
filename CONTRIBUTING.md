@@ -13,10 +13,15 @@ npm test                 # repo checks, type check, unit tests (Node and headles
 npm run test:examples    # every example and the code printed in the docs, then every plugin's gallery e2e, in headless Chrome
 npm run test:plugins     # only the plugin gallery e2e tests (plugins/*/test/*.e2e.mjs), one headless Chrome at a time
 npm run test:pages       # the GitHub Pages site under /html-in-canvas-polyfill/: every page, the gallery with each plugin
+npm run test:field       # the field test page end to end with a tab capture, and its positive control
 npm run demo             # http://127.0.0.1:8765/examples/
 ```
 
 `npm test` and `npm run test:examples` must pass before a pull request. CI runs `npm test`, the build, the bundle check and the package contents on Linux; `test:examples`, `test:plugins` and `test:pages` need WebGPU in headless Chrome for the effect checks and run locally.
+
+## Asking someone to test on their machine
+
+Problems that depend on the platform (Windows text rendering and selection colours, classic scrollbars, a GPU, a fractional zoom) are best seen on that platform. The [field test](docs/guides/FIELD-TEST.md) is a page of the live demo that anyone can run in about five minutes, with no technical knowledge: send them the link and the short message in that guide, and read the report file they send back with `node scripts/field-report.mjs <file> --crops=<dir>`. `npm run test:field` checks the page end to end in headless Chrome, with a deliberately broken canvas as the positive control.
 
 ## Browser gates
 
