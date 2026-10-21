@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Known limitations
 
 - Measured by the platform probe (Chrome 155 on Linux, and on macOS with classic scrollbars): an unsized `<textarea>` or listbox `<select>` is drawn about 15 css px narrower than it is laid out when the platform shows classic scrollbars (Chrome counts the bar thickness in their intrinsic width, the snapshot has no classic bars), so the controls after it reflow in the canvas; and the classic bars Chrome paints on Linux and Windows (Fluent: arrow buttons, a dark look) are drawn in the macOS legacy look. Row `classic-scrollbars` of `docs/SUPPORT-MATRIX.md`.
+- Measured on Windows by the platform probe (headless Chrome 156 on the CI runner): a text selection without an author `::selection` rule is painted by Chrome in its default rgba(0, 65, 198, 0.8), while the polyfill draws the system colour Highlight (#0078d4 there), so the drawn selection is a different blue; the selected glyphs (HighlightText) and author rules match. A headed Windows Chrome was not measured. Row `caret-selection`.
 
 ## [0.1.0-preview.3] - 2026-10-21
 
