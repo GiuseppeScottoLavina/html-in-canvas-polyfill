@@ -136,10 +136,16 @@ jobs:
           chrome-version: stable
 
       - name: Make Chrome reachable for the test harness
+        # Chrome's sandboxed processes run as AppContainer / restricted tokens, which need read and execute access to the browser's folder; the tool cache
+        # does not grant it ("Sandbox cannot access executable ... Access is denied", navigations aborted at random). Grant it to ALL APPLICATION PACKAGES
+        # and ALL RESTRICTED APPLICATION PACKAGES, as an installed Chrome has, instead of turning the sandbox off.
         shell: pwsh
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
+          $dir = Split-Path -Parent $env:CHROME_PATH
+          icacls $dir /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /Q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "HIC_CHROME_PATH=$env:CHROME_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           (Get-Item $env:CHROME_PATH).VersionInfo.ProductVersion
 
