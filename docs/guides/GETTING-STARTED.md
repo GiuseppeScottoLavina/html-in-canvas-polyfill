@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.5`, a preview published under the npm dist-tag `next`, for desktop Chrome, Firefox 155+ and Safari 27+. Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.5`, a preview published under the npm dist-tag `next`, for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on simulators and emulators only). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 ## 1. Run the examples (about 3 minutes)
 
@@ -19,7 +19,7 @@ Open `http://127.0.0.1:8765/examples/` in a supported browser and try, in this o
 
 `npm run demo` serves only `/examples` and `/dist` (everything else is 403). To try your own page, put it in a new folder such as `examples/mine/index.html` and load `../../dist/hic-live-polyfill.iife.min.js`, or open the file directly from disk (`file://` works; the built files make no network request). The snippets in this guide say `dist/...`, which is right only for a page next to `dist/`.
 
-If an example says the polyfill is missing, `dist/` was not built. If the page shows `hic-live-polyfill not installed: ...`, the browser is not supported (section 5).
+If an example says the polyfill is missing, `dist/` was not built. If the `form` or `scroll-and-resize` example shows `hic-live-polyfill not installed: ...`, the browser is not supported (section 5).
 
 ## 2. Your first canvas with a script tag
 
@@ -72,7 +72,7 @@ console.log(hic.mode);                            // 'polyfill' | 'native' | 'na
 
 `install()` throws a `HicUnsupportedError` (`feature: 'browser'`, or `'partial-native'` for a native implementation without its core) in a browser the polyfill refuses; it never throws where the browser's own API is usable. Catch it, or pass `{ onUnsupportedBrowser: 'warn' }` to log once and install nothing. The classic script never throws on refusal: it logs one `console.warn` and sets `window.__HIC__ = { error }`.
 
-Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'` (an example plugin, `plugins/README.md`), `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-156 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
+Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'` (an example plugin, `plugins/README.md`), `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-155 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
 
 ## 4. Adding the effects
 
@@ -92,7 +92,7 @@ const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.2
 await water.trigger('drop', { point: { x: 120, y: 80 } });   // an action of the plugin: resolves 'calm' once the ripple has died out
 ```
 
-The source element (`form` here) must have exactly the size of the canvas content box (for example `width` and `height` in CSS on both, `box-sizing: border-box`). The host stretches the source over the whole canvas and maps pointer input back through that stretch, so a smaller or larger source is drawn distorted and clicks land beside what the user sees; `createHost` prints one `console.warn` with both sizes when they differ by more than 1 CSS pixel. The complete page is in [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) section 7.
+The source element (`form` here) must have exactly the size of the canvas content box (for example `width` and `height` in CSS on both, `box-sizing: border-box`). The host stretches the source over the whole canvas and maps pointer input back through that stretch, so a smaller or larger source is drawn distorted and clicks land beside what the user sees; `createHost` prints one `console.warn` with both sizes when they differ by more than 1 CSS pixel. The complete page is in [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) section 9.
 
 `createHost` rejects with `HicUnsupportedError('effect-plugins')` when there is no WebGPU; keep a 2D `drawElementImage` fallback and decide before any `getContext` call (`examples/effect-plugin/index.html` does, in about 30 lines that also set the frame cap and run a transition with `handle.trigger`). All the plugins over one form, with their actions: `examples/plugins/`. Writing your own plugin: [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) and [`plugins/_template/`](../../plugins/_template/).
 
@@ -100,14 +100,14 @@ The source element (`form` here) must have exactly the size of the canvas conten
 
 | browser | what the polyfill does | source |
 |---|---|---|
-| desktop Chrome without the native feature (154 measured) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
+| desktop Chrome without the native feature (154 and 155 measured; 156 headless in CI) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14 and 158.0.8112.1 on 2026-10-22, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
 | Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Verified on iOS Simulator / Android Emulator only | MOBILE |
 | older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
-Measured on macOS: Chrome 154 and 155, Chrome Canary 157 (native), Firefox 155.0.1 and Safari 27.0.1. Other Chromium browsers are expected to work and are unverified; nothing was measured on Windows or Linux.
+Measured on macOS: Chrome 154 and 155, Chrome Canary 157 and 158 (native), Firefox 155.0.1 and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe). Other Chromium browsers are expected to work and are unverified.
 
 ## 6. When something looks wrong
 

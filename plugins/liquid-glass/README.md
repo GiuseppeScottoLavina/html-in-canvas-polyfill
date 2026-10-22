@@ -61,7 +61,7 @@ GPU time, measured on 2026-10-14 (Apple M1 Max, headless Chrome, 2200 x 1240 tar
 ## Limitations
 
 - Dispersion moves red and blue only; the green channel is the one the mapper describes, so a click on a red or blue fringe goes where green shows.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites (the native suite runs water, CRT and disintegrate); expected to behave the same, as the plugin uses only the plugin interface.
 
 ## Files and tests
 

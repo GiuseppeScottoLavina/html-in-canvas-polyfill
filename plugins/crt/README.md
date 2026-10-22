@@ -63,7 +63,7 @@ GPU time, measured on 2026-10-14 (Apple M1 Max, headless Chrome 155, 2200 x 1240
 
 - The bezel and the rounded corners take no input (by design: they show no element).
 - With `flicker > 0` the effect renders at the frame cap all the time.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); measured there on Chrome Canary 158 with `--enable-blink-features=CanvasDrawElement`: trusted clicks through the barrel at curvature 1 reach the field the user sees (gate G-native-interposer, `npm run test:native-effects`).
 
 ## Files and tests
 

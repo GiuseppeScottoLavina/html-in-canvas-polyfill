@@ -59,7 +59,7 @@ GPU time, measured on 2026-10-14 (Apple M1 Max, headless Chrome, 2200 x 1240 tar
 
 - The space beside the tilted card takes no input (by design: it shows no element); the card is drawn at `scale` of the canvas.
 - With `idle: true` the card sways, so the host renders at the frame cap while the pointer is away.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites (the native suite runs water, CRT and disintegrate); expected to behave the same, as the plugin uses only the plugin interface.
 
 ## Files and tests
 

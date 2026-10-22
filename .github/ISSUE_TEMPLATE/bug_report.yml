@@ -20,14 +20,14 @@ body:
     attributes:
       label: Browser and version
       description: Exact version from the browser's About page, plus any flags (for example `--enable-blink-features=CanvasDrawElement`).
-      placeholder: Chrome 154.0.8037.98
+      placeholder: Chrome 156.0.8078.47
     validations:
       required: true
   - type: input
     id: os
     attributes:
       label: OS, display and device pixel ratio
-      placeholder: macOS 26.1, 120 Hz, devicePixelRatio 2
+      placeholder: macOS 27.0.1, 120 Hz, devicePixelRatio 2
     validations:
       required: true
   - type: textarea

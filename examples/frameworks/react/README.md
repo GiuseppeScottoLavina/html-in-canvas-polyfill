@@ -20,4 +20,4 @@ node test/frameworks/build.mjs                  # builds examples/frameworks/*/d
 npm run demo                                    # then open http://127.0.0.1:8765/examples/frameworks/react/
 ```
 
-`?tick=0` stops the timer, `?mode=ref` renders the plain-DOM twin used by the pixel oracle. Tested by `npm run test:frameworks` (headless Chrome 154, results in `.scratch/results/`); see [docs/guides/FRAMEWORKS.md](../../../docs/guides/FRAMEWORKS.md) for what was verified.
+`?tick=0` stops the timer, `?mode=ref` renders the plain-DOM twin used by the pixel oracle. Tested by `npm run test:frameworks` (headless Chrome, results in `.scratch/results/`); see [docs/guides/FRAMEWORKS.md](../../../docs/guides/FRAMEWORKS.md) for what was verified.

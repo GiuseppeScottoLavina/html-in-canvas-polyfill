@@ -9,7 +9,7 @@ ResizeObserver / microtasks, and accessibility-tree facts, not timings; some wer
 **[E4]** = the taint matrix (which 2D and GPU sinks an SVG `foreignObject` image taints, and whether workers rasterise it). **[E5]** = measurements of the prototype that
 preceded this implementation. **[E6]** = the native baseline (Chrome 154 with the flag, Canary 157). **[review-b]** = timing probes of a design review (taken under machine
 load above threshold, used as ratios only). **[spec]** = the WICG explainer and the HTML Standard pull request. The raw probe data is not part of this repository.
-Anything unlabeled is a design decision, not a measurement.
+Anything unlabeled is a design decision, not a measurement. Gate ids (`G-...`) are the rows of `docs/TEST-PLAN.md`: a row whose status there is `to write` is planned, not implemented (the browser gates that exist are listed in its sections 2.8 to 2.11).
 
 ## 1. Layers and the one-sentence model
 
@@ -247,7 +247,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
 - `changedElements`: `ChangeSet.changed` (tree order, nested drawables are separate entries; deviation `paint-order`). A removed nested drawable lists its drawable ancestor, a removed non-nested one lists nothing (WPT onpaint-remove-drawable-element). Computed from the store, i.e. from DAMAGE, not by diffing pixels: a drawable
   changes when its committed version advanced. Damage that produces identical pixels still advances the version (no pixel compare; spec allows spurious paints).
 - Coalescing: damage between ticks is unioned per drawable; one `paint` per canvas per frame; `requestPaint` is idempotent until fired.
-- FPS cap: `capGate` per canvas, `F = frameCap` (`framecap`, else `defaultFrameCap`), build rate `min(F, maxSnapshotFps)` (an in-frame resize / DPR re-raster is held by `F` only). `due` is true when `now >= nextDue - tolerance`
+- Frame cap: `capGate` per canvas, `F = frameCap` (`framecap`, else `defaultFrameCap`), build rate `min(F, maxSnapshotFps)` (an in-frame resize / DPR re-raster is held by `F` only). `due` is true when `now >= nextDue - tolerance`
   and then `nextDue += 1000/F` (resynchronised if more than 2 intervals late). A cap lower than the display rate therefore skips whole ticks. `interactionFloorFps` (default 0) lets input damage
   use `max(F, floor)`.
 - Hidden tab: rAF stops, so does everything; on `visibilitychange` visible a full-damage + `force` is queued (gate G-hidden-visible).
@@ -400,7 +400,7 @@ and a parent's `clip-path` is not applied to hit testing while it has geometry-a
 3D: `matrix3d` with a perspective w component, backface and behind-the-camera behaviour are NOT covered by [probe2] (its 9 cases are 2D); G-geometry-hit adds them with their own controls.
 Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/200 and the canvas transforms translate, scale(1.5,2) and rotate(25deg), the live element's bounding box equals the box of `D(border box)` with max error 0.000 px, `elementFromPoint` at the drawn centre and at an inner point hits the element in 9/9 cases, an element without `data-hic-hit` falls through to the canvas, and `clip-path: inset()` removes the clipped half from hit testing (kept half hits the element, dropped half hits the canvas). The full gate is G-geometry-hit (trusted clicks, with a positive control).
 
-### ADR-G: effect host, plugin ABI v2, FPS cap, input interposer
+### ADR-G: effect host, plugin ABI v2, frame cap, input interposer
 
 - **Host** (`effects/effect-host.js`, `gpu-presenter.js`): `createHost(canvas, source, options)` acquires adapter/device once per host, `canvas.getContext('webgpu')`, a source texture (`rgba8unorm`, sized like the surface at presentation scale) and a
   destination (the canvas texture or an intermediate for multi-plugin chains). Per due frame: `SourceProvider.upload()` only if the source version advanced (partial: the dirty rect of the committed tile -> `copyExternalImageToTexture` of the
@@ -411,14 +411,14 @@ Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/2
   one render per frame, the cap's phase rules), the stretch and the pointer remap from `native-geometry.js` / `native-interposer.js`: the browser hit-tests the source where `updateElementGeometry` puts it, so the interposer shifts that
   geometry under the pointer and the browser's own hover, focus, caret and selection follow the element the user sees (API-CONTRACT 7.6; gates G-native-effects and G-native-interposer on Chrome Canary).
 - **Plugin ABI v2** (`plugin-abi.js`): types in `contracts/types.js`; any other `apiVersion` is refused (API-CONTRACT 7.2). Plugin errors in `create`/`render` are caught per plugin: `effecterror` event + `report().errors`, the plugin is disabled, the last presented frame stays (never blank).
-- **FPS cap**: the host does not own timers. Its hook receives `due`; it renders only when `due` (and always at least once after a source change when due). So the cap bounds effect frames, paint events and builds with the same gate (ADR-C).
+- **Frame cap**: the host does not own timers. Its hook receives `due`; it renders only when `due` (and always at least once after a source change when due). So the cap bounds effect frames, paint events and builds with the same gate (ADR-C).
 - **Input interposer** (`interposer.js` + `input-mapper.js`): capture listeners on the layer (`pointermove/down/up/click`, `wheel` untouched). The mapper chain composes `captureInputMapper(frame)` results of the spatial plugins of the frames actually presented
   (ring of the last 3), frozen per gesture with `captureGestureSnapshot`. The mapped point is in canvas space; since the source geometry sits under the presented pixels (ADR-F), the intended element is `layer.elementAtPoint(mapped)`.
   Re-targeting rules and limits in API-CONTRACT 7.4 (prototype: pointerdown whose native target control differs from the mapped control is swallowed and the activation re-implemented [E5 prototype]). With an effect on, native hover, `:active` and cursor follow the NATIVE pointer (the displaced control), so
   `InteractionTracker.setMappedTarget` makes hover/active follow `layer.elementAtPoint(mapped)` and the layer cursor follows its computed cursor; range drag updates on every pointermove of the gesture; touch is re-implemented from the mapped target (implicit capture stays on the natively hit element). Verified in Chrome 154 for the design: `preventDefault` on pointerdown suppresses mousedown, focus and caret placement on the natively hit element,
   but `click` still fires and a checkbox still toggles, so the click swallow is required and a mousedown handler never sees the gesture.
-  VALIDATION AGAINST THE REAL DISPLACEMENT (not only against its own mapper): gate G-interposer-gpu renders a known marker in the source, reads the presented frame from the GPU (screenshot), finds where the control's pixels really are, clicks there with a trusted
-  event and asserts the intended control activated; positive control: interposer off -> a measurable fraction of those clicks hits the wrong control.
+  VALIDATION AGAINST THE REAL DISPLACEMENT (not only against its own mapper): gates G-f1-form-effect and G-interposer-strong (G-native-interposer over a native implementation) render a known marker colour in the source, read the presented frame from the GPU (screenshot), find where the control's pixels really are, click there with a trusted
+  event and assert that the intended control activated; positive control: interposer off -> a measurable fraction of those clicks hits the wrong control.
 - **Off-screen pause** (`effects/visibility.js`). Effects are an extension, so unlike `paint` (which native Chrome fires off-screen too, and the polyfill keeps firing) they may stop where nobody sees them. An IntersectionObserver
   with a margin of half the viewport (`scrollMargin: '50%'`, which in Chrome also covers the document's own scroller and every nested scroll container; `rootMargin` where it is missing, never both, because Chrome adds them up) and the
   document's visibility decide; while the canvas is out, the hook returns `false` (the scheduler sleeps as for an idle host) and nothing is uploaded. The observer reports a frame late and the host renders on the frame after, which the margin hides for any scroll that moves.
@@ -427,7 +427,7 @@ Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/2
   The frame clock keeps running (`frame.now` = the frame time; every example plugin is a function of it), so a resume shows the state at that time with nothing replayed and no fast-forward; `delta` is the real gap,
   which plugins integrating with it already clamp. A pending `trigger()` / `settled()` would otherwise hang while paused, because plugins advance their actions in `render`: the plugin set reports
   `unsettled()` and announces new waiters (`onWait`), and the paused host renders one frame per 100 ms until nothing is pending. Measured (gallery, water, headless e2e): renderer + GPU process CPU 28.8 % on screen, 1.3 % one viewport away.
-- **Device loss.** The host handles `GPUDevice.lost`: it keeps presenting the last frame, recreates the device, the source/destination textures and the pipelines (each plugin is re-`create`d with its options) and reports once (gate G-device-lost, non-blank within 3 frames after recovery).
+- **Device loss.** The host handles `GPUDevice.lost`: it keeps presenting the last frame, recreates the device, the source/destination textures and the pipelines (each plugin is re-`create`d with its options) and reports once (non-blank within 3 frames after recovery: `test/unit/gpu-effects/host.browser.test.mjs`; over a native implementation G-native-effects; the gate G-device-lost of `docs/TEST-PLAN.md` 2.7 is planned).
 - **Example plugins** live outside `src/`, in `plugins/<name>/` (`plugins/README.md`): the water plugin (`plugins/water/`) is the prototype's water effect + `water.wgsl`, unchanged shader, `spatial:true`, `continuous:true`, mapper state per presented frame. The build discovers plugin folders by convention and inlines their WGSL.
 
 ### ADR-H: WebGL / WebGPU texture variants, OffscreenCanvas, workers
@@ -440,7 +440,7 @@ Pre-validated in real Chrome [probe2]: for three drawables laid out at y=0/100/2
 
 ### ADR-I: privacy, security, refusals, error model
 
-- Read-back-allowed rendering [spec]: the clone contains only author DOM and same-origin / CORS-approved resources inlined as `data:`; cross-origin images/CSS/fonts without CORS are refused (placeholder + entry), tainted `<canvas>` children refused, iframes/objects refused,
+- Read-back-allowed rendering [spec]: the clone contains only author DOM and same-origin / CORS-approved resources inlined as `data:`; cross-origin images/CSS/fonts without CORS are left out as the platform leaves them out of a canvas (an image keeps its box without the picture, a font falls back; reported), tainted `<canvas>` children refused, a same-origin frame or object document is drawn (its cross-origin content and `:visited` rules left out) while a cross-origin or sandboxed one draws its own box without the document (reported),
   `<video>` is its poster or current frame (repainted at every presented frame while it plays, schedule/observers/video-observer.js) without controls or captions, `:visited` rules dropped, spellcheck/autofill UI and IME UI are never part of the clone, system colors resolve in the clone to defaults (no machine-specific leak beyond what `matchMedia` already exposes),
   text is greyscale-antialiased (SVG image). The retained surface is origin-clean because every input is.
 - The polyfill needs no privileged API; it reads only the live DOM and fetches resources the page could fetch itself.

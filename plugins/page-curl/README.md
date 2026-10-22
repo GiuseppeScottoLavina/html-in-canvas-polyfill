@@ -92,7 +92,7 @@ Per curled frame, all on the GPU and nothing allocated: the lifted paper as the 
 - What lies beneath the sheet is plain paper: a plugin receives one source texture, so it is not another live page.
 - A touch drag on a corner may be claimed by the browser for scrolling (`pointercancel` releases the page); `touch-action: none` on the drawable keeps it for the plugin.
 - After a GPU device loss the gesture in progress is dropped and the page shows flat; a pending `peek` resolves `null`.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites (the native suite runs water, CRT and disintegrate); expected to behave the same, as the plugin uses only the plugin interface.
 
 ## Files and tests
 
