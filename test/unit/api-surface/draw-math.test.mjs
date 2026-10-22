@@ -174,7 +174,7 @@ test('canvasTransformValues: kx/ky override dw/sw, otherwise the ratio is used',
   close(canvasTransformValues(IDENTITY16, { ...base, kx: 1.25, ky: 1.25 }, 1, 1, IDENTITY16), scale16(1.25, 1.25));
 });
 
-test('storedTransformValues: the legacy getElementTransform(element, drawTransform) formula', () => {
+test('storedTransformValues: the matrix stored for a composed draw transform', () => {
   // T_draw = translate(8,6), S = scale(2,3), T_tr = translate(5,5): x -> 0.5(x+5)+4-5 = 0.5x+1.5, y -> (y+5)/3+2-5 = y/3-4/3
   close(storedTransformValues(translation16(8, 6), 2, 3, translation16(5, 5)), [0.5, 0, 0, 0, 0, 1 / 3, 0, 0, 0, 0, 1, 0, 1.5, -4 / 3, 0, 1]);
   // identity draw, S = scale(4), T_tr = translate(10,10): x -> 0.25(x+10)-10 = 0.25x-7.5

@@ -17,7 +17,7 @@ self.onmessage = (e) => {
       self.postMessage({ ok: true, px: Array.from(ctx.getImageData(d.at[0], d.at[1], 1, 1).data) });
     } else if (d.cmd === 'size') self.postMessage({ ok: true, size: oc.getElementImageDefaultSize(image) });
     else if (d.cmd === 'clear') { oc.clearElementGeometry(image); self.postMessage({ ok: true }); }
-    else if (d.cmd === 'transform') self.postMessage({ ok: true, m: Array.from(oc.getElementTransform(image, new DOMMatrix().translate(5, 6)).toFloat64Array()) });
+    else if (d.cmd === 'members') self.postMessage({ ok: true, getElementTransform: 'getElementTransform' in OffscreenCanvas.prototype, updateElementGeometry: 'updateElementGeometry' in OffscreenCanvas.prototype });
     else if (d.cmd === 'standalone') new OffscreenCanvas(10, 10).getContext('2d').drawElementImage(image, 0, 0);
     else if (d.cmd === 'close') { image.close(); oc.getContext('2d').drawElementImage(image, 0, 0); }
   } catch (err) {

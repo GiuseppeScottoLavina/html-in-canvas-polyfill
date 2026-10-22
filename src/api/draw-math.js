@@ -193,8 +193,7 @@ export function canvasTransformValues(ctm, r, scaleX, scaleY, translation) {
 }
 
 /**
- * M = T_tr^-1 * S^-1 * T_draw * T_tr for an already composed T_draw: the matrix the spec stores for a draw, and what the legacy
- * `getElementTransform(element, drawTransform)` overload returns.
+ * M = T_tr^-1 * S^-1 * T_draw * T_tr for an already composed T_draw: the matrix the spec stores for a draw.
  * @param {ArrayLike<number>} draw  16 values of T_draw
  * @param {number} scaleX
  * @param {number} scaleY

@@ -5,7 +5,7 @@
  */
 
 import { invalidState } from '../contracts/errors.js';
-import { elementImageDefaultSize, elementTransformOf } from './canvas-patch.js';
+import { elementImageDefaultSize } from './canvas-patch.js';
 import { fireGeometryUpdate } from './paint-event.js';
 import { geometryOptionsFromValues } from './geometry.js';
 import { defineMethod, geometryOptionsValues, globalsOf, resolveElement } from './validate.js';
@@ -104,12 +104,6 @@ export function installOffscreenPatches(env, ledger, geometry) {
     const values = geometryOptionsValues(options);
     const { record, element } = resolveElement(env, canvas, target, 'eligible');
     enqueueGeometry(env, geometry, record, { kind: 'update', element, options: geometryOptionsFromValues(values) });
-  });
-
-  // Deprecated: the two-argument getElementTransform of the 2026-10-07 draft (WPT at the pinned revision). Native builds dropped it on 2026-10-09 (WPT b59184b6); kept until a re-pin.
-  defineMethod(ledger, proto, 'getElementTransform', 2, /** @this {OffscreenCanvas} */ function (/** @type {unknown} */ target, /** @type {unknown} */ drawTransform) {
-    if (arguments.length < 2) throw new TypeError(`Failed to execute 'getElementTransform' on 'OffscreenCanvas': 2 arguments required, but only ${arguments.length} present.`);
-    return elementTransformOf(env, geometry, placeholderOrThrow(this), target, drawTransform);
   });
 
   // The size follows the OffscreenCanvas's own bitmap (spec: "canvas's bitmap"), resolved against its placeholder; a standalone OffscreenCanvas throws InvalidStateError (WPT).

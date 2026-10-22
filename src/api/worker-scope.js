@@ -2,17 +2,17 @@
  * The HTML-in-Canvas surface inside a dedicated worker (the worker bundle, src/worker.js): ElementImages posted by the main thread (worker-transfer.js) arrive as records
  * (worker-wire.js) and are turned back into ElementImage objects before the page's own message listeners run; OffscreenCanvasRenderingContext2D.drawElementImage draws their
  * pixels with the four overloads of the main thread (draw-math.js), and the OffscreenCanvas geometry calls (updateElementGeometry, clearElementGeometry,
- * getElementImageDefaultSize, the two-argument getElementTransform of the 2026-10-07 draft) work on them. Geometry goes back to the main thread on the channel of the first
+ * getElementImageDefaultSize) work on them. Geometry goes back to the main thread on the channel of the first
  * record, one message per worker turn. An OffscreenCanvas is known to belong to a canvas by the main thread's log (message number and position); a standalone one, or one of
  * another canvas, throws InvalidStateError as natively.
  * Module: api-surface (src/api/*).
  */
 
 import { invalidState } from '../contracts/errors.js';
-import { IDENTITY16, matrixFrom, matrixValues, multiply16, scale16 } from '../util/matrix.js';
+import { IDENTITY16, matrixValues } from '../util/matrix.js';
 import { defaultSizeOf } from './element-image.js';
-import { canvasTransformValues, clipToSurface, parseDrawArgs, resolveRects, storedTransformValues } from './draw-math.js';
-import { geometryOptionsValues, matrixInitValues } from './validate.js';
+import { canvasTransformValues, clipToSurface, parseDrawArgs, resolveRects } from './draw-math.js';
+import { geometryOptionsValues } from './validate.js';
 import { isImageRecord, visitShallow } from './worker-wire.js';
 
 /** @typedef {import('./worker-wire.js').ImageRecord} ImageRecord */
@@ -170,15 +170,6 @@ export function installWorkerScope(scope) {
   define(OC.prototype, 'clearElementGeometry', 1, /** @this {OffscreenCanvas} */ function (/** @type {unknown} */ image) {
     const r = recordFor(this, image);
     send({ kind: 'clear', canvas: r.canvas, element: r.element });
-  });
-  // Deprecated: the two-argument getElementTransform of the 2026-10-07 draft (as on the main thread, offscreen-patch.js); M = S^-1 * D * S with S the grid scale.
-  define(OC.prototype, 'getElementTransform', 2, /** @this {OffscreenCanvas} */ function (/** @type {unknown} */ image, /** @type {unknown} */ drawTransform) {
-    if (arguments.length < 2) throw new TypeError(`Failed to execute 'getElementTransform' on 'OffscreenCanvas': 2 arguments required, but only ${arguments.length} present.`);
-    const r = recordFor(this, image);
-    const draw = matrixInitValues(drawTransform);
-    const sx = r.canvasWidth > 0 ? this.width / r.canvasWidth : 1;
-    const sy = r.canvasHeight > 0 ? this.height / r.canvasHeight : 1;
-    return matrixFrom(storedTransformValues(multiply16(draw.values, scale16(sx, sy)), sx, sy, IDENTITY16), draw.is2D);
   });
   return true;
 }
