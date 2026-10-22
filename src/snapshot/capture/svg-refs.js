@@ -9,7 +9,7 @@
  */
 
 import { resolveResource } from './inline-resources.js';
-import { setInlineStyle } from './inline-style.js';
+import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 
 /** @typedef {import('../../contracts/types.js').ResourceCache} ResourceCache */
 
@@ -199,4 +199,28 @@ export function settleFilterImages(root, base, cache) {
     }
   }
   return out;
+}
+
+/**
+ * The mask images of SVG CONTENT (an element inside an <svg>, not the outer <svg> box): Chromium's read-back-allowed rendering ignores a mask image there that it may not read
+ * (WPT privacy/svg/svg-mask-on-svg-content-ignored, from Chromium "Disallow SVG masks on SVG content in readback-allowed mode": the element is drawn UNMASKED), while a CSS box with
+ * such a mask is masked away (inline-resources.js TRANSPARENT_MASK, WPT privacy/box-mask-*). So when one of its layers is not readable (cross-origin without CORS, failed, or still
+ * loading) its mask-image becomes the computed list with that layer `none`; the readable layers are kept as data: URLs. A mask that is entirely readable is left to the stylesheet.
+ * @param {Element} src  live element @param {Element} clone @param {CSSStyleDeclaration} cs  computed style of src @param {ResourceCache} cache
+ */
+export function svgContentMask(src, clone, cs, cache) {
+  if (src.namespaceURI !== SVG_NS || src.parentElement?.namespaceURI !== SVG_NS) return;
+  const value = cs.maskImage || /** @type {any} */ (cs).webkitMaskImage || 'none';
+  if (value === 'none' || !value.includes('url(')) return;
+  let unreadable = false;
+  const out = value.replace(/url\(\s*"((?:[^"\\]|\\.)*)"\s*\)/g, (/** @type {string} */ whole, /** @type {string} */ raw) => {
+    const url = raw.replace(/\\(.)/g, '$1');
+    if (url.startsWith('data:') || url.startsWith('#')) return whole;
+    const abs = absolute(url, src.ownerDocument.baseURI);
+    const r = abs ? resolveResource(cache, abs, 'image') : null;
+    if (r?.state === 'ready') return `url("${r.url}")`;
+    unreadable = true;
+    return 'none';
+  });
+  if (unreadable) appendInlineStyle(clone, `mask-image:${out}!important;-webkit-mask-image:${out}!important`);
 }
