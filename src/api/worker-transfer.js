@@ -22,7 +22,7 @@ import { BRAND, shallowCopy, visitShallow } from './worker-wire.js';
  * @typedef {{kind: 'update', canvas: number, element: number, values: number[], is2D: boolean, clip: {x: number, y: number, width: number, height: number}|null} | {kind: 'clear', canvas: number, element: number}} WorkerOp
  */
 
-/** @typedef {{seq: number, log: Array<{seq: number, index: number, canvas: number}>, sent: number, port: MessagePort|null}} WorkerState */
+/** @typedef {{seq: number, log: Array<{seq: number, index: number, canvas: number}>, sent: number, port: MessagePort|null, tokens: Set<number>}} WorkerState */
 
 /**
  * @param {HicEnv} env
@@ -52,11 +52,21 @@ export function createWorkerTransfer(env, geometry) {
   /** @param {number} id @returns {CanvasRecord|undefined} */
   const recordById = (id) => env.registry.all().find((r) => r.id === id);
 
-  /** @param {WorkerOp[]} ops */
-  function applyOps(ops) {
+  /** @param {any} op @returns {op is WorkerOp} */
+  const wellFormed = (op) => op !== null && typeof op === 'object' && Number.isInteger(op.canvas) && Number.isInteger(op.element)
+    && (op.kind === 'clear' || (op.kind === 'update' && Array.isArray(op.values) && op.values.length === 16 && op.values.every(Number.isFinite)));
+
+  /**
+   * The geometry a worker sends on its own channel. Only well-formed operations on elements whose images were posted to THAT worker are applied (the geometry API
+   * validates the rest and reports what it refuses); anything else is ignored.
+   * @param {WorkerState} st @param {unknown} ops
+   */
+  function applyOps(st, ops) {
     for (const op of Array.isArray(ops) ? ops : []) {
+      if (!wellFormed(op) || !st.tokens.has(op.element)) continue;
       const record = recordById(op.canvas);
       const element = elements.get(op.element)?.deref();
+      if (!element) elements.delete(op.element);
       if (!record || !element) continue;
       if (op.kind === 'clear') enqueueGeometry(env, geometry, record, { kind: 'clear', element });
       else enqueueGeometry(env, geometry, record, { kind: 'update', element, options: { canvasTransform: matrixInit(op.values, op.is2D), ...(op.clip ? { clip: op.clip } : {}), preserveHitTestOrder: false } });
@@ -66,7 +76,7 @@ export function createWorkerTransfer(env, geometry) {
   /** @param {object} worker @returns {WorkerState} */
   const stateOf = (worker) => {
     let st = workers.get(worker);
-    if (!st) workers.set(worker, (st = { seq: 0, log: [], sent: 0, port: null }));
+    if (!st) workers.set(worker, (st = { seq: 0, log: [], sent: 0, port: null, tokens: new Set() }));
     return st;
   };
 
@@ -95,10 +105,11 @@ export function createWorkerTransfer(env, geometry) {
       scale: w / (v.width + ink.left + ink.right), ink: { ...ink }, blend: v.blend ?? 'normal', log: st.log.slice(st.sent),
     };
     st.sent = st.log.length;
+    st.tokens.add(record.element);
     if (!st.port) {
       const channel = new MessageChannel();
       st.port = channel.port1;
-      st.port.onmessage = (e) => applyOps(e.data);
+      st.port.onmessage = (e) => applyOps(st, e.data);
       record.port = channel.port2;
       transfer.push(channel.port2);
     }

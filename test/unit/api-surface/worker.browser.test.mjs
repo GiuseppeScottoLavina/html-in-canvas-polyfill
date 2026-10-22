@@ -91,3 +91,35 @@ test('a message that cannot be delivered (DataCloneError) leaves no trace: the n
   await event;
   assert.deepEqual([canvas.getElementTransform(a).e, canvas.getElementTransform(a).f], [10, 5]);
 });
+
+test('the geometry channel applies only well-formed operations on elements posted to that worker: malformed ones and another worker\'s element are ignored without an error; control: its own element moves', async (t) => {
+  const i = inst(t);
+  const canvas = await mk(t, i, { inner: '<div id="a" drawable style="width:100px;height:50px;background:rgb(255,0,0)"></div><div id="b" drawable style="width:20px;height:20px;background:blue"></div>' });
+  const a = /** @type {Element} */ (canvas.querySelector('#a'));
+  const b = /** @type {Element} */ (canvas.querySelector('#b'));
+  const other = probe(t);
+  const ib = canvas.captureElementImage(b);
+  await other.ask({ image: ib }, [ib]);
+  const raw = new Worker('/test/unit/api-surface/worker-raw-probe.mjs', { type: 'module' });
+  t.cleanup(() => raw.terminate());
+  const ask = (/** @type {any} */ msg, /** @type {Transferable[]} */ transfer = []) => new Promise((ok) => { raw.onmessage = (e) => ok(e.data); raw.postMessage(msg, transfer); });
+  const ia = canvas.captureElementImage(a);
+  const got = /** @type {any} */ (await ask(ia, [ia]));
+  assert.equal(got.ok, true, 'the raw worker sees the wire record');
+  let fired = 0;
+  canvas.addEventListener('elementgeometryupdate', () => fired++);
+  const move = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 8, 0, 1];
+  const forged = [null, 5, 'x', { kind: 'update' }, { kind: 'update', canvas: got.canvas, element: got.element, values: 'x', is2D: true },
+    { kind: 'update', canvas: got.canvas, element: got.element, values: move.map(() => NaN), is2D: true }, { kind: 'bogus', canvas: got.canvas, element: got.element }];
+  for (let token = 1; token < got.element + 20; token++) if (token !== got.element) forged.push({ kind: 'update', canvas: got.canvas, element: token, values: move, is2D: true, clip: null });
+  await ask({ forge: forged });
+  await ask({ forge: { kind: 'clear', canvas: got.canvas, element: got.element } });
+  await new Promise((ok) => setTimeout(ok, 50));
+  assert.equal(fired, 0, 'nothing applied');
+  assert.ok(canvas.getElementTransform(b).isIdentity, 'the element of the other worker did not move');
+  const event = geometryEvent(canvas);
+  await ask({ own: move });
+  const e = /** @type {any} */ (await event);
+  assert.deepEqual([...e.elements], [a], 'control: its own element');
+  assert.deepEqual([canvas.getElementTransform(a).e, canvas.getElementTransform(a).f], [7, 8]);
+});

@@ -240,7 +240,8 @@ transfer detaches); the worker bundle turns the record back into an `ElementImag
 `OffscreenCanvasRenderingContext2D.drawElementImage` (the four overloads) draws it on the OffscreenCanvas of its canvas, and `getElementImageDefaultSize`,
 `updateElementGeometry`, `clearElementGeometry` and the earlier draft's two-argument `getElementTransform` work on that OffscreenCanvas; another canvas's
 OffscreenCanvas, a standalone one or a closed image throws `InvalidStateError`. The geometry of the worker's draws and calls is sent back once per worker
-turn and applied on the page as for a main-thread OffscreenCanvas (one `elementgeometryupdate`). The pixels are those of the snapshot when it was posted:
+turn, on a private `MessageChannel` opened with the first record, and applied on the page as for a main-thread OffscreenCanvas (one `elementgeometryupdate`);
+the page applies only well-formed operations, and only on elements whose images were posted to that worker (anything else is ignored). The pixels are those of the snapshot when it was posted:
 post a new capture after `paint` to update them. A worker without the bundle receives the plain record. An `ElementImage` sent through a MessagePort, a
 BroadcastChannel or to a ServiceWorker throws `HicUnsupportedError('worker-element-image')`; `toImageBitmap()` is the alternative there.
 
@@ -499,7 +500,7 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `browser` | not Chromium desktop >= 130 | `install()` throws |
 | `partial-native` | a native implementation without its core (no `content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | `install()` throws unless `forcePolyfill`; a usable native is never refused (section 2) |
 | `shadow-dom` | (no longer reported) open shadow roots inside a drawable are drawn in flat-tree order with computed styles inlined (limited) | - |
-| `iframe` | iframe/frame/object whose document this page cannot read (cross-origin, sandboxed without `allow-same-origin`), or an embed that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively; entry. A same-origin frame or object draws its document (resources inlined, its cross-origin content left out), repainted when that document changes or reloads; no entry |
+| `iframe` | iframe/frame/object whose document this page cannot read (cross-origin, sandboxed without `allow-same-origin`), or an embed that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively; entry. A same-origin frame or object draws its document (resources inlined, its cross-origin content and `:visited` rules left out), repainted when that document changes or reloads (a scroll inside the frame alone does not repaint: it shows at the next repaint); no entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |
 | `top-layer-canvas` | a managed canvas became the fullscreen element (its controls take no input), or a `popover` canvas | entry with hint (fullscreen proceeds) / refused at mount |
 | `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | API calls throw `HicUnsupportedError` |
