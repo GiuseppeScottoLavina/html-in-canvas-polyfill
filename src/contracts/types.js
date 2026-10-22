@@ -594,9 +594,10 @@ export {};
  */
 
 /**
- * @typedef {(now: number, info: {frameCap: number, due: boolean}) => boolean|void} FrameHook
+ * @typedef {(now: number, info: {frameCap: number, due: boolean, repeat?: boolean}) => boolean|void} FrameHook
  *   Runs inside the scheduler's rAF tick of ONE canvas, AFTER paint dispatch and the store pump. `due` = the frame cap allows a frame now.
  *   Return true to keep the tick running next frame without damage (continuous effects). Must not throw (caught + reported).
+ *   Native mode (frame-source.js nativeFrameSource): also called from the canvas's paint event; `repeat` = the hook already ran in this frame.
  */
 
 /**
@@ -705,7 +706,7 @@ export {};
  * @property {(context: EffectPluginContext, options: Readonly<Record<string, unknown>>) => EffectPluginInstance | Promise<EffectPluginInstance>} create
  */
 /**
- * @typedef {Object} SourceProvider  Where the effect host reads source pixels. Polyfill mode: the SnapshotStore; native mode: the public API.
+ * @typedef {Object} SourceProvider  Where the effect host reads source pixels. Polyfill mode: the SnapshotStore; native mode: the standard API (GPUQueue.drawElementImageToTexture).
  * @property {'store'|'native'} kind
  * @property {() => number|null} version   id of the newest source version (null before the first); changes whenever pixels changed
  * @property {() => {width:number, height:number, cssWidth:number, cssHeight:number}|null} size  source size (grid px of the draw, css px of the drawable)

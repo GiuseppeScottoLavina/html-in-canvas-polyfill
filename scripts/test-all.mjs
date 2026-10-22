@@ -1,5 +1,5 @@
 // `npm run test:gates:all`: runs EVERYTHING sequentially and prints one table: static checks, type check, unit tests, the browser gates (real + control), the mutant suite.
-//   node scripts/test-all.mjs [--skip=unit,mutants,gates,lint,types,wpt] [--wait-quiet=SECONDS]
+//   node scripts/test-all.mjs [--skip=unit,mutants,gates,lint,types,wpt,native-effects] [--wait-quiet=SECONDS]
 // One headed Chrome at a time (the gates and the mutant suite run strictly one after the other). Exit code 1 when any stage failed.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -16,6 +16,7 @@ const stages = [
   ['unit', 'unit tests (node + browser)', ['npm', 'run', '--silent', 'test:unit']],
   ['gates', 'browser gates (real + control)', [node, 'test/gates/run-all.mjs', ...pass]],
   ['wpt', 'G-wpt-subset: official WPT HTML-in-Canvas tests (oracle / subject / control)', [node, 'test/wpt/gate.mjs']],
+  ['native-effects', 'G-native-effects: the effects over Chrome Canary\'s own implementation (skipped loudly without Canary)', [node, 'test/native-effects/run.mjs']],
   ['mutants', 'mutant suite', [node, 'test/gates/mutants/run.mjs', ...pass]],
 ];
 const rows = [];

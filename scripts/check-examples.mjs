@@ -2,7 +2,9 @@
 // G-examples: every page under examples/ loads in HEADLESS Chrome against the BUILT dist/ and works.
 //
 //   npm run build && npm run test:examples
-//   node scripts/check-examples.mjs [--only=basic,form] [--no-control] [--chrome=stable|canary|/path]
+//   node scripts/check-examples.mjs [--only=basic,form] [--no-control] [--chrome=stable|canary|/path] [--native]
+//   --native: Chrome Canary with --enable-blink-features=CanvasDrawElement, and every example must run in mode native (the browser's own implementation;
+//   used by test/native-effects/run.mjs for effect-plugin)
 //
 // Per example (real run):
 //   1. no console error, no page exception, no failed request (Log errors such as a 404 count)
@@ -39,6 +41,7 @@ import { startServer } from '../examples/serve.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const only = H.arg('only')?.split(',');
 const withControl = !process.argv.includes('--no-control');
+const NATIVE = process.argv.includes('--native');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve(ROOT, '.scratch/results', `examples-${stamp}`);
 const VIEW = { width: 1100, height: 800 };
@@ -96,7 +99,7 @@ async function genericChecks(run, { canvas, kind, ready }) {
   await run.step('install', 'the polyfill (or a native implementation) provides drawElementImage', async () => {
     const info = await page.evaluate(`({ api: typeof CanvasRenderingContext2D.prototype.drawElementImage === 'function', mode: window.__HIC__ && window.__HIC__.installed ? window.__HIC__.installed.mode : null, error: window.__HIC__ && window.__HIC__.error ? String(window.__HIC__.error.message) : null })`);
     run.numbers.mode = info.mode;
-    return { ok: info.api && (info.mode === 'polyfill' || info.mode === 'native'), ...info };
+    return { ok: info.api && (NATIVE ? info.mode === 'native' : info.mode === 'polyfill' || info.mode === 'native'), ...info };
   });
   await run.step('install', 'the page signalled that its setup finished', async () => ({ ok: !!(await H.until(() => page.evaluate(ready), run.fast ? 2500 : 12000)), ready }));
   let first = null;
@@ -238,8 +241,8 @@ const SCENARIOS = {
       const at15 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, label: document.getElementById('cap-value').textContent })`);
       await page.key('ArrowRight'); await sleep(150);
       const at30 = await page.evaluate(`({ prop: document.getElementById('stage').frameCap, label: document.getElementById('cap-value').textContent })`);
-      const native = run.numbers.mode !== 'polyfill';   // the property is this library's extension: over a native implementation the page only assigns it
-      return { ok: (native || (at15.prop === 15 && at30.prop === 30)) && at15.label === '15' && at30.label === '30', at15, at30, native };
+      // the property is this library's extension; install() defines it over a native implementation too
+      return { ok: at15.prop === 15 && at30.prop === 30 && at15.label === '15' && at30.label === '30', at15, at30 };
     });
     if (pathOk === 'effect') {
       await run.step('interact', 'the effect renders at about the cap (15 and 30 fps, page-side count of effectframe, +-30 %)', async () => {
@@ -595,7 +598,7 @@ async function main() {
   const names = NAMES.filter((n) => !only || only.includes(n));
   if (!names.length && !(only && only.includes('smoke'))) { console.error('no example selected'); process.exit(2); }
 
-  const browser = await H.launchChrome({ name: 'examples', chrome: H.arg('chrome') ?? 'stable', windowSize: [VIEW.width, VIEW.height + 100], dpr: 1,
+  const browser = await H.launchChrome({ name: 'examples', chrome: H.arg('chrome') ?? (NATIVE ? 'canary' : 'stable'), nativeDrawElement: NATIVE, windowSize: [VIEW.width, VIEW.height + 100], dpr: 1,
     extraArgs: ['--headless=new', '--hide-scrollbars'] });
   const result = { script: 'scripts/check-examples.mjs', startedAt: new Date().toISOString(), headless: true, dpr: 1, viewport: VIEW, viewportKind: 'Emulation.setDeviceMetricsOverride',
     chrome: browser.version?.Browser, examples: [], controls: [], pass: false };

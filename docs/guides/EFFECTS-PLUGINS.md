@@ -13,12 +13,20 @@ The example plugins of this repository live in [`plugins/`](../../plugins/), out
 
 The effects host (`HTMLInCanvasEffects`, this plugin interface, the input remapping) and the frame cap (`framecap`, `canvas.frameCap`) are **extensions of this library**. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them: they are this library's own API. Code that uses them depends on this library, not on the standard.
 
-They work only while this polyfill provides the API (mode `polyfill`, see `__HIC__.installed.mode`). On top of a native implementation they are not supported. What was checked on 2026-10-14 (macOS, Apple M1 Max, 120 Hz display, headed and headless Chrome), with the built core and effects bundles in `examples/plugins/` and the water example page of that time (now `examples/effect-plugin/`):
+They run over the polyfill's drawing (mode `polyfill`) and over a browser's own HTML-in-Canvas implementation that the installed polyfill stepped aside for (mode `native`): the page loads the same bundles and calls the same API, and `createHost` picks the path. Over a native implementation the host needs the standard members `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` and `getElementImageDefaultSize`; where one is missing (an earlier draft such as the `layoutsubtree` builds) `createHost` rejects with a `NotSupportedError` and the page keeps its 2D path. The extensions still need the core bundle installed: it decides the mode and defines `canvas.frameCap`, also in the native modes (a property of this library, not of the standard; `uninstall()` removes it).
 
-- **Chrome Canary 157.0.8103.0, with or without `--enable-blink-features=CanvasDrawElement`: mode `native`.** The polyfill steps aside (kind `complete`); the examples turn the effects off unless the mode is `polyfill` and draw the form through the browser's own `drawElementImage`; clicking and typing work natively. Earlier preview builds refused this build (`partial-native`, because its `ElementImage` has no `width` / `height`), so the effect behaviour below was measured with a test-only stub that added `ElementImage.prototype.width` and `height`; the effects code never reads those two members, so the stub measurement describes mode `native` on this build.
-- **Effects in mode `native` (measured with that stub): partially.** The effects host started and the water plugin rendered over the native `GPUQueue.drawElementImageToTexture` (frames presented, ripples visible). But `canvas.frameCap` is not defined in this mode (assigning it creates a plain property: 120 effect frames per second whatever the value; the `framecap` attribute did bound the effect frames, 15 and 30.5 per second at 15 and 30), and pointer input was not remapped: a trusted click on the drawn name field hit the canvas, the field did not get the focus and the typing was lost. The input interposer needs the polyfill's live layer, which does not exist in mode `native`.
+#### On a native implementation
 
-So with a native implementation the drawing of an effect may work, the interaction through it does not, and the frame cap property is absent. The examples turn the effects and the frame cap off unless the mode is `polyfill`, and keep the form usable.
+Measured on Chrome Canary 158.0.8112.1 with `--enable-blink-features=CanvasDrawElement` (macOS, Apple M1 Max, 120 Hz, DPR 2), by `npm run test:native-effects` (`test/native-effects/`):
+
+- **Source.** The host draws the browser's own element image of the source into its texture with `GPUQueue.drawElementImageToTexture`, in the canvas's `paint` event: there the image is fresh, while in the animation frame callbacks before it the call still returns the previous paint. A `paint` event whose `changedElements` names the source is a new source version; the browser fires one when the source changed (typing, hover, the caret blink, a resize). With no plugin, the presented frame is the browser's 2D `drawElementImage` of the same form to within 1 level per channel. There is no partial upload: the event says which drawables changed, not where, so every new version is one full draw (about 0.08 ms of main thread per call).
+- **Frames.** A continuous plugin renders from an animation frame loop, and a new source is uploaded and rendered in the `paint` event; one render per frame (a `paint` after the frame was already rendered uploads the source, and the next frame shows it). The `framecap` attribute and `canvas.frameCap` bound the effect frames with the rules of the polyfill's cap: 15.0 and 30.0 effect frames per second at caps 15 and 30. The browser's own `paint` events are not throttled by the cap (the polyfill does not drive them in this mode).
+- **Input.** The browser hit-tests the source where `updateElementGeometry` puts it. The host applies the stretch of the source over the canvas there, and the interposer shifts that geometry at every pointer event so that the pointer hits the element the effect shows under it; the browser then does the rest natively: hover, `:active`, the cursor, focus, caret placement and text selection. A press whose native target was hit before its shift (a jump of the pointer, a touch, a picture that moved under a still pointer) is re-targeted as in mode `polyfill`, and `NO_TARGET` takes the source out of hit testing and swallows the gesture. Measured with trusted input where the plain DOM position would miss: 45 of 45 clicks under the CRT plugin at curvature 1 and 42 of 42 under the water plugin at intensity 1 focus the field the user sees; `:hover` follows that field under a pointer at rest in 12 of 12 places. After a jump of the pointer, hover and the cursor follow one frame later (the engine recomputes them after a layout of one invisible element of the host, `<hic-hover-sync>`, appended to the root element). Keyboard input goes to the focused element, as always.
+- **Pause, actions, device loss.** The off-screen pause, `handle.trigger` / `settled`, and the recovery of a lost `GPUDevice` work as in mode `polyfill` (0 effect frames per second far out of view, 3 frames within 21 ms back in view; the device recreated and the loss reported once).
+- **Cost.** The water plugin over the F1 form at 120 effect frames per second: renderer main thread busy 19 % (polyfill on Chrome 155: 11 %), RunTask p95 1.2 ms, no task over 8.33 ms; while typing 26 characters at 10 per second, 21.5 % busy (polyfill 15 %), p95 1.1 ms, longest 5.4 ms (polyfill 8.6 ms). The host's own script is about 4 % of that time; the rest is the browser's work for the canvas and its drawable.
+- **What differs from mode `polyfill`.** The pixels of the source are the browser's own; the interposer does not take over a press the browser already hit right, so the native default actions apply; `report()` has no canvas entries (the polyfill does not manage the canvas).
+
+Safari Technology Preview with its HTML-in-Canvas feature implements the earlier `layoutsubtree` draft without the GPU upload and the geometry methods: there `createHost` rejects and the examples draw the form in 2D.
 
 Sources of truth: `docs/API-CONTRACT.md` section 7, the typedefs `EffectHost`, `EffectHandle`, `EffectPluginDefinition`, `EffectPluginInstance`, `EffectPluginContext`, `EffectRenderFrame`, `InputMapper` and `EffectActionState` in `src/contracts/types.js`, the validation in `src/effects/plugin-abi.js` and the handles in `src/effects/effect-plugins.js`.
 
@@ -43,7 +51,7 @@ With a bundler: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5, interposer: true });
 ```
 
-- `canvas` is a `<canvas content="drawable">` managed by the polyfill; `source` is one drawable element of it (a direct child with the `drawable` attribute, or a descendant marked drawable). The host owns the canvas bitmap and its `webgpu` context: **do not call `canvas.getContext()` before or after** on that canvas.
+- `canvas` is a `<canvas content="drawable">` (managed by the polyfill, or drawn by the browser's own implementation); `source` is one drawable element of it (a direct child with the `drawable` attribute, or a descendant marked drawable). The host owns the canvas bitmap and its `webgpu` context: **do not call `canvas.getContext()` before or after** on that canvas.
 - The host presents `source` stretched over the whole canvas and applies the matching stretch to the live element, so input follows the picture. **Size the source like the canvas** (section 2.1).
 
 | option | default | |
@@ -56,16 +64,15 @@ const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5,
 
 | error | when |
 |---|---|
-| `HicUnsupportedError` (`feature: 'effect-plugins'`) | no WebGPU, no adapter, or the device request failed. The canvas is still free for a 2D context: the adapter and the device are acquired before the canvas is claimed |
+| `HicUnsupportedError` (`feature: 'effect-plugins'`) | no WebGPU, no adapter, or the device request failed; or a native implementation without `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` or `getElementImageDefaultSize` (the message names it). The canvas is still free for a 2D context: the adapter and the device are acquired before the canvas is claimed |
 | `InvalidStateError` | `source` is not an eligible drawable of `canvas`; the canvas already has another context type; the core is not installed (or was uninstalled) |
 | `TypeError` | `canvas` is not an `HTMLCanvasElement`, `source` not an `Element`, `options` not an object |
 
-Keep the standard 2D path as the fallback and choose before any `getContext` call, because a canvas keeps its first context type for life. The effects also run only while the polyfill provides the API (section "Extensions, not the standard"):
+Keep the standard 2D path as the fallback and choose before any `getContext` call, because a canvas keeps its first context type for life. The effects run over the polyfill and over a native implementation with the members the host needs (section "Extensions, not the standard"); where `createHost` rejects, the page keeps the 2D path:
 
 ```js
 let host = null;
 try {
-  if (window.__HIC__?.installed?.mode !== 'polyfill') throw new Error('the effects need the polyfill');
   if (!navigator.gpu) throw new Error('this browser has no WebGPU');
   host = await HTMLInCanvasEffects.createHost(canvas, form);
 } catch (error) {
@@ -326,7 +333,7 @@ When a plugin moves pixels, the element under the pointer is not the element the
 - Several spatial plugins: the host composes their mappers, last plugin first.
 - Not every plugin moves pixels. A plugin that only tints or blurs is not `spatial` and has no mapper.
 
-What the host does with a mapper (the interposer, on by default): for `pointermove`, `pointerdown`, `pointerup` and `click` on the live layer it maps the pointer, finds the element at the mapped point, and when the native hit control differs it re-implements the activation (focus, button, link, checkbox, radio and label click on `pointerup`, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). End to end with trusted input, the interposer is checked through the example plugins in the gallery (`npm run test:plugins`); for other plugins only the mapper against the GPU pixels is checked (section 17).
+What the host does with a mapper (the interposer, on by default; over a native implementation it moves the hit-test geometry instead, see the top of this guide): for `pointermove`, `pointerdown`, `pointerup` and `click` on the live layer it maps the pointer, finds the element at the mapped point, and when the native hit control differs it re-implements the activation (focus, button, link, checkbox, radio and label click on `pointerup`, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). End to end with trusted input, the interposer is checked through the example plugins in the gallery (`npm run test:plugins`); for other plugins only the mapper against the GPU pixels is checked (section 17).
 
 #### `NO_TARGET`: no element here
 
@@ -508,5 +515,5 @@ The smoke test also runs its action: `handle.trigger('pulse')` resolves `'calm'`
 - Declared `actions` have `runAction` and `settled`; both resolve after the frame that shows the end state; your own triggers go through `context.trigger` / `ui.trigger`; `destroy` resolves your waiters with `null`.
 - `meta.reducedMotion` says what the plugin does under `prefers-reduced-motion: reduce`, and the actions honour `info.reducedMotion`.
 - You did not call `getContext` on the canvas.
-- A 2D fallback exists for browsers without WebGPU, and for a browser whose own native implementation is in use (the extensions are not available there, see the top of this guide).
+- A 2D fallback exists for browsers without WebGPU, and for a native implementation without the members the host needs (`createHost` rejects there, see the top of this guide).
 - You measured the cost on your own page: `docs/guides/PERFORMANCE.md` says which numbers exist and which do not.

@@ -34,7 +34,8 @@ export async function runTransitionGalleryE2E(plan) {
     c.check('idle frame is not blank', pixelStats(before).nonBlank);
 
     await clickOn(page, '#name'); await sleep(150);
-    c.check('idle: a trusted click focuses the drawn name field', (await active()) === 'name');
+    c.check('idle: a trusted click focuses the drawn name field', (await active()) === 'name', await page.evaluate(`(() => { const r = document.getElementById('name').getBoundingClientRect(); const top = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)[0];
+      return { active: document.activeElement && (document.activeElement.id || document.activeElement.localName), top: top && (top.id || top.localName), stats: window.__gallery.host && window.__gallery.host.stats() }; })()`));
     await page.typeText('x');
     c.check('idle: trusted typing reaches it', (await page.evaluate(`document.getElementById('name').value`)) === 'Adax');
     await idle(page);

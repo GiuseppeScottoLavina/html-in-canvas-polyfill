@@ -119,39 +119,80 @@ function dirtyCopy(env, v, dirty, f) {
 }
 
 /**
- * Native mode: queue.drawElementImageToTexture / captureElementImage; version() advances on the native paint event.
- * Not exercised against a real native implementation yet (needs Chrome with CanvasDrawElement).
+ * Native mode: GPUQueue.drawElementImageToTexture of the browser's own element image of `source`.
+ * VERSION: advances on the canvas's `paint` event when its changedElements name the source (or a drawable inside it, or one around it):
+ * the browser fires paint after it painted a changed drawable (typing, hover, the caret blink, a resize). The first paint after creation
+ * always counts (one is requested), and so does a paint of a build without changedElements. A paint that another script requested for
+ * nothing (changedElements empty) does not. The host uploads in the paint event itself (frame-source.js nativeFrameSource): there the
+ * element image is fresh.
+ * SIZE: the texture is getElementImageDefaultSize(source) (grid px of the canvas bitmap, rounded up); the css size is the border box of the
+ * source from a ResizeObserver (fractional, and unaffected by the hit-test transform of native-geometry.js; offsetWidth/Height before its
+ * first report). A change of the default size (the canvas bitmap was resized) is a new version too.
+ * PARTIAL UPLOADS: none. The native paint event says which drawables changed, not where, so every new version is one full draw. The cost
+ * is on the GPU side; the call itself takes about 0.08 ms of main thread (Chrome Canary 158, M1 Max).
+ * @param {HicEnv} env
  * @param {HTMLCanvasElement} canvas
  * @param {Element} source
  * @returns {SourceProvider}
  */
-export function createNativeSourceProvider(canvas, source) {
-  const win = canvas.ownerDocument.defaultView;
+export function createNativeSourceProvider(env, canvas, source) {
+  const win = /** @type {Window & typeof globalThis} */ (env.window);
+  const c = /** @type {any} */ (canvas);
   /** @type {number|null} */
   let version = null;
   let counter = 0;
-  const onPaint = () => { version = ++counter; };
+  /** @type {{width: number, height: number}|null} */
+  let border = null;
+  let lastSize = '';
+  const related = (/** @type {unknown} */ el) => el instanceof win.Element && (el === source || source.contains(el) || el.contains(source));
+  const onPaint = (/** @type {Event} */ e) => {
+    const changed = /** @type {any} */ (e).changedElements;
+    if (version !== null && changed && typeof changed.length === 'number' && !Array.prototype.some.call(changed, related)) return;
+    version = ++counter;
+  };
   canvas.addEventListener('paint', onPaint);
-  /** Native has no event before the first paint unless one is requested. */
-  /** @type {any} */ (canvas).requestPaint?.();
+  // there is no paint event before the next change unless one is requested
+  c.requestPaint?.();
+  const ro = typeof win.ResizeObserver === 'function' ? new win.ResizeObserver((entries) => {
+    const box = entries[entries.length - 1]?.borderBoxSize?.[0];
+    if (box) border = { width: box.inlineSize, height: box.blockSize };
+  }) : null;
+  ro?.observe(source, { box: 'border-box' });
 
-  const cssSize = () => {
-    const el = /** @type {HTMLElement} */ (source);
-    return { cssWidth: el.offsetWidth, cssHeight: el.offsetHeight };
+  /** grid px of the element image, or null before the first paint */
+  const gridSize = () => {
+    try {
+      const s = c.getElementImageDefaultSize(source);
+      return s && s.width > 0 && s.height > 0 ? { width: Math.ceil(s.width), height: Math.ceil(s.height) } : null;
+    } catch { return null; }
   };
   return {
     kind: 'native',
-    version: () => version,
+    version() {
+      if (version === null) return null;
+      const g = gridSize();
+      const key = g ? `${g.width}x${g.height}` : '';
+      if (lastSize && key && key !== lastSize) { lastSize = key; version = ++counter; }
+      return version;
+    },
     size() {
-      const { cssWidth, cssHeight } = cssSize();
-      if (version === null || cssWidth <= 0 || cssHeight <= 0) return null;
-      const dpr = win?.devicePixelRatio || 1;
-      return { width: Math.ceil(cssWidth * dpr), height: Math.ceil(cssHeight * dpr), cssWidth, cssHeight };
+      const g = gridSize();
+      const el = /** @type {HTMLElement} */ (source);
+      const css = border ?? { width: el.offsetWidth, height: el.offsetHeight };
+      if (version === null || !g || css.width <= 0 || css.height <= 0) return null;
+      return { width: g.width, height: g.height, cssWidth: css.width, cssHeight: css.height };
     },
     upload(device, texture) {
-      device.queue.drawElementImageToTexture({ source }, { texture, size: { width: texture.width, height: texture.height } });
+      try {
+        device.queue.drawElementImageToTexture({ source }, { texture, size: { width: texture.width, height: texture.height } });
+      } catch (error) {
+        // no element image yet (InvalidStateError before the first paint, or the source left the canvas): nothing uploaded
+        if (/** @type {any} */ (error)?.name === 'InvalidStateError') return 0;
+        throw error;
+      }
+      lastSize = `${texture.width}x${texture.height}`;
       return version ?? 0;
     },
-    dispose() { canvas.removeEventListener('paint', onPaint); },
+    dispose() { canvas.removeEventListener('paint', onPaint); ro?.disconnect(); },
   };
 }

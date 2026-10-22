@@ -87,7 +87,9 @@ const LIMITS = {
   //   check for jumps into view, the paused frame hook, settle frames for pending actions, the new stats fields)
   // 32.25 -> 32.5 KB, gzip 12.25 -> 12.5 KB (+141 / +42 bytes, 2026-10-21, measured 32,358 / 12,251): the interposer reads the mapped element's cursor without
   //   the cursor it put on the layer (an inherited cursor kept the previous target's cursor everywhere)
-  'hic-live-effects.iife.min.js': { target: 32.5 * KB, ceiling: 32.5 * KB, gzip: 12.5 * KB },
+  // 32.5 -> 39 KB, gzip 12.5 -> 14.5 KB (+6,394 / +2,017 bytes, 2026-10-22, measured 38,752 / 14,268): the effects over a browser's own implementation (the native
+  //   source provider and its paint-driven frame source with the cap phase, the hit-test geometry and the native interposer, the native API checks of createHost)
+  'hic-live-effects.iife.min.js': { target: 39 * KB, ceiling: 39 * KB, gzip: 14.5 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)

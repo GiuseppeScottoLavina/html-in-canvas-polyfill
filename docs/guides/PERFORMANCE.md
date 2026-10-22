@@ -46,7 +46,7 @@ A drawable that updates often (typing, animation, a slider) should stay well und
 - Frames are paced by a phase accumulator, so 60 on a 120 Hz display renders every second frame. Measured with the water plugin on a 120 Hz display: caps 30, 60 and 120 gave 30.0, 60.0 and 120.1 Hz, from an independent clock.
 - `requestPaint()` is a request, not a bypass: a capped canvas never paints faster than F. The redraw behind a `canvas.width/height` write is the one exception (one per frame): a cleared bitmap must be redrawn in the same frame.
 - Input-driven updates also honour the cap unless `options.interactionFloorFps` is set; with the default 0, typing latency can be up to one cap period.
-- With a complete native implementation the cap only bounds effect frames.
+- With a complete native implementation the cap only bounds effect frames (the browser's own `paint` events are not throttled). The cost of the water effect there: `docs/guides/EFFECTS-PLUGINS.md`, "On a native implementation".
 - A cap is a ceiling, not a promise: a slow page cannot be sped up by raising it.
 
 ## 5. Tips

@@ -91,7 +91,9 @@ if (!docsOnly) {
   // api/worker-scope.js in the worker bundle).
   // 14900 -> 14925 (2026-10-22, measured 14,903; 14,881 before this step): the drawable's own backdrop-filter applied by the draw (api/context2d-patch.js).
   // 14925 -> 14975 (2026-10-22, measured 14,965; 14,903 before this step): a playing video repaints its drawable (schedule/observers/video-observer.js).
-  if (total > 14975) problems.push(`G-size: core is ${total} code lines (> 14975)`);
+  // 14975 -> 15250 (2026-10-22, measured 15,243 with the steps above; 14,965 before this step, +271 measured alone on 14,308): the effects over a browser's own HTML-in-Canvas implementation (effects/native-geometry.js,
+  // effects/native-interposer.js, the native source provider and frame source, the native checks of the effect host, the frameCap property in the native modes).
+  if (total > 15250) problems.push(`G-size: core is ${total} code lines (> 15250)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
