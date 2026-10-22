@@ -162,7 +162,7 @@
   "privacy/box-reflect-images-in-iframe-moved-ignored.tentative.https.sub.html": {
    "category": "bug",
    "reason": "WPT-B5",
-   "note": "open (privacy; new test): unstable, 1 of 3 repetitions fails: after the iframe with the box-reflect moves into the drawable, the same-origin div is not drawn yet (0,0,0,0) when the test reads the canvas"
+   "note": "open (privacy; new test): unstable, 2 of 6 repetitions in two full runs on 2026-10-22 fail: after the iframe with the box-reflect moves into the drawable, the same-origin div is not drawn yet (0,0,0,0) when the test reads the canvas"
   },
   "privacy/fragment-mask-png-ignored.tentative.https.sub.html": {
    "category": "bug",
@@ -177,7 +177,7 @@
   "privacy/popover-show-hide-background-image-ignored.tentative.https.sub.html": {
    "category": "bug",
    "reason": "WPT-B3",
-   "note": "open (privacy; new test, WPT 136493f8): an `<iframe popover>` shown, restyled and hidden again inside the drawable: after hidePopover() the drawable draws nothing at all (0,0,0,0) where native draws its green background without the frame's cross-origin background image"
+   "note": "open (privacy; new test, WPT 136493f8): an `<iframe popover>` shown, restyled and hidden again inside the drawable: after hidePopover() the drawable usually draws nothing at all (0,0,0,0; 5 of 6 repetitions in two full runs on 2026-10-22, so the result is not stable) where native draws its green background without the frame's cross-origin background image"
   },
   "privacy/selection-alone-with-decorations-painted.tentative.html": {
    "category": "deviation",
@@ -608,7 +608,6 @@
   "privacy/nested-tainted-html-in-canvas-ignored.tentative.https.sub.html",
   "privacy/object-image-ignored.tentative.https.sub.html",
   "privacy/picture-images-ignored.tentative.https.sub.html",
-  "privacy/popover-show-hide-background-image-ignored.tentative.https.sub.html",
   "privacy/pseudos/before-after-images-ignored.tentative.https.sub.html",
   "privacy/pseudos/before-after-images-moved-ignored.tentative.https.sub.html",
   "privacy/pseudos/before-after-visited-color-ignored.tentative.html",
