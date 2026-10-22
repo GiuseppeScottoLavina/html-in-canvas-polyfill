@@ -41,3 +41,13 @@ test('a failed real check or a thrown run fails; a run without any assertion fai
   const none = judge({ real: real([]), focus: { mode: 'real' } });
   assert.equal(none.pass, false); assert.match(none.failed.join(), /no assertion/);
 });
+
+test('pointer input the harness did not send makes the run NOT USABLE, named first as an environment problem (the real checks it may have broken come after)', () => {
+  const foreignPointer = [{ phase: 'real', type: 'mousemove', x: 822, y: 543 }];
+  const j = judge({ real: real([bad('hover pixels', 'pixel')]), focus: { mode: 'real' }, foreignPointer });
+  assert.equal(j.verdict, 'NOT USABLE'); assert.equal(j.pass, false); assert.equal(j.usable, false); assert.equal(j.countsForThresholds, false);
+  assert.deepEqual(j.degraded, ['foreign-pointer:1']);
+  assert.match(j.failed[0], /^ENVIRONMENT: pointer input the harness did not send/);
+  // and a clean run with an empty guard record is untouched
+  assert.equal(judge({ real: real([ok('a')]), focus: { mode: 'real' }, foreignPointer: [] }).verdict, 'PASS');
+});

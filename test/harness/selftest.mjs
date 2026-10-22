@@ -2,7 +2,7 @@
 // Harness self-test: exercises every helper against tiny built-in fixtures (no polyfill needed) in a REAL headed Chrome and
 // PROVES the positive controls fire (blank detector, non-blank test, cadence reporter, trace parser...).
 //
-//   node test/harness/selftest.mjs [--only=env,input,...] [--skip=pixel] [--chrome=stable|canary] [--keep-profile]
+//   node test/harness/selftest.mjs [--only=env,input,...,pointer] [--skip=pixel] [--chrome=stable|canary] [--keep-profile]
 //
 // Writes .scratch/selftest/<timestamp>/selftest.json (+ diff PNGs, traces) and prints PASS/FAIL per check and the environment.
 // Exit code 1 when any gating check fails. `info` rows are measurements, not gates.
@@ -27,7 +27,7 @@ const ctx = { check, info, outDir, R, chrome };
 
 const SECTIONS = [
   ['env', './selftest/env.mjs'], ['input', './selftest/input.mjs'], ['trace', './selftest/trace.mjs'], ['window', './selftest/window.mjs'],
-  ['pixel', './selftest/pixel.mjs'], ['blank', './selftest/blank.mjs'], ['latency', './selftest/latency.mjs'], ['fixtures', './selftest/fixtures.mjs'],
+  ['pixel', './selftest/pixel.mjs'], ['blank', './selftest/blank.mjs'], ['latency', './selftest/latency.mjs'], ['fixtures', './selftest/fixtures.mjs'], ['pointer', './selftest/pointer.mjs'],
 ];
 const wanted = name => (!only || only.includes(name)) && !skip.includes(name);
 
