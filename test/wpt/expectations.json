@@ -120,11 +120,6 @@
    "reason": "paint-timing",
    "note": "passes every subtest since 2026-10-16 (the first snapshot uses no credit of the snapshot-rate gate, so the rebuild after the first paint is in the next frame); before, the test's one-frame waits (rAF + setTimeout(0)) caught the paint only on a cold first load, and the file passed 4/4 or 0/4 by turns. Kept for the paint-timing deviation should a slower machine miss the single frame"
   },
-  "onpaint.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-spurious",
-   "note": "'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows; telling an unchanged tile apart needs a read-back of every rebuilt tile. The other 11 subtests pass in every rep. Three machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler); the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames; and its phase accumulator allowed a second build one frame after the first or not depending on the phase that the frame of the first build and dropped frames had left ('grandchild changes' or 'child transform' and 'drawing operations' failed by turns). Builds are now paced in frame time by a credit of builds"
-  },
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
