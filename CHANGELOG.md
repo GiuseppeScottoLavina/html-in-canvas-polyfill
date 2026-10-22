@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Test harness: intermittent gate failures traced to the shared machine, not to the polyfill, are now prevented where they can be and otherwise reported as environment problems instead of product failures. A headed Chrome on macOS delivers the resting OS pointer to the page at every clipped screenshot and tab activation, so a pointer left over the test window moved `:hover` behind the gate (G-scroll-cadence's plain-DOM twin lost its hovered row, one row band 6.3 % different, at both DPRs): the harness moves the pointer out of the browser window at launch, every gate page records pointer input the gate did not send and such a run is `NOT USABLE`, and G-scroll-cadence checks that each twin screenshot shows the row it was given. In the cross-browser gate, a scenario during which another application came to the front (a browser that is not the active application swallows trusted clicks, Safari's clickEffect, and cannot activate a popup, Firefox's inactive) runs again and then fails as an environment problem.
+- Gate runners: a gate process that prints no result is reported as not run with the reason (exit code, signal, runner timeout) instead of crashing the mutant suite, and a gate still running after 10 minutes reports itself with the calls it was waiting for (`NOT USABLE` behind a locked screen).
+
 ## [0.1.0-preview.6] - 2026-10-22
 
 The conformance gate now runs the official WPT HTML-in-Canvas tests at their newest revision (2026-10-18): the polyfill passes 198 of 237 files and 316 of 369 subtests, native Chrome Canary 158.0.8112.1 225 and 357, and no polyfill bug is open. Content that read-back-allowed rendering hides is now hidden as natively: an unreadable mask image masks its element away, a cross-origin video is an invisible box, and an SVG `<use>` draws only same-origin documents. **Breaking:** the two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from the specification on 2026-10-09, are gone; see Removed for the migration.
