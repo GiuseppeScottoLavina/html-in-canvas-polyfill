@@ -246,7 +246,7 @@ function installPolyfill(env, services, ledger, undo, setAdoption) {
   installContext2DPatches(env, ledger, geometry);
   const lateGpu = installGpu(env, ledger);
   undo.push(installFullscreenGuard(env, ledger));
-  installWorkerGuard(env, ledger);
+  installWorkerGuard(env, ledger, geometry);
   installDevicePixelBox(env, ledger);
   undo.push(watchCsp(env));
 

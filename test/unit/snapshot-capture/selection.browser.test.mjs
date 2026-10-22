@@ -236,3 +236,39 @@ test('selected page text is not wrapped where a wrapper could change a selector 
     getSelection().removeAllRanges();
   }
 });
+
+test('an author ::selection rule with text-decoration and text-shadow: the selected page text is drawn with them (WPT privacy/selection-alone-with-decorations-painted); control: a rule without them draws neither', async () => {
+  // one class per draw: the fixture of the first draw is still in the document during the second
+  const selCss = (cls, deco) => `${css}.${cls}{margin:0;font:20px/30px sans-serif;color:rgb(0,0,0)}.${cls}::selection{background:rgb(0,255,0);color:rgb(0,128,0)${deco}}`;
+  const draw = async (cls, deco) => {
+    const m = mount(`<div class="d" drawable><p class="${cls}">select me</p></div>`, { css: selCss(cls, deco) });
+    const text = /** @type {Text} */ (m.layerEl.querySelector('p')?.firstChild);
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 6);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    try {
+      const el = m.layerEl.firstElementChild;
+      const er = el.getBoundingClientRect();
+      const rr = range.getBoundingClientRect();
+      const img = await rasterize(m.capture(m.request(el)));
+      return { img, box: { x: Math.round(rr.left - er.left), y: Math.round(rr.top - er.top), w: Math.round(rr.width), h: Math.round(rr.height) } };
+    } finally {
+      getSelection().removeAllRanges();
+    }
+  };
+  /** count of pixels of a colour in the selected line box and below it */
+  const count = ({ img, box }, rgb, tol = 40) => {
+    const d = img.getImageData(box.x, box.y, box.w + 4, box.h + 8).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - rgb[0]) + Math.abs(d[i + 1] - rgb[1]) + Math.abs(d[i + 2] - rgb[2]) <= tol) n++;
+    return n;
+  };
+  const decorated = await draw('deco', ';text-decoration:2px rgb(0,0,255) underline;text-shadow:rgb(255,0,255) 2px 5px');
+  const plain = await draw('plain', '');
+  assert.ok(count(decorated, [0, 0, 255]) >= 40, `the blue underline is drawn: ${count(decorated, [0, 0, 255])} px`);
+  assert.ok(count(decorated, [255, 0, 255]) >= 20, `the magenta shadow is drawn: ${count(decorated, [255, 0, 255])} px`);
+  assert.equal(count(plain, [0, 0, 255]), 0, 'control: no underline without the rule');
+  assert.equal(count(plain, [255, 0, 255]), 0, 'control: no shadow without the rule');
+});

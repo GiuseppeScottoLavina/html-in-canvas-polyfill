@@ -21,9 +21,9 @@ points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/`
 | Implemented (supported or limited) | Not implemented (fails loudly, section 9) |
 |---|---|
 | `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27 (desktop) or < 26 (iOS), other engines, web views, Firefox for Android, an engine lacking a required platform feature |
-| `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | shadow DOM, iframes/objects/embeds, top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
+| `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | cross-origin frames and objects (drawn as their own box, as natively), top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
 | `ctx.drawElementImage` (all 4 overloads) on `CanvasRenderingContext2D` and main-thread `OffscreenCanvasRenderingContext2D` | cross-origin resources that cannot be inlined (section 9.2) |
-| `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas | a worker as a source or sink of `ElementImage` (use `toImageBitmap()`; `postMessage` of one throws a loud, actionable error) |
+| `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas; an `ElementImage` posted to a dedicated Worker that loads the worker bundle (section 5.2) | an `ElementImage` through a MessagePort, a BroadcastChannel or to a ServiceWorker (use `toImageBitmap()`) |
 | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `ElementGeometryUpdateEvent` | a managed canvas in a closed shadow root created before install (`adoptRoot` hook) |
 | WebGL and WebGL2 `texElementSubImage2D` (+ legacy `texElementImage2D`); WebGPU `GPUQueue.drawElementImageToTexture` (+ legacy `copyElementImageToTexture`) | zero-copy texture paths |
 | canvases in open shadow roots (limited), nested `<canvas content=drawable>` managed independently (limited) | |
@@ -232,8 +232,17 @@ Default-size draws take the source rect from the SURFACE pixel size (no resampli
 `canvas.transferControlToOffscreen()` is wrapped only to record the link `record.offscreen`. A main-thread `OffscreenCanvas` (one
 the page obtained from `transferControlToOffscreen()` and keeps on the main thread, or `new OffscreenCanvas` linked by the
 placeholder semantics) can use `getContext('2d').drawElementImage` and `offscreen.updateElementGeometry/clearElementGeometry`
-(microtask-batched, then `elementgeometryupdate` on the HTMLCanvasElement). In a worker the polyfill does not exist: `drawElementImage` is
-`undefined` there (loud `TypeError` on call) and an `ElementImage` cannot be posted (`DataCloneError`); use `toImageBitmap()`.
+(microtask-batched, then `elementgeometryupdate` on the HTMLCanvasElement). In a dedicated worker the surface exists when the worker loads the
+worker bundle first (`importScripts('hic-live-worker.iife.min.js')`, or `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/worker'` in a module
+worker): `Worker.prototype.postMessage` on the page replaces each `ElementImage` at a shallow position of the message (the message itself, an array item,
+a property of a plain object) by a record with the snapshot's pixels as an `ImageBitmap`, and closes the `ElementImage` when it is in the transfer list (a
+transfer detaches); the worker bundle turns the record back into an `ElementImage` before the worker's own listeners run. In the worker,
+`OffscreenCanvasRenderingContext2D.drawElementImage` (the four overloads) draws it on the OffscreenCanvas of its canvas, and `getElementImageDefaultSize`,
+`updateElementGeometry`, `clearElementGeometry` and the earlier draft's two-argument `getElementTransform` work on that OffscreenCanvas; another canvas's
+OffscreenCanvas, a standalone one or a closed image throws `InvalidStateError`. The geometry of the worker's draws and calls is sent back once per worker
+turn and applied on the page as for a main-thread OffscreenCanvas (one `elementgeometryupdate`). The pixels are those of the snapshot when it was posted:
+post a new capture after `paint` to update them. A worker without the bundle receives the plain record. An `ElementImage` sent through a MessagePort, a
+BroadcastChannel or to a ServiceWorker throws `HicUnsupportedError('worker-element-image')`; `toImageBitmap()` is the alternative there.
 
 ### 5.3 WebGL and WebGL2
 Installed on BOTH `WebGLRenderingContext.prototype` and `WebGL2RenderingContext.prototype` (legacy aliases on both).
@@ -268,7 +277,8 @@ All DOMExceptions are the platform class. Loud polyfill refusals are `HicUnsuppo
 | invalid `DOMMatrixInit` / `DOMRectInit` | `TypeError` | updateElementGeometry |
 | any numeric argument NaN / infinite | none (silent return) | drawElementImage |
 | `drawable` SVG element inside an `<svg>` (not the outermost `<svg>`) | `HicUnsupportedError('svg-drawable')` (polyfill limit) | getElementTransform, updateElementGeometry, clearElementGeometry, capture |
-| `postMessage` of an `ElementImage` to a Worker/MessagePort | `HicUnsupportedError('worker-element-image')` (native: DataCloneError) | postMessage |
+| `postMessage` of an `ElementImage` through a MessagePort / BroadcastChannel / to a ServiceWorker; an `ElementImage` in a Worker's transfer list but not in the message | `HicUnsupportedError('worker-element-image')` / `DataCloneError` | postMessage |
+| in a worker: an `ElementImage` of another canvas, a standalone OffscreenCanvas, a closed image | `InvalidStateError` | drawElementImage, the OffscreenCanvas geometry methods |
 | `new ElementImage()` | `TypeError` (Illegal constructor) | constructor |
 
 ### 6.2 "Throws before an initial snapshot"
@@ -433,7 +443,10 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 2. Content the polyfill cannot capture never stalls and never blanks the rest: the offending subtree is replaced in the clone by a
    visible hatched placeholder box (`options.onUnsupportedContent: 'placeholder'`, default), a `Reporter.unsupported()` entry is
    recorded, `console.error` prints ONCE per (feature, path), a `hicunsupported` CustomEvent fires on the canvas, and the commit
-   proceeds. With `'abort'` the commit is dropped, no paint fires, the event still fires.
+   proceeds. With `'abort'` the commit is dropped, no paint fires, the event still fires. Content that the platform itself leaves
+   out of a canvas (an image or frame document that is cross-origin, a filter that would draw a cross-origin image) is drawn as the
+   platform draws it, without a hatched box: the element's own box without the content, or the element unfiltered; it is reported
+   in the same way.
 3. `installed.report()` returns the JSON `HicReport` (mode, native state, browser, per canvas state/drawables/frame cap/stats,
    unsupported entries, exercised deviations, caught internal errors). An unsupported entry's `count` is the number of times the reporter was told about it (typically once per snapshot attempt that meets that content, so a re-capture counts again), NOT the number of offending elements: one iframe can read 3. Internal errors are never swallowed: they land in
    `report().errors` and `console.error` once.
@@ -457,15 +470,15 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `browser` | not Chromium desktop >= 130 | `install()` throws |
 | `partial-native` | a native implementation without its core (no `content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | `install()` throws unless `forcePolyfill`; a usable native is never refused (section 2) |
 | `shadow-dom` | (no longer reported) open shadow roots inside a drawable are drawn in flat-tree order with computed styles inlined (limited) | - |
-| `iframe` | iframe/object/embed in a drawable subtree | placeholder + entry |
+| `iframe` | iframe/frame/object whose document this page cannot read (cross-origin, sandboxed without `allow-same-origin`), or an embed that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively; entry. A same-origin frame or object draws its document (resources inlined, its cross-origin content left out), repainted when that document changes or reloads; no entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |
 | `top-layer-canvas` | a managed canvas became the fullscreen element (its controls take no input), or a `popover` canvas | entry with hint (fullscreen proceeds) / refused at mount |
 | `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | API calls throw `HicUnsupportedError` |
 | `csp-blocked` | CSP without `img-src data:` | entry + hint (snapshots cannot decode) |
 | `top-layer` | (no longer reported) a modal dialog, open popover or fullscreen element inside a drawable is left out of the snapshot, as natively | - |
-| `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | placeholder for the element (image) or fallback font, entry |
+| `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | as natively: an `<img>` / `<picture>` / embed / object draws its box without the picture, an SVG `<image>` draws nothing, a `<filter>` with such an `feImage` is not applied, a font falls back; entry |
 | `resource-fetch-failed` | fetch error / undecodable | as above |
-| `worker-element-image` | `postMessage(elementImage, [elementImage])` | `HicUnsupportedError` with the `toImageBitmap()` hint |
+| `worker-element-image` | `postMessage(elementImage)` through a MessagePort, a BroadcastChannel or to a ServiceWorker (a dedicated Worker takes it, section 5.2) | `HicUnsupportedError` with the `toImageBitmap()` hint |
 | `node-budget` | a drawable above `nodeBudget.absolute` nodes | placeholder + entry (above `hard`: degraded to <= 4 fps except for its inner scrolling, reported) |
 
 ### 9.3 Documented deviations (rows with status `deviation`; each is recorded in `report().deviations` when exercised)

@@ -82,7 +82,16 @@ if (!docsOnly) {
   // 14100 -> 14325 (2026-10-21, measured 14,308; 14,090 before this step): Chromium's classic scrollbars as the platform paints them (snapshot/capture/chromium-bars.js, the
   // bar painter and listbox bar of scroll-emulation.js), the bar-sized intrinsic width of textarea / listbox select pinned in the clone, the raster scale and 1:1 draw
   // of a grid rounded from a fractional device-pixel content box (snapshot/store/surfaces.js gridRasterScale, api/draw-math.js snapDefaultSize).
-  if (total > 14325) problems.push(`G-size: core is ${total} code lines (> 14325)`);
+  // 14325 -> 14400 (2026-10-22, measured 14,399; 14,308 before this step): content the browser leaves out of a canvas drawn as the browser draws it (state-sync.js
+  // syncEmbedded / ownBox), SVG filters and masks under the native read-back rules (svg-refs.js settleFilterImages, addOutsideMasks).
+  // 14400 -> 14575 (2026-10-22, measured 14,556; 14,399 before this step): same-origin frames drawn (snapshot/capture/frame-doc.js) and their documents observed for changes
+  // (schedule/observers/mutation-observer.js).
+  // 14575 -> 14600 (2026-10-22, measured 14,579; 14,556 before this step): canvases of declarative shadow roots, paint events in shadow-including tree order (util/tree-order.js).
+  // 14600 -> 14900 (2026-10-22, measured 14,880; 14,591 before this step): an ElementImage in a dedicated worker (api/worker-transfer.js and worker-wire.js on the page,
+  // api/worker-scope.js in the worker bundle).
+  // 14900 -> 14925 (2026-10-22, measured 14,903; 14,881 before this step): the drawable's own backdrop-filter applied by the draw (api/context2d-patch.js).
+  // 14925 -> 14975 (2026-10-22, measured 14,965; 14,903 before this step): a playing video repaints its drawable (schedule/observers/video-observer.js).
+  if (total > 14975) problems.push(`G-size: core is ${total} code lines (> 14975)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

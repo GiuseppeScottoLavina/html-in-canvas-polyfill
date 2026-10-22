@@ -20,6 +20,11 @@ import { assertTargetType, defineMethod, globalsOf, resolveElement } from './val
 
 const NO_ORIGIN = IDENTITY16;
 
+/** CSS mix-blend-mode -> 2D globalCompositeOperation (the separable and non-separable blend modes share their names; plus-lighter is `lighter`). */
+/** @type {Record<string, GlobalCompositeOperation>} */
+const BLEND_OPS = Object.fromEntries(['multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion',
+  'hue', 'saturation', 'color', 'luminosity'].map((m) => [m, /** @type {GlobalCompositeOperation} */ (m)]).concat([['plus-lighter', 'lighter']]));
+
 /**
  * The HTMLCanvasElement whose content box the context draws for.
  * @param {Context2D} ctx
@@ -86,13 +91,49 @@ function drawElement(env, geometry, ctx, offscreen, drawImage, ctor, args) {
   if (clipped && raster) {
     const size = snapDefaultSize(r, clipped, raster, version.scale);
     raster = isolatedSource(ctx, raster, size) ?? raster;
-    Reflect.apply(drawImage, ctx, [raster.source, raster.sx, raster.sy, raster.sw, raster.sh, clipped.dx, clipped.dy, size.dw, size.dh]);
+    if (version.backdrop && version.backdrop !== 'none') filterBackdrop(ctx, drawImage, version, r, clipped, version.backdrop);
+    // the drawable's own mix-blend-mode blends it with what the canvas holds below it (WPT css-blend-mode-over-content): the snapshot is isolated, so the draw composites with it
+    const blend = BLEND_OPS[version.blend ?? 'normal'];
+    const previous = ctx.globalCompositeOperation;
+    if (blend) ctx.globalCompositeOperation = blend;
+    try {
+      Reflect.apply(drawImage, ctx, [raster.source, raster.sx, raster.sy, raster.sw, raster.sh, clipped.dx, clipped.dy, size.dw, size.dh]);
+    } finally {
+      if (blend) ctx.globalCompositeOperation = previous;
+    }
   }
   const stored = !parsed.preserveElementGeometry && !r.degenerate
     ? updateGeometry(env, geometry, ctx, offscreen, record, element, r)
     : null;
   if (!record.legacy) return undefined;
   return withLegacyOrigin(stored ?? geometry.get(record, element), version.translation);
+}
+
+/**
+ * The drawable's own backdrop-filter works on what the canvas holds under its border box (WPT css-backdrop-filter): the snapshot is an isolated image whose renderer paints no
+ * backdrop-filter, so the draw filters that part of the canvas first (the canvas drawn onto itself through `ctx.filter`, clipped to the border box under the current
+ * transform). Lengths of the filter are css px of the element: they are scaled to output px. Border radii are not applied.
+ * @param {Context2D} ctx @param {Function} drawImage @param {import('../contracts/types.js').SnapshotVersion} version @param {ResolvedRects} r
+ * @param {{src: import('../contracts/types.js').SourceRectCss, dx: number, dy: number, dw: number, dh: number}} clipped @param {string} filter
+ */
+function filterBackdrop(ctx, drawImage, version, r, clipped, filter) {
+  const x0 = Math.max(0, clipped.src.sx); const y0 = Math.max(0, clipped.src.sy);
+  const x1 = Math.min(version.width, clipped.src.sx + clipped.src.sw); const y1 = Math.min(version.height, clipped.src.sy + clipped.src.sh);
+  if (!(x1 > x0 && y1 > y0)) return;
+  const k = Math.sqrt(Math.abs(r.kx * r.ky)) || 1;
+  ctx.save();
+  try {
+    ctx.beginPath();
+    ctx.rect(clipped.dx + (x0 - clipped.src.sx) * r.kx, clipped.dy + (y0 - clipped.src.sy) * r.ky, (x1 - x0) * r.kx, (y1 - y0) * r.ky);
+    ctx.clip();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'copy';
+    ctx.filter = filter.replace(/(-?[\d.]+)px/g, (_m, n) => `${+n * k}px`);
+    Reflect.apply(drawImage, ctx, [ctx.canvas, 0, 0]);
+  } finally {
+    ctx.restore();
+  }
 }
 
 /** @type {OffscreenCanvas|HTMLCanvasElement|null} */

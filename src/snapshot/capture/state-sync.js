@@ -10,6 +10,7 @@ import { scaleMode } from './svg-builder.js';
 import { usedColorScheme } from './color-scheme.js';
 import { engineSkins, skinsFor } from './engine-skins.js';
 import { pinBarBox } from './scroll-emulation.js';
+import { frameImage, ownBox } from './frame-doc.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -246,11 +247,12 @@ function syncImage(env, src, clone, req, unsupported) {
     appendInlineStyle(clone, usedSize(cs));
     return true;
   }
-  if (r.state === 'failed') return refuse(unsupported, src, r.error.feature, r.error.message, r.error.hint);
+  // cross-origin without CORS: the platform draws the <img> box (border, background) without the picture (WPT privacy/html-images-ignored, picture-images-ignored); reported
+  if (r.state === 'failed') addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
   clone.removeAttribute('src');
   appendInlineStyle(clone, usedSize(cs));
-  if (r.state === 'pending') { markPending(unsupported); return true; }
-  clone.setAttribute('src', r.url);
+  if (r.state === 'pending') markPending(unsupported);
+  else if (r.state === 'ready') clone.setAttribute('src', r.url);
   return true;
 }
 
@@ -396,6 +398,51 @@ function scrollInputText(src, clone) {
   appendInlineStyle(clone, `text-indent:calc(${cs.textIndent} - ${src.scrollLeft}px)!important;`);
 }
 
+/** An `<embed src>` / `<object data>` the platform shows as an image document: an image MIME type, or no type and an image file extension. */
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)(?:[?#]|$)/i;
+
+/** @param {Element} src embed or object @returns {string} the absolute URL of the image it shows, '' when it is not an image */
+function embeddedImage(src) {
+  const url = src.localName === 'object' ? /** @type {HTMLObjectElement} */ (src).data : /** @type {HTMLEmbedElement} */ (src).src;
+  const type = (src.getAttribute('type') ?? '').trim().toLowerCase();
+  return url && (type ? type.startsWith('image/') : IMAGE_FILE.test(url)) ? url : '';
+}
+
+/**
+ * <iframe>, <frame>, <embed>, <object>. An embed or object that shows a readable image draws it at its natural size from the top left of its content box (an image document);
+ * a frame or object whose document this page may read (same-origin) draws it inside its own box (frame-doc.js); everything else draws its own box without the content and is
+ * reported: a cross-origin document must never be drawn.
+ * @param {Element} src @param {Element} clone @param {CaptureRequest} req @param {UnsupportedEntry[]} unsupported
+ * @returns {Element}
+ */
+function syncEmbedded(src, clone, req, unsupported) {
+  const ln = src.localName;
+  const image = ln === 'embed' || ln === 'object' ? embeddedImage(src) : '';
+  if (image) {
+    const r = resolveResource(req.resources, image, image.endsWith('.svg') ? 'svg' : 'image');
+    if (r.state === 'ready') {
+      const img = ownBox(src, clone, 'img');
+      appendInlineStyle(img, 'object-fit:none!important;object-position:0 0!important;');
+      img.setAttribute('src', r.url);
+      return img;
+    }
+    if (r.state === 'pending') markPending(unsupported);
+    else addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
+    return ownBox(src, clone);
+  }
+  const box = ownBox(src, clone);
+  const state = { pending: false };
+  const page = ln === 'embed' ? null : frameImage(src, clone.ownerDocument, req.resources, state);
+  if (page === 'loading') return box;
+  if (page) {
+    box.appendChild(page);
+    if (state.pending) markPending(unsupported);
+    return box;
+  }
+  addUnsupported(unsupported, src, 'iframe', `the content of <${ln}> is not drawn (its document is cross-origin, sandboxed or not loaded)`, 'Draw the content as elements of the drawable, or use a same-origin frame.');
+  return box;
+}
+
 /**
  * Copy the live state of `src` onto `clone`. Returns true when the clone stays, false when src is unsupported (iframe, shadow host, top layer, ...) and the caller must put a placeholder in its place
  * (an entry was pushed to `unsupported`), or the element that replaces the clone (canvas and video frames become an <img>).
@@ -409,8 +456,7 @@ function scrollInputText(src, clone) {
 export function syncNodeState(env, src, clone, req, unsupported) {
   const ln = src.localName;
   switch (ln) {
-    case 'iframe': case 'frame': case 'object': case 'embed':
-      return refuse(unsupported, src, 'iframe', `<${ln}> cannot be captured`, 'Replace it with an <img> or draw it outside the drawable.');
+    case 'iframe': case 'frame': case 'object': case 'embed': return syncEmbedded(src, clone, req, unsupported);
     case 'input': syncInput(/** @type {HTMLInputElement} */ (src), clone, req.scale); break;
     case 'textarea': {
       const ta = /** @type {HTMLTextAreaElement} */ (src);
@@ -433,9 +479,12 @@ export function syncNodeState(env, src, clone, req, unsupported) {
         const href = src.getAttribute('href') ?? src.getAttribute('xlink:href') ?? '';
         if (href && !href.startsWith('data:')) {
           const r = resolveResource(req.resources, new URL(href, env.document.baseURI).href, 'image');
-          if (r.state === 'failed') return refuse(unsupported, src, r.error.feature, r.error.message, r.error.hint);
+          // an image that cannot be read is not drawn, as the platform does (WPT privacy/svg/svg-images-ignored); reported
+          if (r.state === 'failed') addUnsupported(unsupported, src, r.error.feature, r.error.message, r.error.hint);
           if (r.state === 'pending') markPending(unsupported);
-          clone.setAttribute('href', r.state === 'ready' ? r.url : 'data:,');
+          // without an href the element draws nothing; `data:,` would draw the broken-image icon
+          if (r.state === 'ready') clone.setAttribute('href', r.url);
+          else clone.removeAttribute('href');
           clone.removeAttribute('xlink:href');
         }
       }

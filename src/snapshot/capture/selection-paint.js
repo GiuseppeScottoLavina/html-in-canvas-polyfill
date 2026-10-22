@@ -21,6 +21,8 @@ import { currentSelectionForeground } from '../../util/engine.js';
  * @typedef {Object} SelectionPaint
  * @property {string} background  a CSS colour, possibly translucent or transparent
  * @property {string|null} foreground  the glyph colour, or null: the glyphs keep their own colour
+ * @property {string} [decoration]  the text-decoration of an author `::selection` rule ('none' or absent: none)
+ * @property {string} [shadow]  its text-shadow ('none' or absent: none)
  */
 
 /**
@@ -127,7 +129,7 @@ export function createSelectionPainter(doc, foreground = currentSelectionForegro
       if (p) return p;
       if (authored(el)) {
         const cs = win.getComputedStyle(el, '::selection');
-        p = { background: cs.backgroundColor, foreground: cs.color };
+        p = { background: cs.backgroundColor, foreground: cs.color, decoration: cs.textDecorationLine === 'none' ? 'none' : cs.textDecoration, shadow: cs.textShadow };
       } else {
         system ??= { background: systemColor(doc, 'Highlight') ?? 'rgba(0, 0, 0, 0)', foreground: foreground ? systemColor(doc, 'HighlightText') : null };
         p = system;

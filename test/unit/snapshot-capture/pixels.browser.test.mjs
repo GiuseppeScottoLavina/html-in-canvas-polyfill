@@ -352,14 +352,72 @@ test('filter: url(#id) naming an SVG <filter> OUTSIDE the drawable is applied (W
   assert.deepEqual([red[0], red[1], red[2]], [255, 0, 0], 'positive control');
 });
 
-test('a filter whose feImage points at an external URL loses the image (it cannot be fetched into the image, and cross-origin ones are never drawn) but the filter still applies', async () => {
+test('a filter whose feImage is a same-origin URL that does not load keeps applying with an empty image (the platform does the same; measured on the native oracle)', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:40px;height:40px;background:red;filter:url(#hic-img)}' });
-  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-img"><feImage href="https://example.invalid/x.png" result="i"/><feFlood flood-color="blue"/></filter></svg>');
-  const r = m.capture(m.request(m.layerEl.firstElementChild));
+  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-img"><feImage href="/test/unit/snapshot-capture/assets/missing.png" result="i"/><feFlood flood-color="blue"/></filter></svg>');
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
   const svg = decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
-  assert.ok(svg.includes('<filter') && !svg.includes('example.invalid'));
+  assert.ok(svg.includes('<filter') && !svg.includes('missing.png'));
   const px = (await rasterize(r)).getImageData(20, 20, 1, 1).data;
   assert.deepEqual([px[0], px[1], px[2]], [0, 0, 255]);
+});
+
+test('a filter whose feImage cannot be read (cross-origin without CORS, or a URL that does not parse) is not applied at all, as the platform ignores it (WPT privacy/filtered-div-*-ignored); positive control: a readable one applies', async () => {
+  const css = '.d{width:40px;height:40px;background:rgb(0,128,0)} #a{filter:url(#hic-x)} #b{filter:url(#hic-bad) blur(2px)} #c{filter:url(#hic-ok)}';
+  const m = mount('<div id="a" class="d" drawable></div><div id="b" class="d" drawable></div><div id="c" class="d" drawable></div>', { css });
+  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-x"><feImage href="http://127.0.0.1:9/x.png"/></filter>'
+    + '<filter id="hic-bad"><feImage href="https://127.0.0.1:9x.png" result="o"/><feGaussianBlur in="o" stdDeviation="2"/></filter>'
+    + '<filter id="hic-ok"><feImage href="/test/unit/snapshot-capture/assets/red.svg" x="0" y="0" width="40" height="40" preserveAspectRatio="none"/></filter></svg>');
+  const [a, b, c] = m.layerEl.children;
+  for (const el of [a, b, c]) m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const center = async (el) => { const r = m.capture(m.request(el)); return { r, px: Array.from((await rasterize(r)).getImageData(20, 20, 1, 1).data) }; };
+  const ra = await center(a);
+  assert.deepEqual(ra.px, [0, 128, 0, 255], 'cross-origin: drawn unfiltered');
+  assert.ok(ra.r.unsupported.some((e) => e.feature === 'cross-origin-resource'), 'reported');
+  assert.ok(!decodeURIComponent(ra.r.url).includes('127.0.0.1:9'), 'never the external URL');
+  const rb = await center(b);
+  assert.deepEqual(rb.px, [0, 128, 0, 255], 'unparseable URL: the url() filter is ignored, the blur still runs (centre unchanged)');
+  assert.ok(!rb.r.unsupported.some((e) => e.feature === 'capture-error'), 'the capture does not fail');
+  const rc = await center(c);
+  assert.deepEqual(rc.px, [224, 0, 0, 255], 'positive control: the same-origin image replaces the box');
+});
+
+test('a feImage of a filter INSIDE the drawable (an <svg drawable>) is inlined when same-origin and drops its filter when cross-origin (WPT privacy/filtered-svg-ref-svg-feimage-ignored, svg-pattern-with-feImage)', async () => {
+  const m = mount('<svg drawable width="40" height="80" style="display:block"><filter id="hic-s"><feImage href="/test/unit/snapshot-capture/assets/red.svg" x="0" y="0" width="40" height="40" preserveAspectRatio="none"/></filter>'
+    + '<filter id="hic-c"><feImage href="http://127.0.0.1:9/x.png"/></filter><rect width="40" height="40" fill="rgb(0,128,0)" filter="url(#hic-s)"/><rect y="40" width="40" height="40" fill="rgb(0,128,0)" filter="url(#hic-c)"/></svg>');
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  const x = await rasterize(r);
+  const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
+  assert.deepEqual(px(20, 20), [224, 0, 0, 255], 'same-origin feImage drawn');
+  assert.deepEqual(px(20, 60), [0, 128, 0, 255], 'cross-origin: the rect is drawn unfiltered');
+});
+
+test('a mask outside the drawable masks its element away (the platform does not draw it, WPT privacy/svg/svg-mask-*); a mask inside the drawable applies; an id that exists nowhere is ignored', async () => {
+  const outside = document.createElement('div');
+  outside.innerHTML = '<svg width="0" height="0"><mask id="hic-out-mask"><rect width="100" height="100" fill="white"/></mask></svg>';
+  document.body.appendChild(outside);
+  const m = mount('<svg drawable width="40" height="120" style="display:block"><mask id="hic-in-mask"><rect width="40" height="20" fill="white"/></mask>'
+    + '<rect width="40" height="40" fill="rgb(0,128,0)" mask="url(#hic-in-mask)"/><rect y="40" width="40" height="40" fill="rgb(0,128,0)" mask="url(#hic-out-mask)"/><rect y="80" width="40" height="40" fill="rgb(0,128,0)" mask="url(#hic-nowhere)"/></svg>'
+    + '<div drawable style="width:40px;height:40px;background:rgb(0,128,0);mask:url(#hic-out-mask)"></div>');
+  const [svgEl, div] = m.layerEl.children;
+  const x = await rasterize(m.capture(m.request(svgEl)));
+  outside.remove();
+  const a = (p, q) => x.getImageData(p, q, 1, 1).data[3];
+  assert.equal(a(20, 10), 255, 'inside mask: the white half shows');
+  assert.equal(a(20, 30), 0, 'inside mask: the other half is masked');
+  assert.equal(a(20, 60), 0, 'outside mask: not drawn');
+  assert.equal(a(20, 100), 255, 'a mask that exists nowhere is ignored, as in the page');
+  document.body.appendChild(outside);
+  const y = await rasterize(m.capture(m.request(div)));
+  outside.remove();
+  assert.equal(y.getImageData(20, 20, 1, 1).data[3], 0, 'an HTML element masked by an outside mask is not drawn either');
 });
 
 test('a drawable with its own CSS transform keeps it in the snapshot (WPT css-transform-on-div): the rotated square reaches outside the corners of its border box', async () => {
@@ -396,4 +454,18 @@ test('a same-origin feImage of a referenced filter is inlined as a data: URL onc
   const svg = decodeURIComponent(second.url.slice(second.url.indexOf(',') + 1));
   assert.equal(second.complete, true);
   assert.ok(/<feImage[^>]*href="data:image\/svg\+xml/.test(svg) && !svg.includes('/test/unit/snapshot-capture/assets'));
+});
+
+test('an SVG <image> that cannot be read draws nothing (no broken-image icon) and is reported; a same-origin one is drawn (WPT privacy/svg/svg-images-ignored)', async () => {
+  const m = mount('<svg drawable width="40" height="80" style="display:block"><rect width="40" height="80" fill="rgb(0,128,0)"/><image href="/test/unit/snapshot-capture/assets/red.svg" width="40" height="40" preserveAspectRatio="none"/>'
+    + `<image y="40" href="http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg?iso=0" width="40" height="40" preserveAspectRatio="none"/></svg>`);
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  assert.deepEqual(r.unsupported.map((e) => e.feature), ['cross-origin-resource']);
+  const x = await rasterize(r);
+  const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
+  assert.deepEqual(px(20, 20), [224, 0, 0, 255], 'same-origin image drawn');
+  for (const [a, b] of [[20, 60], [3, 43], [36, 77]]) assert.deepEqual(px(a, b), [0, 128, 0, 255], `cross-origin image: nothing at ${a},${b}`);
 });

@@ -1,22 +1,26 @@
 /**
  * `filter: url(#id)` that names an SVG <filter> OUTSIDE the drawable: the clone is a separate SVG image document that has no such element, so the filter was dropped (WPT css-filter-reference-on-div).
  * The referenced <filter> elements are copied into the clone as a zero-size hidden <svg>, and so are the targets of `<use href="#id">` (chains included): Chrome draws a <use> whose target is outside
- * the drawable (WPT privacy/svg/svg-use-*: the same-origin image of the target draws, the cross-origin one does not). Masks, markers and paint servers outside the subtree are NOT copied:
- * the platform ignores them for privacy (WPT privacy/svg/*). Images of a copy (feImage / image href) go through the resource cache like every other image: readable ones are inlined, the others
- * (cross-origin without CORS, 404) are removed, as the platform ignores them.
+ * the drawable (WPT privacy/svg/svg-use-*: the same-origin image of the target draws, the cross-origin one does not). Markers and paint servers outside the subtree are NOT copied:
+ * the platform ignores them for privacy (WPT privacy/svg/*). A mask outside the subtree masks its element away entirely (measured on the native oracle: the element is not drawn), so it
+ * becomes an empty <mask> of the same id. Images of a copy (`<image href>`) go through the resource cache like every other image: readable ones are inlined, the others
+ * (cross-origin without CORS, 404) are removed, as the platform ignores them. The feImage of every filter of the clone (copied or inside the drawable) is settled by settleFilterImages.
  * Module: snapshot-capture (src/snapshot/capture/*).
  */
 
 import { resolveResource } from './inline-resources.js';
+import { setInlineStyle } from './inline-style.js';
 
 /** @typedef {import('../../contracts/types.js').ResourceCache} ResourceCache */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FILTER_REF = /filter\s*[:=]\s*["']?[^;"'}]*?url\(\s*["']?#([^"')\s]+)/gi;
+/** `mask: url(#id)`, `mask-image` (also -webkit-) in CSS text, and the `mask` attribute written as `mask:` by the caller. */
+const MASK_REF = /mask(?:-image)?\s*[:=]\s*["']?[^;"'}]*?url\(\s*["']?#([^"')\s]+)/gi;
 
-/** @param {string} text @param {Set<string>} ids */
-function collect(text, ids) {
-  for (const m of text.matchAll(FILTER_REF)) ids.add(m[1]);
+/** @param {string} text @param {Set<string>} ids @param {RegExp} [re] */
+function collect(text, ids, re = FILTER_REF) {
+  for (const m of text.matchAll(re)) ids.add(m[1]);
 }
 
 /**
@@ -86,7 +90,7 @@ function hiddenHolder(doc) {
   const holder = doc.createElementNS(SVG_NS, 'svg');
   holder.setAttribute('width', '0');
   holder.setAttribute('height', '0');
-  holder.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden');
+  setInlineStyle(holder, 'position:absolute;width:0;height:0;overflow:hidden');
   holder.setAttribute('aria-hidden', 'true');
   return holder;
 }
@@ -110,15 +114,89 @@ function useTarget(use) {
  */
 function copyOf(live, doc, target, cache, state) {
   const copy = /** @type {Element} */ (doc.importNode(target, true));
-  for (const image of [copy, ...Array.from(copy.querySelectorAll('feImage, image'))]) {
-    if (image.localName !== 'feImage' && image.localName !== 'image') continue;
-    const href = image.getAttribute('href') ?? image.getAttribute('xlink:href') ?? '';
+  for (const image of [copy, ...Array.from(copy.querySelectorAll('image'))]) {
+    if (image.localName !== 'image') continue;
+    const href = hrefOf(image);
     if (!href || href.startsWith('data:') || href.startsWith('#')) continue;
-    const r = resolveResource(cache, new URL(href, live.baseURI).href, 'image');
+    const abs = absolute(href, live.baseURI);
+    const r = abs ? resolveResource(cache, abs, 'image') : null;
     image.removeAttribute('xlink:href');
-    if (r.state === 'ready') image.setAttribute('href', r.url);
-    else { image.removeAttribute('href'); state.pending ||= r.state === 'pending'; }
+    if (r?.state === 'ready') image.setAttribute('href', r.url);
+    else { image.removeAttribute('href'); state.pending ||= r?.state === 'pending'; }
   }
   state.added++;
   return copy;
+}
+
+/** @param {Element} el @returns {string} */
+const hrefOf = (el) => el.getAttribute('href') ?? el.getAttribute('xlink:href') ?? '';
+
+/** @param {string} href @param {string} base @returns {string|null} the absolute URL, null when it does not parse */
+function absolute(href, base) {
+  try {
+    return new URL(href, base).href;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A mask reference whose target is outside the drawable: the platform does not draw the masked element (measured on the native oracle; WPT privacy/svg/svg-mask-*), so the clone gets an
+ * EMPTY <mask> of that id, which masks everything away. A reference to an id that exists nowhere is left alone (the element is drawn unmasked, as in the page).
+ * @param {Document} live
+ * @param {Element} root  clone root
+ * @param {string} css  the stylesheet text of the clone
+ * @returns {number} masks added
+ */
+export function addOutsideMasks(live, root, css) {
+  const marked = root.querySelectorAll('[mask], [style*="#"]');
+  if (!marked.length && !/mask[^;{}]*url\(\s*["']?#/i.test(css)) return 0;
+  /** @type {Set<string>} */
+  const ids = new Set();
+  collect(css, ids, MASK_REF);
+  for (const el of Array.from(marked)) {
+    collect(el.getAttribute('style') ?? '', ids, MASK_REF);
+    const attr = el.getAttribute('mask');
+    if (attr) collect(`mask:${attr}`, ids, MASK_REF);
+  }
+  const holder = hiddenHolder(root.ownerDocument);
+  for (const id of ids) {
+    if (present(root, holder, id) || !live.getElementById(id)) continue;
+    const mask = root.ownerDocument.createElementNS(SVG_NS, 'mask');
+    mask.setAttribute('id', id);
+    holder.appendChild(mask);
+  }
+  if (holder.firstChild) root.appendChild(holder);
+  return holder.childElementCount;
+}
+
+/**
+ * The feImage elements of the clone (inside the drawable or copied from outside it): a readable image is inlined as a data: URL; one that is still loading is left out until it lands
+ * (`pending`); a same-origin image that does not load (404) leaves the primitive empty, the filter still applies; a cross-origin image without CORS, or a URL that does not parse,
+ * makes the platform ignore the WHOLE filter (measured on the native oracle; WPT privacy/filtered-*-ignored: the element is drawn unfiltered), so that <filter> is removed from the
+ * clone and its references draw unfiltered, as references to a missing filter do.
+ * @param {Element} root  clone root
+ * @param {string} base  base URL of the live document
+ * @param {ResourceCache} cache
+ * @returns {{pending: boolean, ignored: Array<{feature: string, message: string, hint?: string, path: string}>}}
+ */
+export function settleFilterImages(root, base, cache) {
+  const out = { pending: false, ignored: /** @type {Array<{feature: string, message: string, hint?: string, path: string}>} */ ([]) };
+  for (const image of Array.from(root.querySelectorAll('feImage'))) {
+    const href = hrefOf(image);
+    if (!href || href.startsWith('data:') || href.startsWith('#')) continue;
+    image.removeAttribute('xlink:href');
+    image.removeAttribute('href');
+    const abs = absolute(href, base);
+    const r = abs ? resolveResource(cache, abs, 'image') : null;
+    if (r?.state === 'ready') image.setAttribute('href', r.url);
+    else if (r?.state === 'pending') out.pending = true;
+    else if (!r || r.error.feature === 'cross-origin-resource') {
+      const filter = image.closest('filter');
+      const id = filter?.getAttribute('id') ?? '';
+      filter?.remove();
+      out.ignored.push({ feature: r ? r.error.feature : 'resource-fetch-failed', message: `${r ? r.error.message : `invalid feImage URL ${href}`}: filter #${id} is not applied`, hint: r?.error.hint, path: `filter#${id}` });
+    }
+  }
+  return out;
 }

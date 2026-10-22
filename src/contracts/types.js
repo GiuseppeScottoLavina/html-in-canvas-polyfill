@@ -347,6 +347,8 @@ export {};
  * @property {number} canvasWidth   canvas content box width at snapshot time, css px   [spec: canvas width]
  * @property {number} canvasHeight  canvas content box height at snapshot time, css px
  * @property {DOMMatrixReadOnly} translation  translation matrix of the computed transform-origin   [spec: translation matrix]
+ * @property {string} [blend]     computed mix-blend-mode of the drawable: a draw composites the snapshot with it against the canvas content ('normal' when absent)
+ * @property {string} [backdrop]  computed backdrop-filter of the drawable: a draw filters the canvas content under its border box first ('none' when absent)
  * @property {number} scale         surface px per css px (raster scale, <= options.maxDpr)
  * @property {Insets} ink           css px kept beyond the border box on each side (the surface covers border box + ink)
  * @property {{x:number,y:number}|null} layoutOffset  border-box offset of the element inside the layer content box (css px, before transforms) measured by the capture that produced the surface; geometry application reads it instead of measuring layout. null = unknown
