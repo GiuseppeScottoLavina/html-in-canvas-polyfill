@@ -85,7 +85,10 @@ const LIMITS = {
   //   masks a box away and is ignored on SVG content (inline-resources.js maskDeclarationRanges, svg-refs.js svgContentMask), an SVG <use> of a same-origin external
   //   document drawn, the video poster until it plays and a cross-origin video invisible, a popover toggle repaints, moveBefore() into a canvas keeps the node's state:
   //   WPT master privacy/box-mask-*, fragment-mask-*, svg/svg-mask-on-svg-content-ignored, svg/svg-use-ignored, video-ignored, popover-show-hide-*, box-reflect-*-moved
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 316.25 * KB, gzip: 110 * KB },
+  // 316.25 -> 315.75 KB, gzip 110 -> 109.75 KB (-453 / -116 bytes, 2026-10-22, measured 315,542 / 109,731 with the WPT re-pin merged): the two-argument
+  //   getElementTransform and its OffscreenCanvas twin removed (-739 bytes, measured 312,758 alone), the privacy review fixes added (+286 bytes: an SVG document fetched
+  //   same-origin, popover and image loads inside shadow roots, references inside an external <use> document resolved against it)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 315.75 * KB, gzip: 109.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -109,8 +112,9 @@ const LIMITS = {
   //   assumed from Safari >= 27
   'hic-live-engines.iife.min.js': { target: 42.25 * KB, ceiling: 42.25 * KB, gzip: 16.25 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
-  // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922)
-  'hic-live-worker.iife.min.js': { target: 10 * KB, ceiling: 10 * KB, gzip: 4 * KB },
+  // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
+  //   OffscreenCanvas.getElementTransform removed
+  'hic-live-worker.iife.min.js': { target: 9.25 * KB, ceiling: 9.25 * KB, gzip: 4 * KB },
   'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */

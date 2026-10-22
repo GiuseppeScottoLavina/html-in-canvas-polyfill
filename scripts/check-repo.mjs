@@ -97,7 +97,8 @@ if (!docsOnly) {
   // closed shadow root (effects/native-geometry.js createHoverSync).
   // 15275 -> 15400 (2026-10-22, measured 15,374; 15,268 before this step): read-back-allowed rules of WPT master (unreadable mask images, external SVG <use>, the video
   // poster and cross-origin video, popover toggles, moveBefore() into a canvas).
-  if (total > 15400) problems.push(`G-size: core is ${total} code lines (> 15400)`);
+  // 15400 -> 15375 (2026-10-22, measured 15,355 with the WPT re-pin merged: the two-argument getElementTransform removed, the privacy review fixes added).
+  if (total > 15375) problems.push(`G-size: core is ${total} code lines (> 15375)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
