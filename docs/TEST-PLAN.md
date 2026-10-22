@@ -246,6 +246,12 @@ another Mac), and a classic gutter widens textareas and listboxes, so a twin and
 27.0.1, the f6 controls after the textarea 17 css px to the right, the Universal Control link dropped as the scenario started). Safari is started by `safaridriver` and cannot
 be given its own scrollbar setting, so the runner measures the platform gutter before and after every scenario; a scenario during which it changed runs again (at most 3
 attempts, each change recorded in `numbers.scrollbarChanges`) and fails with an `environment` check if the bars never held.
+Active application: a browser that is not the active macOS application cannot make its window key, so a trusted WebDriver click into the page is swallowed and a popup
+cannot take the activation (measured with an own window activating itself: Safari 27.0.1 clickEffect, the drawn email field got no focus and no caret; Firefox 157.0.1
+inactive, the popup did not activate; 2 of 2 runs each, the same signatures as the intermittent failures of full runs on the shared machine). The runner records every
+application activation (`test/harness/lib/os-activation.mjs`, an AppKit observer), brings the browser back to the front before a scenario when another application is
+there, and runs a scenario again when another application came to the front while it ran or the browser could not be brought back (at most 3 attempts, each recorded in
+`numbers.activationChanges`); then it fails with an `environment` check, reported first (`ENVIRONMENT:` in the table). A discarded attempt's checks are printed as such.
 
 ### 2.10 Mobile gate G-mobile (`npm run test:mobile`; iOS Simulator and Android Emulator only, no physical device)
 
