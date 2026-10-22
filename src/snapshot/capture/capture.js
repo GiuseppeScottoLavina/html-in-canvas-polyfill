@@ -13,7 +13,7 @@ import { setInlineStyle } from './inline-style.js';
 import { placeholderElement } from './placeholder.js';
 import { collectVarNames, inheritCustomProperties } from './custom-props.js';
 import { createResourceCache } from './inline-resources.js';
-import { addReferencedFilters } from './svg-refs.js';
+import { addOutsideMasks, addReferencedFilters, settleFilterImages } from './svg-refs.js';
 import { buildSvgDataUrl, cropPixels } from './svg-builder.js';
 import { engineSkins } from './engine-skins.js';
 import { planTextOverlay } from './text-overlay.js';
@@ -110,7 +110,9 @@ export function createCapture(env) {
     const shakenCss = memoShake(`${bundle.key}|${clone.tokens.signature}`, () => shakeCss(bundle.css, clone.tokens));
     const css = shakenCss.css + clone.extraCss;
     const filters = addReferencedFilters(env.document, clone.root, css, req.resources);
-    clone.nodes += filters.added;
+    clone.nodes += filters.added + addOutsideMasks(env.document, clone.root, css);
+    const feImages = settleFilterImages(clone.root, env.document.baseURI, req.resources);
+    for (const e of feImages.ignored) entries.push({ ...e, t: 0, count: 1 });
     inheritCustomProperties(clone.root, clone.layerStyle, [...shakenCss.vars, ...clone.tokens.vars]);
     const t3 = env.now();
     checkContainerQueries(req, bundle.css, bundle.key);
@@ -122,7 +124,7 @@ export function createCapture(env) {
     const t4 = env.now();
     const { widthPx, heightPx } = cropPixels(cropRel, req.scale);
     return {
-      url, cropCss: crop, widthPx, heightPx, nodes: clone.nodes, complete: clone.complete && bundle.pendingUrls.length === 0 && !filters.pending, unsupported: finish(req, [...entries, ...clone.unsupported]),
+      url, cropCss: crop, widthPx, heightPx, nodes: clone.nodes, complete: clone.complete && bundle.pendingUrls.length === 0 && !filters.pending && !feImages.pending, unsupported: finish(req, [...entries, ...clone.unsupported]),
       layoutOffset: clone.layoutOffset, caret: clone.caret, timings: { cloneMs: t2 - t1, cssMs: t1 - t0, shakeMs: t3 - t2, svgMs: t4 - t3, bytes },
     };
   }

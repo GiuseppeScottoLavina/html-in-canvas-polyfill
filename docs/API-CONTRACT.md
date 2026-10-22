@@ -21,9 +21,9 @@ points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/`
 | Implemented (supported or limited) | Not implemented (fails loudly, section 9) |
 |---|---|
 | `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27 (desktop) or < 26 (iOS), other engines, web views, Firefox for Android, an engine lacking a required platform feature |
-| `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | shadow DOM, iframes/objects/embeds, top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
+| `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | cross-origin frames and objects (drawn as their own box, as natively), top layer inside a drawable; `requestFullscreen()`/`popover` on a managed canvas; SVG `drawable`; a CSP without `img-src data:` |
 | `ctx.drawElementImage` (all 4 overloads) on `CanvasRenderingContext2D` and main-thread `OffscreenCanvasRenderingContext2D` | cross-origin resources that cannot be inlined (section 9.2) |
-| `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas | a worker as a source or sink of `ElementImage` (use `toImageBitmap()`; `postMessage` of one throws a loud, actionable error) |
+| `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas; an `ElementImage` posted to a dedicated Worker that loads the worker bundle (section 5.2) | an `ElementImage` through a MessagePort, a BroadcastChannel or to a ServiceWorker (use `toImageBitmap()`) |
 | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `ElementGeometryUpdateEvent` | a managed canvas in a closed shadow root created before install (`adoptRoot` hook) |
 | WebGL and WebGL2 `texElementSubImage2D` (+ legacy `texElementImage2D`); WebGPU `GPUQueue.drawElementImageToTexture` (+ legacy `copyElementImageToTexture`) | zero-copy texture paths |
 | canvases in open shadow roots (limited), nested `<canvas content=drawable>` managed independently (limited) | |
@@ -55,7 +55,7 @@ nor be replaced safely. A failed behavioural probe alone is not a refusal either
 
 | kind | meaning | `HicMode` | what install does |
 |---|---|---|---|
-| `complete` | the core plus every other current name (Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. The extensions are not supported in this mode (section 7.6): no `frameCap` property, no input remapping. |
+| `complete` | the core plus every other current name (Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. It defines only the extension property `canvas.frameCap` (removed by `uninstall()`); the effects host runs over the native implementation (section 7.6). |
 | `partial` | the core works, some other current name is missing (for example the 2026-10-07 shape with `ElementImage.width/height` and no `getElementImageDefaultSize`) | `native`, or `native-bridged` when the bridge is loaded and can build a missing name (`NativeState.fillable`) | uses the native implementation as found; with the bridge, adds only the names it can build from public native API (`gaps`). Never throws. |
 | `legacy` | the core with the earlier `layoutSubtree` instead of `content` (Chrome 154 and 155.0.8059.40 behind `--enable-blink-features=CanvasDrawElement`, measured) | `native-bridged` with the bridge, else `native` | with the bridge: `content` IDL + attribute mirroring to `layoutsubtree`, method aliases, `getElementImageDefaultSize` over `ElementImage.width/height` (section 2.1; row `legacy-native-bridge`). Without it: used as found, one `console.warn` that `content="drawable"` canvases are not drawable in that build and how to load the bridge. Never throws. |
 | `broken` | something native exists but a core name is missing | `refused` | throws `HicUnsupportedError('partial-native')` unless `options.forcePolyfill` (test only). |
@@ -232,8 +232,18 @@ Default-size draws take the source rect from the SURFACE pixel size (no resampli
 `canvas.transferControlToOffscreen()` is wrapped only to record the link `record.offscreen`. A main-thread `OffscreenCanvas` (one
 the page obtained from `transferControlToOffscreen()` and keeps on the main thread, or `new OffscreenCanvas` linked by the
 placeholder semantics) can use `getContext('2d').drawElementImage` and `offscreen.updateElementGeometry/clearElementGeometry`
-(microtask-batched, then `elementgeometryupdate` on the HTMLCanvasElement). In a worker the polyfill does not exist: `drawElementImage` is
-`undefined` there (loud `TypeError` on call) and an `ElementImage` cannot be posted (`DataCloneError`); use `toImageBitmap()`.
+(microtask-batched, then `elementgeometryupdate` on the HTMLCanvasElement). In a dedicated worker the surface exists when the worker loads the
+worker bundle first (`importScripts('hic-live-worker.iife.min.js')`, or `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/worker'` in a module
+worker): `Worker.prototype.postMessage` on the page replaces each `ElementImage` at a shallow position of the message (the message itself, an array item,
+a property of a plain object) by a record with the snapshot's pixels as an `ImageBitmap`, and closes the `ElementImage` when it is in the transfer list (a
+transfer detaches); the worker bundle turns the record back into an `ElementImage` before the worker's own listeners run. In the worker,
+`OffscreenCanvasRenderingContext2D.drawElementImage` (the four overloads) draws it on the OffscreenCanvas of its canvas, and `getElementImageDefaultSize`,
+`updateElementGeometry`, `clearElementGeometry` and the earlier draft's two-argument `getElementTransform` work on that OffscreenCanvas; another canvas's
+OffscreenCanvas, a standalone one or a closed image throws `InvalidStateError`. The geometry of the worker's draws and calls is sent back once per worker
+turn, on a private `MessageChannel` opened with the first record, and applied on the page as for a main-thread OffscreenCanvas (one `elementgeometryupdate`);
+the page applies only well-formed operations, and only on elements whose images were posted to that worker (anything else is ignored). The pixels are those of the snapshot when it was posted:
+post a new capture after `paint` to update them. A worker without the bundle receives the plain record. An `ElementImage` sent through a MessagePort, a
+BroadcastChannel or to a ServiceWorker throws `HicUnsupportedError('worker-element-image')`; `toImageBitmap()` is the alternative there.
 
 ### 5.3 WebGL and WebGL2
 Installed on BOTH `WebGLRenderingContext.prototype` and `WebGL2RenderingContext.prototype` (legacy aliases on both).
@@ -268,7 +278,8 @@ All DOMExceptions are the platform class. Loud polyfill refusals are `HicUnsuppo
 | invalid `DOMMatrixInit` / `DOMRectInit` | `TypeError` | updateElementGeometry |
 | any numeric argument NaN / infinite | none (silent return) | drawElementImage |
 | `drawable` SVG element inside an `<svg>` (not the outermost `<svg>`) | `HicUnsupportedError('svg-drawable')` (polyfill limit) | getElementTransform, updateElementGeometry, clearElementGeometry, capture |
-| `postMessage` of an `ElementImage` to a Worker/MessagePort | `HicUnsupportedError('worker-element-image')` (native: DataCloneError) | postMessage |
+| `postMessage` of an `ElementImage` through a MessagePort / BroadcastChannel / to a ServiceWorker; an `ElementImage` in a Worker's transfer list but not in the message | `HicUnsupportedError('worker-element-image')` / `DataCloneError` | postMessage |
+| in a worker: an `ElementImage` of another canvas, a standalone OffscreenCanvas, a closed image | `InvalidStateError` | drawElementImage, the OffscreenCanvas geometry methods |
 | `new ElementImage()` | `TypeError` (Illegal constructor) | constructor |
 
 ### 6.2 "Throws before an initial snapshot"
@@ -286,7 +297,7 @@ After mounting, the first snapshot is committed one or more frames later (async 
 
 ## 7. Extensions
 
-The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal, native implementations do not provide them, and they are supported only while the polyfill provides the API (mode `polyfill`); section 7.6 has what was observed on top of a native implementation.
+The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal and native implementations do not provide them. They run while the polyfill provides the API (mode `polyfill`) and over a native implementation the installed polyfill stepped aside for (modes `native` and `native-bridged`) that has the members section 7.6 lists; section 7.6 says what differs there.
 
 ### 7.1 Frame cap
 - Attribute `framecap` on the canvas: a non-negative integer, `0..240` (`EXT.FRAME_CAP_MAX`). Missing/invalid -> `options.defaultFrameCap`
@@ -307,7 +318,7 @@ The frame cap and the effects host are extensions of this library. They are not 
   (default 0 = strict cap, input latency can then be up to one cap period). Measured by gate G-f1-form-effect (page-side `effectframe` stamps at 30 / 60 / 120).
 - The promise is "an effect at the cap, over a source updated at most that fast", not a stable 120 Hz source. A 120 Hz effect over
   30-60 Hz source updates is `framecap=120` with source builds limited by `maxSnapshotFps`/pipeline throughput.
-- In mode `native` the `frameCap` property is not defined; the `framecap` attribute bounds effect frames only (feature row `frame-cap`, section 7.6).
+- In the native modes `install()` defines the `frameCap` property too; the cap (attribute or property) bounds the effect frames only, with the same phase rules; the browser's own `paint` events are not throttled (feature row `frame-cap`, section 7.6).
 
 ### 7.2 Effect plugins: ABI v2
 Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(def), createHost(canvas, source, options), NO_TARGET, isNoTarget(point)}`. It is defined by the OPTIONAL effects bundle (`dist/hic-live-effects.iife.js`, loaded after the core; ESM: `installEffects()` of `hic-live-polyfill/effects`), not by `install()`. It is bound late: every call looks up the installed core, so before an install or after `uninstall()` `createHost` rejects with `InvalidStateError`, and after a reinstall it works again. The plugins are not part of the effects bundle: the example plugins of `plugins/` are built to `dist/plugins/<name>.iife(.min).js` (each registers `window.HicLivePlugins.<name>`, WGSL inlined) and `dist/plugins/<name>.esm.js` (`plugins/README.md`).
@@ -330,9 +341,9 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the
-  `SnapshotStore` in polyfill mode, the public native API in native mode, which is not supported: section 7.6), uploads only when `version()` advanced, renders the
+  `SnapshotStore` in polyfill mode, `GPUQueue.drawElementImageToTexture` in the native modes: section 7.6), uploads only when `version()` advanced, renders the
   plugin chain each due frame (`continuous` plugins) or on change, and keeps the source geometry in sync so the live element sits
-  under the presented pixels (`GeometryApi.update(source, fill transform)`).
+  under the presented pixels (`GeometryApi.update(source, fill transform)`; in the native modes `canvas.updateElementGeometry(source, {canvasTransform})`).
 - Off-screen pause (always on, no option): while the canvas does not intersect the viewport enlarged by half its size on each side (and
   each scroll container around it enlarged the same way: `IntersectionObserver` `scrollMargin: '50%'`, or `rootMargin: '50%'` where
   `scrollMargin` is missing), or its document is hidden, the host renders and uploads nothing, `continuous` plugins included. Back inside
@@ -399,16 +410,45 @@ layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `poi
 the native hit control it prevents the native handling and re-implements the activation: focus, button/link/checkbox/radio/label click
 on `pointerup`, `input[type=range]` value + `input`/`change` events during the gesture, text caret placement. Not re-targeted: select
 popups, drag selection, contenteditable (row `interposer-retarget`). Validated against GPU pixels, not against the mapper itself
-(gate G-interposer-gpu).
+(gate G-interposer-gpu). In the native modes the interposer works on the browser's own hit testing instead (section 7.6).
 
 ### 7.5 Polyfill events and handles
 `hicunsupported` (CustomEvent<UnsupportedEntry> on the canvas), `effectframe`, `effecterror` (above). `window.__HIC__` = debug handle
 `{installed, report(), error?}`; `installed` is a getter that follows the live install (`getInstalled() ?? the first install`), so it stays right after `uninstall()` + `install()`.
 
-### 7.6 On top of a native implementation (not supported)
-Checked on 2026-10-14 with the built core and effects bundles (macOS, Apple M1 Max, 120 Hz, headed and headless; details in `docs/guides/EFFECTS-PLUGINS.md`):
-- Chrome Canary 157.0.8103.0, with or without `--enable-blink-features=CanvasDrawElement`: `install()` steps aside (mode `native`, kind `complete`, probe `ok`) and the page draws natively (a drawable form painted from `onpaint`, `getElementImageDefaultSize` 200 x 60, no console message). No extension exists there: no `frameCap` property, no input remapping.
-- Before this check the same build was refused (`partial-native`, because its `ElementImage` has no `width` / `height`); with a test-only stub that completed `ElementImage` (mode `native`), `createHost` and the water plugin rendered over `GPUQueue.drawElementImageToTexture`; the `frameCap` property was not defined (the `framecap` attribute paced effect frames: 15 and 30.5 per second at 15 and 30); pointer input is not remapped (the interposer needs the polyfill's live layer), so a click on the drawn field reached the canvas, not the field.
+### 7.6 Over a native implementation
+In the modes `native` and `native-bridged` there is no live layer and no snapshot store; `createHost` uses the browser's implementation through the standard API
+(`src/effects/source-provider.js`, `frame-source.js`, `native-geometry.js`, `native-interposer.js`):
+- Requirements: `GPUQueue.prototype.drawElementImageToTexture`, `canvas.updateElementGeometry`, `clearElementGeometry` and `getElementImageDefaultSize`; a missing
+  one rejects `createHost` with `HicUnsupportedError('effect-plugins')` naming it. `source` must be a drawable descendant (`getElementTransform(source)` must not throw),
+  else `InvalidStateError`.
+- Source: `version()` advances on the canvas's `paint` event when `changedElements` names the source, a drawable inside it or one around it (any paint when the build
+  has no `changedElements`; the first paint after creation always; a change of `getElementImageDefaultSize`). The upload is one
+  `drawElementImageToTexture({source}, {texture, size})` of the whole element image (no partial upload: no dirty rect is known), made in the `paint` event, where the
+  element image is fresh (in the animation frame callbacks before it the call returns the previous paint; measured on Chrome Canary 158). The texture has the size
+  `getElementImageDefaultSize(source)` (rounded up); the css size of the source is its border box from a `ResizeObserver`.
+- Frames: an animation frame loop while the host wants frames, plus the `paint` event. `due` is decided once per frame time with the rules of 7.1 (a changed cap
+  starts a new phase); a `paint` in a frame the loop already rendered uploads the source without rendering that frame again, and the next frame shows it. A
+  `ResizeObserver` on the canvas (device-pixel content box) replaces the polyfill's resize and DPR signals.
+- Geometry: `updateElementGeometry(source, {canvasTransform: translate(offset) * scale(fill)})`; `fill` is the stretch of 7.3, `offset` is 0 at rest and when the
+  pointer leaves the canvas. `destroy()` calls `clearElementGeometry(source)`.
+- Interposer: capture listeners on the canvas. At each pointer event the pointer `p` (content-box css px) is mapped to `m` and the offset set to `p - m`, so that the
+  browser hit-tests the element the effect shows under the pointer for the next event: hover, `:active`, the cursor, focus, caret placement and selection are then
+  the browser's own. The event in hand was hit-tested before its shift: its intended element is read with `document.elementsFromPoint` (a list; the one-element
+  `elementFromPoint` keeps a per-point cache that a geometry change does not clear), and a press whose native control differs from it is re-targeted with the rules
+  of 7.4. When a pointer move's native target is not the element shown, the host makes the engine recompute hover and the cursor in the next frame with one
+  layout of an element of its own: `<hic-hover-sync>`, the only element the effects add to the page in mode `native`. There is one per document, shared by its
+  hosts, appended to the root element (outside the body) at the first such move and removed when the last host is destroyed (`destroy()`, or `uninstall()`,
+  which destroys the hosts). It has no box (inline `!important` styles: fixed, 0 x 0, `visibility: hidden`, `pointer-events: none`, `contain: strict`), is
+  `aria-hidden`, and what changes at each move is inside its closed shadow root: page `MutationObserver`s see one `childList` record when it is appended and one
+  when it is removed, and nothing per move. A page that selects every child of `<html>` (`:root > *`, `document.documentElement.children`) sees it while it is
+  there. No DOM-free way was found: Chrome recomputes hover after a pointer event, a layout or a scroll, and not after `updateElementGeometry` alone. `NO_TARGET` calls
+  `clearElementGeometry(source)` (the canvas itself is under the pointer) and swallows the press. Ranges are driven by the interposer as in 7.4.
+- Not provided in the native modes: `report()` entries for the canvas (the polyfill does not manage it) and a cap on the browser's own `paint` events.
+- Verified on Chrome Canary 158.0.8112.1 with `--enable-blink-features=CanvasDrawElement` by `npm run test:native-effects` (gates G-native-effects and
+  G-native-interposer with their controls, the water and disintegrate gallery e2e, `examples/effect-plugin`); numbers in `docs/guides/EFFECTS-PLUGINS.md`.
+  The unit tests (`test/unit/gpu-effects/native-*.test.mjs`) run the same code over an emulated native API in any Chrome.
+- Safari Technology Preview's HTML-in-Canvas feature (the `layoutsubtree` draft) has neither the GPU upload nor the geometry methods: `createHost` rejects there.
 
 ## 8. Timing model (summary; full detail in ARCHITECTURE ADR-C)
 - DOM change -> mutation/input/focus/hover observers publish `Damage` -> (next tick, under the cap) clone + serialise + data: URL (main
@@ -433,7 +473,10 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 2. Content the polyfill cannot capture never stalls and never blanks the rest: the offending subtree is replaced in the clone by a
    visible hatched placeholder box (`options.onUnsupportedContent: 'placeholder'`, default), a `Reporter.unsupported()` entry is
    recorded, `console.error` prints ONCE per (feature, path), a `hicunsupported` CustomEvent fires on the canvas, and the commit
-   proceeds. With `'abort'` the commit is dropped, no paint fires, the event still fires.
+   proceeds. With `'abort'` the commit is dropped, no paint fires, the event still fires. Content that the platform itself leaves
+   out of a canvas (an image or frame document that is cross-origin, a filter that would draw a cross-origin image) is drawn as the
+   platform draws it, without a hatched box: the element's own box without the content, or the element unfiltered; it is reported
+   in the same way.
 3. `installed.report()` returns the JSON `HicReport` (mode, native state, browser, per canvas state/drawables/frame cap/stats,
    unsupported entries, exercised deviations, caught internal errors). An unsupported entry's `count` is the number of times the reporter was told about it (typically once per snapshot attempt that meets that content, so a re-capture counts again), NOT the number of offending elements: one iframe can read 3. Internal errors are never swallowed: they land in
    `report().errors` and `console.error` once.
@@ -457,15 +500,15 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `browser` | not Chromium desktop >= 130 | `install()` throws |
 | `partial-native` | a native implementation without its core (no `content`/`layoutSubtree`, `onpaint` or 2D `drawElementImage`) | `install()` throws unless `forcePolyfill`; a usable native is never refused (section 2) |
 | `shadow-dom` | (no longer reported) open shadow roots inside a drawable are drawn in flat-tree order with computed styles inlined (limited) | - |
-| `iframe` | iframe/object/embed in a drawable subtree | placeholder + entry |
+| `iframe` | iframe/frame/object whose document this page cannot read (cross-origin, sandboxed without `allow-same-origin`), or an embed that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively; entry. A same-origin frame or object draws its document (resources inlined, its cross-origin content and `:visited` rules left out), repainted when that document changes or reloads (a scroll inside the frame alone does not repaint: it shows at the next repaint); no entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |
 | `top-layer-canvas` | a managed canvas became the fullscreen element (its controls take no input), or a `popover` canvas | entry with hint (fullscreen proceeds) / refused at mount |
 | `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | API calls throw `HicUnsupportedError` |
 | `csp-blocked` | CSP without `img-src data:` | entry + hint (snapshots cannot decode) |
 | `top-layer` | (no longer reported) a modal dialog, open popover or fullscreen element inside a drawable is left out of the snapshot, as natively | - |
-| `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | placeholder for the element (image) or fallback font, entry |
+| `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | as natively: an `<img>` / `<picture>` / embed / object draws its box without the picture, an SVG `<image>` draws nothing, a `<filter>` with such an `feImage` is not applied, a font falls back; entry |
 | `resource-fetch-failed` | fetch error / undecodable | as above |
-| `worker-element-image` | `postMessage(elementImage, [elementImage])` | `HicUnsupportedError` with the `toImageBitmap()` hint |
+| `worker-element-image` | `postMessage(elementImage)` through a MessagePort, a BroadcastChannel or to a ServiceWorker (a dedicated Worker takes it, section 5.2) | `HicUnsupportedError` with the `toImageBitmap()` hint |
 | `node-budget` | a drawable above `nodeBudget.absolute` nodes | placeholder + entry (above `hard`: degraded to <= 4 fps except for its inner scrolling, reported) |
 
 ### 9.3 Documented deviations (rows with status `deviation`; each is recorded in `report().deviations` when exercised)

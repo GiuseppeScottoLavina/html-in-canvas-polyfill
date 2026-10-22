@@ -1,16 +1,26 @@
 // Loud failure: unsupported content becomes a hatched placeholder plus an entry for the reporter; capture never throws. Shadow trees and top-layer content are NOT refusals (X-13).
+// Content the platform itself leaves out of a canvas (a cross-origin image, a frame's document) is drawn as the platform draws it, its own box without the content, and is still reported.
 import { test, assert } from '/test/unit/lib/t.js';
 import { mount, rasterize } from './_support.mjs';
 
 const svgOf = (r) => decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
 
-test('an iframe is replaced by a placeholder and reported with a path; an open shadow root is drawn; a modal dialog and an open popover are left out silently (X-13)', async () => {
-  const css = '.d{width:300px;height:200px}.d>*{display:block;width:80px;height:40px}';
-  const m = mount('<div class="d" drawable><iframe srcdoc="x"></iframe><div id="host"></div><dialog id="dlg">modal</dialog><div id="pop" popover="manual">pop</div><p>kept text</p></div>', { css });
+/** Resolves once every frame under `root` left its initial about:blank document (a cross-origin one then reads as null). @param {Element} root */
+async function framesSettled(root) {
+  const blank = (f) => { try { return f.contentDocument?.URL === 'about:blank'; } catch { return false; } };
+  for (let i = 0; i < 200 && [...root.querySelectorAll('iframe')].some(blank); i++) await new Promise((ok) => setTimeout(ok, 10));
+}
+
+test('a cross-origin iframe draws its own box (border, background) without its document and is reported with a path, never a hatched box; an open shadow root is drawn; a modal dialog and an open popover are left out silently (X-13)', async () => {
+  const css = '.d{width:300px;height:200px}.d>*{display:block;width:80px;height:40px}.d>iframe{box-sizing:border-box;border:5px solid rgb(255,255,0);background:rgb(0,255,255)}';
+  const m = mount('<div class="d" drawable><iframe src="http://127.0.0.1:9/frame.html"></iframe><div id="host"></div><dialog id="dlg">modal</dialog><div id="pop" popover="manual">pop</div><p>kept text</p></div>', { css });
   m.layerEl.querySelector('#host').attachShadow({ mode: 'open' }).innerHTML = '<b>inside</b>';
   const dlg = m.layerEl.querySelector('#dlg');
   dlg.showModal();
   m.layerEl.querySelector('#pop').showPopover();
+  const loading = m.capture(m.request(m.layerEl.firstElementChild));
+  assert.deepEqual(loading.unsupported.map((e) => e.feature), [], 'still on its initial document: drawn empty, not reported yet');
+  await framesSettled(m.layerEl);
   const r = m.capture(m.request(m.layerEl.firstElementChild));
   dlg.close();
   m.layerEl.querySelector('#pop').hidePopover();
@@ -18,13 +28,15 @@ test('an iframe is replaced by a placeholder and reported with a path; an open s
   assert.ok(r.unsupported.every((e) => e.path && e.message && e.t >= 0 && e.count === 1));
   assert.ok(r.unsupported[0].path.endsWith('iframe'));
   const svg = svgOf(r);
-  assert.equal((svg.match(/data-hic-node/g) ?? []).length, 1, 'one hatched box: the iframe');
+  assert.ok(!svg.includes('data-hic-node') && !svg.includes('<iframe') && !svg.includes('127.0.0.1:9'), 'no hatched box, no frame element, never the frame URL');
   assert.ok(svg.includes('inside'), 'the shadow tree of the host is drawn');
   assert.ok(!svg.includes('>modal<') && !svg.includes('>pop<'), 'top-layer content is painted in the page top layer, never into the canvas');
   assert.ok(svg.includes('kept text'), 'the rest of the drawable is still captured');
   assert.equal(m.reported.length, 1);
   const got = await rasterize(r);
-  assert.ok(got.getImageData(40, 20, 1, 1).data[0] > 150, 'the hatch is painted');
+  const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data);
+  assert.deepEqual(px(2, 20), [255, 255, 0, 255], 'the border of the frame');
+  assert.deepEqual(px(40, 20), [0, 255, 255, 255], 'the background of the frame, where the document would be');
 });
 
 test('shadow DOM inside a drawable: flat-tree order, slotted light DOM, shadow-scoped styles and :host are drawn (X-13)', async () => {
@@ -41,8 +53,9 @@ test('shadow DOM inside a drawable: flat-tree order, slotted light DOM, shadow-s
   assert.deepEqual(px(10, 40), [0, 128, 0], '::slotted rule');
 });
 
-test('the same refusal repeated by every capture is one console.error per (feature, path)', () => {
-  const m = mount('<div class="d" drawable style="width:50px;height:50px"><iframe srcdoc="x" width="30" height="30"></iframe></div>');
+test('the same refusal repeated by every capture is one console.error per (feature, path)', async () => {
+  const m = mount('<div class="d" drawable style="width:50px;height:50px"><iframe src="http://127.0.0.1:9/frame.html" width="30" height="30"></iframe></div>');
+  await framesSettled(m.layerEl);
   for (let i = 0; i < 5; i++) m.capture(m.request(m.layerEl.firstElementChild));
   assert.equal(m.reported.length, 5);
   assert.equal(m.consoleOnce.size, 1);
@@ -58,9 +71,9 @@ test('a tainted canvas child is refused, not read', () => {
   assert.equal(r.unsupported[0].feature, 'canvas-child');
 });
 
-test('cross-origin image without CORS: first pending, then refused with cross-origin-resource, never a silent blank', async () => {
+test('cross-origin image without CORS: first pending, then reported with cross-origin-resource and drawn as the platform draws it (its box without the picture), never a silent blank', async () => {
   const src = 'http://127.0.0.1:9/never.png';
-  const m = mount(`<div class="d" drawable style="width:80px;height:40px"><img src="${src}" width="40" height="20"></div>`);
+  const m = mount(`<div class="d" drawable style="width:80px;height:40px;background:rgb(0,128,0)"><img src="${src}" width="40" height="20" style="display:block;border:5px solid rgb(255,255,0)"></div>`);
   const el = m.layerEl.firstElementChild;
   const first = m.capture(m.request(el));
   assert.equal(first.complete, false);
@@ -68,8 +81,48 @@ test('cross-origin image without CORS: first pending, then refused with cross-or
   const second = m.capture(m.request(el));
   assert.deepEqual(second.unsupported.map((e) => e.feature), ['cross-origin-resource']);
   assert.ok(second.unsupported[0].message.includes('127.0.0.1:9'));
-  assert.ok(svgOf(second).includes('data-hic-node'));
+  assert.ok(!svgOf(second).includes('data-hic-node'), 'no hatched box');
+  assert.ok(!/<img[^>]*\ssrc=/.test(svgOf(second)), 'the <img> has no source at all');
   assert.ok(!/(src|href)="http/.test(svgOf(second)) && !/url\(["']?http/.test(svgOf(second)), 'the SVG image never loads the external url');
+  const px = (await rasterize(second)).getImageData(0, 0, 80, 40);
+  const at = (x, y) => Array.from(px.data.slice((y * 80 + x) * 4, (y * 80 + x) * 4 + 4));
+  assert.deepEqual(at(2, 10), [255, 255, 0, 255], 'the border of the <img> is drawn');
+  assert.deepEqual(at(20, 15), [0, 128, 0, 255], 'no picture where the image would be: the background of the drawable shows through');
+});
+
+test('<picture> whose selected source is cross-origin: the <img> box without the picture, reported (WPT privacy/picture-images-ignored)', async () => {
+  // another origin of the test server (no CORS headers): the source is selected, its URL is the image's currentSrc
+  const other = `http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg?iso=0`;
+  const m = mount(`<div class="d" drawable style="width:40px;height:40px;background:rgb(0,128,0)"><picture><source srcset="${other}"><img width="40" height="40" style="display:block"></picture></div>`);
+  const el = m.layerEl.firstElementChild;
+  const img = el.querySelector('img');
+  for (let i = 0; i < 50 && !img.currentSrc; i++) await new Promise((ok) => setTimeout(ok, 20));
+  assert.equal(img.currentSrc, other, 'the source is selected');
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 300));
+  const r = m.capture(m.request(el));
+  assert.deepEqual(r.unsupported.map((e) => e.feature), ['cross-origin-resource']);
+  assert.ok(!svgOf(r).includes('data-hic-node') && !svgOf(r).includes('localhost'));
+  const px = (await rasterize(r)).getImageData(20, 20, 1, 1).data;
+  assert.deepEqual(Array.from(px), [0, 128, 0, 255]);
+});
+
+test('<embed> / <object> of a same-origin image draw it (natural size, top left of the content box); a cross-origin one draws its own box only and is reported (WPT privacy/embed-image-ignored, object-image-ignored)', async () => {
+  const box = 'style="display:block;width:40px;height:20px;border:5px solid rgb(255,255,0);background:rgb(0,255,255)"';
+  const m = mount(`<div class="d" drawable style="width:50px;height:90px"><embed id="e1" type="image/svg+xml" src="/test/unit/snapshot-capture/assets/red.svg" ${box}><object id="o1" data="/test/unit/snapshot-capture/assets/red.svg" ${box}></object><embed id="e2" type="image/png" src="http://127.0.0.1:9/x.png" ${box}></div>`);
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  assert.deepEqual(r.unsupported.map((e) => e.feature), ['cross-origin-resource']);
+  const svg = svgOf(r);
+  assert.ok(!svg.includes('data-hic-node') && !svg.includes('<embed') && !svg.includes('<object') && !svg.includes('127.0.0.1:9'));
+  const x = await rasterize(r);
+  const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
+  assert.deepEqual(px(20, 15), [224, 0, 0, 255], 'the embedded image (red.svg) is drawn');
+  assert.deepEqual(px(20, 45), [224, 0, 0, 255], 'the object image is drawn');
+  assert.deepEqual(px(2, 75), [255, 255, 0, 255], 'the cross-origin embed keeps its border');
+  assert.deepEqual(px(20, 75), [0, 255, 255, 255], 'and its background, without the image');
 });
 
 test('node budget: absolute refuses with a placeholder tile, hard reports and still renders', async () => {
@@ -115,4 +168,42 @@ test('a 404 image stays an <img> (the platform draws the broken-image icon, WPT 
   assert.ok(r.unsupported.some((e) => e.feature === 'resource-fetch-failed'), 'reported loudly');
   assert.ok(!svgOf(r).includes('data-hic-node'), 'no hatched placeholder');
   assert.ok(/<img[^>]*src="data:image\/png;base64,AAAA"/.test(svgOf(r)), 'an undecodable image keeps its box and draws as a broken image');
+});
+
+test('a same-origin iframe draws its document inside its own box, with the page background over its viewport and without its cross-origin images (WPT iframe, iframe-local, privacy/iframes-ignored, background-image-in-iframe-ignored); a sandboxed one draws its box only and is reported', async () => {
+  const other = `http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg?iso=0`;
+  const doc = `<body style='background:rgb(0,0,255)'><div style='width:20px;height:20px;background:rgb(0,128,0)'></div><img src='${other}' width='20' height='20' style='display:block'></body>`;
+  const box = 'display:block;width:40px;height:50px;border:5px solid rgb(255,255,0)';
+  const m = mount(`<div class="d" drawable style="width:50px;height:120px"><iframe id="f1" srcdoc="${doc}" style="${box}"></iframe><iframe id="f2" sandbox srcdoc="${doc}" style="${box};background:rgb(0,255,255)"></iframe></div>`);
+  const f1 = /** @type {HTMLIFrameElement} */ (m.layerEl.querySelector('#f1'));
+  for (let i = 0; i < 100 && f1.contentDocument?.querySelector('img') == null; i++) await new Promise((ok) => setTimeout(ok, 10));
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  assert.deepEqual(r.unsupported.map((e) => [e.feature, e.path.split(' > ').pop()]), [['iframe', 'iframe#f2']], 'only the sandboxed frame is reported');
+  const svg = svgOf(r);
+  assert.ok(!svg.includes('<iframe') && !svg.includes('localhost'), 'no frame element and never the cross-origin URL');
+  const x = await rasterize(r);
+  const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
+  assert.deepEqual(px(2, 20), [255, 255, 0, 255], 'the frame border');
+  assert.deepEqual(px(8, 8), [0, 0, 255, 255], 'the body background covers the viewport, including the body margin');
+  assert.deepEqual(px(20, 20), [0, 128, 0, 255], 'the frame document is drawn (8 px body margin, then the 20 px box)');
+  assert.deepEqual(px(20, 40), [0, 0, 255, 255], 'its cross-origin image is left out');
+  assert.deepEqual(px(25, 85), [0, 255, 255, 255], 'the sandboxed frame: its own background, no document');
+});
+
+test('a same-origin frame\'s CSS loses its :visited rules (the history never reaches the pixels) and its :link rules match the links of the copy', async () => {
+  const doc = `<style>a:visited{color:rgb(255,0,0)} a:link{color:rgb(0,0,255)} .k{color:rgb(0,128,0)}</style><a href='#x'>x</a><p class='k'>k</p>`;
+  const m = mount(`<div class="d" drawable style="width:80px;height:80px"><iframe id="f" srcdoc="${doc}" style="display:block;width:60px;height:60px;border:0"></iframe></div>`);
+  const f = /** @type {HTMLIFrameElement} */ (m.layerEl.querySelector('#f'));
+  for (let i = 0; i < 100 && f.contentDocument?.querySelector('.k') == null; i++) await new Promise((ok) => setTimeout(ok, 10));
+  const r = m.capture(m.request(m.layerEl.firstElementChild));
+  const nested = /src="(data:image\/svg\+xml;charset=utf-8,[^"]+)"/.exec(svgOf(r));
+  assert.ok(nested, 'the frame is drawn as a nested image');
+  const frameSvg = decodeURIComponent(nested[1].slice(nested[1].indexOf(',') + 1));
+  assert.ok(frameSvg.includes('.k') && frameSvg.includes('rgb(0, 128, 0)'), 'control: the frame CSS travels');
+  assert.ok(!frameSvg.includes(':visited'), 'no :visited rule');
+  assert.ok(!frameSvg.includes('rgb(255, 0, 0)'), 'nor its declarations');
+  assert.ok(frameSvg.includes(':where(a,area)[href]'), ':link rewritten');
 });

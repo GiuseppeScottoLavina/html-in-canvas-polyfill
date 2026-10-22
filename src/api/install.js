@@ -18,7 +18,7 @@ import { buildReport, createReporter, watchCsp } from './report.js';
 import { compose, composeNative, defaultServices } from './compose.js';
 import { createSchedulerHooks, defineEventGlobals, disposeHandlers } from './paint-event.js';
 import { defineElementImageGlobal } from './element-image.js';
-import { installCanvasPatches } from './canvas-patch.js';
+import { installCanvasPatches, installFrameCapProperty } from './canvas-patch.js';
 import { installContext2DPatches } from './context2d-patch.js';
 import { installOffscreenPatches } from './offscreen-patch.js';
 import { GPU_LATE_KEY, installGpu } from './gpu-seam.js';
@@ -246,7 +246,7 @@ function installPolyfill(env, services, ledger, undo, setAdoption) {
   installContext2DPatches(env, ledger, geometry);
   const lateGpu = installGpu(env, ledger);
   undo.push(installFullscreenGuard(env, ledger));
-  installWorkerGuard(env, ledger);
+  installWorkerGuard(env, ledger, geometry);
   installDevicePixelBox(env, ledger);
   undo.push(watchCsp(env));
 
@@ -281,6 +281,8 @@ function installNative(env, native, mode, services, ledger, undo, setAdoption) {
   // a native build in an engine without the device-pixel ResizeObserver box (Safari Technology Preview with its HTML-in-Canvas feature) would make the
   // explainer's own sizing line throw: completed as in mode polyfill (feature-detected: nothing is patched where the engine has it; ledger-restored)
   installDevicePixelBox(env, ledger);
+  // the frame cap extension's property (not part of the standard): it bounds the effect frames of an effects host over the native implementation
+  installFrameCapProperty(env, ledger);
   return composed.effects;
 }
 

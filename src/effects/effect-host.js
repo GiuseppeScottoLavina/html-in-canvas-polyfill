@@ -3,13 +3,15 @@
  * Module: gpu-effects (src/effects/**).
  */
 
-import { invalidState } from '../contracts/errors.js';
+import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
 import { BUS, EVENTS } from '../contracts/events.js';
 import { createPluginSet } from './effect-plugins.js';
-import { rafFrameSource, schedulerFrameSource } from './frame-source.js';
+import { nativeFrameSource, schedulerFrameSource } from './frame-source.js';
 import { createPresenter } from './gpu-presenter.js';
 import { createMapperChain } from './input-mapper.js';
 import { createInterposer } from './interposer.js';
+import { contentBoxOf, createNativeGeometry } from './native-geometry.js';
+import { createNativeInterposer } from './native-interposer.js';
 import { captureMapper } from './plugin-abi.js';
 import { createNativeSourceProvider, createStoreSourceProvider } from './source-provider.js';
 import { watchVisibility } from './visibility.js';
@@ -41,6 +43,9 @@ const SETTLE_MS = 100;
  * time, with nothing replayed. Coming back into the margin renders at once. While paused, an unsettled trigger()/settled() still advances at 1000 / SETTLE_MS frames
  * per second, so its promise resolves; a hidden document runs no frames at all, so there it resolves on the first frame after the document is shown again.
  * DEVICE LOSS: `device.lost` is handled (ADR-G): keep presenting the last frame, recreate device, source/destination textures and every plugin pipeline (plugin.create is re-run with the same options), report once; gate G-fault-injection (G-device-lost).
+ * NATIVE MODE (no record: the browser implements HTML-in-Canvas and the polyfill stepped aside): the source comes from the standard
+ * GPUQueue.drawElementImageToTexture (source-provider.js), frames from a rAF loop plus the canvas's paint event (frame-source.js), the
+ * stretch and the pointer remap from the standard updateElementGeometry (native-geometry.js, native-interposer.js).
  * @param {HicEnv} env
  * @param {{store: SnapshotStore, scheduler: Scheduler, geometry: GeometryApi, tracker: InteractionTracker}} deps
  * @param {HTMLCanvasElement} canvas
@@ -52,6 +57,7 @@ const SETTLE_MS = 100;
 export async function createEffectHost(env, deps, canvas, source, options = {}) {
   const record = env.registry.get(canvas) ?? null;
   assertEligible(canvas, source, record);
+  if (!record) assertNativeApi(env, canvas, source);
   const runtime = new HostRuntime(env, deps, canvas, source, record, { ...options, maxDpr: options.maxDpr ?? env.options.maxDpr });
   try {
     await runtime.start();
@@ -74,6 +80,30 @@ function assertEligible(canvas, source, record) {
     ? !!record.layer?.isMounted() && record.layer.drawableElements().includes(source)
     : source !== canvas && canvas.contains(source);
   if (!eligible) throw invalidState('createHost: `source` is not an eligible drawable of this canvas (it must be a drawable child, or a descendant marked drawable)');
+}
+
+/**
+ * Native mode needs the standard GPU upload and the hit-test geometry of the browser; an earlier draft without them is refused loudly.
+ * @param {HicEnv} env
+ * @param {HTMLCanvasElement} canvas
+ * @param {Element} source
+ */
+function assertNativeApi(env, canvas, source) {
+  const win = /** @type {any} */ (env.window);
+  const c = /** @type {any} */ (canvas);
+  const missing = [
+    typeof win.GPUQueue?.prototype?.drawElementImageToTexture !== 'function' && 'GPUQueue.drawElementImageToTexture',
+    typeof c.updateElementGeometry !== 'function' && 'updateElementGeometry',
+    typeof c.clearElementGeometry !== 'function' && 'clearElementGeometry',
+    typeof c.getElementImageDefaultSize !== 'function' && 'getElementImageDefaultSize',
+  ].filter(Boolean);
+  if (missing.length) {
+    throw new HicUnsupportedError('effect-plugins', `createHost: this browser's own HTML-in-Canvas implementation lacks ${missing.join(', ')}, which the effects host needs on top of it`, { hint: 'Keep the 2D drawElementImage path (draw the source on a 2D canvas) when createHost rejects.' });
+  }
+  // the standard eligibility check of the browser: InvalidStateError unless `source` is a drawable descendant of a content="drawable" canvas
+  try { c.getElementTransform?.(source); } catch {
+    throw invalidState('createHost: `source` is not an eligible drawable of this canvas (it must be a drawable child, or a descendant marked drawable)');
+  }
 }
 
 class HostRuntime {
@@ -114,7 +144,11 @@ class HostRuntime {
     this.chain = createMapperChain();
     /** @type {{stats: () => {remapped: number, passedThrough: number}}|null} */ this.interposer = null;
     /** @type {Presenter} */ this.presenter = /** @type {any} */ (null);
-    this.provider = record ? createStoreSourceProvider(env, record, source) : createNativeSourceProvider(canvas, source);
+    this.provider = record ? createStoreSourceProvider(env, record, source) : createNativeSourceProvider(env, canvas, source);
+    /** native mode: the content box of the canvas from a ResizeObserver (css px), null before its first report */
+    /** @type {{width: number, height: number}|null} */ this.nativeCss = null;
+    /** native mode: the hit-test geometry of the source (the stretch, and the interposer's shift under the pointer) */
+    this.nativeGeometry = record ? null : createNativeGeometry(canvas, source);
     this.plugins = createPluginSet(env, canvas, source, {
       gpu: () => this.presenter,
       viewport: () => this.presenter.viewport(),
@@ -123,8 +157,8 @@ class HostRuntime {
       reportError: (error, slot, phase) => this.reportPluginError(error, slot, phase),
       onWait: () => { if (!this.isVisible()) this.armSettle(); },
     });
-    const hook = (/** @type {number} */ now, /** @type {{frameCap: number, due: boolean}} */ info) => this.onFrame(now, info);
-    this.frames = record ? schedulerFrameSource(deps.scheduler, record, hook) : rafFrameSource(env, canvas, hook);
+    const hook = (/** @type {number} */ now, /** @type {{frameCap: number, due: boolean, repeat?: boolean}} */ info) => this.onFrame(now, info);
+    this.frames = record ? schedulerFrameSource(deps.scheduler, record, hook) : nativeFrameSource(env, canvas, hook);
   }
 
   async start() {
@@ -138,12 +172,34 @@ class HostRuntime {
     const visibility = watchVisibility(this.env, this.canvas, (visible) => this.onVisibility(visible));
     this.visibility = visibility;
     this.cleanups.push(() => visibility.dispose(), () => this.clearSettle());
-    if (this.opts.interposer !== false && this.record?.layer) {
-      const interposer = createInterposer(this.env, this.record, this.chain, this.deps.tracker);
+    if (this.opts.interposer !== false && (this.record?.layer || this.nativeGeometry)) {
+      const interposer = this.record?.layer
+        ? createInterposer(this.env, this.record, this.chain, this.deps.tracker)
+        : createNativeInterposer(this.env, this.canvas, this.source, this.chain, /** @type {import('./native-geometry.js').NativeGeometry} */ (this.nativeGeometry));
       this.interposer = interposer;
       this.cleanups.push(() => interposer.dispose());
     }
+    if (!this.record) this.cleanups.push(this.watchNativeSize());
     this.frames.wake();
+  }
+
+  /**
+   * Native mode: no scheduler reports a resize or a DPR change of the canvas; a ResizeObserver does (the device-pixel box changes with both).
+   * @returns {() => void}
+   */
+  watchNativeSize() {
+    const win = /** @type {any} */ (this.env.window);
+    if (typeof win.ResizeObserver !== 'function') return () => {};
+    let first = true;
+    const ro = new win.ResizeObserver((/** @type {any[]} */ entries) => {
+      // the content box for the presenter, without a layout read per frame
+      const box = entries[entries.length - 1]?.contentBoxSize?.[0];
+      if (box) this.nativeCss = { width: box.inlineSize, height: box.blockSize };
+      if (first) { first = false; return; }
+      this.requestRender();
+    });
+    try { ro.observe(this.canvas, { box: 'device-pixel-content-box' }); } catch { ro.observe(this.canvas); }
+    return () => ro.disconnect();
   }
 
   openPresenter() {
@@ -151,7 +207,8 @@ class HostRuntime {
     return createPresenter(canvas, this.opts, {
       cssSize: () => {
         const box = record?.contentBox;
-        return box && box.width > 0 && box.height > 0 ? box : { width: canvas.clientWidth, height: canvas.clientHeight };
+        if (box && box.width > 0 && box.height > 0) return box;
+        return record ? { width: canvas.clientWidth, height: canvas.clientHeight } : this.nativeCss ?? contentBoxOf(canvas);
       },
       devicePixelRatio: () => env.window.devicePixelRatio || 1,
       onLost: (info) => { void this.onDeviceLost(info); },
@@ -200,7 +257,7 @@ class HostRuntime {
 
   /**
    * @param {number} now
-   * @param {{frameCap: number, due: boolean}} info
+   * @param {{frameCap: number, due: boolean, repeat?: boolean}} info
    * @returns {boolean}
    */
   onFrame(now, info) {
@@ -209,6 +266,16 @@ class HostRuntime {
     try {
       const v = this.provider.version();
       const sourceChanged = v !== null && v !== this.uploaded;
+      if (info.repeat && this.counters.frames > 0 && this.lastNow === now) {
+        // native: the paint event after this frame's rAF render. The frame stays as rendered (one render per frame: what is presented is what the
+        // frame's input mappers describe); the source is uploaded now, while the element image is fresh, and the next frame shows it.
+        if (sourceChanged && this.isVisible()) {
+          const uploaded = this.presenter.uploadSource(this.provider);
+          if (uploaded) { this.uploaded = uploaded; this.counters.uploads += 1; }
+          this.renderRequested = true;
+        }
+        return this.renderRequested || this.plugins.hasContinuous();
+      }
       if (!(sourceChanged || this.renderRequested || this.plugins.hasContinuous() || this.settleDue)) return false;
       const paused = !this.isVisible();
       // paused: the work waits for the resume (the source is uploaded and the clock read then), except a settle frame
@@ -300,15 +367,16 @@ class HostRuntime {
    */
   syncGeometry(vp) {
     const { record, source } = this;
-    const size = record ? this.provider.size() : null;
-    if (!record || !size || size.cssWidth <= 0 || size.cssHeight <= 0) return;
+    const size = this.provider.size();
+    if (!size || size.cssWidth <= 0 || size.cssHeight <= 0) return;
     if (!this.sizeChecked) this.warnSizeMismatch(vp, size);
     const x = vp.cssWidth / size.cssWidth;
     const y = vp.cssHeight / size.cssHeight;
     if (Math.abs(x - this.lastFill.x) < 1e-6 && Math.abs(y - this.lastFill.y) < 1e-6) return;
     this.lastFill = { x, y };
     // Always applied, also for an identity fill: an element is hit-testable only while it is in the canvas's drawn list (a source that exactly fills the canvas still has to be there).
-    this.deps.geometry.update(record, source, { canvasTransform: { a: x, d: y } });
+    if (record) this.deps.geometry.update(record, source, { canvasTransform: { a: x, d: y } });
+    else this.nativeGeometry?.setFill(x, y);
     this.fillApplied = true;
   }
 
@@ -399,6 +467,7 @@ class HostRuntime {
     this.plugins.destroy();
     this.provider.dispose();
     if (this.fillApplied && this.record) this.deps.geometry.clear(this.record, this.source);
+    this.nativeGeometry?.dispose();
     this.presenter?.dispose();
   }
 }

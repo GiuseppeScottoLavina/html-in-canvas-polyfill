@@ -744,7 +744,9 @@ function appendSelectedText(ctx, src, k, clone) {
   const w = doc.createElement(SEL_TAG);
   w.appendChild(doc.createTextNode(text.slice(s, e)));
   const fg = paint.foreground ? `color:${paint.foreground}!important;-webkit-text-fill-color:${paint.foreground}!important;` : '';
-  setInlineStyle(w, `background-color:${paint.background}!important;${lineBoxPadding(boxes[0].height / sel.k)}${fg}`);
+  // an author ::selection rule's decoration and shadow are painted with the selected glyphs (WPT privacy/selection-alone-with-decorations-painted)
+  const deco = (paint.decoration && paint.decoration !== 'none' ? `text-decoration:${paint.decoration}!important;` : '') + (paint.shadow && paint.shadow !== 'none' ? `text-shadow:${paint.shadow}!important;` : '');
+  setInlineStyle(w, `background-color:${paint.background}!important;${lineBoxPadding(boxes[0].height / sel.k)}${fg}${deco}`);
   clone.appendChild(w);
   if (e < text.length) clone.appendChild(doc.createTextNode(text.slice(e)));
   ctx.nodes++;

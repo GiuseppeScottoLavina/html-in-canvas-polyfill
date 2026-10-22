@@ -1,5 +1,7 @@
 // Gate runner: one browser, one server, a REAL run and a CONTROL run (a deliberately broken variant that must fail), one JSON line.
 //
+// Gates over a native implementation (test/native-effects/) pass `chrome: 'canary', nativeDrawElement: true`.
+//
 //   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--wait-quiet=SECONDS]
 //   --wait-quiet waits (up to SECONDS) for the shared machine to be quiet before the run (TEST-PLAN rule 6); a run whose machine load stays above the threshold is labelled so.
 //
@@ -136,7 +138,7 @@ export function judge({ real, control, controlClasses = [], focus = {}, highLoad
 }
 
 /** The single entry of a gate script. */
-export async function runGate(id, run, { dpr, chrome = 'stable', windowSize, scrollbars, controlClasses = [], controlSabotage = [] } = {}) {
+export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawElement = false, windowSize, scrollbars, controlClasses = [], controlSabotage = [] } = {}) {
   const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
   const has = (k) => process.argv.includes(`--${k}`);
   const useDpr = arg('dpr') ? +arg('dpr') : dpr;
@@ -147,7 +149,7 @@ export async function runGate(id, run, { dpr, chrome = 'stable', windowSize, scr
     effects: arg('effects-file') ?? resolve(ROOT, 'dist/hic-live-effects.iife.js'), water: arg('water-file') ?? resolve(ROOT, 'dist/plugins/water.iife.js'),
   });
   const srv = await H.startServer({ files: bundles.files });
-  const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}) });
+  const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, nativeDrawElement, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}) });
   const result = { gate: id, verdict: 'FAIL', pass: false, usable: true, degraded: [], countsForThresholds: false, numbers: {}, control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, assertions: [], failed: [], load: null, chrome: null, dpr: useDpr ?? null, rafHz: null, focus: {}, screenLocked: screenLocked(), highLoad: false, bundle: bundles.info, noControl: !phases.includes('control'), startedAt: new Date().toISOString() };
   const outcomes = {};
   try {

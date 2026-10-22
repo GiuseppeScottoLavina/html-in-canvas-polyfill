@@ -41,8 +41,7 @@
   const canvas = document.getElementById('stage'), form = document.getElementById('form'), status = document.getElementById('status');
   let host = null;
   try {
-    // The effects run while the polyfill provides the API (not over a native implementation) and need WebGPU.
-    if (window.__HIC__?.installed?.mode !== 'polyfill') throw new Error('the effects need the polyfill');
+    // The effects need WebGPU, and the drawing either of this polyfill or of a browser's own implementation (createHost rejects otherwise).
     if (!navigator.gpu) throw new Error('this browser has no WebGPU');
     host = await HTMLInCanvasEffects.createHost(canvas, form);   // it owns the canvas: no getContext() before this
   } catch (error) {

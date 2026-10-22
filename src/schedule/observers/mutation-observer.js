@@ -94,7 +94,7 @@ export function observeMutations(env, record) {
         if (ancestor) damage.add(ancestor, null);
       } else if (drawable) attrOwners.add(element);
     }
-    if (structural) { announceDrawables(new Set(layer.drawableElements())); observeShadows(root); }
+    if (structural) { announceDrawables(new Set(layer.drawableElements())); observeShadows(root); watchFrames(); }
     for (const element of attrOwners) {
       const drawable = layer.nearestDrawable(element);
       if (drawable) damage.add(drawable, memory.reach(layer, element));
@@ -168,11 +168,60 @@ export function observeMutations(env, record) {
     }
   }
 
+  /**
+   * Same-origin frame documents inside the layer: the snapshot draws them (capture/frame-doc.js), so a change in one, or a (re)load, repaints the drawable that contains the frame
+   * (WPT onpaint-iframe). A MutationObserver does not cross into a child document: each readable one is observed, and re-observed when the frame loads another document.
+   * @type {Map<Element, {doc: Document, mo: MutationObserver}>}
+   */
+  const frames = new Map();
+  /** @param {Element} frame */
+  const frameChanged = (frame) => {
+    const drawable = layer.nearestDrawable(frame);
+    if (drawable) env.scheduler.damage(record, 'mutation', drawable, null);
+  };
+  function watchFrames() {
+    for (const [frame, known] of frames) if (!root.contains(frame)) { known.mo.disconnect(); frames.delete(frame); }
+    for (const frame of Array.from(root.querySelectorAll('iframe, frame, object'))) {
+      /** @type {Document|null} */
+      let doc = null;
+      try { doc = /** @type {HTMLIFrameElement} */ (frame).contentDocument; } catch { /* cross-origin */ }
+      const known = frames.get(frame);
+      if (known?.doc === doc) continue;
+      known?.mo.disconnect();
+      frames.delete(frame);
+      if (!doc) continue;
+      const frameMo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver(() => frameChanged(frame));
+      frameMo.observe(doc, OPTIONS);
+      frames.set(frame, { doc, mo: frameMo });
+    }
+  }
+  /**
+   * A frame that loads (another) document, and an image that finishes loading: an <img> whose source is chosen after the snapshot was taken (a <picture> source,
+   * srcset, lazy loading) had no URL to fetch then and nothing else announces it (WPT privacy/picture-images-ignored drew the snapshot from before the load).
+   * @param {Event} e
+   */
+  const onLoad = (e) => {
+    const t = /** @type {Element} */ (e.target);
+    if (t.nodeType !== 1) return;
+    if (t.localName === 'img') { frameChanged(t); return; }
+    if (!/^(iframe|frame|object)$/.test(t.localName)) return;
+    watchFrames();
+    frameChanged(t);
+  };
+
   const mo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver(onMutations);
   mo.observe(root, OPTIONS);
   observeShadows(root);
+  watchFrames();
+  root.addEventListener('load', onLoad, true);
   const stopAncestors = watchAncestors(env, record);
-  return () => { mo.disconnect(); stopAncestors(); };
+  return () => {
+    mo.disconnect();
+    stopAncestors();
+    root.removeEventListener('load', onLoad, true);
+    for (const known of frames.values()) known.mo.disconnect();
+    frames.clear();
+  };
 }
 
 /** @param {Element} canvas @returns {Element[]} the elements above the canvas, nearest first, through shadow hosts up to <html> */

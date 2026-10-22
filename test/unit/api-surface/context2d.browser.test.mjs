@@ -367,3 +367,37 @@ test('raster-scale-floor: a scaled smoothed draw never samples the surface beyon
   ctx.drawElementImage(el, 0, 0, 10, 5);
   assert.deepEqual([...pixel(canvas, 9, 4)].slice(0, 4), [...pixel(canvas, 8, 3)].slice(0, 4), 'a 4x downscale keeps the edge opaque too');
 });
+
+test('a drawable with its own mix-blend-mode blends with the canvas content below it (WPT css-blend-mode-over-content), and the context keeps its composite operation; control: normal draws over', async (t) => {
+  const { canvas, el, store } = await set(t, { version: { solid: true, blend: 'difference' } });
+  const ctx = ctxOf(canvas);
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, 100, 100);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawElementImage(el, 10, 10);
+  const red = COLORS.tl;
+  assert.deepEqual(Array.from(pixel(canvas, 20, 15)).slice(0, 3), [255 - red[0], 255 - red[1], 255 - red[2]], 'difference against white');
+  assert.equal(ctx.globalCompositeOperation, 'source-over', 'restored');
+  store.commit(el, { solid: true });
+  ctx.fillRect(0, 0, 100, 100);
+  ctx.drawElementImage(el, 10, 10);
+  assert.ok(isColor(pixel(canvas, 20, 15), red), 'control: a normal drawable is drawn over the content');
+});
+
+test('a drawable with its own backdrop-filter filters the canvas content under its border box before it is drawn (WPT css-backdrop-filter); the ink and the outside are untouched; control: none leaves the content', async (t) => {
+  const clear = new OffscreenCanvas(48, 28); // a transparent surface: border box 40x20 + 4 px ink
+  const { canvas, el, store } = await set(t, { version: { surface: clear, backdrop: 'invert(1)' } });
+  const ctx = ctxOf(canvas);
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, 100, 100);
+  ctx.drawElementImage(el, 10, 10);
+  assert.deepEqual(Array.from(pixel(canvas, 30, 20)).slice(0, 3), [0, 0, 0], 'inside the border box: inverted');
+  assert.deepEqual(Array.from(pixel(canvas, 8, 20)).slice(0, 3), [255, 255, 255], 'left of it (the ink): untouched');
+  assert.deepEqual(Array.from(pixel(canvas, 52, 20)).slice(0, 3), [255, 255, 255], 'right of it: untouched');
+  assert.equal(ctx.globalCompositeOperation, 'source-over', 'the context state is restored');
+  assert.equal(ctx.filter, 'none');
+  store.commit(el, { surface: clear });
+  ctx.fillRect(0, 0, 100, 100);
+  ctx.drawElementImage(el, 10, 10);
+  assert.deepEqual(Array.from(pixel(canvas, 30, 20)).slice(0, 3), [255, 255, 255], 'control: no backdrop-filter, the content stays');
+});

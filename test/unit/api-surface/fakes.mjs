@@ -57,6 +57,8 @@ function createFakeStore() {
         canvasWidth: o.canvasWidth ?? 100,
         canvasHeight: o.canvasHeight ?? 100,
         translation: new DOMMatrixReadOnly([1, 0, 0, 1, o.originX ?? width / 2, o.originY ?? height / 2]),
+        blend: o.blend ?? 'normal',
+        backdrop: o.backdrop ?? 'none',
         scale,
         ink: { left: ink, top: ink, right: ink, bottom: ink },
         layoutOffset: o.layoutOffset ?? { x: 3, y: 4 },

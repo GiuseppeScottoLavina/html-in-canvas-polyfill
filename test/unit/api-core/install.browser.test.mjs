@@ -6,6 +6,8 @@ import { defineFakeNative, diffDescriptors, fakeServices, makeFrame, settle, sna
 
 /** what a native-mode install may add to the window: the per-window install marker */
 const EXTENSION_ADDITIONS = ['added window.Symbol(hic.installed)'];
+/** what an install in a native mode adds: the install marker and the frame cap extension's property (never a standard name) */
+const NATIVE_ADDITIONS = ['added HTMLCanvasElement.prototype.frameCap', 'added window.Symbol(hic.installed)'];
 // an UNVERIFIED Firefox (below MIN_FIREFOX_MAJOR): still refused as a browser
 const FIREFOX = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0';
 
@@ -193,7 +195,7 @@ test('adoptRoot: a root created before install is refused with the hint, then ma
   assert.throws(() => installed.adoptRoot(/** @type {any} */ (w.document)), TypeError);
 });
 
-test('G-native-first (b): a complete native implementation gives mode native, patches nothing and builds no layer', t => {
+test('G-native-first (b): a complete native implementation gives mode native, patches nothing of the standard (only the frameCap extension) and builds no layer', t => {
   const w = makeFrame(t, '<canvas content="drawable"><b></b></canvas>');
   defineFakeNative(w);
   const before = snapshotDescriptors(w);
@@ -201,8 +203,12 @@ test('G-native-first (b): a complete native implementation gives mode native, pa
   const installed = installIn(t, w);
   assert.equal(installed.mode, 'native');
   assert.equal(installed.native.kind, 'complete');
-  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).filter((l) => !EXTENSION_ADDITIONS.includes(l)), [], 'not one standard descriptor changed (only the install marker may appear)');
+  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).sort(), NATIVE_ADDITIONS, 'not one standard descriptor changed: only the install marker and the frameCap extension appear');
   assert.equal(w.document.documentElement.outerHTML, html, 'no layer, no data-hic attribute');
+  const canvas = w.document.querySelector('canvas');
+  canvas.frameCap = 30;
+  assert.equal(canvas.getAttribute('framecap'), '30', 'frameCap reflects the framecap attribute in mode native');
+  canvas.removeAttribute('framecap');
   assert.deepEqual(installed.canvases(), []);
   installed.uninstall();
   assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)), []);
@@ -292,7 +298,7 @@ test('G-native-first (d): a bridge that throws on an unexpected native shape is 
   const installed = installIn(t, w);
   assert.equal(installed.mode, 'native');
   assert.ok(installed.report().deviations.some((d) => d.id === 'native-step-aside' && /bridge failed \(TypeError: Cannot redefine/.test(d.detail)));
-  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).filter((l) => l !== 'added window.Symbol(hic.installed)'), [], 'the failed bridge left nothing behind');
+  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).sort(), NATIVE_ADDITIONS, 'the failed bridge left nothing behind (the native install adds only the marker and the frameCap extension)');
 });
 
 test('G-native-first (c): deleting one ADDITIVE name gap-fills it in native-bridged and leaves the native descriptors alone', t => {

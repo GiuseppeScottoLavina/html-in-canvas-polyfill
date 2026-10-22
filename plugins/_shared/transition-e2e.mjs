@@ -30,11 +30,16 @@ export async function runTransitionGalleryE2E(plan) {
   try {
     c.check('the gallery is ready with the plugin applied', true, await page.evaluate('({ mode: window.__gallery.mode, active: window.__gallery.active })'));
     c.check('the intro ends: the host stops rendering (idle, not continuous)', await idle(page));
+    // idle() only sees no effect frame for 400 ms; a longer stall of the GPU process during the intro looks the same, and the first click would then land while the
+    // plugin still blocks input by design (NO_TARGET). The plugin's own word that it rests assembled is the precondition of the idle click below.
+    const rest = await page.evaluate(`Promise.race([Promise.resolve(window.__gallery.handle.settled()), new Promise((r) => setTimeout(() => r('still in motion after 10 s'), 10000))])`);
+    c.check('the intro ends: the plugin rests assembled (handle.settled())', rest === 'in', rest);
     const before = (await shot(page)).img;
     c.check('idle frame is not blank', pixelStats(before).nonBlank);
 
     await clickOn(page, '#name'); await sleep(150);
-    c.check('idle: a trusted click focuses the drawn name field', (await active()) === 'name');
+    c.check('idle: a trusted click focuses the drawn name field', (await active()) === 'name', await page.evaluate(`(() => { const r = document.getElementById('name').getBoundingClientRect(); const top = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)[0];
+      return { active: document.activeElement && (document.activeElement.id || document.activeElement.localName), top: top && (top.id || top.localName), stats: window.__gallery.host && window.__gallery.host.stats() }; })()`));
     await page.typeText('x');
     c.check('idle: trusted typing reaches it', (await page.evaluate(`document.getElementById('name').value`)) === 'Adax');
     await idle(page);

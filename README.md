@@ -30,7 +30,7 @@ install(); // synchronous; throws HicUnsupportedError in a browser it refuses
 Or with a script tag (load it before your own scripts; it installs while the tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.4/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.5/dist/hic-live-polyfill.iife.min.js"></script>
 ```
 
 Then use the standard API. This is the explainer's own example, unchanged:
@@ -69,13 +69,13 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 
 | | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Canary 157, flag) |
 |---|---|---|---|
-| official WPT HTML-in-Canvas files passing (of 230) | 145 | 66 | 202 |
+| official WPT HTML-in-Canvas files passing (of 230) | 182 | 66 | 202 |
 | keydown to canvas pixel, p50 / p95 | 5.3 / 9.9 ms | 14.5 / 135.2 ms, final text wrong | 5.2 / 10.3 ms |
 | wheel scroll inside the canvas, p50 to pixel | 27.7 ms | never drawn | 36.5 ms |
 | blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
 | one update in a 1000-element drawable, main thread | 19.2 ms | 40.9 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 97 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 277 KB / 96 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 313 KB / 109 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome with the flag |
 
 The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -85,7 +85,7 @@ The other package is smaller, starts faster and offers a Three.js renderer. Full
 | browser | status |
 |---|---|
 | Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured, with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions are not available there |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured, with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions run over the native implementation (measured on Canary 158.0.8112.1 with the flag) |
 | Chrome 154-155 with the `CanvasDrawElement` flag (the earlier `layoutsubtree` draft) | used as found, with one console warning; load `hic-live-native-bridge.iife.min.js` before the core to bridge `content="drawable"` to it |
 | Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
@@ -100,11 +100,11 @@ On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check,
 
 - **The picture lags the DOM by one to two frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn; on Chromium a snapshot that needs no font or image to load is painted one frame after the change, others about two. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 96 KB gzipped (277 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
-- **Not drawn:** iframes, `<object>`, `<embed>`; cross-origin images, fonts and CSS without CORS; native UI such as select popups, date pickers and IME composition. Each is a hatched placeholder plus one console message, never a silent gap. A strict CSP must allow `img-src data:`.
+- **Size.** The core is about 109 KB gzipped (313 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS, as the browser itself leaves them out of a canvas (the element's box without its content) plus one console message, never a silent gap; native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
-- **Not supported:** web views inside apps, Firefox for Android, workers (an `ElementImage` cannot be posted; use `toImageBitmap()`). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
-- **Preview.** `0.1.0-preview.4` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
+- **Preview.** `0.1.0-preview.5` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 
@@ -125,7 +125,7 @@ The browser itself lays out and paints the HTML; the polyfill only takes picture
 
 ## Two extensions (not part of the standard)
 
-> **Note.** The frame cap and the effect plugins are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them. They work only while this polyfill provides the API; on top of a native implementation they are not supported ([what was checked](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+> **Note.** The frame cap and the effect plugins are extensions of this library. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them. They run over this polyfill and over a browser's own implementation that the polyfill steps aside for ([what differs there](docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)).
 
 - **Frame cap:** `<canvas content="drawable" framecap="30">` or `canvas.frameCap = 60` bounds `paint` events, effect frames and snapshot builds for that canvas (0 = display rate).
 - **Effect plugins:** an optional WebGPU host runs post-processing plugins over the drawn HTML and remaps pointer input through the effect, so clicks reach the element the user sees. A plugin may declare actions that page code runs through its handle (`await handle.trigger('play')` resolves with the state the plugin rests in). The plugins are not part of the polyfill: the water ripple of the demo is one example plugin in [plugins/](plugins/), with a template for new ones and a [gallery](examples/plugins/) that applies each to one live form; [examples/effect-plugin](examples/effect-plugin/) is the smallest page that uses them. [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md) is the reference for using and writing plugins.
@@ -149,14 +149,14 @@ Eight example effect plugins, each applied to the same live form in the [plugin 
 </tr>
 </table>
 
-> **Extensions, not the standard.** The plugins, the effects host they run in and the frame cap are extensions of this library. They are not part of the HTML-in-Canvas proposal and are not available on native implementations: they work only while this polyfill provides the API ([details](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+> **Extensions, not the standard.** The plugins, the effects host they run in and the frame cap are extensions of this library. They are not part of the HTML-in-Canvas proposal and native implementations do not provide them; the bundles of this library run them over the polyfill and over a native implementation alike ([details](docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 What each plugin does and how its input mapping works: [plugins/README.md](plugins/README.md). Writing one: [docs/guides/EFFECTS-PLUGINS.md](docs/guides/EFFECTS-PLUGINS.md).
 
 ## Testing and conformance
 
-- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 145 files (253 of 375 subtests); native Chrome passes 209 (355) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 525 in Node and 786 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check.
+- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 182 files (307 of 375 subtests); native Chrome passes 209 (355) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
+- **Unit tests:** 534 in Node and 807 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check.
 - **Browser gates:** 15 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling and its cadence). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 47 seeded bugs are caught.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
 - **Phones (simulators and emulators):** `npm run test:mobile` drives Mobile Safari in the iOS Simulator and Chrome in the Android Emulator: taps on moved drawables, typing, touch scroll, the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.

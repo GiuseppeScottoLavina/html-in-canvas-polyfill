@@ -46,7 +46,7 @@ A drawable that updates often (typing, animation, a slider) should stay well und
 - Frames are paced by a phase accumulator, so 60 on a 120 Hz display renders every second frame. Measured with the water plugin on a 120 Hz display: caps 30, 60 and 120 gave 30.0, 60.0 and 120.1 Hz, from an independent clock.
 - `requestPaint()` is a request, not a bypass: a capped canvas never paints faster than F. The redraw behind a `canvas.width/height` write is the one exception (one per frame): a cleared bitmap must be redrawn in the same frame.
 - Input-driven updates also honour the cap unless `options.interactionFloorFps` is set; with the default 0, typing latency can be up to one cap period.
-- With a complete native implementation the cap only bounds effect frames.
+- With a complete native implementation the cap only bounds effect frames (the browser's own `paint` events are not throttled). The cost of the water effect there: `docs/guides/EFFECTS-PLUGINS.md`, "On a native implementation".
 - A cap is a ceiling, not a promise: a slow page cannot be sped up by raising it.
 
 ## 5. Tips
@@ -56,6 +56,7 @@ A drawable that updates often (typing, animation, a slider) should stay well und
 - Fonts: system fonts need nothing. A web font is expected to be inlined as `data:` when it is same-origin or CORS-enabled (`docs/SUPPORT-MATRIX.md`, content table: label "expected", no gate loads a web font). Test your own font before relying on it.
 - Keep the drawable small and static where you can: animations and transitions are re-snapshotted at the cap, frozen at the sampled time (`css-animations`). Prefer an effect plugin for motion over animating the source.
 - Do not read the canvas back every frame (`getImageData`) on a native implementation: it was measured to slow the native path considerably. The polyfill's own retained surfaces are not affected.
+- Same-origin iframes in a drawable are re-photographed whole, with their CSS, whenever any of them changes. Measured (headed Chrome 155, macOS, DPR 1, 2026-10-22): a drawable with four same-origin frames of 150 list items and 400 CSS rules each took 11.7 / 13.6 ms (p50 / p95) of snapshot build per change inside one frame, one `paint` per change, about one task over 8.33 ms per change (none over 16.7 ms), and no `paint` at all while nothing changed. Keep frames that change often out of drawables, or few and small.
 - Use `framecap` deliberately: 30 or 60 for forms, higher only when an effect animates.
 - An effect costs nothing while its canvas is out of view: the effect host pauses more than half a viewport away and when the document is hidden (gallery with the water effect, headless: renderer + GPU process CPU 28.8 % on screen, 1.3 % one viewport away). `paint` events and snapshot builds go on off-screen, as they do natively.
 - Chrome's dropped-frame count during a page scroll over a capped effect reflects the cap, not the effect's work. Measured (headed Chrome 155, 120 Hz, DPR 2, wheel scroll of the gallery with the water effect): cap 60, 66 frames counted as dropped (all of them "presented partial": the scroll moved, the canvas did not, as the cap asks); cap 120, twice the effect frames, 1 dropped; the effect off, 12. Main thread busy 4 to 5 %, no task above 8.33 ms in any of them. The scroll itself is presented every frame; to see the effect move at the display rate, raise the cap.

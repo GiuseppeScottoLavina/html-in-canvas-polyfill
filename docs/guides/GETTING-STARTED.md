@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.4`, a preview published under the npm dist-tag `next`, for desktop Chrome, Firefox 155+ and Safari 27+. Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.5`, a preview published under the npm dist-tag `next`, for desktop Chrome, Firefox 155+ and Safari 27+. Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 ## 1. Run the examples (about 3 minutes)
 
@@ -76,7 +76,7 @@ Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 
 ## 4. Adding the effects
 
-The effects and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them, and they work only while the polyfill provides the API (mode `polyfill`; [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+The effects and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them. They run over the polyfill and over a native implementation the installed polyfill steps aside for ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md#extensions-not-the-standard)).
 
 Two more classic scripts, after the core: the effects host and a plugin (the water example of [`plugins/`](../../plugins/)):
 
@@ -101,7 +101,7 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | browser | what the polyfill does | source |
 |---|---|---|
 | desktop Chrome without the native feature (154 measured) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) are not supported there | API-CONTRACT section 2, EFFECTS-PLUGINS |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
 | Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Verified on iOS Simulator / Android Emulator only | MOBILE |

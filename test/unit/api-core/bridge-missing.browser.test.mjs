@@ -4,7 +4,7 @@ import { defineFakeNative, diffDescriptors, fakeServices, makeFrame, snapshotDes
 
 // This file never loads /src/native-bridge.js: the core must step aside for a legacy or nearly complete native implementation, never throw, touching nothing.
 
-test('legacy native without the bridge bundle: used as found (mode native), one warning naming the bridge, a report entry, nothing patched', t => {
+test('legacy native without the bridge bundle: used as found (mode native), one warning naming the bridge, a report entry, nothing of the standard patched', t => {
   const w = makeFrame(t);
   defineFakeNative(w, { legacy: true });
   /** @type {string[]} */ const warnings = [];
@@ -18,7 +18,7 @@ test('legacy native without the bridge bundle: used as found (mode native), one 
   assert.ok(/hic-live-native-bridge/.test(warnings[0]), warnings[0]);
   assert.ok(installed.report().deviations.some((d) => d.id === 'native-step-aside' && /layoutsubtree/.test(d.detail)));
   assert.deepEqual(installed.report().unsupported, []);
-  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).filter((l) => l !== 'added window.Symbol(hic.installed)'), []);
+  assert.deepEqual(diffDescriptors(before, snapshotDescriptors(w)).sort(), ['added HTMLCanvasElement.prototype.frameCap', 'added window.Symbol(hic.installed)'], 'only the install marker and the frameCap extension');
 });
 
 test('a native that lacks only bridgeable names, without the bridge: used as found, silently (no console output), the gaps are reported', t => {

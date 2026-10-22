@@ -347,6 +347,8 @@ export {};
  * @property {number} canvasWidth   canvas content box width at snapshot time, css px   [spec: canvas width]
  * @property {number} canvasHeight  canvas content box height at snapshot time, css px
  * @property {DOMMatrixReadOnly} translation  translation matrix of the computed transform-origin   [spec: translation matrix]
+ * @property {string} [blend]     computed mix-blend-mode of the drawable: a draw composites the snapshot with it against the canvas content ('normal' when absent)
+ * @property {string} [backdrop]  computed backdrop-filter of the drawable: a draw filters the canvas content under its border box first ('none' when absent)
  * @property {number} scale         surface px per css px (raster scale, <= options.maxDpr)
  * @property {Insets} ink           css px kept beyond the border box on each side (the surface covers border box + ink)
  * @property {{x:number,y:number}|null} layoutOffset  border-box offset of the element inside the layer content box (css px, before transforms) measured by the capture that produced the surface; geometry application reads it instead of measuring layout. null = unknown
@@ -592,9 +594,10 @@ export {};
  */
 
 /**
- * @typedef {(now: number, info: {frameCap: number, due: boolean}) => boolean|void} FrameHook
+ * @typedef {(now: number, info: {frameCap: number, due: boolean, repeat?: boolean}) => boolean|void} FrameHook
  *   Runs inside the scheduler's rAF tick of ONE canvas, AFTER paint dispatch and the store pump. `due` = the frame cap allows a frame now.
  *   Return true to keep the tick running next frame without damage (continuous effects). Must not throw (caught + reported).
+ *   Native mode (frame-source.js nativeFrameSource): also called from the canvas's paint event; `repeat` = the hook already ran in this frame.
  */
 
 /**
@@ -703,7 +706,7 @@ export {};
  * @property {(context: EffectPluginContext, options: Readonly<Record<string, unknown>>) => EffectPluginInstance | Promise<EffectPluginInstance>} create
  */
 /**
- * @typedef {Object} SourceProvider  Where the effect host reads source pixels. Polyfill mode: the SnapshotStore; native mode: the public API.
+ * @typedef {Object} SourceProvider  Where the effect host reads source pixels. Polyfill mode: the SnapshotStore; native mode: the standard API (GPUQueue.drawElementImageToTexture).
  * @property {'store'|'native'} kind
  * @property {() => number|null} version   id of the newest source version (null before the first); changes whenever pixels changed
  * @property {() => {width:number, height:number, cssWidth:number, cssHeight:number}|null} size  source size (grid px of the draw, css px of the drawable)

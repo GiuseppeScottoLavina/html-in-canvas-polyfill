@@ -2,51 +2,51 @@
  "note": "Reasons for every subtest that passes natively and fails in the polyfill (category: deviation | impossible | flaky | bug; reason: the feature id of docs/SUPPORT-MATRIX.md or a bug id). `pass`, `partial` and `stable` are rewritten by `npm run test:wpt -- --update-expectations`.",
  "tests": {
   "animated-gif-pinned-to-element-image.tentative.html": {
-   "category": "impossible",
+   "category": "deviation",
    "reason": "animated-images",
-   "note": "no signal when an animated image advances a frame, and an SVG image does not animate its nested images"
+   "note": "only partly fixable: drawImage of an animated image yields its first frame (HTML: the default image), an image inside the SVG snapshot does not animate, and no event announces a new frame, so the snapshot shows the first frame. ImageDecoder (Chromium only) could replay the decoded frames on the polyfill's own clock (not the page's): not done"
   },
   "animated-gif.tentative.html": {
-   "category": "impossible",
+   "category": "deviation",
    "reason": "animated-images",
-   "note": "no signal when an animated image advances a frame, and an SVG image does not animate its nested images"
+   "note": "only partly fixable: drawImage of an animated image yields its first frame (HTML: the default image), an image inside the SVG snapshot does not animate, and no event announces a new frame, so the snapshot shows the first frame. ImageDecoder (Chromium only) could replay the decoded frames on the polyfill's own clock (not the page's): not done"
   },
   "backdrop-filter-nested.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
   },
   "backdrop-filter-rounded-bounds.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
   },
   "canvas-transform-get-bounding-client-rect.tentative.html": {
    "subtests": {
     "updateElementGeometry() affects getBoundingClientRect() on an inline": {
-     "category": "deviation",
+     "category": "impossible",
      "reason": "inline-drawable-geometry",
-     "note": "inline drawable"
+     "note": "the translation steps pass; the scale step cannot: CSS transforms do not apply to an inline box, and changing its display would change the layout the snapshot is taken from"
     },
     "updateElementGeometry() affects getBoundingClientRect() on a fragmented": {
-     "category": "deviation",
+     "category": "impossible",
      "reason": "inline-drawable-geometry",
-     "note": "fragmented inline drawable"
+     "note": "fragmented inline drawable: as above (the translation steps pass, the scale step cannot be expressed on an inline box)"
     },
     "updateElementGeometry() on ancestor and nested drawable": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "a nested drawable without its own canvas transform moves with its ancestor"
+     "note": "fixable, not done: natively a nested drawable is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestor's canvas transform (measured: nested-block at the origin although laid out 50 px down); the polyfill keeps it in flow and lets it follow its ancestor. Doing it changes the hit testing of every undrawn nested drawable"
     },
     "updateElementGeometry() affects getBoundingClientRect() on a block nested": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "follows the ancestor test above in the same page"
+     "note": "as above (canvas-origin placement), and its margin step needs a position independent of layout read synchronously after a style write (a re-measure inside getBoundingClientRect); also follows the ancestor test in the same page"
     },
     "A non-drawable descendant inherits": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "follows the ancestor tests above in the same page"
+     "note": "passes alone: the ancestor test above fails before its cleanup and leaves the ancestor transformed"
     }
    }
   },
@@ -59,114 +59,80 @@
     }
    }
   },
+  "captureElementImage.tentative.html": {
+   "category": "deviation",
+   "reason": "spec-after-wpt-pin",
+   "note": "not a polyfill gap: the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11, which also asserts that ElementImage has no width/height); the polyfill follows the specification, as Canary 158 does. The file at WPT master passes 6/6 in the polyfill: resolved by re-pinning the WPT revision"
+  },
   "css-backdrop-filter-image.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
-  },
-  "css-backdrop-filter.tentative.html": {
-   "category": "deviation",
-   "reason": "backdrop-isolation",
-   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
-  },
-  "css-blend-mode-over-both.tentative.html": {
-   "category": "deviation",
-   "reason": "backdrop-isolation",
-   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
-  },
-  "css-blend-mode-over-content.tentative.html": {
-   "category": "deviation",
-   "reason": "backdrop-isolation",
-   "note": "docs/SUPPORT-MATRIX.md content table: backdrop-filter / mix-blend-mode against content outside the drawable is unsupported in effect (the clone is isolated, the backdrop is transparent)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
   },
   "display-contents.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "children-layout",
-   "note": "children of a display:contents child of the canvas keep their own position (native forces them static): CSS cannot select by computed display"
-  },
-  "draw-element-image-different-canvas.tentative.html": {
-   "subtests": {
-    "Prevent drawing ElementImage into a different canvas in a worker": {
-     "category": "impossible",
-     "reason": "worker-element-image",
-     "note": "needs an ElementImage in a worker"
-    }
-   }
+   "note": "natively the children of a display:contents child of the canvas are forced static; the test changes display and reads getComputedStyle in the same task: CSS cannot select by computed display, and no observer runs before that read"
   },
   "draw-element-image-get-image-data.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "color-space",
-   "note": "display-p3 element in a display-p3 canvas: snapshots are sRGB"
+   "note": "a display-p3 element in a display-p3 canvas: the SVG image rasteriser and the 2D snapshot surface are 8-bit sRGB, so out-of-gamut colours are clamped before the draw"
   },
   "element-image-fractional-size.tentative.html": {
    "category": "deviation",
    "reason": "spec-after-wpt-pin",
-   "note": "the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11); the polyfill follows the specification, as Canary 157 does. The same file at WPT master passes in the polyfill (docs/CONFORMANCE.md, Not covered). Before that change the second subtest raced the stale-first resize tile (resize-stale-first); with getElementImageDefaultSize the master version passes 2/2"
-  },
-  "iframe-local.tentative.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "a child browsing context cannot be serialised into foreignObject: hatched placeholder + report"
-  },
-  "iframe.tentative.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "a child browsing context cannot be serialised into foreignObject: hatched placeholder + report"
+   "note": "not a polyfill gap: as captureElementImage.tentative.html (ElementImage.width/height of the pinned revision); the file at WPT master passes 2/2 in the polyfill"
   },
   "ink-overflow.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-timing",
-   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root). A race by construction, so the file is not in the stable list: the result depends on whether all five first snapshots (each superseded once by the color-grid custom element) have landed when the page draws, about 100 ms after load. Until 2026-10-16 the polyfill always lost it (TIMEOUT in every rep); since its first snapshot is one round it wins it on a warm load (fresh-browser loop: first load TIMEOUT 7 of 7, later loads PASS 8 of 8) and in full runs lost, half won (FAIL) or won (PASS) rep 1 while reps 0 and 2 timed out. The worst repetition is reported, so it never reads as a pass"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root). A race by construction, so the file is not in the stable list: the result depends on whether all five first snapshots (each superseded once by the color-grid custom element) have landed when the page draws, about 100 ms after load. Until 2026-10-16 the polyfill always lost it (TIMEOUT in every rep); since its first snapshot is one round it wins it on a warm load (fresh-browser loop: first load TIMEOUT 7 of 7, later loads PASS 8 of 8) and in full runs lost, half won (FAIL) or won (PASS) rep 1 while reps 0 and 2 timed out. The worst repetition is reported, so it never reads as a pass"
   },
   "invalidation-during-onpaint.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-dom-write-timing",
-   "note": "DOM written in the handler is snapshotted by a later build (>= 2 frames)"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). DOM written in the paint handler must be in the snapshot drawn by the same handler"
   },
   "nested-canvas-scale.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "drawable-canvas-element",
-   "note": "the nested canvas is drawn into and drawn from in the same task: the snapshot still holds the previous bitmap"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). the nested canvas is drawn into and drawn from in the same task: the outer snapshot still holds its previous bitmap"
   },
   "onpaint-changedElements.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-timing",
-   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test waits one frame (rAF + setTimeout(0)) for the paint of a change; the relaxed run (waits of 300 ms) confirms the timing as the cause"
   },
   "onpaint-css-animation.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-timing",
-   "note": "the test waits one rAF + setTimeout(0) for the paint; the polyfill snapshot is asynchronous (>= 2 frames); the relaxed run (waits of 300 ms) confirms the timing as the cause for the rest"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test waits one frame (rAF + setTimeout(0)) for the paint of a change; the relaxed run (waits of 300 ms) confirms the timing as the cause"
   },
   "onpaint-iframe-nested-invalidation.tentative.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "canvases inside iframes need the polyfill in each frame and paint ordering across frames; iframes inside drawables are refused"
+   "category": "impossible",
+   "reason": "paint-timing",
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). Every subtest expects canvases a, b (nested) and c (in a frame) to paint within ONE frame of a change (rAF + setTimeout(0)); the polyfill draws the frame and its canvases, but a change propagates through two asynchronous snapshots"
   },
   "onpaint-iframe-post-tree-order.tentative.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "the first subtest passes: the parent's tick runs the tick of the same-origin iframe document first (each frame runs its own install). The second one times out: the change is inside the iframe, whose content is refused in a drawable (a child browsing context cannot be captured), so it never repaints the canvases that contain the iframe"
+   "category": "impossible",
+   "reason": "paint-timing",
+   "note": "the first subtest passes. The second one times out: the change inside the iframe repaints the canvas that contains the frame (its document is drawn since 2026-10-22), but the paint events across the frames must fire in one rendering update. needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). "
   },
   "onpaint-iframe.tentative.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "canvases inside iframes need the polyfill in each frame and paint ordering across frames; iframes inside drawables are refused"
-  },
-  "onpaint-post-tree-order-shadow-dom.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-order",
-   "note": "paint events of canvases in different shadow trees fire in the polyfill commit order, not in reverse shadow-including tree order"
+   "category": "impossible",
+   "reason": "paint-timing",
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). Same-origin frame documents are drawn and observed since 2026-10-22; the test waits one frame for the paint after each change in the frame"
   },
   "onpaint-post-tree-order.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-timing",
-   "note": "canvases paint when their own first snapshot lands, not all in one rendering update, so the reverse tree order across independent branches is not guaranteed"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). An outer canvas paints after its nested canvas's new bitmap is in its own snapshot, a frame later, while unrelated canvases paint at once, so the reverse tree order ACROSS branches is not one rendering update (dispatch in tree order within a frame is right: onpaint-post-tree-order-shadow-dom passes)"
   },
   "onpaint-remove-drawable-element.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-timing",
-   "note": "one-frame wait, see onpaint.tentative.html. 'report drawable ancestor': the removal is committed and painted (changedElements []) one frame before the rebuilt tile of the drawable ancestor lands, which a second paint then lists. 'becomes display:none': the style change reaches the snapshot a frame after the test's single wait. Deterministic since 2026-10-16 (20 reps, 10 fresh-browser runs, quiet and with an idle Android Emulator): the first snapshot of the 8 drawables is one round, so the first paint is in the first frame; it used to take 4 rounds two frames apart and, depending on machine load, landed just before or just after the third subtest's change and then spilled into the fourth"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). One-frame wait, see onpaint.tentative.html. 'report drawable ancestor': the removal is committed and painted (changedElements []) one frame before the rebuilt tile of the drawable ancestor lands, which a second paint then lists. 'becomes display:none': the style change reaches the snapshot a frame after the test's single wait. Deterministic since 2026-10-16 (20 reps, 10 fresh-browser runs, quiet and with an idle Android Emulator): the first snapshot of the 8 drawables is one round, so the first paint is in the first frame; it used to take 4 rounds two frames apart and, depending on machine load, landed just before or just after the third subtest's change and then spilled into the fourth"
   },
   "onpaint-remove-non-drawable-element.tentative.html": {
    "category": "deviation",
@@ -175,222 +141,67 @@
   },
   "onpaint.tentative.html": {
    "category": "deviation",
-   "reason": "paint-timing",
-   "note": "11 of 12 subtests pass in every rep (2026-10-16: 50 fresh-browser loads x 5 reps, and 3-rep full runs). 'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows (deviation paint-spurious). Three machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler); the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames; and its phase accumulator allowed a second build one frame after the first or not depending on the phase that the frame of the first build and dropped frames had left ('grandchild changes' or 'child transform' and 'drawing operations' failed by turns). Builds are now paced in frame time by a credit of builds"
+   "reason": "paint-spurious",
+   "note": "'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows; telling an unchanged tile apart needs a read-back of every rebuilt tile. The other 11 subtests pass in every rep. Three machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler); the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames; and its phase accumulator allowed a second build one frame after the first or not depending on the phase that the frame of the first build and dropped frames had left ('grandchild changes' or 'child transform' and 'drawing operations' failed by turns). Builds are now paced in frame time by a credit of builds"
   },
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "backdrop-filter with a same-origin feImage: backdrop is not available in the isolated clone"
-  },
-  "privacy/background-image-in-iframe-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/background-image-in-iframe-moved-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/background-image-on-body-in-iframe-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/background-image-on-body-in-iframe-moved-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/background-image-on-html-in-iframe-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/background-image-on-html-in-iframe-moved-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/embed-image-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "cross-origin-resource",
-   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
-  },
-  "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "cross-origin-resource",
-   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
-  },
-  "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "cross-origin-resource",
-   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
-  },
-  "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "svg-drawable",
-   "note": "outermost <svg drawable> is drawn since X-13; the same-origin feImage of the referenced filter does not draw in the clone (cause not traced yet)"
-  },
-  "privacy/iframe-sandbox-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/iframes-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/object-image-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/picture-images-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "cross-origin-resource",
-   "note": "cross-origin content is not drawn (privacy preserved); the polyfill paints a placeholder or an empty filter result where the platform leaves the element as it is"
-  },
-  "privacy/pseudos/before-background-image-iframe-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/pseudos/before-background-image-iframe-modified-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/pseudos/before-background-image-iframe-moved-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/pseudos/before-images-iframe-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/pseudos/before-images-iframe-moved-ignored.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
   },
   "privacy/selection-alone-with-decorations-painted.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+   "note": "the ::selection decoration and shadow are drawn since 2026-10-22 (354 -> 8 differing pixels): natively they end at the whole-pixel highlight rect, in the clone at the text box (a sub-pixel antialiased end)"
   },
   "privacy/selection-painted-overlay-path.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
-  },
-  "privacy/subframe-cross-origin-frame.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "iframe",
-   "note": "iframe/object/embed content inside a drawable is refused: the placeholder is painted where the platform paints nothing, never the cross-origin content (privacy preserved)"
-  },
-  "privacy/svg/svg-mask-filter.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "svg-drawable",
-   "note": "outermost <svg drawable> is drawn since X-13; the canvas pixel under the mask differs from native (native drops the external mask; the clone result was 30-40,140,240; cause not traced yet)"
-  },
-  "privacy/svg/svg-mask-nested-filter.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "svg-drawable",
-   "note": "outermost <svg drawable> is drawn since X-13; the canvas pixel under the mask differs from native (native drops the external mask; the clone result was 30-40,140,240; cause not traced yet)"
-  },
-  "privacy/svg/svg-mask-visited.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "svg-drawable",
-   "note": "outermost <svg drawable> is drawn since X-13; the canvas pixel under the mask differs from native (native drops the external mask; the clone result was 30-40,140,240; cause not traced yet)"
-  },
-  "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html": {
-   "category": "deviation",
-   "reason": "svg-drawable",
-   "note": "outermost <svg drawable> is drawn since X-13; the same-origin feImage pattern does not draw in the clone (cause not traced yet)"
+   "note": "fixable, not done: a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone (its ranges could be wrapped like the selection); the ::selection part is drawn"
   },
   "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+   "note": "fixable, not done: the focus ring of a focused image map <area> (outline auto on the area shape over its <img>) is not drawn"
   },
   "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "selection and focus rings are native UI redrawn by the polyfill: approximate, author ::selection partly honoured"
+   "note": "getSelection().selectAllChildren(canvas): a selection whose boundary points are the canvas element is empty once the canvas children live in the layer (tree-identity); patching Selection/Range boundary points is not done"
   },
   "scale.tentative.html": {
-   "category": "deviation",
+   "category": "impossible",
    "reason": "paint-timing",
-   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous: mostly not there yet (InvalidStateError, harness TIMEOUT), and when it wins the race the 2x draws resample the 1x snapshot (soft edges, 4,079 px, FAIL; native paints the element at the draw scale, raster-scale-floor): the subtest fails either way (before X-13 it failed earlier, on its shadow root)"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous: mostly not there yet (InvalidStateError, harness TIMEOUT), and when it wins the race the 2x draws resample the 1x snapshot (soft edges, 4,079 px, FAIL; native paints the element at the draw scale, raster-scale-floor): the subtest fails either way (before X-13 it failed earlier, on its shadow root)"
   },
   "shadow-dom-slot-canvas-child.tentative.html": {
    "category": "deviation",
    "reason": "shadow-dom",
-   "note": "a drawable child slotted into a shadow tree of the canvas is not a logical child of the layer: drawElementImage throws InvalidStateError"
-  },
-  "video.tentative.html": {
-   "category": "deviation",
-   "reason": "video",
-   "note": "video frames are re-encoded per snapshot; the test needs a paint for every frame"
+   "note": "fixable, not done: a drawable slotted into a canvas that lives in a shadow tree is a child of the canvas in the flat tree only; the layer follows DOM children (the slot is relocated, the slotted light DOM element is not a drawable of the layer: InvalidStateError)"
   },
   "offscreen/animated-gif-worker.tentative.html": {
-   "category": "impossible",
-   "reason": "worker-element-image",
-   "note": "a worker cannot rasterise the DOM and there is no signal for animated image or video frames: no worker-side source (E4)"
-  },
-  "offscreen/canvas-transform-update-worker.tentative.html": {
-   "category": "impossible",
-   "reason": "worker-element-image",
-   "note": "an ElementImage cannot be posted to a worker (not Transferable in userland); the polyfill throws HicUnsupportedError with a toImageBitmap() hint"
-  },
-  "offscreen/getElementTransform-worker.tentative.html": {
-   "category": "impossible",
-   "reason": "worker-element-image",
-   "note": "an ElementImage cannot be posted to a worker (not Transferable in userland); the polyfill throws HicUnsupportedError with a toImageBitmap() hint"
+   "category": "deviation",
+   "reason": "animated-images",
+   "note": "the ElementImage reaches the worker (worker bundle) but shows the first frame of the animated image: see animated-gif.tentative.html"
   },
   "offscreen/ink-overflow-worker.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-timing",
-   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
-  },
-  "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html": {
    "category": "impossible",
-   "reason": "worker-element-image",
-   "note": "an ElementImage cannot be posted to a worker (not Transferable in userland); the polyfill throws HicUnsupportedError with a toImageBitmap() hint"
-  },
-  "offscreen/scale-worker.tentative.html": {
-   "category": "deviation",
    "reason": "paint-timing",
-   "note": "the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
-  },
-  "offscreen/video-worker.tentative.html": {
-   "category": "impossible",
-   "reason": "worker-element-image",
-   "note": "a worker cannot rasterise the DOM and there is no signal for animated image or video frames: no worker-side source (E4)"
-  },
-  "captureElementImage.tentative.html": {
-   "category": "deviation",
-   "reason": "spec-after-wpt-pin",
-   "note": "the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11); the polyfill follows the specification, as Canary 157 does. The same file at WPT master passes in the polyfill (docs/CONFORMANCE.md, Not covered)"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root)"
   },
   "offscreen/offscreenCanvas-drawElementImage.tentative.html": {
    "subtests": {
     "OffscreenCanvas.drawElementImage should draw an ElementImage": {
      "category": "deviation",
      "reason": "spec-after-wpt-pin",
-     "note": "the pinned subtests read ElementImage.width/height, which the specification replaced by canvas.getElementImageDefaultSize() on 2026-10-08 (WPT dcdb8e11); the polyfill follows the specification, as Canary 157 does. The same file at WPT master passes in the polyfill (docs/CONFORMANCE.md, Not covered)"
+     "note": "not a polyfill gap: as captureElementImage.tentative.html (ElementImage.width/height of the pinned revision)"
     }
    }
+  },
+  "offscreen/scale-worker.tentative.html": {
+   "category": "impossible",
+   "reason": "paint-timing",
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root) Since the worker bundle (2026-10-22) the draws happen in the worker; as scale.tentative.html the 2x draws resample the 1x snapshot (raster-scale-floor) when the snapshot is there"
   }
  },
  "controlPass": {
@@ -428,6 +239,9 @@
   "css-backdrop-filter-and-mask.tentative.html",
   "css-backdrop-filter-on-div.tentative.html",
   "css-backdrop-filter-with-sibling.tentative.html",
+  "css-backdrop-filter.tentative.html",
+  "css-blend-mode-over-both.tentative.html",
+  "css-blend-mode-over-content.tentative.html",
   "css-blend-mode.tentative.html",
   "css-clip-path-on-div.tentative.html",
   "css-filter-image.tentative.html",
@@ -440,6 +254,7 @@
   "dialog-paints-in-top-layer.tentative.html",
   "draw-element-different-canvas.tentative.html",
   "draw-element-image-detached.tentative.html",
+  "draw-element-image-different-canvas.tentative.html",
   "draw-element-image-display-none.tentative.html",
   "draw-element-image-empty.tentative.html",
   "draw-element-image-scale-variant.tentative.html",
@@ -462,6 +277,8 @@
   "hit-test/low-dpi-hit-test.tentative.html",
   "hit-test/selection.tentative.html",
   "hit-test/z-index.tentative.html",
+  "iframe-local.tentative.html",
+  "iframe.tentative.html",
   "intersection-observer-visibility.tentative.html",
   "layout-canvas-children.tentative.html",
   "moved-nested-content-drawable-canvas.tentative.html",
@@ -473,6 +290,10 @@
   "nested-div-content-drawable-canvas.tentative.html",
   "nested-drawable.tentative.html",
   "non-opaque-element.tentative.html",
+  "offscreen/canvas-transform-update-worker.tentative.html",
+  "offscreen/getElementTransform-worker.tentative.html",
+  "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html",
+  "offscreen/video-worker.tentative.html",
   "onpaint-after-scroll-2.tentative.html",
   "onpaint-after-scroll.tentative.html",
   "onpaint-display-none.tentative.html",
@@ -480,23 +301,44 @@
   "onpaint-fires-post-resize-observer.tentative.html",
   "onpaint-invalidation-crash.tentative.html",
   "onpaint-outside-invalidation-crash.tentative.html",
+  "onpaint-post-tree-order-shadow-dom.tentative.html",
   "onpaint-remove-non-drawable-element.tentative.html",
   "onpaint-scroll-crash.tentative.html",
   "onpaint-zindex.tentative.html",
   "percent-sizing.tentative.html",
   "position-anchor-crash.tentative.html",
+  "privacy/background-image-in-iframe-ignored.tentative.https.sub.html",
+  "privacy/background-image-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-body-in-iframe-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-body-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-html-in-iframe-ignored.tentative.https.sub.html",
+  "privacy/background-image-on-html-in-iframe-moved-ignored.tentative.https.sub.html",
   "privacy/background-png-images-ignored.tentative.https.sub.html",
   "privacy/border-png-images-ignored.tentative.https.sub.html",
   "privacy/border-svg-images-ignored.tentative.https.sub.html",
   "privacy/box-reflect-images-ignored.tentative.https.sub.html",
   "privacy/canvas-in-custom-element-images-ignored.tentative.html",
+  "privacy/embed-image-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-external-svg-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html",
+  "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html",
   "privacy/html-images-ignored.tentative.https.sub.html",
+  "privacy/iframe-sandbox-ignored.tentative.https.sub.html",
+  "privacy/iframes-ignored.tentative.https.sub.html",
   "privacy/nested-tainted-canvas-ignored.tentative.https.sub.html",
   "privacy/nested-tainted-html-in-canvas-ignored.tentative.https.sub.html",
+  "privacy/object-image-ignored.tentative.https.sub.html",
+  "privacy/picture-images-ignored.tentative.https.sub.html",
   "privacy/pseudos/before-after-images-ignored.tentative.https.sub.html",
   "privacy/pseudos/before-after-images-moved-ignored.tentative.https.sub.html",
   "privacy/pseudos/before-after-visited-color-ignored.tentative.html",
+  "privacy/pseudos/before-background-image-iframe-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-background-image-iframe-modified-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-background-image-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-images-iframe-ignored.tentative.https.sub.html",
+  "privacy/pseudos/before-images-iframe-moved-ignored.tentative.https.sub.html",
   "privacy/pseudos/details-content-after-image-ignored.tentative.https.sub.html",
   "privacy/pseudos/details-content-background-image-ignored.tentative.https.sub.html",
   "privacy/pseudos/details-content-visited-link-currentcolor-ignored.tentative.html",
@@ -516,14 +358,19 @@
   "privacy/shape-image-png-ignored.tentative.https.sub.html",
   "privacy/shape-image-svg-ignored.tentative.https.sub.html",
   "privacy/subframe-cross-origin-background-image.tentative.https.sub.html",
+  "privacy/subframe-cross-origin-frame.tentative.https.sub.html",
   "privacy/subframe-cross-origin-html-images.tentative.https.sub.html",
   "privacy/svg/svg-images-ignored.tentative.https.sub.html",
   "privacy/svg/svg-linear-gradient-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-linear-gradient-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-marker-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-mask-filter.tentative.https.sub.html",
+  "privacy/svg/svg-mask-nested-filter.tentative.https.sub.html",
+  "privacy/svg/svg-mask-visited.tentative.https.sub.html",
   "privacy/svg/svg-pattern-cross-origin-image.tentative.https.sub.html",
   "privacy/svg/svg-pattern-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-pattern-outside-subtree-ignored.tentative.html",
+  "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html",
   "privacy/svg/svg-radial-gradient-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-radial-gradient-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-use-chained-outside-subtree-images-ignored.tentative.https.sub.html",
@@ -551,13 +398,13 @@
   "svg-rect.tentative.html",
   "top-layer-not-painted-in-canvas.tentative.html",
   "triple-nested-content-drawable-canvas.tentative.html",
-  "update-element-geometry-get-bounding-client-rect.tentative.html"
+  "update-element-geometry-get-bounding-client-rect.tentative.html",
+  "video.tentative.html"
  ],
  "partial": {
   "canvas-transform-get-bounding-client-rect.tentative.html": 2,
   "canvas-transform-get-set.tentative.html": 12,
   "display-contents.tentative.html": 1,
-  "draw-element-image-different-canvas.tentative.html": 1,
   "draw-element-image-get-image-data.tentative.html": 1,
   "onpaint-iframe-post-tree-order.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,

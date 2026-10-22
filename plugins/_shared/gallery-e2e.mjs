@@ -20,6 +20,12 @@ export function builtBundle(name) {
 }
 
 /**
+ * HIC_E2E_NATIVE=1 (set by test/native-effects/run.mjs): the same tests over the browser's own HTML-in-Canvas implementation, in Chrome Canary
+ * with CanvasDrawElement; openGallery then requires the installed polyfill to be in mode native, so such a run cannot pass on the polyfill.
+ */
+export const NATIVE = process.env.HIC_E2E_NATIVE === '1';
+
+/**
  * Open the gallery with this plugin selected, in a new headless Chrome. `window.__e2e` counts the presented effect frames (`frames`), the
  * time of the last one (`last`, performance.now()) and the effecterror events (`errors`). `initScript` runs before any script of the page.
  * @param {string} name
@@ -28,7 +34,7 @@ export function builtBundle(name) {
 export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '' } = {}) {
   const bundle = builtBundle(name);
   const server = await startServer();
-  const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'] });
+  const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'], ...(NATIVE ? { chrome: 'canary', nativeDrawElement: true } : {}) });
   browser.conn.sendTimeoutMs = 30000;
   const close = async () => { await browser.close().catch(() => browser.kill()); await server.close().catch(() => {}); };
   try {
@@ -38,6 +44,8 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
     if (initScript) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: initScript });
     await page.navigate(`${server.url}/examples/plugins/?effect=${name}`);
     await page.waitForFunction(`!!(window.__gallery && window.__gallery.ready && window.__gallery.active === ${JSON.stringify(name)})`, { timeout: 20000 });
+    const mode = await page.evaluate('window.__HIC__ && window.__HIC__.installed && window.__HIC__.installed.mode');
+    if (NATIVE && mode !== 'native') throw new Error(`HIC_E2E_NATIVE=1: the gallery runs in mode ${mode}, not over the native implementation`);
     await page.evaluate(`(() => {
       const c = document.getElementById('stage');
       window.__e2e = { frames: 0, last: performance.now(), errors: [] };
@@ -48,7 +56,7 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
     // the picker above grows with the manifest: scroll once it is laid out, so that the whole canvas is in the viewport
     await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'start' })`);
     await sleep(200);
-    return { page, browser, server, bundle, close, chrome: browser.version?.Browser };
+    return { page, browser, server, bundle, close, chrome: browser.version?.Browser, mode };
   } catch (error) {
     await close();
     throw error;

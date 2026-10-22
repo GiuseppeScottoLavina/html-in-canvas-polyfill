@@ -61,7 +61,27 @@ const LIMITS = {
   //   measured from the bar thicknesses, listbox bars), the bar-sized intrinsic width of textarea / listbox select and the gutter of boxes that do not scroll kept in the
   //   clone (G-platform: 29-32 of 62 F6 regions and every bar failed on Linux and macOS with classic bars, now none), and the raster scale and 1:1 draw of a grid rounded
   //   from a fractional device-pixel content box (the field test's scroll box at DPR 1.25)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 300 * KB, gzip: 104.75 * KB },
+  // 300 -> 302.25 KB, gzip 104.75 -> 105.25 KB (+2,610 / +715 bytes, 2026-10-22, measured 302,241 / 105,203): content the browser leaves out of a canvas drawn as the
+  //   browser draws it (the box of a cross-origin image or frame, an embed / object image), SVG filters and masks under the native read-back rules (feImage inlined,
+  //   filters with an unreadable feImage dropped, outside masks empty): 11 WPT privacy subtests
+  // 302.25 -> 306.75 KB, gzip 105.25 -> 106.75 KB (+4,407 / +1,307 bytes, 2026-10-22, measured 306,648 / 106,510): same-origin frames drawn (snapshot/capture/frame-doc.js:
+  //   the frame's document as a nested image with its CSS, inlined resources, form state and nested frames) and repainted when their document changes or reloads: 16 WPT subtests
+  // 306.75 -> 307.25 KB (+559 bytes, 2026-10-22, measured 307,207 / 106,699): canvases of declarative shadow roots managed, paint events in shadow-including tree order
+  //   (util/tree-order.js): WPT onpaint-post-tree-order-shadow-dom
+  // 307.25 -> 307.75 KB, gzip 106.75 -> 107 KB (+489 / +236 bytes, 2026-10-22, measured 307,696 / 106,935): the drawable's own mix-blend-mode composited by the draw
+  //   (SnapshotVersion.blend): WPT css-blend-mode-over-content, css-blend-mode-over-both
+  // 307.75 -> 311 KB, gzip 107 -> 108.25 KB (+3,123 / +1,183 bytes, 2026-10-22, measured 310,819 / 108,118): an ElementImage posted to a dedicated Worker (the page side:
+  //   api/worker-transfer.js, worker-wire.js; the worker side is its own bundle): 21 WPT subtests (offscreen/*-worker, draw-element-image-different-canvas)
+  // 311 -> 311.25 KB (+243 bytes, 2026-10-22, measured 311,062 / 108,197): the text-decoration and text-shadow of an author ::selection rule on selected page text
+  // 311.25 -> 311.75 KB, gzip 108.25 -> 108.5 KB (+692 / +258 bytes, 2026-10-22, measured 311,754 / 108,455): the drawable's own backdrop-filter applied to the canvas
+  //   content by the draw (context2d-patch.js filterBackdrop): WPT css-backdrop-filter
+  // 311.75 -> 313 KB, gzip 108.5 -> 108.75 KB (+1,120 / +340 bytes, 2026-10-22, measured 312,874 / 108,795): a playing video repaints its drawable at every presented
+  //   frame (schedule/observers/video-observer.js): WPT video, offscreen/video-worker
+  // 313 -> 313.25 KB, gzip 108.75 -> 109 KB (+142 / +65 bytes, 2026-10-22, measured 313,016 / 108,860): an image that finishes loading repaints its drawable; a worker
+  //   message that is not delivered leaves the transfer state as it was
+  // 313.25 -> 313.5 KB (2026-10-22, measured 313,497 / 108,975; 313,148 / 108,891 with the effects stream merged, +132 bytes for canvas.frameCap in the native modes):
+  //   the geometry a worker sends is applied only when well-formed and only for elements posted to that worker; a same-origin frame's CSS without :visited rules
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 313.5 * KB, gzip: 109 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -69,7 +89,11 @@ const LIMITS = {
   //   check for jumps into view, the paused frame hook, settle frames for pending actions, the new stats fields)
   // 32.25 -> 32.5 KB, gzip 12.25 -> 12.5 KB (+141 / +42 bytes, 2026-10-21, measured 32,358 / 12,251): the interposer reads the mapped element's cursor without
   //   the cursor it put on the layer (an inherited cursor kept the previous target's cursor everywhere)
-  'hic-live-effects.iife.min.js': { target: 32.5 * KB, ceiling: 32.5 * KB, gzip: 12.5 * KB },
+  // 32.5 -> 39 KB, gzip 12.5 -> 14.5 KB (+6,394 / +2,017 bytes, 2026-10-22, measured 38,752 / 14,268): the effects over a browser's own implementation (the native
+  //   source provider and its paint-driven frame source with the cap phase, the hit-test geometry and the native interposer, the native API checks of createHost)
+  // 39 -> 39.25 KB (+329 / +162 bytes, 2026-10-22, measured 39,081 / 14,430): the hover sync element of mode native shared per document and changed inside a closed
+  //   shadow root, so the page's MutationObservers see no record per pointer move and no author rule can give it a box
+  'hic-live-effects.iife.min.js': { target: 39.25 * KB, ceiling: 39.25 * KB, gzip: 14.5 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
@@ -81,6 +105,8 @@ const LIMITS = {
   //   assumed from Safari >= 27
   'hic-live-engines.iife.min.js': { target: 42.25 * KB, ceiling: 42.25 * KB, gzip: 16.25 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
+  // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922)
+  'hic-live-worker.iife.min.js': { target: 10 * KB, ceiling: 10 * KB, gzip: 4 * KB },
   'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
