@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Fixed
 
 - A `mask-image` (or `mask`, `-webkit-mask`) whose image the polyfill may not read, a cross-origin image without CORS or one that fails to load, masks its element away, as CSS Masking requires for an image that cannot be displayed and as the native implementation does in read-back-allowed rendering; the element was drawn unmasked. On SVG content (an element inside an `<svg>`) such a mask is ignored and the element drawn unmasked, as natively. A mask image that is still loading keeps a box masked away until it lands. WPT master `privacy/box-mask-png-ignored`, `box-mask-svg-ignored`, `fragment-mask-png-ignored`, `fragment-mask-svg-ignored`, `svg/svg-mask-on-svg-content-ignored`.
+- An SVG `<use>` that refers to another document (`<use href="icons.svg#a">`, or the whole document without a fragment) is drawn when that document is same-origin; it drew nothing, since the snapshot cannot load external resources. A cross-origin one draws nothing, as natively. WPT master `privacy/svg/svg-use-ignored`.
 
 ## [0.1.0-preview.5] - 2026-10-22
 
