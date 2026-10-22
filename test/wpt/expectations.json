@@ -40,15 +40,6 @@
     }
    }
   },
-  "canvas-transform-get-set.tentative.html": {
-   "subtests": {
-    "getElementTransform() and updateElementGeometry() on SVG element": {
-     "category": "deviation",
-     "reason": "svg-drawable",
-     "note": "the <rect drawable> cases"
-    }
-   }
-  },
   "css-backdrop-filter-image.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
