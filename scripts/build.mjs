@@ -16,7 +16,7 @@
 //   The .wgsl files of a plugin are inlined: its wgsl.js loader is replaced by a module that returns them as strings. What a plugin imports
 //   from plugins/_lib/ and src/effects/no-target.js is bundled into it.
 //
-//   node scripts/build.mjs [--no-esm] [--quiet]     writes dist/ and dist/sizes.json
+//   node scripts/build.mjs [--no-esm] [--quiet] [--analyze]     writes dist/ and dist/sizes.json; --analyze prints the minified core's bytes per module group and module
 import { build } from 'esbuild';
 import { cpSync, existsSync, readFileSync, readdirSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -84,6 +84,9 @@ mkdirSync(join(root, 'dist'), { recursive: true });
 const built = new Set(IIFES.flatMap(({ name }) => [`${name}.iife.js`, `${name}.iife.min.js`]));
 for (const f of readdirSync(join(root, 'dist'))) if (/\.iife(\.min)?\.js$/.test(f) && !built.has(f)) rmSync(join(root, 'dist', f));
 const rows = [];
+const analyze = process.argv.includes('--analyze');
+/** @type {any} the metafile of the minified core (--analyze) */
+let coreMeta = null;
 const measure = (file, path) => {
   const text = readFileSync(path);
   rows.push({ file, raw: text.length, gzip: gzipSync(text, { level: 9 }).length });
@@ -91,7 +94,9 @@ const measure = (file, path) => {
 for (const { name, entry, plugins } of IIFES) {
   for (const min of [false, true]) {
     const file = `${name}.iife${min ? '.min' : ''}.js`;
-    await build({ ...common, entryPoints: [join(root, entry)], format: 'iife', minify: min, plugins, outfile: join(root, 'dist', file) });
+    const core = analyze && min && name === 'hic-live-polyfill';
+    const r = await build({ ...common, entryPoints: [join(root, entry)], format: 'iife', minify: min, plugins, outfile: join(root, 'dist', file), metafile: core });
+    if (core) coreMeta = r.metafile;
     measure(file, join(root, 'dist', file));
   }
 }
@@ -168,3 +173,17 @@ if (!process.argv.includes('--no-esm')) {
   writeFileSync(doc, text.replace(marked, (_m, a, b) => `${a}${table}\n${b}`));
 }
 if (!quiet) for (const r of rows) console.log(r.file.padEnd(40), String(r.raw).padStart(8), 'bytes', String(r.gzip).padStart(8), 'gzip');
+
+// --analyze: where the bytes of the minified core come from (esbuild's bytes in the output per source module, by module group and the largest modules)
+if (analyze && coreMeta) {
+  const inputs = Object.entries(/** @type {any} */ (Object.values(coreMeta.outputs)[0]).inputs).map(([f, v]) => [f.split(sep).join('/'), /** @type {any} */ (v).bytesInOutput]);
+  const total = inputs.reduce((n, [, b]) => n + b, 0);
+  const groupOf = (/** @type {string} */ f) => (/^src\/(snapshot|schedule)\/[^/]+\//.exec(f)?.[0] ?? /^src\/[^/]+\//.exec(f)?.[0] ?? f).replace(/\/$/, '');
+  const groups = new Map();
+  for (const [f, b] of inputs) groups.set(groupOf(f), (groups.get(groupOf(f)) ?? 0) + b);
+  const pct = (/** @type {number} */ b) => `${(100 * b / total).toFixed(1).padStart(5)} %`;
+  console.log(`\nhic-live-polyfill.iife.min.js by module group (${total} bytes of code in the output):`);
+  for (const [g, b] of [...groups].sort((a, b) => b[1] - a[1])) console.log(`  ${g.padEnd(32)} ${String(b).padStart(7)} ${pct(b)}`);
+  console.log('largest modules:');
+  for (const [f, b] of inputs.sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(`  ${f.padEnd(48)} ${String(b).padStart(7)} ${pct(b)}`);
+}
