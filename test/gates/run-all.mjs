@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gateRunOutcome } from './lib/gate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
@@ -31,11 +32,8 @@ const jobs = finalSelection.flatMap((f) => {
 });
 const rows = [];
 for (const { f, dpr } of jobs) {
-  const r = spawnSync(process.execPath, [resolve(here, f), ...extra, ...(dpr ? [`--dpr=${dpr}`] : [])], { cwd: root, encoding: 'utf8', timeout: 1200000 });
-  const line = (r.stdout ?? '').split('\n').find((l) => l.startsWith('{"gate"'));
-  let res = null;
-  try { res = JSON.parse(line); } catch { /* not run */ }
-  if (!res) { rows.push({ gate: gateIdOf(f) + (dpr ? `@dpr${dpr}` : ''), verdict: 'NOT RUN', pass: false, control: 'n/a', degraded: [], failed: [`NOT RUN: ${(r.stderr || r.stdout || '').slice(-300)}`], countsForThresholds: false }); continue; }
+  const res = gateRunOutcome(spawnSync(process.execPath, [resolve(here, f), ...extra, ...(dpr ? [`--dpr=${dpr}`] : [])], { cwd: root, encoding: 'utf8', timeout: 1200000 }));
+  if (res.notRun) { rows.push({ gate: gateIdOf(f) + (dpr ? `@dpr${dpr}` : ''), verdict: 'NOT RUN', pass: false, control: 'n/a', degraded: [], failed: [`NOT RUN: ${res.notRun}`], countsForThresholds: false }); continue; }
   const cl = res.control;
   rows.push({
     gate: res.gate + (dpr ? `@dpr${dpr}` : ''), verdict: res.verdict, pass: res.pass, usable: res.usable, countsForThresholds: res.countsForThresholds,

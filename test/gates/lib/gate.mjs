@@ -2,8 +2,9 @@
 //
 // Gates over a native implementation (test/native-effects/) pass `chrome: 'canary', nativeDrawElement: true`.
 //
-//   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--wait-quiet=SECONDS]
+//   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--wait-quiet=SECONDS] [--watchdog-min=10]
 //   --wait-quiet waits (up to SECONDS) for the shared machine to be quiet before the run (TEST-PLAN rule 6); a run whose machine load stays above the threshold is labelled so.
+//   --watchdog-min: a gate still running after that many minutes (default 10) reports itself (FAIL naming the CDP calls it waits for; NOT USABLE behind a locked screen) and exits.
 //
 // A gate is `run(ctx)` -> `{ numbers }`; it calls `ctx.check(name, ok, detail, class)` for every assertion (also throws are failures).
 // `ctx.control` is true in the control run. The control bundle (`controlSabotage` option) already carries the sabotage BEFORE the first paint.
@@ -141,6 +142,24 @@ export function judge({ real, control, controlClasses = [], focus = {}, highLoad
   return out;
 }
 
+/**
+ * The result of a gate PROCESS run by a runner (spawnSync result -> the gate's JSON line, pure, unit-tested). A process that printed no complete result line
+ * (it hung and was killed at the runner's timeout, crashed, or could not be spawned) is `{ notRun: reason }` with a reason that is never empty: an empty
+ * reason once read as "ran" and crashed the mutant suite at its first baseline (a g-explainer killed after 15 min under machine load printed nothing).
+ * @param {{stdout?: string|null, stderr?: string|null, status?: number|null, signal?: string|null, error?: Error & {code?: string}}} r
+ * @returns {any}
+ */
+export function gateRunOutcome(r) {
+  const line = (r.stdout ?? '').split('\n').find((l) => l.startsWith('{"gate"'));
+  try {
+    const res = JSON.parse(line ?? '');
+    if (Array.isArray(res.assertions) && Array.isArray(res.failed)) return res;
+  } catch { /* no result line */ }
+  const why = [r.error ? `could not run: ${r.error.code ?? r.error.message}` : '', r.signal ? `killed by ${r.signal}${r.error?.code === 'ETIMEDOUT' ? ' at the runner timeout' : ''}` : '', `exit ${r.status ?? 'none'}`,
+    line ? 'malformed result line' : 'no result line', (r.stderr || r.stdout || '').trim().slice(-300)].filter(Boolean);
+  return { notRun: why.join('; ') };
+}
+
 /** The single entry of a gate script. */
 export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawElement = false, windowSize, scrollbars, controlClasses = [], controlSabotage = [] } = {}) {
   const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
@@ -156,6 +175,37 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
   const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, nativeDrawElement, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}) });
   const result = { gate: id, verdict: 'FAIL', pass: false, usable: true, degraded: [], countsForThresholds: false, numbers: {}, control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, assertions: [], failed: [], load: null, chrome: null, dpr: useDpr ?? null, rafHz: null, focus: {}, screenLocked: screenLocked(), highLoad: false, bundle: bundles.info, noControl: !phases.includes('control'), startedAt: new Date().toISOString(), pointerPark: browser.pointerPark ?? null, foreignPointer: [] };
   const outcomes = {};
+  const emit = () => {
+    result.durationMs = Date.now() - t0;
+    mkdirSync(RESULTS, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = resolve(RESULTS, `${id}-${stamp}.json`);
+    const line = JSON.stringify(result);
+    writeFileSync(file, line + '\n');
+    console.log(line);
+    const rows = (outcomes.real?.checks ?? []).map((c) => `  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok ? '' : ' :: ' + JSON.stringify(c.detail).slice(0, 300)}`);
+    const cl = result.control;
+    console.log(`${result.verdict} ${id}  (real: ${outcomes.real ? outcomes.real.checks.filter((c) => c.ok).length + '/' + outcomes.real.checks.length : 'skipped'}; control detected: ${cl.ran ? cl.detected : 'skipped'} classes red [${cl.failedClasses.join(',')}] missing [${cl.missingClasses.join(',')}]${result.degraded.length ? '; DEGRADED: ' + result.degraded.join(',') : ''})  -> ${file}`);
+    console.log(rows.join('\n'));
+    if (result.failed.length) console.log('first violated: ' + result.failed[0]);
+    process.exit(result.pass ? 0 : 1);
+  };
+  // a gate takes 3 min at most (G-scroll-cadence, 2.6 min); one that hangs is reported, with what it waited for, well before a runner's own timeout kills it silently
+  const watchdogMin = +(arg('watchdog-min') ?? 10);
+  // the verdict is taken when the watchdog fires; closing the browser then rejects the pending call and lets the gate run on, so its own end does not emit
+  /** @type {null | ReturnType<typeof hangVerdict> & {pending: string[], locked: boolean|null, phases: string[]}} */
+  let hung = null;
+  const watchdog = setTimeout(async () => {
+    const pending = [...(browser.conn?.pending?.values() ?? [])].map((p) => p.method);
+    const locked = screenLocked();
+    hung = { ...hangVerdict({ minutes: watchdogMin, pending, screenLocked: locked }), pending, locked, phases: Object.keys(outcomes) };
+    await Promise.race([browser.close().catch(() => {}), H.sleep(15000)]);
+    for (const f of bundles.tmp) { try { rmSync(f, { force: true }); } catch { /* temp copy */ } }
+    Object.assign(result, { pass: false, usable: hung.usable, verdict: hung.verdict, countsForThresholds: false, screenLocked: hung.locked, hung: { pending: hung.pending, phases: hung.phases } });
+    result.failed.unshift(hung.reason);
+    if (!hung.usable) result.degraded.push('screen-locked');
+    emit();
+  }, watchdogMin * 60000);
   try {
     result.chrome = browser.version?.Browser ?? null;
     const waitSec = +(arg('wait-quiet') ?? 0);
@@ -199,19 +249,23 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
     try { await srv.close(); } catch { /* ignore */ }
     for (const f of bundles.tmp) { try { rmSync(f, { force: true }); } catch { /* temp copy */ } }
   }
-  result.durationMs = Date.now() - t0;
-  mkdirSync(RESULTS, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = resolve(RESULTS, `${id}-${stamp}.json`);
-  const line = JSON.stringify(result);
-  writeFileSync(file, line + '\n');
-  console.log(line);
-  const rows = (outcomes.real?.checks ?? []).map((c) => `  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok ? '' : ' :: ' + JSON.stringify(c.detail).slice(0, 300)}`);
-  const cl = result.control;
-  console.log(`${result.verdict} ${id}  (real: ${outcomes.real ? outcomes.real.checks.filter((c) => c.ok).length + '/' + outcomes.real.checks.length : 'skipped'}; control detected: ${cl.ran ? cl.detected : 'skipped'} classes red [${cl.failedClasses.join(',')}] missing [${cl.missingClasses.join(',')}]${result.degraded.length ? '; DEGRADED: ' + result.degraded.join(',') : ''})  -> ${file}`);
-  console.log(rows.join('\n'));
-  if (result.failed.length) console.log('first violated: ' + result.failed[0]);
-  process.exit(result.pass ? 0 : 1);
+  if (hung) return;   // the watchdog reports this run
+  clearTimeout(watchdog);
+  emit();
+}
+
+/**
+ * The verdict of a gate that did not finish within its watchdog (pure, unit-tested): FAIL naming the CDP calls still waiting, or NOT USABLE when the screen
+ * is locked (a locked or sleeping display stops requestAnimationFrame, and canvas reads wait inside one: a g-explainer waited 15 min for one and printed
+ * nothing, which the mutant runner then read as a crash).
+ * @param {{minutes: number, pending: string[], screenLocked: boolean|null}} o
+ */
+export function hangVerdict({ minutes, pending, screenLocked }) {
+  const usable = screenLocked !== true;
+  return {
+    pass: false, usable, verdict: usable ? 'FAIL' : 'NOT USABLE', countsForThresholds: false,
+    reason: `gate did not finish within ${minutes} min (CDP calls still waiting: ${pending.length ? pending.join(', ') : 'none'}; screen locked: ${screenLocked}): a page wait that never resolves${usable ? '' : ' (requestAnimationFrame stops behind a locked screen: unlock and rerun)'}`,
+  };
 }
 
 /** Fixture URL helper with the polyfill bundle. */

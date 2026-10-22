@@ -13,6 +13,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MUTANTS } from './mutants.mjs';
 import { buildMutant } from './build.mjs';
+import { gateRunOutcome } from '../lib/gate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../..');
@@ -47,11 +48,9 @@ if (has('check-anchors')) {
 const passArgs = ['--no-control', ...(arg('wait-quiet') ? [`--wait-quiet=${arg('wait-quiet')}`] : [])];
 /** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'} [which] which of the bundles `file` replaces */
 function runGate(gate, file, which = 'core') {
-  const r = spawnSync(process.execPath, [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 });
-  const line = (r.stdout ?? '').split('\n').find((l) => l.startsWith('{"gate"'));
-  try { return JSON.parse(line); } catch { return { notRun: (r.stderr || r.stdout || '').slice(-300) }; }
+  return gateRunOutcome(spawnSync(process.execPath, [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
 }
-const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made)/.test(f))));
+const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 
 const baselines = new Map();
 const baseline = (gate) => {
