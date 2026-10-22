@@ -12,7 +12,7 @@ Built from `src/contracts/errors.js`, `src/contracts/features.js` and the code t
 | `installed.report()` / `window.__HIC__.installed.report()` | JSON: `mode`, `native`, `browser`, `canvases[]` (state, drawables, frame cap, entries), `unsupported[]` (with `count`), `deviations[]`, `errors[]` | any time; attach it to bug reports. `count` is how often the reporter was told about the entry (typically once per snapshot attempt that meets the content), not the number of elements: one iframe can show `count: 3` |
 | `console.warn` once | install refused (classic script), or the legacy `layoutsubtree` name used | see sections 1 and 6 |
 
-Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. Content that the browser itself leaves out of a canvas (a cross-origin frame document, a cross-origin image without CORS) is drawn as the browser draws it instead (the element's box without that content), with the same report entry. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires.
+Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. Content that the browser itself leaves out of a canvas (a cross-origin frame document, a cross-origin image or video without CORS) is drawn as the browser draws it instead (the element's box without that content; a cross-origin video's box paints nothing, and an element whose mask image cannot be read is masked away), with the same report entry. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires.
 
 ## 1. Install refused
 
@@ -53,7 +53,7 @@ Texture upload errors on missing or too small storage are GL errors (`gl.getErro
 | feature | cause | remedy |
 |---|---|---|
 | `iframe` | a cross-origin or sandboxed `<iframe>` / `<frame>` / `<object>`, or an `<embed>` that does not show an image, inside a drawable (drawn as its own box without the document, as natively) | use a same-origin frame (its document is drawn), draw the content as elements of the drawable, or put the frame outside it |
-| `cross-origin-resource` | image, font, CSS or video frame without CORS and not same-origin ("the server did not allow cross-origin (CORS) access"): left out as natively (an image keeps its box without the picture, a font falls back) | serve it with `Access-Control-Allow-Origin` or host it same-origin; load video with `crossorigin="anonymous"` |
+| `cross-origin-resource` | image, font, CSS or video frame without CORS and not same-origin ("the server did not allow cross-origin (CORS) access"): left out as natively (an image keeps its box without the picture, a font falls back, an element with such a mask image is masked away, a video's box paints nothing) | serve it with `Access-Control-Allow-Origin` or host it same-origin; load video with `crossorigin="anonymous"` |
 | `resource-fetch-failed` | fetch error, HTTP error, undecodable payload, invalid URL, or larger than the resource cache budget | check URL, network, CSP `connect-src`; shrink the resource |
 | `canvas-child` | a `<canvas>` child larger than the size budget, or tainted | draw big canvases outside the drawable; load images with CORS |
 | `video-controls` | `<video controls>`: the control bar is native UI | draw your own controls inside the drawable |

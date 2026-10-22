@@ -67,7 +67,7 @@ Click the drawn field and type: the text goes into the real input, and the canva
 
 Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages, harness and input for all three. The other polyfill on npm implements the older `layoutsubtree` name, so it ran through a small attribute adapter ([included](test/bench/compare/competitor/)).
 
-| | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Canary 157, flag) |
+| | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Chrome Canary) |
 |---|---|---|---|
 | official WPT HTML-in-Canvas files passing | 190 of 237 (WPT of 2026-10-18) | 66 of 230 (WPT of 2026-10-07, not measured again) | 225 of 237 on Canary 158.0.8112.1 (WPT of 2026-10-18) |
 | keydown to canvas pixel, p50 / p95 | 5.3 / 9.9 ms | 14.5 / 135.2 ms, final text wrong | 5.2 / 10.3 ms |
@@ -76,7 +76,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | one update in a 1000-element drawable, main thread | 19.2 ms | 40.9 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 97 ms | 69 ms | 71 ms |
 | core bundle, minified / gzipped | 316 KB / 110 KB | 30 KB / 10 KB | none |
-| browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome with the flag |
+| browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome Canary 157+ (no flag needed) |
 
 The WPT row is this polyfill as released ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)), the other package as measured on 2026-10-13, and native Chrome at the build whose copy of the tests is pinned (newer Canary builds already implement later API changes that the pinned tests predate); the latency, resize, update and first-paint rows were measured from 2026-10-13 to 2026-10-19 with earlier builds of this polyfill (native: Canary 157.0.8101.0); the bundle row is the current build. The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
 

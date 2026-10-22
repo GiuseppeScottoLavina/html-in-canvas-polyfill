@@ -51,7 +51,7 @@ If you cannot run them, say so in the pull request. The harness launches its own
 - Label every number with machine, browser version, DPR, refresh rate and headed or headless. A number taken with machine load above threshold is reported, never used as a threshold.
 - Effect plugins are not part of the polyfill: each lives in its own `plugins/<name>/` folder, imports nothing outside it except `plugins/_lib/` (code that several plugins share) and `src/effects/no-target.js`, and follows the contract of [plugins/README.md](plugins/README.md) (start from `plugins/_template/`; the build and `npm run lint` check it). Nothing in `src/` imports a plugin.
 - `src/` modules import each other only through `src/contracts/`; at most 1000 code lines per file; no runtime dependency; no network request on load; never `blob:` URLs (`npm run lint` checks these).
-- Unsupported content fails loudly: a placeholder, one console message and a `report()` entry.
+- Unsupported content fails loudly: a placeholder, one console message and a `report()` entry. Content the browser itself leaves out of a canvas (cross-origin frames, images, mask images, `<use>` documents and videos) is drawn as the browser draws it instead of a placeholder.
 - The feature tables of `docs/SUPPORT-MATRIX.md` are generated from `src/contracts/features.js` (`npm run docs:sync`).
 - Every claim in the docs is backed by a test, a gate or a file, or marked unverified. No marketing superlatives.
 
