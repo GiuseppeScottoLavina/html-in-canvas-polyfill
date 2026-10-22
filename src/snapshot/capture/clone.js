@@ -636,7 +636,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   const caret = addSelectionAndCaret(ctx, root, size, ink);
   return {
     root, nodes: Math.max(ctx.nodes, sizeTotal), unsupported: ctx.unsupported, complete: !isPending(ctx.unsupported), tokens: ctx.tokens.finish(), frame,
-    layoutOffset: dRect ? { x: dRect.x, y: dRect.y } : null, caret, extraCss: ctx.scroll.rules.join(''), layerStyle: layerCs,
+    layoutOffset: dRect ? { x: dRect.x, y: dRect.y } : null, caret, extraCss: ctx.scroll.rules.join('') + uses.css, layerStyle: layerCs,
   };
 }
 

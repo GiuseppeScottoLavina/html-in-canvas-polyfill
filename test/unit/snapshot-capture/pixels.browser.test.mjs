@@ -480,6 +480,28 @@ test('a loaded video that never played shows its poster (HTML show poster flag, 
   assert.ok(!(r > 200 && g > 200 && b < 80), `positive control: once it played, a frame is drawn instead of the poster, got ${r},${g},${b}`);
 });
 
+test('a loaded video whose poster fails to load (404, not an image) draws nothing until it plays, not its first frame (measured in the page and on the native oracle, Chrome Canary 158); positive controls: without a poster attribute the first frame is drawn, and once played the frame', async () => {
+  const video = (poster) => `<div drawable style="width:40px;height:40px"><video muted preload="auto" width="40" height="40" style="display:block;object-fit:fill" ${poster} src="/test/vendor/wpt/media/rgb100.webm"></video></div>`;
+  const m = mount(video('poster="/test/unit/snapshot-capture/assets/missing-poster.png"') + video('poster="/test/vendor/wpt/media/white.webm"') + video(''));
+  const boxes = Array.from(m.layerEl.children);
+  const vids = boxes.map((d) => /** @type {HTMLVideoElement} */ (d.querySelector('video')));
+  for (let i = 0; i < 400 && vids.some((v) => v.readyState < 2); i++) await new Promise((ok) => setTimeout(ok, 10));
+  assert.ok(vids.every((v) => v.readyState >= 2), 'the videos loaded their first frame');
+  const centre = async (el) => {
+    m.capture(m.request(el));
+    await new Promise((ok) => setTimeout(ok, 150));
+    return Array.from((await rasterize(m.capture(m.request(el)))).getImageData(20, 20, 1, 1).data);
+  };
+  const [r, g, b] = await centre(boxes[2]);
+  assert.ok(r > 200 && g < 40 && b < 40, `positive control: no poster attribute, the first (red) frame, got ${r},${g},${b}`);
+  assert.equal((await centre(boxes[0]))[3], 0, 'a poster that does not load (404): nothing');
+  assert.equal((await centre(boxes[1]))[3], 0, 'a poster that is not an image: nothing');
+  await vids[0].play();
+  await new Promise((ok) => setTimeout(ok, 250));
+  vids[0].pause();
+  assert.ok((await centre(boxes[0]))[3] > 0, 'positive control: once it played, its frame is drawn');
+});
+
 test('a drawable with its own CSS transform keeps it in the snapshot (WPT css-transform-on-div): the rotated square reaches outside the corners of its border box', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:60px;height:60px;background:#080;transform:rotate(45deg)}' });
   // the fake layer measures with getBoundingClientRect, which sees the rotation: the real layer reports the layout size

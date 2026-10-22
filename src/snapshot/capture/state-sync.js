@@ -311,12 +311,13 @@ function syncVideo(src, clone, unsupported, req) {
     }
   }
   // HTML "the video element": while its show poster flag is set (never played, never seeked) and a poster is available, the element represents the poster, not a frame.
-  // The flag is not exposed; it is read as "nothing played and still at time 0" (WPT privacy/video-ignored: the poster of a loaded video is drawn).
+  // The flag is not exposed; it is read as "nothing played and still at time 0" (WPT privacy/video-ignored: the poster of a loaded video is drawn). A poster that fails to load
+  // (404, not an image, cross-origin without CORS) leaves the box empty until playback, not its first frame: measured in the page and on the native oracle (Chrome Canary 158).
   const posterShown = !!v.poster && (!frame || (v.played.length === 0 && v.currentTime === 0 && !v.seeking));
   const poster = posterShown ? resolveResource(req.resources, v.poster, 'image') : null;
   if (poster?.state === 'ready') url = poster.url;
   else if (poster?.state === 'pending') markPending(unsupported);
-  else if (frame) {
+  else if (frame && !poster) {
     try {
       url = frame.toDataURL('image/jpeg', 0.85);
     } catch {
