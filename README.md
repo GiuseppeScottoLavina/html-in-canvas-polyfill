@@ -69,7 +69,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 
 | | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Chrome Canary) |
 |---|---|---|---|
-| official WPT HTML-in-Canvas files passing | 190 of 237 (WPT of 2026-10-18) | 66 of 230 (WPT of 2026-10-07, not measured again) | 225 of 237 on Canary 158.0.8112.1 (WPT of 2026-10-18) |
+| official WPT HTML-in-Canvas files passing | 198 of 237 (WPT of 2026-10-18) | 66 of 230 (WPT of 2026-10-07, not measured again) | 225 of 237 on Canary 158.0.8112.1 (WPT of 2026-10-18) |
 | keydown to canvas pixel, p50 / p95 | 5.3 / 9.9 ms | 14.5 / 135.2 ms, final text wrong | 5.2 / 10.3 ms |
 | wheel scroll inside the canvas, p50 to pixel | 27.7 ms | never drawn | 36.5 ms |
 | blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
@@ -155,7 +155,7 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 
 ## Testing and conformance
 
-- **Official WPT tests:** the 237 HTML-in-Canvas test files at the newest WPT commit that touches them (2026-10-18). The polyfill passes 190 files (308 of 369 subtests); native Chrome passes 225 (357) on Canary 158.0.8112.1, the build whose copy of the tests is closest to that commit; without the polyfill 10 pass, all vacuously. Every difference has a written reason, and the five open polyfill bugs are listed ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
+- **Official WPT tests:** the 237 HTML-in-Canvas test files at the newest WPT commit that touches them (2026-10-18). The polyfill passes 198 files (316 of 369 subtests); native Chrome passes 225 (357) on Canary 158.0.8112.1, the build whose copy of the tests is closest to that commit; without the polyfill 10 pass, all vacuously. Every difference has a written reason, and no polyfill bug is open ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
 - **Unit tests:** 545 in Node and 821 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check (CI has no GPU, so the WebGPU tests skip there).
 - **Browser gates:** 15 gates in real, headed Chrome (18 runs: three of them run at two device pixel ratios) compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling and its cadence); two more run the effects over Chrome Canary's own implementation (G-native-effects, G-native-interposer). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 47 seeded bugs are caught. `npm run test:gates:all` runs them with the WPT gate, the static checks, the unit tests and the mutation suite. In CI, the platform probe (G-platform) checks fonts, form controls, scrollbars, fractional DPR and text selection against native pixels on Linux and Windows.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
