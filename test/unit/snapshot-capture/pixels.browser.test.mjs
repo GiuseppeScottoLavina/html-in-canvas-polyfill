@@ -459,6 +459,27 @@ test('a mask-image that cannot be read on SVG CONTENT is ignored (drawn unmasked
   assert.equal(y.getImageData(20, 20, 1, 1).data[3], 0, 'the outer <svg> is a CSS box: masked away');
 });
 
+test('a loaded video that never played shows its poster (HTML show poster flag, WPT privacy/video-ignored); positive control: once played, its frame; a cross-origin video draws nothing, poster included (read-back-allowed rendering)', async () => {
+  const poster = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="rgb(255,255,0)"/></svg>')}`;
+  const video = (src) => `<div drawable style="width:40px;height:40px"><video muted preload="auto" width="40" height="40" style="display:block;object-fit:fill" poster="${poster}" src="${src}"></video></div>`;
+  const m = mount(video('/test/vendor/wpt/media/rgb100.webm') + video(`http://localhost:${location.port}/test/vendor/wpt/media/rgb100.webm?corp=cross-origin`));
+  const [same, cross] = Array.from(m.layerEl.children);
+  const vids = [same, cross].map((d) => /** @type {HTMLVideoElement} */ (d.querySelector('video')));
+  for (let i = 0; i < 400 && vids.some((v) => v.readyState < 2); i++) await new Promise((ok) => setTimeout(ok, 10));
+  assert.ok(vids.every((v) => v.readyState >= 2), `both videos loaded their first frame: ${vids.map((v) => `${v.readyState}/${v.networkState}/${v.error?.code ?? '-'}`)}`);
+  const centre = async (el) => Array.from((await rasterize(m.capture(m.request(el)))).getImageData(20, 20, 1, 1).data);
+  assert.deepEqual(await centre(same), [255, 255, 0, 255], 'never played: the poster, not the first (red) frame');
+  assert.equal((await centre(cross))[3], 0, 'cross-origin media data: the box is invisible, its same-origin poster too');
+  assert.ok(m.reported.some((e) => e.feature === 'cross-origin-resource'), 'reported');
+  // the test server answers without byte ranges, so the video cannot seek: it plays for a moment instead (the show poster flag is unset when playback starts)
+  await vids[0].play();
+  await new Promise((ok) => setTimeout(ok, 250));
+  vids[0].pause();
+  assert.ok(vids[0].played.length > 0 && vids[0].readyState >= 2, 'played');
+  const [r, g, b] = await centre(same);
+  assert.ok(!(r > 200 && g > 200 && b < 80), `positive control: once it played, a frame is drawn instead of the poster, got ${r},${g},${b}`);
+});
+
 test('a drawable with its own CSS transform keeps it in the snapshot (WPT css-transform-on-div): the rotated square reaches outside the corners of its border box', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:60px;height:60px;background:#080;transform:rotate(45deg)}' });
   // the fake layer measures with getBoundingClientRect, which sees the rotation: the real layer reports the layout size

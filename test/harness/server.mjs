@@ -6,7 +6,8 @@
 //
 //  * `Cache-Control: no-store` everywhere; MIME types incl. .wgsl/.wasm/.mjs.
 //  * Sends COOP/COEP/CORP headers (page is crossOriginIsolated, like a typical WebGPU demo host). Append `?iso=0` to any URL
-//    to drop them.
+//    to drop them, `?corp=cross-origin` to send `Cross-Origin-Resource-Policy: cross-origin` instead (a resource another origin's isolated page may load
+//    without CORS, e.g. a cross-origin video that taints a canvas).
 //  * GET /__hic/hash?path=/dist/polyfill.js -> {path, sha256, bytes}: assert the bundle identity under test in every experiment.
 //  * GET /test/fixtures/f4-large-app/index.html?nodes=N is generated on the fly (see fixtures/f4-large-app/generate.mjs).
 //  * Dot-directories (.git, .profiles, .scratch) and path traversal outside the root are refused (403).
@@ -51,15 +52,17 @@ export async function startServer({ root = PROJECT_ROOT, port = 0, host = '127.0
   const server = createServer(async (req, res) => {
     const t0 = Date.now(); let status = 200;
     let iso = true;
+    let corp = 'same-origin';
     const send = (code, type, body, extra = {}) => {
       status = code;
       const h = { 'Content-Type': type, 'Cache-Control': 'no-store', ...extra };
-      if (iso) Object.assign(h, { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Resource-Policy': 'same-origin', 'Origin-Agent-Cluster': '?1' });
+      if (iso) Object.assign(h, { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Resource-Policy': corp, 'Origin-Agent-Cluster': '?1' });
       res.writeHead(code, h); res.end(body);
     };
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       iso = url.searchParams.get('iso') !== '0';
+      if (url.searchParams.get('corp') === 'cross-origin') corp = 'cross-origin';
       let pathname;
       try { pathname = decodeURIComponent(url.pathname); } catch { return send(400, 'text/plain', 'Bad request'); }
       if (files[pathname]) {
