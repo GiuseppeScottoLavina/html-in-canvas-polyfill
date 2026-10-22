@@ -54,7 +54,9 @@ async function fetchAsDataUrl(env, absUrl, kind) {
   /** @type {Response} */
   let res;
   try {
-    res = await env.window.fetch(url.href, sameOrigin ? { credentials: 'include' } : { mode: 'cors', credentials: 'omit' });
+    // An SVG document is fetched in same-origin mode, so that a same-origin URL redirected to another origin fails: the platform loads an external <use> document
+    // same-origin only (svg-refs.js), and an SVG image redirected to another origin without CORS mode is CORS-cross-origin content, which read-back-allowed rendering hides.
+    res = await env.window.fetch(url.href, sameOrigin ? { credentials: 'include', mode: kind === 'svg' ? 'same-origin' : 'cors' } : { mode: 'cors', credentials: 'omit' });
   } catch {
     throw sameOrigin
       ? new HicUnsupportedError('resource-fetch-failed', `could not fetch ${url.href}`, { path: url.href, hint: 'Check the URL, the network and the content security policy (connect-src).' })

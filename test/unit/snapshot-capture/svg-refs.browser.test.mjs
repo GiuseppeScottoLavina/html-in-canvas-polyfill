@@ -34,3 +34,21 @@ test('a <use> of an external SVG document draws a same-origin one (its root, or 
   assert.deepEqual(px(20, 30), [0, 128, 0, 255], 'positive control: the fragment element of a same-origin document is drawn');
   assert.equal(px(20, 50)[3], 0, 'the cross-origin document and a missing fragment draw nothing');
 });
+
+test('a <use> of a same-origin URL that redirects to another origin draws nothing, even when that origin allows a credentialed CORS read (the platform fetches an external <use> document same-origin only); controls: the target is readable through CORS, and a same-origin redirect is drawn', async () => {
+  const asset = '/test/unit/snapshot-capture/assets/red.svg';
+  const cross = `http://localhost:${location.port}${asset}?cors=1`;
+  const control = await fetch(cross, { credentials: 'include' });
+  assert.equal(control.ok, true, 'control: the cross-origin target answers a CORS read');
+  const viaCross = `${asset}?redirect=${encodeURIComponent(cross)}`;
+  const viaSame = `${asset}?redirect=${encodeURIComponent(asset)}`;
+  const m = mount(`<svg drawable width="40" height="40" style="display:block"><use href="${viaCross}"/><use y="20" href="${viaSame}"/></svg>`);
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  const got = await rasterize(r);
+  const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data);
+  assert.deepEqual(px(20, 30), [224, 0, 0, 255], 'control: a same-origin redirect is followed and drawn');
+  assert.equal(px(20, 10)[3], 0, 'the document redirected to another origin is not drawn');
+});

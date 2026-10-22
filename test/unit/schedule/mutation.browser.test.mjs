@@ -388,3 +388,29 @@ test('a popover shown and hidden (no attribute changes) damages the drawable tha
   out.hidePopover();
   assert.equal(rig.sink.damage.length, 0, 'not in a drawable');
 });
+
+test('a popover inside an open shadow root of a drawable damages that drawable when toggled, and stops doing so once unobserved (toggle is not composed: it never reaches the light tree); control: a light-tree listener does not see it', async t => {
+  const rig = createRig({ html: '<div drawable id="d1" style="width:60px;height:40px"><span id="host"></span></div>' });
+  const sr = rig.layerEl.querySelector('#host').attachShadow({ mode: 'open' });
+  sr.innerHTML = '<div id="pop" popover="manual">x</div>';
+  let lightSaw = 0;
+  const light = () => { lightSaw++; };
+  rig.layerEl.addEventListener('toggle', light, true);
+  t.cleanup(() => rig.layerEl.removeEventListener('toggle', light, true));
+  const stop = observeMutations(rig.env, rig.record);
+  const pop = sr.querySelector('#pop');
+  const toggled = () => new Promise((ok) => pop.addEventListener('toggle', ok, { once: true }));
+  let next = toggled();
+  pop.showPopover();
+  await next;
+  await microtasks();
+  assert.equal(lightSaw, 0, 'control: the toggle event does not leave the shadow tree');
+  assert.deepEqual(rig.sink.damage.map((d) => [d.drawable.id, d.rect]), [['d1', null]], 'shown: the drawable of the shadow host');
+  rig.sink.clear();
+  stop();
+  next = toggled();
+  pop.hidePopover();
+  await next;
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 0, 'unobserved: nothing');
+});
