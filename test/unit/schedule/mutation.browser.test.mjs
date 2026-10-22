@@ -355,3 +355,36 @@ test('an <img> that finishes loading damages its drawable (a <picture> source ch
   await microtasks();
   assert.equal(rig.sink.damage.length, 0, 'not in a drawable');
 });
+
+test('a popover shown and hidden (no attribute changes) damages the drawable that contains it on each toggle (WPT privacy/popover-show-hide-background-image-ignored); control: a <details> toggle is announced by its open attribute alone, and a popover outside every drawable damages nothing', async t => {
+  const rig = createRig({ html: '<div drawable id="d1" style="width:60px;height:40px"><div id="pop" popover="manual" style="display:block!important;position:static!important">x</div><details id="det"><summary>s</summary>t</details></div><div id="out" popover="manual">o</div>' });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const pop = rig.layerEl.querySelector('#pop');
+  const toggled = (el) => new Promise((ok) => el.addEventListener('toggle', ok, { once: true }));
+  let next = toggled(pop);
+  pop.showPopover();
+  await next;
+  await microtasks();
+  assert.deepEqual(rig.sink.damage.map((d) => [d.cause, d.drawable.id, d.rect]), [['mutation', 'd1', null]], 'shown: the whole drawable');
+  rig.sink.clear();
+  next = toggled(pop);
+  pop.hidePopover();
+  await next;
+  await microtasks();
+  assert.deepEqual(rig.sink.damage.map((d) => d.drawable.id), ['d1'], 'hidden: repainted again');
+  rig.sink.clear();
+  const det = rig.layerEl.querySelector('#det');
+  next = toggled(det);
+  det.open = true;
+  await next;
+  await microtasks();
+  assert.equal(rig.sink.damage.length, 1, 'details: the attribute mutation only, not a second damage from its toggle event');
+  rig.sink.clear();
+  const out = rig.layerEl.querySelector('#out');
+  next = toggled(out);
+  out.showPopover();
+  await next;
+  await microtasks();
+  out.hidePopover();
+  assert.equal(rig.sink.damage.length, 0, 'not in a drawable');
+});
