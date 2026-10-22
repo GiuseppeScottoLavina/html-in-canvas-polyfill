@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluateBudget } from '../../../src/snapshot/capture/budget.js';
 import { shellNeedsBox } from '../../../src/snapshot/capture/shells.js';
 import { buildSvgMarkup, cropPixels, encodeSvgDataUrl, rootTransform, scaleMode } from '../../../src/snapshot/capture/svg-builder.js';
-import { inlineCssUrls, resolveResource, createResourceCache, kindOfUrl } from '../../../src/snapshot/capture/inline-resources.js';
+import { inlineCssUrls, maskDeclarationRanges, resolveResource, createResourceCache, kindOfUrl } from '../../../src/snapshot/capture/inline-resources.js';
 import { HicUnsupportedError } from '../../../src/contracts/errors.js';
 
 const budget = { soft: 350, hard: 3000, absolute: 20000 };
@@ -114,6 +114,41 @@ test('resolveResource remembers a failure and reports it as failed, not pending'
   const css = inlineCssUrls('.a{background:url(https://x.test/i.png)}', 'https://x.test/', cache);
   assert.equal(css.failed.length, 1);
   assert.equal(css.css, '.a{background:url("data:,")}');
+});
+
+test('inlineCssUrls: an unreadable mask layer image masks the element away, other properties keep the empty url (read-back-allowed rendering)', async () => {
+  const cache = fakeCache();
+  cache.store.set('https://x.test/ok.png', 'data:image/png;base64,AAAA');
+  const T = 'linear-gradient(transparent,transparent)';
+  // positive control: a readable mask image is inlined, never replaced
+  assert.equal(inlineCssUrls('.a{mask-image:url(ok.png)}', 'https://x.test/', cache).css, '.a{mask-image:url("data:image/png;base64,AAAA")}');
+  // still loading: masked away until the image lands (never drawn unmasked in between)
+  const pend = inlineCssUrls('.a{background:url(bg.png);mask-image:url(m.png)}.b{-webkit-mask:url("m2.png") no-repeat 0 0 / 10px}', 'https://x.test/', cache);
+  assert.equal(pend.css, `.a{background:url("data:,");mask-image:${T}}.b{-webkit-mask:${T} no-repeat 0 0 / 10px}`);
+  assert.deepEqual(pend.pending, ['https://x.test/bg.png', 'https://x.test/m.png', 'https://x.test/m2.png']);
+  // failed (cross-origin without CORS): the same, and it is still reported
+  cache.store.pending.get('https://x.test/m.png').bad(new HicUnsupportedError('cross-origin-resource', 'no cors', { path: 'https://x.test/m.png' }));
+  await new Promise((r) => setTimeout(r, 0));
+  const failed = inlineCssUrls('mask: url(m.png), url(ok.png); color: red', 'https://x.test/', cache);
+  assert.equal(failed.css, `mask: ${T}, url("data:image/png;base64,AAAA"); color: red`);
+  assert.equal(failed.failed.length, 1);
+  // a semicolon inside an earlier data: URL does not end the mask declaration early; the next declaration is not a mask
+  assert.equal(inlineCssUrls('.a{-webkit-mask-image:url("data:image/png;base64,ZZ"),url(m.png);background-image:url(m.png)}', 'https://x.test/', cache).css,
+    `.a{-webkit-mask-image:url("data:image/png;base64,ZZ"),${T};background-image:url("data:,")}`);
+  // not mask layers: a reflection mask and a mask border keep the empty url (natively the reflection is drawn unmasked)
+  assert.equal(inlineCssUrls('.a{-webkit-box-reflect:below 0 url(m.png);-webkit-mask-box-image:url(m.png)}', 'https://x.test/', cache).css,
+    '.a{-webkit-box-reflect:below 0 url("data:,");-webkit-mask-box-image:url("data:,")}');
+  // fragment references (an SVG <mask>) are left to svg-refs
+  assert.equal(inlineCssUrls('.a{mask:url(#m)}', 'https://x.test/', cache).css, '.a{mask:url(#m)}');
+});
+
+test('maskDeclarationRanges: only mask layer declarations, strings and parentheses skipped', () => {
+  const css = '.mask{color:red}.a{mask-image:url("a;b}")}.b{x:1}';
+  const r = maskDeclarationRanges(css);
+  assert.equal(r.length, 1);
+  assert.equal(css.slice(r[0][0], r[0][1]), 'url("a;b}")');
+  assert.deepEqual(maskDeclarationRanges('.a{color:red}'), []);
+  assert.equal(maskDeclarationRanges('mask:none;-webkit-mask-image:url(x)').length, 2);
 });
 
 test('resource kinds follow the extension', () => {

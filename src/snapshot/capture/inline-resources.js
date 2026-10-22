@@ -4,6 +4,7 @@
  */
 
 import { HicUnsupportedError } from '../../contracts/errors.js';
+import { skipParens, skipString } from './css-rewrite.js';
 
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
 /** @typedef {import('../../contracts/types.js').ResourceCache} ResourceCache */
@@ -183,9 +184,47 @@ export function resolveResource(cache, absUrl, kind = kindOfUrl(absUrl)) {
 
 const URL_TOKEN = /url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)"'\s][^)]*?))\s*\)/gi;
 
+/** A declaration of a mask layer image: `mask`, `mask-image` and their -webkit- forms (not -webkit-mask-box-image, not -webkit-box-reflect). */
+const MASK_DECL = /(?:^|[;{\s])((?:-webkit-)?mask(?:-image)?)\s*:/gi;
+/**
+ * A mask layer whose image is not drawn: CSS Masking 1 (mask-image) treats "a mask reference that is an empty image, ... that fails to download, ... or cannot be displayed" as a
+ * transparent black image layer, so the masked element is masked away; read-back-allowed rendering makes a CORS-cross-origin image such an image (WHATWG HTML PR 12554, "Read-back-allowed
+ * rendering": CSS <url> references to CORS-cross-origin content are invisible). Chromium draws the element UNMASKED for the empty `data:,` the other properties get, so a mask layer gets
+ * an image that loads and is transparent everywhere (WPT privacy/box-mask-*, privacy/fragment-mask-*). A -webkit-box-reflect mask is not a mask layer: natively the reflection is then
+ * drawn unmasked (WPT privacy/box-reflect-images-in-iframe-moved-ignored), which `data:,` gives.
+ */
+const TRANSPARENT_MASK = 'linear-gradient(transparent,transparent)';
+
+/**
+ * PURE. The [start, end) ranges of the mask layer declarations of a stylesheet or a style attribute (strings and parentheses skipped).
+ * @param {string} css
+ * @returns {Array<[number, number]>}
+ */
+export function maskDeclarationRanges(css) {
+  /** @type {Array<[number, number]>} */
+  const out = [];
+  if (!/mask/i.test(css)) return out;
+  MASK_DECL.lastIndex = 0;
+  for (let m = MASK_DECL.exec(css); m; m = MASK_DECL.exec(css)) {
+    const start = m.index + m[0].length;
+    let i = start;
+    for (; i < css.length; i++) {
+      const c = css.charCodeAt(i);
+      if (c === 34 || c === 39) i = skipString(css, i) - 1;
+      else if (c === 40) i = skipParens(css, i) - 1;
+      else if (c === 92) i++;
+      else if (c === 59 || c === 123 || c === 125) break;
+    }
+    out.push([start, i]);
+    MASK_DECL.lastIndex = i;
+  }
+  return out;
+}
+
 /**
  * Replace every url() of css by cached data: URLs resolved against baseUrl; uncached ones are started and listed in pending (and replaced by an empty data: URL,
- * so that the SVG image never tries the network); resources that failed are listed in failed.
+ * so that the SVG image never tries the network); resources that failed are listed in failed. In a mask layer declaration both become a transparent image instead
+ * (TRANSPARENT_MASK): the element stays masked away until its mask image is drawn, and is never drawn unmasked.
  * @param {string} css
  * @param {string} baseUrl
  * @param {ResourceCache} cache
@@ -197,7 +236,8 @@ export function inlineCssUrls(css, baseUrl, cache) {
   /** @type {Array<{url: string, error: HicUnsupportedError}>} */
   const failed = [];
   if (!/url\(/i.test(css)) return { css, pending, failed };
-  const out = css.replace(URL_TOKEN, (whole, dq, sq, bare) => {
+  const masks = maskDeclarationRanges(css);
+  const out = css.replace(URL_TOKEN, (whole, dq, sq, bare, /** @type {number} */ offset) => {
     const raw = String(dq ?? sq ?? bare).replace(/\\(.)/g, '$1');
     if (raw.startsWith('data:') || raw.startsWith('#') || raw.startsWith('about:') || !raw) return whole;
     let abs;
@@ -210,7 +250,7 @@ export function inlineCssUrls(css, baseUrl, cache) {
     if (r.state === 'ready') return `url("${r.url}")`;
     if (r.state === 'pending') pending.push(abs);
     else failed.push({ url: abs, error: r.error });
-    return 'url("data:,")';
+    return masks.some(([a, b]) => offset >= a && offset < b) ? TRANSPARENT_MASK : 'url("data:,")';
   });
   return { css: out, pending, failed };
 }

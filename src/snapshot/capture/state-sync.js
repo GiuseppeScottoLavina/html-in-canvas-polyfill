@@ -288,21 +288,40 @@ function syncVideo(src, clone, unsupported, req) {
   for (const a of ['class', 'id', 'style', 'title', 'hidden']) if (src.hasAttribute(a)) img.setAttribute(a, src.getAttribute(a) ?? '');
   appendInlineStyle(img, `${usedSize(cs)}object-fit:${cs.objectFit};object-position:${cs.objectPosition};`);
   let url = '';
+  // an invisible box (WHATWG HTML PR 12554): it keeps its place in the layout and paints nothing, not even its background or border; reported
+  const crossOrigin = () => {
+    addUnsupported(unsupported, src, 'cross-origin-resource', 'video frame of a cross-origin source cannot be read', 'Serve the video with CORS and crossorigin="anonymous".');
+    appendInlineStyle(img, 'visibility:hidden!important');
+    return img;
+  };
+  /** @type {HTMLCanvasElement|null} */
+  let frame = null;
   if (v.readyState >= 2 && v.videoWidth > 0) {
+    // read-back-allowed rendering (WHATWG HTML PR 12554): the box of a video whose media data is CORS-cross-origin is invisible, its poster included
     try {
       const k = Math.min(1, MAX_VIDEO_SIDE / Math.max(v.videoWidth, v.videoHeight));
-      const tmp = src.ownerDocument.createElement('canvas');
-      tmp.width = Math.round(v.videoWidth * k);
-      tmp.height = Math.round(v.videoHeight * k);
-      tmp.getContext('2d')?.drawImage(v, 0, 0, tmp.width, tmp.height);
-      url = tmp.toDataURL('image/jpeg', 0.85);
+      frame = src.ownerDocument.createElement('canvas');
+      frame.width = Math.round(v.videoWidth * k);
+      frame.height = Math.round(v.videoHeight * k);
+      const ctx = frame.getContext('2d');
+      ctx?.drawImage(v, 0, 0, frame.width, frame.height);
+      ctx?.getImageData(0, 0, 1, 1);
     } catch {
-      return refuse(unsupported, src, 'cross-origin-resource', 'video frame of a cross-origin source cannot be read', 'Serve the video with CORS and crossorigin="anonymous".');
+      return crossOrigin();
     }
-  } else if (v.poster) {
-    const r = resolveResource(req.resources, v.poster, 'image');
-    if (r.state === 'ready') url = r.url;
-    else if (r.state === 'pending') markPending(unsupported);
+  }
+  // HTML "the video element": while its show poster flag is set (never played, never seeked) and a poster is available, the element represents the poster, not a frame.
+  // The flag is not exposed; it is read as "nothing played and still at time 0" (WPT privacy/video-ignored: the poster of a loaded video is drawn).
+  const posterShown = !!v.poster && (!frame || (v.played.length === 0 && v.currentTime === 0 && !v.seeking));
+  const poster = posterShown ? resolveResource(req.resources, v.poster, 'image') : null;
+  if (poster?.state === 'ready') url = poster.url;
+  else if (poster?.state === 'pending') markPending(unsupported);
+  else if (frame) {
+    try {
+      url = frame.toDataURL('image/jpeg', 0.85);
+    } catch {
+      return crossOrigin();
+    }
   }
   if (url) img.setAttribute('src', url);
   return img;

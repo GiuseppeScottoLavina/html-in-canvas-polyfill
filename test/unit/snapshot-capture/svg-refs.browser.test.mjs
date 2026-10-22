@@ -15,3 +15,22 @@ test('a <use> whose target (a chain of <use>) is outside the drawable is drawn, 
   assert.deepEqual(px(10, 10), [0, 128, 0, 255], 'the use chain draws the outside rect with its author fill');
   assert.equal(px(10, 30)[3], 0, 'the outside pattern is ignored: transparent, never red');
 });
+
+test('a <use> of an external SVG document draws a same-origin one (its root, or the fragment element) once loaded and never a cross-origin one (read-back-allowed rendering, WPT privacy/svg/svg-use-ignored)', async () => {
+  const cross = `http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg`;
+  const m = mount('<svg drawable width="40" height="60" style="display:block"><use href="/test/unit/snapshot-capture/assets/red.svg"/>'
+    + `<use y="20" href="/test/unit/snapshot-capture/assets/sprite.svg#green"/><use y="40" href="${cross}"/><use y="40" href="/test/unit/snapshot-capture/assets/sprite.svg#missing"/></svg>`);
+  const el = m.layerEl.firstElementChild;
+  const first = m.capture(m.request(el));
+  assert.equal(first.complete, false, 'the same-origin documents are still loading');
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  assert.equal(r.complete, true);
+  const svg = decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
+  assert.ok(!svg.includes('localhost:') && !svg.includes('/assets/'), 'no external URL reaches the snapshot');
+  const got = await rasterize(r);
+  const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data);
+  assert.deepEqual(px(20, 10), [224, 0, 0, 255], 'positive control: the whole same-origin document is drawn');
+  assert.deepEqual(px(20, 30), [0, 128, 0, 255], 'positive control: the fragment element of a same-origin document is drawn');
+  assert.equal(px(20, 50)[3], 0, 'the cross-origin document and a missing fragment draw nothing');
+});

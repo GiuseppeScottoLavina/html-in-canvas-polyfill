@@ -5,11 +5,14 @@
  * the platform ignores them for privacy (WPT privacy/svg/*). A mask outside the subtree masks its element away entirely (measured on the native oracle: the element is not drawn), so it
  * becomes an empty <mask> of the same id. Images of a copy (`<image href>`) go through the resource cache like every other image: readable ones are inlined, the others
  * (cross-origin without CORS, 404) are removed, as the platform ignores them. The feImage of every filter of the clone (copied or inside the drawable) is settled by settleFilterImages.
+ * A <use> of an EXTERNAL document (`href="icons.svg#a"`, or the whole document without a fragment) cannot load inside the SVG image either: a same-origin document is fetched
+ * through the resource cache and its target copied in like an outside target; a cross-origin one draws nothing, as the platform never loads a cross-origin <use> (WHATWG HTML PR 12554,
+ * read-back-allowed rendering: "SVG elements (e.g., use, pattern, feImage)" that refer to CORS-cross-origin content are invisible; WPT privacy/svg/svg-use-ignored).
  * Module: snapshot-capture (src/snapshot/capture/*).
  */
 
 import { resolveResource } from './inline-resources.js';
-import { setInlineStyle } from './inline-style.js';
+import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 
 /** @typedef {import('../../contracts/types.js').ResourceCache} ResourceCache */
 
@@ -69,13 +72,39 @@ export function addUseTargets(live, root, cache, onElement) {
   const state = { added: 0, pending: false };
   if (!queue.length) return state;
   const holder = hiddenHolder(root.ownerDocument);
+  /** @type {Map<string, string|null>} external URL -> id of its copy in the holder (null: nothing to draw) */
+  const external = new Map();
   for (let i = 0; i < queue.length; i++) {
-    const id = useTarget(queue[i]);
-    if (!id || present(root, holder, id)) continue;
-    const target = live.getElementById(id);
-    if (!target || target.namespaceURI !== SVG_NS) continue;
-    const copy = copyOf(live, root.ownerDocument, target, cache, state);
-    holder.appendChild(copy);
+    const use = queue[i];
+    const href = hrefOf(use);
+    let copy = null;
+    if (!href.startsWith('#')) {
+      if (!href || href.startsWith('data:')) continue;
+      const abs = absolute(href, live.baseURI);
+      const key = abs ?? href;
+      let id = external.get(key);
+      if (id === undefined) {
+        const target = abs ? externalTarget(live, abs, cache, state) : null;
+        id = target ? `hic-use-${external.size}` : null;
+        if (target && id) {
+          copy = copyOf(live, root.ownerDocument, target, cache, state, abs ?? live.baseURI);
+          copy.setAttribute('id', id);
+          holder.appendChild(copy);
+        }
+        external.set(key, id);
+      }
+      use.removeAttribute('xlink:href');
+      if (id) use.setAttribute('href', `#${id}`);
+      else use.removeAttribute('href');
+    } else {
+      const id = href.length > 1 ? href.slice(1) : null;
+      if (!id || present(root, holder, id)) continue;
+      const target = live.getElementById(id);
+      if (!target || target.namespaceURI !== SVG_NS) continue;
+      copy = copyOf(live, root.ownerDocument, target, cache, state);
+      holder.appendChild(copy);
+    }
+    if (!copy) continue;
     for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
       onElement(el);
       if (el.localName === 'use') queue.push(el);
@@ -83,6 +112,33 @@ export function addUseTargets(live, root, cache, onElement) {
   }
   if (state.added) root.appendChild(holder);
   return state;
+}
+
+/**
+ * The element an external <use> draws: the fragment's element of a SAME-ORIGIN SVG document, or its root element without a fragment (SVG 2). A cross-origin document is never
+ * read (the platform does not load it); one still loading sets state.pending; one that fails to load or parse, or has no such element, draws nothing.
+ * @param {Document} live @param {string} abs @param {ResourceCache} cache @param {{pending: boolean}} state
+ * @returns {Element|null}
+ */
+function externalTarget(live, abs, cache, state) {
+  const url = new URL(abs);
+  if (url.origin !== (live.location?.origin ?? new URL(live.URL).origin)) return null;
+  const fragment = decodeURIComponent(url.hash.slice(1));
+  url.hash = '';
+  const r = resolveResource(cache, url.href, 'svg');
+  if (r.state === 'pending') state.pending = true;
+  if (r.state !== 'ready') return null;
+  const parsed = new DOMParser().parseFromString(textOfDataUrl(r.url), 'image/svg+xml');
+  const target = fragment ? parsed.getElementById(fragment) : parsed.documentElement;
+  return target && target.namespaceURI === SVG_NS && !parsed.querySelector('parsererror') ? target : null;
+}
+
+/** @param {string} dataUrl @returns {string} the text a data: URL carries */
+function textOfDataUrl(dataUrl) {
+  const comma = dataUrl.indexOf(',');
+  const body = dataUrl.slice(comma + 1);
+  if (!dataUrl.slice(0, comma).includes(';base64')) return decodeURIComponent(body);
+  return new TextDecoder().decode(Uint8Array.from(atob(body), (c) => c.charCodeAt(0)));
 }
 
 /** @param {Document} doc @returns {Element} zero-size hidden <svg> that holds the copies */
@@ -101,24 +157,19 @@ function present(root, holder, id) {
   return !!(root.ownerDocument.getElementById(id) || root.querySelector(sel) || holder.querySelector(sel));
 }
 
-/** @param {Element} use @returns {string|null} the fragment id a <use> points at */
-function useTarget(use) {
-  const href = use.getAttribute('href') ?? use.getAttribute('xlink:href') ?? '';
-  return href.startsWith('#') && href.length > 1 ? href.slice(1) : null;
-}
-
 /**
  * Deep copy of an out-of-subtree SVG element with its images inlined from the resource cache (unreadable ones removed).
  * @param {Document} live @param {Document} doc @param {Element} target @param {ResourceCache} cache @param {{added: number, pending: boolean}} state
+ * @param {string} [base]  base URL of the target's document (the live document's by default)
  * @returns {Element}
  */
-function copyOf(live, doc, target, cache, state) {
+function copyOf(live, doc, target, cache, state, base = live.baseURI) {
   const copy = /** @type {Element} */ (doc.importNode(target, true));
   for (const image of [copy, ...Array.from(copy.querySelectorAll('image'))]) {
     if (image.localName !== 'image') continue;
     const href = hrefOf(image);
     if (!href || href.startsWith('data:') || href.startsWith('#')) continue;
-    const abs = absolute(href, live.baseURI);
+    const abs = absolute(href, base);
     const r = abs ? resolveResource(cache, abs, 'image') : null;
     image.removeAttribute('xlink:href');
     if (r?.state === 'ready') image.setAttribute('href', r.url);
@@ -199,4 +250,28 @@ export function settleFilterImages(root, base, cache) {
     }
   }
   return out;
+}
+
+/**
+ * The mask images of SVG CONTENT (an element inside an <svg>, not the outer <svg> box): Chromium's read-back-allowed rendering ignores a mask image there that it may not read
+ * (WPT privacy/svg/svg-mask-on-svg-content-ignored, from Chromium "Disallow SVG masks on SVG content in readback-allowed mode": the element is drawn UNMASKED), while a CSS box with
+ * such a mask is masked away (inline-resources.js TRANSPARENT_MASK, WPT privacy/box-mask-*). So when one of its layers is not readable (cross-origin without CORS, failed, or still
+ * loading) its mask-image becomes the computed list with that layer `none`; the readable layers are kept as data: URLs. A mask that is entirely readable is left to the stylesheet.
+ * @param {Element} src  live element @param {Element} clone @param {CSSStyleDeclaration} cs  computed style of src @param {ResourceCache} cache
+ */
+export function svgContentMask(src, clone, cs, cache) {
+  if (src.namespaceURI !== SVG_NS || src.parentElement?.namespaceURI !== SVG_NS) return;
+  const value = cs.maskImage || /** @type {any} */ (cs).webkitMaskImage || 'none';
+  if (value === 'none' || !value.includes('url(')) return;
+  let unreadable = false;
+  const out = value.replace(/url\(\s*"((?:[^"\\]|\\.)*)"\s*\)/g, (/** @type {string} */ whole, /** @type {string} */ raw) => {
+    const url = raw.replace(/\\(.)/g, '$1');
+    if (url.startsWith('data:') || url.startsWith('#')) return whole;
+    const abs = absolute(url, src.ownerDocument.baseURI);
+    const r = abs ? resolveResource(cache, abs, 'image') : null;
+    if (r?.state === 'ready') return `url("${r.url}")`;
+    unreadable = true;
+    return 'none';
+  });
+  if (unreadable) appendInlineStyle(clone, `mask-image:${out}!important;-webkit-mask-image:${out}!important`);
 }
