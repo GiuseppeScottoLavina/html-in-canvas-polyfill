@@ -256,8 +256,8 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
 
 /**
  * The verdict of a gate that did not finish within its watchdog (pure, unit-tested): FAIL naming the CDP calls still waiting, or NOT USABLE when the screen
- * is locked (a locked or sleeping display stops requestAnimationFrame, and canvas reads wait inside one: a g-explainer waited 15 min for one and printed
- * nothing, which the mutant runner then read as a crash).
+ * is locked (a locked or sleeping display stops requestAnimationFrame, and canvas reads wait inside one). A g-explainer that never finished printed nothing
+ * until the mutant runner's 15 min timeout, and the runner then crashed on the empty output.
  * @param {{minutes: number, pending: string[], screenLocked: boolean|null}} o
  */
 export function hangVerdict({ minutes, pending, screenLocked }) {
