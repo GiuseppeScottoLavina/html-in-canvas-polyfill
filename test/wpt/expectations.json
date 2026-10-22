@@ -26,12 +26,12 @@
     "updateElementGeometry() on ancestor and nested drawable": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "fixable, not done: natively a nested drawable is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestor's canvas transform (measured: nested-block at the origin although laid out 50 px down); the polyfill keeps it in flow and lets it follow its ancestor. Doing it changes the hit testing of every undrawn nested drawable"
+     "note": "fixable, not done: natively every drawable, nested ones included, is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestors' canvas transforms; it keeps its layout space, and while an ancestor is drawn it is hit-tested there (measured on Canary 158.0.8112.1: an undrawn nested drawable laid out 40 px down reports the canvas origin and is hit at the origin, not at its layout position). The polyfill places only the direct children at the origin (the layer grid) and lets nested drawables follow their layout and their ancestor. Matching it means a placement rule for every nested drawable, drawn or not, re-measured whenever the layout moves it, which changes hit testing and the measured geometry of every page with nested drawables; not done in this round"
     },
     "updateElementGeometry() affects getBoundingClientRect() on a block nested": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "as above (canvas-origin placement), and its margin step needs a position independent of layout read synchronously after a style write (a re-measure inside getBoundingClientRect); also follows the ancestor test in the same page"
+     "note": "as above (canvas-origin placement of a nested drawable), and its margin step needs a position independent of layout read synchronously after a style write; also follows the ancestor test in the same page"
     },
     "A non-drawable descendant inherits": {
      "category": "deviation",
@@ -133,7 +133,7 @@
   "privacy/selection-painted-overlay-path.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "fixable, not done: a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone (its ranges could be wrapped like the selection); the ::selection part is drawn"
+   "note": "a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone; the ::selection part is. Drawing it (its ranges wrapped like the selection) would not make the file pass: its ::selection decoration has the same edge as privacy/selection-alone-with-decorations-painted (natively it ends at the whole-pixel highlight rect, in the clone at the text box), so it was not done"
   },
   "scale.tentative.html": {
    "category": "impossible",
@@ -167,12 +167,15 @@
  "pass": [
   "anchor-positioning.tentative.html",
   "animated-clip-path.tentative.html",
+  "animated-gif-pinned-to-element-image.tentative.html",
+  "animated-gif.tentative.html",
   "backdrop-filter-bounds-expansion.tentative.html",
   "basic-rect-zoom.tentative.html",
   "basic-rect.tentative.html",
   "broken-image.tentative.html",
   "canvas-in-custom-element-multiple.tentative.html",
   "canvas-in-custom-element.tentative.html",
+  "canvas-transform-get-set.tentative.html",
   "canvas-transform-update-element-image.tentative.html",
   "canvas-transform-update.tentative.html",
   "captureElementImage.tentative.html",
@@ -240,6 +243,7 @@
   "nested-div-content-drawable-canvas.tentative.html",
   "nested-drawable.tentative.html",
   "non-opaque-element.tentative.html",
+  "offscreen/animated-gif-worker.tentative.html",
   "offscreen/canvas-transform-update-worker.tentative.html",
   "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html",
   "offscreen/offscreenCanvas-drawElementImage.tentative.html",
@@ -255,6 +259,7 @@
   "onpaint-remove-non-drawable-element.tentative.html",
   "onpaint-scroll-crash.tentative.html",
   "onpaint-zindex.tentative.html",
+  "onpaint.tentative.html",
   "opacity-zero-ancestor.tentative.html",
   "percent-sizing.tentative.html",
   "position-anchor-crash.tentative.html",
@@ -340,8 +345,10 @@
   "privacy/svg/svg-use-outside-subtree-images-ignored.tentative.https.sub.html",
   "privacy/target-text-ignored-overlay-path.tentative.html",
   "privacy/video-ignored.tentative.https.sub.html",
+  "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-currentcolor-ignored.tentative.html",
+  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-decoration-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-slotted-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-svg-fill-stroke-color-ignored.tentative.html",
@@ -354,6 +361,7 @@
   "ruby-canvas-crash.tentative.html",
   "scroller-crash.tentative.html",
   "shadow-basic.tentative.html",
+  "shadow-dom-slot-canvas-child.tentative.html",
   "shadow-dom-slotted-moveBefore.tentative.html",
   "shadow-dom-slotted.tentative.html",
   "shadow-non-opaque-element.tentative.html",
@@ -366,13 +374,11 @@
  ],
  "partial": {
   "canvas-transform-get-bounding-client-rect.tentative.html": 2,
-  "canvas-transform-get-set.tentative.html": 12,
   "display-contents.tentative.html": 1,
   "draw-element-image-get-image-data.tentative.html": 1,
   "onpaint-iframe-post-tree-order.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,
-  "onpaint-remove-drawable-element.tentative.html": 5,
-  "onpaint.tentative.html": 11
+  "onpaint-remove-drawable-element.tentative.html": 5
  },
  "stable": [
   "anchor-positioning.tentative.html",
