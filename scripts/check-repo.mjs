@@ -95,7 +95,9 @@ if (!docsOnly) {
   // effects/native-interposer.js, the native source provider and frame source, the native checks of the effect host, the frameCap property in the native modes).
   // 15250 -> 15275 (2026-10-22, measured 15,261; 15,243 before this step): the hover sync element of the native effects shared per document, its changes inside a
   // closed shadow root (effects/native-geometry.js createHoverSync).
-  if (total > 15275) problems.push(`G-size: core is ${total} code lines (> 15275)`);
+  // 15275 -> 15400 (2026-10-22, measured 15,374; 15,268 before this step): read-back-allowed rules of WPT master (unreadable mask images, external SVG <use>, the video
+  // poster and cross-origin video, popover toggles, moveBefore() into a canvas).
+  if (total > 15400) problems.push(`G-size: core is ${total} code lines (> 15400)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

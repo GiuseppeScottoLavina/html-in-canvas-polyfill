@@ -81,7 +81,11 @@ const LIMITS = {
   //   message that is not delivered leaves the transfer state as it was
   // 313.25 -> 313.5 KB (2026-10-22, measured 313,497 / 108,975; 313,148 / 108,891 with the effects stream merged, +132 bytes for canvas.frameCap in the native modes):
   //   the geometry a worker sends is applied only when well-formed and only for elements posted to that worker; a same-origin frame's CSS without :visited rules
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 313.5 * KB, gzip: 109 * KB },
+  // 313.5 -> 316.25 KB, gzip 109 -> 110 KB (+2,498 / +872 bytes, 2026-10-22, measured 315,995 / 109,847): read-back-allowed rules of WPT master: an unreadable mask image
+  //   masks a box away and is ignored on SVG content (inline-resources.js maskDeclarationRanges, svg-refs.js svgContentMask), an SVG <use> of a same-origin external
+  //   document drawn, the video poster until it plays and a cross-origin video invisible, a popover toggle repaints, moveBefore() into a canvas keeps the node's state:
+  //   WPT master privacy/box-mask-*, fragment-mask-*, svg/svg-mask-on-svg-content-ignored, svg/svg-use-ignored, video-ignored, popover-show-hide-*, box-reflect-*-moved
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 316.25 * KB, gzip: 110 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
