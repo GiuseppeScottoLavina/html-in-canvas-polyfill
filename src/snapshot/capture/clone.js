@@ -661,6 +661,7 @@ function addSelectionAndCaret(ctx, root, size, ink) {
       caret = measureCaret(live, focus, fr);
     }
   }
+  rects.push(...areaFocusRings(ctx));
   if (rects.length) {
     const box = ctx.doc.createElement('div');
     setInlineStyle(box, `position:absolute;left:${n3(ink.left)}px;top:${n3(ink.top)}px;width:0;height:0;overflow:visible`);
@@ -668,6 +669,45 @@ function addSelectionAndCaret(ctx, root, size, ink) {
     root.appendChild(box);
   }
   return caret;
+}
+
+/**
+ * The focus ring of a focused image-map <area>: the engine paints the area's outline over every <img> that uses its map (the <map> may lie outside the canvas), with the
+ * area's computed outline, which never reflects :visited (WPT privacy/visited-link/image-map-area-visited-color-ignored). A rect, circle or default area is drawn as a box
+ * of its shape with that outline; a polygon is not drawn (an outline follows the box, not a clip path).
+ * @param {Ctx} ctx @returns {Element[]}
+ */
+function areaFocusRings(ctx) {
+  const area = ctx.env.document.activeElement;
+  if (!area || area.localName !== 'area') return [];
+  const map = area.closest('map');
+  const name = map && (map.getAttribute('name') || map.id);
+  if (!name) return [];
+  const cs = ctx.env.window.getComputedStyle(area);
+  const width = parseFloat(cs.outlineWidth) || 0;
+  if (cs.outlineStyle === 'none' || width <= 0) return [];
+  const shape = (area.getAttribute('shape') ?? 'rect').toLowerCase();
+  const c = (area.getAttribute('coords') ?? '').split(/[\s,]+/).filter(Boolean).map(Number);
+  /** @type {Element[]} */
+  const out = [];
+  for (const img of ctx.drawable.querySelectorAll('img[usemap]')) {
+    if (img.getAttribute('usemap')?.replace(/^#/, '') !== name || ctx.layer.nearestDrawable(img) !== ctx.drawable) continue;
+    const fr = ctx.layer.frameRect(img);
+    if (!fr) continue;
+    const ics = ctx.env.window.getComputedStyle(img);
+    const x0 = fr.x + (parseFloat(ics.borderLeftWidth) || 0) + (parseFloat(ics.paddingLeft) || 0);
+    const y0 = fr.y + (parseFloat(ics.borderTopWidth) || 0) + (parseFloat(ics.paddingTop) || 0);
+    let box;
+    if (shape === 'default') box = { x: x0, y: y0, w: img.clientWidth - (parseFloat(ics.paddingLeft) || 0) - (parseFloat(ics.paddingRight) || 0), h: img.clientHeight - (parseFloat(ics.paddingTop) || 0) - (parseFloat(ics.paddingBottom) || 0), round: false };
+    else if ((shape === 'circle' || shape === 'circ') && c.length >= 3) box = { x: x0 + c[0] - c[2], y: y0 + c[1] - c[2], w: 2 * c[2], h: 2 * c[2], round: true };
+    else if ((shape === 'rect' || shape === 'rectangle') && c.length >= 4) box = { x: x0 + Math.min(c[0], c[2]), y: y0 + Math.min(c[1], c[3]), w: Math.abs(c[2] - c[0]), h: Math.abs(c[3] - c[1]), round: false };
+    if (!box || !(box.w > 0 && box.h > 0)) continue;
+    const ring = ctx.doc.createElement('div');
+    setInlineStyle(ring, `position:absolute;pointer-events:none;z-index:50;left:${n3(box.x)}px;top:${n3(box.y)}px;width:${n3(box.w)}px;height:${n3(box.h)}px;`
+      + `${box.round ? 'border-radius:50%;' : ''}outline:${cs.outlineStyle} ${cs.outlineWidth} ${cs.outlineColor};outline-offset:${cs.outlineOffset}`);
+    out.push(ring);
+  }
+  return out;
 }
 
 /** @param {Ctx} ctx @returns {import('./selection-paint.js').SelectionPainter} */

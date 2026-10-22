@@ -135,11 +135,6 @@
    "reason": "caret-selection",
    "note": "fixable, not done: a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone (its ranges could be wrapped like the selection); the ::selection part is drawn"
   },
-  "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html": {
-   "category": "deviation",
-   "reason": "caret-selection",
-   "note": "fixable, not done: the focus ring of a focused image map <area> (outline auto on the area shape over its <img>) is not drawn"
-  },
   "scale.tentative.html": {
    "category": "impossible",
    "reason": "paint-timing",
