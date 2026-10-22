@@ -537,8 +537,13 @@ function inlineComputed(src, clone, cs) {
  */
 function ancestorsOf(el, canvas, layerEl) {
   const out = [];
-  for (let cur = el.parentElement; cur && cur !== canvas && cur !== layerEl; cur = cur.parentElement) out.push(cur);
-  return out;
+  let cur = el.parentElement;
+  for (; cur && cur !== canvas && cur !== layerEl; cur = cur.parentElement) out.push(cur);
+  if (cur) return out;
+  // a drawable slotted into a slot of the canvas (the canvas lives in a shadow tree): its ancestors in the flat tree, through the slots it is assigned to
+  out.length = 0;
+  for (cur = el.assignedSlot ?? el.parentElement; cur && cur !== canvas && cur !== layerEl; cur = cur.assignedSlot ?? cur.parentElement) out.push(cur);
+  return cur ? out : [];
 }
 
 /**

@@ -140,11 +140,6 @@
    "reason": "paint-timing",
    "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous: mostly not there yet (InvalidStateError, harness TIMEOUT), and when it wins the race the 2x draws resample the 1x snapshot (soft edges, 4,079 px, FAIL; native paints the element at the draw scale, raster-scale-floor): the subtest fails either way (before X-13 it failed earlier, on its shadow root)"
   },
-  "shadow-dom-slot-canvas-child.tentative.html": {
-   "category": "deviation",
-   "reason": "shadow-dom",
-   "note": "fixable, not done: a drawable slotted into a canvas that lives in a shadow tree is a child of the canvas in the flat tree only; the layer follows DOM children (the slot is relocated, the slotted light DOM element is not a drawable of the layer: InvalidStateError)"
-  },
   "offscreen/ink-overflow-worker.tentative.html": {
    "category": "impossible",
    "reason": "paint-timing",

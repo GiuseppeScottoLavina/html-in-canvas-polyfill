@@ -228,6 +228,19 @@ export function observeMutations(env, record) {
 
   const mo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver(onMutations);
   mo.observe(root, OPTIONS);
+  /** @type {WeakSet<Element>} */
+  const slotted = new WeakSet();
+  // drawables slotted into the layer from the light DOM of a shadow host (live/drawables.js collectDrawables) lie outside the layer subtree: each is observed too
+  // (once; an element that is no longer slotted maps to no drawable and its mutations are ignored)
+  const observeSlotted = () => {
+    for (const d of layer.drawableElements()) {
+      if (root.contains(d) || slotted.has(d)) continue;
+      slotted.add(d);
+      mo.observe(d, OPTIONS);
+    }
+  };
+  observeSlotted();
+  const offDrawables = env.bus.on(BUS.DRAWABLES_CHANGED, (/** @type {{record: CanvasRecord}} */ e) => { if (e.record === record) observeSlotted(); });
   observeShadows(root);
   watchFrames();
   root.addEventListener('load', onLoad, true);
@@ -236,6 +249,7 @@ export function observeMutations(env, record) {
   return () => {
     stopped = true;
     mo.disconnect();
+    offDrawables();
     stopAncestors();
     root.removeEventListener('load', onLoad, true);
     root.removeEventListener('toggle', onToggle, true);
