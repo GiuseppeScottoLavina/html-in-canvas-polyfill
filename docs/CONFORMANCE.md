@@ -270,7 +270,7 @@ Gate (`G-wpt-subset`) fails when (i) a subtest that passes natively and fails in
 | `privacy/nested-tainted-html-in-canvas-ignored.tentative.https.sub.html` | 1/1 | 1/1 | 0/1 | pass-both |  |
 | `privacy/object-image-ignored.tentative.https.sub.html` | 1/1 | 1/1 | 0/1 | pass-both |  |
 | `privacy/picture-images-ignored.tentative.https.sub.html` | 1/1 | 1/1 | 0/1 | pass-both |  |
-| `privacy/popover-show-hide-background-image-ignored.tentative.https.sub.html` | 1/1 | 0/1 (unstable) | 0/1 | bug | WPT-B3 |
+| `privacy/popover-show-hide-background-image-ignored.tentative.https.sub.html` | 1/1 | 0/1 | 0/1 | bug | WPT-B3 |
 | `privacy/pseudos/before-after-images-ignored.tentative.https.sub.html` | 1/1 | 1/1 | 0/1 | pass-both |  |
 | `privacy/pseudos/before-after-images-moved-ignored.tentative.https.sub.html` | 1/1 | 1/1 | 0/1 | pass-both |  |
 | `privacy/pseudos/before-after-visited-color-ignored.tentative.html` | 1/1 | 1/1 | 0/1 | pass-both |  |
