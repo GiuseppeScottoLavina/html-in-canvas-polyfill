@@ -356,7 +356,10 @@ export function createAnimatedImages(env) {
     frameUrl(img, abs, dataUrl) {
       let anim = byUrl.get(abs);
       if (anim === undefined) byUrl.set(abs, (anim = sniff(abs, dataUrl)));
-      if (!anim) return dataUrl;
+      if (!anim) {
+        seen.delete(img); // it showed an animated image before: that clock lets it go
+        return dataUrl;
+      }
       anim.source = dataUrl;
       if (seen.get(img) !== abs || !anim.imgs.has(img)) {
         seen.set(img, abs);

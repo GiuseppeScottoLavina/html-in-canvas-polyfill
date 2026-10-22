@@ -136,3 +136,18 @@ test('an image that left the layer stops its clock', async (t) => {
   await sleep(600);
   assert.equal(rig.sink.damage.length, 0, 'no image shows it: stopped');
 });
+
+test('an image whose source changes from an animated to a still image stops being played', async (t) => {
+  const { rig, player, img } = setup();
+  t.cleanup(() => player.dispose());
+  t.cleanup(observeAnimatedImages(rig.env, rig.record));
+  player.frameUrl(img, 'https://x.test/rgb100.gif', await inline(GIF));
+  await sleep(500);
+  assert.ok(rig.sink.damage.length >= 1, 'played');
+  const still = await inline(STILL);
+  assert.equal(player.frameUrl(img, 'https://x.test/blue.png', still), still);
+  await sleep(250);
+  rig.sink.clear();
+  await sleep(600);
+  assert.equal(rig.sink.damage.length, 0, 'the still image is not damaged by the clock of the animated one');
+});
