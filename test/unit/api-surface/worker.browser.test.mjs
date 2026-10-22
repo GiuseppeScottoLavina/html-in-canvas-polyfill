@@ -33,7 +33,8 @@ test('a worker draws a transferred ElementImage on the OffscreenCanvas of its ca
   const m = canvas.getElementTransform(a);
   assert.deepEqual([m.e, m.f], [10, 5], 'the canvas transform of the draw');
   assert.deepEqual((await ask({ cmd: 'size', on: 'main' })).size, { width: 100, height: 50 });
-  assert.deepEqual((await ask({ cmd: 'transform', on: 'main' })).m.slice(12, 14), [5, 6], 'the two-argument getElementTransform of the earlier draft');
+  assert.deepEqual(await ask({ cmd: 'members' }), { ok: true, getElementTransform: false, updateElementGeometry: true },
+    'OffscreenCanvas has no getElementTransform (the two-argument draft overload was removed, WPT b59184b6); control: the geometry methods exist');
   const cleared = geometryEvent(canvas);
   await ask({ cmd: 'clear', on: 'main' });
   await cleared;

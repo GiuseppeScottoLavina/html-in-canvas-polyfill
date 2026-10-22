@@ -312,9 +312,8 @@ test('OffscreenCanvas without a placeholder: InvalidStateError on draw and on ev
   const { el, canvas } = await set(t);
   const free = new OffscreenCanvas(50, 50);
   throwsDom(() => free.getContext('2d').drawElementImage(el, 0, 0), 'InvalidStateError');
-  throwsDom(() => free.getElementTransform(el, new DOMMatrix()), 'InvalidStateError');
-  assert.throws(() => free.getElementTransform(el), TypeError, 'native OffscreenCanvas has the two-argument overload only');
-  assert.ok(canvas.transferControlToOffscreen().getElementTransform(el, new DOMMatrix()) instanceof DOMMatrix);
+  assert.equal('getElementTransform' in free, false, 'OffscreenCanvas has no getElementTransform: the two-argument draft overload was removed (WPT b59184b6)');
+  assert.equal('getElementTransform' in canvas.transferControlToOffscreen(), false);
   throwsDom(() => free.updateElementGeometry(el), 'InvalidStateError');
   throwsDom(() => free.clearElementGeometry(el), 'InvalidStateError');
   throwsDom(() => free.getElementImageDefaultSize(el), 'InvalidStateError');

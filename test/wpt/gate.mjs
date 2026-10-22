@@ -11,6 +11,7 @@ import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RESULTS_DIR, runConfig, saveResults, selectTests } from './run.mjs';
 import { gateFailures, formatTable, loadJson, triage } from './triage.mjs';
 import { writeConformance } from './report.mjs';
+import { missingResources } from './lib/inventory.mjs';
 
 const EXPECTATIONS = resolve(PROJECT_ROOT, 'test/wpt/expectations.json');
 const args = new Set(process.argv.slice(2));
@@ -52,6 +53,7 @@ const result = triage(docs, expectations, baseline);
 const failures = gateFailures(docs, expectations, result);
 const pinned = `Chrome/${loadJson(resolve(PROJECT_ROOT, 'test/vendor/wpt/VERSION.json'))?.chromium?.tag}`;
 if (docs.A.config.version !== pinned && (!baseline || baseline.build !== pinned)) failures.push(`(iv) the oracle is ${docs.A.config.version}, not the build of the pinned WPT revision (${pinned}), and test/wpt/oracle-baseline.json has no runs of ${pinned}: native passes cannot be trusted`);
+for (const m of missingResources()) failures.push(`(v) ${m.url} is referenced by ${m.from.length} vendored test file(s) (${m.from[0]}) and is not vendored: the test cannot load what it loads upstream (copy it from the pinned WPT commit, or list it in ABSENT_UPSTREAM of test/wpt/lib/inventory.mjs when upstream lacks it too)`);
 if (args.has('--table')) console.log(formatTable(result));
 const f = result.counts.files; const s = result.counts.subtests;
 console.log(`\nWPT HTML-in-Canvas (${docs.A.config.version} native / ${docs.B.config.version} + polyfill / ${docs.C.config.version} control)`);

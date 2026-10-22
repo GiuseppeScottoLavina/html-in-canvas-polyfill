@@ -432,22 +432,16 @@ test('updateElementGeometry rank: last updated is top-most; preserveHitTestOrder
   assert.equal(world.reports.caught.length, 0);
 });
 
-test('getElementTransform(element, drawTransform) returns the matrix a draw with that transform would store (S^-1 D S), without changing state', async (t) => {
+test('getElementTransform takes one argument: a second one is ignored, as WebIDL does (the two-argument draft overload was removed, WPT b59184b6)', async (t) => {
   const { canvas, el, record } = await set(t, { version: { originX: 0, originY: 0 } });
   canvas.width = 200;
   canvas.height = 200;
-  const draw = new DOMMatrix([1, 0, 0, 1, 20, 10]);
-  const m = canvas.getElementTransform(el, draw);
-  assert.deepEqual([m.a, m.d, m.e, m.f], [1, 1, 10, 5], 'S^-1 * D * S with S = scale(2): the draw transform acts on the element at its natural grid size (WPT get-element-transform)');
+  assert.equal(canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 20, 10])).isIdentity, true, 'the stored transform (none), not the matrix of a draw');
+  assert.equal(canvas.getElementTransform(el, { a: 1, m11: 2 }).isIdentity, true, 'the second argument is not converted (a conflicting DOMMatrixInit would throw TypeError)');
   assert.equal(record.geometry.byElement.has(el), false);
-  assert.equal(canvas.getElementTransform(el).isIdentity, true);
-  assert.equal(canvas.getElementTransform(el, undefined).isIdentity, true);
-  assert.throws(() => canvas.getElementTransform(el, { a: 1, m11: 2 }), TypeError);
-});
-
-test('the two-argument getElementTransform is standard: it does not depend on legacyNames', async (t) => {
-  const { canvas, el } = await set(t, { options: { legacyNames: false } });
-  assert.equal(canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 20, 10])).isIdentity, false);
+  canvas.updateElementGeometry(el, { canvasTransform: new DOMMatrix([2, 0, 0, 2, 3, 4]) });
+  const m = canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 20, 10]));
+  assert.deepEqual([m.a, m.d, m.e, m.f], [2, 2, 3, 4], 'control: the stored transform is returned whatever the second argument');
 });
 
 test('methods look like platform methods', async (t) => {

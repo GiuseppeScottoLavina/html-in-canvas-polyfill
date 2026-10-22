@@ -3,7 +3,7 @@
 //  * `/resources/testharnessreport.js` is the upstream stub followed by our reporter (test/wpt/lib/report.js), and
 //    `/resources/testdriver-vendor.js` is our CDP-backed driver (test/wpt/lib/testdriver-vendor.js);
 //  * files with `.sub.` in the name get the `{{location[host]}}`, `{{ports[https][0]}}`, `{{hosts[alt][www]}}` substitutions;
-//  * `<file>.headers` (`Name: value` lines) are applied as response headers;
+//  * `<file>.headers` (`Name: value` lines) are applied as response headers, and so is the wptserve pipe `?pipe=header(Name,value)` (the only pipe the tests use);
 //  * a self-signed certificate is generated with the system `openssl` into .scratch/wpt/cert (Chrome runs with
 //    --ignore-certificate-errors and a host-resolver rule that maps the test host names to 127.0.0.1).
 import { createServer } from 'node:https';
@@ -55,6 +55,22 @@ async function parseHeaders(file) {
   return Object.fromEntries(t.split('\n').map(l => l.match(/^([^:\s]+):\s*(.*)$/)).filter(Boolean).map(m => [m[1], m[2]]));
 }
 
+/**
+ * The `header(Name,value)` steps of a wptserve `pipe` query (`|`-separated; `header(Name,value,True)` appends, which a single value makes the same). Other pipes are
+ * not implemented and throw, so a test that needs one fails loudly instead of loading a different response.
+ * @param {string|null} pipe @returns {Record<string, string>}
+ */
+export function pipeHeaders(pipe) {
+  const out = {};
+  if (!pipe) return out;
+  for (const step of pipe.split('|').map(x => x.trim()).filter(Boolean)) {
+    const m = step.match(/^header\(([^,()]+),([^,()]*)(?:,(?:True|False))?\)$/);
+    if (!m) throw new Error(`wptserve pipe not implemented: ${step}`);
+    out[m[1].trim()] = m[2].trim();
+  }
+  return out;
+}
+
 /** Upstream harness stub + our reporter, upstream driver vendor stub + ours. */
 async function virtualFile(pathname) {
   const read = f => readFile(resolve(VENDOR_ROOT, f), 'utf8');
@@ -92,7 +108,7 @@ export async function startWptServer({ port = 0 } = {}) {
       let info; try { info = await stat(file); } catch { return reply(404, 'text/plain', 'Not found: ' + pathname); }
       if (info.isDirectory()) return reply(404, 'text/plain', 'Directory: ' + pathname);
       const type = MIME.get(extname(file).toLowerCase()) ?? 'application/octet-stream';
-      const headers = await parseHeaders(file);
+      const headers = { ...await parseHeaders(file), ...pipeHeaders(url.searchParams.get('pipe')) };
       if (/\.sub\./.test(file)) return reply(200, type, substitute(await readFile(file, 'utf8'), server.address().port), headers);
       if (url.searchParams.has('relax') && type.startsWith('text/html')) return reply(200, type, relaxFrameWaits(await readFile(file, 'utf8')), headers);
       return reply(200, type, await readFile(file), headers);
