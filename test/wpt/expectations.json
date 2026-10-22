@@ -140,11 +140,6 @@
    "reason": "caret-selection",
    "note": "fixable, not done: the focus ring of a focused image map <area> (outline auto on the area shape over its <img>) is not drawn"
   },
-  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html": {
-   "category": "deviation",
-   "reason": "caret-selection",
-   "note": "getSelection().selectAllChildren(canvas): a selection whose boundary points are the canvas element is empty once the canvas children live in the layer (tree-identity); patching Selection/Range boundary points is not done"
-  },
   "scale.tentative.html": {
    "category": "impossible",
    "reason": "paint-timing",
