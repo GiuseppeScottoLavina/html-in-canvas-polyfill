@@ -95,6 +95,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Mutant anchors (every mutant's edit still matches the built bundle once; the suite itself runs locally)
+        run: node test/gates/mutants/run.mjs --check-anchors
+
       - name: Bundle check (sizes, every bundle and plugin bundle loaded in headless Chrome)
         # --allow-size: the 150 KB core target is a documented known miss (docs/BUNDLES.md); the size ceilings still fail.
         run: node scripts/check-bundle.mjs --no-build --allow-size
