@@ -1,7 +1,7 @@
 // Discover and classify the vendored WPT HTML-in-Canvas tests (test/vendor/wpt/html/canvas/**/draw-element-image).
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
-import { VENDOR_ROOT } from '../server.mjs';
+import { VENDOR_ROOT, MAIN_HOST, ALT_DOMAIN, substitute } from '../server.mjs';
 
 const ROOTS = ['html/canvas/element/manual/draw-element-image', 'html/canvas/offscreen/manual/draw-element-image'];
 const SKIP_DIRS = new Set(['resources', 'support']);
@@ -64,7 +64,55 @@ export function listTests() {
   return tests;
 }
 
-if (process.argv[1]?.endsWith('inventory.mjs')) {
+/**
+ * Same-server URLs that the tests reference and that do not exist upstream at the pinned commit either (wptserve answers 404 there too), with the reason.
+ * Every other same-server reference must be vendored: a missing helper, image or frame makes a test pass or fail for the wrong reason (before 2026-10-22,
+ * five images and a video the privacy tests load were missing, so those tests drew nothing where the upstream run draws a picture).
+ */
+export const ABSENT_UPSTREAM = {
+  '/html/canvas/element/manual/draw-element-image/non-existent-image.gif': 'broken-image tests: a missing image on purpose',
+  '/images/green-filter.svg': 'privacy/filtered-div-ref-external-svg-ignored: absent upstream',
+  '/imagess/red-filter.svg': 'privacy/filtered-div-ref-external-svg-ignored: misspelt path upstream',
+  '/wimages/blue-100x50-transparent-100x50.svg': 'privacy/fragment-mask-svg-ignored: misspelt path upstream',
+};
+
+/** @param {string} h */
+const ours = h => [MAIN_HOST, ALT_DOMAIN].some(d => h === d || h.endsWith('.' + d));
+
+/**
+ * Every same-server URL referenced by a file of the vendored test directories (attributes, CSS url(), quoted absolute paths in scripts) that is not a vendored
+ * file and not in ABSENT_UPSTREAM. URLs that do not parse after the wptserve substitution (an upstream typo such as a port followed by a path without '/')
+ * cannot be fetched by a browser either and are skipped. @returns {{url: string, from: string[]}[]}
+ */
+export function missingResources() {
+  const out = new Map();
+  const files = [];
+  const all = dir => { for (const e of readdirSync(dir, { withFileTypes: true })) { const p = join(dir, e.name); if (e.isDirectory()) all(p); else if (/\.(html?|svg|css|m?js)$/.test(e.name)) files.push(p); } };
+  for (const root of ROOTS) all(join(VENDOR_ROOT, root));
+  const re = /(?:\b(?:src|href|xlink:href|data|poster)\s*=\s*["']([^"']+)["'])|url\(\s*["']?([^"')]+?)["']?\s*\)|["'`]((?:https?:\/\/\{\{[^"'`]+)|\/(?:images|media|common|resources|html|fonts|css|dom)\/[^"'`\s]+)["'`]/g;
+  for (const abs of files) {
+    const rel = '/' + relative(VENDOR_ROOT, abs).split(sep).join('/');
+    const text = readFileSync(abs, 'utf8');
+    for (const m of text.matchAll(re)) {
+      const raw = (m[1] ?? m[2] ?? m[3]).trim();
+      if (!raw || /^(data:|#|blob:|about:|javascript:|mailto:)/.test(raw) || /\$\{|\s\+\s/.test(raw)) continue;
+      let u; try { u = new URL(substitute(raw, 8443), `https://${MAIN_HOST}:8443${rel}`); } catch { continue; }
+      if (!/^https?:$/.test(u.protocol) || !ours(u.hostname)) continue;
+      const path = decodeURIComponent(u.pathname);
+      if (path === rel || existsSync(join(VENDOR_ROOT, path)) || ABSENT_UPSTREAM[path]) continue;
+      if (!out.has(path)) out.set(path, new Set());
+      out.get(path).add(rel);
+    }
+  }
+  return [...out].map(([url, from]) => ({ url, from: [...from].sort() })).sort((a, b) => a.url.localeCompare(b.url));
+}
+
+if (process.argv[1]?.endsWith('inventory.mjs') && process.argv.includes('--resources')) {
+  const miss = missingResources();
+  for (const m of miss) console.log(`missing ${m.url} <- ${m.from.join(', ')}`);
+  console.log(miss.length ? `${miss.length} referenced resources are not vendored` : 'every same-server resource the tests reference is vendored (or absent upstream too)');
+  process.exit(miss.length ? 1 : 0);
+} else if (process.argv[1]?.endsWith('inventory.mjs')) {
   const t = listTests(); const by = {};
   for (const x of t) by[x.type] = (by[x.type] ?? 0) + 1;
   console.log(t.length, by, 'privacy', t.filter(x => x.privacy).length, 'worker', t.filter(x => x.worker).length);
