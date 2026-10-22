@@ -158,3 +158,30 @@ test('frameworks style reconcile: node moves, keyed reorder and replaceWith keep
   await microtasks();
   assert.equal(canvas.childElementCount, 3);
 });
+
+test('an atomic move into the canvas keeps the moved iframe\'s document (WPT privacy/box-reflect-images-in-iframe-moved-ignored): the native canvas.moveBefore() and the routed one; control: appendChild reloads it', async (t) => {
+  const { managed } = setup({ t });
+  const frames = '<iframe id="f1" srcdoc="<p>1</p>"></iframe><iframe id="f2" srcdoc="<p>2</p>"></iframe><iframe id="f3" srcdoc="<p>3</p>"></iframe>';
+  const { canvas, root } = page('<div id="k">k</div>', '', frames);
+  const ids = ['f1', 'f2', 'f3'];
+  const els = ids.map((id) => /** @type {HTMLIFrameElement} */ (root.querySelector(`#${id}`)));
+  for (const f of els) if (f.contentDocument?.readyState !== 'complete' || !f.contentDocument.querySelector('p')) await new Promise((ok) => f.addEventListener('load', ok, { once: true }));
+  els.forEach((f, i) => { /** @type {any} */ (f.contentWindow).mark = ids[i]; });
+  const r = managed(canvas);
+  const layerEl = r.layer.element;
+  const nativeMove = /** @type {any} */ (Element.prototype).moveBefore;
+  if (typeof nativeMove !== 'function') { assert.equal(typeof (/** @type {any} */ (canvas)).moveBefore, typeof nativeMove, 'no moveBefore here: none is added'); return; }
+  nativeMove.call(canvas, els[0], null);
+  await microtasks();
+  const parentOf = /** @type {any} */ (Object.getOwnPropertyDescriptor(Node.prototype, 'parentNode')).get;
+  assert.equal(parentOf.call(els[0]), layerEl, 'relocated into the layer');
+  assert.equal(/** @type {any} */ (els[0].contentWindow).mark, 'f1', 'relocated atomically: the same document');
+  /** @type {any} */ (canvas).moveBefore(els[1], canvas.querySelector('#k'));
+  assert.equal(parentOf.call(els[1]), layerEl);
+  assert.equal(els[1].nextElementSibling?.id, 'k', 'before the logical child it names');
+  assert.equal(/** @type {any} */ (els[1].contentWindow).mark, 'f2', 'the routed moveBefore keeps the document too');
+  assert.equal(els[1].parentNode, canvas, 'its logical parent is the canvas');
+  canvas.appendChild(els[2]);
+  await microtasks();
+  assert.notEqual(/** @type {any} */ (els[2].contentWindow)?.mark, 'f3', 'control: a remove-and-insert reloads the frame (the check sees a reload)');
+});
