@@ -4,10 +4,6 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-### Fixed
-
-- Documentation brought in line with the code and the measurements of 0.1.0-preview.5: the example plugins' READMEs, the design decisions and the examples no longer say that effects need the polyfill's own drawing (they run over native implementations too); the support matrix, the API contract, the architecture and the troubleshooting guide describe same-origin frames, open shadow roots, top-layer content, cross-origin resources and fullscreen canvases as they now behave; the README's test counts (545 in Node, 822 in headless Chrome), gate list and WPT figures (native: 209 files at the pinned build 157.0.8091.0, 203 on Canary 158.0.8112.1) are current and labelled; `docs/BUNDLES.md` lists the current size budgets and the worker bundle's package subpaths; the Windows rows carry the CI results of 2026-10-22; the `offscreen-main-thread` feature row names the dedicated-worker path.
-
 ## [0.1.0-preview.5] - 2026-10-22
 
 Conformance rises to 182 of 230 official WPT files and 307 of 375 subtests (was 145 and 253): same-origin frames, videos, `mix-blend-mode`, `backdrop-filter`, declarative shadow roots and `::selection` decorations are drawn as natively, and an `ElementImage` can be drawn in a dedicated worker. The effects extension and its plugins now also run over a browser's own HTML-in-Canvas implementation, with the same bundles and API. Every remaining difference from the native implementation has a written reason in `docs/CONFORMANCE.md`.
