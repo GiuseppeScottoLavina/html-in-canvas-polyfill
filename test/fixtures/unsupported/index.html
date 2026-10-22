@@ -15,7 +15,8 @@
 <script>
   var kind = q.get('case');
   var slot = document.getElementById('slot');
-  var other = q.get('other');
+  // the second origin for the cross-origin cases: G-unsupported passes a second server; otherwise the same server under another host name (G-xbrowser)
+  var other = q.get('other') || location.origin.replace('//127.0.0.1', '//localhost');
   // a cross-origin frame: its document is never drawn (a same-origin one is, and is not reported)
   if (kind === 'iframe') slot.innerHTML = '<iframe src="' + other + '/test/fixtures/unsupported/pixel.png" width="200" height="60"></iframe>';
   else if (kind === 'xorigin') slot.innerHTML = '<img id="img" src="' + other + '/test/fixtures/unsupported/pixel.png" width="40" height="40" alt="x">';
