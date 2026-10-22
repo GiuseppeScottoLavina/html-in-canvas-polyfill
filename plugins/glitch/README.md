@@ -76,7 +76,7 @@ Frames are requested only while the picture changes (ambient mode; a burst); bur
 - The split, the sort streaks, the grain and the scanlines are not mapped: a click goes to the element at that place, not to what a streak shows.
 - `watch` sees changes of `class`, `aria-invalid` and `data-state` only.
 - At most 16 blocks per pattern.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites (the native suite runs water, CRT and disintegrate); expected to behave the same, as the plugin uses only the plugin interface.
 
 ## Files and tests
 

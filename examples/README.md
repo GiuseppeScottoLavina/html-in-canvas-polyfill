@@ -16,7 +16,7 @@ The server answers only under `/examples` and `/dist` (403 elsewhere). To try yo
 |---|---|---|
 | [basic](basic/) | the WICG explainer "Basic Example", unchanged | core |
 | [form](form/) | a contact form (inputs, textarea, checkbox, validation) drawn from `onpaint` | core |
-| [plugins](plugins/) | the effect gallery: pick a plugin of `plugins/` and apply it to one live form, its controls and actions (`handle.trigger`), FPS cap slider, "effect off", 2D fallback | core, effects, the plugin bundles, WebGPU for the effects |
+| [plugins](plugins/) | the effect gallery: pick a plugin of `plugins/` and apply it to one live form, its controls and actions (`handle.trigger`), frame cap slider, "effect off", 2D fallback | core, effects, the plugin bundles, WebGPU for the effects |
 | [effect-plugin](effect-plugin/) | the smallest page with effects (about 30 lines of script): create the host, add the water plugin, set the frame cap, run a disintegrate transition with `handle.trigger` from the page's submit handler; 2D fallback | core, effects, `plugins/water`, `plugins/disintegrate`, WebGPU for the effects |
 | [scroll-and-resize](scroll-and-resize/) | a scrolling list (sticky header, hover) and a responsive layout in one canvas | core |
 | [webgl-texture](webgl-texture/) | a spinning cube textured with a live form via `gl.texElementSubImage2D` | core, WebGL2 |

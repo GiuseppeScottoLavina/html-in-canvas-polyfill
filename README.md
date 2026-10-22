@@ -14,7 +14,7 @@ A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in
 
 ## Why
 
-HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome Canary 157 exposes it without a flag (measured on 157.0.8103.0) and Chrome is expected to ship it in 157. This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: wherever the browser implements the API in a usable form, it patches nothing of the standard surface and steps aside, and it never throws because a native build differs in a secondary member.
+HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome Canary exposes it without a flag (measured on 157.0.8103.0 and 158.0.8112.1), and Chrome is expected to ship it in 157 (Chromium marks the runtime feature `stable`). This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: wherever the browser implements the API in a usable form, it patches nothing of the standard surface and steps aside, and it never throws because a native build differs in a secondary member.
 
 ## Quick start
 
@@ -69,7 +69,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 
 | | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Canary 157, flag) |
 |---|---|---|---|
-| official WPT HTML-in-Canvas files passing (of 230) | 182 | 66 | 202 |
+| official WPT HTML-in-Canvas files passing (of 230) | 182 | 66 | 209 at the pinned build 157.0.8091.0 (203 on Canary 158.0.8112.1) |
 | keydown to canvas pixel, p50 / p95 | 5.3 / 9.9 ms | 14.5 / 135.2 ms, final text wrong | 5.2 / 10.3 ms |
 | wheel scroll inside the canvas, p50 to pixel | 27.7 ms | never drawn | 36.5 ms |
 | blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
@@ -78,14 +78,14 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | core bundle, minified / gzipped | 313 KB / 109 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome with the flag |
 
-The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
+The WPT row is this polyfill as released ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)), the other package as measured on 2026-10-13, and native Chrome at the build whose copy of the tests is pinned (newer Canary builds already implement later API changes that the pinned tests predate); the latency, resize, update and first-paint rows were measured from 2026-10-13 to 2026-10-19 with earlier builds of this polyfill (native: Canary 157.0.8101.0); the bundle row is the current build. The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
 
 ## Browser support
 
 | browser | status |
 |---|---|
-| Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured, with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions run over the native implementation (measured on Canary 158.0.8112.1 with the flag) |
+| Chrome desktop 154-156 (no native API) | polyfill runs; measured on 154 and 155 (macOS), 156 headless in CI (Linux and Windows) |
+| Chrome with a native implementation (Canary 157.0.8103.0 and 158.0.8112.1 measured; the API is exposed with or without the `CanvasDrawElement` flag) | polyfill steps aside (mode `native`) and the page draws natively; the two extensions run over the native implementation (measured on Canary 158.0.8112.1 with the flag) |
 | Chrome 154-155 with the `CanvasDrawElement` flag (the earlier `layoutsubtree` draft) | used as found, with one console warning; load `hic-live-native-bridge.iife.min.js` before the core to bridge `content="drawable"` to it |
 | Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
@@ -103,7 +103,7 @@ On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check,
 - **Size.** The core is about 109 KB gzipped (313 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS, as the browser itself leaves them out of a canvas (the element's box without its content) plus one console message, never a silent gap; native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
-- **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The gates run at DPR 2 on macOS, and at DPR 1.25 and 1.5 against Chrome's native implementation.
+- **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The headed gates run on macOS at DPR 2 (some also at DPR 1 or 1.25), and at DPR 1.25 and 1.5 against Chrome's native implementation.
 - **Preview.** `0.1.0-preview.5` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
@@ -155,9 +155,9 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 
 ## Testing and conformance
 
-- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 182 files (307 of 375 subtests); native Chrome passes 209 (355) at the matching build; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 534 in Node and 807 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check.
-- **Browser gates:** 15 gates in real, headed Chrome compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling and its cadence). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 47 seeded bugs are caught.
+- **Official WPT tests:** the 230 HTML-in-Canvas test files at a pinned commit. The polyfill passes 182 files (307 of 375 subtests); native Chrome passes 209 (355) at the matching build, 157.0.8091.0, and 203 (318) on Canary 158.0.8112.1, which already implements API changes made after the pin; without the polyfill 10 pass, all vacuously. Every difference has a written reason ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
+- **Unit tests:** 545 in Node and 822 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check (CI has no GPU, so the WebGPU tests skip there).
+- **Browser gates:** 15 gates in real, headed Chrome (18 runs: three of them run at two device pixel ratios) compare the canvas with the same HTML rendered as a plain page or, at DPR 1.25 and 1.5, with Chrome's native implementation (pixels, hit testing through strong effects, typing, resize, scrolling and its cadence); two more run the effects over Chrome Canary's own implementation (G-native-effects, G-native-interposer). Each has a positive control, a deliberately broken renderer that must make it fail, and a mutation suite checks that all 47 seeded bugs are caught. `npm run test:gates:all` runs them with the WPT gate, the static checks, the unit tests and the mutation suite. In CI, the platform probe (G-platform) checks fonts, form controls, scrollbars, fractional DPR and text selection against native pixels on Linux and Windows.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
 - **Phones (simulators and emulators):** `npm run test:mobile` drives Mobile Safari in the iOS Simulator and Chrome in the Android Emulator: taps on moved drawables, typing, touch scroll, the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
@@ -166,7 +166,7 @@ The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.
 
 ## Documentation
 
-- Guides: [getting started](docs/guides/GETTING-STARTED.md), [frameworks](docs/guides/FRAMEWORKS.md), [effect plugins](docs/guides/EFFECTS-PLUGINS.md), [performance](docs/guides/PERFORMANCE.md), [troubleshooting](docs/guides/TROUBLESHOOTING.md)
+- Guides: [getting started](docs/guides/GETTING-STARTED.md), [frameworks](docs/guides/FRAMEWORKS.md), [effect plugins](docs/guides/EFFECTS-PLUGINS.md), [performance](docs/guides/PERFORMANCE.md), [phones and tablets](docs/guides/MOBILE.md), [troubleshooting](docs/guides/TROUBLESHOOTING.md), [field test](docs/guides/FIELD-TEST.md)
 - Reference: [API contract](docs/API-CONTRACT.md), [support matrix](docs/SUPPORT-MATRIX.md), [bundles](docs/BUNDLES.md), [conformance](docs/CONFORMANCE.md)
 - Design: [design decisions](docs/DESIGN-DECISIONS.md), [architecture](docs/ARCHITECTURE.md), [test plan](docs/TEST-PLAN.md)
 - Comparisons: [with html-in-canvas-polyfill](docs/COMPARISON.md), [performance](docs/PERFORMANCE-COMPARISON.md)

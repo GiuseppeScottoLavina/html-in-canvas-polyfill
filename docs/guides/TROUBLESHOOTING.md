@@ -12,7 +12,7 @@ Built from `src/contracts/errors.js`, `src/contracts/features.js` and the code t
 | `installed.report()` / `window.__HIC__.installed.report()` | JSON: `mode`, `native`, `browser`, `canvases[]` (state, drawables, frame cap, entries), `unsupported[]` (with `count`), `deviations[]`, `errors[]` | any time; attach it to bug reports. `count` is how often the reporter was told about the entry (typically once per snapshot attempt that meets the content), not the number of elements: one iframe can show `count: 3` |
 | `console.warn` once | install refused (classic script), or the legacy `layoutsubtree` name used | see sections 1 and 6 |
 
-Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires.
+Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. Content that the browser itself leaves out of a canvas (a cross-origin frame document, a cross-origin image without CORS) is drawn as the browser draws it instead (the element's box without that content), with the same report entry. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires.
 
 ## 1. Install refused
 
@@ -38,25 +38,22 @@ Option errors are plain `TypeError`s that name the option: `option "<name>" (got
 | `InvalidStateError` | `The element is not a drawable descendant of this canvas.` | the element lacks the `drawable` attribute, or is not inside this canvas | add `drawable` to the element you draw |
 | `InvalidStateError` | `The canvas is not rendered (detached or display:none), so its drawables have no snapshot.` | canvas hidden or detached | show it first |
 | `InvalidStateError` | `The ElementImage is closed.` / `The element of this ElementImage no longer exists.` | `close()` was called, or the element was removed | capture again |
-| `TypeError` | `The element belongs to another canvas.` / `The ElementImage was captured from another canvas.` | drawing a drawable of canvas A on canvas B | draw on the owning canvas |
+| `InvalidStateError` | `The element belongs to another canvas.` / `The ElementImage was captured from another canvas.` | drawing a drawable of canvas A on canvas B | draw on the owning canvas |
 | `TypeError` | `Illegal constructor` | `new ElementImage()` | use `canvas.captureElementImage(el)` |
 | `InvalidStateError` | `This OffscreenCanvas has no placeholder canvas; use transferControlToOffscreen() on a content="drawable" canvas.` | an Offscreen 2D context without a managed placeholder | transfer from a managed canvas |
 | `InvalidStateError` | `The element is not a drawable descendant of a canvas with content="drawable".` | texture upload of an element outside a drawable canvas | see above |
 | `InvalidStateError` | `Could not allocate a WxH scratch canvas for the texture upload.` | scratch resample canvas could not be created | smaller rect or `maxDpr` |
-| `HicUnsupportedError('svg-drawable')` | `` `drawable` on an SVG element is not supported by the polyfill. `` | `drawable` on an SVG element | wrap the SVG in an HTML element with `drawable` and draw that |
+| `HicUnsupportedError('svg-drawable')` | `` `drawable` on an SVG element inside an <svg> is not supported by the polyfill (an outermost <svg drawable> is). `` | `drawable` on an SVG element inside an `<svg>` (`<rect drawable>`) | put `drawable` on the outermost `<svg>`, or wrap it in an HTML element with `drawable` and draw that |
 | `HicUnsupportedError('worker-element-image')` | `An ElementImage cannot be posted to a <MessagePort\|BroadcastChannel\|ServiceWorker>: only a dedicated Worker running the worker bundle takes one.` | `postMessage` of an `ElementImage` through another carrier | post it to the dedicated Worker itself (it loads `hic-live-worker`), or `await image.toImageBitmap()` and transfer the `ImageBitmap` |
-| rejected promise, `HicUnsupportedError('top-layer-canvas')` | `requestFullscreen() on a canvas with content="drawable" is not supported: its live layer is a sibling ...` | fullscreen on a managed canvas | request fullscreen on an ancestor container |
 
 Texture upload errors on missing or too small storage are GL errors (`gl.getError()`), not exceptions: allocate with `texImage2D` first (`docs/API-CONTRACT.md` 5.3).
 
-## 3. Content the snapshot cannot reproduce (placeholder + report entry)
+## 3. Content the snapshot cannot reproduce (report entry; a placeholder, or the content left out as natively)
 
 | feature | cause | remedy |
 |---|---|---|
-| `shadow-dom` | a shadow root inside a drawable ("a shadow root inside a drawable cannot be captured") | move the shadow host outside the drawable, or render its content as light DOM |
 | `iframe` | a cross-origin or sandboxed `<iframe>` / `<frame>` / `<object>`, or an `<embed>` that does not show an image, inside a drawable (drawn as its own box without the document, as natively) | use a same-origin frame (its document is drawn), draw the content as elements of the drawable, or put the frame outside it |
-| `top-layer` | an open modal `<dialog>` or open popover inside a drawable | use a non-modal dialog (`show()`), or render the popover inline |
-| `cross-origin-resource` | image, font, CSS or video frame without CORS and not same-origin ("the server did not allow cross-origin (CORS) access") | serve it with `Access-Control-Allow-Origin` or host it same-origin; load video with `crossorigin="anonymous"` |
+| `cross-origin-resource` | image, font, CSS or video frame without CORS and not same-origin ("the server did not allow cross-origin (CORS) access"): left out as natively (an image keeps its box without the picture, a font falls back) | serve it with `Access-Control-Allow-Origin` or host it same-origin; load video with `crossorigin="anonymous"` |
 | `resource-fetch-failed` | fetch error, HTTP error, undecodable payload, invalid URL, or larger than the resource cache budget | check URL, network, CSP `connect-src`; shrink the resource |
 | `canvas-child` | a `<canvas>` child larger than the size budget, or tainted | draw big canvases outside the drawable; load images with CORS |
 | `video-controls` | `<video controls>`: the control bar is native UI | draw your own controls inside the drawable |
@@ -66,7 +63,7 @@ Texture upload errors on missing or too small storage are GL errors (`gl.getErro
 | `surface-size` | the drawable does not fit `maxSurfacePixels` / `maxTotalSurfaceBytes` / the canvas dimension limit (raster scale reduced, or refused below 0.25) | lower `maxDpr` or the drawable size, raise the budgets, reduce the number of drawables |
 | `context-loss` | a retained 2D surface lost its context; the drawable is re-rastered (`no action needed`) | none; the page shows the last good frame where it can, recovery up to 3 frames |
 
-Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): select popups, datalist popups, date pickers, autofill and IME composition UI, `backdrop-filter` against content outside the drawable.
+Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): select popups, datalist popups, date pickers, autofill and IME composition UI, the `backdrop-filter` of an element inside a drawable (the drawable's own `backdrop-filter` is applied against the canvas content). Left out as natively, without an entry: top-layer content inside a drawable (an open modal `<dialog>`, an open popover, a fullscreen element), which shows in the page's top layer. Open shadow roots inside a drawable are drawn (row `shadow-dom`).
 
 ## 4. Page integration reports
 
@@ -75,7 +72,7 @@ Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): s
 | `layer-containing-block` | the canvas sits inside a clipping ancestor with a `clip-path` shape the layer clip cannot follow | give the canvas container `position:relative` |
 | `stacking-overlap` | page content that paints above the canvas (sticky header, float) but under its live layer, or a clipping ancestor hides the canvas from hit testing | give the canvas a positioned stacking context (`position:relative; z-index:0`) |
 | `shadow-canvas` | a canvas in a closed shadow root created before install | call `installed.adoptRoot(shadowRoot)`, or install before the component attaches its root |
-| `top-layer-canvas` | `popover` attribute on a managed canvas | put `popover` on an ancestor container |
+| `top-layer-canvas` | `popover` attribute on a managed canvas (refused at mount), or the canvas became the fullscreen element: it draws as usual, but its drawn controls take no input until fullscreen ends | put `popover` on an ancestor container; request fullscreen on an ancestor container |
 | `legacy-native-bridge` | a legacy native can only draw DIRECT children; a deeper draw failed natively | make the drawn element a direct child, or use a native build with the current API |
 | `csp-blocked` (`img-src`) | the page CSP blocks `data:` images, and every snapshot is a `data:` SVG image | add `data:` to `img-src`, e.g. `img-src 'self' data:` |
 | `csp-blocked` (`script-src`) | the page CSP blocks eval, so `onpaint="..."` cannot be compiled | assign `canvas.onpaint` or use `addEventListener('paint', ...)` |
@@ -91,7 +88,7 @@ Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): s
 | `console.warn` `createHost: the source is AxB CSS px but the canvas is CxD` (once per host) | the source has another size than the canvas, so the effect stretches it: the picture is distorted and clicks land beside what you see | give the source exactly the canvas content-box size ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md), "Size the source like the canvas") |
 | `InvalidStateError` `createHost: source is not an eligible drawable of this canvas ...` | the source is not a drawable child or a descendant marked `drawable` | pass the element that has `drawable` |
 | `TypeError` `createHost: canvas must be an HTMLCanvasElement` / `source must be an Element` / `options must be an object` | wrong arguments | fix the call |
-| `TypeError` from `definePlugin` / `addPlugin` | `type`, `apiVersion` (1 or 2), `version`, `create` invalid; unknown `outputCapabilities` key; instance without `render`; `spatial` without `captureInputMapper`; `captureInputMapper` not returning a function | see [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) |
+| `TypeError` from `definePlugin` / `addPlugin` | `type`, `apiVersion` (must be 2), `version`, `create` invalid; unknown `outputCapabilities` key; instance without `render`; `spatial` without `captureInputMapper`; `captureInputMapper` not returning a function | see [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) |
 | `TypeError` `an input mapper returned a non-finite point` | a mapper returned NaN or Infinity | clamp inside the mapper |
 | `InvalidStateError` `the effect host was destroyed` / `the plugin was removed` | calling a handle after `destroy()` / `remove()` | do not reuse handles |
 | `effecterror` event (`detail: {error, type, id, phase}`) | a plugin or the GPU failed | the plugin is marked failed and skipped; see `report().errors` |
@@ -105,10 +102,10 @@ Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): s
 | the canvas is blank after a context or GPU loss | a retained 2D canvas can come back blank | recovers within 3 frames (`context-loss`) |
 | during a window drag the picture lags the layout; a click lands on the "wrong" element | the drawn pixels are 1 to 3 frames old and stretched into the new box while the live layer is already at the new size | documented deviation `resize-stale-first`; the pixels converge a few frames after the last resize event |
 | `canvas.width` writes make the canvas flash | writing `width/height` clears the bitmap | write it only from the `ResizeObserver` (the polyfill redraws in the same frame) and only when the size changed |
-| typing feels late by a frame or two | snapshots lag the DOM by at least 2 frames; with a frame cap input latency can reach one cap period | raise `framecap`, or set `options.interactionFloorFps` |
+| typing feels late by a frame or two | snapshots lag the DOM by one frame, two or more when an image or font must load first (typing in a single-line field is drawn at once); with a frame cap input latency can reach one cap period | raise `framecap`, or set `options.interactionFloorFps` |
 | `parent.children`, `:last-child`, `canvas + x`, a MutationObserver on the canvas behave differently | the children live in `<hic-layer>`, a sibling of the canvas (`tree-identity`, `selector-bridge`) | do not rely on the canvas's siblings; use the facades (`canvas.children`, `parentFacade`) |
 | a framework renders the canvas children and something breaks | the framework reads the parent's child list or the canvas's siblings, which the layer perturbs | see [FRAMEWORKS.md](FRAMEWORKS.md) |
-| scrollbar thumbs look slightly different | native scrollbars are not painted inside an SVG image; the polyfill paints an approximation (`classic-scrollbars`) | style them with `::-webkit-scrollbar` / `scrollbar-color` |
+| scrollbar thumbs look slightly different | native scrollbars are not painted inside an SVG image; the polyfill paints them in the platform's look, but not their hover and pressed states (`classic-scrollbars`) | style them with `::-webkit-scrollbar` / `scrollbar-color` |
 | find-in-page matches invisible text with no highlight, print shows the bitmap | the live DOM is the `opacity:0` layer (`print-find`) | by design |
 | a CSS animation looks stepped | animations are re-snapshotted at the cap and frozen at the sampled time (`css-animations`) | animate with an effect plugin instead |
 | `getComputedStyle(drawable).contain` is `layout` | the polyfill makes drawables containing blocks (`contain-layout` deviation) | none |

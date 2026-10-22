@@ -2,6 +2,8 @@
 
 Measured 2026-10-13 by the authors of this polyfill, so read it as one party's measurements: every number below is reproducible with the method described, and where the other package is ahead it says so (section 6).
 
+This is a snapshot of that date; the columns of this polyfill describe it as it was then. Changed since, for this polyfill (the other package was not measured again): 182 of 230 WPT files and 307 of 375 subtests pass (was 139 and 238; [CONFORMANCE.md](CONFORMANCE.md)), the native oracle passes 209 files at the pinned build 157.0.8091.0 and 203 on Canary 158.0.8112.1 (202 on 157.0.8099.0 below), the minified core is 313,497 bytes (108,975 gzip; [BUNDLES.md](BUNDLES.md)), Chrome for Android 130+ and Safari on iOS / iPadOS 26+ are admitted (verified on simulators and emulators only), and an `ElementImage` can be drawn in a dedicated worker that loads the worker bundle.
+
 Scope: facts and our own measurements only. Chrome 154.0.8037.98 (no native feature), Apple M1 Max, macOS, DPR 2 for the gates and DPR 1 for WPT. Nothing was run in Firefox or Safari for this comparison. Load average stayed under 4.
 
 ## 1. What the package is

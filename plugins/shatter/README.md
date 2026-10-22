@@ -95,7 +95,7 @@ How: the crack pattern (`spiderweb` in `shards.js`: radial cracks, broken rings,
 - The falling shards show the picture of the moment the pane broke (a copy), not the live page; the cracked pane and the way back are live.
 - At most 160 shards per pattern.
 - Device loss mid-transition: the plugin comes back intact (or at its `state`), without the intro; the pending trigger resolves `null`.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites (the native suite runs water, CRT and disintegrate); expected to behave the same, as the plugin uses only the plugin interface.
 
 ## Files and tests
 

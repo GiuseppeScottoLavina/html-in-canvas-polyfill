@@ -34,8 +34,12 @@ Changes that can affect what is drawn, when, or where input lands also need the 
 npm run test:gates       # browser gates in headed Chrome, each with its positive control
 npm run test:mutants     # every seeded bug must be caught by a gate
 npm run test:wpt         # the official WPT HTML-in-Canvas tests; Chrome Canary is the native oracle
+npm run test:gates:all   # lint, types, unit tests, the gates, the WPT gate, test:native-effects and the mutants, in one table
 npm run test:xbrowser    # Firefox and Safari through WebDriver (quit Safari first)
-npm run test:frameworks  # React, Vue, Svelte and Lit apps (run `npm install` in test/frameworks once)
+npm run test:mobile      # the iOS Simulator and the Android Emulator (Xcode and the Android SDK; docs/guides/MOBILE.md)
+npm run test:frameworks  # React, Vue, Svelte and Lit apps in headless Chrome (run `npm install` in test/frameworks once)
+npm run test:stress      # repeated loads of the basic example with typing, bounded against hangs (headless)
+npm run bench:compare    # the performance comparison (docs/PERFORMANCE-COMPARISON.md, about 45 minutes)
 ```
 
 If you cannot run them, say so in the pull request. The harness launches its own browsers with throwaway profiles under `.profiles/` (under the OS temp directory on Windows) and writes results to `.scratch/` (both git-ignored); it never touches a browser it did not start.

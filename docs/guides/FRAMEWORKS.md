@@ -1,6 +1,6 @@
 # Using it with React, Vue, Svelte and Lit
 
-This page separates what was **run** from what was only **designed**. Verified means: a real app built with that framework, loaded after `dist/hic-live-polyfill.iife.js`, driven with trusted input in headless Chrome 154.0.8037.98 at DPR 1 by `npm run test:frameworks` (`test/frameworks/run.mjs`), with positive controls that turn red. Versions: React 19.3.0, Vue 3.5.43, Svelte 5.57.2, Lit 3.3.3, all as development builds. The last recorded run is named in section 7.
+This page separates what was **run** from what was only **designed**. Verified means: a real app built with that framework, loaded after `dist/hic-live-polyfill.iife.js`, driven with trusted input in headless Chrome 155.0.8059.85 at DPR 1 by `npm run test:frameworks` (`test/frameworks/run.mjs`), with positive controls that turn red. Versions: React 19.3.1, Vue 3.5.44, Svelte 5.57.2, Lit 3.3.3 (the pins of `test/frameworks/package.json`), all as development builds. The last recorded run is named in section 7.
 
 The four apps are in `examples/frameworks/{react,vue,svelte,lit}/`, each with a README. They draw the same picture: a controlled input, a keyed list with Add / Remove first / Reverse buttons and clickable rows, a conditional second drawable (a badge drawn at (340, 300) while it is laid out at the origin), and a component that re-renders every 500 ms.
 
@@ -51,7 +51,7 @@ Not hidden (row `tree-identity`, limited; not re-tested here): CSS `:last-child`
 
 ## 4. Hydration and server rendering
 
-React 19 `hydrateRoot` over `react-dom/server` markup works: the server-rendered panel node is kept (not re-created by the client), the oracle and the typing scenario pass, handlers are attached. Two caveats, reproduced on every run of `npm run test:frameworks` as KNOWN probes:
+React 19 `hydrateRoot` over `react-dom/server` markup works: the server-rendered panel node is kept (not re-created by the client), the oracle and the typing scenario pass, handlers are attached. Two KNOWN probes of `npm run test:frameworks` watch the caveats; the first is still reproduced on every run:
 
 - The dev build logs `A tree hydrated but some attributes of the server rendered HTML didn't match the client properties` for the canvas, because the polyfill added `data-hic-canvas` before hydration (`aria-owns` is now written after `load`). `suppressHydrationWarning` on the `<canvas>` silences it (verified). React leaves the attributes in place, which is what the polyfill needs.
 - Fixed: a top-level drawable WITHOUT an `id` used to get a generated one before hydration (reported on the child); the id is now generated after `load` (probe `react-hydration-generated-child-id` reports it as no longer reproduced).
@@ -153,7 +153,7 @@ render() {
 
 ## 6. Not verified
 
-- DPR 2 or fractional DPR, headed Chrome, a real display refresh rate, other Chromium browsers: only headless Chrome 154 at DPR 1 ran.
+- DPR 2 or fractional DPR, headed Chrome, a real display refresh rate, other Chromium browsers: only headless Chrome at DPR 1 ran (154 until 2026-10-09, 155 since).
 - Production builds (React, Vue and Svelte ran as development builds, Lit in dev mode), and performance of any kind: no timing was measured.
 - Vue, Svelte and Lit server rendering and hydration; React Server Components and streaming SSR.
 - A framework that MOVES the canvas (a keyed reorder of the list that contains the canvas), portals into a canvas, a framework-rendered drawable nested inside another drawable, text nodes as direct canvas children, toggling `content` from a framework.
@@ -168,6 +168,6 @@ npm run build
 npm run test:frameworks                      # [--only=react,vue] [--no-control]; headless Chrome; .scratch/results/frameworks-<ts>.json + PNGs
 ```
 
-Last recorded run: 2026-10-09, headless Chrome 154.0.8037.98, DPR 1: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 7 s; a repeat without controls was green too. The two KNOWN hydration probes of section 4 were still present.
+Last recorded run: 2026-10-22, headless Chrome 155.0.8059.85, DPR 1, with the versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s. Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
 
 If something breaks in your app, run `__HIC__.installed.report()` and note which facade or selector was involved; a minimal repro in the style of `examples/frameworks/` is the most useful bug report.

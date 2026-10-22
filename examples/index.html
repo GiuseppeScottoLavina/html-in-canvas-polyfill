@@ -26,8 +26,8 @@
   <li><a href="webgl-texture/">webgl-texture</a>: a spinning cube textured with a live form (<code>texElementSubImage2D</code>).</li>
 </ul>
 <p><strong><a href="field-test/">Field test</a></strong>: a five-minute guided check of this polyfill on your own device (Windows, a phone, another Mac). It compares the canvas with the plain page as your screen shows them, measures typing and scrolling, and ends with one report file to send back. Nothing is sent anywhere by the page.</p>
-<p>The effect plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them.</p>
-<p>Tested: desktop Chrome, Firefox 155+ and Safari 27+ (other desktop Chromium browsers are expected to work, unverified); Safari on iOS / iPadOS 26+ and Chrome for Android 130+ on simulators and emulators only. In a browser with a complete native implementation the polyfill steps aside.
+<p>The effect plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them, and this library runs them over the polyfill and over a native implementation alike.</p>
+<p>Tested: desktop Chrome, Firefox 155+ and Safari 27+ (other desktop Chromium browsers are expected to work, unverified); Safari on iOS / iPadOS 26+ and Chrome for Android 130+ on simulators and emulators only. In a browser with a complete native implementation the polyfill steps aside, and the effects run over the browser's own implementation.
   Elsewhere (older browsers, web views inside apps, Firefox for Android) it refuses with one console warning and the examples say so on the page.</p>
 <p>Source, documentation and known limitations: <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">github.com/GiuseppeScottoLavina/html-in-canvas-polyfill</a>.</p>
 </body>

@@ -93,7 +93,7 @@ How it stays cheap: everything is a function of the dissolve amount `g` and of t
 - Pointer input is blocked while a transition plays (by design: the pieces are not where the controls are).
 - "Content" is what differs from the dominant colour around it: a large picture or a gradient wider than the estimate's window can count as background, and content very close to its background colour (below `sensitivity`) stays.
 - Device loss mid-transition: the plugin comes back at its `state` (assembled by default), without the intro; the pending trigger resolves `null`.
-- WebGPU only, and only while the polyfill provides the API (not over a native implementation).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); measured there on Chrome Canary 158 with `--enable-blink-features=CanvasDrawElement`: the gallery e2e (`npm run test:native-effects`).
 
 ## Files and tests
 
