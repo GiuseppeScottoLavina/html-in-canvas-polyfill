@@ -30,6 +30,10 @@ export async function runTransitionGalleryE2E(plan) {
   try {
     c.check('the gallery is ready with the plugin applied', true, await page.evaluate('({ mode: window.__gallery.mode, active: window.__gallery.active })'));
     c.check('the intro ends: the host stops rendering (idle, not continuous)', await idle(page));
+    // idle() only sees no effect frame for 400 ms; a longer stall of the GPU process during the intro looks the same, and the first click would then land while the
+    // plugin still blocks input by design (NO_TARGET). The plugin's own word that it rests assembled is the precondition of the idle click below.
+    const rest = await page.evaluate(`Promise.race([Promise.resolve(window.__gallery.handle.settled()), new Promise((r) => setTimeout(() => r('still in motion after 10 s'), 10000))])`);
+    c.check('the intro ends: the plugin rests assembled (handle.settled())', rest === 'in', rest);
     const before = (await shot(page)).img;
     c.check('idle frame is not blank', pixelStats(before).nonBlank);
 
