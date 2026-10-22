@@ -192,3 +192,18 @@ test('a same-origin iframe draws its document inside its own box, with the page 
   assert.deepEqual(px(20, 40), [0, 0, 255, 255], 'its cross-origin image is left out');
   assert.deepEqual(px(25, 85), [0, 255, 255, 255], 'the sandboxed frame: its own background, no document');
 });
+
+test('a same-origin frame\'s CSS loses its :visited rules (the history never reaches the pixels) and its :link rules match the links of the copy', async () => {
+  const doc = `<style>a:visited{color:rgb(255,0,0)} a:link{color:rgb(0,0,255)} .k{color:rgb(0,128,0)}</style><a href='#x'>x</a><p class='k'>k</p>`;
+  const m = mount(`<div class="d" drawable style="width:80px;height:80px"><iframe id="f" srcdoc="${doc}" style="display:block;width:60px;height:60px;border:0"></iframe></div>`);
+  const f = /** @type {HTMLIFrameElement} */ (m.layerEl.querySelector('#f'));
+  for (let i = 0; i < 100 && f.contentDocument?.querySelector('.k') == null; i++) await new Promise((ok) => setTimeout(ok, 10));
+  const r = m.capture(m.request(m.layerEl.firstElementChild));
+  const nested = /src="(data:image\/svg\+xml;charset=utf-8,[^"]+)"/.exec(svgOf(r));
+  assert.ok(nested, 'the frame is drawn as a nested image');
+  const frameSvg = decodeURIComponent(nested[1].slice(nested[1].indexOf(',') + 1));
+  assert.ok(frameSvg.includes('.k') && frameSvg.includes('rgb(0, 128, 0)'), 'control: the frame CSS travels');
+  assert.ok(!frameSvg.includes(':visited'), 'no :visited rule');
+  assert.ok(!frameSvg.includes('rgb(255, 0, 0)'), 'nor its declarations');
+  assert.ok(frameSvg.includes(':where(a,area)[href]'), ':link rewritten');
+});

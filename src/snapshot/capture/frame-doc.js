@@ -11,11 +11,13 @@ import { MARK } from '../../contracts/events.js';
 import { inlineCssUrls, resolveResource } from './inline-resources.js';
 import { encodeSvgDataUrl } from './svg-builder.js';
 import { appendInlineStyle } from './inline-style.js';
+import { dropUnclonableSelectors, rewriteLinkPseudos } from './css-rewrite.js';
 
 /** @typedef {import('../../contracts/types.js').ResourceCache} ResourceCache */
 
 const MAX_DEPTH = 3;
-const SKIP = new Set(['script', 'noscript', 'template']);
+/** not copied: scripts, and the frame's style sheets (its CSS travels once, filtered, as documentCss) */
+const SKIP = new Set(['script', 'noscript', 'template', 'style', 'link']);
 const XHTML = 'http://www.w3.org/1999/xhtml';
 
 /**
@@ -36,6 +38,8 @@ export function frameDocument(frame) {
 
 /**
  * The author CSS of a document as text with its url()s inlined; a sheet that cannot be read (cross-origin without CORS) is left out, as it cannot be fetched into the image either.
+ * As for the page's own CSS (css-collector.js), `:visited` rules are dropped (the browsing history must never reach pixels a script can read) and `:link` / `:any-link`
+ * match the links of the copy, which has no URL of its own.
  * @param {Document} doc @param {ResourceCache} cache @param {{pending: boolean}} state
  * @returns {string}
  */
@@ -54,7 +58,7 @@ function documentCss(doc, cache, state) {
     if (r.pending.length) state.pending = true;
     css += media && media !== 'all' ? `@media ${media}{${r.css}}` : r.css;
   }
-  return css;
+  return css && rewriteLinkPseudos(dropUnclonableSelectors(css));
 }
 
 /**
