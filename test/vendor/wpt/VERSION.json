@@ -1,19 +1,46 @@
 {
   "source": "https://github.com/web-platform-tests/wpt",
-  "sha": "d9b949e562d5064aa1cab263dcfb678139646766",
-  "commit": "[html-in-canvas] Privacy preserving paint -> read-back allowed rendering (2026-10-07T05:45:45Z)",
+  "sha": "850b36a56cfc15b9117a9d222d32a63104662f49",
+  "commit": "[HiC] Make canvas break out of the enclosing decorating box (2026-10-18T02:51:31Z)",
+  "newestTestCommit": "the newest WPT commit that touches html/canvas/{element,offscreen}/manual/draw-element-image (verified 2026-10-22 against WPT master f6880eca1af36e5572d433b6032915d1fd7e3725, where both directories have the same tree ids as at this commit)",
+  "trees": {
+    "html/canvas/element/manual/draw-element-image": "31dd11e2619df7884b124740f3690d06ed63d2a5",
+    "html/canvas/offscreen/manual/draw-element-image": "6e1f5371c9e73cff7ec3d6be533de50fd33dc566"
+  },
+  "previous": {
+    "sha": "d9b949e562d5064aa1cab263dcfb678139646766",
+    "date": "2026-10-07T05:45:45Z",
+    "chromium": "157.0.8091.0",
+    "commitsSince": [
+      "136493f8c1 2026-10-07 [HiC] Privacy fix for popovers in the canvas subtree",
+      "30d4d7d411 2026-10-07 [HiC] Draw nothing and return for non-finite rects",
+      "beed7c13e3 2026-10-08 [html-in-canvas] Do not treat canvas content as effectively invisible",
+      "dcdb8e113c 2026-10-09 [html-in-canvas] Switch to canvas getter for element width/height",
+      "3e22fa4e75 2026-10-09 [html-in-canvas] Remove blink-specific terms in WPTs",
+      "b59184b6ef 2026-10-09 [html-in-canvas] Remove legacy getElementTransform API",
+      "d9984257b4 2026-10-10 [html-in-canvas] Keep MailboxTextureBacking single-threaded",
+      "2a13b3b97c 2026-10-12 Remove stray end tags from WPT tests",
+      "e723d22ab2 2026-10-13 [HiC] Fix backdrop-filter combined with mix-blend-mode",
+      "a7242745c4 2026-10-13 [HiC] Invalidate filters when an element moves into canvas",
+      "0f068db84a 2026-10-14 [HiC] Disallow SVG masks on SVG content in readback-allowed mode",
+      "850b36a56c 2026-10-18 [HiC] Make canvas break out of the enclosing decorating box",
+      "helpers: 0ca9782406 html/canvas/resources/canvas-tests.js (redirect sources, unused by these tests); d191fa8, c3b8918 resources/testdriver.js (two BiDi emulation commands, unused)"
+    ]
+  },
   "chromium": {
-    "tag": "157.0.8091.0",
-    "commit": "6532fdea9c01b64cea9c3d3d9f10c241bc3dfb42",
-    "note": "third_party/blink/web_tests/external/wpt/html/canvas/element/manual/draw-element-image at this tag has the git tree id 56dcb6eb7b44390b6cf245af4043a948da0c71ec, identical to the same directory of the pinned WPT commit; every one of the 308 test blobs was verified byte for byte (git blob sha1) against the Chromium copy"
+    "tag": "158.0.8112.1",
+    "commit": "fd48b1bd6692dd5b4d2e2b13c986692d3af083fe",
+    "match": "closest, not exact",
+    "note": "No Chromium build has a byte-identical copy: Chromium is where these tests are written, and two of its test changes have not been exported to WPT (pull requests 63444 'Suppress snapshot generation for drawables in top layer', open since 2026-10-09, and 63519 'Sync CanvasPaintEvent&ElementGeometryUpdateEvent IDL', open since 2026-10-10). From 158.0.8112.0 to 158.0.8115.0 third_party/blink/web_tests/external/wpt/html/canvas/element/manual/draw-element-image (tree 588ace872a4b17bb52451cf83f371188ca0df681) has the same 309 files as this commit and 306 of them are byte-identical (git blob sha1); the 3 others are this commit's files plus those two unexported changes, which only ADD assertions: error-conditions.tentative.html (drawables inside a modal dialog cannot be drawn or captured), onpaint-changedElements.tentative.html and canvas-transform-update-element-image.tentative.html (CanvasPaintEvent constructor, frozen [SameObject] changedElements and elements). The offscreen directory is identical (tree 6e1f5371c9e73cff7ec3d6be533de50fd33dc566), and so are draw-element-image-utils.js, wait-for-canvas-paint.js, draw-element-image-styles.css, color-grid-component.js, testharness.js and reftest-wait.js. 158.0.8116.0 and later add exported-pending tests (css-backdrop-filter-with-blend-mode-over-content, privacy/filtered-div-drawable-added-ignored, nested-*-filter). 158.0.8112.1 is the installed Chrome Canary and is inside the matching range."
   },
   "paths": [
     "html/canvas/element/manual/draw-element-image/**",
     "html/canvas/offscreen/manual/draw-element-image/**",
     "html/canvas/resources/{draw-element-image-utils.js,wait-for-canvas-paint.js,draw-element-image-styles.css,color-grid-component.js,canvas-tests.js}",
     "resources/{testharness.js,testharnessreport.js,testdriver.js,testdriver-actions.js,testdriver-vendor.js}",
-    "common/reftest-wait.js, dom/events/scrolling/scroll_support.js, fonts/{ahem.css,Ahem.ttf}, images/*, media/rgb100.webm"
+    "common/reftest-wait.js, dom/events/scrolling/scroll_support.js, fonts/{ahem.css,Ahem.ttf}, images/{blue.png,blue-100x100.png,green-100x100.png,green-100x100.svg,red-100x100.png,red-100x100.svg,red-16x16.png,left-half-rectangle-50.png,left-half-rectangle-50.svg,blue-100x50-transparent-100x50.png,blue-100x50-transparent-100x50.svg}, media/{rgb100.webm,white.webm}"
   ],
+  "verification": "every vendored file is the git blob of this commit (git hash-object); test/wpt/lib/inventory.mjs --resources lists every same-server URL the tests reference and fails on one that is neither vendored nor absent upstream",
   "licence": "BSD-3-Clause (web-platform-tests contributors), see LICENSE.md",
   "use": "test time only; never shipped and never imported by src/",
   "serverSideSubstitution": "`.sub.` files are served with {{location[host]}}, {{ports[https][0]}}, {{hosts[alt][www]}} substituted by test/wpt/server.mjs",
@@ -21,5 +48,5 @@
     "resources/testharnessreport.js is served as the upstream stub plus test/wpt/lib/report.js",
     "resources/testdriver-vendor.js is served as test/wpt/lib/testdriver-vendor.js (CDP input)"
   ],
-  "fetchedOn": "2026-10-09"
+  "fetchedOn": "2026-10-22"
 }

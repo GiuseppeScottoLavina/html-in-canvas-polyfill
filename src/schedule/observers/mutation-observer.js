@@ -164,6 +164,9 @@ export function observeMutations(env, record) {
       if (!sr || shadows.has(sr)) continue;
       shadows.add(sr);
       mo.observe(sr, OPTIONS);
+      // `load` and `toggle` are not composed: they never leave the shadow tree they fire in
+      sr.addEventListener('load', onLoad, true);
+      sr.addEventListener('toggle', onToggle, true);
       observeShadows(sr);
     }
   }
@@ -202,23 +205,39 @@ export function observeMutations(env, record) {
    */
   const onLoad = (e) => {
     const t = /** @type {Element} */ (e.target);
-    if (t.nodeType !== 1) return;
-    if (t.localName === 'img') { frameChanged(t); return; }
+    if (stopped || t.nodeType !== 1) return;
+    if (t.localName === 'img') { frameChanged(lightHost(t)); return; }
     if (!/^(iframe|frame|object)$/.test(t.localName)) return;
     watchFrames();
-    frameChanged(t);
+    frameChanged(lightHost(t));
   };
+
+  /**
+   * A popover shown or hidden (showPopover/hidePopover/togglePopover, popovertarget) changes no attribute, so no mutation announces it: an open popover is in the top layer and
+   * left out of the snapshot (state-sync.js inTopLayer), a hidden one with an author display is drawn in place again (WPT privacy/popover-show-hide-background-image-ignored drew
+   * the snapshot taken while it was open). The `toggle` event (HTML "queue a popover toggle event task") repaints the drawable that contains it.
+   * @param {Event} e
+   */
+  const onToggle = (e) => {
+    const t = /** @type {Element} */ (e.target);
+    if (!stopped && t.nodeType === 1 && t.hasAttribute('popover')) frameChanged(lightHost(t));
+  };
+  // the listeners on shadow roots are not removed one by one (the roots are only weakly known): they do nothing once stopped
+  let stopped = false;
 
   const mo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver(onMutations);
   mo.observe(root, OPTIONS);
   observeShadows(root);
   watchFrames();
   root.addEventListener('load', onLoad, true);
+  root.addEventListener('toggle', onToggle, true);
   const stopAncestors = watchAncestors(env, record);
   return () => {
+    stopped = true;
     mo.disconnect();
     stopAncestors();
     root.removeEventListener('load', onLoad, true);
+    root.removeEventListener('toggle', onToggle, true);
     for (const known of frames.values()) known.mo.disconnect();
     frames.clear();
   };

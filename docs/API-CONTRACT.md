@@ -9,7 +9,7 @@ Sources: the WICG explainer (https://github.com/WICG/html-in-canvas), the Chromi
 feature `CanvasDrawElement` has status `stable`) and WPT `master`. Spec status: an explainer plus a draft in the HTML Standard PR; Chrome
 ran an origin trial in 148-150, the `content=drawable` rename landed 2026-09 (WICG issues 174, 179), and Chrome Canary exposes
 the API without any flag (measured on 157.0.8103.0 on 2026-10-14 and on 158.0.8112.1 on 2026-10-22). The API still changes week to week, so the polyfill decides on the core behaviour and never on
-a secondary member (section 2); section 2.2 lists the changes after the pinned WPT revision.
+a secondary member (section 2); section 2.2 lists the changes between the two WPT revisions the conformance gate has pinned.
 
 Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" = layout pixels. The names of the typedefs
 (`CanvasRecord`, `SnapshotVersion`, ...) are in `src/contracts/types.js`. Feature ids (`tree-identity`, ...) are the rows of
@@ -97,13 +97,15 @@ loaded before app scripts that read the API. AUTO-install policy: a refusal (`Hi
 unconditionally keeps working for every visitor; a usable native implementation is never a refusal at all, with or without the optional native-bridge bundle); any other error is a polyfill bug: `console.error`, `window.__HIC__ = {error}`, rethrown. An explicit `install()` call throws on refusal. Pages whose CSP forbids `img-src data:` get a `csp-blocked` report with a hint
 (every snapshot is a data: SVG image); `onpaint="..."` attributes need `new Function`, a CSP/Trusted Types block of it is reported.
 
-### 2.2 Specification changes after the pinned WPT revision (2026-10-07) and what the polyfill does
+### 2.2 Specification changes between the WPT pins of 2026-10-07 and 2026-10-18 and what the polyfill does
+The conformance gate runs the WPT at `850b36a5` (2026-10-18), the newest commit that touches these tests (`docs/CONFORMANCE.md`); the earlier pin was `d9b949e5` (2026-10-07).
+
 | change (source) | polyfill |
 |---|---|
 | `ElementImage.width/height` removed; `getElementImageDefaultSize(element \| ElementImage)` on `HTMLCanvasElement` and `OffscreenCanvas` returns `{width, height}` in grid px of the CURRENT bitmap (WHATWG PR `4cfec766`, 2026-10-08; WPT `dcdb8e11`, 2026-10-09; explainer PR #184) | follows it: `ElementImage` has `close()` only (plus the `toImageBitmap()` extension); both `getElementImageDefaultSize` methods exist. No deprecated `width`/`height` alias: the current WPT asserts `'width' in elementImage` is false, and an alias would let code pass on the polyfill and fail on native Chrome. The WPT expects `InvalidStateError` for a closed image, another canvas and a standalone OffscreenCanvas where the PR text says `TypeError`; the polyfill follows the WPT (section 6.3). |
-| the two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform` removed; the one-argument form stays (WPT `b59184b6`, 2026-10-09) | the one-argument form is unchanged; the two-argument form and the OffscreenCanvas method are KEPT as deprecated legacy overloads until the WPT pin moves (they cost nothing to code written for the current API, which never passes a second argument) |
+| the two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform` removed; the one-argument form stays (WPT `b59184b6`, 2026-10-09) | follows it since 0.1.0-preview.6 (a breaking change, CHANGELOG): `getElementTransform(element)` returns the stored canvas transform and ignores any further argument (as WebIDL does), and `OffscreenCanvas` has no `getElementTransform`. The polyfill had kept both as deprecated overloads while the gate ran the earlier pin. |
 | non-finite source or destination rects: draw nothing and return (WPT `30d4d7d4`, 2026-10-07) | already the behaviour (`draw-math.js` returns before drawing or updating geometry) |
-| `opacity: 0` on the canvas or an ancestor does not hide the drawn content (WPT `beed7c13`); popover privacy, filters invalidated when content moves into a canvas, backdrop-filter with mix-blend-mode (WPT `136493f8`, `a7242745`, `e723d22a`) | rendering fixes of the native implementation; measured against WPT master in `docs/CONFORMANCE.md` |
+| `opacity: 0` on the canvas or an ancestor does not hide the drawn content (WPT `beed7c13`); popover privacy, filters invalidated when content moves into a canvas, backdrop-filter with mix-blend-mode (WPT `136493f8`, `a7242745`, `e723d22a`); SVG masks on SVG content in read-back-allowed mode (WPT `0f068db8`); a canvas breaks out of the enclosing decorating box (WPT `850b36a5`) | rendering fixes of the native implementation. The polyfill already draws an `opacity: 0` ancestor's content, ignores an unreadable mask on SVG content, and repaints a drawable when a popover in it is shown or hidden; a backdrop-filter of a descendant of a drawable is not drawn at all (`docs/CONFORMANCE.md`, backdrop-isolation). Each test's result and reason is in `docs/CONFORMANCE.md` |
 
 ## 3. Markup
 
@@ -193,9 +195,8 @@ Removes the element from the drawn list, sets canvas transform and clip to null;
 (`pointer-events:none` again) and its CSS correction.
 
 ### 4.7 `getElementTransform(element)` -> `DOMMatrix`
-A NEW `DOMMatrix` each call (a copy of the canvas transform, identity when null; 3D preserved). Deprecated: the two-argument overload
-`getElementTransform(element, drawTransform: DOMMatrix)` (in the IDL of the pinned WPT revision and exercised by its `get-element-transform`; removed from native builds on 2026-10-09, section 2.2; kept until the WPT pin moves, always available, also without `legacyNames`) returns, without
-changing state, the matrix a draw with `drawTransform` as the draw transform would store, `S^-1 * D * S` (`S` = scale(canvas grid / css size)); it needs a snapshot (`InvalidStateError` before the first paint). The same overload exists on a main-thread `OffscreenCanvas` (two arguments only, as native). The first argument of `getElementTransform` and `updateElementGeometry` is `Element` or `ElementImage`. `drawable` on an outermost `<svg>` is supported like any CSS box; `drawable` on an SVG element inside an `<svg>` is refused (`svg-drawable`: `HicUnsupportedError`; the WPT `<rect drawable>` cases fail by design).
+A NEW `DOMMatrix` each call (a copy of the canvas transform, identity when null; 3D preserved). One argument: the two-argument overload
+`getElementTransform(element, drawTransform)` of the 2026-10-07 draft and `OffscreenCanvas.getElementTransform` were removed from the specification and the WPT on 2026-10-09 (section 2.2) and from the polyfill in 0.1.0-preview.6; a second argument is ignored, with one console warning per page that names the removed call shape. The first argument of `getElementTransform` and `updateElementGeometry` is `Element` or `ElementImage`. `drawable` on an outermost `<svg>` is supported like any CSS box; `drawable` on an SVG element inside an `<svg>` is refused (`svg-drawable`: `HicUnsupportedError`; the WPT `<rect drawable>` cases fail by design).
 
 ### 4.8 `elementgeometryupdate` / `onelementgeometryupdate`
 `ElementGeometryUpdateEvent` with `elements: FrozenArray<Element>`, dispatched on the HTMLCanvasElement after a batch of geometry
@@ -238,7 +239,7 @@ worker): `Worker.prototype.postMessage` on the page replaces each `ElementImage`
 a property of a plain object) by a record with the snapshot's pixels as an `ImageBitmap`, and closes the `ElementImage` when it is in the transfer list (a
 transfer detaches); the worker bundle turns the record back into an `ElementImage` before the worker's own listeners run. In the worker,
 `OffscreenCanvasRenderingContext2D.drawElementImage` (the four overloads) draws it on the OffscreenCanvas of its canvas, and `getElementImageDefaultSize`,
-`updateElementGeometry`, `clearElementGeometry` and the earlier draft's two-argument `getElementTransform` work on that OffscreenCanvas; another canvas's
+`updateElementGeometry` and `clearElementGeometry` work on that OffscreenCanvas; another canvas's
 OffscreenCanvas, a standalone one or a closed image throws `InvalidStateError`. The geometry of the worker's draws and calls is sent back once per worker
 turn, on a private `MessageChannel` opened with the first record, and applied on the page as for a main-thread OffscreenCanvas (one `elementgeometryupdate`);
 the page applies only well-formed operations, and only on elements whose images were posted to that worker (anything else is ignored). The pixels are those of the snapshot when it was posted:
@@ -512,7 +513,7 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `node-budget` | a drawable above `nodeBudget.absolute` nodes | placeholder + entry (above `hard`: degraded to <= 4 fps except for its inner scrolling, reported) |
 
 ### 9.3 Documented deviations (rows with status `deviation`; each is recorded in `report().deviations` when exercised)
-`paint-timing`, `paint-dom-write-timing`, `event-untrusted`, `contain-layout`, `spec-after-wpt-pin`, `a11y-geometry`, `resize-stale-first`, `css-transform-on-drawable`, `paint-order`, `backdrop-isolation`, `paint-spurious`, `children-layout`, `raster-scale-floor`, `color-space`.
+`paint-timing`, `paint-dom-write-timing`, `event-untrusted`, `contain-layout`, `a11y-geometry`, `resize-stale-first`, `css-transform-on-drawable`, `paint-order`, `backdrop-isolation`, `paint-spurious`, `children-layout`, `raster-scale-floor`, `color-space`.
 Limited rows that change observable layout or structure: `tree-identity` (parent-level collections and CSS see the layer), `layer-containing-block` (fixed/clipping ancestors), `stacking-overlap` (page content above a non-positioned canvas), `a11y-tree-link` (aria-owns and generated ids),
 `container-queries`, `shadow-canvas`, `nested-canvas`, `export-resolution`, `context-loss`, `print-find`.
 

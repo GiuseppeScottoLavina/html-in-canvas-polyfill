@@ -342,6 +342,22 @@ test('SVG drawable: an inner SVG element (<rect drawable>) throws svg-drawable f
 });
 
 // ---------------------------------------------------------------------------------------------- geometry methods
+test('getElementTransform with a second argument (the removed draft overload): the argument is ignored and one console warning says so', async (t) => {
+  const warns = [];
+  const warn = console.warn;
+  console.warn = (...a) => { warns.push(a.join(' ')); };
+  t.cleanup(() => { console.warn = warn; });
+  const { canvas, el } = await set(t);
+  canvas.updateElementGeometry(el, { canvasTransform: { a: 2, d: 3, e: 10, f: 20 } });
+  const one = canvas.getElementTransform(el);
+  assert.equal(warns.length, 0, 'the standard one-argument call does not warn');
+  const two = canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 50, 50]));
+  assert.deepEqual(two.toFloat64Array(), one.toFloat64Array(), 'the second argument does not change the result');
+  canvas.getElementTransform(el, new DOMMatrix());
+  assert.equal(warns.length, 1, 'warned once, not per call');
+  assert.ok(warns[0].includes("getElementTransform(element, drawTransform)"), warns[0]);
+});
+
 test('updateElementGeometry / getElementTransform / clearElementGeometry round trip', async (t) => {
   const { canvas, el, record, version } = await set(t);
   const identity = canvas.getElementTransform(el);
@@ -432,22 +448,16 @@ test('updateElementGeometry rank: last updated is top-most; preserveHitTestOrder
   assert.equal(world.reports.caught.length, 0);
 });
 
-test('getElementTransform(element, drawTransform) returns the matrix a draw with that transform would store (S^-1 D S), without changing state', async (t) => {
+test('getElementTransform takes one argument: a second one is ignored, as WebIDL does (the two-argument draft overload was removed, WPT b59184b6)', async (t) => {
   const { canvas, el, record } = await set(t, { version: { originX: 0, originY: 0 } });
   canvas.width = 200;
   canvas.height = 200;
-  const draw = new DOMMatrix([1, 0, 0, 1, 20, 10]);
-  const m = canvas.getElementTransform(el, draw);
-  assert.deepEqual([m.a, m.d, m.e, m.f], [1, 1, 10, 5], 'S^-1 * D * S with S = scale(2): the draw transform acts on the element at its natural grid size (WPT get-element-transform)');
+  assert.equal(canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 20, 10])).isIdentity, true, 'the stored transform (none), not the matrix of a draw');
+  assert.equal(canvas.getElementTransform(el, { a: 1, m11: 2 }).isIdentity, true, 'the second argument is not converted (a conflicting DOMMatrixInit would throw TypeError)');
   assert.equal(record.geometry.byElement.has(el), false);
-  assert.equal(canvas.getElementTransform(el).isIdentity, true);
-  assert.equal(canvas.getElementTransform(el, undefined).isIdentity, true);
-  assert.throws(() => canvas.getElementTransform(el, { a: 1, m11: 2 }), TypeError);
-});
-
-test('the two-argument getElementTransform is standard: it does not depend on legacyNames', async (t) => {
-  const { canvas, el } = await set(t, { options: { legacyNames: false } });
-  assert.equal(canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 20, 10])).isIdentity, false);
+  canvas.updateElementGeometry(el, { canvasTransform: new DOMMatrix([2, 0, 0, 2, 3, 4]) });
+  const m = canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 20, 10]));
+  assert.deepEqual([m.a, m.d, m.e, m.f], [2, 2, 3, 4], 'control: the stored transform is returned whatever the second argument');
 });
 
 test('methods look like platform methods', async (t) => {

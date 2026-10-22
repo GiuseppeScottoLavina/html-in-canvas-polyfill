@@ -123,8 +123,19 @@ export function installTreeFacade(env, record, layerEl) {
     try { fn(); } catch (err) { env.reporter.caught(err, 'tree-facade'); }
   }
 
+  /**
+   * A node that reached the canvas itself (a native method the facade does not route, e.g. canvas.moveBefore(node, null)) moves on into the layer. With the
+   * state-preserving moveBefore() where the engine has it: an appendChild() would remove and re-insert the node, which reloads an iframe (a moved srcdoc frame showed its
+   * blank initial document, WPT privacy/box-reflect-images-in-iframe-moved-ignored) and resets focus, animations and playing media that the author's own move kept.
+   */
   function relocate() {
-    for (let n = nat.firstChild.call(canvas); n; n = nat.firstChild.call(canvas)) layerEl.appendChild(n);
+    const move = /** @type {any} */ (layerEl).moveBefore;
+    for (let n = nat.firstChild.call(canvas); n; n = nat.firstChild.call(canvas)) {
+      if (typeof move === 'function') {
+        try { move.call(layerEl, n, null); continue; } catch { /* not movable atomically (a disconnected layer, another document): inserted */ }
+      }
+      layerEl.appendChild(n);
+    }
   }
 
   function drain() {
@@ -210,6 +221,8 @@ function defineCanvasProperties(canvas, layerEl, own, nat, flush, hooks) {
   for (const key of ['append', 'prepend', 'appendChild', 'insertBefore', 'removeChild', 'replaceChild', 'replaceChildren']) {
     method(key, (/** @type {any[]} */ ...args) => { const result = L[key](...args); flush(); return result; });
   }
+  // the atomic move (DOM moveBefore) of the engines that have it: relative to a logical child it must run on the layer, where that child is
+  if (typeof L.moveBefore === 'function') method('moveBefore', (/** @type {any[]} */ ...args) => { const result = L.moveBefore(...args); flush(); return result; });
   for (const key of ['querySelector', 'querySelectorAll', 'getElementsByTagName', 'getElementsByTagNameNS', 'getElementsByClassName']) {
     method(key, (/** @type {any[]} */ ...args) => { flush(); return L[key](...args); });
   }

@@ -15,7 +15,7 @@ import {
   LEAF_TAGS, addUnsupported, applyInteractionClasses, cleanAttributes, elementPath, freezeAnimations, inTopLayer, interactionContext, isPending, markPending, syncNodeState, topLayerIn, usedColorScheme,
 } from './state-sync.js';
 import { placeholderElement } from './placeholder.js';
-import { addUseTargets } from './svg-refs.js';
+import { addUseTargets, svgContentMask } from './svg-refs.js';
 import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 import { compositeOver, createSelectionPainter, solidBackdrop } from './selection-paint.js';
 import { currentEngine } from '../../util/engine.js';
@@ -226,6 +226,7 @@ function cloneElement(ctx, src, known) {
   applyInteractionClasses(src, clone, ctx.ix);
   const cs = known ?? ctx.env.window.getComputedStyle(src);
   if (!replaced && (!scoped || styledByShadow(src))) inlineComputed(src, clone, cs);
+  if (src.namespaceURI === 'http://www.w3.org/2000/svg') svgContentMask(src, clone, cs, ctx.req.resources);
   // backdrop of the optimistic text overlay (text-overlay.js): the field without its text
   if (src === ctx.req.hideText) appendInlineStyle(clone, 'color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important');
   // a page of the scroll compositor: pinned (sticky) elements are drawn from their own tile

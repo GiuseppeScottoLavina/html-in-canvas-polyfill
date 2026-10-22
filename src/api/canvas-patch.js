@@ -5,13 +5,11 @@
  */
 
 import { BUS, EVENTS, EXT } from '../contracts/events.js';
-import { matrixFrom, matrixValues, multiply16, scale16, IDENTITY16 } from '../util/matrix.js';
-import { storedTransformValues } from './draw-math.js';
 import { createElementImage, defaultSizeOf, elementImageVersion } from './element-image.js';
 import { geometryOptionsFromValues } from './geometry.js';
 import { ensureHandlerListener, getEventHandler, isPaintDispatching, requestIdlePaint, setEventHandler } from './paint-event.js';
 import {
-  defineMethod, frameCapFromIdl, geometryOptionsValues, globalsOf, managedRecord, matrixInitValues, parseFrameCap, resolveElement, warnLegacyOnce,
+  defineMethod, frameCapFromIdl, geometryOptionsValues, globalsOf, managedRecord, parseFrameCap, resolveElement, warnLegacyOnce, warnRemovedOnce,
 } from './validate.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -148,27 +146,6 @@ function installExtensions(env, ledger, proto) {
 // ---------------------------------------------------------------------------------------------- methods
 
 /**
- * The matrix the spec formula would store for a draw with `drawTransform` as T_draw (legacy two-argument getElementTransform).
- * @param {HicEnv} env
- * @param {CanvasRecord} record
- * @param {Element} element
- * @param {unknown} drawTransform  DOMMatrix or DOMMatrixInit
- * @returns {DOMMatrix}
- */
-function transformForDraw(env, record, element, drawTransform) {
-  const draw = matrixInitValues(drawTransform);
-  const version = env.store.version(element);
-  const canvas = record.canvas;
-  const scaleX = version && version.canvasWidth > 0 ? canvas.width / version.canvasWidth : record.contentBox.gridScaleX || 1;
-  const scaleY = version && version.canvasHeight > 0 ? canvas.height / version.canvasHeight : record.contentBox.gridScaleY || 1;
-  // The standard has no transform-origin term; the legacy `layoutsubtree` formula (Chrome 154) conjugated by the origin translation.
-  // The standard's draw transform is applied to the element at its NATURAL size in grid px: M = S^-1 * D * S (WPT get-element-transform).
-  if (!record.legacy) return matrixFrom(storedTransformValues(multiply16(draw.values, scale16(scaleX, scaleY)), scaleX, scaleY, IDENTITY16), draw.is2D);
-  const translation = version ? matrixValues(version.translation) : IDENTITY16;
-  return matrixFrom(storedTransformValues(draw.values, scaleX, scaleY, translation), draw.is2D && (version ? version.translation.is2D : true));
-}
-
-/**
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
  * @param {object} proto
@@ -212,10 +189,16 @@ function installMethods(env, ledger, proto, geometry) {
     geometry.clear(resolved.record, resolved.element);
   });
 
-  defineMethod(ledger, proto, 'getElementTransform', 1, /** @this {HTMLCanvasElement} */ function (/** @type {unknown} */ element, /** @type {unknown} */ drawTransform) {
+  // One argument (the two-argument draft overload was removed from the specification and the WPT on 2026-10-09, WPT b59184b6): a further argument is ignored, as WebIDL does.
+  defineMethod(ledger, proto, 'getElementTransform', 1, /** @this {HTMLCanvasElement} */ function (/** @type {unknown} */ element) {
     const canvas = brand(env, this);
     if (arguments.length < 1) throw new TypeError("Failed to execute 'getElementTransform': 1 argument required, but only 0 present.");
-    return elementTransformOf(env, geometry, canvas, element, drawTransform);
+    if (arguments.length > 1) {
+      warnRemovedOnce(env, 'getElementTransform-two-arguments', 'getElementTransform(element, drawTransform) was removed from the specification on 2026-10-09: '
+        + 'the second argument is ignored and the result is the element\'s canvas transform (API-CONTRACT 4.7 shows how to derive the old value).');
+    }
+    const resolved = resolveElement(env, canvas, element, 'eligible');
+    return geometry.get(resolved.record, resolved.element);
   });
 }
 
@@ -232,22 +215,6 @@ function installMethods(env, ledger, proto, geometry) {
 export function elementImageDefaultSize(env, canvas, bitmap, element) {
   const { version } = resolveElement(env, canvas, element, 'snapshot');
   return defaultSizeOf(/** @type {NonNullable<typeof version>} */ (version), bitmap);
-}
-
-/**
- * getElementTransform for an HTMLCanvasElement (or the placeholder canvas of an OffscreenCanvas): the stored matrix, or with the second argument the matrix a draw with that transform would store.
- * @param {HicEnv} env
- * @param {GeometryApi} geometry
- * @param {HTMLCanvasElement} canvas
- * @param {unknown} element
- * @param {unknown} drawTransform
- * @returns {DOMMatrix}
- */
-export function elementTransformOf(env, geometry, canvas, element, drawTransform) {
-  // The draw-transform overload needs the snapshot (it scales by the canvas size the snapshot was taken at): InvalidStateError before the first paint (WPT get-element-transform).
-  const { record, element: target } = resolveElement(env, canvas, element, drawTransform != null ? 'snapshot' : 'eligible');
-  if (drawTransform != null) return transformForDraw(env, record, target, drawTransform);
-  return geometry.get(record, target);
 }
 
 // ---------------------------------------------------------------------------------------------- width / height

@@ -420,6 +420,66 @@ test('a mask outside the drawable masks its element away (the platform does not 
   assert.equal(y.getImageData(20, 20, 1, 1).data[3], 0, 'an HTML element masked by an outside mask is not drawn either');
 });
 
+test('a mask-image that cannot be read masks its element away (CSS Masking: an image that cannot be displayed is a transparent black layer; read-back-allowed rendering, WPT privacy/box-mask-*, fragment-mask-*); positive control: a same-origin mask image applies', async () => {
+  const cross = `http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg?mask=1`;
+  const css = `.d{width:40px;height:40px;background:rgb(0,128,0)} #a{mask-image:url(/test/unit/snapshot-capture/assets/red.svg)} #b{mask-image:url(${cross})} #c{-webkit-mask:url(${cross}) no-repeat}`;
+  const m = mount('<div id="a" class="d" drawable></div><div id="b" class="d" drawable></div><div id="c" class="d" drawable><span>x</span></div>', { css });
+  const els = Array.from(m.layerEl.children);
+  for (const el of els) m.capture(m.request(el));
+  const loading = m.capture(m.request(els[0]));
+  assert.equal((await rasterize(loading)).getImageData(20, 20, 1, 1).data[3], 0, 'while the mask image loads the element is masked away, never drawn unmasked');
+  await new Promise((ok) => setTimeout(ok, 400));
+  const alpha = async (el) => { const r = m.capture(m.request(el)); return { r, a: (await rasterize(r)).getImageData(20, 20, 1, 1).data[3] }; };
+  const a = await alpha(els[0]);
+  assert.equal(a.a, 255, 'positive control: the same-origin mask image is drawn and lets the element through');
+  const b = await alpha(els[1]);
+  assert.equal(b.a, 0, 'cross-origin mask image: the element is not drawn');
+  assert.ok(m.reported.some((e) => e.feature === 'cross-origin-resource' && e.path === cross), 'reported');
+  assert.ok(!decodeURIComponent(b.r.url).includes('localhost:'), 'never the external URL');
+  assert.equal((await alpha(els[2])).a, 0, 'the -webkit-mask shorthand too');
+});
+
+test('a mask-image that cannot be read on SVG CONTENT is ignored (drawn unmasked, as Chromium\'s read-back-allowed rendering does, WPT privacy/svg/svg-mask-on-svg-content-ignored), on the outer <svg> box it masks the box away; positive control: a readable mask applies to SVG content', async () => {
+  const cross = `http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg?svgmask=1`;
+  const half = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect y="20" width="40" height="20"/></svg>')}`;
+  const m = mount(`<svg drawable width="40" height="80" style="display:block"><rect width="40" height="40" fill="rgb(0,0,255)" style="mask-image:url('${half}')"/>`
+    + `<rect y="40" width="40" height="40" fill="rgb(0,0,255)" style="mask-image:url('${cross}')"/></svg>`
+    + `<svg drawable width="40" height="40" style="display:block;background:rgb(0,128,0);mask-image:url('${cross}')"><rect width="40" height="40" fill="rgb(0,0,255)"/></svg>`);
+  const [content, box] = Array.from(m.layerEl.children);
+  m.capture(m.request(content));
+  m.capture(m.request(box));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const x = await rasterize(m.capture(m.request(content)));
+  const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
+  assert.equal(px(20, 10)[3], 0, 'positive control: the readable mask hides the top half');
+  assert.deepEqual(px(20, 30), [0, 0, 255, 255], 'positive control: and shows the bottom half');
+  assert.deepEqual(px(20, 50), [0, 0, 255, 255], 'cross-origin mask on SVG content: ignored, the rect is drawn unmasked');
+  assert.deepEqual(px(20, 70), [0, 0, 255, 255]);
+  const y = await rasterize(m.capture(m.request(box)));
+  assert.equal(y.getImageData(20, 20, 1, 1).data[3], 0, 'the outer <svg> is a CSS box: masked away');
+});
+
+test('a loaded video that never played shows its poster (HTML show poster flag, WPT privacy/video-ignored); positive control: once played, its frame; a cross-origin video draws nothing, poster included (read-back-allowed rendering)', async () => {
+  const poster = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="rgb(255,255,0)"/></svg>')}`;
+  const video = (src) => `<div drawable style="width:40px;height:40px"><video muted preload="auto" width="40" height="40" style="display:block;object-fit:fill" poster="${poster}" src="${src}"></video></div>`;
+  const m = mount(video('/test/vendor/wpt/media/rgb100.webm') + video(`http://localhost:${location.port}/test/vendor/wpt/media/rgb100.webm?corp=cross-origin`));
+  const [same, cross] = Array.from(m.layerEl.children);
+  const vids = [same, cross].map((d) => /** @type {HTMLVideoElement} */ (d.querySelector('video')));
+  for (let i = 0; i < 400 && vids.some((v) => v.readyState < 2); i++) await new Promise((ok) => setTimeout(ok, 10));
+  assert.ok(vids.every((v) => v.readyState >= 2), `both videos loaded their first frame: ${vids.map((v) => `${v.readyState}/${v.networkState}/${v.error?.code ?? '-'}`)}`);
+  const centre = async (el) => Array.from((await rasterize(m.capture(m.request(el)))).getImageData(20, 20, 1, 1).data);
+  assert.deepEqual(await centre(same), [255, 255, 0, 255], 'never played: the poster, not the first (red) frame');
+  assert.equal((await centre(cross))[3], 0, 'cross-origin media data: the box is invisible, its same-origin poster too');
+  assert.ok(m.reported.some((e) => e.feature === 'cross-origin-resource'), 'reported');
+  // the test server answers without byte ranges, so the video cannot seek: it plays for a moment instead (the show poster flag is unset when playback starts)
+  await vids[0].play();
+  await new Promise((ok) => setTimeout(ok, 250));
+  vids[0].pause();
+  assert.ok(vids[0].played.length > 0 && vids[0].readyState >= 2, 'played');
+  const [r, g, b] = await centre(same);
+  assert.ok(!(r > 200 && g > 200 && b < 80), `positive control: once it played, a frame is drawn instead of the poster, got ${r},${g},${b}`);
+});
+
 test('a drawable with its own CSS transform keeps it in the snapshot (WPT css-transform-on-div): the rotated square reaches outside the corners of its border box', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:60px;height:60px;background:#080;transform:rotate(45deg)}' });
   // the fake layer measures with getBoundingClientRect, which sees the rotation: the real layer reports the layout size
