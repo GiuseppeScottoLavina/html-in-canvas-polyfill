@@ -93,7 +93,9 @@ if (!docsOnly) {
   // 14925 -> 14975 (2026-10-22, measured 14,965; 14,903 before this step): a playing video repaints its drawable (schedule/observers/video-observer.js).
   // 14975 -> 15250 (2026-10-22, measured 15,243 with the steps above; 14,965 before this step, +271 measured alone on 14,308): the effects over a browser's own HTML-in-Canvas implementation (effects/native-geometry.js,
   // effects/native-interposer.js, the native source provider and frame source, the native checks of the effect host, the frameCap property in the native modes).
-  if (total > 15250) problems.push(`G-size: core is ${total} code lines (> 15250)`);
+  // 15250 -> 15275 (2026-10-22, measured 15,261; 15,243 before this step): the hover sync element of the native effects shared per document, its changes inside a
+  // closed shadow root (effects/native-geometry.js createHoverSync).
+  if (total > 15275) problems.push(`G-size: core is ${total} code lines (> 15275)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

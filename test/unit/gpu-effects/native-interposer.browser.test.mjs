@@ -4,7 +4,7 @@
 // trusted input on Chrome Canary by test/native-effects/run.mjs.
 import { test, assert } from '/test/unit/lib/t.js';
 import { createNativeInterposer } from '/src/effects/native-interposer.js';
-import { createNativeGeometry } from '/src/effects/native-geometry.js';
+import { createHoverSync, createNativeGeometry, hoverSyncPokes } from '/src/effects/native-geometry.js';
 import { createMapperChain } from '/src/effects/input-mapper.js';
 import { NO_TARGET } from '/src/effects/no-target.js';
 
@@ -153,9 +153,51 @@ test('hover: a move whose native target differs from the drawn element pokes one
   s.fire('pointermove', 20, 20); // natively A, drawn B
   const sync = document.documentElement.querySelector(':scope > hic-hover-sync');
   assert.ok(sync, 'the hover sync element exists, outside the body');
-  const w = sync.style.width;
+  assert.equal(hoverSyncPokes(document), 1);
   s.fire('pointermove', 21, 20); // natively B now, drawn B: no poke
-  assert.equal(sync.style.width, w);
+  assert.equal(hoverSyncPokes(document), 1);
   s.ip.dispose();
   assert.equal(document.documentElement.querySelector(':scope > hic-hover-sync'), null);
+  assert.equal(hoverSyncPokes(document), null);
+});
+
+test('hover sync: inert for the page (no box, no hit test, no a11y, no shadow root to read), one element shared by every host, no mutation records for a poke', async (t) => {
+  // an author rule that would give every element a box, if it could
+  const style = document.createElement('style');
+  style.textContent = 'html > * { display: block !important; visibility: visible !important; width: 50px !important; height: 50px !important; position: static !important; pointer-events: auto !important; }';
+  document.head.append(style);
+  const records = [];
+  const mo = new MutationObserver((list) => records.push(...list));
+  mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  t.cleanup(() => { mo.disconnect(); style.remove(); });
+  const a = createHoverSync(document);
+  const b = createHoverSync(document);
+  a.poke();
+  b.poke();
+  a.poke();
+  const els = document.querySelectorAll('hic-hover-sync');
+  assert.equal(els.length, 1, 'one element for the document');
+  const el = /** @type {HTMLElement} */ (els[0]);
+  assert.equal(el.parentNode, document.documentElement);
+  assert.equal(el.shadowRoot, null, 'its shadow root is closed');
+  assert.equal(el.getAttribute('aria-hidden'), 'true');
+  const r = el.getBoundingClientRect();
+  assert.deepEqual([r.width, r.height, r.left, r.top], [0, 0, 0, 0], 'no box, whatever the page styles');
+  assert.equal(getComputedStyle(el).visibility, 'hidden');
+  assert.equal(getComputedStyle(el).pointerEvents, 'none');
+  assert.equal(document.elementsFromPoint(0, 0).includes(el), false, 'never hit-tested');
+  assert.equal(hoverSyncPokes(document), 3);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(records.map((m) => `${m.type}:${[...m.addedNodes].map((n) => n.nodeName).join()}`), ['childList:HIC-HOVER-SYNC'], 'only the append is seen');
+  a.dispose();
+  a.dispose(); // a second dispose of the same user changes nothing
+  assert.ok(el.isConnected, 'kept while another host uses it');
+  b.dispose();
+  assert.equal(el.isConnected, false, 'removed by the last dispose');
+  // positive control: the observer does see a change of an attribute of an element of the page
+  document.body.dataset.hoverSyncControl = '1';
+  delete document.body.dataset.hoverSyncControl;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(records.some((m) => m.type === 'attributes' && m.target === document.body), 'the observer sees attribute changes');
+  assert.ok(records.some((m) => m.type === 'childList' && [...m.removedNodes].includes(el)), 'and the removal');
 });

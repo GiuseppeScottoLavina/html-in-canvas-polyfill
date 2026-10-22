@@ -89,7 +89,9 @@ const LIMITS = {
   //   the cursor it put on the layer (an inherited cursor kept the previous target's cursor everywhere)
   // 32.5 -> 39 KB, gzip 12.5 -> 14.5 KB (+6,394 / +2,017 bytes, 2026-10-22, measured 38,752 / 14,268): the effects over a browser's own implementation (the native
   //   source provider and its paint-driven frame source with the cap phase, the hit-test geometry and the native interposer, the native API checks of createHost)
-  'hic-live-effects.iife.min.js': { target: 39 * KB, ceiling: 39 * KB, gzip: 14.5 * KB },
+  // 39 -> 39.25 KB (+329 / +162 bytes, 2026-10-22, measured 39,081 / 14,430): the hover sync element of mode native shared per document and changed inside a closed
+  //   shadow root, so the page's MutationObservers see no record per pointer move and no author rule can give it a box
+  'hic-live-effects.iife.min.js': { target: 39.25 * KB, ceiling: 39.25 * KB, gzip: 14.5 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)

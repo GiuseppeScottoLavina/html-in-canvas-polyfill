@@ -435,8 +435,13 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
   browser hit-tests the element the effect shows under the pointer for the next event: hover, `:active`, the cursor, focus, caret placement and selection are then
   the browser's own. The event in hand was hit-tested before its shift: its intended element is read with `document.elementsFromPoint` (a list; the one-element
   `elementFromPoint` keeps a per-point cache that a geometry change does not clear), and a press whose native control differs from it is re-targeted with the rules
-  of 7.4. When a pointer move's native target is not the element shown, the host changes the width of one invisible element of its own (`<hic-hover-sync>`, appended
-  to the root element on first use, removed by `destroy()`) so that the engine recomputes hover and the cursor in the next frame. `NO_TARGET` calls
+  of 7.4. When a pointer move's native target is not the element shown, the host makes the engine recompute hover and the cursor in the next frame with one
+  layout of an element of its own: `<hic-hover-sync>`, the only element the effects add to the page in mode `native`. There is one per document, shared by its
+  hosts, appended to the root element (outside the body) at the first such move and removed when the last host is destroyed (`destroy()`, or `uninstall()`,
+  which destroys the hosts). It has no box (inline `!important` styles: fixed, 0 x 0, `visibility: hidden`, `pointer-events: none`, `contain: strict`), is
+  `aria-hidden`, and what changes at each move is inside its closed shadow root: page `MutationObserver`s see one `childList` record when it is appended and one
+  when it is removed, and nothing per move. A page that selects every child of `<html>` (`:root > *`, `document.documentElement.children`) sees it while it is
+  there. No DOM-free way was found: Chrome recomputes hover after a pointer event, a layout or a scroll, and not after `updateElementGeometry` alone. `NO_TARGET` calls
   `clearElementGeometry(source)` (the canvas itself is under the pointer) and swallows the press. Ranges are driven by the interposer as in 7.4.
 - Not provided in the native modes: `report()` entries for the canvas (the polyfill does not manage it) and a cap on the browser's own `paint` events.
 - Verified on Chrome Canary 158.0.8112.1 with `--enable-blink-features=CanvasDrawElement` by `npm run test:native-effects` (gates G-native-effects and

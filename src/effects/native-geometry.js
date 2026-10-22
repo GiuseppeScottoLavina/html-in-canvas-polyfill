@@ -97,30 +97,62 @@ export function createNativeGeometry(canvas, source) {
  * @property {() => void} dispose
  */
 
+/** @typedef {{host: HTMLElement, box: HTMLElement, users: number, on: boolean, pokes: number}} HoverSyncShared */
+
+/** One element per document, shared by every host of that document. @type {WeakMap<Document, HoverSyncShared>} */
+const SHARED = new WeakMap();
+
+/** inline and important: an author rule (even `* {... !important}`) cannot give it a box, a visibility or hit testing */
+const HOST_STYLE = 'all:initial;display:block;position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;contain:strict'
+  .replace(/;|$/g, '!important;');
+
 /**
- * One inert element of our own, appended to the root element on first use (outside the body, so that page layouts and selectors of the
- * body do not see it): fixed, 0 x 0, invisible, contained. Toggling its width between 0 and 1 px is a layout that changes nothing visible.
+ * One inert element of our own per document, appended to the root element on the first poke (outside the body, so that page layouts and selectors of the
+ * body do not see it): fixed, 0 x 0, invisible, contained, aria-hidden. What a poke changes is the width of a box inside its closed shadow root: a layout
+ * that changes nothing visible, and no mutation record for the page's observers (they do not see into the shadow root), so the page sees one
+ * childList record when the element is appended and one when it is removed. Every host of the document shares it; the last dispose removes it.
  * @param {Document} doc
  * @returns {HoverSync}
  */
 export function createHoverSync(doc) {
-  /** @type {HTMLElement|null} */
-  let el = null;
-  let on = false;
+  let shared = SHARED.get(doc);
+  if (!shared) {
+    const host = /** @type {HTMLElement} */ (doc.createElement('hic-hover-sync'));
+    host.setAttribute('aria-hidden', 'true');
+    host.style.cssText = HOST_STYLE;
+    const box = /** @type {HTMLElement} */ (doc.createElement('div'));
+    box.style.cssText = 'display:block;width:0;height:0';
+    host.attachShadow({ mode: 'closed' }).append(box);
+    shared = { host, box, users: 0, on: false, pokes: 0 };
+    SHARED.set(doc, shared);
+  }
+  const s = shared;
+  s.users += 1;
+  let live = true;
   return {
     poke() {
-      if (!el) {
-        el = doc.createElement('hic-hover-sync');
-        el.setAttribute('aria-hidden', 'true');
-        el.style.cssText = 'display:block;position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;overflow:hidden;visibility:hidden;pointer-events:none;contain:strict';
-      }
-      if (!el.isConnected) doc.documentElement.appendChild(el);
-      on = !on;
-      el.style.width = on ? '1px' : '0px';
+      if (!live) return;
+      if (!s.host.isConnected) doc.documentElement?.appendChild(s.host);
+      s.on = !s.on;
+      s.box.style.width = s.on ? '1px' : '0px';
+      s.pokes += 1;
     },
     dispose() {
-      el?.remove();
-      el = null;
+      if (!live) return;
+      live = false;
+      s.users -= 1;
+      if (s.users > 0) return;
+      s.host.remove();
+      SHARED.delete(doc);
     },
   };
+}
+
+/**
+ * Test hook: how many times the hover sync element of `doc` was poked (null while no host of the document uses it).
+ * @param {Document} doc
+ * @returns {number|null}
+ */
+export function hoverSyncPokes(doc) {
+  return SHARED.get(doc)?.pokes ?? null;
 }
