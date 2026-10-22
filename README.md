@@ -30,7 +30,7 @@ install(); // synchronous; throws HicUnsupportedError in a browser it refuses
 Or with a script tag (load it before your own scripts; it installs while the tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.5/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.6/dist/hic-live-polyfill.iife.min.js"></script>
 ```
 
 Then use the standard API. This is the explainer's own example, unchanged:
@@ -104,7 +104,7 @@ On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check,
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS, as the browser itself leaves them out of a canvas (the element's box without its content) plus one console message, never a silent gap; native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The headed gates run on macOS at DPR 2 (some also at DPR 1 or 1.25), and at DPR 1.25 and 1.5 against Chrome's native implementation.
-- **Preview.** `0.1.0-preview.5` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Preview.** `0.1.0-preview.6` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 

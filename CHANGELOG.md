@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.6] - 2026-10-22
+
+The conformance gate now runs the official WPT HTML-in-Canvas tests at their newest revision (2026-10-18): the polyfill passes 198 of 237 files and 316 of 369 subtests, native Chrome Canary 158.0.8112.1 225 and 357, and no polyfill bug is open. Content that read-back-allowed rendering hides is now hidden as natively: an unreadable mask image masks its element away, a cross-origin video is an invisible box, and an SVG `<use>` draws only same-origin documents. **Breaking:** the two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from the specification on 2026-10-09, are gone; see Removed for the migration.
+
 ### Changed
 
 - The official WPT HTML-in-Canvas tests are pinned at the newest commit that touches them, `850b36a5` (2026-10-18; was `d9b949e5`, 2026-10-07): 237 files and 369 subtests (was 230 and 375). The polyfill passes 198 files and 316 subtests (was 182 and 307), native Chrome Canary 158.0.8112.1 225 and 357, Chrome without the polyfill 10 and 19, all vacuously. The oracle is the Chrome build whose imported copy of the tests is closest to the pinned commit (306 of 309 files byte-identical; the other 3 carry assertions Chromium has not exported to WPT yet), and its baseline comes from three full runs. The `ElementImage` size tests (`captureElementImage`, `element-image-fractional-size`, `offscreenCanvas-drawElementImage`) now pass: they test `getElementImageDefaultSize`, which the polyfill already followed. The polyfill bugs that the new tests and resources exposed (cross-origin masks, a same-origin SVG `<use>` of an external document, a popover frame, the poster of a paused video, an iframe moved into a drawable) are fixed (below); no polyfill bug is open, and every remaining difference has a written reason in `docs/CONFORMANCE.md`.
@@ -133,7 +137,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.5...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.6...HEAD
+[0.1.0-preview.6]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.5...v0.1.0-preview.6
 [0.1.0-preview.5]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.4...v0.1.0-preview.5
 [0.1.0-preview.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.3...v0.1.0-preview.4
 [0.1.0-preview.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.2...v0.1.0-preview.3
