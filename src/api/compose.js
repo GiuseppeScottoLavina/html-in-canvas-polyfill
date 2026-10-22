@@ -24,6 +24,7 @@ import { createSnapshotStore } from '../snapshot/store/store.js';
 import { createScheduler } from '../schedule/scheduler.js';
 import { startObservers } from '../schedule/observers/index.js';
 import { createInteractionTracker } from '../schedule/observers/interaction-tracker.js';
+import { createAnimatedImages } from '../schedule/observers/animated-images.js';
 import { createGeometryApi } from './geometry.js';
 import { createCanvasRegistry } from './canvas-registry.js';
 
@@ -95,7 +96,7 @@ function disposeAll(env, parts) {
  */
 export function compose(env, services, hooks, ledger) {
   // Everything created so far, so that a throwing factory unwinds the part that already runs (observers, intervals, listeners) instead of leaking it.
-  /** @type {Partial<{roots: unknown, registry: CoreRegistry, store: unknown, scheduler: unknown, effects: unknown, stopObservers: unknown, stopBridge: unknown, offResources: (() => void)|undefined, offs: Array<() => void>}>} */
+  /** @type {Partial<{roots: unknown, registry: CoreRegistry, animatedImages: unknown, store: unknown, scheduler: unknown, effects: unknown, stopObservers: unknown, stopBridge: unknown, offResources: (() => void)|undefined, offs: Array<() => void>}>} */
   const made = {};
   const teardown = () => {
     // Records first: unmounting restores the children while scheduler and store still exist to be told.
@@ -106,7 +107,7 @@ export function compose(env, services, hooks, ledger) {
       if (typeof stop !== 'function') continue;
       try { stop(); } catch (err) { env.reporter.caught(err, `dispose.${name}`); }
     }
-    disposeAll(env, [['effects', made.effects], ['scheduler', made.scheduler], ['store', made.store], ['roots', made.roots]]);
+    disposeAll(env, [['effects', made.effects], ['scheduler', made.scheduler], ['store', made.store], ['animated-images', made.animatedImages], ['roots', made.roots]]);
     for (const key of Object.keys(made)) delete (/** @type {Record<string, unknown>} */ (made))[key];
   };
   try {
@@ -133,6 +134,7 @@ function wire(env, services, hooks, ledger, made, dispose) {
   const registry = (made.registry = createCanvasRegistry(env, (e, record) => services.createLiveLayer(e, record)));
   env.registry = registry;
   env.adopt = (canvas) => { registry.ensure(canvas); };
+  env.animatedImages = made.animatedImages = createAnimatedImages(env);
   const capture = services.createCapture(env);
   const tracker = services.createInteractionTracker(env, capture);
   const resources = capture.resources;

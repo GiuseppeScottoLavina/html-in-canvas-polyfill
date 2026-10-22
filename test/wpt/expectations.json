@@ -1,16 +1,6 @@
 {
  "note": "Reasons for every subtest that passes natively and fails in the polyfill (category: deviation | impossible | flaky | bug; reason: the feature id of docs/SUPPORT-MATRIX.md or a bug id). `pass`, `partial` and `stable` are rewritten by `npm run test:wpt -- --update-expectations`.",
  "tests": {
-  "animated-gif-pinned-to-element-image.tentative.html": {
-   "category": "deviation",
-   "reason": "animated-images",
-   "note": "only partly fixable: drawImage of an animated image yields its first frame (HTML: the default image), an image inside the SVG snapshot does not animate, and no event announces a new frame, so the snapshot shows the first frame. ImageDecoder (Chromium only) could replay the decoded frames on the polyfill's own clock (not the page's): not done"
-  },
-  "animated-gif.tentative.html": {
-   "category": "deviation",
-   "reason": "animated-images",
-   "note": "only partly fixable: drawImage of an animated image yields its first frame (HTML: the default image), an image inside the SVG snapshot does not animate, and no event announces a new frame, so the snapshot shows the first frame. ImageDecoder (Chromium only) could replay the decoded frames on the polyfill's own clock (not the page's): not done"
-  },
   "backdrop-filter-nested.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
@@ -178,11 +168,6 @@
    "category": "deviation",
    "reason": "shadow-dom",
    "note": "fixable, not done: a drawable slotted into a canvas that lives in a shadow tree is a child of the canvas in the flat tree only; the layer follows DOM children (the slot is relocated, the slotted light DOM element is not a drawable of the layer: InvalidStateError)"
-  },
-  "offscreen/animated-gif-worker.tentative.html": {
-   "category": "deviation",
-   "reason": "animated-images",
-   "note": "the ElementImage reaches the worker (worker bundle) but shows the first frame of the animated image: see animated-gif.tentative.html"
   },
   "offscreen/ink-overflow-worker.tentative.html": {
    "category": "impossible",

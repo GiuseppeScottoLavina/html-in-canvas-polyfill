@@ -252,7 +252,7 @@ function syncImage(env, src, clone, req, unsupported) {
   clone.removeAttribute('src');
   appendInlineStyle(clone, usedSize(cs));
   if (r.state === 'pending') markPending(unsupported);
-  else if (r.state === 'ready') clone.setAttribute('src', r.url);
+  else if (r.state === 'ready') clone.setAttribute('src', env.animatedImages?.frameUrl(src, abs, r.url) ?? r.url); // the frame due of an animated image
   return true;
 }
 
