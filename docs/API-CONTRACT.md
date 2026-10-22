@@ -196,7 +196,7 @@ Removes the element from the drawn list, sets canvas transform and clip to null;
 
 ### 4.7 `getElementTransform(element)` -> `DOMMatrix`
 A NEW `DOMMatrix` each call (a copy of the canvas transform, identity when null; 3D preserved). One argument: the two-argument overload
-`getElementTransform(element, drawTransform)` of the 2026-10-07 draft and `OffscreenCanvas.getElementTransform` were removed from the specification and the WPT on 2026-10-09 (section 2.2) and from the polyfill in 0.1.0-preview.6; a second argument is ignored. The first argument of `getElementTransform` and `updateElementGeometry` is `Element` or `ElementImage`. `drawable` on an outermost `<svg>` is supported like any CSS box; `drawable` on an SVG element inside an `<svg>` is refused (`svg-drawable`: `HicUnsupportedError`; the WPT `<rect drawable>` cases fail by design).
+`getElementTransform(element, drawTransform)` of the 2026-10-07 draft and `OffscreenCanvas.getElementTransform` were removed from the specification and the WPT on 2026-10-09 (section 2.2) and from the polyfill in 0.1.0-preview.6; a second argument is ignored, with one console warning per page that names the removed call shape. The first argument of `getElementTransform` and `updateElementGeometry` is `Element` or `ElementImage`. `drawable` on an outermost `<svg>` is supported like any CSS box; `drawable` on an SVG element inside an `<svg>` is refused (`svg-drawable`: `HicUnsupportedError`; the WPT `<rect drawable>` cases fail by design).
 
 ### 4.8 `elementgeometryupdate` / `onelementgeometryupdate`
 `ElementGeometryUpdateEvent` with `elements: FrozenArray<Element>`, dispatched on the HTMLCanvasElement after a batch of geometry

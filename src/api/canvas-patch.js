@@ -9,7 +9,7 @@ import { createElementImage, defaultSizeOf, elementImageVersion } from './elemen
 import { geometryOptionsFromValues } from './geometry.js';
 import { ensureHandlerListener, getEventHandler, isPaintDispatching, requestIdlePaint, setEventHandler } from './paint-event.js';
 import {
-  defineMethod, frameCapFromIdl, geometryOptionsValues, globalsOf, managedRecord, parseFrameCap, resolveElement, warnLegacyOnce,
+  defineMethod, frameCapFromIdl, geometryOptionsValues, globalsOf, managedRecord, parseFrameCap, resolveElement, warnLegacyOnce, warnRemovedOnce,
 } from './validate.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -193,6 +193,10 @@ function installMethods(env, ledger, proto, geometry) {
   defineMethod(ledger, proto, 'getElementTransform', 1, /** @this {HTMLCanvasElement} */ function (/** @type {unknown} */ element) {
     const canvas = brand(env, this);
     if (arguments.length < 1) throw new TypeError("Failed to execute 'getElementTransform': 1 argument required, but only 0 present.");
+    if (arguments.length > 1) {
+      warnRemovedOnce(env, 'getElementTransform-two-arguments', 'getElementTransform(element, drawTransform) was removed from the specification on 2026-10-09: '
+        + 'the second argument is ignored and the result is the element\'s canvas transform (API-CONTRACT 4.7 shows how to derive the old value).');
+    }
     const resolved = resolveElement(env, canvas, element, 'eligible');
     return geometry.get(resolved.record, resolved.element);
   });

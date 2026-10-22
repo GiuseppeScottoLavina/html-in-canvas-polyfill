@@ -287,6 +287,17 @@ export function warnLegacyOnce(env) {
   if (first) env.reporter.deviation('layoutsubtree-legacy', 'legacy attribute or property used');
 }
 
+/**
+ * One console warning per environment for a call shape the specification removed but WebIDL silently accepts (an extra argument is ignored),
+ * so a page written against the earlier draft learns why its result changed.
+ * @param {HicEnv} env @param {string} key @param {string} message
+ */
+export function warnRemovedOnce(env, key, message) {
+  let log = legacyLogs.get(env);
+  if (!log) legacyLogs.set(env, log = createOnceLog(globalsOf(env).console));
+  log.once(key, 'warn', `[hic-live-polyfill] ${message}`);
+}
+
 // ---------------------------------------------------------------------------------------------- definition helper
 
 /**

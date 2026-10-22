@@ -88,7 +88,9 @@ const LIMITS = {
   // 316.25 -> 315.75 KB, gzip 110 -> 109.75 KB (-453 / -116 bytes, 2026-10-22, measured 315,542 / 109,731 with the WPT re-pin merged): the two-argument
   //   getElementTransform and its OffscreenCanvas twin removed (-739 bytes, measured 312,758 alone), the privacy review fixes added (+286 bytes: an SVG document fetched
   //   same-origin, popover and image loads inside shadow roots, references inside an external <use> document resolved against it)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 315.75 * KB, gzip: 109.75 * KB },
+  // 315.75 -> 316 KB, gzip 109.75 -> 110 KB (+404 / +177 bytes, 2026-10-22, measured 315,946 / 109,908): one console warning when getElementTransform
+  //   receives the second argument of the removed draft overload, so the silent change of its result is visible
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 316 * KB, gzip: 110 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

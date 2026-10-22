@@ -342,6 +342,22 @@ test('SVG drawable: an inner SVG element (<rect drawable>) throws svg-drawable f
 });
 
 // ---------------------------------------------------------------------------------------------- geometry methods
+test('getElementTransform with a second argument (the removed draft overload): the argument is ignored and one console warning says so', async (t) => {
+  const warns = [];
+  const warn = console.warn;
+  console.warn = (...a) => { warns.push(a.join(' ')); };
+  t.cleanup(() => { console.warn = warn; });
+  const { canvas, el } = await set(t);
+  canvas.updateElementGeometry(el, { canvasTransform: { a: 2, d: 3, e: 10, f: 20 } });
+  const one = canvas.getElementTransform(el);
+  assert.equal(warns.length, 0, 'the standard one-argument call does not warn');
+  const two = canvas.getElementTransform(el, new DOMMatrix([1, 0, 0, 1, 50, 50]));
+  assert.deepEqual(two.toFloat64Array(), one.toFloat64Array(), 'the second argument does not change the result');
+  canvas.getElementTransform(el, new DOMMatrix());
+  assert.equal(warns.length, 1, 'warned once, not per call');
+  assert.ok(warns[0].includes("getElementTransform(element, drawTransform)"), warns[0]);
+});
+
 test('updateElementGeometry / getElementTransform / clearElementGeometry round trip', async (t) => {
   const { canvas, el, record, version } = await set(t);
   const identity = canvas.getElementTransform(el);
