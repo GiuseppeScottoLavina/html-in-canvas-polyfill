@@ -78,6 +78,8 @@ export function addUseTargets(live, root, cache, onElement) {
     const use = queue[i];
     const href = hrefOf(use);
     let copy = null;
+    /** @type {string|null} URL of the external document the copy comes from */
+    let from = null;
     if (!href.startsWith('#')) {
       if (!href || href.startsWith('data:')) continue;
       const abs = absolute(href, live.baseURI);
@@ -90,6 +92,7 @@ export function addUseTargets(live, root, cache, onElement) {
           copy = copyOf(live, root.ownerDocument, target, cache, state, abs ?? live.baseURI);
           copy.setAttribute('id', id);
           holder.appendChild(copy);
+          from = abs;
         }
         external.set(key, id);
       }
@@ -107,7 +110,12 @@ export function addUseTargets(live, root, cache, onElement) {
     if (!copy) continue;
     for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
       onElement(el);
-      if (el.localName === 'use') queue.push(el);
+      if (el.localName !== 'use') continue;
+      // a reference inside an external document is relative to THAT document: `#a` there is not the page's #a (absolute, it is handled as external above)
+      const inner = from ? hrefOf(el) : '';
+      const rebased = inner && !inner.startsWith('data:') ? absolute(inner, /** @type {string} */ (from)) : null;
+      if (rebased) { el.removeAttribute('xlink:href'); el.setAttribute('href', rebased); }
+      queue.push(el);
     }
   }
   if (state.added) root.appendChild(holder);

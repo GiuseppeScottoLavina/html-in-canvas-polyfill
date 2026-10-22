@@ -52,3 +52,20 @@ test('a <use> of a same-origin URL that redirects to another origin draws nothin
   assert.deepEqual(px(20, 30), [224, 0, 0, 255], 'control: a same-origin redirect is followed and drawn');
   assert.equal(px(20, 10)[3], 0, 'the document redirected to another origin is not drawn');
 });
+
+test('a <use> inside an external document refers to that document: `#blue` there is its own element, not the page element of the same id; control: the page has a red #blue', async (t) => {
+  const outside = document.createElement('div');
+  outside.innerHTML = '<svg width="0" height="0"><defs><rect id="blue" width="40" height="20" fill="red"/></defs></svg>';
+  document.body.appendChild(outside);
+  t.cleanup(() => outside.remove());
+  const m = mount('<svg drawable width="40" height="40" style="display:block"><use href="/test/unit/snapshot-capture/assets/sprite-chain.svg#chain"/><use y="20" href="#blue"/></svg>');
+  const el = m.layerEl.firstElementChild;
+  m.capture(m.request(el));
+  await new Promise((ok) => setTimeout(ok, 400));
+  const r = m.capture(m.request(el));
+  assert.equal(r.complete, true);
+  const got = await rasterize(r);
+  const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data);
+  assert.deepEqual(px(20, 30), [255, 0, 0, 255], 'control: the page\'s own #blue is red');
+  assert.deepEqual(px(20, 10), [0, 0, 255, 255], 'the external chain draws its own #blue');
+});
