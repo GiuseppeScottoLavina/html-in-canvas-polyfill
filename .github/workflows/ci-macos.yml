@@ -32,7 +32,7 @@ env:
   # (test/gates/lib/gate.mjs). Gates with their own DPRs (G-regress-capture 1 and 2, G-pixel-dpr 1.25 and 1.5) keep them.
   HIC_GATE_DPR: '2'
   # the whole mutation suite on the nightly run, on release tags and on request; one mutant per gate otherwise
-  MUTANTS_ALL: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all') }}
+  MUTANTS_ALL: ${{ true || github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all') }}
 
 jobs:
   local-only:
@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON((github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all')) && '[1, 2, 3, 4]' || '[1, 2]') }}
+        shard: ${{ fromJSON((true || github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all')) && '[1, 2, 3, 4]' || '[1, 2]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
