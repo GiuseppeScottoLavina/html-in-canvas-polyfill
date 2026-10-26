@@ -1,79 +1,156 @@
-# PROBE (first measurement of the hosted macOS runner; replaced by the real workflow once measured).
+# The browser suites that need a desktop session, on GitHub-hosted macOS runners: the headed Chrome gates with their positive controls, the mutation suite,
+# the headless example / site / field / stress / framework / platform suites, and Firefox and Safari through WebDriver. The runner has a logged-in desktop,
+# a 60 Hz virtual display and a virtual GPU; what needs a 120 Hz display, continuous WebGPU frames, Safari Technology Preview or the phone simulators stays
+# on a local Mac, and the `local-only` job lists it on every run (test/ci/macos-plan.mjs, CONTRIBUTING.md "Where the suites run").
 name: CI macOS
 
 on:
   pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  schedule:
+    # nightly: the whole mutation suite
+    - cron: '23 2 * * *'
   workflow_dispatch:
+    inputs:
+      mutants:
+        description: 'mutation suite: "all" (every mutant the runner can judge) or "pr" (one per gate)'
+        type: choice
+        options: [all, pr]
+        default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-macos-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The runner's virtual display is 1x and offers no HiDPI mode: gates without a DPR of their own run at 2, as on the Retina screens their thresholds were set on
+  # (test/gates/lib/gate.mjs). Gates with their own DPRs (G-regress-capture 1 and 2, G-pixel-dpr 1.25 and 1.5) keep them.
+  HIC_GATE_DPR: '2'
+  # the whole mutation suite on the nightly run, on release tags and on request; one mutant per gate otherwise
+  MUTANTS_ALL: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all') }}
 
 jobs:
-  probe:
-    name: probe ${{ matrix.part }}
-    runs-on: macos-15
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - part: gates-a
-            canary: 'false'
-            run: node test/gates/run-all.mjs --only=g-explainer,g-f1-form,g-f1-form-effect,g-interposer-strong,g-dom-identity
-          - part: gates-b
-            canary: 'false'
-            run: node test/gates/run-all.mjs --only=g-scroll-cadence,g-scroll-inner,g-resize-drag,g-listeners
-          - part: gates-c
-            canary: 'true'
-            run: node test/gates/run-all.mjs --only=g-regress-capture,g-regress-pagescroll,g-regress-paint,g-regress-stacking,g-unsupported,g-pixel-dpr
-          - part: headless
-            canary: 'false'
-            run: |
-              set +e
-              for s in "node scripts/check-examples.mjs" "node scripts/check-plugins-e2e.mjs" "node scripts/check-pages.mjs" "node scripts/check-field-test.mjs" "node scripts/check-hang-stress.mjs" "node test/platform/run.mjs --allow-known"; do
-                t0=$(date +%s); $s > ".scratch/results/log-$(echo $s | tr ' /=' '___').txt" 2>&1; rc=$?; echo "SUITE [$s] exit $rc in $(( $(date +%s) - t0 )) s"; tail -40 ".scratch/results/log-$(echo $s | tr ' /=' '___').txt"
-              done
-              (cd test/frameworks && npm ci) && t0=$(date +%s) && node test/frameworks/run.mjs; echo "SUITE [frameworks] exit $? in $(( $(date +%s) - t0 )) s"
-          - part: wpt-native
-            canary: 'true'
-            run: |
-              set +e
-              t0=$(date +%s); node test/wpt/gate.mjs --no-docs; echo "SUITE [wpt] exit $? in $(( $(date +%s) - t0 )) s"
-              t0=$(date +%s); node test/native-effects/run.mjs --require-canary; echo "SUITE [native-effects] exit $? in $(( $(date +%s) - t0 )) s"
-          - part: xbrowser
-            canary: 'false'
-            run: |
-              sudo safaridriver --enable
-              mkdir -p .scratch/geckodriver-dl && ln -sf "$(command -v geckodriver)" .scratch/geckodriver-dl/geckodriver
-              /Applications/Firefox.app/Contents/MacOS/firefox --version; geckodriver --version | head -1; safaridriver --version
-              node test/xbrowser/run.mjs --engine=firefox,safari
+  local-only:
+    # what this workflow does NOT run, and why: a warning per item on every run, never a silent pass
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Suites, gates and mutants left to a local Mac
+        run: node test/ci/macos-plan.mjs --report
 
+  gates:
+    # every gate of test/gates that the runner can judge, each with its positive control (G-pixel-dpr takes its reference from Chrome Canary)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/macos-browsers
         with:
-          canary: ${{ matrix.canary }}
-
-      - name: Run ${{ matrix.part }}
-        run: |
-          mkdir -p .scratch/results
-          ${{ matrix.run }}
-
-      - name: Desktop screenshot
+          canary: 'true'
+      - name: TEMPORARY WebGPU diagnosis
+        run: node test/ci/diag-webgpu.mjs || true
+      - name: Browser gates (real + control)
+        run: node test/gates/run-all.mjs --only="$(node test/ci/macos-plan.mjs --gates)"
+      - uses: ./.github/actions/macos-results
         if: always()
-        run: screencapture -x .scratch/results/desktop-end.png || true
-
-      - name: Keep the results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: probe-${{ matrix.part }}
-          path: .scratch/results
-          retention-days: 7
-          if-no-files-found: ignore
+          name: gates
+          failed: ${{ job.status == 'failure' }}
+
+  mutants:
+    # the mutation suite: every seeded bug must turn a gate red (test/gates/mutants); split over machines with --shard
+    name: mutants ${{ matrix.shard }}/${{ strategy.job-total }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON((github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all')) && '[1, 2, 3, 4]' || '[1, 2]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+        with:
+          canary: 'true'
+      - name: Mutation suite, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+        env:
+          SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: |
+          if [ "$MUTANTS_ALL" = true ]; then scope=all; else scope=pr; fi
+          node test/gates/mutants/run.mjs --only="$(node test/ci/macos-plan.mjs --mutants=$scope)" --shard="$SHARD"
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: mutants-${{ matrix.shard }}
+          failed: ${{ job.status == 'failure' }}
+
+  headless:
+    # the suites that drive headless Chrome (they never take the screen, but need macOS fonts, form controls and a GPU)
+    name: headless ${{ matrix.part }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [examples, apps]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+      - name: Examples (all but effect-plugin, see local-only), documentation smoke pages, the Pages site, the field test
+        if: matrix.part == 'examples'
+        run: |
+          node scripts/check-examples.mjs --only=basic,form,plugins,scroll-and-resize,webgl-texture,smoke
+          node scripts/check-pages.mjs
+          node scripts/check-field-test.mjs
+      - name: Framework apps, hang stress, platform probe
+        if: matrix.part == 'apps'
+        run: |
+          (cd test/frameworks && npm ci)
+          node test/frameworks/run.mjs
+          node scripts/check-hang-stress.mjs
+          node test/platform/run.mjs --allow-known
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: headless-${{ matrix.part }}
+          failed: ${{ job.status == 'failure' }}
+
+  xbrowser:
+    # Firefox and Safari through W3C WebDriver (the runner image's Firefox and geckodriver; Safari's remote automation is enabled for the job)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+      - name: Enable Safari's remote automation; point the harness at geckodriver
+        run: |
+          sudo safaridriver --enable
+          mkdir -p .scratch/geckodriver-dl && ln -sf "$(command -v geckodriver)" .scratch/geckodriver-dl/geckodriver
+          /Applications/Firefox.app/Contents/MacOS/firefox --version
+          geckodriver --version | head -1
+          safaridriver --version
+      - name: G-xbrowser (Firefox, Safari)
+        run: node test/xbrowser/run.mjs --engine=firefox,safari
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: xbrowser
+          failed: ${{ job.status == 'failure' }}

@@ -57,16 +57,19 @@ runs:
         npm ci
         npm run build
 
-    - name: Keep the display awake
+    - name: Keep the display awake, stop Spotlight indexing
       # A display that sleeps stops requestAnimationFrame in every page; caffeinate holds it on for the rest of the job (the runner ends it with the job).
+      # A fresh runner indexes its disk: the Spotlight processes were the top CPU users in the gates' load records and marked runs as high load.
       shell: bash
       run: |
         caffeinate -u -t 2
         nohup caffeinate -dimsu > /dev/null 2>&1 &
+        sudo mdutil -a -i off > /dev/null || echo "Spotlight indexing could not be turned off"
 
-    - name: Record the display, the GPU and the session (test/ci/macos-env.mjs)
+    - name: Display mode; record of the display, the GPU and the session (test/ci/macos-display.mjs, test/ci/macos-env.mjs)
       shell: bash
       run: |
         mkdir -p .scratch/results
-        node test/ci/macos-display.mjs --min=1600x1000 || echo "::warning::display: no mode of at least 1600 x 1000"
-        node test/ci/macos-env.mjs || echo "::warning::environment record incomplete"
+        # the gates open 1400 x 900 windows (and move the pointer beside them): the runner's display starts at 1024 x 768
+        node test/ci/macos-display.mjs --min=1600x1000 > .scratch/results/macos-display.json
+        node test/ci/macos-env.mjs --require=pointer

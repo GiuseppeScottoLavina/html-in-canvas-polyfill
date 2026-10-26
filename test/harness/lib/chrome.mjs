@@ -214,7 +214,16 @@ export class Browser {
       targetId = targetInfos.find(t => t.type === 'page' && !/^http:\/\/(always|whenscrolling)\//.test(t.url) && !this.pages.some(p => p.targetId === t.targetId))?.targetId;
     }
     if (!targetId) ({ targetId } = await this.conn.send('Target.createTarget', { url }));
-    const { sessionId } = await this.conn.send('Target.attachToTarget', { targetId, flatten: true });
+    let sessionId;
+    try { ({ sessionId } = await this.conn.send('Target.attachToTarget', { targetId, flatten: true })); } catch (e) {
+      // A tab that Target.getTargets still listed can be gone by the time we attach (seen once on the hosted macOS runner, headless with the macOS scrollbar
+      // override, whose stray tab is closed during launch): a reused tab that vanished is replaced by a new one, and the event is written to stderr.
+      if (!reuseFirst || !/No target with given id/.test(String(/** @type {any} */ (e)?.message))) throw e;
+      const { targetInfos } = await this.conn.send('Target.getTargets');
+      console.error(`newPage: tab ${targetId} closed before it could be attached; opening a new one (tabs now: ${targetInfos.map((t) => `${t.type} ${t.url}`).join(', ') || 'none'})`);
+      ({ targetId } = await this.conn.send('Target.createTarget', { url }));
+      ({ sessionId } = await this.conn.send('Target.attachToTarget', { targetId, flatten: true }));
+    }
     const page = new Page(this, targetId, sessionId);
     await page.init();
     this.pages.push(page);

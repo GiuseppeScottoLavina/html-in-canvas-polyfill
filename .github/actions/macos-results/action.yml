@@ -1,0 +1,37 @@
+# The record of a macOS browser job (.github/workflows/ci-macos.yml): the verdict files and the environment record of every run, and when the job failed also
+# the images of the failing comparisons, the suites' logs and a screenshot of the whole desktop (a dialog or another window in front shows up there).
+name: macOS browser results
+description: upload .scratch/results (JSON always; images, logs and a desktop screenshot when the job failed)
+inputs:
+  name:
+    description: artifact name
+    required: true
+  failed:
+    description: whether the job failed (pass job.status == 'failure')
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Desktop screenshot
+      if: inputs.failed == 'true'
+      shell: bash
+      run: mkdir -p .scratch/results && (screencapture -x .scratch/results/desktop.png || echo "no desktop screenshot")
+
+    - name: Keep the verdicts and the environment record
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.name }}-results
+        path: .scratch/results/**/*.json
+        retention-days: 14
+        if-no-files-found: ignore
+
+    - name: Keep the images and logs of the failure
+      if: inputs.failed == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.name }}-failure
+        path: |
+          .scratch/results
+          .scratch/platform
+        retention-days: 14
+        if-no-files-found: ignore
