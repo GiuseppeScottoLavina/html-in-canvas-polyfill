@@ -1,0 +1,60 @@
+# Shared setup of the macOS browser jobs (.github/workflows/ci-macos.yml): Node, the OS pointer helpers, Chrome stable (and Chrome Canary when asked), the root
+# dependencies, the build, and a record of the machine's display and GPU (test/ci/macos-env.mjs) that every result of the job is read against.
+name: macOS browser setup
+description: Node, python3 with PyObjC, Chrome (stable, optional Canary), npm ci, build, environment record
+inputs:
+  canary:
+    description: also install Chrome Canary (Chrome for Testing, Canary channel) and point HIC_CANARY_PATH at it
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+        cache: npm
+
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.13'
+
+    - name: OS pointer helpers (python3 with Quartz and AppKit)
+      # The harness reads and parks the OS pointer and watches application activations through PyObjC (test/harness/lib/os-pointer.mjs, os-activation.mjs).
+      # Without it the pointer could rest over the browser window and reach the page as trusted input.
+      shell: bash
+      run: |
+        python3 -m pip install --disable-pip-version-check --quiet pyobjc-core==12.2.2 pyobjc-framework-Cocoa==12.2.2 pyobjc-framework-Quartz==12.2.2
+        python3 -c 'import Quartz, AppKit; print("PyObjC", Quartz.__name__, AppKit.__name__, "ok")'
+
+    - name: Install Chrome (stable)
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+      with:
+        chrome-version: stable
+
+    - name: Install Chrome (Canary)
+      id: canary
+      if: inputs.canary == 'true'
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+      with:
+        chrome-version: canary
+
+    - name: Point the harness at the installed browsers
+      shell: bash
+      env:
+        CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        CANARY_PATH: ${{ steps.canary.outputs.chrome-path }}
+      run: |
+        echo "HIC_CHROME_PATH=${CHROME_PATH}" >> "$GITHUB_ENV"
+        "${CHROME_PATH}" --version
+        if [ -n "${CANARY_PATH}" ]; then echo "HIC_CANARY_PATH=${CANARY_PATH}" >> "$GITHUB_ENV"; "${CANARY_PATH}" --version; fi
+
+    - name: Install dependencies and build
+      shell: bash
+      run: |
+        npm ci
+        npm run build
+
+    - name: Record the display, the GPU and the session (test/ci/macos-env.mjs)
+      shell: bash
+      run: node test/ci/macos-env.mjs
