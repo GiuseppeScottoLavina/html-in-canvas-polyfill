@@ -188,8 +188,7 @@ async function launchFirefox({ app = FIREFOX_APP, prefs = {} } = {}) {
   if (!existsSync(GECKODRIVER)) throw new Error(`geckodriver missing at ${GECKODRIVER}: download the official release into .scratch/geckodriver-dl/ (docs/TEST-PLAN.md, G-xbrowser)`);
   const profile = mkdtempSync(join(tmpdir(), 'hic-xb-firefox-'));
   const mport = await freePort();
-  // HIC_FIREFOX_PREFS (JSON) adds prefs for a machine: the macOS CI job gives Firefox the Retina device pixel ratio of the machines the bounds were set on
-  // (its virtual display is 1x) and WebGL on the virtual GPU that Firefox's blocklist refuses
+  // HIC_FIREFOX_PREFS (JSON) adds prefs for a machine: the macOS CI job turns WebGL on for the virtual GPU that Firefox's blocklist refuses
   const envPrefs = process.env.HIC_FIREFOX_PREFS ? JSON.parse(process.env.HIC_FIREFOX_PREFS) : {};
   const all = { ...FIREFOX_PREFS, ...envPrefs, ...prefs, 'marionette.port': mport };
   writeFileSync(join(profile, 'user.js'), Object.entries(all).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');

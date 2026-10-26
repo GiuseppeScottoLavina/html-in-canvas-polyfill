@@ -6,6 +6,7 @@
 // by default instead of being left out silently.
 //
 //   node test/ci/macos-plan.mjs --gates                   the gates the runner runs, comma-separated (for run-all.mjs --only)
+//   node test/ci/macos-plan.mjs --xbrowser                the G-xbrowser scenarios run on Firefox there (for test/xbrowser/run.mjs --only)
 //   node test/ci/macos-plan.mjs --mutants=all|pr          the mutants the runner runs (every gate of the mutant runs there); `pr` is one per gate
 //   node test/ci/macos-plan.mjs --report                  what is NOT run on the runner and why: GitHub warnings and a step-summary table
 //   node test/ci/macos-plan.mjs --local-gates | --local-mutants   the complement, for a local run (test/ci/local.mjs, `npm run test:local`)
@@ -13,6 +14,7 @@ import { readdirSync, appendFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MUTANTS } from '../gates/mutants/mutants.mjs';
+import { SCENARIOS } from '../xbrowser/scenarios.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -25,6 +27,7 @@ export const LOCAL_ONLY = {
   'test:examples effect-plugin': 'its frame-cap check counts continuous effect frames (0 on the runner\'s virtual GPU); every other example and the documentation smoke pages run in CI',
   'test:native-effects': 'G-native-effects and G-native-interposer measure continuous effect frames over Canary\'s own implementation (0 per second on the runner\'s virtual GPU)',
   'test:wpt': 'on the runner 3 of the 237 files were unstable between repetitions (onpaint-css-animation, onpaint-post-tree-order, privacy/picture-images-ignored), which fails the gate (measured before 0.1.0-preview.7). It also takes 18 min and its native oracle, Chrome Canary, changes every day',
+  'test:xbrowser firefox scroll': 'the scrolled list of the scroll scenario differs from its twin on 6.6-6.8 % of the pixels over 16 at the runner\'s DPR 1 (bound 5 %; the text antialiasing of a 1x macOS display, the same gap G-scroll-inner shows in Chrome at DPR 1). Firefox cannot be given a real DPR 2 there: layout.css.devPixelsPerPx=2 shrinks the viewport and fails five scenarios',
   'test:xbrowser safari': 'the hosted runner images ship Safari 26 (macOS 15 and 26), which the polyfill refuses (Safari 27 is the minimum): every Safari scenario would test the refusal',
   'test:xbrowser stp': 'Safari Technology Preview is not installed on the runner image',
   'test:mobile': 'the iOS Simulator and the Android Emulator (the Android Emulator needs hardware virtualization, which the hosted macOS virtual machine does not offer)',
@@ -38,6 +41,8 @@ const local = LOCAL_ONLY;
 export const CI_GATES = ALL_GATES.filter((g) => !local[g]);
 /** mutants every gate of which runs on the runner */
 export const CI_MUTANTS = MUTANTS.filter((m) => m.gates.every((g) => CI_GATES.includes(g)));
+/** the G-xbrowser scenarios run on Firefox on the runner (all but those listed as `test:xbrowser firefox <scenario>`) */
+export const CI_XBROWSER = Object.keys(SCENARIOS).filter((n) => !local[`test:xbrowser firefox ${n}`]);
 export const LOCAL_GATES = ALL_GATES.filter((g) => local[g]);
 export const LOCAL_MUTANTS = MUTANTS.filter((m) => !CI_MUTANTS.includes(m));
 /** the PR subset: per CI gate, the first mutant of the suite that targets it (every gate shown able to catch a seeded bug on every pull request) */
@@ -46,6 +51,7 @@ export const PR_MUTANTS = CI_GATES.map((g) => CI_MUTANTS.find((m) => m.gates.inc
 const arg = (/** @type {string} */ k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   if (process.argv.includes('--gates')) console.log(CI_GATES.join(','));
+  else if (process.argv.includes('--xbrowser')) console.log(CI_XBROWSER.join(','));
   else if (process.argv.includes('--local-gates')) console.log(LOCAL_GATES.join(','));
   else if (process.argv.includes('--local-mutants')) console.log(LOCAL_MUTANTS.map((m) => m.name).join(','));
   else if (arg('mutants')) console.log((arg('mutants') === 'pr' ? PR_MUTANTS : CI_MUTANTS).map((m) => /** @type {any} */ (m).name).join(','));
@@ -55,5 +61,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     const md = ['### Not run on the hosted macOS runner (run them locally: CONTRIBUTING.md, "Browser gates")', '', '| suite | why |', '| --- | --- |', ...rows.map(([id, why]) => `| ${id} | ${why} |`), ''].join('\n');
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');
     console.log(`${rows.length} suites, gates and mutants are not run here; CI gates: ${CI_GATES.length} of ${ALL_GATES.length}; CI mutants: ${CI_MUTANTS.length} of ${MUTANTS.length}`);
-  } else { console.error('usage: macos-plan.mjs --gates | --mutants=all|pr | --report | --local-gates | --local-mutants'); process.exit(2); }
+  } else { console.error('usage: macos-plan.mjs --gates | --xbrowser | --mutants=all|pr | --report | --local-gates | --local-mutants'); process.exit(2); }
 }

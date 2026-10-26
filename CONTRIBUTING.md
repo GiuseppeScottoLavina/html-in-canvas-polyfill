@@ -53,7 +53,8 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 | 12 of the 15 Chrome gates (`npm run test:gates`: all but the three below), real + control | CI macOS, every push | pixels, hit testing, typing, resize and listeners do not depend on the refresh rate |
 | mutation suite, the 40 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 40 nightly and on release tags (4 machines) | |
 | `test:examples` (all but effect-plugin), the documentation smoke pages, `test:pages`, `test:field`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
-| `test:xbrowser` on Firefox | CI macOS, every push | the runner image's Firefox and geckodriver, at the Retina device pixel ratio and with WebGL forced on (`HIC_FIREFOX_PREFS`) |
+| `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS, every push | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
+| the scroll scenario of `test:xbrowser` on Firefox | local | at the runner's DPR 1 the scrolled list differs from its twin on 6.6-6.8 % of the pixels (bound 5 %), the text antialiasing of a 1x macOS display; Firefox cannot be given a real DPR 2 there |
 | G-scroll-cadence and its 5 mutants | local | thresholds from a 120 Hz display; at 60 Hz the live list moved in 61-74 % of the frames (70 % / 82 % required) |
 | G-f1-form-effect, G-interposer-strong (and 2 mutants), `test:plugins`, examples/effect-plugin, `test:native-effects` | local | continuous WebGPU effects present no frames on the virtual GPU (a transition effect does, and plain WebGPU presents at 60 fps): not yet explained |
 | `test:wpt` | local | 3 of 237 files unstable between repetitions on the runner; its oracle, Canary, changes daily |

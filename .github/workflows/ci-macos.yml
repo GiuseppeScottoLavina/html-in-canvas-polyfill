@@ -150,13 +150,12 @@ jobs:
           mkdir -p .scratch/geckodriver-dl && ln -sf "$(command -v geckodriver)" .scratch/geckodriver-dl/geckodriver
           /Applications/Firefox.app/Contents/MacOS/firefox --version
           geckodriver --version | head -1
-      - name: G-xbrowser (Firefox; Safari runs locally, see local-only)
+      - name: G-xbrowser on Firefox (Safari and the scroll scenario run locally, see local-only)
         timeout-minutes: 30
         env:
-          # the device pixel ratio of the Retina screens the bounds were set on (the runner's display is 1x), and WebGL on the virtual GPU, which Firefox's
-          # blocklist refuses ("gl is null" in the explainer's texture check)
-          HIC_FIREFOX_PREFS: '{"layout.css.devPixelsPerPx": "2", "webgl.force-enabled": true}'
-        run: node test/xbrowser/run.mjs --engine=firefox
+          # WebGL on the virtual GPU, which Firefox's blocklist refuses ("gl is null" in the explainer's texture check)
+          HIC_FIREFOX_PREFS: '{"webgl.force-enabled": true}'
+        run: node test/xbrowser/run.mjs --engine=firefox --only="$(node test/ci/macos-plan.mjs --xbrowser)"
       - uses: ./.github/actions/macos-results
         if: always()
         with:
