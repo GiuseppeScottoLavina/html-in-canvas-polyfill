@@ -1,6 +1,6 @@
 /**
- * Can the user see an effect canvas? The effect host pauses its rendering while the answer is no (docs/ARCHITECTURE.md ADR-G, off-screen pause).
- * Module: gpu-effects (src/effects/**).
+ * Can the user see a canvas? The effect host pauses its rendering while the answer is no (docs/ARCHITECTURE.md ADR-G, off-screen pause), and so do animated images (schedule/observers/animated-images.js).
+ * Module: util.
  */
 
 /** @typedef {import('../contracts/types.js').HicEnv} HicEnv */

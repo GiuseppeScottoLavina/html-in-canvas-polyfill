@@ -278,7 +278,7 @@ All DOMExceptions are the platform class. Loud polyfill refusals are `HicUnsuppo
 | Offscreen context without placeholder canvas | `InvalidStateError` (a WebGL context of such a canvas keeps `TypeError`) | drawElementImage |
 | invalid `DOMMatrixInit` / `DOMRectInit` | `TypeError` | updateElementGeometry |
 | any numeric argument NaN / infinite | none (silent return) | drawElementImage |
-| `drawable` SVG element inside an `<svg>` (not the outermost `<svg>`) | `HicUnsupportedError('svg-drawable')` (polyfill limit) | getElementTransform, updateElementGeometry, clearElementGeometry, capture |
+| `drawable` SVG element inside an `<svg>` (not the outermost `<svg>`) | `HicUnsupportedError('svg-drawable')` (polyfill limit) | captureElementImage, drawElementImage and the texture methods (getElementTransform, updateElementGeometry and clearElementGeometry keep its canvas transform, as natively) |
 | `postMessage` of an `ElementImage` through a MessagePort / BroadcastChannel / to a ServiceWorker; an `ElementImage` in a Worker's transfer list but not in the message | `HicUnsupportedError('worker-element-image')` / `DataCloneError` | postMessage |
 | in a worker: an `ElementImage` of another canvas, a standalone OffscreenCanvas, a closed image | `InvalidStateError` | drawElementImage, the OffscreenCanvas geometry methods |
 | `new ElementImage()` | `TypeError` (Illegal constructor) | constructor |
@@ -504,7 +504,7 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
 | `iframe` | iframe/frame/object whose document this page cannot read (cross-origin, sandboxed without `allow-same-origin`), or an embed that does not show an image, in a drawable subtree | its own box (border, background) without the document, as natively; entry. A same-origin frame or object draws its document (resources inlined, its cross-origin content and `:visited` rules left out), repainted when that document changes or reloads (a scroll inside the frame alone does not repaint: it shows at the next repaint); no entry |
 | `shadow-canvas` | managed canvas in a closed shadow root created before install | refused, entry with hint `installed.adoptRoot(root)` |
 | `top-layer-canvas` | a managed canvas became the fullscreen element (its controls take no input), or a `popover` canvas | entry with hint (fullscreen proceeds) / refused at mount |
-| `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | API calls throw `HicUnsupportedError` |
+| `svg-drawable` | `drawable` on an SVG element inside an `<svg>` | capture and draw throw `HicUnsupportedError`; the geometry methods work |
 | `csp-blocked` | CSP without `img-src data:` | entry + hint (snapshots cannot decode) |
 | `top-layer` | (no longer reported) a modal dialog, open popover or fullscreen element inside a drawable is left out of the snapshot, as natively | - |
 | `cross-origin-resource` | image/font/CSS url without CORS and not same-origin | as natively: an `<img>` / `<picture>` / embed / object draws its box without the picture, an SVG `<image>` draws nothing, a `<filter>` with such an `feImage` is not applied, a font falls back; entry |

@@ -90,6 +90,15 @@ export function collectDrawables(logicalChildren, legacy) {
     for (const el of child.querySelectorAll('[drawable]')) {
       if (!belongsToNested(el, child)) out.push(el);
     }
+    // a canvas in a shadow tree whose children are slots: the light-DOM elements assigned to them are its children in the flat tree (WPT shadow-dom-slot-canvas-child)
+    const slots = child.localName === 'slot' ? [child] : [];
+    for (const slot of child.querySelectorAll('slot')) if (!belongsToNested(slot, child)) slots.push(slot);
+    for (const slot of slots) {
+      for (const el of /** @type {HTMLSlotElement} */ (slot).assignedElements?.({ flatten: true }) ?? []) {
+        if (el.hasAttribute('drawable')) out.push(el);
+        if (el.localName !== 'canvas') for (const d of el.querySelectorAll('[drawable]')) if (!belongsToNested(d, el)) out.push(d);
+      }
+    }
   }
   return out;
 }

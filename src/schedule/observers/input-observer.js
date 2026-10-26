@@ -134,7 +134,23 @@ export function observeInput(env, record) {
     damageControl(control, 'selection');
   };
 
+  /**
+   * An image-map <area> (its <map> may lie outside the canvas) that gains or loses focus repaints its focus ring over the <img> elements of the layer that use the map
+   * (snapshot/capture/clone.js areaFocusRings).
+   * @param {Event} ev
+   */
+  const onAreaFocus = (ev) => {
+    const area = /** @type {Element} */ (ev.target);
+    if (area.localName !== 'area') return;
+    const map = area.closest('map');
+    const name = map && (map.getAttribute('name') || map.id);
+    if (!name) return;
+    for (const img of root.querySelectorAll('img[usemap]')) if (img.getAttribute('usemap')?.replace(/^#/, '') === name) damageControl(img, 'focus');
+  };
+
   const capture = { capture: true, passive: true };
+  env.document.addEventListener('focusin', onAreaFocus, capture);
+  env.document.addEventListener('focusout', onAreaFocus, capture);
   for (const type of VALUE_EVENTS) root.addEventListener(type, onValue, capture);
   root.addEventListener('keydown', /** @type {EventListener} */ (onKey), capture);
   root.addEventListener('selectionchange', onSelection, capture);
@@ -148,6 +164,8 @@ export function observeInput(env, record) {
     root.removeEventListener('keydown', /** @type {EventListener} */ (onKey), capture);
     root.removeEventListener('selectionchange', onSelection, capture);
     env.document.removeEventListener('selectionchange', onSelection, capture);
+    env.document.removeEventListener('focusin', onAreaFocus, capture);
+    env.document.removeEventListener('focusout', onAreaFocus, capture);
   };
 }
 

@@ -1,6 +1,6 @@
-// watchVisibility (src/effects/visibility.js) with the browser's real IntersectionObserver: no GPU needed.
+// watchVisibility (src/util/visibility.js) with the browser's real IntersectionObserver: no GPU needed.
 import { test, assert, fixture, frames } from '/test/unit/lib/t.js';
-import { watchVisibility, VISIBILITY_MARGIN } from '/src/effects/visibility.js';
+import { watchVisibility, VISIBILITY_MARGIN } from '/src/util/visibility.js';
 
 const env = { window };
 

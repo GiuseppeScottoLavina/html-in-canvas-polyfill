@@ -98,7 +98,9 @@ if (!docsOnly) {
   // 15275 -> 15400 (2026-10-22, measured 15,374; 15,268 before this step): read-back-allowed rules of WPT master (unreadable mask images, external SVG <use>, the video
   // poster and cross-origin video, popover toggles, moveBefore() into a canvas).
   // 15400 -> 15375 (2026-10-22, measured 15,355 with the WPT re-pin merged: the two-argument getElementTransform removed, the privacy review fixes added).
-  if (total > 15375) problems.push(`G-size: core is ${total} code lines (> 15375)`);
+  // 15375 -> 15875 (2026-10-22, measured 15,861; 15,364 before these steps): animated images (+313, schedule/observers/animated-images.js), the ancestor-change
+  // filter (+90, mutation-observer.js watchAncestors), the image-map <area> focus ring (+44), selectAllChildren / selectNodeContents of a canvas (+25), slotted drawables (+25).
+  if (total > 15875) problems.push(`G-size: core is ${total} code lines (> 15875)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

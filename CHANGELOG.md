@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- An animated GIF, APNG, WebP or AVIF `<img>` inside a drawable is played: each new frame of the image is drawn and fires a `paint` event, as natively (it showed its first frame forever). Frames are decoded with `ImageDecoder` from the same bytes the polyfill already inlines, so a cross-origin image without CORS is never read; an image plays only while a canvas that shows it can be seen, at most at that canvas's frame cap and build rate, and decoded frames are kept in a bounded cache. Safari 27 (no `ImageDecoder`) and pages that are not a secure context show the first frame, with one console message. Animated CSS images (`background-image` and the like) still show their first frame.
+
+### Changed
+
+- The official WPT HTML-in-Canvas tests at the same revision (2026-10-18): the polyfill passes 206 of 237 files and 324 of 369 subtests (was 198 and 316); native Chrome Canary 158.0.8112.1 passes 225 and 357. Every remaining difference is classified in `docs/CONFORMANCE.md`: 32 subtests that a userland polyfill cannot pass, 5 documented deviations (the canvas-origin placement of a nested drawable, the decoration edge of a `::selection` and a CSS Custom Highlight), 8 that the native build fails too.
+- The core bundle grows to 328,870 bytes minified, 114,739 gzipped (was 315,946 / 109,908), for the changes below (each measured in `scripts/check-bundle.mjs`).
+
+### Fixed
+
+- An attribute change on an ancestor of the canvas no longer fires a `paint` event when it cannot change what the drawables paint (a class that only restyles that ancestor, an attribute no rule tests): only a class, id or attribute that a style rule tests above its subject, `lang` / `dir`, or a change of the values the canvas passes on (its inherited and custom properties) repaints the canvas. Every such change used to rebuild every tile.
+- `getSelection().selectAllChildren(canvas)` and `range.selectNodeContents(canvas)` select the drawables of a managed canvas, as natively; they selected nothing, since the canvas's children live in its layer.
+- The focus ring of a focused image-map `<area>` is drawn over the `<img>` of a drawable that uses its map (rect, circle and default shapes), in the area's outline colour, never its `:visited` one.
+- A light-DOM drawable slotted into a `content=drawable` canvas that lives in a shadow tree (`<canvas content=drawable><slot>`) is a drawable of that canvas, as in the flat tree; drawing it threw `InvalidStateError`. Changes inside it repaint it.
+- `getElementTransform`, `updateElementGeometry` and `clearElementGeometry` accept an SVG element inside an `<svg>` (`<rect drawable>`) and keep its canvas transform, as natively; they threw `HicUnsupportedError`. Capturing or drawing it is still refused.
+
 ## [0.1.0-preview.6] - 2026-10-22
 
 The conformance gate now runs the official WPT HTML-in-Canvas tests at their newest revision (2026-10-18): the polyfill passes 198 of 237 files and 316 of 369 subtests, native Chrome Canary 158.0.8112.1 225 and 357, and no polyfill bug is open. Content that read-back-allowed rendering hides is now hidden as natively: an unreadable mask image masks its element away, a cross-origin video is an invisible box, and an SVG `<use>` draws only same-origin documents. **Breaking:** the two-argument `getElementTransform(element, drawTransform)` and `OffscreenCanvas.getElementTransform`, removed from the specification on 2026-10-09, are gone; see Removed for the migration.

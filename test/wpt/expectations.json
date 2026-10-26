@@ -1,16 +1,6 @@
 {
  "note": "Reasons for every subtest that passes natively and fails in the polyfill (category: deviation | impossible | flaky | bug; reason: the feature id of docs/SUPPORT-MATRIX.md or a bug id). `pass`, `partial` and `stable` are rewritten by `npm run test:wpt -- --update-expectations`.",
  "tests": {
-  "animated-gif-pinned-to-element-image.tentative.html": {
-   "category": "deviation",
-   "reason": "animated-images",
-   "note": "only partly fixable: drawImage of an animated image yields its first frame (HTML: the default image), an image inside the SVG snapshot does not animate, and no event announces a new frame, so the snapshot shows the first frame. ImageDecoder (Chromium only) could replay the decoded frames on the polyfill's own clock (not the page's): not done"
-  },
-  "animated-gif.tentative.html": {
-   "category": "deviation",
-   "reason": "animated-images",
-   "note": "only partly fixable: drawImage of an animated image yields its first frame (HTML: the default image), an image inside the SVG snapshot does not animate, and no event announces a new frame, so the snapshot shows the first frame. ImageDecoder (Chromium only) could replay the decoded frames on the polyfill's own clock (not the page's): not done"
-  },
   "backdrop-filter-nested.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
@@ -36,26 +26,17 @@
     "updateElementGeometry() on ancestor and nested drawable": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "fixable, not done: natively a nested drawable is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestor's canvas transform (measured: nested-block at the origin although laid out 50 px down); the polyfill keeps it in flow and lets it follow its ancestor. Doing it changes the hit testing of every undrawn nested drawable"
+     "note": "fixable, not done: natively every drawable, nested ones included, is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestors' canvas transforms; it keeps its layout space, and while an ancestor is drawn it is hit-tested there (measured on Canary 158.0.8112.1: an undrawn nested drawable laid out 40 px down reports the canvas origin and is hit at the origin, not at its layout position). The polyfill places only the direct children at the origin (the layer grid) and lets nested drawables follow their layout and their ancestor. Matching it means a placement rule for every nested drawable, drawn or not, re-measured whenever the layout moves it, which changes hit testing and the measured geometry of every page with nested drawables; not done in this round"
     },
     "updateElementGeometry() affects getBoundingClientRect() on a block nested": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "as above (canvas-origin placement), and its margin step needs a position independent of layout read synchronously after a style write (a re-measure inside getBoundingClientRect); also follows the ancestor test in the same page"
+     "note": "as above (canvas-origin placement of a nested drawable), and its margin step needs a position independent of layout read synchronously after a style write; also follows the ancestor test in the same page"
     },
     "A non-drawable descendant inherits": {
      "category": "deviation",
      "reason": "nested-geometry",
      "note": "passes alone: the ancestor test above fails before its cleanup and leaves the ancestor transformed"
-    }
-   }
-  },
-  "canvas-transform-get-set.tentative.html": {
-   "subtests": {
-    "getElementTransform() and updateElementGeometry() on SVG element": {
-     "category": "deviation",
-     "reason": "svg-drawable",
-     "note": "the <rect drawable> cases"
     }
    }
   },
@@ -139,11 +120,6 @@
    "reason": "paint-timing",
    "note": "passes every subtest since 2026-10-16 (the first snapshot uses no credit of the snapshot-rate gate, so the rebuild after the first paint is in the next frame); before, the test's one-frame waits (rAF + setTimeout(0)) caught the paint only on a cold first load, and the file passed 4/4 or 0/4 by turns. Kept for the paint-timing deviation should a slower machine miss the single frame"
   },
-  "onpaint.tentative.html": {
-   "category": "deviation",
-   "reason": "paint-spurious",
-   "note": "'canvas ancestor changes': an attribute change on an ancestor damages every tile (the clone carries the ancestor shells, whose classes can restyle the content), so a paint with unchanged pixels follows; telling an unchanged tile apart needs a read-back of every rebuilt tile. The other 11 subtests pass in every rep. Three machine-load effects made this file flaky before 2026-10-16: a build that took 3.5 ms deferred its decode behind the test's next task (the grandchild paint then reached the next subtest's handler); the snapshot-rate gate compared post-frame task times with thresholds on whole 120 Hz frames; and its phase accumulator allowed a second build one frame after the first or not depending on the phase that the frame of the first build and dropped frames had left ('grandchild changes' or 'child transform' and 'drawing operations' failed by turns). Builds are now paced in frame time by a credit of builds"
-  },
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
@@ -157,32 +133,12 @@
   "privacy/selection-painted-overlay-path.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "fixable, not done: a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone (its ranges could be wrapped like the selection); the ::selection part is drawn"
-  },
-  "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html": {
-   "category": "deviation",
-   "reason": "caret-selection",
-   "note": "fixable, not done: the focus ring of a focused image map <area> (outline auto on the area shape over its <img>) is not drawn"
-  },
-  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html": {
-   "category": "deviation",
-   "reason": "caret-selection",
-   "note": "getSelection().selectAllChildren(canvas): a selection whose boundary points are the canvas element is empty once the canvas children live in the layer (tree-identity); patching Selection/Range boundary points is not done"
+   "note": "a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone; the ::selection part is. Drawing it (its ranges wrapped like the selection) would not make the file pass: its ::selection decoration has the same edge as privacy/selection-alone-with-decorations-painted (natively it ends at the whole-pixel highlight rect, in the clone at the text box), so it was not done"
   },
   "scale.tentative.html": {
    "category": "impossible",
    "reason": "paint-timing",
    "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous: mostly not there yet (InvalidStateError, harness TIMEOUT), and when it wins the race the 2x draws resample the 1x snapshot (soft edges, 4,079 px, FAIL; native paints the element at the draw scale, raster-scale-floor): the subtest fails either way (before X-13 it failed earlier, on its shadow root)"
-  },
-  "shadow-dom-slot-canvas-child.tentative.html": {
-   "category": "deviation",
-   "reason": "shadow-dom",
-   "note": "fixable, not done: a drawable slotted into a canvas that lives in a shadow tree is a child of the canvas in the flat tree only; the layer follows DOM children (the slot is relocated, the slotted light DOM element is not a drawable of the layer: InvalidStateError)"
-  },
-  "offscreen/animated-gif-worker.tentative.html": {
-   "category": "deviation",
-   "reason": "animated-images",
-   "note": "the ElementImage reaches the worker (worker bundle) but shows the first frame of the animated image: see animated-gif.tentative.html"
   },
   "offscreen/ink-overflow-worker.tentative.html": {
    "category": "impossible",
@@ -211,12 +167,15 @@
  "pass": [
   "anchor-positioning.tentative.html",
   "animated-clip-path.tentative.html",
+  "animated-gif-pinned-to-element-image.tentative.html",
+  "animated-gif.tentative.html",
   "backdrop-filter-bounds-expansion.tentative.html",
   "basic-rect-zoom.tentative.html",
   "basic-rect.tentative.html",
   "broken-image.tentative.html",
   "canvas-in-custom-element-multiple.tentative.html",
   "canvas-in-custom-element.tentative.html",
+  "canvas-transform-get-set.tentative.html",
   "canvas-transform-update-element-image.tentative.html",
   "canvas-transform-update.tentative.html",
   "captureElementImage.tentative.html",
@@ -284,6 +243,7 @@
   "nested-div-content-drawable-canvas.tentative.html",
   "nested-drawable.tentative.html",
   "non-opaque-element.tentative.html",
+  "offscreen/animated-gif-worker.tentative.html",
   "offscreen/canvas-transform-update-worker.tentative.html",
   "offscreen/offscreenCanvas-drawElementImage-worker.tentative.html",
   "offscreen/offscreenCanvas-drawElementImage.tentative.html",
@@ -299,6 +259,7 @@
   "onpaint-remove-non-drawable-element.tentative.html",
   "onpaint-scroll-crash.tentative.html",
   "onpaint-zindex.tentative.html",
+  "onpaint.tentative.html",
   "opacity-zero-ancestor.tentative.html",
   "percent-sizing.tentative.html",
   "position-anchor-crash.tentative.html",
@@ -384,8 +345,10 @@
   "privacy/svg/svg-use-outside-subtree-images-ignored.tentative.https.sub.html",
   "privacy/target-text-ignored-overlay-path.tentative.html",
   "privacy/video-ignored.tentative.https.sub.html",
+  "privacy/visited-link/image-map-area-visited-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-currentcolor-ignored.tentative.html",
+  "privacy/visited-link/visited-link-custom-selection-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-decoration-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-slotted-color-ignored.tentative.html",
   "privacy/visited-link/visited-link-svg-fill-stroke-color-ignored.tentative.html",
@@ -398,6 +361,7 @@
   "ruby-canvas-crash.tentative.html",
   "scroller-crash.tentative.html",
   "shadow-basic.tentative.html",
+  "shadow-dom-slot-canvas-child.tentative.html",
   "shadow-dom-slotted-moveBefore.tentative.html",
   "shadow-dom-slotted.tentative.html",
   "shadow-non-opaque-element.tentative.html",
@@ -410,13 +374,11 @@
  ],
  "partial": {
   "canvas-transform-get-bounding-client-rect.tentative.html": 2,
-  "canvas-transform-get-set.tentative.html": 12,
   "display-contents.tentative.html": 1,
   "draw-element-image-get-image-data.tentative.html": 1,
   "onpaint-iframe-post-tree-order.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,
-  "onpaint-remove-drawable-element.tentative.html": 5,
-  "onpaint.tentative.html": 11
+  "onpaint-remove-drawable-element.tentative.html": 5
  },
  "stable": [
   "anchor-positioning.tentative.html",

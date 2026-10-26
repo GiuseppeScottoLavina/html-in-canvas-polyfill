@@ -14,7 +14,7 @@ import { contentBoxOf, createNativeGeometry } from './native-geometry.js';
 import { createNativeInterposer } from './native-interposer.js';
 import { captureMapper } from './plugin-abi.js';
 import { createNativeSourceProvider, createStoreSourceProvider } from './source-provider.js';
-import { watchVisibility } from './visibility.js';
+import { watchVisibility } from '../util/visibility.js';
 
 /** @typedef {import('../contracts/types.js').EffectHost} EffectHost */
 /** @typedef {import('../contracts/types.js').EffectHostOptions} EffectHostOptions */
@@ -38,7 +38,7 @@ const SETTLE_MS = 100;
 
 /**
  * Runs as a Scheduler FrameHook; uploads only when the source version advanced; renders when due; effecterror on plugin failure (plugin disabled, last frame kept). Keeps source geometry in sync via GeometryApi.
- * OFF-SCREEN PAUSE (ADR-G): while the canvas cannot be seen (visibility.js: outside the viewport by more than VISIBILITY_MARGIN, or the document hidden) nothing is rendered,
+ * OFF-SCREEN PAUSE (ADR-G): while the canvas cannot be seen (util/visibility.js: outside the viewport by more than VISIBILITY_MARGIN, or the document hidden) nothing is rendered,
  * continuous plugins included; the frame clock keeps running (`frame.now` is the time of the frame), so on resume a time-based effect shows the state it has at that
  * time, with nothing replayed. Coming back into the margin renders at once. While paused, an unsettled trigger()/settled() still advances at 1000 / SETTLE_MS frames
  * per second, so its promise resolves; a hidden document runs no frames at all, so there it resolves on the first frame after the document is shown again.
@@ -136,7 +136,7 @@ class HostRuntime {
     /** @type {number[]} */ this.lossTimes = [];
     /** @type {Float64Array} */ this.frameTimes = new Float64Array(FPS_WINDOW);
     this.counters = { frames: 0, uploads: 0, pluginErrors: 0, deviceLosses: 0, pauses: 0, offscreenFrames: 0 };
-    /** @type {import('./visibility.js').VisibilityWatch|null} */ this.visibility = null;
+    /** @type {import('../util/visibility.js').VisibilityWatch|null} */ this.visibility = null;
     /** @type {any} */ this.settleTimer = 0;
     /** a paused host may render one frame to advance an unsettled action */
     this.settleDue = false;

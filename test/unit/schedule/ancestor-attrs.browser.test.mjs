@@ -39,3 +39,34 @@ for (const [name, css, on, off] of CASES) {
     assert.deepEqual(px(), [255, 0, 0], 'and follows it back');
   });
 }
+
+// WPT onpaint 'canvas ancestor changes': a change that restyles only the ancestor paints nothing in the canvas, and natively fires no paint event. The control (same
+// page, a rule that reaches the drawable through inheritance) must fire one.
+for (const [name, css, reaches] of /** @type {Array<[string, string, boolean]>} */ ([
+  ['a class that restyles only the wrapper (its own background)', '.wrap.on{background:rgb(0,128,0)}', false],
+  ['an attribute nothing tests', '', false],
+  ['control: a class whose rule sets an inherited property of the wrapper (color)', '.wrap.on{color:rgb(0,0,255)}', true],
+  ['control: a class tested above the drawable', '.wrap.on #d{outline:1px solid red}', true],
+])) {
+  test(`ancestor attributes: ${name} ${reaches ? 'fires a paint' : 'fires no paint'}`, async (t) => {
+    const i = inst(t);
+    const style = document.createElement('style');
+    style.textContent = `#d{background:rgb(255,0,0)}${css}`;
+    document.head.append(style);
+    const wrap = document.createElement('div');
+    wrap.className = 'wrap';
+    wrap.innerHTML = '<canvas content="drawable" width="200" height="100" style="display:block;width:200px;height:100px"><div id="d" drawable style="width:200px;height:100px">text</div></canvas>';
+    document.body.append(wrap);
+    t.cleanup(() => { style.remove(); wrap.remove(); });
+    const c = /** @type {HTMLCanvasElement} */ (wrap.querySelector('canvas'));
+    let paints = 0;
+    c.onpaint = () => { paints++; /** @type {any} */ (c.getContext('2d')).drawElementImage(wrap.querySelector('#d'), 0, 0); };
+    c.requestPaint();
+    await i.whenPainted(c);
+    await sleep(400);
+    paints = 0;
+    if (css) wrap.classList.add('on'); else wrap.setAttribute('data-unused', '1');
+    await sleep(400);
+    assert.equal(paints, reaches ? 1 : 0);
+  });
+}
