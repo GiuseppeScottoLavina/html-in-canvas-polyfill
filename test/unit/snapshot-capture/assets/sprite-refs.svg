@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<defs><style>.cls-1{fill:rgb(0,0,200)} #by-id{fill:rgb(0,100,0)} @media (min-width:1px){.mq{fill:rgb(255,0,0)}}</style>
+<linearGradient id="g"><stop stop-color="rgb(0,0,255)"/></linearGradient>
+<clipPath id="c"><rect width="10" height="20"/></clipPath>
+<mask id="m"><rect width="20" height="20" fill="white"/></mask>
+<filter id="f" x="0" y="0" width="1" height="1"><feFlood flood-color="rgb(200,100,0)"/></filter></defs>
+<rect id="grad" width="20" height="20" fill="url(#g)"/>
+<rect id="grad-fallback" width="20" height="20" fill="url(#g) rgb(10,20,30)"/>
+<rect id="clip" width="20" height="20" clip-path="url(#c)"/>
+<rect id="mask" width="20" height="20" mask="url(#m)"/>
+<rect id="filter" width="20" height="20" filter="url(#f)"/>
+<rect id="cls" class="cls-1" width="20" height="20"/>
+<rect id="by-id" width="20" height="20"/>
+<rect id="page-cls" class="page-cls" width="20" height="20"/>
+<rect id="mq" class="mq" width="20" height="20"/>
+<symbol id="sym"><style>.inner{fill:rgb(0,150,150)}</style><rect class="inner" width="20" height="20"/></symbol>
+<g id="chain"><use xlink:href="#clip"/></g>
+</svg>

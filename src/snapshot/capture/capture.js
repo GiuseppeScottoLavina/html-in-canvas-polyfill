@@ -13,7 +13,7 @@ import { setInlineStyle } from './inline-style.js';
 import { placeholderElement } from './placeholder.js';
 import { collectVarNames, inheritCustomProperties } from './custom-props.js';
 import { createResourceCache } from './inline-resources.js';
-import { addOutsideMasks, addReferencedFilters, settleFilterImages } from './svg-refs.js';
+import { addOutsideMasks, addReferencedDefs, settleFilterImages } from './svg-refs.js';
 import { buildSvgDataUrl, cropPixels } from './svg-builder.js';
 import { engineSkins } from './engine-skins.js';
 import { planTextOverlay } from './text-overlay.js';
@@ -109,7 +109,7 @@ export function createCapture(env) {
     const t2 = env.now();
     const shakenCss = memoShake(`${bundle.key}|${clone.tokens.signature}`, () => shakeCss(bundle.css, clone.tokens));
     const css = shakenCss.css + clone.extraCss;
-    const filters = addReferencedFilters(env.document, clone.root, css, req.resources);
+    const filters = addReferencedDefs(env.document, clone.root, css, req.resources);
     clone.nodes += filters.added + addOutsideMasks(env.document, clone.root, css);
     const feImages = settleFilterImages(clone.root, env.document.baseURI, req.resources);
     for (const e of feImages.ignored) entries.push({ ...e, t: 0, count: 1 });

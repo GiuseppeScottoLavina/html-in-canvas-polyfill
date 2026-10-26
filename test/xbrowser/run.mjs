@@ -17,6 +17,8 @@ import { startServer } from '../harness/server.mjs';
 import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg, sleep } from '../harness/lib/util.mjs';
 import { SCROLLBAR_PROBE_EXPR } from '../harness/lib/env.mjs';
+import { watchActivations, foreignActivations, activateApp } from '../harness/lib/os-activation.mjs';
+import { parkOsPointer } from '../harness/lib/os-pointer.mjs';
 import { RECORDER } from './lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, NATIVE_SURFACE, NATIVE_SCENARIOS } from './scenarios.mjs';
 
@@ -58,34 +60,75 @@ async function waitLoad() {
 const scrollbarGutter = async (s) => (await s.evaluate(SCROLLBAR_PROBE_EXPR).catch(() => null))?.verticalGutterPx ?? null;
 /** A scenario whose scrollbars changed while it ran compared pages laid out with different bars; it runs again, at most this often, and fails if they never held. */
 const SCROLLBAR_ATTEMPTS = 3;
+/**
+ * Application activations (macOS): a browser that is not the active application cannot make its window key, so a trusted click into it is swallowed (Safari: the
+ * clickEffect field got no focus) and its popup cannot take the activation (Firefox: the inactive scenario). Measured with an own window activating itself every
+ * second (test/harness/lib/os-activation.mjs). A scenario during which another application came to the front, or that started with one in front the browser
+ * could not displace, ran in another environment than the one it judges: it runs again, at most ACTIVATION_ATTEMPTS times, and then fails as an environment problem.
+ */
+const ACTIVATION_ATTEMPTS = 3;
+/**
+ * The OS pointer (macOS): real pointer input reaches the page in both engines (WebDriver input does not move the OS pointer), so a person moving the mouse over
+ * the test window changes hover and press looks behind the scenario's back. Measured: Firefox 157 interaction, 3 of 3 runs failed on 11-15 regions with real
+ * pointer moves over the window every 0.7 s, 3 of 3 passed without (the intermittent single-region failures of D-rg:press, L-cb-on:hover in full runs came with
+ * scrollbar switches, i.e. a mouse in use). The pointer is moved off the browser's windows before each scenario, and a scenario during which it moved runs again
+ * (the same attempts as above), then fails as an environment problem.
+ */
+const activations = watchActivations();
 
 async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
   const rows = []; const numbers = {};
+  /** the browser's processes (the application among them is the one that must stay in front) */
+  const pids = (s.caps?.pids ?? []).map(Number);
   for (const [name, fn] of Object.entries(scenarios)) {
     if (only && !only.includes(name)) continue;
     if (control && !(CONTROL_CLASSES[name] ?? []).length) continue;
     for (let attempt = 1; ; attempt++) {
       const checks = [];
+      /** the attempt's report lines, printed once it is known whether the attempt counts (an attempt disturbed by the environment is run again) */
+      const lines = [];
       const ctx = {
         s, srv, bundle: BUNDLE, control, numbers,
-        check: (label, ok, data, cls) => { checks.push({ label, ok: !!ok, cls, data }); if (!control) console.log(`  ${ok ? 'ok  ' : 'FAIL'} [${engine}] ${label}${ok ? '' : ' ' + JSON.stringify(data)?.slice(0, 300)}`); },
+        check: (label, ok, data, cls) => { checks.push({ label, ok: !!ok, cls, data }); if (!control) lines.push(`  ${ok ? 'ok  ' : 'FAIL'} [${engine}] ${label}${ok ? '' : ' ' + JSON.stringify(data)?.slice(0, 300)}`); },
         save: (n, img) => writeFileSync(join(pngDir, `${engine}${control ? '-control' : ''}-${n}.png`), encodePng(img)),
       };
       // a test window that lost activation (another app came to the front on this shared machine) draws macOS controls in their inactive look and drops trusted
       // clicks: re-activate it through WebDriver (switch to its own handle) before every scenario and record when it was not active
       try { const h = await s.cmd('GET', '/window'); await s.cmd('POST', '/window', { handle: h }); } catch { /* engines without window switching */ }
       if (!(await s.evaluate('document.hasFocus()').catch(() => true))) numbers[`${name}WindowInactive`] = true;
+      // the browser must be the active application: bring it back if another one is in front, and record every activation while the scenario runs
+      const watched = activations.available && pids.length > 0;
+      if (watched && !pids.includes(activations.front()?.pid ?? -1)) { activateApp(pids); await sleep(600); }
+      const parked = watched ? parkOsPointer(pids) : null;
+      if (parked?.parked) await sleep(450);   // past one 200 ms pointer sample, so the parking itself is not recorded as a move
+      const frontAtStart = activations.front();
+      const actMark = activations.mark();
       const barsBefore = await scrollbarGutter(s);
       const t0 = Date.now(); let threw = null;
-      try { await fn(ctx); } catch (e) { threw = String(e.stack ?? e).slice(0, 600); if (!control) console.log(`  FAIL [${engine}] ${name} threw: ${threw}`); }
+      try { await fn(ctx); } catch (e) { threw = String(e.stack ?? e).slice(0, 600); if (!control) lines.push(`  FAIL [${engine}] ${name} threw: ${threw}`); }
+      /** an attempt that does not count: its lines are printed as such, and the scenario runs again */
+      const discard = (why) => { console.log(`  [${engine}]${control ? ' (control)' : ''} ${name}: ${why}, attempt ${attempt} discarded; its checks were:`); for (const l of lines) console.log('  ' + l.replace(/^  (ok  |FAIL)/, '  ($1)')); };
       const barsAfter = await scrollbarGutter(s);
+      const foreign = watched ? foreignActivations(activations.since(actMark), pids) : [];
+      const inFront = !watched || pids.includes(frontAtStart?.pid ?? -1);
+      const moved = watched ? activations.movesSince(actMark) : [];
+      if (watched && (foreign.length || !inFront || moved.length)) {
+        (numbers.activationChanges ??= []).push({ scenario: name, control, attempt, frontAtStart, foreign, pointerMoves: moved.length, parked, at: new Date().toISOString() });
+        const why = `${!inFront ? `another application was in front (${frontAtStart?.name}) and the browser could not take it back` : foreign.length ? `another application came to the front (${foreign.map((a) => a.name).join(', ')})` : `the OS pointer moved (${moved.length} times)`} while the scenario ran (attempt ${attempt} of ${ACTIVATION_ATTEMPTS})`;
+        if (attempt < ACTIVATION_ATTEMPTS) { discard(why); continue; }
+        console.log(`  [${engine}]${control ? ' (control)' : ''} ${name}: ${why}`);
+        checks.unshift({ label: `${name}: the browser stayed the active application and nobody moved the pointer during one of ${ACTIVATION_ATTEMPTS} attempts (another application in front swallows trusted clicks and keeps popups from activating; a moving pointer changes hover and press looks)`, ok: false, cls: 'environment', data: numbers.activationChanges.filter((c) => c.scenario === name) });
+      }
       const barsHeld = barsBefore === null || barsAfter === null || barsBefore === barsAfter;
       if (!barsHeld) {
         (numbers.scrollbarChanges ??= []).push({ scenario: name, control, attempt, gutterBefore: barsBefore, gutterAfter: barsAfter, at: new Date().toISOString() });
-        console.log(`  [${engine}]${control ? ' (control)' : ''} ${name}: the system scrollbars changed during the scenario (gutter ${barsBefore} -> ${barsAfter} css px), attempt ${attempt} of ${SCROLLBAR_ATTEMPTS}`);
-        if (attempt < SCROLLBAR_ATTEMPTS) continue;
-        checks.push({ label: `${name}: the system scrollbars held during one of ${SCROLLBAR_ATTEMPTS} attempts (twin and polyfill page laid out with the same bars)`, ok: false, cls: 'environment', data: numbers.scrollbarChanges.filter((c) => c.scenario === name) });
+        const why = `the system scrollbars changed during the scenario (gutter ${barsBefore} -> ${barsAfter} css px; attempt ${attempt} of ${SCROLLBAR_ATTEMPTS})`;
+        if (attempt < SCROLLBAR_ATTEMPTS) { discard(why); continue; }
+        console.log(`  [${engine}]${control ? ' (control)' : ''} ${name}: ${why}`);
+        checks.unshift({ label: `${name}: the system scrollbars held during one of ${SCROLLBAR_ATTEMPTS} attempts (twin and polyfill page laid out with the same bars)`, ok: false, cls: 'environment', data: numbers.scrollbarChanges.filter((c) => c.scenario === name) });
       }
+      for (const l of lines) console.log(l);
+      if (checks[0]?.cls === 'environment' && !control) console.log(`  FAIL [${engine}] ${checks[0].label}`);
       rows.push({ scenario: name, checks, threw, ms: Date.now() - t0, attempts: attempt, gutter: barsAfter });
       break;
     }
@@ -140,19 +183,19 @@ try {
         control = missing.length ? `DID NOT FAIL: ${missing.join(',')}${cr?.threw ? ' (control threw: ' + cr.threw.slice(0, 120) + ')' : ''}` : `red [${want.join(',')}]`;
       }
       const pass = ok && (noControl || !want.length || control.startsWith('red'));
-      E.scenarios[row.scenario] = { pass, control, failed: row.checks.filter((c) => !c.ok).map((c) => c.label), threw: row.threw, ms: row.ms };
+      E.scenarios[row.scenario] = { pass, control, failed: row.checks.filter((c) => !c.ok).map((c) => c.label), threw: row.threw, ms: row.ms, environment: row.checks.some((c) => !c.ok && c.cls === 'environment') };
       if (!pass) report.pass = false;
     }
     E.numbers = E.real.numbers;
     if (noControl) report.pass = false;
     writeFileSync(join(outRoot, `xbrowser-${engine}-${stamp}.json`), JSON.stringify(E, null, 1));
   }
-} finally { await srv.close(); clearTimeout(watchdog); }
+} finally { await srv.close(); clearTimeout(watchdog); activations.stop(); }
 
 const table = [];
 for (const [engine, E] of Object.entries(report.engines)) {
   if (!E.scenarios) { table.push({ engine, scenario: '-', verdict: E.verdict, control: '', first_failure: E.reason?.slice(0, 100) }); continue; }
-  for (const [sc, r] of Object.entries(E.scenarios)) table.push({ engine: `${engine} ${E.version.split(' ').pop()}`, scenario: sc, verdict: r.pass ? 'PASS' : 'FAIL', control: r.control.slice(0, 40), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 90) });
+  for (const [sc, r] of Object.entries(E.scenarios)) table.push({ engine: `${engine} ${E.version.split(' ').pop()}`, scenario: sc, verdict: r.pass ? 'PASS' : 'FAIL', control: r.control.slice(0, 40), first_failure: (r.environment ? 'ENVIRONMENT: ' + r.failed[0] : r.threw ?? r.failed[0] ?? '').slice(0, 90) });
 }
 console.table(table);
 writeFileSync(join(outRoot, `xbrowser-summary-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));

@@ -28,7 +28,7 @@ Problems that depend on the platform (Windows text rendering and selection colou
 
 ## Browser gates
 
-Changes that can affect what is drawn, when, or where input lands also need the browser gates. They drive real, headed browsers, take the screen focus and need an unlocked screen, so they run locally on macOS and not in CI:
+Changes that can affect what is drawn, when, or where input lands also need the browser gates. They drive real, headed browsers, take the screen focus, move the mouse pointer out of the browser window and need an unlocked screen, so they run locally on macOS and not in CI; leave the mouse and keyboard alone while they run (pointer input the gates did not send makes a Chrome gate run NOT USABLE: run it again; another application brought to the front, or a pointer moved, during a cross-browser scenario makes it run again, up to three attempts, after which it fails marked ENVIRONMENT rather than as a product failure; a failure in an undisturbed attempt is never retried):
 
 ```sh
 npm run test:gates       # browser gates in headed Chrome, each with its positive control

@@ -316,27 +316,33 @@ test('an ElementImage of another canvas is an InvalidStateError for capture; the
   throwsDom(() => canvas.getElementTransform(image), 'InvalidStateError');
 });
 
-test('SVG drawable: an inner SVG element (<rect drawable>) throws svg-drawable from capture and the geometry methods, reported; an outermost <svg drawable> is not refused (X-13)', async (t) => {
-  const { world, canvas, root } = await set(t);
+test('SVG drawable: an inner SVG element (<rect drawable>) throws svg-drawable from capture, reported; its canvas transform is state like any drawable\'s (WPT canvas-transform-get-set); an outermost <svg drawable> is not refused (X-13)', async (t) => {
+  const { world, canvas, record } = await set(t);
   canvas.insertAdjacentHTML('beforeend', '<svg id="s"><rect id="r" drawable width="10" height="10"/></svg>');
-  const rect = canvas.querySelector('#r');
-  for (const call of [() => canvas.captureElementImage(rect), () => canvas.getElementTransform(rect), () => canvas.updateElementGeometry(rect), () => canvas.clearElementGeometry(rect)]) {
-    let err;
-    try { call(); } catch (e) { err = e; }
-    assert.equal(err?.feature, 'svg-drawable');
-    assert.equal(err.name, 'NotSupportedError');
-    assert.equal(err.code, 9);
-    assert.ok(err.hint.includes('outermost <svg>'));
-  }
-  assert.equal(world.reports.unsupported.length, 4);
+  const rect = /** @type {Element} */ (canvas.querySelector('#r'));
+  record.drawables.add(rect); // the live layer collects it as a drawable (querySelectorAll('[drawable]'))
+  let err;
+  try { canvas.captureElementImage(rect); } catch (e) { err = e; }
+  assert.equal(err?.feature, 'svg-drawable');
+  assert.equal(err.name, 'NotSupportedError');
+  assert.equal(err.code, 9);
+  assert.ok(err.hint.includes('outermost <svg>'));
+  assert.equal(world.reports.unsupported.length, 1);
+  assert.ok(canvas.getElementTransform(rect).isIdentity);
+  const m = new DOMMatrix().translate(25, 35).scale(5, 10);
+  canvas.updateElementGeometry(rect, { canvasTransform: m });
+  assert.deepEqual(Array.from(canvas.getElementTransform(rect).toFloat64Array()), Array.from(m.toFloat64Array()));
+  canvas.clearElementGeometry(rect);
+  assert.ok(canvas.getElementTransform(rect).isIdentity, 'cleared');
+  assert.equal(world.reports.unsupported.length, 1, 'the geometry methods report nothing');
   canvas.insertAdjacentHTML('beforeend', '<svg id="o" drawable width="10" height="10"></svg>');
   const outer = canvas.querySelector('#o');
   for (const call of [() => canvas.captureElementImage(outer), () => canvas.getElementTransform(outer)]) {
-    let err;
-    try { call(); } catch (e) { err = e; }
-    assert.notEqual(err?.feature, 'svg-drawable', 'an outermost <svg> is a CSS box: never refused as svg-drawable');
+    let e2;
+    try { call(); } catch (e) { e2 = e; }
+    assert.notEqual(e2?.feature, 'svg-drawable', 'an outermost <svg> is a CSS box: never refused as svg-drawable');
   }
-  assert.equal(world.reports.unsupported.length, 4, 'nothing reported for the outermost <svg>');
+  assert.equal(world.reports.unsupported.length, 1, 'nothing reported for the outermost <svg>');
   assert.equal(world.reports.unsupported[0].feature, 'svg-drawable');
   assert.equal(world.reports.unsupported[0].canvas, canvas);
 });

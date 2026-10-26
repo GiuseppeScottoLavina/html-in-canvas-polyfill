@@ -1,13 +1,15 @@
 /**
  * `filter: url(#id)` that names an SVG <filter> OUTSIDE the drawable: the clone is a separate SVG image document that has no such element, so the filter was dropped (WPT css-filter-reference-on-div).
- * The referenced <filter> elements are copied into the clone as a zero-size hidden <svg>, and so are the targets of `<use href="#id">` (chains included): Chrome draws a <use> whose target is outside
- * the drawable (WPT privacy/svg/svg-use-*: the same-origin image of the target draws, the cross-origin one does not). Markers and paint servers outside the subtree are NOT copied:
- * the platform ignores them for privacy (WPT privacy/svg/*). A mask outside the subtree masks its element away entirely (measured on the native oracle: the element is not drawn), so it
- * becomes an empty <mask> of the same id. Images of a copy (`<image href>`) go through the resource cache like every other image: readable ones are inlined, the others
- * (cross-origin without CORS, 404) are removed, as the platform ignores them. The feImage of every filter of the clone (copied or inside the drawable) is settled by settleFilterImages.
+ * The referenced <filter> and <clipPath> elements are copied into the clone as a zero-size hidden <svg>, and so are the targets of `<use href="#id">` (chains included): Chrome draws a <use> whose
+ * target is outside the drawable (WPT privacy/svg/svg-use-*: the same-origin image of the target draws, the cross-origin one does not), and applies an outside clip path. Markers and paint
+ * servers outside the subtree are NOT copied, and are removed from the copies: the platform ignores them for privacy (WPT privacy/svg/*). A mask outside the subtree masks its element away
+ * entirely (measured on the native oracle: the element is not drawn), so it becomes an empty <mask> of the same id. Images of a copy (`<image href>`) go through the resource cache like every
+ * other image: readable ones are inlined, the others (cross-origin without CORS, 404) are removed, as the platform ignores them. The feImage of every filter of the clone (copied or inside the
+ * drawable) is settled by settleFilterImages.
  * A <use> of an EXTERNAL document (`href="icons.svg#a"`, or the whole document without a fragment) cannot load inside the SVG image either: a same-origin document is fetched
- * through the resource cache and its target copied in like an outside target; a cross-origin one draws nothing, as the platform never loads a cross-origin <use> (WHATWG HTML PR 12554,
- * read-back-allowed rendering: "SVG elements (e.g., use, pattern, feImage)" that refer to CORS-cross-origin content are invisible; WPT privacy/svg/svg-use-ignored).
+ * through the resource cache and its target copied in like an outside target, every reference inside it resolved against that document (addUseTargets); a cross-origin one draws nothing,
+ * as the platform never loads a cross-origin <use> (WHATWG HTML PR 12554, read-back-allowed rendering: "SVG elements (e.g., use, pattern, feImage)" that refer to CORS-cross-origin content
+ * are invisible; WPT privacy/svg/svg-use-ignored).
  * Module: snapshot-capture (src/snapshot/capture/*).
  */
 
@@ -17,7 +19,8 @@ import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 /** @typedef {import('../../contracts/types.js').ResourceCache} ResourceCache */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const FILTER_REF = /filter\s*[:=]\s*["']?[^;"'}]*?url\(\s*["']?#([^"')\s]+)/gi;
+/** `filter: url(#id)` and `clip-path: url(#id)` in CSS text, and the attributes written as `filter:` / `clip-path:` by the caller. */
+const FILTER_REF = /(?:filter|clip-path)\s*[:=]\s*["']?[^;"'}]*?url\(\s*["']?#([^"')\s]+)/gi;
 /** `mask: url(#id)`, `mask-image` (also -webkit-) in CSS text, and the `mask` attribute written as `mask:` by the caller. */
 const MASK_REF = /mask(?:-image)?\s*[:=]\s*["']?[^;"'}]*?url\(\s*["']?#([^"')\s]+)/gi;
 
@@ -27,30 +30,33 @@ function collect(text, ids, re = FILTER_REF) {
 }
 
 /**
- * Copy the filters that the clone refers to by fragment but does not contain.
+ * Copy the filters and clip paths that the clone refers to by fragment but does not contain (the native oracle applies a clip path outside the drawable, as it does a filter).
  * @param {Document} live
  * @param {Element} root  clone root
  * @param {string} css  the stylesheet text of the clone
  * @param {ResourceCache} cache  feImage images are inlined as data: URLs from it (same-origin and CORS images draw, the others are dropped)
  * @returns {{added: number, pending: boolean}} elements added, and whether an image of a filter is still loading
  */
-export function addReferencedFilters(live, root, css, cache) {
+export function addReferencedDefs(live, root, css, cache) {
   const none = { added: 0, pending: false };
-  if (!/url\(\s*["']?#/i.test(css) && !root.querySelector('[style*="#"], [filter*="#"]')) return none;
+  const sel = '[style*="#"], [filter*="#"], [clip-path*="#"]';
+  if (!/url\(\s*["']?#/i.test(css) && !root.querySelector(sel)) return none;
   /** @type {Set<string>} */
   const ids = new Set();
   collect(css, ids);
-  for (const el of Array.from(root.querySelectorAll('[style*="#"], [filter*="#"]'))) {
+  for (const el of Array.from(root.querySelectorAll(sel))) {
     collect(el.getAttribute('style') ?? '', ids);
-    const attr = el.getAttribute('filter');
-    if (attr) collect(`filter:${attr}`, ids);
+    for (const name of ['filter', 'clip-path']) {
+      const attr = el.getAttribute(name);
+      if (attr) collect(`${name}:${attr}`, ids);
+    }
   }
   const holder = hiddenHolder(root.ownerDocument);
   const state = { added: 0, pending: false };
   for (const id of ids) {
     if (present(root, holder, id)) continue;
     const target = live.getElementById(id);
-    if (!target || target.namespaceURI !== SVG_NS || target.localName !== 'filter') continue;
+    if (!target || target.namespaceURI !== SVG_NS || (target.localName !== 'filter' && target.localName !== 'clipPath')) continue;
     holder.appendChild(copyOf(live, root.ownerDocument, target, cache, state));
   }
   if (state.added) root.appendChild(holder);
@@ -59,86 +65,171 @@ export function addReferencedFilters(live, root, css, cache) {
 
 /**
  * Copy the targets of `<use href="#id">` that are outside the clone (breadth first, so a chain `use -> g > use -> g` copies both; ids already present stop cycles).
- * Runs inside the clone phase: every copied element is handed to `onElement` (the CSS shake token collector), so author rules that style the target (`#link { fill: green }`) are kept.
+ * Runs inside the clone phase: every copied page element is handed to `onElement` (the CSS shake token collector), so author rules that style the target (`#link { fill: green }`) are kept.
+ * A copy follows the read-back rules of the native oracle (Chrome Canary 158): the paint servers and markers of a copy are outside the drawable, so they are ignored (the paint
+ * falls back to its fallback colour, or none) and its masks mask their element away; its clip paths and filters apply.
+ * The elements of an EXTERNAL document refer to that document only: their ids and classes get the prefix `hic-u<n>-` of their document (so neither the page's references nor its
+ * class and id rules reach them, and theirs never reach the page), every `#id` reference inside them is rebased the same way and its element copied from the same document, and the
+ * document's own <style> rules are returned as `css`, rewritten to those names and held to its elements (the page's rules do not apply to an external <use>, the document's do;
+ * its @media rules do not apply: measured on the native oracle and in the page).
  * @param {Document} live
  * @param {Element} root  clone root
  * @param {ResourceCache} cache
  * @param {(el: Element) => void} onElement
- * @returns {{added: number, pending: boolean}}
+ * @returns {{added: number, pending: boolean, css: string}}
  */
 export function addUseTargets(live, root, cache, onElement) {
   /** @type {Element[]} */
   const queue = Array.from(root.querySelectorAll('use'));
-  const state = { added: 0, pending: false };
+  const state = { added: 0, pending: false, css: '' };
   if (!queue.length) return state;
   const holder = hiddenHolder(root.ownerDocument);
-  /** @type {Map<string, string|null>} external URL -> id of its copy in the holder (null: nothing to draw) */
-  const external = new Map();
+  /** @type {Map<string, ExtDoc|null>} external document URL -> its parsed document (null: never read, nothing to draw) */
+  const docs = new Map();
+  /** @type {ExtDoc[]} */
+  const byIndex = [];
+  /** @param {ExtDoc} d @param {Element} target @returns {string} id of the target's copy */
+  const ensure = (d, target) => {
+    const id = target.id ? `hic-u${d.n}-${target.id}` : `hic-u${d.n}`;
+    if (present(root, holder, id)) return id;
+    const copy = copyOf(live, root.ownerDocument, target, cache, state, d.url);
+    /** @type {Set<string>} */
+    const refs = new Set();
+    settleCopy(copy, d, refs);
+    copy.setAttribute('id', id);
+    holder.appendChild(copy);
+    queue.push(...(copy.localName === 'use' ? [copy] : []), ...Array.from(copy.querySelectorAll('use')));
+    for (const ref of refs) {
+      const el = d.doc.getElementById(ref);
+      if (el && !PAINT.has(el.localName)) ensure(d, el);
+    }
+    return id;
+  };
   for (let i = 0; i < queue.length; i++) {
     const use = queue[i];
     const href = hrefOf(use);
-    let copy = null;
-    /** @type {string|null} URL of the external document the copy comes from */
-    let from = null;
+    if (!href || href.startsWith('data:')) continue;
     if (!href.startsWith('#')) {
-      if (!href || href.startsWith('data:')) continue;
       const abs = absolute(href, live.baseURI);
-      const key = abs ?? href;
-      let id = external.get(key);
-      if (id === undefined) {
-        const target = abs ? externalTarget(live, abs, cache, state) : null;
-        id = target ? `hic-use-${external.size}` : null;
-        if (target && id) {
-          copy = copyOf(live, root.ownerDocument, target, cache, state, abs ?? live.baseURI);
-          copy.setAttribute('id', id);
-          holder.appendChild(copy);
-          from = abs;
-        }
-        external.set(key, id);
+      const url = abs ? new URL(abs) : null;
+      if (url) url.hash = '';
+      const key = url?.href ?? href;
+      let d = docs.get(key);
+      if (d === undefined) {
+        const doc = url ? externalDoc(live, url.href, cache, state) : null;
+        d = doc ? { n: byIndex.length, url: key, doc } : null;
+        docs.set(key, d);
+        if (d) { byIndex.push(d); state.css += documentCss(d, (ref) => { const el = d?.doc.getElementById(ref); if (d && el && !PAINT.has(el.localName)) ensure(d, el); }); }
       }
+      const fragment = abs ? decodeURIComponent(new URL(abs).hash.slice(1)) : '';
+      const target = d ? (fragment ? d.doc.getElementById(fragment) : d.doc.documentElement) : null;
       use.removeAttribute('xlink:href');
-      if (id) use.setAttribute('href', `#${id}`);
+      if (d && target && target.namespaceURI === SVG_NS) use.setAttribute('href', `#${ensure(d, target)}`);
       else use.removeAttribute('href');
-    } else {
-      const id = href.length > 1 ? href.slice(1) : null;
-      if (!id || present(root, holder, id)) continue;
-      const target = live.getElementById(id);
-      if (!target || target.namespaceURI !== SVG_NS) continue;
-      copy = copyOf(live, root.ownerDocument, target, cache, state);
-      holder.appendChild(copy);
+      continue;
     }
-    if (!copy) continue;
+    const id = href.slice(1);
+    if (!id || present(root, holder, id)) continue;
+    const own = /^hic-u(\d+)-(.+)$/.exec(id);
+    const d = own ? byIndex[Number(own[1])] : null;
+    if (d) {
+      const target = d.doc.getElementById(own?.[2] ?? '');
+      if (target && target.namespaceURI === SVG_NS) ensure(d, target);
+      continue;
+    }
+    const target = live.getElementById(id);
+    if (!target || target.namespaceURI !== SVG_NS) continue;
+    const copy = copyOf(live, root.ownerDocument, target, cache, state);
+    settleCopy(copy, null, new Set());
+    holder.appendChild(copy);
     for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
       onElement(el);
-      if (el.localName !== 'use') continue;
-      // a reference inside an external document is relative to THAT document: `#a` there is not the page's #a (absolute, it is handled as external above)
-      const inner = from ? hrefOf(el) : '';
-      const rebased = inner && !inner.startsWith('data:') ? absolute(inner, /** @type {string} */ (from)) : null;
-      if (rebased) { el.removeAttribute('xlink:href'); el.setAttribute('href', rebased); }
-      queue.push(el);
+      if (el.localName === 'use') queue.push(el);
     }
   }
   if (state.added) root.appendChild(holder);
   return state;
 }
 
+/** @typedef {{n: number, url: string, doc: Document}} ExtDoc */
+
+/** Paint servers and markers: the platform ignores them outside the drawable (WPT privacy/svg/*). */
+const PAINT = new Set(['linearGradient', 'radialGradient', 'pattern', 'marker']);
+/** `url(#id)` in an attribute or a declaration */
+const URL_REF = /url\(\s*(["']?)#([^"')\s]+)\1\s*\)/g;
+
 /**
- * The element an external <use> draws: the fragment's element of a SAME-ORIGIN SVG document, or its root element without a fragment (SVG 2). A cross-origin document is never
- * read (the platform does not load it); one still loading sets state.pending; one that fails to load or parse, or has no such element, draws nothing.
- * @param {Document} live @param {string} abs @param {ResourceCache} cache @param {{pending: boolean}} state
- * @returns {Element|null}
+ * Apply the read-back rules to a copy of an element outside the drawable: its paint servers and markers are removed (their references then fall back, as on the native oracle),
+ * its masks are emptied (they mask their element away); in a copy of a page element its `filter` attributes are dropped (the native oracle draws it unfiltered). In a copy of an external document `ext`, every id and class gets the document's prefix (plus the class `hic-u<n>`),
+ * `<style>` elements are removed (documentCss scopes them), every `url(#id)` and `href="#id"` points to the prefixed id (the ids are added to `refs` so their elements are
+ * copied too), and a <use> of another document gets an absolute URL.
+ * @param {Element} copy @param {ExtDoc|null} ext @param {Set<string>} refs
  */
-function externalTarget(live, abs, cache, state) {
-  const url = new URL(abs);
-  if (url.origin !== (live.location?.origin ?? new URL(live.URL).origin)) return null;
-  const fragment = decodeURIComponent(url.hash.slice(1));
-  url.hash = '';
-  const r = resolveResource(cache, url.href, 'svg');
+function settleCopy(copy, ext, refs) {
+  for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
+    if (PAINT.has(el.localName) || (ext && el.localName === 'style')) { el.remove(); continue; }
+    if (el.localName === 'mask') el.replaceChildren();
+    if (!ext) {
+      // a page element drawn through a <use> of an outside target is not filtered by its filter attribute (measured on the native oracle; an external document's are)
+      if (el.getAttribute('filter')?.includes('url(')) el.removeAttribute('filter');
+      continue;
+    }
+    const p = `hic-u${ext.n}-`;
+    if (el.id) el.id = p + el.id;
+    const cls = (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+    el.setAttribute('class', [...cls.map((c) => p + c), `hic-u${ext.n}`].join(' '));
+    for (const a of Array.from(el.attributes)) {
+      if (a.value.includes('url(')) el.setAttribute(a.name, rebaseUrls(a.value, p, refs));
+    }
+    const href = hrefOf(el);
+    if (!href || href.startsWith('data:')) continue;
+    el.removeAttribute('xlink:href');
+    if (href.startsWith('#')) { refs.add(href.slice(1)); el.setAttribute('href', `#${p}${href.slice(1)}`); }
+    else el.setAttribute('href', absolute(href, ext.url) ?? '');
+  }
+}
+
+/** @param {string} text @param {string} prefix @param {Set<string>} refs @returns {string} text with every `url(#id)` pointing to `#<prefix><id>` (ids added to refs) */
+function rebaseUrls(text, prefix, refs) {
+  return text.replace(URL_REF, (_m, _q, id) => { refs.add(id); return `url("#${prefix}${id}")`; });
+}
+
+/**
+ * The <style> rules of an external document as they apply to its copies: each selector's ids and classes prefixed as settleCopy renames them, the subject held to the
+ * document's elements (`:is(selector):where(.hic-u<n>)`), every `url(#id)` rebased (`onRef` copies its element). Grouping rules (@media and the like) are left out.
+ * @param {ExtDoc} d @param {(id: string) => void} onRef @returns {string}
+ */
+function documentCss(d, onRef) {
+  const text = Array.from(d.doc.getElementsByTagNameNS(SVG_NS, 'style'), (s) => s.textContent ?? '').join('\n');
+  if (!text.trim()) return '';
+  const sheet = new CSSStyleSheet();
+  try { sheet.replaceSync(text); } catch { return ''; }
+  const p = `hic-u${d.n}-`;
+  /** @type {Set<string>} */
+  const refs = new Set();
+  let out = '';
+  for (const rule of Array.from(sheet.cssRules)) {
+    if (!(rule instanceof CSSStyleRule)) continue;
+    const sel = rule.selectorText.replace(/\[[^\]]*\]|"[^"]*"|'[^']*'|([.#])(-?[_a-zA-Z\u00a0-\uffff][-\w\u00a0-\uffff]*)/g, (m, sig, name) => (sig ? `${sig}${p}${name}` : m));
+    out += `:is(${sel}):where(.hic-u${d.n}){${rebaseUrls(rule.style.cssText, p, refs)}}`;
+  }
+  for (const id of refs) onRef(id);
+  return out;
+}
+
+/**
+ * A SAME-ORIGIN SVG document an external <use> refers to, parsed. A cross-origin document is never read (the platform does not load it); one still loading sets state.pending;
+ * one that fails to load or parse gives null (its <use> elements draw nothing).
+ * @param {Document} live @param {string} url  without fragment @param {ResourceCache} cache @param {{pending: boolean}} state
+ * @returns {Document|null}
+ */
+function externalDoc(live, url, cache, state) {
+  if (new URL(url).origin !== (live.location?.origin ?? new URL(live.URL).origin)) return null;
+  const r = resolveResource(cache, url, 'svg');
   if (r.state === 'pending') state.pending = true;
   if (r.state !== 'ready') return null;
   const parsed = new DOMParser().parseFromString(textOfDataUrl(r.url), 'image/svg+xml');
-  const target = fragment ? parsed.getElementById(fragment) : parsed.documentElement;
-  return target && target.namespaceURI === SVG_NS && !parsed.querySelector('parsererror') ? target : null;
+  return parsed.querySelector('parsererror') ? null : parsed;
 }
 
 /** @param {string} dataUrl @returns {string} the text a data: URL carries */

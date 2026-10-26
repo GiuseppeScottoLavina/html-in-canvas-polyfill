@@ -252,7 +252,7 @@ function syncImage(env, src, clone, req, unsupported) {
   clone.removeAttribute('src');
   appendInlineStyle(clone, usedSize(cs));
   if (r.state === 'pending') markPending(unsupported);
-  else if (r.state === 'ready') clone.setAttribute('src', r.url);
+  else if (r.state === 'ready') clone.setAttribute('src', env.animatedImages?.frameUrl(src, abs, r.url) ?? r.url); // the frame due of an animated image
   return true;
 }
 
@@ -311,12 +311,13 @@ function syncVideo(src, clone, unsupported, req) {
     }
   }
   // HTML "the video element": while its show poster flag is set (never played, never seeked) and a poster is available, the element represents the poster, not a frame.
-  // The flag is not exposed; it is read as "nothing played and still at time 0" (WPT privacy/video-ignored: the poster of a loaded video is drawn).
+  // The flag is not exposed; it is read as "nothing played and still at time 0" (WPT privacy/video-ignored: the poster of a loaded video is drawn). A poster that fails to load
+  // (404, not an image, cross-origin without CORS) leaves the box empty until playback, not its first frame: measured in the page and on the native oracle (Chrome Canary 158).
   const posterShown = !!v.poster && (!frame || (v.played.length === 0 && v.currentTime === 0 && !v.seeking));
   const poster = posterShown ? resolveResource(req.resources, v.poster, 'image') : null;
   if (poster?.state === 'ready') url = poster.url;
   else if (poster?.state === 'pending') markPending(unsupported);
-  else if (frame) {
+  else if (frame && !poster) {
     try {
       url = frame.toDataURL('image/jpeg', 0.85);
     } catch {
@@ -398,7 +399,12 @@ function syncInput(src, clone, scale) {
     clone.setAttribute('value', src.value);
     if (src.scrollLeft > 0 && TEXT_SCROLL_TYPES.has(type)) scrollInputText(src, clone);
   }
+  // the intrinsic width of a date / time field is the sum of its fields' text, which the image sets a device pixel narrower or wider than the page at a fractional
+  // device pixel ratio (Chrome 155, F6 at DPR 1.25 / 1.5: 1-2 device px, every control after it in its line moved): the clone keeps the live border box
+  if (DATE_TYPES.has(type)) pinBarBox(src, clone);
 }
+
+const DATE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week']);
 
 /** Buttons whose label is the engine default while they have no value attribute (writing `value=""` would blank it). */
 const BUTTON_LABEL_TYPES = new Set(['submit', 'reset']);

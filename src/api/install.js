@@ -6,6 +6,7 @@
  * inverses in reverse order. All prototype patches go through the ledger, so uninstall restores every descriptor by identity.
  */
 
+import { installSelectionPatches } from './selection-patch.js';
 import { HicUnsupportedError } from '../contracts/errors.js';
 import { BUS, EXT } from '../contracts/events.js';
 import { createBus } from '../util/bus.js';
@@ -248,6 +249,7 @@ function installPolyfill(env, services, ledger, undo, setAdoption) {
   undo.push(installFullscreenGuard(env, ledger));
   installWorkerGuard(env, ledger, geometry);
   installDevicePixelBox(env, ledger);
+  installSelectionPatches(env, ledger);
   undo.push(watchCsp(env));
 
   setAdoption({ adoptRoot: (root) => env.roots.adopt(root) });

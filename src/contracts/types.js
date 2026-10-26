@@ -228,6 +228,15 @@ export {};
  * @property {Scheduler} scheduler      same rule as `store`
  * @property {RootScope} roots          assigned by api/compose.js; the tree scopes (document + observed shadow roots) in which layers and geometry rules live
  * @property {(canvas: HTMLCanvasElement) => void} adopt  hand a canvas to the registry (used by autoDiscover:false and by tests)
+ * @property {AnimatedImages} [animatedImages]  assigned by api/compose.js (schedule/observers/animated-images.js); absent in the native modes
+ */
+
+/**
+ * @typedef {Object} AnimatedImages  the frames of animated images, played on the polyfill's clock (schedule/observers/animated-images.js)
+ * @property {(img: Element, absUrl: string, dataUrl: string) => string} frameUrl  the picture an <img> showing `absUrl` (inlined as `dataUrl`) shows now: `dataUrl` itself unless
+ *   the image is animated and played; the first call for an animated image starts its clock (sync, cheap: one sniff per URL)
+ * @property {() => void} wake  re-check every clock (a canvas came into view or left it)
+ * @property {() => void} dispose
  */
 
 // ---------------------------------------------------------------------------------------------- per-canvas record

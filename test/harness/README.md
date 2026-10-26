@@ -31,7 +31,7 @@ await srv.close();
 | file | what |
 |---|---|
 | `chrome.mjs` | `launchChrome({chrome:'stable'\|'canary'\|path, dpr:1\|2, windowSize, nativeDrawElement, scrollbars:'default'\|'hidden'\|'overlay'\|'classic', extraArgs})`, `Browser` (newPage, `traceStart/traceStop(file)`, `info`, `close`), `resolveChrome`, `chromeCandidates`. `nativeDrawElement` adds `--enable-blink-features=CanvasDrawElement` (native baseline). |
-| `page.mjs` | `Page`: `evaluate`, `navigate`, foreground (`focusState`, `assertForeground`, `ensureForeground`, `requireForeground`), `setInnerSize`, `screenshot`, `measureRaf`, `sampleHeap`/`perfMetrics`/`domCounters` (heap, DOM nodes, listeners), `cpuProfileStart/Stop`, primitive input, `errors()` (console+exceptions+log). |
+| `page.mjs` | `Page`: `evaluate`, `navigate`, foreground (`focusState`, `assertForeground`, `ensureForeground`, `requireForeground`), `setInnerSize`, `screenshot`, `measureRaf`, `sampleHeap`/`perfMetrics`/`domCounters` (heap, DOM nodes, listeners), `cpuProfileStart/Stop`, primitive input, `errors()` (console+exceptions+log), `installPointerGuard` / `flushPointerGuard` / `foreignPointer` (trusted pointer input at a position the harness never sent; every gate page has it and such a run is NOT USABLE). |
 | `input.mjs` | Paced input that REPORTS the achieved cadence: `typeKeys`, `pressKeys`, `wheelStream`, `mouseStream`, `mouseDrag`. Each returns `{requestedMs, actual:{p50,p95..}, cadenceOk, effectiveHz, ackMs, pageSaw?}`; `probe:true` also records what the page received. |
 | `window.mjs` | `dragResize` (REAL window drag: `Browser.setWindowBounds` in steps at a cadence, reports page-seen sizes), resize recorder. |
 | `trace.mjs` | `analyzeTrace(file, {window\|windowMarks, thresholdMs})`: RunTask count over 8.33/16.7/50 ms, p50/p95/p99/max, busy %, `longFrames` with top events. Errors out (never "0 long tasks") if marks or tasks are missing. |
@@ -42,6 +42,8 @@ await srv.close();
 | `oracle-latency.mjs` | `measureLatency`: trusted event -> first rendering update whose canvas region shows the change. `commitMs` is exact up to frame quantisation; `presentedMs` adds one frame period (estimate). Observer cost: one `drawImage+getImageData` of <= 160x96 per frame (~0.2-2 ms), so never mix it with a RunTask-budget run. Timeouts and missing events are counted, not turned into numbers. |
 | `env.mjs` | `environmentFacts` (Chrome version, DPR, window, rAF-measured refresh, scrollbar probe, GPU, mac model). |
 | `load.mjs` | `loadSnapshot`, `waitForQuiet` (shared-machine high machine load check). |
+| `os-activation.mjs` | macOS: `watchActivations()` (every application activation and every OS pointer movement, AppKit observer; `since`, `movesSince`), `frontmostApp`, `activateApp(pids)`, `foreignActivations` (pure). The xbrowser runner reruns a scenario during which another application came to the front (a browser that is not active swallows trusted clicks) or the pointer moved. |
+| `os-pointer.mjs` | macOS: `osPointer(pid)` (the OS pointer, the displays, the windows of a process), `parkOsPointer(pid)` (moves a pointer resting over the browser's windows out of them; `launchChrome` does it, `browser.pointerPark` records it), `parkingSpot` (pure). A headed Chrome delivers a resting pointer to the page at every clipped screenshot and tab activation. |
 | `fixtures.mjs` | `openFixture`, `openPair`, `fixtureUrl`, `checkBundle`. |
 | `webdriver.mjs` | Firefox / Safari over W3C WebDriver (not exported from `index.mjs`): `launchEngine({engine})` -> `WdSession` (navigate, evaluate, screenshot, click, typeText, key, wheel, setWindowSize, close), `probeSafari()`. Used by `test/xbrowser/` (docs/TEST-PLAN.md 2.9). |
 
@@ -54,13 +56,14 @@ await srv.close();
 - F1 water form (the frozen demo page of an earlier prototype), F2 scroll (page scroll, sticky header, nested scrollers), F3 resize (flex-wrap, media queries at 800/520), F4 large app (`nodes=200|500|1000|2000`, exact element count of `#root` subtree), F5 classic scrollbars (`::-webkit-scrollbar`, 15 px gutters regardless of the OS setting), F6 form controls, F7 system scrollbars (unstyled scrollers: the platform's own bars; every box edge on whole device pixels at DPR 1, 1.25, 1.5 and 2). F6 and F7 are opened by path (`openFixture(page, srv, '/test/fixtures/f7-system-scrollbars/index.html', ...)`).
 
 ## Self-test
-`node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures] [--chrome=canary] [--waitquiet=ms]`
+`node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures,pointer] [--chrome=canary] [--waitquiet=ms]`
 It opens a REAL, headed Chrome window (and a second tab for the foreground control) for the duration of the run, takes over the screen focus, and needs an unlocked screen; the `LOAD highLoad=true` line it may print means another process was busy at the start (the checks assert correctness, not timing). The server traversal check sends raw requests with `http.request`, because `fetch()` normalises `/../x`.
 Writes `.scratch/selftest/<ts>/selftest.json` (environment, load before/after, checks, info, diff PNGs, trace), exits 1 on any failed check.
 Positive controls proven: profile guard refuses directories outside .profiles/; `assertForeground` throws on a hidden tab; cadence reporter flags a deliberately
 slowed injector; trace parser separates 12 ms from 40 ms tasks and errors on empty windows; two blank images diff to 0 while the non-blank test refuses them;
 blank detector catches a width-write blank and refuses a canvas that never had content; latency probe measures a 60 ms delayed app
-as >= 60 ms and reports no-event / no-change as such; fixtures fail loudly without a bundle.
+as >= 60 ms and reports no-event / no-change as such; fixtures fail loudly without a bundle; the pointer guard reports a trusted event the harness did not send and, on macOS,
+the real OS pointer placed over the page (a clipped screenshot delivers it), while the parked pointer delivers nothing.
 
 ## Known limits (read before trusting a number)
 - Scrollbar style follows the macOS setting (it flipped between runs: auto-hide vs 15 px bars, depending on pointing devices). `--disable-features=OverlayScrollbar` is not guaranteed on macOS. Always record `environmentFacts().scrollbar`; use F5 for guaranteed classic bars.

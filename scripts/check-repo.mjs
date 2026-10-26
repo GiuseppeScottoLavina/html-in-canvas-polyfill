@@ -98,7 +98,14 @@ if (!docsOnly) {
   // 15275 -> 15400 (2026-10-22, measured 15,374; 15,268 before this step): read-back-allowed rules of WPT master (unreadable mask images, external SVG <use>, the video
   // poster and cross-origin video, popover toggles, moveBefore() into a canvas).
   // 15400 -> 15375 (2026-10-22, measured 15,355 with the WPT re-pin merged: the two-argument getElementTransform removed, the privacy review fixes added).
-  if (total > 15375) problems.push(`G-size: core is ${total} code lines (> 15375)`);
+  // 15375 -> 15875 (2026-10-22, measured 15,861; 15,364 before these steps): animated images (+313, schedule/observers/animated-images.js), the ancestor-change
+  // filter (+90, mutation-observer.js watchAncestors), the image-map <area> focus ring (+44), selectAllChildren / selectNodeContents of a canvas (+25), slotted drawables (+25).
+  // 15375 -> 15425 (2026-10-23, measured 15,419; 15,364 before this step): the references inside an external SVG <use> document resolved against that document (its
+  // ids, classes and <style> rules scoped to it; svg-refs.js addUseTargets), clip paths outside the drawable copied, the read-back rules applied to copied <use> targets.
+  // 15425 -> 15475 (2026-10-23, measured 15,457; 15,419 before this step): the macOS overlay thumb of a scrollable listbox select (scroll-emulation.js macOverlayThumb).
+  // 15875 -> 15975 (2026-10-26, measured 15,959 with both step lists above merged; 15,861 with the animated images and the WPT steps alone): the two lists were
+  // measured on separate branches; merged, the external <use> documents and the overlay listbox thumb add their lines on top.
+  if (total > 15975) problems.push(`G-size: core is ${total} code lines (> 15975)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

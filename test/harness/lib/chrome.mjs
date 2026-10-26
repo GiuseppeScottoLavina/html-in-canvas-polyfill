@@ -6,6 +6,7 @@ import { dirname, resolve, sep, basename, win32 } from 'node:path';
 import { CDPConnection } from './cdp-conn.mjs';
 import { Page } from './page.mjs';
 import { sleep, PROFILES_DIR } from './util.mjs';
+import { osPointer, parkOsPointer } from './os-pointer.mjs';
 
 /** The macOS locations of the two channels (kept as the default of `chrome` on macOS). */
 export const CHROME_APPS = {
@@ -132,6 +133,8 @@ function mergeFeatureFlags(base, extra) {
  * @property {string[]} [extraArgs]
  * @property {string} [url='about:blank']
  * @property {string|null} [colorProfile='srgb'] --force-color-profile; keep 'srgb' for any pixel comparison
+ * @property {boolean} [parkPointer=true] macOS, headed: move the OS pointer out of the new browser window when it rests over it (a resting pointer is
+ *           delivered to the page as trusted input, see os-pointer.mjs); what happened is `browser.pointerPark`. HIC_PARK_POINTER=0 turns it off by default
  */
 /** @param {LaunchOptions} [opts] @returns {Promise<Browser>} */
 export async function launchChrome(opts = {}) {
@@ -180,6 +183,12 @@ export async function launchChrome(opts = {}) {
   browser.version = ver;
   browser.conn = await new CDPConnection(ver.webSocketDebuggerUrl).open();
   if (macBars) await closeStrayTab(browser, `http://${macBars.toLowerCase()}/`);
+  browser.pointerPark = { parked: false, reason: headless ? 'headless' : 'not requested' };
+  if (process.platform === 'darwin' && !headless && (opts.parkPointer ?? process.env.HIC_PARK_POINTER !== '0')) {
+    for (let i = 0; i < 20; i++) { const o = osPointer(child.pid); if (!o || o.windows.length) break; await sleep(250); }
+    browser.pointerPark = parkOsPointer(child.pid);
+    browser.parksPointer = true;
+  }
   return browser;
 }
 
