@@ -399,7 +399,12 @@ function syncInput(src, clone, scale) {
     clone.setAttribute('value', src.value);
     if (src.scrollLeft > 0 && TEXT_SCROLL_TYPES.has(type)) scrollInputText(src, clone);
   }
+  // the intrinsic width of a date / time field is the sum of its fields' text, which the image sets a device pixel narrower or wider than the page at a fractional
+  // device pixel ratio (Chrome 155, F6 at DPR 1.25 / 1.5: 1-2 device px, every control after it in its line moved): the clone keeps the live border box
+  if (DATE_TYPES.has(type)) pinBarBox(src, clone);
 }
+
+const DATE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week']);
 
 /** Buttons whose label is the engine default while they have no value attribute (writing `value=""` would blank it). */
 const BUTTON_LABEL_TYPES = new Set(['submit', 'reset']);

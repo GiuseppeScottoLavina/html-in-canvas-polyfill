@@ -551,3 +551,17 @@ test('an SVG <image> that cannot be read draws nothing (no broken-image icon) an
   assert.deepEqual(px(20, 20), [224, 0, 0, 255], 'same-origin image drawn');
   for (const [a, b] of [[20, 60], [3, 43], [36, 77]]) assert.deepEqual(px(a, b), [0, 128, 0, 255], `cross-origin image: nothing at ${a},${b}`);
 });
+
+test('a date / time field keeps its live border box in the snapshot (its intrinsic width, the text of its fields, came out 1-2 device px off at DPR 1.25-2 and moved the controls after it); control: a text field is not pinned', () => {
+  const m = mount('<div drawable style="width:300px;height:40px"><input type="time" id="t" value="14:35"><input type="date" id="d" value="2026-10-08"><input id="x" value="text"></div>');
+  const r = m.capture(m.request(m.layerEl.firstElementChild));
+  const svg = decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
+  const tag = (id) => (new RegExp(`<input[^>]*id="${id}"[^>]*>`).exec(svg) ?? [''])[0];
+  for (const id of ['t', 'd']) {
+    const el = /** @type {HTMLElement} */ (m.layerEl.querySelector(`#${id}`));
+    const cs = getComputedStyle(el), n = (p) => parseFloat(cs.getPropertyValue(p)) || 0;
+    const w = cs.boxSizing === 'border-box' ? n('width') : n('width') + n('padding-left') + n('padding-right') + n('border-left-width') + n('border-right-width');
+    assert.ok(w > 0 && tag(id).replace(/\s+/g, '').includes(`;width:${w}px!important`), `${id}: the live border box ${w} px in ${tag(id)}`);
+  }
+  assert.ok(!/box-sizing:\s*border-box\s*!important/.test(tag('x')), `control: ${tag('x')}`);
+});
