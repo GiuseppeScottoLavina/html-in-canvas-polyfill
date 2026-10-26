@@ -215,7 +215,10 @@ export function createLiveLayer(env, record) {
       for (const cb of [...childListeners]) cb(change);
     });
     const offTree = facade.onTreeChanged(() => refreshDrawables(true));
-    teardown.push(offChildren, offTree);
+    // slotted drawables (drawables.js collectDrawables) come and go with the assignment of the layer's slots
+    const onSlotChange = () => refreshDrawables(true);
+    layerEl.addEventListener('slotchange', onSlotChange);
+    teardown.push(offChildren, offTree, () => layerEl.removeEventListener('slotchange', onSlotChange));
     presentation();
     a11y.update(topLevelElements());
     refreshDrawables(true);

@@ -74,7 +74,8 @@ for (const f of ['dist/hic-live-polyfill.iife.js', 'dist/hic-live-polyfill.iife.
 const KNOWN = {
   // the classic-bar gaps (controls.regions, controls.whole, controls.bars, scrollers.bars) were fixed on 2026-10-21: the bar-sized intrinsic width of textarea and
   // listbox select pinned in the clone, Chromium's own Fluent and macOS bar looks painted (measured passing on Linux and on macOS with classic bars; Windows by its job)
-  'controls.regions': { platforms: ['darwin'], scrollbars: 'overlay', reason: 'with overlay bars (harness overlay mode, headless Chrome 155) Chrome keeps a thin overlay thumb on a scrollable listbox <select> (7 px, black at 50 %, measured on F6 L-lb / L-lb-sc: 5.05 / 4.97 % of the region over 16, 4.46 / 2.74 % over 100; the dark listboxes pass), which the polyfill does not paint (it paints no overlay bars on desktop; Chrome for Android\'s listbox thumb is drawn)' },
+  // controls.regions with overlay bars on macOS (Chrome keeps a thin overlay thumb on a scrollable listbox <select>, 5.05 / 4.97 % of F6 L-lb / L-lb-sc over 16)
+  // was fixed on 2026-10-23: the thumb is painted as Chrome draws it in a drawable (snapshot/capture/scroll-emulation.js macOverlayThumb)
   'selection.system': { platforms: ['win32'], reason: 'headless Chrome on Windows paints a selection without an author ::selection rule in Chromium\'s default rgba(0, 65, 198, 0.8) (rgb(51, 103, 209) over white, rgb(2, 56, 165) over #0e1626), while the CSS system colour Highlight that the polyfill draws is the Windows accent #0078d4: 54-91 % of the selection\'s pixels differ; the glyphs are HighlightText, as decided. Not measured in a headed Windows Chrome' },
 };
 /** @type {{id?: string, section: string, name: string, ok: boolean, status: 'pass'|'fail'|'known'|'now-passes', detail?: any}[]} */

@@ -168,6 +168,6 @@ npm run build
 npm run test:frameworks                      # [--only=react,vue] [--no-control]; headless Chrome; .scratch/results/frameworks-<ts>.json + PNGs
 ```
 
-Last recorded run: 2026-10-22, headless Chrome 155.0.8059.85, DPR 1, with the versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s. Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
+Last recorded run: 2026-10-26, headless Chrome 155.0.8059.85, DPR 1, with the versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s (the run of 2026-10-22 gave the same counts). Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
 
 If something breaks in your app, run `__HIC__.installed.report()` and note which facade or selector was involved; a minimal repro in the style of `examples/frameworks/` is the most useful bug report.

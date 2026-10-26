@@ -97,8 +97,9 @@ export function resolveElement(env, canvas, target, need) {
   const element = /** @type {Element} */ (target);
   const record = managedRecord(env, canvas);
   if (!record) throw invalidState('The canvas does not have content="drawable".');
-  // An outermost <svg> is a CSS box like any HTML element (captured, measured and hit tested as one); an SVG element INSIDE an <svg> (`<rect drawable>`) has no border box.
-  if (element.namespaceURI === SVG_NS && /** @type {SVGElement} */ (element).ownerSVGElement && element.hasAttribute('drawable') && env.registry.logicalCanvasAncestor(element) === canvas) {
+  // An outermost <svg> is a CSS box like any HTML element (captured, measured and hit tested as one); an SVG element INSIDE an <svg> (`<rect drawable>`) has no border box:
+  // it cannot be drawn or captured, while its canvas transform is state like any drawable's (getElementTransform / updateElementGeometry, WPT canvas-transform-get-set)
+  if (need === 'snapshot' && element.namespaceURI === SVG_NS && /** @type {SVGElement} */ (element).ownerSVGElement && element.hasAttribute('drawable') && env.registry.logicalCanvasAncestor(element) === canvas) {
     throw refuseSvg(env, canvas, element);
   }
   if (need === 'snapshot') {

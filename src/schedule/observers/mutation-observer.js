@@ -5,6 +5,7 @@
 
 import { BUS, MARK } from '../../contracts/events.js';
 import { createDamageBatch, getRectMemory } from './damage-rect.js';
+import { INHERITED_PROPS } from '../../util/inherited-props.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').DamageCause} DamageCause */
@@ -227,6 +228,19 @@ export function observeMutations(env, record) {
 
   const mo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver(onMutations);
   mo.observe(root, OPTIONS);
+  /** @type {WeakSet<Element>} */
+  const slotted = new WeakSet();
+  // drawables slotted into the layer from the light DOM of a shadow host (live/drawables.js collectDrawables) lie outside the layer subtree: each is observed too
+  // (once; an element that is no longer slotted maps to no drawable and its mutations are ignored)
+  const observeSlotted = () => {
+    for (const d of layer.drawableElements()) {
+      if (root.contains(d) || slotted.has(d)) continue;
+      slotted.add(d);
+      mo.observe(d, OPTIONS);
+    }
+  };
+  observeSlotted();
+  const offDrawables = env.bus.on(BUS.DRAWABLES_CHANGED, (/** @type {{record: CanvasRecord}} */ e) => { if (e.record === record) observeSlotted(); });
   observeShadows(root);
   watchFrames();
   root.addEventListener('load', onLoad, true);
@@ -235,6 +249,7 @@ export function observeMutations(env, record) {
   return () => {
     stopped = true;
     mo.disconnect();
+    offDrawables();
     stopAncestors();
     root.removeEventListener('load', onLoad, true);
     root.removeEventListener('toggle', onToggle, true);
@@ -251,9 +266,112 @@ function ancestorsOf(canvas) {
   return chain;
 }
 
+/** Attributes whose change on an ancestor always reaches the drawables: the language and the direction (`:lang()`, `:dir()`, fonts and shaping of the text below). */
+const ALWAYS_REACHES = new Set(['lang', 'xml:lang', 'dir']);
+/** A class, id or attribute name in a selector (CSS escapes kept: they are undone by unescapeIdent). */
+const SELECTOR_TOKEN = /([.#])((?:[-\w\u00a0-\uffff]|\\[0-9a-fA-F]{1,6}\s?|\\.)+)|\[\s*(?:[-\w*]*\|)?((?:[-\w\u00a0-\uffff]|\\.)+)/g;
+
+/** @param {string} s @returns {string} a CSS identifier with its escapes undone */
+const unescapeIdent = (s) => s.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_, hex, ch) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : ch));
+
+/**
+ * PURE. The classes (`.x`), ids (`#x`) and attribute names (`[x`) that one selector list can test on an element ABOVE the subject of a selector: everything before the last
+ * top-level combinator of each complex selector, and everything inside parentheses (`:is()`, `:not()`, `:has()`, nested selectors) of its last compound. A token only in
+ * a subject compound (`.dark { ... }`) styles that element itself, which reaches its descendants through inheritance only (styleSignature).
+ * @param {string} selectorText
+ * @param {Set<string>} out  tokens as `.x`, `#x`, `[x`
+ */
+export function ancestorTokens(selectorText, out) {
+  let depth = 0;
+  let start = 0;
+  /** index of the last top-level combinator of the current complex selector */
+  let cut = 0;
+  const flush = (/** @type {number} */ end) => {
+    const head = selectorText.slice(start, cut);
+    const last = selectorText.slice(cut, end);
+    const take = (/** @type {string} */ text) => { for (const m of text.matchAll(SELECTOR_TOKEN)) out.add(m[1] ? m[1] + unescapeIdent(m[2]) : `[${unescapeIdent(m[3]).toLowerCase()}`); };
+    take(head);
+    for (const m of last.matchAll(/\((.*)\)/gs)) take(m[1]);
+  };
+  for (let i = 0; i < selectorText.length; i++) {
+    const c = selectorText[i];
+    if (c === '\\') { i++; continue; }
+    if (c === '"' || c === "'") { const close = selectorText.indexOf(c, i + 1); i = close < 0 ? selectorText.length : close; continue; }
+    if (c === '(' || c === '[') depth++;
+    else if (c === ')' || c === ']') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && c === ',') { cut = Math.max(cut, start); flush(i); start = i + 1; cut = start; }
+    else if (depth === 0 && (c === '>' || c === '+' || c === '~' || /\s/.test(c))) cut = i + 1; // white space before a combinator or a comma only moves the cut early: more tokens, never fewer
+  }
+  cut = Math.max(cut, start);
+  flush(selectorText.length);
+}
+
+/**
+ * The tokens every style rule reachable from `roots` can test on an ancestor (ancestorTokens), or null when a sheet cannot be read (cross-origin without CORS): then every
+ * ancestor change counts. Nested style rules count the whole selector of their parent; `@scope` preludes count whole.
+ * @param {Array<Document|ShadowRoot>} roots
+ * @returns {Set<string>|null}
+ */
+function ancestorTokensOf(roots) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  /** @param {CSSRuleList} rules @param {boolean} nested */
+  const walk = (rules, nested) => {
+    for (const rule of Array.from(rules)) {
+      const r = /** @type {any} */ (rule);
+      if (r.styleSheet) { if (!walkSheet(r.styleSheet)) return false; continue; }
+      if (typeof r.selectorText === 'string') {
+        if (r.cssRules?.length || nested) for (const m of r.selectorText.matchAll(SELECTOR_TOKEN)) out.add(m[1] ? m[1] + unescapeIdent(m[2]) : `[${unescapeIdent(m[3]).toLowerCase()}`);
+        ancestorTokens(r.selectorText, out);
+        if (r.cssRules?.length && walk(r.cssRules, true) === false) return false;
+        continue;
+      }
+      for (const prelude of [r.start, r.end]) if (typeof prelude === 'string') for (const m of prelude.matchAll(SELECTOR_TOKEN)) out.add(m[1] ? m[1] + unescapeIdent(m[2]) : `[${unescapeIdent(m[3]).toLowerCase()}`);
+      if (r.cssRules && walk(r.cssRules, nested) === false) return false;
+    }
+    return true;
+  };
+  /** @param {CSSStyleSheet} sheet @returns {boolean} */
+  const walkSheet = (sheet) => {
+    let rules;
+    try { rules = sheet.cssRules; } catch { return false; }
+    return walk(rules, false) !== false;
+  };
+  for (const root of roots) {
+    for (const sheet of [...Array.from(root.styleSheets ?? []), ...Array.from(/** @type {any} */ (root).adoptedStyleSheets ?? [])]) if (!walkSheet(sheet)) return null;
+  }
+  return out;
+}
+
+/** @param {Element} el @returns {string} the values `el` passes on to its descendants: its inherited properties and its custom properties */
+function styleSignature(el) {
+  const cs = (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
+  let sig = '';
+  for (const name of INHERITED_PROPS) sig += `${cs.getPropertyValue(name)};`;
+  for (let i = 0; i < cs.length; i++) if (cs[i].startsWith('--')) sig += `${cs[i]}:${cs.getPropertyValue(cs[i])};`;
+  return sig;
+}
+
+/** @param {MutationRecord} m @returns {string[]} the tokens the change can turn on or off in a selector */
+function changedTokens(m) {
+  const name = m.attributeName ?? '';
+  const now = /** @type {Element} */ (m.target).getAttribute(name);
+  if (name === 'class') {
+    const before = new Set((m.oldValue ?? '').split(/\s+/).filter(Boolean));
+    const after = new Set((now ?? '').split(/\s+/).filter(Boolean));
+    return [...before, ...after].filter((c) => before.has(c) !== after.has(c)).map((c) => `.${c}`).concat(`[class`);
+  }
+  if (name === 'id') return [`#${m.oldValue ?? ''}`, `#${now ?? ''}`, '[id'];
+  return [`[${name.toLowerCase()}`];
+}
+
 /**
  * The clone carries attribute-only shells of the canvas's ancestors and the custom properties computed above it, so a class / data-theme / lang / style change on an ancestor (a theme toggle on <html>, a wrapper's
- * `--accent`) changes every tile of the canvas. One MutationObserver per canvas watches ONLY the attributes of the few ancestor elements (not their subtrees: idle cost is zero); a change damages the whole canvas.
+ * `--accent`) can change every tile of the canvas. One MutationObserver per canvas watches ONLY the attributes of the few ancestor elements (not their subtrees: idle cost is zero).
+ * A change damages the whole canvas when it can reach what the drawables paint: a class, id or attribute that a style rule tests on an element above its subject
+ * (ancestorTokens; any change when a sheet cannot be read), the language or direction, or a computed value of the canvas itself (what the drawables inherit: its inherited and
+ * custom properties; styleSignature). A change that restyles only the ancestor (WPT onpaint 'canvas ancestor changes': its own background) paints nothing in the
+ * canvas, and natively fires no paint event.
  * The chain is re-read when the canvas is (re)activated (a moved canvas resumes with forced damage), so a canvas that was moved to another parent is followed at once.
  * @param {HicEnv} env
  * @param {CanvasRecord} record
@@ -262,20 +380,39 @@ function ancestorsOf(canvas) {
 function watchAncestors(env, record) {
   /** @type {Element[]} */
   let watched = [];
-  const mo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver((batch) => {
-    if (batch.some((m) => !OWN_ATTRIBUTE.test(m.attributeName ?? '') && !env.isManagedLayerNode(/** @type {Element} */ (m.target)))) env.scheduler.damage(record, 'mutation', null, null);
+  /** @type {Set<string>|null|undefined} undefined: not read since the last stylesheet change */
+  let tokens;
+  let signature = styleSignature(record.canvas);
+  /** @param {MutationRecord[]} batch @returns {boolean} */
+  const reaches = (batch) => {
+    const next = styleSignature(record.canvas);
+    const inherited = next !== signature;
+    signature = next;
+    if (inherited || batch.some((m) => ALWAYS_REACHES.has(m.attributeName ?? ''))) return true;
+    if (tokens === undefined) tokens = ancestorTokensOf([...new Set([env.document, ...watched.map((el) => /** @type {Document|ShadowRoot} */ (el.getRootNode())), record.root])]);
+    const known = tokens;
+    return !known || batch.some((m) => changedTokens(m).some((t) => known.has(t)));
+  };
+  const mo = new /** @type {Window & typeof globalThis} */ (env.window).MutationObserver((records) => {
+    const batch = records.filter((m) => !OWN_ATTRIBUTE.test(m.attributeName ?? '') && !env.isManagedLayerNode(/** @type {Element} */ (m.target)));
+    if (batch.length && reaches(batch)) env.scheduler.damage(record, 'mutation', null, null);
   });
+  const observe = () => { for (const el of watched) mo.observe(el, { attributes: true, attributeOldValue: true }); };
   function sync() {
     const next = ancestorsOf(record.canvas);
+    signature = styleSignature(record.canvas);
     if (next.length === watched.length && next.every((el, i) => el === watched[i])) return;
     mo.disconnect();
     watched = next;
-    for (const el of next) mo.observe(el, { attributes: true });
+    tokens = undefined;
+    observe();
     if (record.state === 'active') env.scheduler.damage(record, 'mutation', null, null);
   }
-  const first = ancestorsOf(record.canvas);
-  watched = first;
-  for (const el of first) mo.observe(el, { attributes: true });
-  const offForced = env.bus.on(BUS.DAMAGE, (/** @type {{record: CanvasRecord, cause: string}} */ e) => { if (e.record === record && e.cause === 'forced') sync(); });
-  return () => { offForced(); mo.disconnect(); watched = []; };
+  watched = ancestorsOf(record.canvas);
+  observe();
+  const offDamage = env.bus.on(BUS.DAMAGE, (/** @type {{record: CanvasRecord, cause: string}} */ e) => {
+    if (e.cause === 'stylesheet') tokens = undefined;
+    else if (e.record === record && e.cause === 'forced') sync();
+  });
+  return () => { offDamage(); mo.disconnect(); watched = []; };
 }
