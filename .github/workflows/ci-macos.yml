@@ -90,7 +90,7 @@ jobs:
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
         run: |
-          if [ "$MUTANTS_ALL" = true ]; then scope=all; else scope=pr; fi
+          if [ "$MUTANTS_ALL" = true ]; then scope="all"; else scope="pr"; fi
           node test/gates/mutants/run.mjs --only="$(node test/ci/macos-plan.mjs --mutants=$scope)" --shard="$SHARD"
       - uses: ./.github/actions/macos-results
         if: always()
