@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.7] - 2026-10-26
+
+Conformance with the official WPT HTML-in-Canvas tests at the pinned revision (2026-10-18) rises to 206 of 237 files and 324 of 369 subtests (was 198 and 316), with no polyfill bug open. Animated GIF, APNG, WebP and AVIF images inside a drawable now play, decoded from the bytes the polyfill may already read. Rendering is closer to native for external SVG `<use>` documents, clip paths defined outside the drawable, a video whose poster fails to load, the macOS overlay thumb of a listbox `<select>` and date / time fields at a fractional device pixel ratio. The browser test harness now tells a disturbed machine (another application in front, a moving mouse pointer) apart from a product failure. The minified core grows to 332,499 bytes (115,986 gzipped).
+
 ### Added
 
 - An animated GIF, APNG, WebP or AVIF `<img>` inside a drawable is played: each new frame of the image is drawn and fires a `paint` event, as natively (it showed its first frame forever). Frames are decoded with `ImageDecoder` from the same bytes the polyfill already inlines, so a cross-origin image without CORS is never read; an image plays only while a canvas that shows it can be seen, at most at that canvas's frame cap and build rate, and decoded frames are kept in a bounded cache. Safari 27 (no `ImageDecoder`) and pages that are not a secure context show the first frame, with one console message. Animated CSS images (`background-image` and the like) still show their first frame.
@@ -161,7 +165,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.6...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.7...HEAD
+[0.1.0-preview.7]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.6...v0.1.0-preview.7
 [0.1.0-preview.6]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.5...v0.1.0-preview.6
 [0.1.0-preview.5]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.4...v0.1.0-preview.5
 [0.1.0-preview.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.3...v0.1.0-preview.4

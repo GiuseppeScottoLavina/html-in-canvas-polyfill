@@ -30,7 +30,7 @@ install(); // synchronous; throws HicUnsupportedError in a browser it refuses
 Or with a script tag (load it before your own scripts; it installs while the tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.6/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.7/dist/hic-live-polyfill.iife.min.js"></script>
 ```
 
 Then use the standard API. This is the explainer's own example, unchanged:
@@ -105,7 +105,7 @@ On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check,
 - **Animated images:** an animated GIF, APNG, WebP or AVIF `<img>` plays where the browser has `ImageDecoder` (WebCodecs), in a secure context; Safari 27, which has none, shows its first frame. Animated CSS images (`background-image` and the like) show their first frame everywhere.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The headed gates run on macOS at DPR 2 (some also at DPR 1 or 1.25), and at DPR 1.25 and 1.5 against Chrome's native implementation.
-- **Preview.** `0.1.0-preview.6` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Preview.** `0.1.0-preview.7` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 
