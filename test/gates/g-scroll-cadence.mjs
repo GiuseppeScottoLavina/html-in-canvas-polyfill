@@ -7,7 +7,9 @@
 //   compose  the scroll compositor drew the steps (snapshot stats): a scroll is not re-photographed per frame.
 //   pixel    samples of the canvas taken INSIDE paint handlers during the stream each equal the plain-DOM twin at one of the offsets the list had in the frames
 //            just before (a composed frame shows the live offset, a fallback tile a slightly older one; anything else is a wrong frame), and the settled canvas
-//            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row.
+//            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row;
+//            the twin must then show that row hovered in its screenshot (the reference's own precondition, class twin: a resting OS pointer over the window was
+//            delivered to the twin at every clipped screenshot and took its hover away, 2026-10-22; the harness now parks the pointer and reports foreign input).
 // Positive control (sabotage stale + nosync + nocompose): only the first draw reaches the canvas, the live scroller is never synchronised, and every scroll
 // scroller under the pointer gets an empty position:fixed child (no plan for it): every class must go red.
 import { runGate, H } from './lib/gate.mjs';
@@ -134,6 +136,8 @@ runGate('G-scroll-cadence', async (ctx) => {
     const withHover = !!c.params.hover;
     /** @type {Map<string, any>} */
     const twin = new Map();
+    /** pairs whose twin screenshot did not show the hovered row it was given */
+    const twinMisses = [];
     const twinAt = async (/** @type {number} */ top, /** @type {number} */ hov) => {
       const key = withHover ? `${top}|${hov}` : `${top}`;
       if (twin.has(key)) return twin.get(key);
@@ -144,6 +148,10 @@ runGate('G-scroll-cadence', async (ctx) => {
       }
       await H.sleep(250);
       const shot = await H.screenshotElement(ref, '#list');
+      if (withHover) {
+        const got = await ref.evaluate(`(() => { const h = document.querySelector('#rows li:hover'); return h ? Array.prototype.indexOf.call(document.getElementById('rows').children, h) : -1; })()`);
+        if (got !== hov) twinMisses.push({ top, want: hov, got });
+      }
       twin.set(key, { img: shot.img, top: await ref.evaluate(`document.getElementById('list').scrollTop`) });
       return twin.get(key);
     };
@@ -167,7 +175,8 @@ runGate('G-scroll-cadence', async (ctx) => {
       worstCorner = Math.max(worstCorner, best?.corner ?? 1);
       if (!best || best.fraction > MAX_FRACTION || best.corner > MAX_CORNER) misses.push({ sample: i, top: s.top, cands, best });
     }
-    numbers[`${c.name}Samples`] = { checked, worstCorner, misses: misses.slice(0, 4) };
+    numbers[`${c.name}Samples`] = { checked, worstCorner, misses: misses.slice(0, 4), twins: twin.size, twinMisses: twinMisses.slice(0, 4) };
+    if (withHover) ctx.check(`${c.name}: each twin screenshot shows the row it was given under :hover (${twin.size} pairs; the reference's precondition)`, twinMisses.length === 0, { twinMisses: twinMisses.slice(0, 4), of: twin.size }, 'twin');
     if (misses.length && process.argv.includes('--dump')) { const { writeFileSync } = await import('node:fs'); const m0 = misses[0]; const png = await page.evaluate(`window.__rec.png(${m0.sample})`); writeFileSync('/tmp/gsc-canvas.png', Buffer.from(png.split(',')[1], 'base64')); writeFileSync('/tmp/gsc-twin.png', H.encodePng(twin.get(withHover ? `${m0.best.top}|${m0.best.hov}` : `${m0.best.top}`).img)); writeFileSync('/tmp/gsc-crop.png', H.encodePng(cropList(H.decodePng(Buffer.from(png.split(',')[1], 'base64')), geo))); }
     ctx.check(`${c.name}: every canvas frame sampled during the stream (${checked}) equals the twin at an offset the list had (tolerance ${TOLERANCE}, <= ${MAX_FRACTION * 100} %; each corner of the list <= ${MAX_CORNER * 100} % above 16)`, checked >= 4 && misses.length === 0, numbers[`${c.name}Samples`], 'pixel');
 

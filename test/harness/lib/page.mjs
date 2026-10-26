@@ -4,14 +4,44 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { paced, sleep, stats } from './util.mjs';
+import { parkOsPointer } from './os-pointer.mjs';
+
+const POINTER_BINDING = '__hicPointerSeen';
+/** the page side of installPointerGuard: each distinct (type, position) once per document, to the CDP binding; the binding is taken off the global object */
+const POINTER_GUARD_SRC = `(() => {
+  const report = window.${POINTER_BINDING};
+  if (window.top !== window || typeof report !== 'function') return;
+  try { delete window.${POINTER_BINDING}; } catch { /* stays reachable, harmless */ }
+  const seen = new Set();
+  for (const type of ['mousemove', 'mousedown', 'wheel']) addEventListener(type, (e) => {
+    if (!e.isTrusted) return;
+    const k = (document.fullscreenElement ? 'fullscreen-' : '') + type + ',' + e.clientX + ',' + e.clientY;
+    if (!seen.has(k)) { seen.add(k); report(k); }
+  }, { capture: true, passive: true });
+  addEventListener('fullscreenchange', () => report('fullscreenchange,0,0'), true);
+})()`;
+/** ms around a fullscreen change during which pointer input counts as fullscreen-related (the window's geometry is in transition, over the parked pointer) */
+const FULLSCREEN_GRACE_MS = 2500;
 
 export class Page {
   /** @param {import('./chrome.mjs').Browser} browser */
   constructor(browser, targetId, sessionId) {
     this.browser = browser; this.conn = browser.conn; this.targetId = targetId; this.sessionId = sessionId;
     this.console = []; this.exceptions = []; this.logEntries = []; this.focusEmulated = false;
+    /** css px points of every pointer event this page was sent (installPointerGuard compares what the page received with them) */
+    this.sentPointer = new Set();
+    /** @type {{type:string, x:number, y:number, at:string}[] | null} pointer input the harness did not send (null: no guard installed) */
+    this.foreignPointer = null;
+    /** the same while the page was fullscreen: a fullscreen window covers its whole display, so a resting pointer cannot be kept off it (recorded, not judged) */
+    this.fullscreenPointer = [];
+    /** Date.now() of each fullscreenchange of the page */
+    this.fullscreenChanges = [];
   }
-  send(method, params) { return this.conn.send(method, params, this.sessionId); }
+  send(method, params) {
+    if (method === 'Input.dispatchMouseEvent' && params) this.sentPointer.add(`${Math.floor(params.x)},${Math.floor(params.y)}`);
+    else if (method === 'Input.dispatchTouchEvent' && params?.touchPoints) for (const t of params.touchPoints) this.sentPointer.add(`${Math.floor(t.x)},${Math.floor(t.y)}`);
+    return this.conn.send(method, params, this.sessionId);
+  }
   on(method, h) { return this.conn.on(method, h, this.sessionId); }
 
   async init() {
@@ -55,6 +85,44 @@ export class Page {
       if (Date.now() - t > timeout) throw new Error('waitForFunction timeout: ' + expression.slice(0, 160));
       await sleep(interval);
     }
+  }
+
+  /**
+   * Record every trusted pointer event (mousemove, mousedown, wheel) of the top document whose position the harness never sent: the OS pointer
+   * resting over the window (a headed Chrome delivers it at a clipped screenshot or a tab activation, see os-pointer.mjs), a person using the
+   * machine, a Universal Control link. Such input changes :hover, focus and hit tests behind the harness's back. Input while the page is fullscreen goes to
+   * `fullscreenPointer` instead, and so does input within FULLSCREEN_GRACE_MS of a fullscreen change (a fullscreen window covers its display: the parked
+   * pointer is over it, and it was delivered as the window left fullscreen in G-unsupported). Survives navigations; read
+   * `foreignPointer` (after `flushPointerGuard()`), which a gate turns into an environment verdict. Install before the first navigation.
+   */
+  async installPointerGuard() {
+    if (this.foreignPointer) return;
+    this.foreignPointer = [];
+    this.on('Runtime.bindingCalled', (p) => {
+      if (p.name !== POINTER_BINDING) return;
+      const [type, x, y] = p.payload.split(',');
+      if (type === 'fullscreenchange') { this.fullscreenChanges.push(Date.now()); return; }
+      const fx = Math.floor(+x), fy = Math.floor(+y);
+      let near = false;
+      for (let dx = -1; dx <= 1 && !near; dx++) for (let dy = -1; dy <= 1 && !near; dy++) near = this.sentPointer.has(`${fx + dx},${fy + dy}`);
+      if (near) return;
+      const f = { type: type.replace(/^fullscreen-/, ''), x: +x, y: +y, at: new Date().toISOString(), t: Date.now() };
+      if (type.startsWith('fullscreen-')) this.fullscreenPointer.push(f); else this.foreignPointer?.push(f);
+    });
+    await this.send('Runtime.addBinding', { name: POINTER_BINDING });
+    await this.send('Page.addScriptToEvaluateOnNewDocument', { source: POINTER_GUARD_SRC });
+    await this.evaluate(POINTER_GUARD_SRC);
+  }
+  /** Wait until every report the page sent before this call has arrived (one CDP round trip on the same session). */
+  async flushPointerGuard() {
+    try { await this.evaluate('0'); } catch { /* a closed or crashed page reports nothing more */ }
+    // input just before or after a fullscreen change came while the window's geometry changed over the parked pointer: fullscreen-related too
+    if (this.foreignPointer && this.fullscreenChanges.length) {
+      const near = (/** @type {{t:number}} */ f) => this.fullscreenChanges.some((c) => Math.abs(f.t - c) <= FULLSCREEN_GRACE_MS);
+      this.fullscreenPointer.push(...this.foreignPointer.filter(near));
+      const keep = this.foreignPointer.filter((f) => !near(f)); this.foreignPointer.length = 0; this.foreignPointer.push(...keep);
+    }
+    return this.foreignPointer ?? [];
   }
 
   // ---- foreground / focus -------------------------------------------------------------------------------------
@@ -118,6 +186,8 @@ export class Page {
       await sleep(250); v = await this.viewport();
       if (v.innerWidth === w && v.innerHeight === h) break;
     }
+    // the window may have grown over the parked pointer: move it again (launchChrome parks it, os-pointer.mjs)
+    if (this.browser.parksPointer) this.browser.pointerRepark = parkOsPointer(this.browser.pid);
     return v;
   }
 

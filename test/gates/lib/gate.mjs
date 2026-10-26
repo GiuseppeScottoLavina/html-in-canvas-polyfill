@@ -2,15 +2,18 @@
 //
 // Gates over a native implementation (test/native-effects/) pass `chrome: 'canary', nativeDrawElement: true`.
 //
-//   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--wait-quiet=SECONDS]
+//   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--wait-quiet=SECONDS] [--watchdog-min=10]
 //   --wait-quiet waits (up to SECONDS) for the shared machine to be quiet before the run (TEST-PLAN rule 6); a run whose machine load stays above the threshold is labelled so.
+//   --watchdog-min: a gate still running after that many minutes (default 10) reports itself (FAIL naming the CDP calls it waits for; NOT USABLE behind a locked screen) and exits.
 //
 // A gate is `run(ctx)` -> `{ numbers }`; it calls `ctx.check(name, ok, detail, class)` for every assertion (also throws are failures).
 // `ctx.control` is true in the control run. The control bundle (`controlSabotage` option) already carries the sabotage BEFORE the first paint.
 // The gate passes only when the real run has no failed assertion AND the control run turned red in EVERY declared check class (`controlClasses`):
 // "some check went red" is not enough, each class of check (pixel, hit, typing, ...) must be shown able to fail.
 //
-// Verdicts (TEST-PLAN rule 1 and 6): PASS | FAIL | NOT USABLE (focus was refused/lost: the run is dropped and never counts).
+// Verdicts (TEST-PLAN rule 1 and 6): PASS | FAIL | NOT USABLE (focus was refused/lost, or pointer input the harness did not send reached a page: the run is dropped and never counts).
+// Every gate page carries the harness's pointer guard (Page.installPointerGuard): the OS pointer resting over the window or a person using the machine moves
+// :hover and focus behind the gate's back, so such a run proves nothing about the polyfill (launchChrome moves the resting pointer out of the window first).
 // `degraded` lists reasons a result must be read with care (focus via a CDP click, machine load above threshold, no control run); `countsForThresholds` is true
 // only for a clean, real-focus run without high machine load. A high-load PASS stays reportable but never decides a threshold.
 //
@@ -103,7 +106,7 @@ function prepareBundles(id, bundleFile, kinds, optional = {}) {
  * A control passes only when it detected something AND every declared class has a red check. A focus that was refused/lost makes the run NOT USABLE (pass:false); a CDP-click focus,
  * machine load above threshold, a locked screen and --no-control only DEGRADE it (reportable, never counted toward a threshold decision).
  */
-export function judge({ real, control, controlClasses = [], focus = {}, highLoad = false, screenLocked = false, noControl = false }) {
+export function judge({ real, control, controlClasses = [], focus = {}, highLoad = false, screenLocked = false, noControl = false, foreignPointer = [] }) {
   const out = { numbers: {}, assertions: [], failed: [], control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, usable: true, degraded: [], pass: false, countsForThresholds: false, verdict: 'FAIL' };
   if (real) {
     out.numbers = real.numbers;
@@ -122,6 +125,7 @@ export function judge({ real, control, controlClasses = [], focus = {}, highLoad
   const controlOk = control ? out.control.detected && out.control.missingClasses.length === 0 : true;
   if (focus.mode === 'failed') { out.usable = false; out.degraded.push('focus:failed'); }
   if (focus.lost) { out.usable = false; out.degraded.push(`focus-lost:${focus.lostAt ?? ''}`); }
+  if (foreignPointer.length) { out.usable = false; out.degraded.push(`foreign-pointer:${foreignPointer.length}`); }
   if (focus.mode === 'cdp-click') out.degraded.push('focus:cdp-click');
   if (focus.mode === 'emulated') out.degraded.push('focus:emulated');
   if (highLoad) out.degraded.push('high-load');
@@ -133,8 +137,27 @@ export function judge({ real, control, controlClasses = [], focus = {}, highLoad
   if (real && real.checks.length === 0) out.failed.push('gate made no assertion');
   if (control && !out.control.detected) out.failed.push('POSITIVE CONTROL DID NOT FAIL: the detector cannot see the broken variant');
   else if (control && out.control.missingClasses.length) out.failed.push(`POSITIVE CONTROL: no check of class [${out.control.missingClasses.join(', ')}] went red (these checks were never shown able to fail)`);
+  if (foreignPointer.length) out.failed.unshift(`ENVIRONMENT: pointer input the harness did not send reached the page ${foreignPointer.length} time(s), first ${JSON.stringify(foreignPointer[0])} (the OS pointer over the test window, or someone using the machine): keep the pointer off the browser window and rerun`);
   if (!out.usable) out.failed.push(`NOT USABLE: ${out.degraded.join(', ')} (the run is dropped, it proves nothing)`);
   return out;
+}
+
+/**
+ * The result of a gate PROCESS run by a runner (spawnSync result -> the gate's JSON line, pure, unit-tested). A process that printed no complete result line
+ * (it hung and was killed at the runner's timeout, crashed, or could not be spawned) is `{ notRun: reason }` with a reason that is never empty: an empty
+ * reason once read as "ran" and crashed the mutant suite at its first baseline (a g-explainer killed after 15 min under machine load printed nothing).
+ * @param {{stdout?: string|null, stderr?: string|null, status?: number|null, signal?: string|null, error?: Error & {code?: string}}} r
+ * @returns {any}
+ */
+export function gateRunOutcome(r) {
+  const line = (r.stdout ?? '').split('\n').find((l) => l.startsWith('{"gate"'));
+  try {
+    const res = JSON.parse(line ?? '');
+    if (Array.isArray(res.assertions) && Array.isArray(res.failed)) return res;
+  } catch { /* no result line */ }
+  const why = [r.error ? `could not run: ${r.error.code ?? r.error.message}` : '', r.signal ? `killed by ${r.signal}${r.error?.code === 'ETIMEDOUT' ? ' at the runner timeout' : ''}` : '', `exit ${r.status ?? 'none'}`,
+    line ? 'malformed result line' : 'no result line', (r.stderr || r.stdout || '').trim().slice(-300)].filter(Boolean);
+  return { notRun: why.join('; ') };
 }
 
 /** The single entry of a gate script. */
@@ -150,8 +173,39 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
   });
   const srv = await H.startServer({ files: bundles.files });
   const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, nativeDrawElement, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}) });
-  const result = { gate: id, verdict: 'FAIL', pass: false, usable: true, degraded: [], countsForThresholds: false, numbers: {}, control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, assertions: [], failed: [], load: null, chrome: null, dpr: useDpr ?? null, rafHz: null, focus: {}, screenLocked: screenLocked(), highLoad: false, bundle: bundles.info, noControl: !phases.includes('control'), startedAt: new Date().toISOString() };
+  const result = { gate: id, verdict: 'FAIL', pass: false, usable: true, degraded: [], countsForThresholds: false, numbers: {}, control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, assertions: [], failed: [], load: null, chrome: null, dpr: useDpr ?? null, rafHz: null, focus: {}, screenLocked: screenLocked(), highLoad: false, bundle: bundles.info, noControl: !phases.includes('control'), startedAt: new Date().toISOString(), pointerPark: browser.pointerPark ?? null, foreignPointer: [] };
   const outcomes = {};
+  const emit = () => {
+    result.durationMs = Date.now() - t0;
+    mkdirSync(RESULTS, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = resolve(RESULTS, `${id}-${stamp}.json`);
+    const line = JSON.stringify(result);
+    writeFileSync(file, line + '\n');
+    console.log(line);
+    const rows = (outcomes.real?.checks ?? []).map((c) => `  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok ? '' : ' :: ' + JSON.stringify(c.detail).slice(0, 300)}`);
+    const cl = result.control;
+    console.log(`${result.verdict} ${id}  (real: ${outcomes.real ? outcomes.real.checks.filter((c) => c.ok).length + '/' + outcomes.real.checks.length : 'skipped'}; control detected: ${cl.ran ? cl.detected : 'skipped'} classes red [${cl.failedClasses.join(',')}] missing [${cl.missingClasses.join(',')}]${result.degraded.length ? '; DEGRADED: ' + result.degraded.join(',') : ''})  -> ${file}`);
+    console.log(rows.join('\n'));
+    if (result.failed.length) console.log('first violated: ' + result.failed[0]);
+    process.exit(result.pass ? 0 : 1);
+  };
+  // a gate takes 3 min at most (G-scroll-cadence, 2.6 min); one that hangs is reported, with what it waited for, well before a runner's own timeout kills it silently
+  const watchdogMin = +(arg('watchdog-min') ?? 10);
+  // the verdict is taken when the watchdog fires; closing the browser then rejects the pending call and lets the gate run on, so its own end does not emit
+  /** @type {null | ReturnType<typeof hangVerdict> & {pending: string[], locked: boolean|null, phases: string[]}} */
+  let hung = null;
+  const watchdog = setTimeout(async () => {
+    const pending = [...(browser.conn?.pending?.values() ?? [])].map((p) => p.method);
+    const locked = screenLocked();
+    hung = { ...hangVerdict({ minutes: watchdogMin, pending, screenLocked: locked }), pending, locked, phases: Object.keys(outcomes) };
+    await Promise.race([browser.close().catch(() => {}), H.sleep(15000)]);
+    for (const f of bundles.tmp) { try { rmSync(f, { force: true }); } catch { /* temp copy */ } }
+    Object.assign(result, { pass: false, usable: hung.usable, verdict: hung.verdict, countsForThresholds: false, screenLocked: hung.locked, hung: { pending: hung.pending, phases: hung.phases } });
+    result.failed.unshift(hung.reason);
+    if (!hung.usable) result.degraded.push('screen-locked');
+    emit();
+  }, watchdogMin * 60000);
   try {
     result.chrome = browser.version?.Browser ?? null;
     const waitSec = +(arg('wait-quiet') ?? 0);
@@ -167,7 +221,7 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
       const ctx = {
         id, control, srv, browser, dpr: useDpr, bundle, effectsBundle: withEffects(bundle), focusState: result.focus,
         check(name, ok, detail, cls) { checks.push({ name, ok: !!ok, detail: detail ?? null, ...(cls ? { cls } : {}) }); return !!ok; },
-        async page() { const p = await browser.newPage({ reuseFirst: pages.length === 0 }); pages.push(p); return p; },
+        async page() { const p = await browser.newPage({ reuseFirst: pages.length === 0 }); await p.installPointerGuard(); pages.push(p); return p; },
         focus: (page) => focusPage(page, result.focus),
         stillFocused: (page, what) => stillFocused(page, result.focus, what),
         note(k, v) { numbers[k] = v; },
@@ -181,10 +235,12 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
         thrown = String(err?.stack ?? err).slice(0, 1500);
         checks.push({ name: 'gate ran to completion', ok: false, detail: thrown });
       }
+      for (const p of pages) for (const f of await p.flushPointerGuard()) result.foreignPointer.push({ phase, ...f });
+      for (const p of pages) for (const f of p.fullscreenPointer) (result.fullscreenPointer ??= []).push({ phase, ...f });
       for (const p of pages) { try { await p.close(); } catch { /* closing the tab is best effort */ } }
       outcomes[phase] = { checks, numbers, thrown };
     }
-    Object.assign(result, judge({ real: outcomes.real, control: outcomes.control, controlClasses, focus: result.focus, highLoad: result.highLoad, screenLocked: result.screenLocked, noControl: result.noControl }));
+    Object.assign(result, judge({ real: outcomes.real, control: outcomes.control, controlClasses, focus: result.focus, highLoad: result.highLoad, screenLocked: result.screenLocked, noControl: result.noControl, foreignPointer: result.foreignPointer }));
   } catch (err) {
     result.failed.push(`gate setup failed: ${String(err?.stack ?? err).slice(0, 800)}`);
     result.pass = false;
@@ -194,19 +250,23 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
     try { await srv.close(); } catch { /* ignore */ }
     for (const f of bundles.tmp) { try { rmSync(f, { force: true }); } catch { /* temp copy */ } }
   }
-  result.durationMs = Date.now() - t0;
-  mkdirSync(RESULTS, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = resolve(RESULTS, `${id}-${stamp}.json`);
-  const line = JSON.stringify(result);
-  writeFileSync(file, line + '\n');
-  console.log(line);
-  const rows = (outcomes.real?.checks ?? []).map((c) => `  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok ? '' : ' :: ' + JSON.stringify(c.detail).slice(0, 300)}`);
-  const cl = result.control;
-  console.log(`${result.verdict} ${id}  (real: ${outcomes.real ? outcomes.real.checks.filter((c) => c.ok).length + '/' + outcomes.real.checks.length : 'skipped'}; control detected: ${cl.ran ? cl.detected : 'skipped'} classes red [${cl.failedClasses.join(',')}] missing [${cl.missingClasses.join(',')}]${result.degraded.length ? '; DEGRADED: ' + result.degraded.join(',') : ''})  -> ${file}`);
-  console.log(rows.join('\n'));
-  if (result.failed.length) console.log('first violated: ' + result.failed[0]);
-  process.exit(result.pass ? 0 : 1);
+  if (hung) return;   // the watchdog reports this run
+  clearTimeout(watchdog);
+  emit();
+}
+
+/**
+ * The verdict of a gate that did not finish within its watchdog (pure, unit-tested): FAIL naming the CDP calls still waiting, or NOT USABLE when the screen
+ * is locked (a locked or sleeping display stops requestAnimationFrame, and canvas reads wait inside one). A g-explainer that never finished printed nothing
+ * until the mutant runner's 15 min timeout, and the runner then crashed on the empty output.
+ * @param {{minutes: number, pending: string[], screenLocked: boolean|null}} o
+ */
+export function hangVerdict({ minutes, pending, screenLocked }) {
+  const usable = screenLocked !== true;
+  return {
+    pass: false, usable, verdict: usable ? 'FAIL' : 'NOT USABLE', countsForThresholds: false,
+    reason: `gate did not finish within ${minutes} min (CDP calls still waiting: ${pending.length ? pending.join(', ') : 'none'}; screen locked: ${screenLocked}): a page wait that never resolves${usable ? '' : ' (requestAnimationFrame stops behind a locked screen: unlock and rerun)'}`,
+  };
 }
 
 /** Fixture URL helper with the polyfill bundle. */
