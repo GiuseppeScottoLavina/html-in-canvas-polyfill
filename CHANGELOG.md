@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- CI on GitHub-hosted macOS runners (`.github/workflows/ci-macos.yml`): 12 of the 15 headed Chrome gates with their positive controls, the mutation suite (one mutant per gate on pull requests; the 40 mutants whose gates run there nightly and on release tags, split over four machines with the new `--shard=k/n`), the examples, documentation smoke pages, Pages site, field test, framework apps, hang stress and platform probe, and G-xbrowser on Firefox and Safari. Every run lists, as warnings, what stays local and why (`test/ci/macos-plan.mjs`): the suites that need a 120 Hz display, continuous WebGPU frames, the WPT gate, Safari Technology Preview and the phone simulators. `npm run test:local` runs that rest on a Mac.
+- `HIC_GATE_DPR` gives the gates without a device pixel ratio of their own a forced ratio (the runner's display is 1x; CI uses 2, the ratio of the screens the thresholds were set on).
+
+### Fixed
+
+- Test harness: launching Firefox for G-xbrowser no longer waits forever when macOS shows a dialog about the application (the first-launch prompt of a quarantined download); it fails after 30 s and names the cause. A tab that closes between being listed and being attached is replaced by a new one instead of failing the run.
+- Field test page: starting the tab capture can no longer wait forever for its first frame (the page now changes before the capture starts, and a capture that delivers no frame within 10 s is reported as an error).
+
 ## [0.1.0-preview.7] - 2026-10-26
 
 Conformance with the official WPT HTML-in-Canvas tests at the pinned revision (2026-10-18) rises to 206 of 237 files and 324 of 369 subtests (was 198 and 316), with no polyfill bug open. Animated GIF, APNG, WebP and AVIF images inside a drawable now play, decoded from the bytes the polyfill may already read. Rendering is closer to native for external SVG `<use>` documents, clip paths defined outside the drawable, a video whose poster fails to load, the macOS overlay thumb of a listbox `<select>` and date / time fields at a fractional device pixel ratio. The browser test harness now tells a disturbed machine (another application in front, a moving mouse pointer) apart from a product failure. The minified core grows to 332,499 bytes (115,986 gzipped).

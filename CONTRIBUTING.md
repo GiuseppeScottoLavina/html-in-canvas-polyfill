@@ -18,9 +18,9 @@ npm run test:field       # the field test page end to end with a tab capture, an
 npm run demo             # http://127.0.0.1:8765/examples/
 ```
 
-`npm test` and `npm run test:examples` must pass before a pull request. CI runs `npm test`, the build, the bundle check, the platform probe (`node test/platform/run.mjs`: fonts, form controls, scrollbars, DPR 1.25 and 1.5 and the text selection against native pixels) and the package contents on Linux (Ubuntu 24.04) and on Windows (Windows Server 2025), in headless Chrome without a GPU (the WebGPU tests report `SKIPPED: no WebGPU` there); `test:examples`, `test:plugins` and `test:pages` need WebGPU in headless Chrome for the effect checks and run locally.
+`npm test` and `npm run test:examples` must pass before a pull request. CI runs `npm test`, the build, the bundle check, the platform probe (`node test/platform/run.mjs`: fonts, form controls, scrollbars, DPR 1.25 and 1.5 and the text selection against native pixels) and the package contents on Linux (Ubuntu 24.04) and on Windows (Windows Server 2025), in headless Chrome without a GPU (the WebGPU tests report `SKIPPED: no WebGPU` there). The browser suites run on GitHub-hosted macOS runners (`.github/workflows/ci-macos.yml`, see "Where the suites run" below).
 
-The harness finds Chrome (stable or Canary) where the platform installs it (macOS, Windows, Linux); `--chrome=<path>` or the environment variable `HIC_CHROME_PATH` points it at another executable. What CI does not cover on Windows: the headed browser gates, a GPU, ClearType (LCD) text in the canvas comparisons, a real display scale, Edge, and Windows 10.
+The harness finds Chrome (stable or Canary) where the platform installs it (macOS, Windows, Linux); `--chrome=<path>` or the environment variable `HIC_CHROME_PATH` points it at another executable. What CI does not cover on Windows: the headed browser gates (they run on macOS), a GPU, ClearType (LCD) text in the canvas comparisons, a real display scale, Edge, and Windows 10.
 
 ## Asking someone to test on their machine
 
@@ -28,7 +28,7 @@ Problems that depend on the platform (Windows text rendering and selection colou
 
 ## Browser gates
 
-Changes that can affect what is drawn, when, or where input lands also need the browser gates. They drive real, headed browsers, take the screen focus, move the mouse pointer out of the browser window and need an unlocked screen, so they run locally on macOS and not in CI; leave the mouse and keyboard alone while they run (pointer input the gates did not send makes a Chrome gate run NOT USABLE: run it again; another application brought to the front, or a pointer moved, during a cross-browser scenario makes it run again, up to three attempts, after which it fails marked ENVIRONMENT rather than as a product failure; a failure in an undisturbed attempt is never retried):
+Changes that can affect what is drawn, when, or where input lands also need the browser gates. They drive real, headed browsers, take the screen focus, move the mouse pointer out of the browser window and need an unlocked screen with a logged-in desktop: most of them run in CI on GitHub-hosted macOS runners, the rest locally on macOS (next section). Leave the mouse and keyboard alone while they run on your machine: the harness parks the OS pointer outside the browser window before each run (pointer input the gates did not send makes a Chrome gate run NOT USABLE: run it again; another application brought to the front, or a pointer moved, during a cross-browser scenario makes it run again, up to three attempts, after which it fails marked ENVIRONMENT rather than as a product failure; a failure in an undisturbed attempt is never retried):
 
 ```sh
 npm run test:gates       # browser gates in headed Chrome, each with its positive control
@@ -43,6 +43,30 @@ npm run bench:compare    # the performance comparison (docs/PERFORMANCE-COMPARIS
 ```
 
 If you cannot run them, say so in the pull request. The harness launches its own browsers with throwaway profiles under `.profiles/` (under the OS temp directory on Windows) and writes results to `.scratch/` (both git-ignored); it never touches a browser it did not start.
+
+## Where the suites run
+
+The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 virtual machine (3 vCPU) with a logged-in desktop, a 60 Hz virtual display (switched from 1024 x 768 to 1600 x 1200 at the start of each job), no HiDPI mode and a virtual GPU ("Apple Paravirtual device": WebGL and a WebGPU adapter). It installs the Google-signed Chrome stable and Canary (Chrome for Testing builds get no renderer there), records the display, GPU and session of every job (`test/ci/macos-env.mjs`, in the job's artifact), turns Spotlight indexing off and runs the gates without a DPR of their own at DPR 2 (`HIC_GATE_DPR=2`), the ratio of the Retina screens their thresholds were set on. Each job uploads its verdict files; a failing job also uploads the failing images, the logs and a screenshot of the desktop.
+
+| suite | where | why |
+| --- | --- | --- |
+| 12 of the 15 Chrome gates (`npm run test:gates`: all but the three below), real + control | CI macOS, every push | pixels, hit testing, typing, resize and listeners do not depend on the refresh rate |
+| mutation suite, the 40 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 40 nightly and on release tags (4 machines) | |
+| `test:examples` (all but effect-plugin), the documentation smoke pages, `test:pages`, `test:field`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
+| `test:xbrowser` on Firefox and Safari | CI macOS, every push | the runner image has Firefox, geckodriver and Safari; `safaridriver --enable` works there |
+| G-scroll-cadence and its 5 mutants | local | thresholds from a 120 Hz display; at 60 Hz the live list moved in 61-74 % of the frames (70 % / 82 % required) |
+| G-f1-form-effect, G-interposer-strong (and 2 mutants), `test:plugins`, examples/effect-plugin, `test:native-effects` | local | continuous WebGPU effects present no frames on the virtual GPU (a transition effect does, and plain WebGPU presents at 60 fps): not yet explained |
+| `test:wpt` | local | 3 of 237 files unstable between repetitions on the runner; its oracle, Canary, changes daily |
+| `test:xbrowser --engine=stp`, `test:mobile`, `bench:compare` | local | Safari Technology Preview is not on the runner; simulators and emulators; performance numbers come from the 120 Hz machine |
+
+The list lives in `test/ci/macos-plan.mjs`; anything not listed there runs in CI, and every CI run prints the list as warnings. To run the local-only rest unattended on a Mac with a 120 Hz display, a GPU and Chrome Canary:
+
+```sh
+npm run build
+caffeinate -dimsu npm run test:local            # add -- --skip=mobile,stp without simulators or Technology Preview
+```
+
+Leave the Mac alone while it runs. The harness moves the OS pointer outside the browser windows, records every pointer movement and application activation it did not cause, and reports such a run as NOT USABLE (Chrome gates, mutants) or runs the scenario again and marks it ENVIRONMENT after three disturbed attempts (cross-browser); a disturbed run is never counted as a product result.
 
 ## Rules the codebase keeps
 

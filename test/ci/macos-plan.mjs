@@ -24,7 +24,7 @@ export const LOCAL_ONLY = {
   'test:plugins': 'six of the nine plugin gallery tests need continuous effect frames (water, CRT, glitch, page-curl, shatter: 0 frames per second on the runner\'s virtual GPU)',
   'test:examples effect-plugin': 'its frame-cap check counts continuous effect frames (0 on the runner\'s virtual GPU); every other example and the documentation smoke pages run in CI',
   'test:native-effects': 'G-native-effects and G-native-interposer measure continuous effect frames over Canary\'s own implementation (0 per second on the runner\'s virtual GPU)',
-  'test:wpt': 'on the runner 3 of the 237 files were unstable between repetitions (onpaint-css-animation, onpaint-post-tree-order, privacy/picture-images-ignored), which fails the gate; subject 198 files / 315 subtests otherwise, as locally. It also takes 18 min and its native oracle, Chrome Canary, changes every day',
+  'test:wpt': 'on the runner 3 of the 237 files were unstable between repetitions (onpaint-css-animation, onpaint-post-tree-order, privacy/picture-images-ignored), which fails the gate (measured before 0.1.0-preview.7). It also takes 18 min and its native oracle, Chrome Canary, changes every day',
   'test:xbrowser stp': 'Safari Technology Preview is not installed on the runner image',
   'test:mobile': 'the iOS Simulator and the Android Emulator (the Android Emulator needs hardware virtualization, which the hosted macOS virtual machine does not offer)',
   'bench:compare': 'performance numbers are taken on the 120 Hz development machine (docs/PERFORMANCE-COMPARISON.md); a shared 3 vCPU virtual machine at 60 Hz would measure something else',
