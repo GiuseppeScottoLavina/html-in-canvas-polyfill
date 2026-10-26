@@ -8,6 +8,7 @@
 //   node test/ci/macos-plan.mjs --gates                   the gates the runner runs, comma-separated (for run-all.mjs --only)
 //   node test/ci/macos-plan.mjs --mutants=all|pr          the mutants the runner runs (every gate of the mutant runs there); `pr` is one per gate
 //   node test/ci/macos-plan.mjs --report                  what is NOT run on the runner and why: GitHub warnings and a step-summary table
+//   node test/ci/macos-plan.mjs --local-gates | --local-mutants   the complement, for a local run (test/ci/local.mjs, `npm run test:local`)
 import { readdirSync, appendFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,19 +36,22 @@ const local = LOCAL_ONLY;
 export const CI_GATES = ALL_GATES.filter((g) => !local[g]);
 /** mutants every gate of which runs on the runner */
 export const CI_MUTANTS = MUTANTS.filter((m) => m.gates.every((g) => CI_GATES.includes(g)));
+export const LOCAL_GATES = ALL_GATES.filter((g) => local[g]);
+export const LOCAL_MUTANTS = MUTANTS.filter((m) => !CI_MUTANTS.includes(m));
 /** the PR subset: per CI gate, the first mutant of the suite that targets it (every gate shown able to catch a seeded bug on every pull request) */
 export const PR_MUTANTS = CI_GATES.map((g) => CI_MUTANTS.find((m) => m.gates.includes(g))).filter((m, i, a) => m && a.indexOf(m) === i);
 
 const arg = (/** @type {string} */ k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   if (process.argv.includes('--gates')) console.log(CI_GATES.join(','));
+  else if (process.argv.includes('--local-gates')) console.log(LOCAL_GATES.join(','));
+  else if (process.argv.includes('--local-mutants')) console.log(LOCAL_MUTANTS.map((m) => m.name).join(','));
   else if (arg('mutants')) console.log((arg('mutants') === 'pr' ? PR_MUTANTS : CI_MUTANTS).map((m) => /** @type {any} */ (m).name).join(','));
   else if (process.argv.includes('--report')) {
-    const skippedMutants = MUTANTS.filter((m) => !CI_MUTANTS.includes(m));
-    const rows = [...Object.entries(LOCAL_ONLY), ...skippedMutants.map((m) => [`mutant ${m.name}`, `targets ${m.gates.filter((g) => !CI_GATES.includes(g)).join(', ')}, which runs locally only`])];
+    const rows = [...Object.entries(LOCAL_ONLY), ...LOCAL_MUTANTS.map((m) => [`mutant ${m.name}`, `targets ${m.gates.filter((g) => !CI_GATES.includes(g)).join(', ')}, which runs locally only`])];
     for (const [id, why] of rows) console.log(`::warning title=Not run on the hosted macOS runner::${id}: ${why}`);
     const md = ['### Not run on the hosted macOS runner (run them locally: CONTRIBUTING.md, "Browser gates")', '', '| suite | why |', '| --- | --- |', ...rows.map(([id, why]) => `| ${id} | ${why} |`), ''].join('\n');
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');
     console.log(`${rows.length} suites, gates and mutants are not run here; CI gates: ${CI_GATES.length} of ${ALL_GATES.length}; CI mutants: ${CI_MUTANTS.length} of ${MUTANTS.length}`);
-  } else { console.error('usage: macos-plan.mjs --gates | --mutants=all|pr | --report'); process.exit(2); }
+  } else { console.error('usage: macos-plan.mjs --gates | --mutants=all|pr | --report | --local-gates | --local-mutants'); process.exit(2); }
 }
