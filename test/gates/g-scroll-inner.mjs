@@ -34,9 +34,9 @@ async function compare(ctx, ref, page, name, numbers) {
 }
 
 /** wait until the list stopped moving (smooth scrolling) */
-async function stable(page) {
+async function stable(page, expr = `document.querySelector('#list').scrollTop`) {
   let last = -1;
-  for (let i = 0; i < 40; i++) { const v = await page.evaluate(`document.querySelector('#list').scrollTop`); if (v === last) return v; last = v; await H.sleep(250); }
+  for (let i = 0; i < 40; i++) { const v = await page.evaluate(expr); if (v === last) return v; last = v; await H.sleep(250); }
   return last;
 }
 const scrollTops = async (page) => page.evaluate(`({ list: document.querySelector('#list').scrollTop, side: document.querySelector('#side').scrollTop, y: scrollY })`);
@@ -83,8 +83,10 @@ runGate('G-scroll-inner', async (ctx) => {
   numbers.listScrollTops = offsets;
 
   // page scroll (the canvas moves in the viewport)
-  await onBoth(ctx, ref, page, (p) => H.wheelStream(p, { x: 700, y: 60, deltaY: 100, count: 3, intervalMs: 16 }));
-  await H.sleep(400);
+  // each page is read once its smooth scroll has ended, while it is the foreground tab: a background tab does not advance the animation, so a fixed wait
+  // read the twin frozen part-way on the slower hosted macOS runner (ref 100, poly 200 px after a 300 px stream, 2026-10-26)
+  await onBoth(ctx, ref, page, async (p) => { await H.wheelStream(p, { x: 700, y: 60, deltaY: 100, count: 3, intervalMs: 16 }); await stable(p, 'scrollY'); });
+  await stable(page, 'scrollY'); await ctx.focus(ref); await stable(ref, 'scrollY'); await ctx.focus(page);
   const ps = await scrollTops(page); const prs = await scrollTops(ref);
   ctx.check('page scroll moved both pages equally', ps.y > 0 && ps.y === prs.y, { poly: ps.y, ref: prs.y }, 'scroll');
   await compare(ctx, ref, page, 'page-scroll', numbers);
