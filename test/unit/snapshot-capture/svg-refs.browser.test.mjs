@@ -131,3 +131,23 @@ test('an HTML box clipped by `clip-path: url(#id)` whose <clipPath> is outside t
   assert.deepEqual(Array.from(got.getImageData(10, 10, 1, 1).data), [0, 0, 255, 255], 'control: the left half is drawn');
   assert.equal(got.getImageData(30, 10, 1, 1).data[3], 0, 'the right half is clipped away');
 });
+
+test('a <use> of a page target outside the drawable draws it under the read-back rules of the native oracle (Chrome Canary 158): its own mask masks it away, its clip path applies, its filter does not, its marker and pattern are ignored (fallback kept)', async (t) => {
+  const outside = document.createElement('div');
+  outside.innerHTML = '<svg width="0" height="0" style="position:absolute"><defs>'
+    + '<g id="in-m"><mask id="in-mi"><rect width="10" height="20" fill="white"/></mask><rect width="20" height="20" mask="url(#in-mi)"/></g>'
+    + '<g id="in-c"><clipPath id="in-ci"><rect width="10" height="20"/></clipPath><rect width="20" height="20" clip-path="url(#in-ci)"/></g>'
+    + '<g id="in-f"><filter id="in-fi" x="0" y="0" width="1" height="1"><feFlood flood-color="rgb(200,100,0)"/></filter><rect width="20" height="20" filter="url(#in-fi)"/></g>'
+    + '<g id="in-k"><marker id="in-ki" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse"><rect width="20" height="20" fill="rgb(150,0,150)"/></marker><path d="M0,0 L1,0" marker-start="url(#in-ki)"/></g>'
+    + '<g id="in-p"><pattern id="in-pi" width="20" height="20" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="rgb(0,160,0)"/></pattern><rect width="20" height="20" fill="url(#in-pi) rgb(1,2,3)"/></g>'
+    + '</defs></svg>';
+  document.body.appendChild(outside);
+  t.cleanup(() => outside.remove());
+  const ids = ['in-m', 'in-c', 'in-f', 'in-k', 'in-p'];
+  const m = mount(`<svg drawable width="100" height="20" style="display:block">${ids.map((id, i) => `<use x="${i * 20}" href="#${id}"/>`).join('')}</svg>`);
+  const got = await rasterize(m.capture(m.request(m.layerEl.firstElementChild)));
+  const px = (x) => Array.from(got.getImageData(x, 10, 1, 1).data).join();
+  // measured on the native oracle with the same markup (canvas pixels at x = 5, 15, ... 95)
+  const want = ['0,0,0,0', '0,0,0,0', '0,0,0,255', '0,0,0,0', '0,0,0,255', '0,0,0,255', '0,0,0,0', '0,0,0,0', '1,2,3,255', '1,2,3,255'];
+  assert.deepEqual(Array.from({ length: 10 }, (_, i) => px(i * 10 + 5)), want);
+});

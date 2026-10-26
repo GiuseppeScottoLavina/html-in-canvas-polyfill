@@ -160,7 +160,7 @@ const URL_REF = /url\(\s*(["']?)#([^"')\s]+)\1\s*\)/g;
 
 /**
  * Apply the read-back rules to a copy of an element outside the drawable: its paint servers and markers are removed (their references then fall back, as on the native oracle),
- * its masks are emptied (they mask their element away). In a copy of an external document `ext`, every id and class gets the document's prefix (plus the class `hic-u<n>`),
+ * its masks are emptied (they mask their element away); in a copy of a page element its `filter` attributes are dropped (the native oracle draws it unfiltered). In a copy of an external document `ext`, every id and class gets the document's prefix (plus the class `hic-u<n>`),
  * `<style>` elements are removed (documentCss scopes them), every `url(#id)` and `href="#id"` points to the prefixed id (the ids are added to `refs` so their elements are
  * copied too), and a <use> of another document gets an absolute URL.
  * @param {Element} copy @param {ExtDoc|null} ext @param {Set<string>} refs
@@ -169,7 +169,11 @@ function settleCopy(copy, ext, refs) {
   for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
     if (PAINT.has(el.localName) || (ext && el.localName === 'style')) { el.remove(); continue; }
     if (el.localName === 'mask') el.replaceChildren();
-    if (!ext) continue;
+    if (!ext) {
+      // a page element drawn through a <use> of an outside target is not filtered by its filter attribute (measured on the native oracle; an external document's are)
+      if (el.getAttribute('filter')?.includes('url(')) el.removeAttribute('filter');
+      continue;
+    }
     const p = `hic-u${ext.n}-`;
     if (el.id) el.id = p + el.id;
     const cls = (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
