@@ -1,5 +1,5 @@
 # The browser suites that need a desktop session, on GitHub-hosted macOS runners: the headed Chrome gates with their positive controls, the mutation suite,
-# the headless example / site / field / stress / framework / platform suites, and Firefox through WebDriver. The runner has a logged-in desktop,
+# the headless example / site / stress / framework / platform suites, and Firefox through WebDriver. The runner has a logged-in desktop,
 # a 60 Hz virtual display and a virtual GPU; what needs a 120 Hz display, continuous WebGPU frames, Safari 27, Safari Technology Preview or the phone simulators stays
 # on a local Mac, and the `local-only` job lists it on every run (test/ci/macos-plan.mjs, CONTRIBUTING.md "Where the suites run").
 name: CI macOS
@@ -112,13 +112,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/macos-browsers
-      - name: Examples and documentation smoke pages that render no WebGPU (the others are local, see local-only), the Pages site, the field test
+      - name: Examples and documentation smoke pages that render no WebGPU (the others are local, see local-only), the Pages site
         if: matrix.part == 'examples'
         timeout-minutes: 25
         run: |
           node scripts/check-examples.mjs --only=basic,form,scroll-and-resize,webgl-texture,smoke:esm-quickstart,smoke:doc-readme-basic,smoke:doc-getting-started
           node scripts/check-pages.mjs
-          node scripts/check-field-test.mjs
       - name: Framework apps, hang stress, platform probe
         if: matrix.part == 'apps'
         timeout-minutes: 25

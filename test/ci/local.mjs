@@ -16,6 +16,7 @@ const stages = [
   ['gates', `gates ${LOCAL_GATES.join(', ')} (real + control)`, [node, 'test/gates/run-all.mjs', `--only=${LOCAL_GATES.join(',')}`, ...quiet]],
   ['mutants', `the ${LOCAL_MUTANTS.length} mutants that target those gates`, [node, 'test/gates/mutants/run.mjs', `--only=${LOCAL_MUTANTS.map((m) => m.name).join(',')}`, ...quiet]],
   ['wpt', 'G-wpt-subset: the official WPT tests (Canary as the native oracle)', [node, 'test/wpt/gate.mjs']],
+  ['field', 'G-field-test: the field test page with a tab capture', [node, 'scripts/check-field-test.mjs']],
   ['plugins', 'plugin gallery e2e (continuous WebGPU effects)', [node, 'scripts/check-plugins-e2e.mjs']],
   ['webgpu-examples', 'the WebGPU examples: effect-plugin, plugins, the wobble-plugin smoke page', [node, 'scripts/check-examples.mjs', '--only=effect-plugin,plugins,smoke:wobble-plugin']],
   ['native-effects', 'the effects over Chrome Canary\'s own implementation', [node, 'test/native-effects/run.mjs', '--require-canary']],
