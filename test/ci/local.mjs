@@ -17,7 +17,7 @@ const stages = [
   ['mutants', `the ${LOCAL_MUTANTS.length} mutants that target those gates`, [node, 'test/gates/mutants/run.mjs', `--only=${LOCAL_MUTANTS.map((m) => m.name).join(',')}`, ...quiet]],
   ['wpt', 'G-wpt-subset: the official WPT tests (Canary as the native oracle)', [node, 'test/wpt/gate.mjs']],
   ['plugins', 'plugin gallery e2e (continuous WebGPU effects)', [node, 'scripts/check-plugins-e2e.mjs']],
-  ['effect-plugin', 'examples/effect-plugin (its frame cap)', [node, 'scripts/check-examples.mjs', '--only=effect-plugin']],
+  ['webgpu-examples', 'the WebGPU examples: effect-plugin, plugins, the wobble-plugin smoke page', [node, 'scripts/check-examples.mjs', '--only=effect-plugin,plugins,smoke:wobble-plugin']],
   ['native-effects', 'the effects over Chrome Canary\'s own implementation', [node, 'test/native-effects/run.mjs', '--require-canary']],
   ['firefox-scroll', 'G-xbrowser\'s scroll scenario on Firefox', [node, 'test/xbrowser/run.mjs', '--engine=firefox', '--only=scroll']],
   ['safari', 'G-xbrowser on Safari and Safari Technology Preview (the latter skipped by the suite when it is not installed); quit Safari first', [node, 'test/xbrowser/run.mjs', '--engine=safari,stp']],

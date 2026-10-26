@@ -112,11 +112,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/macos-browsers
-      - name: Examples (all but effect-plugin, see local-only), documentation smoke pages, the Pages site, the field test
+      - name: Examples and documentation smoke pages that render no WebGPU (the others are local, see local-only), the Pages site, the field test
         if: matrix.part == 'examples'
         timeout-minutes: 25
         run: |
-          node scripts/check-examples.mjs --only=basic,form,plugins,scroll-and-resize,webgl-texture,smoke
+          node scripts/check-examples.mjs --only=basic,form,scroll-and-resize,webgl-texture,smoke:esm-quickstart,smoke:doc-readme-basic,smoke:doc-getting-started
           node scripts/check-pages.mjs
           node scripts/check-field-test.mjs
       - name: Framework apps, hang stress, platform probe
