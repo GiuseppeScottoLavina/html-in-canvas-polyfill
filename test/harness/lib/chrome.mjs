@@ -36,8 +36,7 @@ export function chromeCandidates(platform = process.platform, env = process.env)
 
 /**
  * The executable for `chrome`: a channel name ('stable', 'canary') or a path. For 'stable', the environment variable HIC_CHROME_PATH wins (CI points it at the
- * browser it installed, so every script, not only those with a --chrome option, uses that one), for 'canary' HIC_CANARY_PATH (the macOS CI job installs a Chrome
- * for Testing build of the Canary channel, which is not an application bundle in /Applications); else the first installed candidate of the platform. Throws,
+ * browser it installed, so every script, not only those with a --chrome option, uses that one); else the first installed candidate of the platform. Throws,
  * naming every place it looked, when there is none.
  * @param {string} [chrome] @param {{platform?: NodeJS.Platform, env?: Record<string, string|undefined>, exists?: (p: string) => boolean}} [o]
  * @returns {string}
@@ -47,10 +46,9 @@ export function resolveChrome(chrome = 'stable', { platform = process.platform, 
     if (!exists(chrome)) throw new Error(`Chrome executable not found: ${chrome}`);
     return chrome;
   }
-  const override = chrome === 'stable' ? env.HIC_CHROME_PATH : env.HIC_CANARY_PATH;
-  const tried = [...(override ? [override] : []), ...chromeCandidates(platform, env)[chrome]];
+  const tried = [...(chrome === 'stable' && env.HIC_CHROME_PATH ? [env.HIC_CHROME_PATH] : []), ...chromeCandidates(platform, env)[chrome]];
   const found = tried.find((p) => exists(p));
-  if (!found) throw new Error(`Chrome (${chrome}) not found on ${platform}; looked at: ${tried.join(', ') || '(nothing)'}. Pass --chrome=<path> or set ${chrome === 'stable' ? 'HIC_CHROME_PATH' : 'HIC_CANARY_PATH'}.`);
+  if (!found) throw new Error(`Chrome (${chrome}) not found on ${platform}; looked at: ${tried.join(', ') || '(nothing)'}. Pass --chrome=<path> or set HIC_CHROME_PATH.`);
   return found;
 }
 
@@ -121,7 +119,7 @@ function mergeFeatureFlags(base, extra) {
 
 /**
  * @typedef {object} LaunchOptions
- * @property {'stable'|'canary'|string} [chrome='stable'] channel name (found per platform, resolveChrome; HIC_CHROME_PATH overrides 'stable', HIC_CANARY_PATH 'canary') or an executable path
+ * @property {'stable'|'canary'|string} [chrome='stable'] channel name (found per platform, resolveChrome; HIC_CHROME_PATH overrides 'stable') or an executable path
  * @property {string} [userDataDir] must be inside PROFILES_DIR (<repo>/.profiles/, the OS temp dir on Windows); default is a fresh `<name>-<pid>-<rand>` dir
  * @property {string} [name='run'] used for the default profile dir name
  * @property {[number,number]} [windowSize=[1400,900]] OUTER window size; inner is smaller by the browser chrome (use Page.setInnerSize for exact)

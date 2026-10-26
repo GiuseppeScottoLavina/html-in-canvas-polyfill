@@ -35,15 +35,6 @@ test('HIC_CHROME_PATH overrides the stable channel only; an explicit path is use
   assert.equal(resolveChrome('/x/chrome', { platform: 'linux', env, exists: only('/x/chrome') }), '/x/chrome');
 });
 
-test('HIC_CANARY_PATH overrides the canary channel only (the macOS CI job installs Canary outside /Applications)', () => {
-  const env = { HIC_CANARY_PATH: '/hosted/chrome-canary/Google Chrome for Testing' };
-  const all = () => true;
-  assert.equal(resolveChrome('canary', { platform: 'darwin', env, exists: all }), env.HIC_CANARY_PATH);
-  assert.equal(resolveChrome('stable', { platform: 'darwin', env, exists: all }), CHROME_APPS.stable);
-  assert.equal(resolveChrome('canary', { platform: 'darwin', env, exists: only(CHROME_APPS.canary) }), CHROME_APPS.canary, 'a path that does not exist falls through to the installed Canary');
-  assert.throws(() => resolveChrome('canary', { platform: 'darwin', env, exists: () => false }), (e) => e instanceof Error && e.message.includes('HIC_CANARY_PATH') && e.message.includes(env.HIC_CANARY_PATH));
-});
-
 test('nothing installed: a loud error that names every place it looked and the two ways out', () => {
   assert.throws(() => resolveChrome('stable', { platform: 'win32', env: WIN_ENV, exists: () => false }),
     (e) => e instanceof Error && e.message.includes('Program Files (x86)') && e.message.includes('--chrome=<path>') && e.message.includes('HIC_CHROME_PATH'));
