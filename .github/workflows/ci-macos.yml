@@ -16,7 +16,7 @@ jobs:
   probe:
     name: probe ${{ matrix.part }}
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:

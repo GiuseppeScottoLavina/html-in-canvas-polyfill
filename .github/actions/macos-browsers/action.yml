@@ -55,6 +55,15 @@ runs:
         npm ci
         npm run build
 
+    - name: Keep the display awake
+      # A display that sleeps stops requestAnimationFrame in every page; caffeinate holds it on for the rest of the job (the runner ends it with the job).
+      shell: bash
+      run: |
+        caffeinate -u -t 2
+        nohup caffeinate -dimsu > /dev/null 2>&1 &
+
     - name: Record the display, the GPU and the session (test/ci/macos-env.mjs)
       shell: bash
-      run: node test/ci/macos-env.mjs
+      run: |
+        mkdir -p .scratch/results
+        node test/ci/macos-env.mjs
