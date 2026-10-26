@@ -59,3 +59,36 @@ test('Chrome for Android: a scrollable listbox clone carries the overlay thumb i
   l.style.backgroundImage = 'linear-gradient(red, red)';
   assert.equal(run(l, android), '', 'an author background image is kept');
 });
+
+test('macOS overlay bars: a scrollable listbox draws Chrome\'s overlay thumb (black at 50 % over a light background, white over a dark one, over the selected option\'s highlight); positive controls: none with classic bars, none on an unscrollable list', async () => {
+  const opts = '<option>Alpha</option><option selected>Beta</option><option>Gamma</option><option>Delta</option><option>Epsilon</option><option>Zeta</option>';
+  const m = mount(`<div class="s" drawable><select size="4" id="l" style="font:13px system-ui">${opts}</select><select size="4" id="d" style="font:13px system-ui;background:#222;color:#fff">${opts}</select>`
+    + '<select size="4" id="u"><option>1</option></select></div>', { css: '.s{width:300px;height:100px;display:flex;align-items:flex-start;gap:10px}' });
+  const [l, d, u] = ['#l', '#d', '#u'].map((s) => /** @type {HTMLSelectElement} */ (m.layerEl.querySelector(s)));
+  const mac = { engine: 'chromium', os: 'desktop', macOverlay: true };
+  const clone = (el, info) => { const c = /** @type {HTMLSelectElement} */ (el.cloneNode(true)); listboxThumb(el, c, getComputedStyle(el), el.scrollTop, info); return c; };
+  const layered = (el) => (el.getAttribute('style') ?? '').includes('data:image/svg+xml');
+  assert.ok(layered(clone(l, mac)), 'the select carries the thumb layer');
+  assert.ok(layered(clone(l, mac).options[1]), 'and the selected option under it');
+  assert.ok(!layered(clone(l, mac).options[0]), 'a transparent option shows the select\'s layer');
+  assert.ok(!layered(clone(l, { ...mac, macOverlay: false })), 'control: classic bars, no overlay thumb');
+  assert.ok(!layered(clone(u, mac)), 'control: nothing to scroll');
+  // pixels: the clone alone in an SVG image (as the snapshot draws it, without bars of its own), the thumb column 5 px from the inner right edge, rows 5 and 22 (the
+  // selected option)
+  const image = async (sel, w, h) => {
+    sel.style.cssText += `;scrollbar-width:none;box-sizing:border-box;width:${w}px;height:${h}px;margin:0`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><foreignObject width="${w}" height="${h}"><div xmlns="http://www.w3.org/1999/xhtml">${new XMLSerializer().serializeToString(sel)}</div></foreignObject></svg>`;
+    return rasterize({ url: `data:image/svg+xml,${encodeURIComponent(svg)}`, widthPx: w, heightPx: h });
+  };
+  for (const el of [l, d]) {
+    const w = el.offsetWidth, h = el.offsetHeight, x = Math.round(el.clientLeft + el.clientWidth - 5.5);
+    const got = await image(clone(el, mac), w, h);
+    const g = (yy) => Array.from(got.getImageData(x, el.clientTop + yy, 1, 1).data);
+    if (el === l) {
+      assert.ok(g(5).slice(0, 3).every((v) => Math.abs(v - 128) <= 3), `black at 50 % over white: ${g(5)}`);
+      assert.ok(g(22)[0] < 110, `over the selected option's highlight: ${g(22)}`);
+    } else assert.ok(g(5)[0] > 130 && g(5)[0] < 160, `white at 50 % over #222: ${g(5)}`);
+    const none = await image(/** @type {HTMLSelectElement} */ (el.cloneNode(true)), w, h);
+    assert.notDeepEqual(Array.from(none.getImageData(x, el.clientTop + 5, 1, 1).data), g(5), 'positive control: the select without the layer draws no thumb');
+  }
+});

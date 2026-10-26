@@ -13,6 +13,7 @@ import { engineSkins } from './engine-skins.js';
 import { inlineCssUrls } from './inline-resources.js';
 import { barColors, barParts, barThemeOf, cornerSvg, hasArrowGlyphs, svgUrl, trackSvg } from './chromium-bars.js';
 import { darkSchemeOf } from './color-scheme.js';
+import { backdropOf, parseColor } from './caret-overlay.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -290,18 +291,75 @@ function chromiumListboxBar(win, src, clone, cs, f) {
 }
 
 /**
- * Chrome for Android keeps a thin overlay thumb on a scrollable listbox select (it does not fade; measured Chromium 158, DPR 2.625: 4 css px wide, grey 128 at 50 %
- * alpha, flush with the inner right border, length and offset in proportion to the scrollport), which an SVG image never draws. It becomes a background layer of the
- * clone (under the selected option's highlight, where the page draws it over). Skipped when the select has its own background image.
+ * The overlay thumb of a scrollable listbox select, which an SVG image never draws:
+ * - Chrome for Android keeps a thin overlay thumb on it (it does not fade; measured Chromium 158, DPR 2.625: 4 css px wide, grey 128 at 50 % alpha, flush with the inner
+ *   right border, length and offset in proportion to the scrollport). It becomes a background layer of the clone (under the selected option's highlight, where the page
+ *   draws it over).
+ * - Chrome on macOS with overlay bars draws a listbox's thumb in a drawable whether or not it scrolled (measured on the native oracle, Chrome Canary 158, where the page
+ *   fades it after a scroll; Chrome 155 keeps it in the page too, headless and headed): macOverlayThumb.
+ * Skipped when the select has its own background image.
  * @param {Element} src @param {HTMLElement} clone @param {CSSStyleDeclaration} cs @param {number} top  the scroll offset drawn
- * @param {{engine: string, os: string}} [info]  the engine (tests pass Android on a desktop browser)
+ * @param {{engine: string, os: string, macOverlay?: boolean}} [info]  the engine and whether macOS overlay bars are on (tests pass them)
  */
-export function listboxThumb(src, clone, cs, top, info = currentEngine()) {
+export function listboxThumb(src, clone, cs, top, info = { ...currentEngine(), macOverlay: currentMacPlatform() && !(probeBars(src.ownerDocument, 'auto', false).v > 0) }) {
   const { engine, os } = info;
   const ch = src.clientHeight, sh = src.scrollHeight;
-  if (engine !== 'chromium' || os !== 'android' || cs.backgroundImage !== 'none' || cs.overflowY === 'hidden' || !(sh > ch) || ch <= 0) return;
+  if (engine !== 'chromium' || cs.backgroundImage !== 'none' || cs.overflowY === 'hidden' || !(sh > ch) || ch <= 0) return;
+  if (os !== 'android') {
+    if (info.macOverlay && cs.scrollbarWidth === 'auto' && cs.scrollbarColor === 'auto' && cs.direction !== 'rtl') macOverlayThumb(src, clone, top);
+    return;
+  }
   const g = 'rgba(128,128,128,0.5)';
   appendInlineStyle(clone, `background-image:linear-gradient(${g},${g})!important;background-size:4px ${(ch * ch) / sh}px!important;background-position:right 0 top ${(top * ch) / sh}px!important;background-repeat:no-repeat!important;background-origin:padding-box!important;`);
+}
+
+/**
+ * PURE. The macOS overlay thumb of a vertical listbox bar, in device px (k per css px) from the scrollport's top right corner, as Chromium paints it unhovered
+ * (measured on the native oracle at DPR 1, 1.25 and 2): the bar is round(16 k) thick; the thumb is inset round(2 k) from the right edge and round(7 k) from the bar's
+ * left edge, and round(2 k) at both ends of its track slot; the slot is Blink's ThumbLength over the whole scrollport (no buttons; at least trunc(26 k)) at the truncated
+ * ThumbPosition.
+ * @param {number} k @param {number} ch  scrollport height, css px @param {number} sh  scroll height, css px @param {number} top  scroll offset, css px
+ * @returns {{right: number, width: number, top: number, len: number}|null}
+ */
+export function macOverlayThumbRect(k, ch, sh, top) {
+  const chD = Math.round(ch * k), shD = Math.round(sh * k), inset = Math.round(2 * k), right = inset;
+  if (!(shD > chD)) return null;
+  const slot = Math.min(chD, Math.max(Math.round((chD * chD) / shD), Math.trunc(26 * k)));
+  const raw = (Math.max(0, top) * k * (chD - slot)) / (shD - chD);
+  const at = raw > 0 && raw < 1 ? 1 : Math.trunc(raw);
+  const width = Math.round(16 * k) - Math.round(7 * k) - right;
+  return slot - 2 * inset > 0 ? { right, width, top: at + inset, len: slot - 2 * inset } : null;
+}
+
+/**
+ * Paint the macOS overlay thumb on the clone of a listbox: a rounded bar, black at 50 % over a light background, white at 50 % over a dark one (the background's
+ * lightness decides, not the colour scheme: measured), drawn OVER the options as natively, so it is a background layer of the select and of every option with a
+ * background that it crosses (that background, the selected option's highlight, would cover the select's layer; a transparent option shows it).
+ * @param {Element} src @param {HTMLElement} clone @param {number} top
+ */
+function macOverlayThumb(src, clone, top) {
+  const win = src.ownerDocument.defaultView ?? window;
+  const k = win.devicePixelRatio || 1;
+  const t = macOverlayThumbRect(k, src.clientHeight, src.scrollHeight, top);
+  if (!t) return;
+  const bg = backdropOf(win, src);
+  const fill = Math.max(...bg) + Math.min(...bg) > 255 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+  const w = t.width / k, h = t.len / k, x = src.clientWidth - (t.right + t.width) / k, y = t.top / k;
+  const url = svgUrl(`<rect width="${t.width}" height="${t.len}" rx="${t.width / 2}" fill="${fill}"/>`, w, h, k);
+  const layer = (/** @type {Element} */ el, /** @type {number} */ lx, /** @type {number} */ ly, /** @type {string} */ origin) => appendInlineStyle(el, `background-image:${url}!important;`
+    + `background-size:${w}px ${h}px!important;background-position:${lx}px ${ly}px!important;background-repeat:no-repeat!important;background-origin:${origin}!important;background-attachment:scroll!important;`);
+  layer(clone, x, y, 'padding-box');
+  const r = src.getBoundingClientRect();
+  const scale = r.height > 0 ? /** @type {HTMLElement} */ (src).offsetHeight / r.height : 1;
+  const opts = clone.querySelectorAll('option'), live = /** @type {HTMLSelectElement} */ (src).options;
+  for (let i = 0; i < live.length; i++) {
+    const or = live[i].getBoundingClientRect();
+    const ox = (or.left - r.left) * scale - src.clientLeft, oy = (or.top - r.top) * scale - src.clientTop;
+    if (oy >= y + h) break;
+    if (oy + or.height * scale <= y || ox + or.width * scale <= x || !opts[i]) continue;
+    const ocs = win.getComputedStyle(live[i]);
+    if (ocs.backgroundImage === 'none' && (parseColor(ocs.backgroundColor)?.[3] ?? 0) > 0) layer(opts[i], x - ox, y - oy, 'border-box');
+  }
 }
 
 /**

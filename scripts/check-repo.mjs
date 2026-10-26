@@ -100,7 +100,8 @@ if (!docsOnly) {
   // 15400 -> 15375 (2026-10-22, measured 15,355 with the WPT re-pin merged: the two-argument getElementTransform removed, the privacy review fixes added).
   // 15375 -> 15425 (2026-10-23, measured 15,419; 15,364 before this step): the references inside an external SVG <use> document resolved against that document (its
   // ids, classes and <style> rules scoped to it; svg-refs.js addUseTargets), clip paths outside the drawable copied, the read-back rules applied to copied <use> targets.
-  if (total > 15425) problems.push(`G-size: core is ${total} code lines (> 15425)`);
+  // 15425 -> 15475 (2026-10-23, measured 15,457; 15,419 before this step): the macOS overlay thumb of a scrollable listbox select (scroll-emulation.js macOverlayThumb).
+  if (total > 15475) problems.push(`G-size: core is ${total} code lines (> 15475)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

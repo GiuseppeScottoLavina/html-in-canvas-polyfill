@@ -93,7 +93,8 @@ const LIMITS = {
   // 316 -> 318 KB, gzip 110 -> 110.75 KB (+1,898 / +716 bytes, 2026-10-23, measured 317,844 / 110,624): the references inside an external SVG <use> document resolved
   //   against that document (ids, classes and its <style> rules scoped to it), clip paths outside the drawable, the read-back rules on copied <use> targets, an empty
   //   box for a video whose poster fails to load
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 318 * KB, gzip: 110.75 * KB },
+  // 318 -> 319.5 KB, gzip 110.75 -> 111.25 KB (+1,579 / +502 bytes, 2026-10-23, measured 319,423 / 111,126): the macOS overlay thumb of a scrollable listbox select
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 319.5 * KB, gzip: 111.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
