@@ -21,6 +21,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 /** Suites and gates that stay on a local Mac: id -> the reason, measured on the hosted runner (2026-10-26, Chrome 156.0.8078.48, Canary 158.0.8125.0). */
 export const LOCAL_ONLY = {
   'g-scroll-cadence': 'its cadence thresholds come from a 120 Hz display; on the runner\'s 60 Hz virtual display the live list moved in 61-74 % of the frames of the wheel stream (thresholds 70 % per case, 82 % on average)',
+  'g-regress-paint': 'its rate checks (M5, M6: a 60 Hz counter, alone and beside 2,000 cells, must paint at >= 75 % of a tabular reference) are throughput measurements that the shared 3 vCPU runner sits on the edge of: M6 measured 34.3 to 44.8 paints per second against a floor of 33.5 to 34.2 and failed 1 of 7 runs. Its correctness checks (M1 to M4) passed in every run; they would run here if the rate checks were a gate of their own',
   'g-f1-form-effect': 'continuous WebGPU effects present no frames on the runner\'s virtual GPU: the effect host stops after 2 to 4 frames (0 effect frames per second at every frame cap) while a plain WebGPU page presents 60 per second there; not yet explained. The gate waits for frames and its watchdog ends it after 10 min',
   'g-interposer-strong': 'the same: the CRT and water effects present no continuous frames on the runner\'s virtual GPU, the gate never finishes',
   'test:plugins': 'six of the nine plugin gallery tests need continuous effect frames (water, CRT, glitch, page-curl, shatter: 0 frames per second on the runner\'s virtual GPU)',

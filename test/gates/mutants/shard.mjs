@@ -5,7 +5,7 @@
 // mutant lands in exactly one shard, and the union of the shards is the whole suite.
 
 /** Minutes per run of a gate WITHOUT its control, where they differ enough to matter; a gate not listed counts as DEFAULT_MINUTES (equal weights: the four
- *  nightly shards of the 40 CI mutants took 10 to 20 min each on the hosted macOS runner, 2026-10-26). */
+ *  nightly shards of the 40 mutants then run in CI took 10 to 20 min each on the hosted macOS runner, 2026-10-26). */
 export const GATE_MINUTES = {};
 export const DEFAULT_MINUTES = 1;
 const cost = (/** @type {string} */ gate) => GATE_MINUTES[/** @type {keyof typeof GATE_MINUTES} */ (gate)] ?? DEFAULT_MINUTES;

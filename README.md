@@ -163,7 +163,7 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 - **Phones (simulators and emulators):** `npm run test:mobile` drives Mobile Safari in the iOS Simulator and Chrome in the Android Emulator: taps on moved drawables, typing, touch scroll, the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
 
-The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless on Linux and on Windows, and the browser gates (12 of the 15, with their controls), the mutation suite, the example, site, framework and field suites and Firefox on GitHub-hosted macOS runners; what needs a 120 Hz display, continuous WebGPU frames, Safari 27, Chrome Canary's oracle for WPT or the phone simulators runs locally on macOS (`npm run test:local`; [CONTRIBUTING.md](CONTRIBUTING.md#where-the-suites-run)).
+The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless on Linux and on Windows, and the browser gates (11 of the 15, with their controls), the mutation suite, the example, site, framework and field suites and Firefox on GitHub-hosted macOS runners; what needs a 120 Hz display, a fast machine for throughput checks, continuous WebGPU frames, Safari 27, Chrome Canary's oracle for WPT or the phone simulators runs locally on macOS (`npm run test:local`; [CONTRIBUTING.md](CONTRIBUTING.md#where-the-suites-run)).
 
 ## Documentation
 
