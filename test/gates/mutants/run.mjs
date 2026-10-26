@@ -1,5 +1,6 @@
 // Mutant suite runner: `npm run test:mutants`.
-//   node test/gates/mutants/run.mjs [--only=a,b] [--gate=g-explainer] [--list] [--check-anchors] [--no-baseline] [--wait-quiet=SECONDS]
+//   node test/gates/mutants/run.mjs [--only=a,b] [--gate=g-explainer] [--shard=k/n] [--list] [--check-anchors] [--no-baseline] [--wait-quiet=SECONDS]
+// --shard=k/n runs the k-th of n parts of the selection (shard.mjs: every mutant in exactly one part; CI runs the parts on separate machines).
 // For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>), and compare the
 // failed checks with the CLEAN bundle's run of the same gate (cached per gate). A mutant is CAUGHT when a check goes red that is green on the clean bundle.
 //   CAUGHT        ok
@@ -13,6 +14,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MUTANTS } from './mutants.mjs';
 import { buildMutant } from './build.mjs';
+import { parseShard, planShards } from './shard.mjs';
 import { gateRunOutcome } from '../lib/gate.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +35,10 @@ const basePath = BUNDLES.core.clean;
 
 const build = (m) => buildMutant(BUNDLES[m.bundle ?? 'core'].text, m);
 
-const selected = MUTANTS.filter((m) => (!only || only.includes(m.name)) && (!gateFilter || m.gates.includes(gateFilter)));
+const shard = parseShard(arg('shard'));
+const filtered = MUTANTS.filter((m) => (!only || only.includes(m.name)) && (!gateFilter || m.gates.includes(gateFilter)));
+const selected = shard ? planShards(filtered, shard.count)[shard.index - 1].mutants : filtered;
+if (shard) console.log(`shard ${shard.index}/${shard.count}: ${selected.length} of ${filtered.length} mutants (${selected.map((m) => m.name).join(', ')})`);
 if (has('list')) { for (const m of selected) console.log(`${m.name.padEnd(32)} ${m.bundle ?? 'core'} ${m.gates.join(',')}${m.pendingFix ? '  [pending ' + m.pendingFix + ']' : ''}\n    ${m.proves}`); process.exit(0); }
 
 const built = new Map();

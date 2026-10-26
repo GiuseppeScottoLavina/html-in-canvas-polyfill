@@ -1,0 +1,162 @@
+# The browser suites that need a desktop session, on GitHub-hosted macOS runners: the headed Chrome gates with their positive controls, the mutation suite,
+# the headless example / site / stress / framework / platform suites, and Firefox through WebDriver. The runner has a logged-in desktop,
+# a 60 Hz virtual display and a virtual GPU; what needs a 120 Hz display, continuous WebGPU frames, Safari 27, Safari Technology Preview or the phone simulators stays
+# on a local Mac, and the `local-only` job lists it on every run (test/ci/macos-plan.mjs, CONTRIBUTING.md "Where the suites run").
+name: CI macOS
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  schedule:
+    # nightly: the whole mutation suite
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      mutants:
+        description: 'mutation suite: "all" (every mutant the runner can judge) or "pr" (one per gate)'
+        type: choice
+        options: [all, pr]
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The runner's virtual display is 1x and offers no HiDPI mode: gates without a DPR of their own run at 2, as on the Retina screens their thresholds were set on
+  # (test/gates/lib/gate.mjs). Gates with their own DPRs (G-regress-capture 1 and 2, G-pixel-dpr 1.25 and 1.5) keep them.
+  HIC_GATE_DPR: '2'
+  # the whole mutation suite on the nightly run, on release tags and on request; one mutant per gate otherwise
+  MUTANTS_ALL: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all') }}
+
+jobs:
+  local-only:
+    # what this workflow does NOT run, and why: a warning per item on every run, never a silent pass
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Suites, gates and mutants left to a local Mac
+        run: node test/ci/macos-plan.mjs --report
+
+  gates:
+    # every gate of test/gates that the runner can judge, each with its positive control (G-pixel-dpr takes its reference from Chrome Canary)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+        with:
+          canary: 'true'
+      - name: Browser gates (real + control)
+        timeout-minutes: 35
+        run: node test/gates/run-all.mjs --only="$(node test/ci/macos-plan.mjs --gates)"
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: gates
+          failed: ${{ job.status == 'failure' }}
+
+  mutants:
+    # the mutation suite: every seeded bug must turn a gate red (test/gates/mutants); split over machines with --shard
+    name: mutants ${{ matrix.shard }}/${{ strategy.job-total }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON((github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all')) && '[1, 2, 3, 4]' || '[1, 2]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+        with:
+          canary: 'true'
+      - name: Mutation suite, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+        timeout-minutes: 45
+        env:
+          SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: |
+          if [ "$MUTANTS_ALL" = true ]; then scope="all"; else scope="pr"; fi
+          node test/gates/mutants/run.mjs --only="$(node test/ci/macos-plan.mjs --mutants=$scope)" --shard="$SHARD"
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: mutants-${{ matrix.shard }}
+          failed: ${{ job.status == 'failure' }}
+
+  headless:
+    # the suites that drive headless Chrome (they never take the screen, but need macOS fonts, form controls and a GPU)
+    name: headless ${{ matrix.part }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [examples, apps]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+      - name: Examples and documentation smoke pages that render no WebGPU (the others are local, see local-only), the Pages site
+        if: matrix.part == 'examples'
+        timeout-minutes: 25
+        run: |
+          node scripts/check-examples.mjs --only=basic,form,scroll-and-resize,webgl-texture,smoke:esm-quickstart,smoke:doc-readme-basic,smoke:doc-getting-started
+          node scripts/check-pages.mjs
+      - name: Framework apps, hang stress, platform probe
+        if: matrix.part == 'apps'
+        timeout-minutes: 25
+        run: |
+          (cd test/frameworks && npm ci)
+          node test/frameworks/run.mjs
+          node scripts/check-hang-stress.mjs
+          node test/platform/run.mjs --allow-known
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: headless-${{ matrix.part }}
+          failed: ${{ job.status == 'failure' }}
+
+  xbrowser:
+    # Firefox through W3C WebDriver (the runner image's Firefox and geckodriver)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/macos-browsers
+      - name: Point the harness at geckodriver; clear Firefox's quarantine
+        # The image installs Firefox with Homebrew, which leaves the download quarantined: the first launch then waits behind macOS's "downloaded from the
+        # Internet" dialog (it held a run for two hours). The quarantine flag of the runner image's own Firefox is removed.
+        run: |
+          sudo xattr -dr com.apple.quarantine /Applications/Firefox.app
+          mkdir -p .scratch/geckodriver-dl && ln -sf "$(command -v geckodriver)" .scratch/geckodriver-dl/geckodriver
+          /Applications/Firefox.app/Contents/MacOS/firefox --version
+          geckodriver --version | head -1
+      - name: G-xbrowser on Firefox (Safari and the scroll scenario run locally, see local-only)
+        timeout-minutes: 30
+        env:
+          # WebGL on the virtual GPU, which Firefox's blocklist refuses ("gl is null" in the explainer's texture check)
+          HIC_FIREFOX_PREFS: '{"webgl.force-enabled": true}'
+        run: node test/xbrowser/run.mjs --engine=firefox --only="$(node test/ci/macos-plan.mjs --xbrowser)"
+      - uses: ./.github/actions/macos-results
+        if: always()
+        with:
+          name: xbrowser
+          failed: ${{ job.status == 'failure' }}

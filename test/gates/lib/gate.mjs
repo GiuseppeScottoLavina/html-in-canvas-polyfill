@@ -164,7 +164,9 @@ export function gateRunOutcome(r) {
 export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawElement = false, windowSize, scrollbars, controlClasses = [], controlSabotage = [] } = {}) {
   const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
   const has = (k) => process.argv.includes(`--${k}`);
-  const useDpr = arg('dpr') ? +arg('dpr') : dpr;
+  // A gate without a DPR of its own runs at the display's: 2 on the Retina screens the thresholds were set on. HIC_GATE_DPR gives such gates that ratio on a display
+  // that has another one (the hosted macOS runner's virtual display is 1x and offers no HiDPI mode; .github/workflows/ci-macos.yml sets 2).
+  const useDpr = arg('dpr') ? +arg('dpr') : dpr ?? (process.env.HIC_GATE_DPR ? +process.env.HIC_GATE_DPR : undefined);
   const channel = arg('chrome') ?? chrome;
   const phases = has('control-only') ? ['control'] : has('no-control') ? ['real'] : ['real', 'control'];
   const t0 = Date.now();

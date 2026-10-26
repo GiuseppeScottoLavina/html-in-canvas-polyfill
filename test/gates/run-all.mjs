@@ -32,7 +32,10 @@ const jobs = finalSelection.flatMap((f) => {
 });
 const rows = [];
 for (const { f, dpr } of jobs) {
-  const res = gateRunOutcome(spawnSync(process.execPath, [resolve(here, f), ...extra, ...(dpr ? [`--dpr=${dpr}`] : [])], { cwd: root, encoding: 'utf8', timeout: 1200000 }));
+  const proc = spawnSync(process.execPath, [resolve(here, f), ...extra, ...(dpr ? [`--dpr=${dpr}`] : [])], { cwd: root, encoding: 'utf8', timeout: 1200000 });
+  const res = gateRunOutcome(proc);
+  // a gate that did not pass prints its failed checks with their numbers here (its own summary, after the result line), so a CI log shows them
+  if (res.notRun || !res.pass) console.log(`--- ${gateIdOf(f)}${dpr ? '@dpr' + dpr : ''}: ${res.notRun ? 'NOT RUN' : res.verdict}\n${(proc.stdout ?? '').split('\n').filter((l) => !l.startsWith('{"gate"') && !/^\s+ok\s/.test(l)).join('\n').slice(-6000)}`);
   if (res.notRun) { rows.push({ gate: gateIdOf(f) + (dpr ? `@dpr${dpr}` : ''), verdict: 'NOT RUN', pass: false, control: 'n/a', degraded: [], failed: [`NOT RUN: ${res.notRun}`], countsForThresholds: false }); continue; }
   const cl = res.control;
   rows.push({

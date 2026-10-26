@@ -1,0 +1,75 @@
+# Shared setup of the macOS browser jobs (.github/workflows/ci-macos.yml): Node, the OS pointer helpers, Chrome stable (and Chrome Canary when asked), the root
+# dependencies, the build, and a record of the machine's display and GPU (test/ci/macos-env.mjs) that every result of the job is read against.
+name: macOS browser setup
+description: Node, python3 with PyObjC, Chrome (stable, optional Canary), npm ci, build, environment record
+inputs:
+  canary:
+    description: also install Chrome Canary (Chrome for Testing, Canary channel) and point HIC_CANARY_PATH at it
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+        cache: npm
+
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.13'
+
+    - name: OS pointer helpers (python3 with Quartz and AppKit)
+      # The harness reads and parks the OS pointer and watches application activations through PyObjC (test/harness/lib/os-pointer.mjs, os-activation.mjs).
+      # Without it the pointer could rest over the browser window and reach the page as trusted input.
+      shell: bash
+      run: |
+        python3 -m pip install --disable-pip-version-check --quiet pyobjc-core==12.2.2 pyobjc-framework-Cocoa==12.2.2 pyobjc-framework-Quartz==12.2.2
+        python3 -c 'import Quartz, AppKit; print("PyObjC", Quartz.__name__, AppKit.__name__, "ok")'
+
+    - name: Install Google Chrome (stable, and Canary when asked)
+      # The Google-signed application bundles, in the places the harness looks on macOS (test/harness/lib/chrome.mjs, CHROME_APPS). Chrome for Testing
+      # (browser-actions/setup-chrome) is ad-hoc signed, and on the hosted macOS runner its helper processes are refused the browser's Mach rendezvous
+      # service ("bootstrap_look_up ... Permission denied"): no renderer starts and every page command waits forever. The runner image's own Chrome is
+      # weeks behind the stable channel, so it is replaced.
+      shell: bash
+      env:
+        CANARY: ${{ inputs.canary }}
+      run: |
+        install_app() { # $1 dmg URL, $2 application name
+          local dmg="$RUNNER_TEMP/$2.dmg" mnt="$RUNNER_TEMP/mnt-$RANDOM"
+          curl -fsSL --retry 3 -o "$dmg" "$1"
+          hdiutil attach -nobrowse -quiet -mountpoint "$mnt" "$dmg"
+          sudo rm -rf "/Applications/$2.app"
+          # without the Finder information the disk image carries (codesign --strict refuses it as detritus)
+          sudo ditto --norsrc --noextattr --noqtn "$mnt/$2.app" "/Applications/$2.app"
+          hdiutil detach -quiet "$mnt"
+          # Google LLC's Developer ID (team EQHXZ8M8AV), checked before the browser is run
+          codesign --verify --deep --strict "/Applications/$2.app"
+          codesign -dv "/Applications/$2.app" 2>&1 | grep -q 'TeamIdentifier=EQHXZ8M8AV'
+          "/Applications/$2.app/Contents/MacOS/$2" --version
+        }
+        install_app https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg "Google Chrome"
+        if [ "$CANARY" = true ]; then install_app https://dl.google.com/chrome/mac/universal/canary/googlechromecanary.dmg "Google Chrome Canary"; fi
+
+    - name: Install dependencies and build
+      shell: bash
+      run: |
+        npm ci
+        npm run build
+
+    - name: Keep the display awake, stop Spotlight indexing
+      # A display that sleeps stops requestAnimationFrame in every page; caffeinate holds it on for the rest of the job (the runner ends it with the job).
+      # A fresh runner indexes its disk: the Spotlight processes were the top CPU users in the gates' load records and marked runs as high load.
+      shell: bash
+      run: |
+        caffeinate -u -t 2
+        nohup caffeinate -dimsu > /dev/null 2>&1 &
+        sudo mdutil -a -i off > /dev/null || echo "Spotlight indexing could not be turned off"
+
+    - name: Display mode; record of the display, the GPU and the session (test/ci/macos-display.mjs, test/ci/macos-env.mjs)
+      shell: bash
+      run: |
+        mkdir -p .scratch/results
+        # the gates open 1400 x 900 windows (and move the pointer beside them): the runner's display starts at 1024 x 768
+        node test/ci/macos-display.mjs --min=1600x1000 > .scratch/results/macos-display.json
+        node test/ci/macos-env.mjs --require=pointer

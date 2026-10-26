@@ -2,7 +2,8 @@
 // G-examples: every page under examples/ loads in HEADLESS Chrome against the BUILT dist/ and works.
 //
 //   npm run build && npm run test:examples
-//   node scripts/check-examples.mjs [--only=basic,form] [--no-control] [--chrome=stable|canary|/path] [--native]
+//   node scripts/check-examples.mjs [--only=basic,form,smoke] [--no-control] [--chrome=stable|canary|/path] [--native]
+//   --only takes example names, `smoke` (every smoke page) or `smoke:<name>` (only those smoke pages; the macOS CI job leaves out the WebGPU one)
 //   --native: Chrome Canary with --enable-blink-features=CanvasDrawElement, and every example must run in mode native (the browser's own implementation;
 //   used by test/native-effects/run.mjs for effect-plugin)
 //
@@ -40,6 +41,9 @@ import { startServer } from '../examples/serve.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const only = H.arg('only')?.split(',');
+/** the smoke pages to run: all of them without --only or with `smoke`, else those named `smoke:<name>` */
+const smokeWanted = (/** @type {string} */ name) => !only || only.includes('smoke') || only.includes(`smoke:${name}`);
+const anySmoke = !only || only.some((n) => n === 'smoke' || n.startsWith('smoke:'));
 const withControl = !process.argv.includes('--no-control');
 const NATIVE = process.argv.includes('--native');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -596,7 +600,7 @@ async function main() {
   if (missing.length) { console.error(`dist/ is missing ${missing.join(', ')}. Run \`npm run build\` first.`); process.exit(2); }
   mkdirSync(outDir, { recursive: true });
   const names = NAMES.filter((n) => !only || only.includes(n));
-  if (!names.length && !(only && only.includes('smoke'))) { console.error('no example selected'); process.exit(2); }
+  if (!names.length && !anySmoke) { console.error('no example selected'); process.exit(2); }
 
   const browser = await H.launchChrome({ name: 'examples', chrome: H.arg('chrome') ?? (NATIVE ? 'canary' : 'stable'), nativeDrawElement: NATIVE, windowSize: [VIEW.width, VIEW.height + 100], dpr: 1,
     extraArgs: ['--headless=new', '--hide-scrollbars'] });
@@ -631,7 +635,7 @@ async function main() {
       for (const c of run.failed()) { console.log(`       x [${c.cls}] ${c.name}  ${JSON.stringify(c.detail)}`); problems.push(`${name} no-adapter: ${c.name}`); }
     }
     // ---- smoke pages of the documentation (served by the harness server, repository root)
-    if (!only || only.includes('smoke')) {
+    if (anySmoke) {
       const drift = guidePluginProblem();
       result.examples.push({ example: 'smoke:guide-plugin-is-the-tested-file', ok: !drift, checks: [{ cls: 'load', name: 'the plugin printed in the guide is the file the smoke page runs', ok: !drift, detail: drift }] });
       console.log(`${drift ? 'FAIL' : 'ok  '} smoke: the plugin printed in docs/guides/EFFECTS-PLUGINS.md is test/examples-smoke/wobble-plugin/wobble-plugin.js${drift ? '  ' + drift : ''}`);
@@ -645,7 +649,7 @@ async function main() {
       writeFileSync(resolve(docDir, 'getting-started.html'), `<!doctype html><meta charset="utf-8"><title>GETTING-STARTED</title>\n${guideBlock}\n`);
       const smokeServer = await H.startServer({ files: { '/__docs/readme-basic.html': resolve(docDir, 'readme-basic.html'), '/__docs/getting-started.html': resolve(docDir, 'getting-started.html') } });
       try {
-        for (const name of Object.keys(SMOKE)) {
+        for (const name of Object.keys(SMOKE).filter(smokeWanted)) {
           const url = name === 'doc-readme-basic' ? '__docs/readme-basic.html' : name === 'doc-getting-started' ? '__docs/getting-started.html' : undefined;
           const run = await runExample(browser, smokeServer, name, { smoke: true, url });
           const s = summarize(run); s.example = `smoke:${name}`; result.examples.push(s);
@@ -676,7 +680,7 @@ async function main() {
         if (!control.turnedRed) problems.push('control C2 did not fail');
       }
       // C4: the ESM entry is missing: the ESM smoke page must fail
-      if (!only || only.includes('smoke')) {
+      if (smokeWanted('esm-quickstart')) {
         const brokenEsm = await H.startServer({ files: { '/dist/esm/index.js': resolve(ROOT, '.scratch/does-not-exist/index.js') } });
         try {
           const run = await runExample(browser, brokenEsm, 'esm-quickstart', { smoke: true, generic: true, tag: 'control-broken-esm', noShots: true });
