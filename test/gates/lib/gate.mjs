@@ -236,6 +236,7 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
         checks.push({ name: 'gate ran to completion', ok: false, detail: thrown });
       }
       for (const p of pages) for (const f of await p.flushPointerGuard()) result.foreignPointer.push({ phase, ...f });
+      for (const p of pages) for (const f of p.fullscreenPointer) (result.fullscreenPointer ??= []).push({ phase, ...f });
       for (const p of pages) { try { await p.close(); } catch { /* closing the tab is best effort */ } }
       outcomes[phase] = { checks, numbers, thrown };
     }

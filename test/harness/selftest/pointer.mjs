@@ -7,6 +7,18 @@ import { execFileSync } from 'node:child_process';
 export async function run({ check, info, browser, srv }) {
   info('launch: the OS pointer', browser.pointerPark);
   const page = await browser.newPage({ reuseFirst: false });
+  const fullscreenCheck = async () => {
+    // a fullscreen page covers its display (the parked pointer is over it): input then is recorded apart and never judged
+    const fs = await page.evaluate('document.documentElement.requestFullscreen().then(() => !!document.fullscreenElement, () => false)');
+    if (fs) {
+      await sleep(500); page.foreignPointer.length = 0; page.fullscreenPointer.length = 0;
+      await page.conn.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 345, y: 111, button: 'none' }, page.sessionId);
+      await sleep(150); await page.flushPointerGuard();
+      check('pointer guard: input while the page is fullscreen is recorded apart, not as foreign', page.foreignPointer.length === 0 && page.fullscreenPointer.some((f) => f.x === 345 && f.y === 111), { foreign: page.foreignPointer, fullscreen: page.fullscreenPointer });
+      await page.evaluate('document.exitFullscreen().then(() => true, () => true)'); await sleep(1500);
+      page.foreignPointer.length = 0;
+    } else info('fullscreen guard check', 'skipped: requestFullscreen refused');
+  };
   try {
     await page.installPointerGuard();
     await page.navigate(`${srv.url}/test/harness/selftest-fixture/app.html`);
@@ -33,7 +45,7 @@ export async function run({ check, info, browser, srv }) {
     // macOS, headed: the real pointer resting over the page is delivered by a clipped screenshot (the environment problem the guard exists for)
     const pid = browser.pid;
     const o = pid ? osPointer(pid) : null;
-    if (!o || !o.windows.length) { info('real OS pointer control', 'skipped: the OS pointer or the browser window cannot be read here'); return; }
+    if (!o || !o.windows.length) { info('real OS pointer control', 'skipped: the OS pointer or the browser window cannot be read here'); await fullscreenCheck(); return; }
     page.foreignPointer.length = 0;
     const vp = await page.evaluate('({ x: screenX + (outerWidth - innerWidth) / 2, y: screenY + outerHeight - innerHeight, w: innerWidth, h: innerHeight, dpr: devicePixelRatio })');
     const before = o.at;
@@ -54,6 +66,7 @@ export async function run({ check, info, browser, srv }) {
       await sleep(300);
       check('parked OS pointer: a clipped screenshot delivers nothing', park.parked && (await page.flushPointerGuard()).length === 0, { park, foreign: page.foreignPointer });
     }
+    await fullscreenCheck();
   } finally {
     await page.close();
   }
