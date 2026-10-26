@@ -69,16 +69,21 @@ export function parkingSpot(wins, displays) {
 
 /**
  * Move the OS pointer out of the on-screen windows of process `pid` (the browser this harness started; or of any of several processes) when it rests over one
- * of them. Returns what happened, for the run's record: `{ parked: false, reason }` (not macOS, unreadable, no window, already outside, no free spot) or `{ parked: true, from, to }`.
- * @param {number | number[]} pid
+ * of them or within `margin` points of one: a gate that resizes its window (Page.setInnerSize) grew it over a pointer resting just below it, which then reached
+ * the page (G-scroll-cadence, 2026-10-26). Returns what happened, for the run's record: `{ parked: false, reason }` (not macOS, unreadable, no window, already
+ * clear, no free spot) or `{ parked: true, from, to }`.
+ * @param {number | number[]} pid @param {{margin?: number}} [o]
  */
-export function parkOsPointer(pid) {
+export function parkOsPointer(pid, { margin = PARK_MARGIN } = {}) {
   const now = osPointer(pid);
   if (!now) return { parked: false, reason: 'the OS pointer cannot be read here (not macOS, or no python3 with Quartz)' };
   if (!now.windows.length) return { parked: false, reason: 'the browser has no window on screen', at: now.at };
-  if (!now.windows.some((w) => inside(now.at, w))) return { parked: false, reason: 'outside the browser windows', at: now.at };
-  const to = parkingSpot(now.windows, now.displays);
+  const near = now.windows.map((w) => ({ left: w.left - margin, top: w.top - margin, width: w.width + 2 * margin, height: w.height + 2 * margin }));
+  if (!near.some((w) => inside(now.at, w))) return { parked: false, reason: 'clear of the browser windows', at: now.at };
+  const to = parkingSpot(near, now.displays) ?? parkingSpot(now.windows, now.displays);
   if (!to) return { parked: false, reason: 'the browser windows cover every display: no place for the pointer', at: now.at };
   const after = quartz('warp', to.x, to.y);
   return { parked: !!after && !now.windows.some((w) => inside(after.at, w)), from: now.at, to: after?.at ?? null };
 }
+/** points around the browser windows kept free of the pointer (a gate may grow its window by about one toolbar) */
+export const PARK_MARGIN = 120;

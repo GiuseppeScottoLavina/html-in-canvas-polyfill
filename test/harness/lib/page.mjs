@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { paced, sleep, stats } from './util.mjs';
+import { parkOsPointer } from './os-pointer.mjs';
 
 const POINTER_BINDING = '__hicPointerSeen';
 /** the page side of installPointerGuard: each distinct (type, position) once per document, to the CDP binding; the binding is taken off the global object */
@@ -185,6 +186,8 @@ export class Page {
       await sleep(250); v = await this.viewport();
       if (v.innerWidth === w && v.innerHeight === h) break;
     }
+    // the window may have grown over the parked pointer: move it again (launchChrome parks it, os-pointer.mjs)
+    if (this.browser.parksPointer) this.browser.pointerRepark = parkOsPointer(this.browser.pid);
     return v;
   }
 

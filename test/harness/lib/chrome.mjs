@@ -185,8 +185,9 @@ export async function launchChrome(opts = {}) {
   if (macBars) await closeStrayTab(browser, `http://${macBars.toLowerCase()}/`);
   browser.pointerPark = { parked: false, reason: headless ? 'headless' : 'not requested' };
   if (process.platform === 'darwin' && !headless && (opts.parkPointer ?? process.env.HIC_PARK_POINTER !== '0')) {
-    for (let i = 0; i < 20; i++) { const o = osPointer(child.pid); if (!o || o.windows.length) break; await sleep(150); }
+    for (let i = 0; i < 20; i++) { const o = osPointer(child.pid); if (!o || o.windows.length) break; await sleep(250); }
     browser.pointerPark = parkOsPointer(child.pid);
+    browser.parksPointer = true;
   }
   return browser;
 }
