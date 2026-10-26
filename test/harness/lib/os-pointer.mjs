@@ -18,9 +18,9 @@ err, ids, n = Quartz.CGGetActiveDisplayList(16, None, None)
 for i in ids[:n]:
     b = Quartz.CGDisplayBounds(i); print('D %f %f %f %f' % (b.origin.x, b.origin.y, b.size.width, b.size.height))
 if sys.argv[1] == 'get':
-    pid = int(sys.argv[2])
+    pids = [int(x) for x in sys.argv[2].split(',') if x]
     for w in Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []:
-        if w.get('kCGWindowOwnerPID') == pid and w.get('kCGWindowLayer') == 0:
+        if w.get('kCGWindowOwnerPID') in pids and w.get('kCGWindowLayer') == 0:
             b = w.get('kCGWindowBounds'); print('W %f %f %f %f' % (b['X'], b['Y'], b['Width'], b['Height']))
 `;
 
@@ -37,8 +37,8 @@ function quartz(...args) {
   } catch { return null; }
 }
 
-/** The OS pointer location in global screen points, the active displays and the on-screen windows of process `pid`; null where it cannot be read. @param {number} [pid] */
-export const osPointer = (pid = -1) => quartz('get', pid);
+/** The OS pointer location in global screen points, the active displays and the on-screen windows of process `pid` (or of any of several); null where it cannot be read. @param {number | number[]} [pid] */
+export const osPointer = (pid = -1) => quartz('get', [pid].flat().join(','));
 
 /** @param {Rect[]} rs @returns {Rect} */
 const union = (rs) => { const l = Math.min(...rs.map((r) => r.left)), t = Math.min(...rs.map((r) => r.top)); return { left: l, top: t, width: Math.max(...rs.map((r) => r.left + r.width)) - l, height: Math.max(...rs.map((r) => r.top + r.height)) - t }; };
@@ -68,12 +68,12 @@ export function parkingSpot(wins, displays) {
 }
 
 /**
- * Move the OS pointer out of the on-screen windows of process `pid` (the browser this harness started) when it rests over one of them. Returns what
- * happened, for the run's record: `{ parked: false, reason }` (not macOS, unreadable, no window, already outside, no free spot) or `{ parked: true, from, to }`.
- * @param {number} pid
+ * Move the OS pointer out of the on-screen windows of process `pid` (the browser this harness started; or of any of several processes) when it rests over one
+ * of them. Returns what happened, for the run's record: `{ parked: false, reason }` (not macOS, unreadable, no window, already outside, no free spot) or `{ parked: true, from, to }`.
+ * @param {number | number[]} pid
  */
 export function parkOsPointer(pid) {
-  const now = quartz('get', pid);
+  const now = osPointer(pid);
   if (!now) return { parked: false, reason: 'the OS pointer cannot be read here (not macOS, or no python3 with Quartz)' };
   if (!now.windows.length) return { parked: false, reason: 'the browser has no window on screen', at: now.at };
   if (!now.windows.some((w) => inside(now.at, w))) return { parked: false, reason: 'outside the browser windows', at: now.at };

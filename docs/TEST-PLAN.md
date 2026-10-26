@@ -252,6 +252,11 @@ inactive, the popup did not activate; 2 of 2 runs each, the same signatures as t
 application activation (`test/harness/lib/os-activation.mjs`, an AppKit observer), brings the browser back to the front before a scenario when another application is
 there, and runs a scenario again when another application came to the front while it ran or the browser could not be brought back (at most 3 attempts, each recorded in
 `numbers.activationChanges`); then it fails with an `environment` check, reported first (`ENVIRONMENT:` in the table). A discarded attempt's checks are printed as such.
+Pointer: real pointer input reaches the page in both engines (WebDriver input does not move the OS pointer), so a mouse moved over the test window changes hover and
+press looks behind a scenario (measured: Firefox 157.0.1 interaction failed on 11-15 regions in 3 of 3 runs with real pointer moves over the window every 0.7 s and
+passed 3 of 3 without; the intermittent one-region failures, D-rg:press and L-cb-on:hover, came in runs whose scrollbars switched, i.e. with a mouse in use). The
+runner moves the OS pointer off the browser's windows before each scenario and records every movement of it; a scenario during which it moved runs again on the
+same terms as above.
 
 ### 2.10 Mobile gate G-mobile (`npm run test:mobile`; iOS Simulator and Android Emulator only, no physical device)
 

@@ -14,8 +14,16 @@ def say(app):
     sys.stdout.write('%d %.3f %s\\n' % (app.processIdentifier(), time.time() * 1000, app.localizedName() or '')); sys.stdout.flush()
 class O(AppKit.NSObject):
     def act_(self, n): say(n.userInfo()['NSWorkspaceApplicationKey'])
+    def tick_(self, t):
+        global last
+        p = AppKit.NSEvent.mouseLocation()
+        if last is None or abs(p.x - last.x) + abs(p.y - last.y) > 0.5:
+            sys.stdout.write('P %.1f %.1f %.3f\\n' % (p.x, p.y, time.time() * 1000)); sys.stdout.flush()
+        last = p
+last = None
 o = O.alloc().init()
 ws.notificationCenter().addObserver_selector_name_object_(o, 'act:', AppKit.NSWorkspaceDidActivateApplicationNotification, None)
+AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(0.2, o, 'tick:', None, True)
 say(ws.frontmostApplication())
 AppHelper.runConsoleEventLoop()
 `;
@@ -33,19 +41,23 @@ export function frontmostApp() {
 }
 
 /**
- * Start recording application activations (one python3 process with an AppKit observer; stop() ends it). `since(mark)` lists the activations recorded after
- * `mark()`; the first entry is the application that was in front at the start. On a platform without the observer `available` is false and nothing is recorded.
- * @returns {{available: boolean, mark: () => number, since: (m: number) => Activation[], front: () => Activation | null, stop: () => void}}
+ * Start recording application activations and OS pointer movements (one python3 process with an AppKit observer; stop() ends it). `since(mark)` lists the
+ * activations recorded after `mark()` (the first entry ever is the application that was in front at the start), `movesSince(mark)` the pointer movements.
+ * On a platform without the observer `available` is false and nothing is recorded.
+ * @returns {{available: boolean, mark: () => {a: number, p: number}, since: (m: {a: number, p: number}) => Activation[], movesSince: (m: {a: number, p: number}) => {x:number, y:number, at:number}[], front: () => Activation | null, stop: () => void}}
  */
 export function watchActivations() {
   /** @type {Activation[]} */ const log = [];
-  if (process.platform !== 'darwin') return { available: false, mark: () => 0, since: () => [], front: () => null, stop: () => {} };
+  /** OS pointer positions (AppKit screen points, sampled every 200 ms, one entry per change; the first is where it rested at the start) @type {{x:number, y:number, at:number}[]} */
+  const moves = [];
+  if (process.platform !== 'darwin') return { available: false, mark: () => ({ a: 0, p: 0 }), since: () => [], movesSince: () => [], front: () => null, stop: () => {} };
   const child = spawn('python3', ['-c', PY], { stdio: ['ignore', 'pipe', 'ignore'] });
   let buf = '';
   child.stdout.on('data', (d) => {
     buf += d;
     for (let i = buf.indexOf('\n'); i >= 0; i = buf.indexOf('\n')) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (line.startsWith('P ')) { const [, x, y, at] = line.split(' ').map(Number); moves.push({ x, y, at }); continue; }
       const [pid, at, ...name] = line.split(' ');
       if (+pid > 0) log.push({ pid: +pid, at: +at, name: name.join(' ') });
     }
@@ -55,8 +67,10 @@ export function watchActivations() {
   process.once('exit', stop);
   return {
     get available() { return log.length > 0; },
-    mark: () => log.length,
-    since: (m) => log.slice(m),
+    mark: () => ({ a: log.length, p: moves.length }),
+    since: (m) => log.slice(m.a),
+    /** pointer movements recorded after `mark()` (WebDriver input does not move the OS pointer: any entry is a person or another program) */
+    movesSince: (m) => moves.slice(m.p),
     front: () => log[log.length - 1] ?? null,
     stop,
   };

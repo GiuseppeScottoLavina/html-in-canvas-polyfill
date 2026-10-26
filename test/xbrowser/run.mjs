@@ -18,6 +18,7 @@ import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg, sleep } from '../harness/lib/util.mjs';
 import { SCROLLBAR_PROBE_EXPR } from '../harness/lib/env.mjs';
 import { watchActivations, foreignActivations, activateApp } from '../harness/lib/os-activation.mjs';
+import { parkOsPointer } from '../harness/lib/os-pointer.mjs';
 import { RECORDER } from './lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, NATIVE_SURFACE, NATIVE_SCENARIOS } from './scenarios.mjs';
 
@@ -66,6 +67,13 @@ const SCROLLBAR_ATTEMPTS = 3;
  * could not displace, ran in another environment than the one it judges: it runs again, at most ACTIVATION_ATTEMPTS times, and then fails as an environment problem.
  */
 const ACTIVATION_ATTEMPTS = 3;
+/**
+ * The OS pointer (macOS): real pointer input reaches the page in both engines (WebDriver input does not move the OS pointer), so a person moving the mouse over
+ * the test window changes hover and press looks behind the scenario's back. Measured: Firefox 157 interaction, 3 of 3 runs failed on 11-15 regions with real
+ * pointer moves over the window every 0.7 s, 3 of 3 passed without (the intermittent single-region failures of D-rg:press, L-cb-on:hover in full runs came with
+ * scrollbar switches, i.e. a mouse in use). The pointer is moved off the browser's windows before each scenario, and a scenario during which it moved runs again
+ * (the same attempts as above), then fails as an environment problem.
+ */
 const activations = watchActivations();
 
 async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
@@ -91,6 +99,8 @@ async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
       // the browser must be the active application: bring it back if another one is in front, and record every activation while the scenario runs
       const watched = activations.available && pids.length > 0;
       if (watched && !pids.includes(activations.front()?.pid ?? -1)) { activateApp(pids); await sleep(600); }
+      const parked = watched ? parkOsPointer(pids) : null;
+      if (parked?.parked) await sleep(450);   // past one 200 ms pointer sample, so the parking itself is not recorded as a move
       const frontAtStart = activations.front();
       const actMark = activations.mark();
       const barsBefore = await scrollbarGutter(s);
@@ -101,12 +111,13 @@ async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
       const barsAfter = await scrollbarGutter(s);
       const foreign = watched ? foreignActivations(activations.since(actMark), pids) : [];
       const inFront = !watched || pids.includes(frontAtStart?.pid ?? -1);
-      if (watched && (foreign.length || !inFront)) {
-        (numbers.activationChanges ??= []).push({ scenario: name, control, attempt, frontAtStart, foreign, at: new Date().toISOString() });
-        const why = `${!inFront ? `another application was in front (${frontAtStart?.name}) and the browser could not take it back` : `another application came to the front (${foreign.map((a) => a.name).join(', ')})`} while the scenario ran (attempt ${attempt} of ${ACTIVATION_ATTEMPTS})`;
+      const moved = watched ? activations.movesSince(actMark) : [];
+      if (watched && (foreign.length || !inFront || moved.length)) {
+        (numbers.activationChanges ??= []).push({ scenario: name, control, attempt, frontAtStart, foreign, pointerMoves: moved.length, parked, at: new Date().toISOString() });
+        const why = `${!inFront ? `another application was in front (${frontAtStart?.name}) and the browser could not take it back` : foreign.length ? `another application came to the front (${foreign.map((a) => a.name).join(', ')})` : `the OS pointer moved (${moved.length} times)`} while the scenario ran (attempt ${attempt} of ${ACTIVATION_ATTEMPTS})`;
         if (attempt < ACTIVATION_ATTEMPTS) { discard(why); continue; }
         console.log(`  [${engine}]${control ? ' (control)' : ''} ${name}: ${why}`);
-        checks.unshift({ label: `${name}: the browser stayed the active application during one of ${ACTIVATION_ATTEMPTS} attempts (another application in front swallows trusted clicks and keeps popups from activating)`, ok: false, cls: 'environment', data: numbers.activationChanges.filter((c) => c.scenario === name) });
+        checks.unshift({ label: `${name}: the browser stayed the active application and nobody moved the pointer during one of ${ACTIVATION_ATTEMPTS} attempts (another application in front swallows trusted clicks and keeps popups from activating; a moving pointer changes hover and press looks)`, ok: false, cls: 'environment', data: numbers.activationChanges.filter((c) => c.scenario === name) });
       }
       const barsHeld = barsBefore === null || barsAfter === null || barsBefore === barsAfter;
       if (!barsHeld) {
