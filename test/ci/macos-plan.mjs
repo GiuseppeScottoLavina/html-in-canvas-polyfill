@@ -19,12 +19,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 /** Suites and gates that stay on a local Mac: id -> the reason, measured on the hosted runner (2026-10-26, Chrome 156.0.8078.48, Canary 158.0.8125.0). */
 export const LOCAL_ONLY = {
   'g-scroll-cadence': 'its cadence thresholds come from a 120 Hz display; on the runner\'s 60 Hz virtual display the live list moved in 61-74 % of the frames of the wheel stream (thresholds 70 % per case, 82 % on average)',
-  'g-f1-form-effect': 'continuous WebGPU effects present no frames on the runner\'s virtual GPU (0 effect frames per second at every frame cap; the gate waits for frames and its watchdog ends it after 10 min)',
+  'g-f1-form-effect': 'continuous WebGPU effects present no frames on the runner\'s virtual GPU: the effect host stops after 2 to 4 frames (0 effect frames per second at every frame cap) while a plain WebGPU page presents 60 per second there; not yet explained. The gate waits for frames and its watchdog ends it after 10 min',
   'g-interposer-strong': 'the same: the CRT and water effects present no continuous frames on the runner\'s virtual GPU, the gate never finishes',
   'test:plugins': 'six of the nine plugin gallery tests need continuous effect frames (water, CRT, glitch, page-curl, shatter: 0 frames per second on the runner\'s virtual GPU)',
   'test:examples effect-plugin': 'its frame-cap check counts continuous effect frames (0 on the runner\'s virtual GPU); every other example and the documentation smoke pages run in CI',
   'test:native-effects': 'G-native-effects and G-native-interposer measure continuous effect frames over Canary\'s own implementation (0 per second on the runner\'s virtual GPU)',
   'test:wpt': 'on the runner 3 of the 237 files were unstable between repetitions (onpaint-css-animation, onpaint-post-tree-order, privacy/picture-images-ignored), which fails the gate (measured before 0.1.0-preview.7). It also takes 18 min and its native oracle, Chrome Canary, changes every day',
+  'test:xbrowser safari': 'the hosted runner images ship Safari 26 (macOS 15 and 26), which the polyfill refuses (Safari 27 is the minimum): every Safari scenario would test the refusal',
   'test:xbrowser stp': 'Safari Technology Preview is not installed on the runner image',
   'test:mobile': 'the iOS Simulator and the Android Emulator (the Android Emulator needs hardware virtualization, which the hosted macOS virtual machine does not offer)',
   'bench:compare': 'performance numbers are taken on the 120 Hz development machine (docs/PERFORMANCE-COMPARISON.md); a shared 3 vCPU virtual machine at 60 Hz would measure something else',

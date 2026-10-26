@@ -53,17 +53,17 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 | 12 of the 15 Chrome gates (`npm run test:gates`: all but the three below), real + control | CI macOS, every push | pixels, hit testing, typing, resize and listeners do not depend on the refresh rate |
 | mutation suite, the 40 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 40 nightly and on release tags (4 machines) | |
 | `test:examples` (all but effect-plugin), the documentation smoke pages, `test:pages`, `test:field`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
-| `test:xbrowser` on Firefox and Safari | CI macOS, every push | the runner image has Firefox, geckodriver and Safari; `safaridriver --enable` works there |
+| `test:xbrowser` on Firefox | CI macOS, every push | the runner image's Firefox and geckodriver, at the Retina device pixel ratio and with WebGL forced on (`HIC_FIREFOX_PREFS`) |
 | G-scroll-cadence and its 5 mutants | local | thresholds from a 120 Hz display; at 60 Hz the live list moved in 61-74 % of the frames (70 % / 82 % required) |
 | G-f1-form-effect, G-interposer-strong (and 2 mutants), `test:plugins`, examples/effect-plugin, `test:native-effects` | local | continuous WebGPU effects present no frames on the virtual GPU (a transition effect does, and plain WebGPU presents at 60 fps): not yet explained |
 | `test:wpt` | local | 3 of 237 files unstable between repetitions on the runner; its oracle, Canary, changes daily |
-| `test:xbrowser --engine=stp`, `test:mobile`, `bench:compare` | local | Safari Technology Preview is not on the runner; simulators and emulators; performance numbers come from the 120 Hz machine |
+| `test:xbrowser` on Safari and Safari Technology Preview, `test:mobile`, `bench:compare` | local | the runner images ship Safari 26, which the polyfill refuses (27 is the minimum), and no Technology Preview; simulators and emulators; performance numbers come from the 120 Hz machine |
 
 The list lives in `test/ci/macos-plan.mjs`; anything not listed there runs in CI, and every CI run prints the list as warnings. To run the local-only rest unattended on a Mac with a 120 Hz display, a GPU and Chrome Canary:
 
 ```sh
 npm run build
-caffeinate -dimsu npm run test:local            # add -- --skip=mobile,stp without simulators or Technology Preview
+caffeinate -dimsu npm run test:local            # add -- --skip=mobile without the simulators
 ```
 
 Leave the Mac alone while it runs. The harness moves the OS pointer outside the browser windows, records every pointer movement and application activation it did not cause, and reports such a run as NOT USABLE (Chrome gates, mutants) or runs the scenario again and marks it ENVIRONMENT after three disturbed attempts (cross-browser); a disturbed run is never counted as a product result.
