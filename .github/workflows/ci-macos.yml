@@ -16,18 +16,41 @@ jobs:
   probe:
     name: probe ${{ matrix.part }}
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - part: diag
+          - part: gates-a
+            canary: 'false'
+            run: node test/gates/run-all.mjs --only=g-explainer,g-f1-form,g-f1-form-effect,g-interposer-strong,g-dom-identity
+          - part: gates-b
+            canary: 'false'
+            run: node test/gates/run-all.mjs --only=g-scroll-cadence,g-scroll-inner,g-resize-drag,g-listeners
+          - part: gates-c
+            canary: 'true'
+            run: node test/gates/run-all.mjs --only=g-regress-capture,g-regress-pagescroll,g-regress-paint,g-regress-stacking,g-unsupported,g-pixel-dpr
+          - part: headless
             canary: 'false'
             run: |
-              ls -la "/Applications/Google Chrome.app/Contents/MacOS/" || true
-              xattr -l "$HIC_CHROME_PATH" || true
-              codesign -dv "$(dirname "$(dirname "$(dirname "$HIC_CHROME_PATH")")")" 2>&1 | head -5 || true
-              node test/ci/diag-chrome.mjs
+              set +e
+              for s in "node scripts/check-examples.mjs" "node scripts/check-plugins-e2e.mjs" "node scripts/check-pages.mjs" "node scripts/check-field-test.mjs" "node scripts/check-hang-stress.mjs" "node test/platform/run.mjs --allow-known"; do
+                t0=$(date +%s); $s > ".scratch/results/log-$(echo $s | tr ' /=' '___').txt" 2>&1; rc=$?; echo "SUITE [$s] exit $rc in $(( $(date +%s) - t0 )) s"; tail -40 ".scratch/results/log-$(echo $s | tr ' /=' '___').txt"
+              done
+              (cd test/frameworks && npm ci) && t0=$(date +%s) && node test/frameworks/run.mjs; echo "SUITE [frameworks] exit $? in $(( $(date +%s) - t0 )) s"
+          - part: wpt-native
+            canary: 'true'
+            run: |
+              set +e
+              t0=$(date +%s); node test/wpt/gate.mjs --no-docs; echo "SUITE [wpt] exit $? in $(( $(date +%s) - t0 )) s"
+              t0=$(date +%s); node test/native-effects/run.mjs --require-canary; echo "SUITE [native-effects] exit $? in $(( $(date +%s) - t0 )) s"
+          - part: xbrowser
+            canary: 'false'
+            run: |
+              sudo safaridriver --enable
+              mkdir -p .scratch/geckodriver-dl && ln -sf "$(command -v geckodriver)" .scratch/geckodriver-dl/geckodriver
+              /Applications/Firefox.app/Contents/MacOS/firefox --version; geckodriver --version | head -1; safaridriver --version
+              node test/xbrowser/run.mjs --engine=firefox,safari
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
