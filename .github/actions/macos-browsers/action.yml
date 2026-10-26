@@ -26,28 +26,29 @@ runs:
         python3 -m pip install --disable-pip-version-check --quiet pyobjc-core==12.2.2 pyobjc-framework-Cocoa==12.2.2 pyobjc-framework-Quartz==12.2.2
         python3 -c 'import Quartz, AppKit; print("PyObjC", Quartz.__name__, AppKit.__name__, "ok")'
 
-    - name: Install Chrome (stable)
-      id: chrome
-      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
-      with:
-        chrome-version: stable
-
-    - name: Install Chrome (Canary)
-      id: canary
-      if: inputs.canary == 'true'
-      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
-      with:
-        chrome-version: canary
-
-    - name: Point the harness at the installed browsers
+    - name: Install Google Chrome (stable, and Canary when asked)
+      # The Google-signed application bundles, in the places the harness looks on macOS (test/harness/lib/chrome.mjs, CHROME_APPS). Chrome for Testing
+      # (browser-actions/setup-chrome) is ad-hoc signed, and on the hosted macOS runner its helper processes are refused the browser's Mach rendezvous
+      # service ("bootstrap_look_up ... Permission denied"): no renderer starts and every page command waits forever. The runner image's own Chrome is
+      # weeks behind the stable channel, so it is replaced.
       shell: bash
       env:
-        CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        CANARY_PATH: ${{ steps.canary.outputs.chrome-path }}
+        CANARY: ${{ inputs.canary }}
       run: |
-        echo "HIC_CHROME_PATH=${CHROME_PATH}" >> "$GITHUB_ENV"
-        "${CHROME_PATH}" --version
-        if [ -n "${CANARY_PATH}" ]; then echo "HIC_CANARY_PATH=${CANARY_PATH}" >> "$GITHUB_ENV"; "${CANARY_PATH}" --version; fi
+        install_app() { # $1 dmg URL, $2 application name
+          local dmg="$RUNNER_TEMP/$2.dmg" mnt="$RUNNER_TEMP/mnt-$RANDOM"
+          curl -fsSL --retry 3 -o "$dmg" "$1"
+          hdiutil attach -nobrowse -quiet -mountpoint "$mnt" "$dmg"
+          sudo rm -rf "/Applications/$2.app"
+          sudo ditto "$mnt/$2.app" "/Applications/$2.app"
+          hdiutil detach -quiet "$mnt"
+          # Google LLC's Developer ID (team EQHXZ8M8AV), checked before the browser is run
+          codesign --verify --deep --strict "/Applications/$2.app"
+          codesign -dv "/Applications/$2.app" 2>&1 | grep -q 'TeamIdentifier=EQHXZ8M8AV'
+          "/Applications/$2.app/Contents/MacOS/$2" --version
+        }
+        install_app https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg "Google Chrome"
+        if [ "$CANARY" = true ]; then install_app https://dl.google.com/chrome/mac/universal/canary/googlechromecanary.dmg "Google Chrome Canary"; fi
 
     - name: Install dependencies and build
       shell: bash

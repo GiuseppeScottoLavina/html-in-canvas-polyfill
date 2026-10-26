@@ -2,15 +2,13 @@
 import * as H from '../harness/index.mjs';
 import { execFileSync } from 'node:child_process';
 
+const STABLE = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const configs = [
-  ['cft headless', process.env.HIC_CHROME_PATH, ['--headless=new']],
-  ['cft headless --disable-gpu', process.env.HIC_CHROME_PATH, ['--headless=new', '--disable-gpu']],
-  ['cft headless swiftshader', process.env.HIC_CHROME_PATH, ['--headless=new', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']],
-  ['cft headless no-sandbox', process.env.HIC_CHROME_PATH, ['--headless=new', '--no-sandbox']],
-  ['image chrome headless', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new']],
-  ['image chrome headed', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', []],
-  ['cft headed', process.env.HIC_CHROME_PATH, []],
-  ['cft headed swiftshader', process.env.HIC_CHROME_PATH, ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']],
+  ['stable headless', STABLE, ['--headless=new']],
+  ['stable headless unsafe-webgpu', STABLE, ['--headless=new', '--enable-unsafe-webgpu']],
+  ['stable headed', STABLE, []],
+  ['stable headed unsafe-webgpu', STABLE, ['--enable-unsafe-webgpu']],
+  ['stable headed unsafe-webgpu + vulkan swiftshader', STABLE, ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader']],
 ];
 const bounded = (p, ms) => Promise.race([p, new Promise((_, bad) => setTimeout(() => bad(new Error(`timeout ${ms} ms`)), ms))]);
 for (const [name, path, args] of configs) {
@@ -23,6 +21,12 @@ for (const [name, path, args] of configs) {
     const page = await bounded(browser.newPage(), 20000);
     console.log('page ok; eval:', await bounded(page.evaluate('navigator.userAgent'), 10000));
     console.log('gpu:', JSON.stringify(await bounded(page.evaluate(`(async () => { const a = await navigator.gpu?.requestAdapter(); return a ? a.info?.description || a.info?.vendor || 'adapter' : null; })()`), 20000).catch((e) => String(e))));
+    if (!args.includes('--headless=new')) {
+      await page.ensureForeground({ timeout: 4000 }).then((r) => console.log('focus', r.mode));
+      const r = await bounded(page.measureRaf({ frames: 120 }), 20000).catch((e) => ({ error: String(e) }));
+      console.log('raf', JSON.stringify({ p50: r.p50, p95: r.p95, hz: r.hz, error: r.error }));
+      console.log('viewport', JSON.stringify(await page.viewport()));
+    }
     const info = await browser.info();
     console.log('gpu devices', JSON.stringify(info.gpu?.map((d) => d.deviceString)), 'features', JSON.stringify(info.featureStatus));
   } catch (e) {
