@@ -29,9 +29,12 @@ const step = async (/** @type {string} */ what, /** @type {() => Promise<any>} *
 async function chromeFacts(headless) {
   console.error(`Chrome ${headless ? 'headless' : 'headed'}:`);
   const srv = await H.startServer();
+  const t0 = Date.now();
   const browser = await H.launchChrome({ name: `macos-env-${headless ? 'headless' : 'headed'}`, extraArgs: headless ? ['--headless=new'] : [] });
+  console.error(`  launch: ${Date.now() - t0} ms (pid ${browser.pid}, pointer ${JSON.stringify(browser.pointerPark)})`);
   try {
-    const page = await browser.newPage();
+    const page = await step('new page', () => browser.newPage());
+    if (page.error) return { headless, error: page.error };
     const out = { headless, chrome: browser.version?.Browser, pointerPark: browser.pointerPark };
     await step('navigate', () => page.navigate(`${srv.url}/examples/index.html`)); // a secure context (localhost), where navigator.gpu exists
     if (!headless) out.focus = await step('foreground', async () => (await page.ensureForeground({ timeout: 4000 })).mode, 15000);

@@ -66,4 +66,5 @@ runs:
       shell: bash
       run: |
         mkdir -p .scratch/results
-        node test/ci/macos-env.mjs
+        node test/ci/macos-display.mjs --min=1600x1000 || echo "::warning::display: no mode of at least 1600 x 1000"
+        node test/ci/macos-env.mjs || echo "::warning::environment record incomplete"
