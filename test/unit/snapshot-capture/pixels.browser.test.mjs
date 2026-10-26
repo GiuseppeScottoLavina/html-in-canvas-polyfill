@@ -480,6 +480,28 @@ test('a loaded video that never played shows its poster (HTML show poster flag, 
   assert.ok(!(r > 200 && g > 200 && b < 80), `positive control: once it played, a frame is drawn instead of the poster, got ${r},${g},${b}`);
 });
 
+test('a loaded video whose poster fails to load (404, not an image) draws nothing until it plays, not its first frame (measured in the page and on the native oracle, Chrome Canary 158); positive controls: without a poster attribute the first frame is drawn, and once played the frame', async () => {
+  const video = (poster) => `<div drawable style="width:40px;height:40px"><video muted preload="auto" width="40" height="40" style="display:block;object-fit:fill" ${poster} src="/test/vendor/wpt/media/rgb100.webm"></video></div>`;
+  const m = mount(video('poster="/test/unit/snapshot-capture/assets/missing-poster.png"') + video('poster="/test/vendor/wpt/media/white.webm"') + video(''));
+  const boxes = Array.from(m.layerEl.children);
+  const vids = boxes.map((d) => /** @type {HTMLVideoElement} */ (d.querySelector('video')));
+  for (let i = 0; i < 400 && vids.some((v) => v.readyState < 2); i++) await new Promise((ok) => setTimeout(ok, 10));
+  assert.ok(vids.every((v) => v.readyState >= 2), 'the videos loaded their first frame');
+  const centre = async (el) => {
+    m.capture(m.request(el));
+    await new Promise((ok) => setTimeout(ok, 150));
+    return Array.from((await rasterize(m.capture(m.request(el)))).getImageData(20, 20, 1, 1).data);
+  };
+  const [r, g, b] = await centre(boxes[2]);
+  assert.ok(r > 200 && g < 40 && b < 40, `positive control: no poster attribute, the first (red) frame, got ${r},${g},${b}`);
+  assert.equal((await centre(boxes[0]))[3], 0, 'a poster that does not load (404): nothing');
+  assert.equal((await centre(boxes[1]))[3], 0, 'a poster that is not an image: nothing');
+  await vids[0].play();
+  await new Promise((ok) => setTimeout(ok, 250));
+  vids[0].pause();
+  assert.ok((await centre(boxes[0]))[3] > 0, 'positive control: once it played, its frame is drawn');
+});
+
 test('a drawable with its own CSS transform keeps it in the snapshot (WPT css-transform-on-div): the rotated square reaches outside the corners of its border box', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:60px;height:60px;background:#080;transform:rotate(45deg)}' });
   // the fake layer measures with getBoundingClientRect, which sees the rotation: the real layer reports the layout size
@@ -528,4 +550,18 @@ test('an SVG <image> that cannot be read draws nothing (no broken-image icon) an
   const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
   assert.deepEqual(px(20, 20), [224, 0, 0, 255], 'same-origin image drawn');
   for (const [a, b] of [[20, 60], [3, 43], [36, 77]]) assert.deepEqual(px(a, b), [0, 128, 0, 255], `cross-origin image: nothing at ${a},${b}`);
+});
+
+test('a date / time field keeps its live border box in the snapshot (its intrinsic width, the text of its fields, came out 1-2 device px off at DPR 1.25-2 and moved the controls after it); control: a text field is not pinned', () => {
+  const m = mount('<div drawable style="width:300px;height:40px"><input type="time" id="t" value="14:35"><input type="date" id="d" value="2026-10-08"><input id="x" value="text"></div>');
+  const r = m.capture(m.request(m.layerEl.firstElementChild));
+  const svg = decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
+  const tag = (id) => (new RegExp(`<input[^>]*id="${id}"[^>]*>`).exec(svg) ?? [''])[0];
+  for (const id of ['t', 'd']) {
+    const el = /** @type {HTMLElement} */ (m.layerEl.querySelector(`#${id}`));
+    const cs = getComputedStyle(el), n = (p) => parseFloat(cs.getPropertyValue(p)) || 0;
+    const w = cs.boxSizing === 'border-box' ? n('width') : n('width') + n('padding-left') + n('padding-right') + n('border-left-width') + n('border-right-width');
+    assert.ok(w > 0 && tag(id).replace(/\s+/g, '').includes(`;width:${w}px!important`), `${id}: the live border box ${w} px in ${tag(id)}`);
+  }
+  assert.ok(!/box-sizing:\s*border-box\s*!important/.test(tag('x')), `control: ${tag('x')}`);
 });

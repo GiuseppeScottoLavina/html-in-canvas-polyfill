@@ -190,7 +190,7 @@ export function parseColor(css) {
 }
 
 /** The colour behind `el`: its own and its ancestors' backgrounds composited over white (12 levels). @param {Window} win @param {Element} el @returns {number[]} rgb */
-function backdropOf(win, el) {
+export function backdropOf(win, el) {
   /** @type {number[][]} */
   const layers = [];
   for (let n = /** @type {Element|null} */ (el), i = 0; n && i < 12; n = n.parentElement, i++) {

@@ -96,7 +96,16 @@ const LIMITS = {
   //   <area> (+2,003 / +620: WPT privacy/visited-link/image-map-area-visited-color-ignored), a drawable slotted into a canvas of a shadow tree (+697 / +146: WPT
   //   shadow-dom-slot-canvas-child), selectAllChildren / selectNodeContents of a canvas (+599 / +184: WPT visited-link-custom-selection-color-ignored), the
   //   geometry methods on an inner SVG drawable (+16 bytes: WPT canvas-transform-get-set)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 329 * KB, gzip: 115 * KB },
+  // 316 -> 318 KB, gzip 110 -> 110.75 KB (+1,898 / +716 bytes, 2026-10-23, measured 317,844 / 110,624): the references inside an external SVG <use> document resolved
+  //   against that document (ids, classes and its <style> rules scoped to it), clip paths outside the drawable, the read-back rules on copied <use> targets, an empty
+  //   box for a video whose poster fails to load
+  // 318 -> 319.5 KB, gzip 110.75 -> 111.25 KB (+1,579 / +502 bytes, 2026-10-23, measured 319,423 / 111,126): the macOS overlay thumb of a scrollable listbox select
+  // 319.5 -> 319.75 KB (+152 / +49 bytes, 2026-10-26, measured 319,575 / 111,175): a date / time field keeps its live border box, a <use> target copied from outside the
+  //   drawable drops its filter attributes
+  // 329 -> 332.5 KB, gzip 115 -> 116 KB (2026-10-26, measured 332,499 / 115,986 with both steps above merged; 328,870 / 114,739 with the animated images and the WPT
+  //   steps alone): the two steps above were measured on separate branches; merged, the external <use> documents, the overlay listbox thumb and the date / time
+  //   field box add their +3,629 bytes on top of the animated images and the WPT fixes
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 332.5 * KB, gzip: 116 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
