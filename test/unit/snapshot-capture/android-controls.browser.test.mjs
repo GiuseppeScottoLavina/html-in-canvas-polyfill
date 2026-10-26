@@ -89,6 +89,7 @@ test('macOS overlay bars: a scrollable listbox draws Chrome\'s overlay thumb (bl
       assert.ok(g(22)[0] < 110, `over the selected option's highlight: ${g(22)}`);
     } else assert.ok(g(5)[0] > 130 && g(5)[0] < 160, `white at 50 % over #222: ${g(5)}`);
     const none = await image(/** @type {HTMLSelectElement} */ (el.cloneNode(true)), w, h);
-    assert.notDeepEqual(Array.from(none.getImageData(x, el.clientTop + 5, 1, 1).data), g(5), 'positive control: the select without the layer draws no thumb');
+    const bare = Array.from(none.getImageData(x, el.clientTop + 5, 1, 1).data);
+    assert.ok(Math.abs(bare[0] - g(5)[0]) > 60, `positive control: the select without the layer draws no thumb there: ${bare} against ${g(5)}`);
   }
 });
