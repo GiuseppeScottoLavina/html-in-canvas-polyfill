@@ -40,7 +40,8 @@ runs:
           curl -fsSL --retry 3 -o "$dmg" "$1"
           hdiutil attach -nobrowse -quiet -mountpoint "$mnt" "$dmg"
           sudo rm -rf "/Applications/$2.app"
-          sudo ditto "$mnt/$2.app" "/Applications/$2.app"
+          # without the Finder information the disk image carries (codesign --strict refuses it as detritus)
+          sudo ditto --norsrc --noextattr --noqtn "$mnt/$2.app" "/Applications/$2.app"
           hdiutil detach -quiet "$mnt"
           # Google LLC's Developer ID (team EQHXZ8M8AV), checked before the browser is run
           codesign --verify --deep --strict "/Applications/$2.app"
