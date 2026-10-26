@@ -190,8 +190,13 @@ async function launchFirefox({ app = FIREFOX_APP, prefs = {} } = {}) {
   const mport = await freePort();
   const all = { ...FIREFOX_PREFS, ...prefs, 'marionette.port': mport };
   writeFileSync(join(profile, 'user.js'), Object.entries(all).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');
-  const opened = spawnSync('open', ['-n', '-a', app, '--args', '--marionette', '-profile', profile, '-no-remote', 'about:blank'], { encoding: 'utf8' });
-  if (opened.status !== 0) throw new Error(`open Firefox failed: ${opened.stderr}`);
+  // bounded: `open` waits while macOS shows a dialog about the application (the Gatekeeper prompt of a quarantined download, seen on the hosted macOS
+  // runner, where the run then waited two hours for an answer)
+  const opened = spawnSync('open', ['-n', '-a', app, '--args', '--marionette', '-profile', profile, '-no-remote', 'about:blank'], { encoding: 'utf8', timeout: 30000 });
+  if (opened.status !== 0) {
+    rmSync(profile, { recursive: true, force: true });
+    throw new Error(opened.error?.code === 'ETIMEDOUT' ? `open Firefox did not return in 30 s: macOS is probably showing a dialog about ${app} (a quarantined download: xattr -dr com.apple.quarantine "${app}")` : `open Firefox failed: ${opened.stderr}`);
+  }
   let ffPids = [];
   const t0 = Date.now();
   while (Date.now() - t0 < 30000 && !existsSync(join(profile, 'MarionetteActivePort'))) { ffPids = pgrep(profile); own(ffPids); await sleep(200); }

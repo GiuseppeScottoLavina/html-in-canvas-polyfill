@@ -45,8 +45,15 @@ for (const headless of [false, true]) {
       const cv = document.querySelector('canvas'); let ev = 0; document.addEventListener('effectframe', () => ev++, true);
       let raf = 0; const t0 = performance.now(); await new Promise((r) => { const f = () => { raf++; performance.now() - t0 < 2000 ? requestAnimationFrame(f) : r(); }; requestAnimationFrame(f); });
       const s0 = h.stats(); await new Promise((r) => setTimeout(r, 2000)); const s1 = h.stats();
-      return { raf, ev, s0, s1, cap: cv && cv.getAttribute('framecap'), vis: document.visibilityState, focus: document.hasFocus() };
-    })()`), H.sleep(15000).then(() => 'TIMEOUT')]);
+      const calls = []; const orig = h.onFrame;
+      const keys = Object.keys(h);
+      if (typeof orig === 'function') h.onFrame = function (now, info) { let r, err; try { r = orig.call(this, now, info); } catch (e) { err = String(e); throw e; } finally { if (calls.length < 12) calls.push({ now: Math.round(now), due: info && info.due, cap: info && info.frameCap, r, err, rec: this.recovering, pres: !!this.presenter, cont: this.plugins && this.plugins.hasContinuous && this.plugins.hasContinuous(), vis: this.isVisible && this.isVisible() }); } return r; };
+      await new Promise((r) => setTimeout(r, 1500));
+      try { h.requestRender && h.requestRender(); } catch (e) { calls.push('requestRender ' + e); }
+      await new Promise((r) => setTimeout(r, 1500));
+      const errs = window.__HIC__ && window.__HIC__.installed && window.__HIC__.installed.report ? window.__HIC__.installed.report() : null;
+      return { raf, ev, s0, s1, s2: h.stats(), cap: cv && cv.getAttribute('framecap'), vis: document.visibilityState, focus: document.hasFocus(), keys, calls, report: errs && JSON.stringify(errs).slice(0, 600) };
+    })()`), H.sleep(25000).then(() => 'TIMEOUT')]);
     console.log('  gallery water', JSON.stringify(g));
   } catch (e) { console.log('FAILED', String(e).slice(0, 300)); } finally {
     await Promise.race([browser.close(), H.sleep(10000)]); await srv.close();

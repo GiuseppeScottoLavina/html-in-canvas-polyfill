@@ -61,8 +61,10 @@ jobs:
         with:
           canary: 'true'
       - name: TEMPORARY WebGPU diagnosis
+        timeout-minutes: 3
         run: node test/ci/diag-webgpu.mjs || true
       - name: Browser gates (real + control)
+        timeout-minutes: 35
         run: node test/gates/run-all.mjs --only="$(node test/ci/macos-plan.mjs --gates)"
       - uses: ./.github/actions/macos-results
         if: always()
@@ -87,6 +89,7 @@ jobs:
         with:
           canary: 'true'
       - name: Mutation suite, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+        timeout-minutes: 45
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
         run: |
@@ -114,12 +117,14 @@ jobs:
       - uses: ./.github/actions/macos-browsers
       - name: Examples (all but effect-plugin, see local-only), documentation smoke pages, the Pages site, the field test
         if: matrix.part == 'examples'
+        timeout-minutes: 25
         run: |
           node scripts/check-examples.mjs --only=basic,form,plugins,scroll-and-resize,webgl-texture,smoke
           node scripts/check-pages.mjs
           node scripts/check-field-test.mjs
       - name: Framework apps, hang stress, platform probe
         if: matrix.part == 'apps'
+        timeout-minutes: 25
         run: |
           (cd test/frameworks && npm ci)
           node test/frameworks/run.mjs
@@ -134,20 +139,24 @@ jobs:
   xbrowser:
     # Firefox and Safari through W3C WebDriver (the runner image's Firefox and geckodriver; Safari's remote automation is enabled for the job)
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/macos-browsers
-      - name: Enable Safari's remote automation; point the harness at geckodriver
+      - name: Enable Safari's remote automation; point the harness at geckodriver; clear Firefox's quarantine
+        # The image installs Firefox with Homebrew, which leaves the download quarantined: the first launch then waits behind macOS's "downloaded from the
+        # Internet" dialog (it held a run for two hours). The quarantine flag of the runner image's own Firefox is removed.
         run: |
+          sudo xattr -dr com.apple.quarantine /Applications/Firefox.app
           sudo safaridriver --enable
           mkdir -p .scratch/geckodriver-dl && ln -sf "$(command -v geckodriver)" .scratch/geckodriver-dl/geckodriver
           /Applications/Firefox.app/Contents/MacOS/firefox --version
           geckodriver --version | head -1
           safaridriver --version
       - name: G-xbrowser (Firefox, Safari)
+        timeout-minutes: 30
         run: node test/xbrowser/run.mjs --engine=firefox,safari
       - uses: ./.github/actions/macos-results
         if: always()

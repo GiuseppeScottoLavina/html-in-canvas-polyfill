@@ -460,11 +460,14 @@
     const video = document.createElement('video');
     video.id = 'ft-video'; video.muted = true; video.playsInline = true; video.srcObject = stream;
     document.body.append(video);
-    await video.play();
+    // A tab capture sends a frame when the tab's picture changes, and play() waits for the first one. The video is invisible, so the sync marker is shown
+    // first: without a change the capture of a still page could send nothing and play() wait forever (seen in headless Chrome on a slow machine).
+    const sync = document.createElement('div'); sync.id = 'ft-sync'; document.body.append(sync); cap.syncEl = sync;
+    const played = await Promise.race([video.play().then(() => true), sleep(10000).then(() => false)]);
+    if (!played) { stream.getTracks().forEach((t) => t.stop()); video.remove(); sync.remove(); cap.syncEl = cap.stream = cap.track = null; throw new Error('the tab capture delivered no frame within 10 s'); }
     cap.video = video;
     cap.scratch = document.createElement('canvas');
     cap.sctx = cap.scratch.getContext('2d', { willReadFrequently: true });
-    const sync = document.createElement('div'); sync.id = 'ft-sync'; document.body.append(sync); cap.syncEl = sync;
     report.capture.state = 'active';
     await onVideoFrame(() => true, 3000);
     await sleep(300);
