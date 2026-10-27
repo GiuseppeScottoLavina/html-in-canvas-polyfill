@@ -45,7 +45,9 @@ function serve(/** @type {string} */ dir, /** @type {Set<string>} */ missing = n
   });
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => {
     const { port } = /** @type {import('node:net').AddressInfo} */ (server.address());
-    ok({ url: `http://127.0.0.1:${port}${BASE}`, log, close: () => new Promise((done) => server.close(() => done(undefined))) });
+    // close() waits for every open connection: a keep-alive socket the page still held kept it waiting until the CI job timed out (macOS runner, 2026-10-27,
+    // after the control page). The harness server (test/harness/server.mjs) drops them the same way
+    ok({ url: `http://127.0.0.1:${port}${BASE}`, log, close: () => new Promise((done) => { server.closeAllConnections(); server.close(() => done(undefined)); }) });
   }));
 }
 
