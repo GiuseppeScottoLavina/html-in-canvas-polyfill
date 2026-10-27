@@ -1,5 +1,5 @@
 // REPORTED DATA, no thresholds: scroll jank of drawn scrollers under trusted wheel and touch streams, at several CPU throttling rates.
-//   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--out=file] [--profile]
+//   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--out=file] [--profile] [--touch-cold]
 // Per case x rate x input, in a fresh tab: a stream of three gestures with pauses between them (the pauses let the settle tile, the plan and the page builds run, as
 // they do between a user's gestures). Measured in the page, per rAF frame: the live scroller's offset and the count of canvas paint events.
 //   moveGaps   intervals between consecutive offset changes of the live scroller during a gesture longer than 2 frame intervals (the native scroll stalled)
@@ -19,6 +19,8 @@ const INPUTS = arg('inputs', 'wheel,touch').split(',');
 const REPS = Number(arg('reps', '1'));
 const HEADLESS = process.argv.includes('--headless');
 const PROFILE = process.argv.includes('--profile');
+/** touch streams start with the mouse pointer outside the page (a phone has no hover before the finger lands): without it the pointer rests over the scroller */
+const TOUCH_COLD = process.argv.includes('--touch-cold');
 
 const SC = '/test/gates/fixtures/scroll-cadence.html';
 /** page path, query, the drawn scroller, a script run before the measurement (refused-scroller variants) */
@@ -32,7 +34,6 @@ const CASES = {
   'refused-hscroll': { path: SC, q: { rows: 300 }, scroller: '#list', prep: `(() => { document.querySelector('#rows li:nth-child(3) span').style.cssText = 'white-space:nowrap;min-width:900px'; })()` },
   f2: { path: '/test/fixtures/f2-scroll/index.html', q: { mode: 'poly' }, scroller: '#list', fixture: true },
   'ex-scroll-and-resize': { path: '/examples/scroll-and-resize/index.html', q: {}, scroller: '#inbox', example: true },
-  'ex-plugins': { path: '/examples/plugins/index.html', q: {}, scroller: '#demo-form', example: true },
 };
 const ONLY = arg('cases', '')?.split(',').filter(Boolean);
 
@@ -153,7 +154,7 @@ try {
       const r = await page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(c.scroller)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 200), w: innerWidth, h: innerHeight }; })()`);
       if (r.y > r.h - 20) throw new Error(`${name}: scroller below the viewport`);
       const at = { x: r.x, y: r.y };
-      await page.mouseMove(at.x - 30, at.y); await page.mouseMove(at.x, at.y);
+      if (input === 'touch' && TOUCH_COLD) await page.mouseMove(2, 2); else { await page.mouseMove(at.x - 30, at.y); await page.mouseMove(at.x, at.y); }
       await H.sleep(700);
       await page.send('Emulation.setCPUThrottlingRate', { rate });
       const sc0 = await page.evaluate(STATS);
