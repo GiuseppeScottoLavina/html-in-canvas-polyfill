@@ -54,6 +54,7 @@ function frameMetrics(frames, windows) {
   const lim = 2.5 * iv;
   let moves = 0, moveGaps = 0, paintGaps = 0, rafGaps = 0, maxMoveGap = 0, maxPaintGap = 0, maxRaf = 0, unpainted = 0;
   const startLag = [];
+  let paintsIn = 0, spanIn = 0;
   for (const [w0, w1] of windows) {
     const idx = []; for (let i = 1; i < frames.length; i++) if (frames[i][0] >= w0 && frames[i][0] <= w1) idx.push(i);
     const mv = idx.filter((i) => frames[i][1] !== frames[i - 1][1]);
@@ -73,9 +74,10 @@ function frameMetrics(frames, windows) {
       if (d > lim && mv.some((m) => m >= a && m <= b - 1 && !painted(m))) { paintGaps++; maxPaintGap = Math.max(maxPaintGap, d); }
       a = b;
     }
+    paintsIn += pi.length; spanIn += frames[Math.min(frames.length - 1, last + 1)][0] - frames[first][0];
     startLag.push(+((pi.length ? frames[pi[0]][0] : frames[frames.length - 1][0]) - frames[first][0]).toFixed(1));
   }
-  return { frameMs: +iv.toFixed(2), moves, moveGaps, maxMoveGap: +maxMoveGap.toFixed(1), paintGaps, maxPaintGap: +maxPaintGap.toFixed(1), unpainted, rafGaps, maxRaf: +maxRaf.toFixed(1), startLag };
+  return { frameMs: +iv.toFixed(2), moves, moveGaps, maxMoveGap: +maxMoveGap.toFixed(1), paintGaps, maxPaintGap: +maxPaintGap.toFixed(1), unpainted, paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: +maxRaf.toFixed(1), startLag };
 }
 
 /** self time per function of the CPU profile samples inside [t0, t1] (trace microseconds) */
@@ -192,7 +194,7 @@ try {
       out.runs.push(run);
       const rt = run.runTask ?? {};
       run.longInGesture = { over8_33: long.filter((l) => l.gesture).length, over16_7: long.filter((l) => l.gesture && l.ms > 16.7).length };
-      console.log(`${name.padEnd(20)} ${input.padEnd(5)} ${rate}x  moves ${String(fm.moves).padStart(3)} moveGaps ${fm.moveGaps} (max ${fm.maxMoveGap}) paintGaps ${fm.paintGaps} (max ${fm.maxPaintGap}) unpainted ${fm.unpainted} rafGaps ${fm.rafGaps} lag ${fm.startLag.join('/')} | RunTask>8.33 ${rt.over8_33ms} >16.7 ${rt.over16_7ms} (in gestures ${run.longInGesture.over8_33}/${run.longInGesture.over16_7}) max ${rt.max?.toFixed?.(1)} | ${sDelta[0] ? `composed ${sDelta[0].composed} fallbacks ${sDelta[0].fallbacks} plans ${sDelta[0].plans} refusals ${sDelta[0].refusals} pages ${sDelta[0].pages}` : 'no stats'} nonBlank ${nonBlank}${load.highLoad ? ' HIGHLOAD' : ''}`);
+      console.log(`${name.padEnd(20)} ${input.padEnd(5)} ${rate}x  moves ${String(fm.moves).padStart(3)} moveGaps ${fm.moveGaps} (max ${fm.maxMoveGap}) paintGaps ${fm.paintGaps} (max ${fm.maxPaintGap}) unpainted ${fm.unpainted} paintHz ${fm.paintHz} rafGaps ${fm.rafGaps} lag ${fm.startLag.join('/')} | RunTask>8.33 ${rt.over8_33ms} >16.7 ${rt.over16_7ms} (in gestures ${run.longInGesture.over8_33}/${run.longInGesture.over16_7}) max ${rt.max?.toFixed?.(1)} | ${sDelta[0] ? `composed ${sDelta[0].composed} fallbacks ${sDelta[0].fallbacks} plans ${sDelta[0].plans} refusals ${sDelta[0].refusals} pages ${sDelta[0].pages}` : 'no stats'} nonBlank ${nonBlank}${load.highLoad ? ' HIGHLOAD' : ''}`);
       for (const l of long.filter((x) => x.gesture).sort((x, y) => y.ms - x.ms).slice(0, 4)) console.log(`    ${l.ms}ms @${l.at}: ${l.slices.join(', ')}${l.ours ? ' | ' + l.ours.slice(0, 5).join(', ') : ''}`);
     }
   }
