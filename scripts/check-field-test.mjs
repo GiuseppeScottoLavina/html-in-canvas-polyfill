@@ -44,6 +44,10 @@ mkdirSync(outDir, { recursive: true });
 // it matches ONE check of ONE run (by its exact name), so any other failure still fails the script. Remove the entry when src/ is fixed.
 /** @type {Array<{run: string, check: string, where: string}>} */
 const KNOWN_RED = [
+  // the scroll smoothness step's composed-vs-settled oracle at a device pixel ratio of 1.25 with classic scrollbars: the first frame after a jump of a list differs from
+  // the settled canvas on 482 of 330,154 device px (0.146 %, amber), all in a 9 x 62 device px box of the list's scrollbar column that moves down with the offset (the
+  // thumb), in the 4 of 6 jumps per list that were repainted when the scroll settled; 0 at a ratio of 1 with overlay bars (headless Chrome 155, 2026-10-27).
+  { run: 'dpr125', check: 'smoothness: pixel verdict pass', where: 'scroll compositor: the classic scrollbar thumb of a composed frame at DPR 1.25 (src/snapshot/store/scroll-compose.js)' },
   // empty: the scroll box at a device pixel ratio of 1.25 (3.6-8 % of its pixels) was a canvas grid rounded from a content box that is not a whole number of device
   // pixels (210.5 device px high, a grid of 211), rasterised at the grid's scale and stretched to it by a hair; fixed in src/snapshot/store/surfaces.js gridRasterScale
   // and src/api/draw-math.js snapDefaultSize.

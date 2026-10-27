@@ -136,7 +136,7 @@
   .ft-smooth-prompt { margin: 0 0 6px; padding: 8px 10px; border-radius: 8px; background: #fff3c4; font-weight: 600; min-height: 2.6em; }
   .ft-smooth-prompt[data-tone=idle] { background: #eef1f6; color: var(--muted); font-weight: 400; }
   .ft-smooth-prompt[data-tone=go] { background: #d9f2e4; color: #11532f; }
-  .pair .frame.smooth { width: 100%; height: 380px; }
+  .pair .frame.smooth { width: 100%; height: 380px; height: max(220px, min(380px, calc(100svh - 140px))); }
   .ft-smooth-sample { box-sizing: border-box; width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px; padding: 12px; font: 14px/1.4 system-ui, -apple-system, sans-serif; color: #1b2330; background: #fff; }
   .ft-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .ft-list header { position: sticky; top: 0; z-index: 1; padding: 8px 10px; font-weight: 700; background: #e6ecf7; border-bottom: 1px solid #c9d1de; }
@@ -192,13 +192,13 @@
         <div id="ft-twin-scroll" class="frame scroll twin"></div></figure>
     </div>
     <div class="pair" id="ft-smooth-pair" hidden>
-      <figure><figcaption>Scroll smoothness: two lists drawn into one canvas</figcaption>
-        <p class="ft-smooth-prompt" id="ft-smooth-prompt" data-tone="idle" aria-live="polite"></p>
-        <canvas id="ft-canvas-smooth" class="frame smooth" content="drawable"></canvas></figure>
+      <!-- the canvases of the scroll smoothness and effect steps are created by their steps: an empty drawable canvas on the page (no drawable child yet)
+           stopped the scroll compositor on WebKit for every other canvas (iOS Simulator: 0 composed scroll steps instead of about 215) -->
+      <figure id="ft-smooth-figure"><figcaption>Scroll smoothness: two lists drawn into one canvas</figcaption>
+        <p class="ft-smooth-prompt" id="ft-smooth-prompt" data-tone="idle" aria-live="polite"></p></figure>
     </div>
     <div class="pair" id="ft-effect-pair" hidden>
-      <figure><figcaption>An effect plugin (water) on live HTML</figcaption>
-        <canvas id="ft-canvas-effect" class="frame effect" content="drawable"></canvas></figure>
+      <figure id="ft-effect-figure"><figcaption>An effect plugin (water) on live HTML</figcaption></figure>
     </div>
   </section>
 

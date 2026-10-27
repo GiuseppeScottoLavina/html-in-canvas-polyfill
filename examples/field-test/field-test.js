@@ -348,6 +348,12 @@
     } catch (e) { recordError('setup ' + name, e); }
     return pair;
   }
+  /** the canvas of a step that creates its own (see index.html: no empty drawable canvas waits on the page) */
+  function stepCanvas(name, figureId) {
+    let c = /** @type {HTMLCanvasElement|null} */ (document.getElementById('ft-canvas-' + name));
+    if (!c) { c = document.createElement('canvas'); c.id = 'ft-canvas-' + name; c.className = 'frame ' + name; c.setAttribute('content', 'drawable'); $(figureId).append(c); }
+    return c;
+  }
   function sizeCanvas(canvas) {
     const apply = (w, h) => { if (w > 0 && canvas.width !== w) canvas.width = w; if (h > 0 && canvas.height !== h) canvas.height = h; };
     const ro = new ResizeObserver((entries) => {
@@ -902,7 +908,8 @@
       jumps.push({ t: target, live: round(el.scrollTop, 2), painted: true, composed: wasComposed, settlePaints, diff: round(n / px, 6), pixels: n, ink: round(ink / px, 3), ...(n ? { box: [x0, y0, x1, y1] } : {}) });
     }
     const measured = jumps.filter((j) => typeof j.diff === 'number');
-    return { jumps, size: [canvas.width, canvas.height], composedJumps: jumps.filter((j) => j.composed).length, worst: measured.length ? Math.max(...measured.map((j) => j.diff)) : null,
+    // a jump without a later paint (settlePaints 0) compares a frame with itself: the canvas kept its first frame, so no jump is visible when the scroll settles
+    return { jumps, size: [canvas.width, canvas.height], composedJumps: jumps.filter((j) => j.composed).length, repaintedJumps: measured.filter((j) => j.settlePaints > 0).length, worst: measured.length ? Math.max(...measured.map((j) => j.diff)) : null,
       worstComposed: measured.some((j) => j.composed) ? Math.max(...measured.filter((j) => j.composed).map((j) => j.diff)) : null };
   }
   const SMOOTH_WORDS = { pass: 'green', warn: 'amber', fail: 'red', info: 'not judged', skipped: 'skipped', error: 'error' };
@@ -1019,7 +1026,7 @@
           try { rec.results.scenarios[ids[i]] = await runScenario(ids[i], 'picture', ctx.signal); } catch (e) { recordError('picture ' + ids[i], e); rec.results.scenarios[ids[i]] = { error: errInfo(e) }; check('picture.' + ids[i], 'error', `${SCENARIOS[ids[i]].title}: ${errInfo(e).message}`); }
         }
         ui.meter(1);
-        window.scrollTo(0, 0);
+        if (!ctx.signal.aborted) window.scrollTo(0, 0); // a skipped step that ends later must not move the page under the next one
         return 'done';
       },
     },
@@ -1167,6 +1174,7 @@
         const prompt = $('ft-smooth-prompt');
         const say = (text, tone = 'idle') => { prompt.textContent = text; prompt.dataset.tone = tone; };
         say('Press Start above when you are ready.');
+        stepCanvas('smooth', 'ft-smooth-figure');
         const pair = pairs.smooth || makePair('smooth', 'ft-smooth-template', (root) => {
           let i = 0;
           for (const ol of root.querySelectorAll('ol')) {
@@ -1179,11 +1187,20 @@
         const lists = [round_, square];
         const out = report.scrollSmoothness = { complete: false, thresholds: SMOOTH, device: null, script: null, touch: null, pixels: null, verdict: null,
           method: 'per animation frame the offsets of the two lists and the count of canvas paint events (the frame metrics of test/bench/scroll-jank.mjs and scroll-jank-ios.mjs); the polyfill snapshot stats before and after each phase; the first canvas paint after each jump of a list against the settled canvas 700 ms later' };
-        const hide = () => { $('ft-smooth-pair').hidden = true; };
+        // afterwards the canvas leaves the page (the report keeps its numbers): the later steps run as before this step
+        // the prompt at the top of the viewport and the whole canvas below it: the scroll compositor plans a list only when all of its port is on screen
+        // (measured on the iOS Simulator: a list below the viewport when the scripted scroll began was refused, and a refusal stands until the drawable changes)
+        const intoView = () => {
+          const p = prompt.getBoundingClientRect(), c = pair.canvas.getBoundingClientRect();
+          if (p.top < 4 || c.bottom > innerHeight - 8) window.scrollBy(0, p.top - 8);
+          const r = pair.canvas.getBoundingClientRect();
+          return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+        };
+        const hide = () => { $('ft-smooth-pair').hidden = true; pair.canvas.remove(); };
         try {
           if ((await ctx.wait()) !== 'start' || ctx.signal.aborted) return 'skipped';
           ui.show({ meta: ctx.meta, title: 'Scroll smoothness', html: `<p>Please <strong>do not touch the ${touch ? 'screen' : 'mouse or keyboard'}</strong> while the page scrolls the lists by itself.</p>` });
-          bringIntoView(pair.canvas.closest('.pair'));
+          intoView();
           await waitPaint(pair, 0, 5000);
           await sleep(1500);
           const s0 = snapshotStats();
@@ -1201,7 +1218,7 @@
             if (ctx.signal.aborted) return 'skipped';
             say(`Hands off: the page is scrolling the ${name === 'round' ? 'Rounded' : 'Square'} list by itself.`);
             ui.status(`Scripted scroll of the ${name === 'round' ? 'Rounded' : 'Square'} list...`); ui.meter(phase++ / 4);
-            el.scrollTop = 0; await sleep(600);
+            el.scrollTop = 0; const inView = intoView(); await sleep(600);
             const before = snapshotStats(), recorder = frameRecorder(lists, pair);
             await sleep(300);
             const windows = [];
@@ -1216,7 +1233,7 @@
             const frames = recorder.stop();
             if (ctx.signal.aborted) return 'skipped';
             const m = frameMetrics(frames, windows);
-            out.script[name] = { ...m, verdict: smoothVerdict(m), stats: statsOfPhase(before, snapshotStats()), pageHidden: document.visibilityState !== 'visible', ...(windows.timedOut ? { timedOut: true } : {}) };
+            out.script[name] = { ...m, verdict: smoothVerdict(m), canvasInView: inView, stats: statsOfPhase(before, snapshotStats()), pageHidden: document.visibilityState !== 'visible', ...(windows.timedOut ? { timedOut: true } : {}) };
           }
           const scriptWorst = ['fail', 'warn', 'pass', 'info'].find((v) => Object.values(out.script).some((r) => r.verdict === v));
           const sr = out.script.round;
@@ -1229,15 +1246,16 @@
             if (ctx.signal.aborted) return 'skipped';
             ui.status(`Comparing scroll frames of the ${name === 'round' ? 'Rounded' : 'Square'} list...`); ui.meter(phase++ / 4);
             el.scrollTop = 0;
-            pixels[name] = await smoothOracle(pair, el, SMOOTH.jumps, ctx.signal);
+            const inView = intoView();
+            pixels[name] = { ...(await smoothOracle(pair, el, SMOOTH.jumps, ctx.signal)), canvasInView: inView };
           }
           if (ctx.signal.aborted) return 'skipped';
           const all = [...pixels.round.jumps, ...pixels.square.jumps];
           const ws = [pixels.round.worst, pixels.square.worst].filter((v) => v != null);
-          out.pixels = { ...pixels, worst: ws.length ? Math.max(...ws) : null, composedJumps: pixels.round.composedJumps + pixels.square.composedJumps, jumps: all.length };
+          out.pixels = { ...pixels, worst: ws.length ? Math.max(...ws) : null, composedJumps: pixels.round.composedJumps + pixels.square.composedJumps, repaintedJumps: pixels.round.repaintedJumps + pixels.square.repaintedJumps, jumps: all.length };
           out.pixels.verdict = pixelsVerdict({ jumps: all, worst: out.pixels.worst });
-          check('smoothness.pixels', out.pixels.verdict, out.pixels.worst == null ? 'scroll frames: no jump of the lists was painted' : `scroll frames: the first canvas update after a jump differs from the settled canvas on at most ${round(100 * out.pixels.worst, 3)} % of the pixels (${out.pixels.composedJumps} of ${all.length} jumps composed from cached pages)${all.some((j) => !j.painted) ? `; ${all.filter((j) => !j.painted).length} jumps not repainted within 2 s` : ''}`,
-            { worst: out.pixels.worst, composedJumps: out.pixels.composedJumps, jumps: all.length });
+          check('smoothness.pixels', out.pixels.verdict, out.pixels.worst == null ? 'scroll frames: no jump of the lists was painted' : `scroll frames: the first canvas update after a jump differs from the settled canvas on at most ${round(100 * out.pixels.worst, 3)} % of the pixels (${out.pixels.composedJumps} of ${all.length} jumps composed from cached pages, ${out.pixels.repaintedJumps} repainted when the scroll settled)${all.some((j) => !j.painted) ? `; ${all.filter((j) => !j.painted).length} jumps not repainted within 2 s` : ''}`,
+            { worst: out.pixels.worst, composedJumps: out.pixels.composedJumps, repaintedJumps: out.pixels.repaintedJumps, jumps: all.length });
           for (const el of lists) el.scrollTop = 0;
           ui.meter(1);
           // 3. the tester's own scrolling: a finger flick (or the wheel / touchpad); bounded, skippable on its own
@@ -1247,7 +1265,7 @@
             ? '<p><strong>Flick the Rounded list</strong> (the list on the left inside the canvas) up and down with your finger, several times, until the counter reaches zero.</p>'
             : '<p>Put the pointer over <strong>the Rounded list</strong> (the list on the left inside the canvas) and <strong>scroll it up and down</strong> with the mouse wheel or two fingers on the touchpad until the counter reaches zero.</p>',
           buttons: [{ id: 'skip-touch', label: touch ? 'I cannot flick here' : 'I cannot scroll here', onClick: () => { skipTouch = true; } }] });
-          bringIntoView(pair.canvas.closest('.pair'));
+          const touchInView = intoView();
           const before = snapshotStats(), recorder = frameRecorder(lists, pair);
           let active = 0, lastScroll = -1e9, events = 0;
           const onScroll = (e) => { const t = e.timeStamp || performance.now(); if (t - lastScroll < 150) active += t - lastScroll; lastScroll = t; events++; };
@@ -1275,7 +1293,7 @@
           const frames = recorder.stop();
           if (outcome === 'aborted') return 'skipped';
           const m = frameMetrics(frames, movementWindows(frames));
-          out.touch = { outcome, input: touch ? 'touch' : 'wheel or touchpad', activeMs: Math.round(active), scrollEvents: events, waitedMs: Math.round(performance.now() - start), ...m, verdict: smoothVerdict(m), stats: statsOfPhase(before, snapshotStats()) };
+          out.touch = { outcome, input: touch ? 'touch' : 'wheel or touchpad', activeMs: Math.round(active), scrollEvents: events, waitedMs: Math.round(performance.now() - start), canvasInView: touchInView, ...m, verdict: smoothVerdict(m), stats: statsOfPhase(before, snapshotStats()) };
           if (outcome === 'skipped' && !m.moves) check('smoothness.touch', 'skipped', `your own scrolling: skipped (${out.touch.input})`);
           else if (!m.moves) check('smoothness.touch', 'skipped', `your own scrolling: no scrolling of the lists within ${Math.round(limit / 1000)} s`);
           else check('smoothness.touch', out.touch.verdict, `your own scrolling (${out.touch.input}${outcome === 'done' ? '' : ', ' + outcome}): canvas updated in ${round(100 * (m.paintedShare ?? 0), 0)} % of the frames a list moved (${m.paintHz} updates per second at ${round(1000 / m.frameMs, 0)} frames per second), ${m.paintGaps} stutters in ${round(m.movingMs / 1000, 1)} s of movement (longest gap ${m.maxPaintGap} ms), first update ${quantile(m.startLag, 0.5) ?? '?'} ms after a scroll starts (median)`,
@@ -1310,6 +1328,7 @@
         if (mode !== 'polyfill' && mode !== 'native' && mode !== 'native-bridged') { check('effect', 'skipped', `the effect plugins need the installed polyfill (mode here: ${mode ?? 'none'})`); return 'skipped'; }
         ui.show({ meta: ctx.meta, title: 'Effect plugin', html: '<p>Loading the effect...</p>' });
         $('ft-effect-pair').hidden = false;
+        stepCanvas('effect', 'ft-effect-figure');
         const pair = pairs.effect || makePair('effect', 'ft-effect-template');
         bringIntoView(pair.canvas.closest('.pair'));
         await frames(3);
@@ -1391,7 +1410,7 @@
           if (ctx.signal.aborted) break;
           try { rec.results.scenarios[id] = await runScenario(id, 'zoom', ctx.signal); } catch (e) { recordError('zoom ' + id, e); check('zoom.' + id, 'error', errInfo(e).message); }
         }
-        window.scrollTo(0, 0);
+        if (!ctx.signal.aborted) window.scrollTo(0, 0); // a skipped step that ends later must not move the page under the next one
         ui.show({ meta: ctx.meta, title: 'Browser zoom', html: `<p>Done. Now press <strong>${mod}</strong> and <strong>0</strong> (zero) together to set the zoom back to 100 %.</p>`,
           buttons: [{ id: 'continue', label: 'Continue', primary: true, onClick: () => ctx.next() }] });
         await Promise.race([stable(() => Math.abs(devicePixelRatio / base - 1) <= 0.04), ctx.wait()]);
