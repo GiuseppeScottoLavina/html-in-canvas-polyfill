@@ -160,3 +160,23 @@ for (const [what, rect, cause] of [['a change over the port', { x: 20, y: 20, wi
     assert.equal(sc.obstructed, 1, 'and its obstruction stopped the composition');
   });
 }
+
+test('a scroll composed for 4 s with no other change is input, not a runaway loop (the guard uninstalled the polyfill)', async (t) => {
+  const { rig, a, scroller } = await setup(t);
+  await warm(rig, a, scroller, ['lime', 'blue', 'lime']);
+  let clock = performance.now();
+  rig.env.now = () => clock;
+  /** @type {any[]} */
+  const trips = [];
+  rig.bus.on(rig.BUS.RUNAWAY, (e) => trips.push(e));
+  let composed = 0;
+  for (let i = 0; i < 200; i++) {
+    clock += 20;
+    scroller.scrollTop = i % 2 ? 10 : 20;
+    if (rig.store.scrollCompose(a, scroller)) composed++;
+    rig.store.commitLanded();
+  }
+  assert.ok(composed >= 190, `the steps were composed (${composed})`);
+  assert.ok(rig.store.stats().commits >= 190, 'each one a commit');
+  assert.deepEqual(trips, [], 'no runaway report');
+});
