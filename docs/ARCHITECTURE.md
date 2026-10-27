@@ -368,9 +368,10 @@ Tick RUN(now), for each canvas record in reverse tree order:
     the curve semi-transparent. Refused on WebKit besides what Chromium refuses: a classic bar gutter (the thumb geometry is Chromium's). In the rounded corners both engines
     blend a page rendered with square corners (content over the scroller's background) into the backdrop by the clip's coverage, where the engine clips the content alone
     over background and border: up to a few pixels of the antialiased arc differ where translucent content crosses it (G-mobile scrollCompose: 0-3 of 504 at DPR 3).
-    Known residual on both engines: in a list whose rows have a fractional height (36.6 css px), a page can place a box edge one css px away from the tile at the same offset
-    (desktop Safari 27 at DPR 2: one row border 2 device rows higher and a badge's antialiased edge, 0.1-0.17 % of the canvas; Chromium shows a few device px of text drift on
-    the same fixture). The settled frame is exact; the cause (a page laid out from a different origin than the tile) is under investigation.
+    Rows of fractional height (36.6 css px) on the same fixture: a page placed a box edge one css px away from the tile at the same offset on desktop Safari 27 at DPR 2 (one
+    row border 2 device rows higher and a badge's antialiased edge, 0.1-0.17 % of the canvas), and Chromium showed a few device px of text drift. On Chromium the cause is
+    the spacers of the pruned rows (see "Pruned pages and tiles" below); the same fix is engine-agnostic (WebKit lays out in LayoutUnits of 1/64 css px and truncates too)
+    but is NOT VERIFIED on WebKit: the desktop Safari oracle timed out (a Safari window that is not frontmost does not paint).
   - **Page build cost.** The pages of one scroller cut the same flow container at different rows; the truncation test (one Range rect over the rest of the container, about
     2.5 ms over 2000 rows) is measured once per scroller in blocks of 64 children (`CaptureRequest.scroll.memo`, `clone.js` `tailClear`), and each page measures only the rest of
     its own block. The memo lives with the scroller's pages, is emptied by every damage inside the content, and is read only while the cut row and the last row sit where they
