@@ -253,7 +253,10 @@ export async function scrollCompose(ctx) {
     await s.navigate(u.href);
     await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
     await sleep(1500);
-    const r = await s.evaluate(COMPOSE_ORACLE(sels, offsets), { timeoutMs: 90000 });
+    // one scroller per call: a WebDriver session's script timeout is 30 s, and one scroller's 10 jumps take about 15
+    const parts = [];
+    for (const sel of sels) parts.push(await s.evaluate(COMPOSE_ORACLE([sel], offsets), { timeoutMs: 60000 }));
+    const r = { ...parts[parts.length - 1], jumps: parts.flatMap((p) => p.jumps) };
     ctx.numbers[`scrollCompose${tag}`] = { ...r, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, live: j.live, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc })) };
     return r;
   };
