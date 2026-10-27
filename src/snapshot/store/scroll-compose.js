@@ -147,8 +147,6 @@ export function createScrollCompositor(deps) {
   const refused = new WeakMap();
   /** @type {WeakMap<Entry, Set<Element>>} scrollers of a drawable whose plan waits for the pump */
   const planning = new WeakMap();
-  /** @type {WeakMap<Entry, Map<Element, Array<{rect: Rect|null, cause: string}>>>} damage heard while a plan runs in several steps (it read the DOM before it) */
-  const heard = new WeakMap();
   /** @type {WeakMap<Entry, number>} side builds in flight per drawable */
   const inFlight = new WeakMap();
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
@@ -367,13 +365,10 @@ export function createScrollCompositor(deps) {
       if (!set) planning.set(entry, (set = new Set()));
       if (set.has(scroller) || stillRefused(entry, scroller)) return;
       set.add(scroller);
-      let ears = heard.get(entry);
-      if (!ears) heard.set(entry, (ears = new Map()));
-      ears.set(scroller, []);
       counters.plans++;
       /** @param {Iterator<void, ScrollPlan|null, void>|null} steps */
       const step = (steps) => deps.schedule(entry, () => {
-        if (!entry.surface || !entry.geo || entry.lost || scroller.isConnected === false) { set.delete(scroller); heard.get(entry)?.delete(scroller); return; }
+        if (!entry.surface || !entry.geo || entry.lost || scroller.isConnected === false) { set.delete(scroller); return; }
         const got = steps ?? deps.plan(scroller, entry.el);
         /** @type {ScrollPlan|null} */
         let plan;
@@ -384,22 +379,8 @@ export function createScrollCompositor(deps) {
           plan = r.value;
         } else plan = /** @type {ScrollPlan|null} */ (got);
         set.delete(scroller);
-        const since = heard.get(entry)?.get(scroller) ?? [];
-        heard.get(entry)?.delete(scroller);
-        // damage between the steps of the plan: the scroller itself (or an ancestor) changed, the plan may be stale (planned again at its next scroll); damage over the
-        // port is hit-tested before the first composition, as damage after the plan is
-        /** @type {Rect[]} */
-        const over = [];
-        if (plan) {
-          for (const d of since) {
-            if (d.cause === 'scroll' && d.rect && sameRect(plan.frame, d.rect)) continue;
-            if (!d.rect || holds(d.rect, plan.frame)) return;
-            const visible = intersectRect(d.rect, plan.port);
-            if (visible) over.push(visible);
-          }
-        }
         const c = install(entry, scroller, plan);
-        if (c) { c.unverified.push(...over); prefetch(entry, c, topOf(scroller)); }
+        if (c) prefetch(entry, c, topOf(scroller));
       });
       step(null);
     },
@@ -423,7 +404,6 @@ export function createScrollCompositor(deps) {
     damaged(entry, rect, cause) {
       const m = caches.get(entry);
       const n = ++seq;
-      for (const list of heard.get(entry)?.values() ?? []) list.push({ rect, cause });
       for (const c of [...(m?.values() ?? [])]) {
         // its own scrolling (a step that was not composed)
         if (cause === 'scroll' && rect && sameRect(c.plan.frame, rect)) continue;
@@ -506,7 +486,6 @@ export function createScrollCompositor(deps) {
       caches.delete(entry);
       refused.delete(entry);
       planning.delete(entry);
-      heard.delete(entry);
     },
   };
 
