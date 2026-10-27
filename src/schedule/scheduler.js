@@ -646,8 +646,11 @@ export function createScheduler(env, store, hooks) {
     }
     // a resize frame is long (the page relayouts) and the browser runs the NEXT rendering update before a task posted from it, so a post-frame build would land a frame later
     // (measured: resize convergence p95 17 -> 25 ms); resize / DPR damage is built inside the tick. Everything else builds after the frame.
-    // ... and so is the FIRST snapshot of a canvas (so its first paint is not a frame late: WPT onpaint-zindex expects the initial paint within the first frame)
-    const resized = now < resizingUntil || work.some((entry) => entry.resized || !entry.record.paint.everFired);
+    // ... and so is the FIRST snapshot of a canvas (so its first paint is not a frame late: WPT onpaint-zindex expects the initial paint within the first frame).
+    // Only of a canvas that has a drawable: one without (an empty drawable canvas waiting for its content) fires no paint at all, so it never stopped asking, and every
+    // tick it took part in pumped inside the frame, where the side builds of every other canvas (scroll plans and pages) wait; their leftover work made it tick again
+    // (iOS Simulator, the scroll-and-resize example beside an empty canvas: 0 composed scroll steps instead of 211, the scheduler ticking at 61 Hz while idle)
+    const resized = now < resizingUntil || work.some((entry) => entry.resized || (!entry.record.paint.everFired && (entry.record.layer?.drawableElements().length ?? 0) > 0));
     const pumped = resized ? pump(now, interaction, true) : null;
     if (resized) for (const entry of work) entry.resized = false;
     // no pump without something to build: a pump task left queued behind a quiet frame would take the next DOM change BEFORE the rendering update that should observe it

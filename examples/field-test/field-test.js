@@ -1189,7 +1189,7 @@
           method: 'per animation frame the offsets of the two lists and the count of canvas paint events (the frame metrics of test/bench/scroll-jank.mjs and scroll-jank-ios.mjs); the polyfill snapshot stats before and after each phase; the first canvas paint after each jump of a list against the settled canvas 700 ms later' };
         // afterwards the canvas leaves the page (the report keeps its numbers): the later steps run as before this step
         // the prompt at the top of the viewport and the whole canvas below it: the scroll compositor plans a list only when all of its port is on screen
-        // (measured on the iOS Simulator: a list below the viewport when the scripted scroll began was refused, and a refusal stands until the drawable changes)
+        // (measured on the iOS Simulator: a list below the viewport when the scripted scroll began was refused, and up to 0.1.0-preview.9 a refusal stood until the drawable changed)
         const intoView = () => {
           const p = prompt.getBoundingClientRect(), c = pair.canvas.getBoundingClientRect();
           if (p.top < 4 || c.bottom > innerHeight - 8) window.scrollBy(0, p.top - 8);

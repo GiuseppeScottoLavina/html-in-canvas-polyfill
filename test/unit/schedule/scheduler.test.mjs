@@ -633,3 +633,32 @@ test('focus / active (and urgent value changes) are built in a microtask of the 
   t.step();
   assert.equal(t.store.pumps, before + 3, 'and are pumped after it');
 });
+
+test('a canvas without a drawable keeps no other canvas\'s builds inside the tick: the side builds (scroll plans, pages) still run after the frame, and the ticks stop', () => {
+  const t = setup();
+  const el = fakeElement();
+  const record = mounted(t, [el]);
+  // an empty drawable canvas (no drawable child yet) never fires a paint (native fires none): it was taken for a canvas whose FIRST snapshot is due, so every tick it
+  // was part of pumped inside the rendering update, where side builds wait, and the work they left made every canvas tick again (iOS: 0-1 composed scroll steps of ~215)
+  const empty = t.addRecord([]);
+  t.scheduler.register(empty);
+  t.run(100);
+  let side = 0, inTick = 0;
+  t.store.needsPump = () => side > 0;
+  // side builds run only in a post-frame pump (store.pump), one per pump here: the work left after each makes the scheduler mark every canvas dirty again
+  t.store.pump = (now, budget) => {
+    t.store.pumps++;
+    if (budget.urgent) inTick++;
+    else if (side > 0) side--;
+    return { started: 0, spentMs: 0, moreWork: side > 0, nextDueAt: side > 0 ? now : null };
+  };
+  side = 4;
+  t.scheduler.wake(record);
+  t.run(200);
+  assert.equal(side, 0, 'every side build ran');
+  assert.equal(inTick, 0, 'no pump inside the tick');
+  const rafs = t.fw.counters.rafRequests;
+  t.run(500);
+  assert.equal(t.fw.counters.rafRequests, rafs, 'idle afterwards: no rAF');
+  assert.equal(empty.paint.everFired, false, 'the empty canvas still fires no paint');
+});
