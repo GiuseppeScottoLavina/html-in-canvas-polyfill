@@ -60,7 +60,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | file (in `dist/`) | bytes | gzip (level 9) |
 |---|---|---|
 | `hic-live-polyfill.iife.js` | 649,665 | 163,396 |
-| `hic-live-polyfill.iife.min.js` | 333,701 | 116,437 |
+| `hic-live-polyfill.iife.min.js` | 333,701 | 116,438 |
 | `hic-live-effects.iife.js` | 79,926 | 21,209 |
 | `hic-live-effects.iife.min.js` | 39,081 | 14,430 |
 | `hic-live-native-bridge.iife.js` | 32,004 | 8,739 |
