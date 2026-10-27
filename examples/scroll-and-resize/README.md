@@ -5,7 +5,7 @@ One canvas holding a scrolling inbox (60 rows, sticky header, `:hover` colours, 
 Run: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/examples/scroll-and-resize/` in desktop Chrome.
 
 What to look at:
-- Scroll the list with the mouse wheel, a trackpad or the keyboard: the scrolling is the browser's own on the live list, the canvas shows the result.
+- Scroll the list with the mouse wheel, a trackpad or the keyboard: the scrolling is the browser's own on the live list, the canvas shows the result. In Chrome and Safari (also on iOS) each scroll step is drawn from cached pages of the list and the exact picture follows when the scroll stops; Firefox rebuilds the list at every step.
 - Drag the window narrower than 760 px and back. The readout under the canvas prints the window width, the canvas bitmap size and the list `scrollTop`.
 - The `ResizeObserver` writes `canvas.width/height` on every size change; the polyfill repaints in the same frame (`docs/API-CONTRACT.md` section 8). A real-window-drag gate (G-resize-drag, F3 fixture) checks for 0 blank frames after the first paint, and a scroll gate (G-scroll-inner, F2 fixture) checks inner scrolling (`docs/TEST-PLAN.md`).
 

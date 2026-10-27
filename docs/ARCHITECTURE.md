@@ -170,7 +170,7 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
 - Measured/verified consequences: layout of children equals plain DOM in the same box (the pixel oracle compares against a plain-DOM twin, G-pixel-*).
 
 **Consequences.** (+) native input, selection, IME, cursor shapes, scroll physics, a11y with real geometry. (-) the facade is a compatibility
-surface to keep tested (page-structure and framework fixtures, G-page-structure and G-framework-smoke); `display:none` canvas hides the layer; anchor positioning is Chromium-only (consistent with the Chrome-only first release);
+surface to keep tested (page-structure and framework fixtures, G-page-structure and G-framework-smoke); `display:none` canvas hides the layer; the layer needs CSS anchor positioning, which every supported engine has (an engine without it is refused, `browser`);
 the containing-block chain of an absolute layer differs from the canvas's (ADR-L).
 
 ### ADR-B: retained-surface model
