@@ -351,7 +351,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     half rate (the input pipeline settles into the alternation), hence the pointer.
   - **Pacing of scroll damage** (`pump.js`): scroll damage alone, or with hover changes inside the scrolled box (rows passing under a still pointer), is held by the framecap and the
     cost bucket but not by `maxSnapshotFps` nor by the node-budget interval (`DamageTracker.pendingScroll`); every other cause keeps every limit, and such a build takes no credit of the gate.
-  - **Compositor validity per scroller** (`scroll-compose.js`). A scroller is planned when it is seen (pointer over it, first scroll event, settle), in the post-frame pump, a large
+  - **Compositor validity per scroller** (`scroll-compose.js`). A scroller is planned when it is seen (pointer over it, first scroll event, settle), in the post-frame pump (the pointer entering a scroller wakes the scheduler, so the plan and the first pages are built while the pointer rests, not in the first frames of the gesture), a large
     scroller's subtree scan in steps of 2500 elements (`planSteps`). Damage that does not reach the scroller's content box leaves its pages; damage inside it marks those CONTENT
     pixels dirty in every page captured before it (pages are ordered with damage by a sequence number); damage with no rect, covering the scroller, or crossing a pinned element drops
     or refreshes. A dirty part is never composed: the step falls back to the plain path, and the fallback tile, copied from the retained surface, repairs the pages it covers (pinned

@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- Scroll: the first wheel or trackpad gesture over a drawn scroller no longer starts with a stutter. The plan and the first cached pages of a scroller under the pointer were meant to be built while the pointer rests, but nothing woke the scheduler, so they waited for the first scroll event: that gesture began with a whole-scroller build inside its first frame and the planning and page builds in the frames after it. Measured (headed Chrome, 120 Hz, wheel and touch streams on four lists, CPU throttled 1x/4x/6x, 24 runs): canvas update gaps longer than 2.5 frames while the list moved 82 -> 0, main-thread tasks over 16.7 ms during the gestures 262 -> 141.
 - Test harness: launching Firefox for G-xbrowser no longer waits forever when macOS shows a dialog about the application (the first-launch prompt of a quarantined download); it fails after 30 s and names the cause. A tab that closes between being listed and being attached is replaced by a new one instead of failing the run.
 - G-scroll-inner reads the page scroll of each tab once its smooth scroll has ended, while that tab is in front: a fixed 400 ms wait read the plain-DOM twin frozen part-way (a background tab does not advance the animation), seen once on the slower hosted macOS runner.
 - Field test page: starting the tab capture can no longer wait forever for its first frame (the page now changes before the capture starts, and a capture that delivers no frame within 10 s is reported as an error).
