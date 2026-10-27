@@ -118,4 +118,4 @@ Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): s
 ## 7. Still stuck
 
 Collect: the browser and version, the OS, `JSON.stringify(__HIC__.installed.report(), null, 1)`, the console output, and a minimal page.
-When the problem shows up on a machine you cannot use yourself, ask its owner to run the [field test](FIELD-TEST.md): it collects the environment, compares the canvas with the plain page as that screen shows them, and measures typing and scrolling, in one report file. File an issue at https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues/new/choose.
+When the problem shows up on a machine you cannot use yourself, ask its owner to run the [field test](FIELD-TEST.md): it collects the environment, compares the canvas with the plain page as that screen shows them, and measures typing and scrolling (how smoothly a long list drawn into a canvas scrolls under the tester's finger included), in one report file. File an issue at https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues/new/choose.

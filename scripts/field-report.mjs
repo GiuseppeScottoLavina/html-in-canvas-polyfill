@@ -25,6 +25,15 @@ console.log(`polyfill   ${r.polyfill?.version ?? '-'} mode ${r.polyfill?.mode ??
 console.log(`capture    ${r.capture?.state}${r.capture?.reason ? ' (' + r.capture.reason + ')' : ''}${r.capture?.calibrations?.length ? `, last calibration ${JSON.stringify(r.capture.calibrations.at(-1)).slice(0, 160)}` : ''}`);
 console.log(`steps      ${Object.entries(r.steps ?? {}).map(([k, v]) => `${k}:${v.status}`).join(' ')}`);
 console.log(`verdicts   ${JSON.stringify(r.summary?.verdicts)}`);
+const sm = r.scrollSmoothness;
+if (sm) {
+  const line = (m) => `frame ${m.frameMs} ms, ${m.moves} moves, ${Math.round(100 * (m.paintedShare ?? 0))} % painted, ${m.paintHz} updates/s, ${m.paintGaps} stutters (max gap ${m.maxPaintGap} ms), first-step lag ${m.startLag?.join('/')} ms`
+    + `${m.stats?.scroll ? `; composed ${m.stats.scroll.composed}, fallbacks ${m.stats.scroll.fallbacks}, refusals ${m.stats.scroll.refusals}` : ''}${m.stats ? `; clone p50/p95 ${m.stats.cloneMsP50}/${m.stats.cloneMsP95} ms, decode ${m.stats.decodeMsP50}/${m.stats.decodeMsP95} ms` : ''} -> ${m.verdict}`;
+  console.log(`smoothness ${sm.verdict?.overall ?? 'incomplete'}: DPR ${sm.device?.devicePixelRatio}, raster scale ${sm.device?.rasterScale}, canvas ${sm.device?.canvas?.backingStore?.join('x')}, ${sm.device?.pointer} pointer`);
+  for (const k of ['round', 'square']) if (sm.script?.[k]) console.log(`  script ${k.padEnd(6)} ${line(sm.script[k])}`);
+  if (sm.touch) console.log(`  ${sm.touch.input} (${sm.touch.outcome}) ${sm.touch.moves ? line(sm.touch) : 'no movement'}`);
+  if (sm.pixels) console.log(`  pixels worst ${sm.pixels.worst} (${sm.pixels.composedJumps}/${sm.pixels.jumps} composed, ${sm.pixels.repaintedJumps} repainted when settled) -> ${sm.pixels.verdict}`);
+}
 console.log('');
 for (const c of r.checks ?? []) console.log(`${c.verdict.padEnd(7)} ${c.id.padEnd(26)} ${c.text}`);
 if (r.errors?.length) { console.log('\npage errors:'); for (const e of r.errors) console.log(`  ${e.where ?? ''} ${e.name ?? ''}: ${e.message}`); }
