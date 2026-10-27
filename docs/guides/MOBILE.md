@@ -46,7 +46,10 @@ reached the drawable is rastered at a lower scale and reported (`surface-size`),
   pans the visual viewport so the field stays visible (measured with Chromium 158: 754 -> 442 px).
 - **Selection.** A long press selects a word in the live field; the system selection handles and menu belong to the live element and line up with the drawn copy.
 - **Selecting text drawn outside fields.** The desktop gesture (a double click on the canvas itself, row `selection-through-canvas`) is a mouse gesture and was not measured with touch; on a phone, long-press a drawn field instead.
-- **Scrolling.** A finger drag over a drawn scroller scrolls the live scroller, not the page; a drag over the canvas outside drawn scrollers scrolls the page.
+- **Scrolling.** A finger drag over a drawn scroller scrolls the live scroller, not the page; a drag over the canvas outside drawn scrollers scrolls the page. A scroller
+  that the scroll compositor accepts is drawn from its cached pages at each step (on iOS too), and the exact picture follows when the scroll stops. The scroll-and-resize
+  example under a scripted scroll on the iOS Simulator (iPhone 17 Pro, DPR 3): 58 canvas updates per second instead of 30 before 0.1.0-preview.9. The Simulator runs on
+  the Mac's CPU, so a phone is slower.
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
 - **Effects.** The effect plugins re-target touch input like mouse input (unit-tested with touch pointer events), but neither simulator has a WebGPU adapter, so effects
   with touch were not run.

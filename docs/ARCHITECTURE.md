@@ -170,7 +170,7 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
 - Measured/verified consequences: layout of children equals plain DOM in the same box (the pixel oracle compares against a plain-DOM twin, G-pixel-*).
 
 **Consequences.** (+) native input, selection, IME, cursor shapes, scroll physics, a11y with real geometry. (-) the facade is a compatibility
-surface to keep tested (page-structure and framework fixtures, G-page-structure and G-framework-smoke); `display:none` canvas hides the layer; anchor positioning is Chromium-only (consistent with the Chrome-only first release);
+surface to keep tested (page-structure and framework fixtures, G-page-structure and G-framework-smoke); `display:none` canvas hides the layer; the layer needs CSS anchor positioning, which every supported engine has (an engine without it is refused, `browser`);
 the containing-block chain of an absolute layer differs from the canvas's (ADR-L).
 
 ### ADR-B: retained-surface model
@@ -371,7 +371,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
     Rows of fractional height (36.6 css px) on the same fixture: a page placed a box edge one css px away from the tile at the same offset on desktop Safari 27 at DPR 2 (one
     row border 2 device rows higher and a badge's antialiased edge, 0.1-0.17 % of the canvas), and Chromium showed a few device px of text drift. On Chromium the cause is
     the spacers of the pruned rows (see "Pruned pages and tiles" below); the same fix is engine-agnostic (WebKit lays out in LayoutUnits of 1/64 css px and truncates too)
-    but is NOT VERIFIED on WebKit: the desktop Safari oracle timed out (a Safari window that is not frontmost does not paint).
+    and it holds there: with it, desktop Safari 27 at DPR 2 composes frames pixel-equal to the settled tile on both lists of that fixture, the scroll-and-resize example
+    and the F2 scroll fixture (composed-vs-settled oracle, 9 composed jumps per page, 2026-10-27; the oracle needs the Safari window in front, a background one does not paint).
   - **Page build cost.** The pages of one scroller cut the same flow container at different rows; the truncation test (one Range rect over the rest of the container, about
     2.5 ms over 2000 rows) is measured once per scroller in blocks of 64 children (`CaptureRequest.scroll.memo`, `clone.js` `tailClear`), and each page measures only the rest of
     its own block. The memo lives with the scroller's pages, is emptied by every damage inside the content, and is read only while the cut row and the last row sit where they
