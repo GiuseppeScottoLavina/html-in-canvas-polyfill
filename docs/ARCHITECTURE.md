@@ -376,6 +376,18 @@ Tick RUN(now), for each canvas record in reverse tree order:
     its own block. The memo lives with the scroller's pages, is emptied by every damage inside the content, and is read only while the cut row and the last row sit where they
     were measured. A Range rect per child instead cost 30 times more (a 65 ms first build). 2000-row list, trusted wheel stream, headed Chrome 155: page builds p50 6.5 -> 5.2 ms,
     main thread 28.8 % -> 26.5 %; the per-element `frameRect` reads of the compositor are per pinned element (one or two per build), not per row.
+  - **Pruned pages and tiles.** Pages and tiles of a long list are pruned (node budget, long-scroller window), and each prunes other rows: a row lands where the composition
+    expects it only if a spacer lays out at exactly the height of what it stands for. The engine truncates a length to LayoutUnits (1/64 device px in Chromium: `height:20.078px`
+    lays out as 20.0625 px at DPR 1) and the CSSOM keeps 6 significant digits of a length (`1024.771px` reads back `1024.77px`), so a live height rounded to the nearest 0.001 px
+    was often one LayoutUnit short and moved every row after it: up to a device pixel between a composed frame and the settled tile (headless Chrome, 36.6 px rows: 3,153 pixels
+    in one of 12 composed frames at DPR 2; 5,665 in 3 of 13 at DPR 3). Spacer lengths are put on the live grid, rounded up (to 0.001 px), and a spacer or a merged run stays
+    below 1000 px (`clone.js` `layoutPx`, `onLiveGrid`, `EXACT_MAX`); after it 0 pixels differ in every composed frame. This holds where the clone lays out at the live scale
+    (raster scale = device pixel ratio). At a REDUCED raster scale (above `maxDpr`, which is 2.5 on desktops, so headless Chrome at DPR 3; a surface over its pixel budget; a
+    canvas grid other than the device pixels) the clone snaps border widths to other whole pixels than the page (a 1 px border is 2 surface px at 2.5, 3 device px live): a row
+    of the clone is not the height of its live-measured spacer, and composed frames still differ from the settled tile by several device pixels (the mobile fixture at DPR 3 on
+    desktop: 35,000-165,000 pixels per frame). Composition is not refused there: in headless Chrome at DPR 3 with 4x CPU throttling, the plain path instead of it fell from
+    60 to 16-30 canvas updates per second under touch scrolls, with 84-119 of about 167 moves unpainted (0 composed); at 1x both kept 60 (test/bench/scroll-jank.mjs, a
+    variant of the store that refuses). Refusing, or a desktop `maxDpr` of 3, is an open decision.
   - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
     the scroller's content ('backdrop': border, background and whatever lies behind the corners); the composition draws the backdrop in the corner squares and the pages inside the
     antialiased rounded clip of the inner border radii with `copy` (which lerps by the clip coverage): within 0.1 % of a live capture in the unit oracle. Not with a classic
