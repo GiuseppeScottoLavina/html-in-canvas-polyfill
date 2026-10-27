@@ -46,3 +46,57 @@ test('a pruned grid item keeps its id: an id-placed spacer (#bar spans both colu
   assert.ok(/data-hic-sp/.test(decodeURIComponent(pruned.url)), 'the bar outside the crop became a spacer');
   assert.ok(diffFraction(await rasterize(pruned), full) <= 0.002, `the pruned tile shows the list and the side where they are (${(diffFraction(await rasterize(pruned), full) * 100).toFixed(2)} %)`);
 });
+
+// Chromium scroll compositor drift (work/chromium-drift): a spacer must reach the clone at the live height to the LayoutUnit (1/64 device px). Tiles and scroll
+// compositor pages prune different rows, so any spacer error moved the same row between a composed frame and the settled tile.
+// Rows of line-height 20.08px are 20.078125 px (the engine truncates 1285.12 LayoutUnits to 1285), 21.078125 px with their border.
+const fracRows = '.l{width:200px;font:12px sans-serif}.c{line-height:20.08px;border-bottom:1px solid #345;background:#fafafa}';
+
+test('spacers keep the live height to the LayoutUnit: rows after 100 pruned rows of 21.078125 px are where the full tile has them', async () => {
+  // :nth-child keeps one spacer per row. Rounded to the nearest 0.001 px (21.078) and truncated by the engine, each spacer was 1/64 px short: 1.6 px after 100 rows
+  const m = mount(`<div class="l" drawable>${rows(140)}</div>`, { css: `${fracRows}.c:nth-child(even){background:#dde6ff}`, height: 3100 });
+  const el = m.layerEl.firstElementChild;
+  const rect = { x: 0, y: 2200, width: 200, height: 160 };
+  const full = await rasterize(m.capture(m.request(el, { rect })));
+  const prunedResult = m.capture(m.request(el, { rect, prune: true }));
+  assert.ok((decodeURIComponent(prunedResult.url).match(/data-hic-sp/g) ?? []).length >= 100, 'the rows above the crop became spacers, one per row');
+  const pruned = await rasterize(prunedResult);
+  assert.ok(inkFraction(full) > 0.5);
+  const d = diffFraction(pruned, full);
+  assert.ok(d <= 0.002, `the pruned tile shows the rows where the full tile does (${(d * 100).toFixed(2)} % differ)`);
+});
+
+test('a merged spacer run reaches the clone to the LayoutUnit: runs stay below 1000 px (the CSSOM keeps 6 significant digits of a length)', async () => {
+  // no sibling selector: the rows above the crop merge. One 2108 px run was written 2107.81px (2107.8125 rounded by the CSSOM), a LayoutUnit short
+  const m = mount(`<div class="l" drawable>${rows(140)}</div>`, { css: fracRows, height: 3100 });
+  const el = m.layerEl.firstElementChild;
+  const rect = { x: 0, y: 2200, width: 200, height: 160 };
+  const url = m.capture(m.request(el, { rect, prune: true })).url;
+  const svg = new DOMParser().parseFromString(decodeURIComponent(url.slice(url.indexOf(',') + 1)), 'image/svg+xml');
+  const list = svg.querySelector('.l');
+  const lead = [];
+  for (const c of list.children) { if (!c.hasAttribute('data-hic-sp')) break; lead.push(Number(/(?:^|;)\s*height:\s*([\d.]+)px/.exec(c.getAttribute('style') ?? '')?.[1])); }
+  const first = list.children[lead.length];
+  const live = el.children[[...list.children].slice(0, lead.length).length && Number(first.textContent.replace(/\D+/g, ''))];
+  const want = Math.round((live.getBoundingClientRect().top - el.getBoundingClientRect().top) * 64);
+  const units = lead.reduce((a, h) => a + Math.trunc(h * 64), 0);
+  assert.ok(lead.length >= 3 && lead.every((h) => h > 0 && h < 1000), `runs below 1000 px: ${lead.join(', ')}`);
+  assert.equal(units, want, 'the spacers before the first kept row lay out at its live offset, in LayoutUnits');
+});
+
+test('layoutPx rounds a live length up so the engine truncates it back to the same LayoutUnit (below 1000 px, scales up to 15); onLiveGrid removes client-rect noise', async () => {
+  const { layoutPx, onLiveGrid } = await import('/src/snapshot/capture/clone.js');
+  assert.equal(layoutPx(21.078125), '21.079');
+  assert.equal(layoutPx(36.6), '36.6');
+  assert.equal(layoutPx(36.6 + 1e-12), '36.6');
+  assert.equal(layoutPx(1024.7708), '1024.78', 'above 1000 px: up, to the 6 significant digits the CSSOM keeps');
+  assert.equal(layoutPx(123456.7), '123457');
+  for (const scale of [1, 1.25, 1.5, 2, 2.5, 3, 4, 15]) {
+    for (let m = 1; m < 64 * 999 * scale; m += 997) {
+      const v = m / (64 * scale);
+      assert.equal(Math.trunc(Number(layoutPx(v)) * scale * 64 + 1e-9), m, `${m} LayoutUnits at scale ${scale}`);
+    }
+  }
+  assert.equal(onLiveGrid(7027 / 192 + 0.0004, 3), 7027 / 192, 'noise of 0.08 LayoutUnit at DPR 3 is removed');
+  assert.equal(onLiveGrid(36.6025, 3), 36.6025, 'a value off the grid (another engine, a scaled layer) is left alone');
+});

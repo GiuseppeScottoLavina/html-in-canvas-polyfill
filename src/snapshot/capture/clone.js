@@ -66,6 +66,39 @@ const ROOT_NEUTRAL = 'display:block!important;position:relative!important;box-si
 const n3 = (v) => String(+v.toFixed(3));
 
 /**
+ * A spacer (or a merged run of them) stays below this many css px, so that its height reaches the clone to 0.001 px: the CSSOM serialises a length with 6 significant
+ * digits (Chromium 155: `height:1024.771px` reads back `1024.77px`), and 0.01 px is more than a LayoutUnit at DPR 2 (1/128 px) and 3 (1/192 px).
+ */
+const EXACT_MAX = 1000;
+
+/**
+ * PURE. A live length measured from client rects (css px), on the live layout's grid: Blink lays out in LayoutUnits of 1/64 DEVICE pixel (1/(64 dpr) css px), and a client
+ * rect is a float, so a difference of two far-off edges (a merged spacer run 5000 px down the page) carries ~0.1 LayoutUnit of noise. A value within 0.2 LayoutUnit of the
+ * grid is put on it; anything else (another grid, a scaled layer) is left alone.
+ * @param {number} v css px @param {number} dpr @returns {number}
+ */
+export function onLiveGrid(v, dpr) {
+  const g = 64 * (dpr > 0 ? dpr : 1);
+  const n = Math.round(v * g);
+  return Math.abs(v * g - n) < 0.2 ? n / g : v;
+}
+
+/**
+ * PURE. A live length (css px) as it is written into the clone so that the engine lays it out at the live length again. The engine converts a length to LayoutUnits by
+ * TRUNCATION (Chromium 155: `height:20.078px` lays out as 20.0625 px at DPR 1, 1284/64; 20.079px as 20.078125), so the length is rounded UP: to 0.001 px below
+ * EXACT_MAX, where the excess stays under one LayoutUnit at any scale below 15 and the clone gets the live LayoutUnit exactly; above it to the 6 significant digits the
+ * CSSOM keeps (0.01 px at 1000-9999: at least the live length, at most 0.01 px more). Rounded to the nearest 0.001 instead (the old n3), a spacer standing for pruned rows
+ * came out one LayoutUnit short whenever the rounding went down, and every row after it moved: tiles and scroll compositor pages prune different rows, so the same row
+ * landed a device pixel apart between a composed frame and the settled tile (headless Chrome, DPR 2 and 3).
+ * @param {number} v css px @returns {string}
+ */
+export function layoutPx(v) {
+  const d = v > 0 ? Math.max(0, Math.min(3, 5 - Math.floor(Math.log10(v)))) : 3;
+  const k = 10 ** d;
+  return String(Math.ceil(v * k - 1e-6) / k);
+}
+
+/**
  * @typedef {Object} Ctx
  * @property {HicEnv} env
  * @property {CaptureRequest} req
@@ -154,7 +187,8 @@ function spacerFor(ctx, src, r) {
   const sp = ctx.doc.importNode(src, false);
   cleanAttributes(sp);
   sp.setAttribute('data-hic-sp', '');
-  appendInlineStyle(sp, `width:${n3(r.width)}px!important;height:${n3(r.height)}px!important`);
+  const dpr = ctx.env.window.devicePixelRatio;
+  appendInlineStyle(sp, `width:${layoutPx(onLiveGrid(r.width, dpr))}px!important;height:${layoutPx(onLiveGrid(r.height, dpr))}px!important`);
   ctx.tokens.add(sp);
   return sp;
 }
@@ -170,7 +204,8 @@ function spacerInfo(ctx, k, window, cs) {
   // a rect without area is never a spacer: the laid-out test is left to its size
   const live = ctx.frame(k, true);
   const r = live && ctx.shift ? { x: live.x, y: live.y + ctx.shift, width: live.width, height: live.height } : live;
-  if (!r || r.width <= 0 || r.height <= 0) return null;
+  // a box of EXACT_MAX px or more is cloned (its children may still be spacers): its spacer's height would not reach the clone to the LayoutUnit
+  if (!r || r.width <= 0 || r.height <= 0 || r.height >= EXACT_MAX) return null;
   if ((!ctx.keep || intersectRect(r, ctx.keep)) && (!window || intersectRect(r, window))) return null;
   if (ctx.ix.focusWithin.has(k) || k.contains(ctx.drawable)) return null;
   return { r, cs };
@@ -187,11 +222,16 @@ const MERGEABLE = /^(block|flow-root|flex|grid)$/;
 /** @param {CSSStyleDeclaration} cs @returns {boolean} the element increments no counter (a merged run would number what follows differently) */
 const countsNothing = (cs) => cs.counterIncrement === 'none' || cs.counterIncrement === '';
 
-/** @param {SpacerRun|null} run @param {Element} k @param {{r: Rect, cs: CSSStyleDeclaration}} info @returns {boolean} true when `k` was folded into the run */
-function extendRun(run, k, info) {
+/**
+ * @param {SpacerRun|null} run @param {Element} k @param {{r: Rect, cs: CSSStyleDeclaration}} info @param {number} dpr
+ * @returns {boolean} true when `k` was folded into the run (a run stays below EXACT_MAX px: a longer list is a few runs)
+ */
+function extendRun(run, k, info, dpr) {
   if (!run || run.tag !== k.localName || !MERGEABLE.test(info.cs.display) || !countsNothing(info.cs)) return false;
   if (Math.abs(info.r.x - run.x) > 0.5 || Math.abs(info.r.width - run.width) > 0.5 || info.r.y < run.y) return false;
-  run.el.style.setProperty('height', `${n3(info.r.y + info.r.height - run.y)}px`, 'important');
+  const height = onLiveGrid(info.r.y + info.r.height - run.y, dpr);
+  if (height >= EXACT_MAX) return false;
+  run.el.style.setProperty('height', `${layoutPx(height)}px`, 'important');
   run.el.style.setProperty('margin-bottom', info.cs.marginBottom, 'important');
   return true;
 }
@@ -317,7 +357,7 @@ function cloneChildList(ctx, src, clone, window, srcStyle) {
     const info = cs ? spacerInfo(ctx, el, window, cs) : null;
     if (info) {
       ctx.nodes += 1 + el.getElementsByTagName('*').length;
-      if (blockParent && extendRun(run, el, info)) continue;
+      if (blockParent && extendRun(run, el, info, ctx.env.window.devicePixelRatio)) continue;
       const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r));
       clone.appendChild(sp);
       run = blockParent && MERGEABLE.test(info.cs.display) && countsNothing(info.cs) ? { el: sp, tag: el.localName, x: info.r.x, y: info.r.y, width: info.r.width } : null;
@@ -413,7 +453,9 @@ function truncation(ctx, src, kids) {
   const content = cs.boxSizing !== 'border-box';
   const h = size.height - (content ? n(cs.paddingTop) + n(cs.paddingBottom) + n(cs.borderTopWidth) + n(cs.borderBottomWidth) : 0);
   const w = size.width - (content ? n(cs.paddingLeft) + n(cs.paddingRight) + n(cs.borderLeftWidth) + n(cs.borderRightWidth) : 0);
-  const pin = `min-height:${n3(h)}px!important;` + (rowItem ? `width:${n3(w)}px!important;min-width:${n3(w)}px!important;flex:0 0 auto!important;` : '');
+  const dpr = win.devicePixelRatio;
+  const ph = layoutPx(onLiveGrid(h, dpr)), pw = layoutPx(onLiveGrid(w, dpr));
+  const pin = `min-height:${ph}px!important;` + (rowItem ? `width:${pw}px!important;min-width:${pw}px!important;flex:0 0 auto!important;` : '');
   return { index, pin };
 }
 
