@@ -109,6 +109,20 @@ function outsideCorner(x, y, w, h, r) {
 }
 
 /**
+ * PURE. The layout grid of the snapshot image on an engine whose pages the compositor can reproduce (ScrollPlan.grid), or undefined when it does not compose there.
+ * - Chromium lays the image out at device scale (svg-builder.js scaleMode 'zoom'): edges and scroll offsets land on surface pixels. No grid (0).
+ * - WebKit lays it out at css scale and a CSS transform scales it ('transform'): every box edge is snapped to whole css px and a scroll offset is rendered at whole
+ *   css px, then scaled. Measured in Mobile Safari 26.4 at DPR 3 (test/bench/scroll-jank-ios.mjs oracle): pages at the device-pixel offsets of the Chromium path
+ *   came out one device pixel lower than the tile at the same offset, and the port one device row taller. Grid 1.
+ * - Gecko (viewBox scaling) is not verified: no composition.
+ * @param {string} engine
+ * @returns {number|undefined}
+ */
+export function composeGrid(engine) {
+  return engine === 'chromium' ? 0 : engine === 'webkit' ? 1 : undefined;
+}
+
+/**
  * Plan the composition of `scroller` (a vertical scroller inside `drawable`, or the drawable itself). Expensive (a computed-style scan of the subtree and a hit-test grid):
  * the store caches it until something other than this scroller's own scrolling damages the drawable.
  * @param {Document} doc @param {LiveLayer} layer @param {Element} scroller @param {Element} drawable
@@ -125,12 +139,13 @@ export function planScrollPages(doc, layer, scroller, drawable) {
 /**
  * planScrollPages in steps: the scan of a large scroller yields after every SCAN_STEP elements, so the store can spread it over several post-frame tasks
  * (Capture.scrollPlan). A step that finds the scroller changed in between answers null (the store plans it again later).
- * @param {Document} doc @param {LiveLayer} layer @param {Element} scroller @param {Element} drawable
+ * @param {Document} doc @param {LiveLayer} layer @param {Element} scroller @param {Element} drawable @param {string} [engine]  the engine (tests pass one)
  * @returns {Generator<void, ScrollPlan|null, void>}
  */
-export function* planSteps(doc, layer, scroller, drawable) {
+export function* planSteps(doc, layer, scroller, drawable, engine = currentEngine().engine) {
   const win = doc.defaultView;
-  if (!win || currentEngine().engine !== 'chromium' || layer.nearestDrawable(scroller) !== drawable && scroller !== drawable) return null;
+  const grid = composeGrid(engine);
+  if (!win || grid === undefined || layer.nearestDrawable(scroller) !== drawable && scroller !== drawable) return null;
   const s = /** @type {HTMLElement} */ (scroller);
   const cs = win.getComputedStyle(s);
   // the bar gutters from whole-pixel sizes: offsetWidth and clientWidth are rounded each on its own, so a fractional layout (a 400.4 px track at DPR 1.25: 400 and 399)
@@ -202,6 +217,8 @@ export function* planSteps(doc, layer, scroller, drawable) {
   if (!portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round)) return null;
   let bar = null;
   if (gutterX > 0.5) {
+    // a classic bar is composed from the Chromium bar geometry (the thumb moves by chromiumVerticalBar / verticalBar); WebKit's own bar is not verified
+    if (engine !== 'chromium') return null;
     const f = scrollFacts(s, cs);
     if (!f || !f.scrollableY) return null;
     const look = chromiumBarLook(win, s, cs, f.styled);
@@ -209,7 +226,10 @@ export function* planSteps(doc, layer, scroller, drawable) {
       : verticalBar(f.gv, s.clientHeight, s.scrollHeight, f.styled, !f.styled && !!parseScrollbarColor(cs.scrollbarColor), f.styled ? styledMinThumb(win, s) : 0);
     bar = { gutter: { x: port.x + (f.cw ?? s.clientWidth), y: port.y, width: f.gv, height: s.clientHeight }, ...v };
   }
-  return { port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round, clear: (rects) => clearOver(doc, layer, s, port, rects) };
+  return {
+    port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
+    ...(grid ? { grid } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, clear: (rects) => clearOver(doc, layer, s, port, rects),
+  };
 }
 
 /**

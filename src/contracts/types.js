@@ -572,6 +572,9 @@ export {};
  * @property {{width: number, height: number}} [client]  clientWidth / clientHeight when planned (whole css px; the port is the padding box at its layout size); absent = the port's size
  * @property {{tl: {x: number, y: number}, tr: {x: number, y: number}, br: {x: number, y: number}, bl: {x: number, y: number}}|null} [round]  inner radii of a rounded padding box (the port and a classic bar gutter; css px); null/absent = square
  * @property {(rects: Rect[]) => boolean} [clear]  hit test: true when nothing outside the scroller covers the port inside these rects (frame css px), now
+ * @property {boolean} [opaque]  the scroller's background colour is opaque: every page pixel is (a page renders the port with square corners)
+ * @property {number} [grid]  css px: the snapshot image snaps box edges and scroll offsets to multiples of it in its layout coordinates (WebKit: 1, scroll-pages.js
+ *   composeGrid); absent = to surface pixels (Chromium). Every rect, page offset and row of the composition is snapped the same way (scroll-compose.js snapPx, rowOf)
  */
 
 /** @typedef {(req: CaptureRequest) => CaptureResult} CaptureFn  SYNCHRONOUS part of a capture: clone + css + serialise + encode to a data: URL. Decode is the store's job. Must not throw: failures become result.unsupported + a placeholder. */

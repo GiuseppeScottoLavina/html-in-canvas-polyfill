@@ -149,11 +149,12 @@ try {
         await s.evaluate('window.__jank.stop()');
         const res = await s.evaluate('window.__jank.oracle([100, 130, 400, 437, 800, 851, 20, 61, 1203, 1170])', { timeoutMs: 60000 });
         const worst = Math.max(...res.map((x) => x.diff));
-        out.runs.push({ name, mode, rep, oracle: res, worst });
+        const scroll = (await s.evaluate(STATS))?.scroll ?? null;
+        out.runs.push({ name, mode, rep, oracle: res, worst, scroll });
         // --dump: the first composed frame that differs and its settled canvas, as PNG files next to the results
         const k = res.findIndex((x) => x.diff > 0);
         if (process.argv.includes('--dump') && k >= 0) for (const [j, tag] of [[2 * k, 'composed'], [2 * k + 1, 'settled']]) writeFileSync(resolve(PROJECT_ROOT, `.scratch/results/oracle-${name}-${tag}.png`), Buffer.from((await s.evaluate(`window.__jank.shot(${j})`)).split(',')[1], 'base64'));
-        console.log(`${name.padEnd(8)} oracle composed ${res.filter((x) => x.composed).length}/${res.length} worst diff ${(worst * 100).toFixed(3)} % ${JSON.stringify(res)}`);
+        console.log(`${name.padEnd(8)} oracle composed ${res.filter((x) => x.composed).length}/${res.length} worst diff ${(worst * 100).toFixed(3)} % ${JSON.stringify(res)} scroll ${JSON.stringify(scroll)}`);
         continue;
       }
       for (const dir of [1, 1, -1]) {
