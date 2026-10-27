@@ -1282,7 +1282,7 @@
               const left = limit - (performance.now() - start);
               if (left <= 0) { outcome = 'timeout'; break; }
               const remain = Math.max(0, Math.ceil((need - active) / 1000));
-              say(active > 0 ? `Keep ${touch ? 'flicking' : 'scrolling'} the Rounded list: ${remain} s` : `Your turn: ${touch ? 'flick' : 'scroll'} the Rounded list up and down (${remain} s of scrolling needed).`, 'go');
+              say(active > 0 ? `Keep ${touch ? 'flicking' : 'scrolling'} the Rounded list: ${remain} s` : `Your turn: ${touch ? 'flick' : 'scroll'} the Rounded list up and down (${remain} s of scrolling needed; without it this part ends by itself in ${Math.ceil(left / 1000)} s).`, 'go');
               ui.status(active > 0 ? `Keep ${touch ? 'flicking' : 'scrolling'}... ${remain} s` : `Waiting for you to ${touch ? 'flick' : 'scroll'} the Rounded list (this part ends by itself in ${Math.ceil(left / 1000)} s).`);
               ui.meter(active / need);
               await sleep(250);
@@ -1314,7 +1314,8 @@
             ${row('Scroll frames', parts.pixels, out.pixels.worst == null ? 'not measured' : `at most ${round(100 * out.pixels.worst, 3)} % of the pixels differ from the settled picture`)}
             </table><p class="step-meta">Green: smooth. Amber: some frames skipped or a slight drift. Red: visible stutter or wrong frames. The numbers are in the report.</p>`,
           buttons: [{ id: 'continue', label: 'Continue', primary: true, onClick: () => ctx.next('continue') }] });
-          say(`Result: ${SMOOTH_WORDS[out.verdict.overall]}.`);
+          say(`Result: ${SMOOTH_WORDS[out.verdict.overall]}. The details are at the top of the page.`);
+          $('ft-step').scrollIntoView({ block: 'start' }); // on a phone the step card with the summary and Continue is above the canvas
           await Promise.race([ctx.wait(), sleep(testOptions().summaryMs ?? 120000)]);
           return 'done';
         } finally {

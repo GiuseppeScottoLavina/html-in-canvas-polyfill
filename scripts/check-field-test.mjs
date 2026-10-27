@@ -2,7 +2,7 @@
 // G-field-test: the field test page (examples/field-test/) runs end to end in HEADLESS Chrome and produces a valid report.
 //
 //   npm run build && npm run test:field
-//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing,smooth-drop,smooth-shift] [--headed] [--scrollbars=overlay|classic]
+//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing,smooth-drop,smooth-shift,phone] [--headed] [--scrollbars=overlay|classic]
 //
 // Runs (each in a fresh page of one headless Chrome, trusted input through CDP):
 //   clean    every step with an accepted tab capture (--auto-select-tab-capture-source-by-title picks this tab): the capture calibrates,
@@ -21,6 +21,8 @@
 //            does not scroll: the touch part must end by its (shortened) timeout and be recorded as skipped.
 //   smooth-shift  POSITIVE CONTROL of the composed-vs-settled oracle: the first canvas paint after each scroll of a list is drawn 1 px lower (a composed
 //            frame that lands a pixel off): the pixel check must be red. The tester presses "I cannot scroll here": the touch part is skipped.
+//   phone    the scroll smoothness step on an emulated phone (390 x 844 css px, DPR 3, touch): the layout fits the phone's width, the step asks for a
+//            finger, and touch flicks with their fling (Input.synthesizeScrollGesture) over the Rounded list are measured as the tester's scrolling.
 // Results: .scratch/results/field-test-<timestamp>/ (the downloaded report of each run, a screenshot of the finished page, a summary JSON).
 // Headless by default; --headed runs the same steps in a visible window (it takes the screen focus).
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -232,7 +234,7 @@ function assertSmooth(run, r, { touch = 'done', expect = { script: 'pass', pixel
   if (expect.pixels) run.check('smoothness: every pixel jump measured (12 jumps, each repainted and compared)', sm.pixels.jumps === 12 && [...sm.pixels.round.jumps, ...sm.pixels.square.jumps].every((j) => typeof j.diff === 'number'), sm.pixels);
   if (expect.pixels) run.check(`smoothness: pixel verdict ${expect.pixels}`, r.checks.find((c) => c.id === 'smoothness.pixels')?.verdict === expect.pixels, { check: r.checks.find((c) => c.id === 'smoothness.pixels'), worst: sm.pixels.worst });
   run.check(`smoothness: the tester's part ended as '${touch}'`, sm.touch.outcome === touch, { outcome: sm.touch.outcome, moves: sm.touch.moves, activeMs: sm.touch.activeMs });
-  if (touch === 'done') run.check(`smoothness: the wheel stream was measured as the tester's scrolling (verdict ${expect.touch})`, sm.touch.moves >= 60 && sm.touch.activeMs >= 6000 && sm.touch.verdict === expect.touch, { ...sm.touch, stats: undefined });
+  if (touch === 'done') run.check(`smoothness: the scroll input was measured as the tester's scrolling (verdict ${expect.touch})`, sm.touch.moves >= 60 && sm.touch.activeMs >= 6000 && sm.touch.verdict === expect.touch, { ...sm.touch, stats: undefined });
   else run.check("smoothness: the tester's part without scrolling records no measurement verdict", r.checks.find((c) => c.id === 'smoothness.touch')?.verdict === 'skipped', r.checks.find((c) => c.id === 'smoothness.touch'));
 }
 
@@ -251,6 +253,44 @@ async function runSmoothControl(browser, site, name, { init, scroll, touch, expe
   await skipUntil(page, 'finish');
   const r = await finishAndDownload(page, run, join(outDir, name));
   if (r) assertSmooth(run, r, { touch, expect });
+  await page.close();
+  return run;
+}
+/** the scroll smoothness step on an emulated phone, with touch flicks; the other steps are skipped */
+async function runPhone(browser, site) {
+  const run = new Run('phone');
+  const page = await browser.newPage({ reuseFirst: false });
+  await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await page.navigate(site.url + '/examples/field-test/');
+  await need(() => page.evaluate('!!window.__fieldTest'), 15000, 'the page script');
+  await press(page, 'start');
+  await waitStep(page, 'capture', 30000);
+  await skipUntil(page, 'smoothness');
+  await press(page, 'start-smooth');
+  await need(() => page.evaluate("!!document.querySelector('#ft-step-buttons [data-action=\"skip-touch\"]')"), 90000, 'the touch part of the scroll smoothness step');
+  const layout = await page.evaluate(`(() => { const c = document.getElementById('ft-canvas-smooth').getBoundingClientRect(), p = document.getElementById('ft-smooth-prompt').getBoundingClientRect();
+    return { innerWidth, innerHeight, scrollWidth: document.documentElement.scrollWidth, canvas: [c.left, c.top, c.right, c.bottom].map(Math.round), prompt: p.top, text: document.getElementById('ft-step-text').textContent.trim().slice(0, 80), coarse: matchMedia('(pointer: coarse)').matches }; })()`);
+  run.check('phone: the page fits 390 css px (no horizontal scroll) and the prompt and the whole canvas are on screen when the touch part starts',
+    layout.scrollWidth <= layout.innerWidth && layout.prompt >= 0 && layout.canvas[0] >= 0 && layout.canvas[2] <= layout.innerWidth && layout.canvas[3] <= layout.innerHeight, layout);
+  run.check('phone: the step asks for a finger flick', layout.coarse && /flick/i.test(layout.text), layout);
+  mkdirSync(join(outDir, 'phone'), { recursive: true });
+  await page.screenshot({ file: join(outDir, 'phone', 'touch-part.png') }).catch(() => {});
+  const box = await centerOf(page, '#ft-canvas-smooth .ft-round');
+  const t0 = Date.now();
+  for (let i = 0; Date.now() - t0 < 40000 && !(await page.evaluate("!!document.querySelector('#ft-step-buttons [data-action=\"continue\"]')")); i++) {
+    await page.send('Input.synthesizeScrollGesture', { x: Math.round(box.x), y: Math.round(box.y), yDistance: i % 3 === 2 ? 220 : -220, speed: 1200, gestureSourceType: 'touch', preventFling: false });
+    await H.sleep(300);
+  }
+  await page.screenshot({ file: join(outDir, 'phone', 'summary.png') }).catch(() => {});
+  await press(page, 'continue', 30000);
+  await skipUntil(page, 'finish');
+  const r = await finishAndDownload(page, run, join(outDir, 'phone'));
+  if (r) {
+    assertSmooth(run, r);
+    run.check("phone: the report records a coarse pointer and touch as the tester's input", r.scrollSmoothness?.device?.pointer === 'coarse' && r.scrollSmoothness?.touch?.input === 'touch', { device: r.scrollSmoothness?.device, input: r.scrollSmoothness?.touch?.input });
+  }
   await page.close();
   return run;
 }
@@ -354,7 +394,7 @@ async function runWithoutPolyfill(browser, site, name, setup) {
  * --scrollbars=overlay|classic sets every run.
  * @type {Record<string, 'overlay'|'classic'>}
  */
-const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay', 'smooth-drop': 'overlay', 'smooth-shift': 'overlay' };
+const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay', 'smooth-drop': 'overlay', 'smooth-shift': 'overlay', phone: 'overlay' };
 
 const RUNS = {
   clean: (b, s) => runClean(b, s),
@@ -366,6 +406,7 @@ const RUNS = {
     userAgentMetadata: { brands: [{ brand: 'Chromium', version: '120' }, { brand: 'Google Chrome', version: '120' }], fullVersion: '120.0.0.0', platform: 'macOS', platformVersion: '15.0.0', architecture: 'arm', model: '', mobile: false } })),
   missing: (b, s) => runWithoutPolyfill(b, s, 'missing', async () => {}),
   'smooth-drop': (b, s) => runSmoothControl(b, s, 'smooth-drop', { init: DROP_PAINTS, scroll: 'none', touch: 'timeout', expect: { script: 'fail' } }),
+  phone: (b, s) => runPhone(b, s),
   'smooth-shift': (b, s) => runSmoothControl(b, s, 'smooth-shift', { init: SHIFT_FIRST, scroll: 'skip', touch: 'skipped', expect: { script: 'pass', pixels: 'fail' } }),
 };
 
