@@ -204,3 +204,56 @@ test('a grid that is not a whole number of surface pixels (a reduced scale) is r
   await until(() => rig.store.isSettled(a), 3000, 'planned');
   assert.ok(rig.store.stats().scroll.refusals >= 1, 'grid 0.5 at scale 3: 1.5 surface px');
 });
+
+// Gecko (ScrollPlan.whole): the image renders a scroll offset at its exact value and snaps each box edge to surface pixels on its own, so only offsets on whole surface
+// pixels are composed; the plan vouched for the styles of the content, so a change inside it re-plans the scroller instead of dirtying its pages.
+async function geckoSetup(t, plan = {}, scale = 2) {
+  const scroller = { scrollTop: 0, nodeType: 1, localName: 'div' };
+  const rig = await makeRig(t, { scale, scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040, whole: true, opaque: true, ...plan }) });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  return { rig, a, scroller };
+}
+
+test('Gecko: a live offset on a whole surface pixel is composed, one between two (20.25 css px at scale 2) keeps the plain path', async (t) => {
+  const { rig, a, scroller } = await geckoSetup(t);
+  await warm(rig, a, scroller, ['lime', 'blue']);
+  scroller.scrollTop = 20.5;
+  assert.equal(rig.store.scrollCompose(a, scroller), true, '20.5 css px = surface row 41');
+  rig.store.commitLanded();
+  scroller.scrollTop = 20.25;
+  assert.equal(rig.store.scrollCompose(a, scroller), false, '20.25 css px = surface row 40.5: the image shows the edges of that offset rounded one by one');
+});
+
+test('Gecko: a change inside the content drops the pages and re-plans the scroller (Chromium dirties them)', async (t) => {
+  const { rig, a, scroller } = await geckoSetup(t);
+  await warm(rig, a, scroller, ['lime', 'blue']);
+  const before = rig.store.stats().scroll;
+  rig.store.markDamage(a, { x: 10, y: 35, width: 60, height: 5 }, 'hover');
+  const after = rig.store.stats().scroll;
+  assert.equal(after.dirtied, before.dirtied, 'no page was dirtied');
+  assert.equal(after.dropped, before.dropped + 1, 'the scroller was dropped');
+  scroller.scrollTop = 6;
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'cold again: planned anew');
+  rig.store.markDamage(a, { x: 80, y: 0, width: 15, height: 15 }, 'mutation');
+  assert.equal(rig.store.stats().scroll.dropped, after.dropped, 'a change beside the scroller drops nothing');
+});
+
+test('Gecko: a raster scale that is not a whole number is refused', async (t) => {
+  const { rig, a, scroller } = await geckoSetup(t, {}, 1.25);
+  rig.store.scrollCompose(a, scroller);
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'planned');
+  assert.ok(rig.store.stats().scroll.refusals >= 1, 'scale 1.25 refused');
+  assert.equal(rig.calls.filter((c) => c.scroll).length, 0, 'no page was built');
+});
+
+test('Gecko: a rounded port with a translucent background is refused (its corners are blended source-over, exact over opaque pages only)', async (t) => {
+  const round = { tl: { x: 6, y: 6 }, tr: { x: 6, y: 6 }, br: { x: 6, y: 6 }, bl: { x: 6, y: 6 } };
+  const { rig, a, scroller } = await geckoSetup(t, { round, opaque: false });
+  rig.store.scrollCompose(a, scroller);
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'planned');
+  assert.ok(rig.store.stats().scroll.refusals >= 1, 'refused');
+  assert.equal(rig.calls.filter((c) => c.scroll).length, 0, 'no page, pin or backdrop was built');
+});

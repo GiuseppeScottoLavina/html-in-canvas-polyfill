@@ -184,7 +184,7 @@ const FIREFOX_PREFS = {
   'dom.disable_open_during_load': false, 'browser.translations.automaticallyPopup': false, 'sidebar.revamp': false, 'sidebar.verticalTabs': false,
 };
 
-async function launchFirefox({ app = FIREFOX_APP, prefs = {} } = {}) {
+async function launchFirefox({ app = FIREFOX_APP, prefs = {}, headless = process.env.HIC_FIREFOX_HEADLESS === '1' } = {}) {
   if (!existsSync(GECKODRIVER)) throw new Error(`geckodriver missing at ${GECKODRIVER}: download the official release into .scratch/geckodriver-dl/ (docs/TEST-PLAN.md, G-xbrowser)`);
   const profile = mkdtempSync(join(tmpdir(), 'hic-xb-firefox-'));
   const mport = await freePort();
@@ -194,7 +194,8 @@ async function launchFirefox({ app = FIREFOX_APP, prefs = {} } = {}) {
   writeFileSync(join(profile, 'user.js'), Object.entries(all).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');
   // bounded: `open` waits while macOS shows a dialog about the application (the Gatekeeper prompt of a quarantined download, seen on the hosted macOS
   // runner, where the run then waited two hours for an answer)
-  const opened = spawnSync('open', ['-n', '-a', app, '--args', '--marionette', '-profile', profile, '-no-remote', 'about:blank'], { encoding: 'utf8', timeout: 30000 });
+  // headless (`-headless`, or HIC_FIREFOX_HEADLESS=1): no window on the machine's screen; `open -g` leaves the frontmost application where it is
+  const opened = spawnSync('open', [...(headless ? ['-g'] : []), '-n', '-a', app, '--args', ...(headless ? ['-headless'] : []), '--marionette', '-profile', profile, '-no-remote', 'about:blank'], { encoding: 'utf8', timeout: 30000 });
   if (opened.status !== 0) {
     rmSync(profile, { recursive: true, force: true });
     throw new Error(opened.error?.code === 'ETIMEDOUT' ? `open Firefox did not return in 30 s: macOS is probably showing a dialog about ${app} (a quarantined download: xattr -dr com.apple.quarantine "${app}")` : `open Firefox failed: ${opened.stderr}`);
@@ -308,9 +309,9 @@ export async function launchIosSimulator({ udid }) {
   return s;
 }
 
-/** @param {{engine:'firefox'|'safari'|'stp', width?:number, height?:number, prefs?:object}} o  'stp' = Safari Technology Preview (optional: EngineUnavailable when it cannot run) */
-export async function launchEngine({ engine, width = 1200, height = 900, prefs } = {}) {
-  const s = engine === 'firefox' ? await launchFirefox({ prefs }) : engine === 'safari' ? await launchSafari() : engine === 'stp' ? await launchSafari({ stp: true }) : null;
+/** @param {{engine:'firefox'|'safari'|'stp', width?:number, height?:number, prefs?:object, headless?:boolean}} o  'stp' = Safari Technology Preview (optional: EngineUnavailable when it cannot run); `headless` is Firefox only */
+export async function launchEngine({ engine, width = 1200, height = 900, prefs, headless } = {}) {
+  const s = engine === 'firefox' ? await launchFirefox({ prefs, ...(headless === undefined ? {} : { headless }) }) : engine === 'safari' ? await launchSafari() : engine === 'stp' ? await launchSafari({ stp: true }) : null;
   if (!s) throw new Error(`unknown engine ${engine}`);
   try { await s.setWindowSize(width, height); } catch (e) { await s.close(); throw e; }
   return s;
