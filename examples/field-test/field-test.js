@@ -1208,7 +1208,9 @@
             userAgent: navigator.userAgent, platform: platformLabel(), browser: browserLabel(), devicePixelRatio, screen: [screen.width, screen.height], viewport: [innerWidth, innerHeight],
             pointer: touch ? 'coarse' : 'fine', maxTouchPoints: navigator.maxTouchPoints ?? 0, refreshHz: report.environment?.display?.refresh?.hz ?? null,
             polyfillMode: window.__HIC__?.installed?.mode ?? null, polyfillVersion: window.HicLivePolyfill?.version ?? null, rasterScale: s0?.rasterScale ?? null,
-            canvas: { backingStore: [pair.canvas.width, pair.canvas.height], cssBox: [pair.canvas.clientWidth, pair.canvas.clientHeight] }
+            canvas: { backingStore: [pair.canvas.width, pair.canvas.height], cssBox: [pair.canvas.clientWidth, pair.canvas.clientHeight] },
+            /** the states of the drawable canvases the polyfill manages on the page */
+            drawableCanvases: (() => { try { return window.__HIC__?.installed?.report?.().canvases.map((c) => c.state) ?? null; } catch { return null; } })(),
           };
           if (!pair.drawn) { check('smoothness', 'fail', 'the scroll smoothness canvas was not drawn within 5 s'); return 'done'; }
           // 1. scripted baseline: three momentum-like scrolls of each list from requestAnimationFrame (comparable with the benches' script mode)
