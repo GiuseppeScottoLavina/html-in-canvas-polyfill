@@ -4,16 +4,25 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.8] - 2026-10-27
+
+A bug fix release for scrolling. A long composed scroll (about 3 s of uninterrupted wheel, trackpad or fling scrolling over a list drawn from cached pages) made the polyfill uninstall itself, leaving the canvas frozen until the page was reloaded; in Chrome and Edge (the only engines where scroll steps are composed), any drawn scroller that the compositor accepts could hit it. The first wheel or trackpad gesture over a drawn scroller no longer stutters, and a scroller of fractional width is composed from cached pages again instead of rebuilt at every step. The headed browser suites now run on GitHub-hosted macOS runners. The minified core grows to 332,769 bytes (116,096 gzipped).
+
 ### Added
 
 - CI on GitHub-hosted macOS runners (`.github/workflows/ci-macos.yml`): 10 of the 15 headed Chrome gates with their positive controls, the mutation suite (one mutant per gate on pull requests; the 24 mutants whose gates run there nightly and on release tags, split over four machines with the new `--shard=k/n`), the examples and documentation smoke pages that render no WebGPU, the Pages site, framework apps, hang stress and platform probe, and G-xbrowser on Firefox (all scenarios but scroll). Every run lists, as warnings, what stays local and why (`test/ci/macos-plan.mjs`): the suites that need a 120 Hz display or a fast machine for throughput checks (G-regress-paint), G-scroll-inner (an unexplained page-scroll difference seen there), WebGPU (the runner's virtual GPU presents no continuous effect frames and lost its device once), the field test (its tab capture), the WPT gate, Safari 27 and Technology Preview, and the phone simulators. `npm run test:local` runs that rest on a Mac.
 - `scripts/check-examples.mjs --only` takes `smoke:<name>` to run single documentation smoke pages.
 - `HIC_FIREFOX_PREFS` (JSON) adds Firefox prefs for a machine's G-xbrowser runs.
+- Scroll jank measurements (reported data, no thresholds): `test/bench/scroll-jank.mjs` (headed Chrome, trusted wheel and touch streams, CPU throttling) and `test/bench/scroll-jank-ios.mjs` (Mobile Safari on the iOS Simulator); see `docs/TEST-PLAN.md`.
 - `HIC_GATE_DPR` gives the gates without a device pixel ratio of their own a forced ratio (the runner's display is 1x; CI uses 2, the ratio of the screens the thresholds were set on).
+
+### Changed
+
+- The core bundle grows to 332,769 bytes minified, 116,096 gzipped (was 332,499 / 115,986), for the scroll fixes below (measured in `scripts/check-bundle.mjs`).
 
 ### Fixed
 
-- Scroll: a long scroll of a list drawn from cached pages no longer uninstalls the polyfill. Composed scroll steps were invisible to the runaway guard (which uninstalls the polyfill when the pipeline keeps committing with nothing on the page asking for it), so about 3 s of uninterrupted composed scrolling (a long wheel or trackpad scroll, a fling) tripped it: the canvas kept its last picture and stopped following the page. Reproduced on 0.1.0-preview.7 with a 3.4 s wheel scroll of a 2000-row list in headed Chrome.
+- **Serious:** a long scroll of a list drawn from cached pages uninstalled the polyfill. Composed scroll steps were invisible to the runaway guard (which uninstalls the polyfill when the pipeline keeps committing with nothing on the page asking for it), so about 3 s of uninterrupted composed scrolling (a long wheel or trackpad scroll, a fling) tripped it: the polyfill logged a console error, uninstalled itself and stayed uninstalled, so the canvas kept its last picture and stopped following the page until it was reloaded. Reproduced on 0.1.0-preview.7 with a 3.4 s wheel scroll of a 2000-row list in headed Chrome. Each composed scroll step now counts as input for the guard, as a scroll event always did.
 - Scroll: a scroller of fractional width (a grid or flex track, such as the list of the scroll-and-resize example) is composed from cached pages again. The compositor took the scrollport's size from `clientWidth` / `clientHeight`, which are rounded to whole pixels: every sticky header was one device pixel wider than that port and the scroller was refused (and at DPR 1.25 the rounding showed a scrollbar gutter of -1 px, also refused), so each scroll step rebuilt the whole list. Touch scrolling of that example without a hovering pointer (as on a phone), headed Chrome 120 Hz: canvas updates during the scroll 65 -> 115 per second at full CPU speed and 17 -> 75 with the CPU slowed 4x.
 - Scroll: the first wheel or trackpad gesture over a drawn scroller no longer starts with a stutter. The plan and the first cached pages of a scroller under the pointer were meant to be built while the pointer rests, but nothing woke the scheduler, so they waited for the first scroll event: that gesture began with a whole-scroller build inside its first frame and the planning and page builds in the frames after it. Measured (headed Chrome, 120 Hz, wheel and touch streams on four lists, CPU throttled 1x/4x/6x, 24 runs): canvas update gaps longer than 2.5 frames while the list moved 82 -> 0, main-thread tasks over 16.7 ms during the gestures 262 -> 141.
 - Test harness: launching Firefox for G-xbrowser no longer waits forever when macOS shows a dialog about the application (the first-launch prompt of a quarantined download); it fails after 30 s and names the cause. A tab that closes between being listed and being attached is replaced by a new one instead of failing the run.
@@ -181,7 +190,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.7...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.8...HEAD
+[0.1.0-preview.8]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.7...v0.1.0-preview.8
 [0.1.0-preview.7]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.6...v0.1.0-preview.7
 [0.1.0-preview.6]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.5...v0.1.0-preview.6
 [0.1.0-preview.5]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.4...v0.1.0-preview.5
