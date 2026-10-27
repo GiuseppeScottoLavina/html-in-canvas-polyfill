@@ -4,7 +4,8 @@
 <!-- The mobile gate's scrollCompose scenario (test/mobile/scenarios.mjs): two inner scrollers the scroll compositor composes, laid out on fractional css px (a 1fr / 1.3fr
      grid, rows 36.6 px tall, a 7.4 px offset), so that their edges and offsets fall between the device pixels of a DPR 3 phone.
      #round: rounded, bordered, opaque, with a sticky header (the scroll-and-resize example's inbox). #square: square, transparent (over the white root), with a sticky header.
-     ?mode=ref|poly&bundle=... (shared/boot.js); ?badges=square: square badges (G-xbrowser scrollCompose: Gecko composes no content with rounded corners) -->
+     ?mode=ref|poly&bundle=... (shared/boot.js); ?badges=square: square badges (G-xbrowser scrollCompose: Gecko composes no content with rounded corners); ?bars=none: scrollbar-width none on the lists
+     (no gutter whatever the system's scrollbars: Gecko composes no scroller with a classic bar) -->
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #eef1f6; color: #1b2330; font: 14px/1.4 system-ui, -apple-system, sans-serif; }
@@ -27,7 +28,9 @@
 </canvas>
 <div style="height:900px"></div>
 <script>
-  if (new URLSearchParams(location.search).get('badges') === 'square') document.head.insertAdjacentHTML('beforeend', '<style>.list li b { border-radius: 0; }</style>');
+  const fq = new URLSearchParams(location.search);
+  if (fq.get('badges') === 'square') document.head.insertAdjacentHTML('beforeend', '<style>.list li b { border-radius: 0; }</style>');
+  if (fq.get('bars') === 'none') document.head.insertAdjacentHTML('beforeend', '<style>.list { scrollbar-width: none; }</style>');
   for (const ol of document.querySelectorAll('.list ol')) {
     let html = '';
     for (let i = 0; i < 60; i++) html += `<li><b style="background:hsl(${(i * 37) % 360} 65% 42%)">${i}</b><span>Row ${i} amber fjord kelp</span></li>`;

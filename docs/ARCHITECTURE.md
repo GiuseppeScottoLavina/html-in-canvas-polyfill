@@ -357,7 +357,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     or refreshes. A dirty part is never composed: the step falls back to the plain path, and the fallback tile, copied from the retained surface, repairs the pages it covers (pinned
     elements, grown by the offset change since its build, and rounded corners excluded); a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is
     hit-tested (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages.
-  - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1 and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row
+  - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1, only square scrollers and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row
     where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. WebKit lays it out at css scale
     and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
     rendered at the nearest whole css px (a page asked at 133.333 shows 133; `scrollTop = 133.9` on a live WebKit scroller reads 133), then scaled. A WebKit plan carries
@@ -391,11 +391,13 @@ Tick RUN(now), for each canvas record in reverse tree order:
     content not verified (images, SVG, MathML, form controls, which the engines bundle skins with rounded backgrounds). Verified unchanged under such a cut: text, square
     solid and dashed borders, colours, linear gradients, url() backgrounds, box and text shadows, opacity, list markers, wavy underlines, nested square clips. Because the
     plan vouched for the content's styles, a change inside the content re-plans the scroller instead of dirtying its pages. (3) A raster scale that is not a whole number
-    (not verified), classic bar gutters and a rounded port with a translucent background are refused as on WebKit; an opaque rounded port is composed source-over. Oracle
-    (`G-xbrowser scrollCompose`, headless Firefox 157 at 1x): the composed-scrolling fixture with square badges and the scroll-cadence list (300 and 2000 rows, square
+    (not verified), classic bar gutters and every rounded port are refused: Gecko's own rounded clip and the canvas's clip antialias the arc differently (an opaque
+    port at a fractional position: up to 26 levels on 6 of its 168 arc pixels, more than the 2 % of the arc accepted on Chromium and WebKit; at another position at most
+    12 levels). Oracle
+    (`G-xbrowser scrollCompose`, headless Firefox 157 at 1x): the square list of the composed-scrolling fixture with square badges and the scroll-cadence list (300 and 2000 rows, square
     badges) compose 9 of 10 jumps each with no pixel differing from the settled tile; with the fixtures' rounded badges, the F2 fixture and the scroll-and-resize example
     (checkboxes in its rows) nothing is composed, and composing them anyway (the planner's content rule removed) left up to 7 pixels per frame over 16 at the badges'
-    corners (and up to 123 below 16). The rounded port of the fixture differs from the settled tile only on its antialiased arc, by at most 12 levels (about 105 pixels).
+    corners (and up to 123 below 16).
     Under a scripted rAF scroll in headless Firefox 157 at 1x (`test/bench`-style recorder, 3 strokes, 2 runs), the composable lists went from 39-71 to 110-117 canvas
     updates per second and from 25-55 to 1-3 stutters per run, and with 8 ms of extra work per frame from 52-68 to 105-111 updates per second; pages it refuses are
     unchanged (the example about 30, F2 about 24).

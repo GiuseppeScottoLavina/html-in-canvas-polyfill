@@ -235,21 +235,23 @@ const GECKO_COMPOSE_MUTANTS = {
 };
 
 /**
- * The scroll compositor on Gecko (Firefox): at a devicePixelRatio of 1 (with overlay scrollbars; classic ones are refused and the scenario reports n/a), both lists of the composed-scrolling fixture with square badges are
- * composed, and every composed frame equals the tile the snapshot settles on at that offset (outside the rounded port's corners: no pixel over 16; on its antialiased
- * arc: the G-mobile criterion). With rounded badges (the default fixture) nothing is composed: Gecko paints a corner differently once a clip edge crosses it. At another
- * ratio nothing is composed at all. The control serves mutant cores (GECKO_COMPOSE_MUTANTS) instead of sabotaging the page.
- * Desktop Safari composes on its own grid: G-mobile scrollCompose covers WebKit.
+ * The scroll compositor on Gecko (Firefox), on the composed-scrolling fixture (its lists hide their bars, `bars=none`: Gecko refuses a classic bar and the CI runner
+ * has them). At a devicePixelRatio of 1, with square badges, the square list is composed and every composed frame equals the tile the snapshot settles on at that
+ * offset (no pixel over 16); the rounded list is not (Gecko and the canvas antialias a rounded port's arc differently). With the fixture's rounded badges nothing is
+ * composed (a clip edge changes how Gecko paints a corner). At another ratio nothing is composed. The control serves mutant cores (GECKO_COMPOSE_MUTANTS) instead of
+ * sabotaging the page. Desktop Safari composes on its own grid: G-mobile scrollCompose covers WebKit.
  */
 export async function scrollCompose(ctx) {
   const { s } = ctx;
   if (s.engine !== 'firefox') { ctx.check('scrollCompose: Gecko only (WebKit: G-mobile scrollCompose; Chromium: G-scroll-cadence)', true, null, 'n/a'); return; }
-  const sels = ['#round', '#square'];
   const offsets = [100, 131, 400, 437, 800, 851, 20, 61, 1203, 1170];
-  const run = async (bundle, badges, tag) => {
+  /** @param {string} bundle @param {string|null} badges @param {string[]} sels @param {string} tag */
+  const run = async (bundle, badges, sels, tag) => {
     const u = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
     u.searchParams.set('iso', '0'); u.searchParams.set('mode', 'poly'); u.searchParams.set('bundle', bundle);
     if (badges) u.searchParams.set('badges', badges);
+    // no bar gutter whatever the system's scrollbars
+    u.searchParams.set('bars', 'none');
     await s.navigate(u.href);
     await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
     await sleep(1500);
@@ -257,36 +259,33 @@ export async function scrollCompose(ctx) {
     const parts = [];
     for (const sel of sels) parts.push(await s.evaluate(COMPOSE_ORACLE([sel], offsets), { timeoutMs: 60000 }));
     const r = { ...parts[parts.length - 1], jumps: parts.flatMap((p) => p.jumps) };
-    ctx.numbers[`scrollCompose${tag}`] = { ...r, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, live: j.live, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc })) };
+    ctx.numbers[`scrollCompose${tag}`] = { ...r, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, live: j.live, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc, max: j.max })) };
     return r;
   };
-  const gutter = (await s.evaluate(SCROLLBAR_PROBE_EXPR).catch(() => null))?.verticalGutterPx ?? null;
   const dpr = await s.evaluate('devicePixelRatio');
-  const composable = dpr === 1 && gutter === 0;
-  ctx.numbers.scrollComposeEnv = { dpr, gutter, composable };
-  // classic bars are refused on Gecko whatever the ratio (the composed bar has Chromium's thumb geometry): nothing a mutant of the composition could turn red
-  if (gutter !== 0) { ctx.check(`scrollCompose: classic scrollbars (gutter ${gutter} css px): Gecko composes no scroller with a classic bar, nothing to measure`, true, { dpr, gutter }, 'n/a'); return; }
-  const painted = (r) => r.jumps.every((j) => j.painted !== false && j.ink > 0.5);
+  const systemGutter = (await s.evaluate(SCROLLBAR_PROBE_EXPR).catch(() => null))?.verticalGutterPx ?? null;
+  const composable = dpr === 1;
+  ctx.numbers.scrollComposeEnv = { dpr, systemGutter, composable };
+  const painted = (/** @type {any} */ r) => r.jumps.every((/** @type {any} */ j) => j.painted !== false && j.ink > 0.5);
   /** @param {any} r @param {string} label */
   const judgeExact = (r, label) => {
-    const composed = r.jumps.filter((j) => j.composed);
-    const bad = composed.filter((j) => j.grid > 0);
-    const badArc = composed.filter((j) => j.offArc > 0 || j.onArc > 0.02 * j.arcPixels);
-    ctx.check(`scrollCompose ${label}: every composed frame equals the settled tile at its offset (outside the rounded corners: no pixel over 16)`, composed.length > 0 && bad.length === 0, bad.slice(0, 4), 'grid');
-    ctx.check(`scrollCompose ${label}: in the rounded corners no pixel over 16 off the antialiased arc, at most 2 % of the arc`, composed.length > 0 && badArc.length === 0, badArc.slice(0, 4), 'corner');
+    const composed = r.jumps.filter((/** @type {any} */ j) => j.composed);
+    const bad = composed.filter((/** @type {any} */ j) => j.grid > 0);
+    ctx.check(`scrollCompose ${label}: every composed frame equals the settled tile at its offset (no pixel over 16)`, composed.length > 0 && bad.length === 0, bad.slice(0, 4), 'grid');
   };
   /** @param {any} r @param {string} label */
   const judgeRefused = (r, label) => ctx.check(`scrollCompose ${label}: nothing composed (every jump painted by a build), the canvas non-blank`,
-    r.jumps.every((j) => !j.composed) && painted(r), { composed: r.jumps.filter((j) => j.composed).length, scroll: r.scroll }, 'refusal');
+    r.jumps.every((/** @type {any} */ j) => !j.composed) && painted(r), { composed: r.jumps.filter((/** @type {any} */ j) => j.composed).length, scroll: r.scroll }, 'refusal');
   if (!ctx.control) {
-    const sq = await run(ctx.bundle, 'square', 'Square');
     if (composable) {
-      const per = sels.map((sel) => sq.jumps.filter((j) => j.sel === sel && j.composed).length);
-      ctx.check(`scrollCompose square badges, DPR 1, overlay bars: each scroller composed at least 3 of its ${offsets.length} jumps (composed: ${per.join(' / ')}), every jump painted, the canvas non-blank`,
-        per.every((n) => n >= 3) && painted(sq), { per, scroll: sq.scroll }, 'surface');
-      judgeExact(sq, 'square badges');
-      judgeRefused(await run(ctx.bundle, null, 'Rounded'), 'rounded badges (a clip edge changes how Gecko paints a corner)');
-    } else judgeRefused(sq, `square badges at DPR ${dpr} (Gecko composes only at DPR 1: its SVG images lay out with 1x font metrics and borders)`);
+      const sq = await run(ctx.bundle, 'square', ['#square'], 'Square');
+      const n = sq.jumps.filter((/** @type {any} */ j) => j.composed).length;
+      ctx.check(`scrollCompose square list, square badges, DPR 1: composed in at least 3 of its ${offsets.length} jumps (composed: ${n}), every jump painted, the canvas non-blank`,
+        n >= 3 && painted(sq), { n, scroll: sq.scroll }, 'surface');
+      judgeExact(sq, 'square list, square badges');
+      judgeRefused(await run(ctx.bundle, 'square', ['#round'], 'RoundPort'), 'rounded list (Gecko and the canvas antialias a rounded port differently)');
+      judgeRefused(await run(ctx.bundle, null, ['#square'], 'RoundBadges'), 'square list, rounded badges (a clip edge changes how Gecko paints a corner)');
+    } else judgeRefused(await run(ctx.bundle, 'square', ['#square'], 'Square'), `square list, square badges at DPR ${dpr} (Gecko composes only at DPR 1: its SVG images lay out with 1x font metrics and borders)`);
     await noErrors(ctx, 'scrollCompose');
     return;
   }
@@ -296,6 +295,7 @@ export async function scrollCompose(ctx) {
   const dir = resolve(PROJECT_ROOT, '.scratch/xbrowser-mutants');
   mkdirSync(dir, { recursive: true });
   for (const [cls, edits] of Object.entries(GECKO_COMPOSE_MUTANTS)) {
+    if ((cls === 'grid') !== composable) continue;
     const m = buildMutant(text, { edits });
     if ('drift' in m) throw new Error(`scrollCompose control: mutant ${cls}: ${m.drift}`);
     const file = resolve(dir, `core-${cls}.js`);
@@ -304,11 +304,10 @@ export async function scrollCompose(ctx) {
     ctx.files[path] = file;
     const bundle = ctx.bundle.split(',').map((b) => (b === core ? path : b)).join(',');
     if (cls === 'grid') {
-      if (!composable) continue;
-      const r = await run(bundle, null, 'MutantGrid');
+      const r = await run(bundle, null, ['#square'], 'MutantGrid');
       judgeExact(r, '(mutant grid: rounded badges composed)');
       judgeRefused(r, '(mutant grid)');
-    } else if (!composable) judgeRefused(await run(bundle, 'square', 'MutantRefusal'), '(mutant refusal: composed at another ratio)');
+    } else judgeRefused(await run(bundle, 'square', ['#square'], 'MutantRefusal'), '(mutant refusal: composed at another ratio)');
   }
 }
 

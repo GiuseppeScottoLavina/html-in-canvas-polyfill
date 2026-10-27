@@ -256,9 +256,9 @@ test('Gecko: a raster scale that is not a whole number is refused', async (t) =>
   assert.equal(rig.calls.filter((c) => c.scroll).length, 0, 'no page was built');
 });
 
-test('Gecko: a rounded port with a translucent background is refused (its corners are blended source-over, exact over opaque pages only)', async (t) => {
+test('Gecko: a rounded port is refused, opaque or not (Gecko and the canvas antialias the arc differently)', async (t) => {
   const round = { tl: { x: 6, y: 6 }, tr: { x: 6, y: 6 }, br: { x: 6, y: 6 }, bl: { x: 6, y: 6 } };
-  const { rig, a, scroller } = await geckoSetup(t, { round, opaque: false });
+  const { rig, a, scroller } = await geckoSetup(t, { round, opaque: true });
   rig.store.scrollCompose(a, scroller);
   rig.pump();
   await until(() => rig.store.isSettled(a), 3000, 'planned');

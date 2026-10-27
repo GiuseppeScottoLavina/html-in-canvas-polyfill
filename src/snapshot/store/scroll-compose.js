@@ -266,8 +266,11 @@ export function createScrollCompositor(deps) {
     if (portPx.width <= 0 || portPx.height <= 0) return null;
     const live = topOf(el);
     const round = plan.round ?? null;
-    // a rounded port on a grid (WebKit) or on Gecko is composed source-over (compose()): exact over opaque pages only
-    if (round && (grid || plan.whole) && !plan.opaque) return refuse();
+    // a rounded port on a grid (WebKit) is composed source-over (compose()): exact over opaque pages only
+    if (round && grid && !plan.opaque) return refuse();
+    // Gecko: its own rounded clip and the canvas's clip antialias the arc differently (Firefox 157, an opaque port at a fractional position: up to 26 levels on 6 of
+    // its 168 arc pixels, more than the 2 % of the arc accepted on Chromium and WebKit)
+    if (round && plan.whole) return refuse();
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
     /** @type {Cache} */
@@ -632,9 +635,8 @@ export function createScrollCompositor(deps) {
     };
     // under the rounded clip on a grid (WebKit): an accelerated WebKit canvas drawing with 'copy' multiplies the source by the clip's coverage and drops the
     // destination (Mobile Safari 26.4: canvases of 200 px and more; 60 px blends like Skia), so the curve of the port came out semi-transparent (alpha 172-192).
-    // The opaque pages and pins (install) are drawn source-over the backdrop instead, which blends them by the coverage as 'copy' does in Chromium. Gecko the same way:
-    // its canvas may be accelerated or not, and source-over of an opaque page is the coverage blend on any backend
-    const over = round && (grid || c.plan.whole) ? 'source-over' : 'copy';
+    // The opaque pages and pins (install) are drawn source-over the backdrop instead, which blends them by the coverage as 'copy' does in Chromium
+    const over = round && grid ? 'source-over' : 'copy';
     ctx.save();
     try {
       ctx.globalCompositeOperation = 'copy';
