@@ -1,5 +1,5 @@
 // REPORTED DATA, no thresholds: scroll jank of drawn scrollers under trusted wheel and touch streams, at several CPU throttling rates.
-//   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--out=file] [--profile] [--touch-cold]
+//   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--out=file] [--profile] [--touch-cold] [--keep-traces]
 // Per case x rate x input, in a fresh tab: a stream of three gestures with pauses between them (the pauses let the settle tile, the plan and the page builds run, as
 // they do between a user's gestures). Measured in the page, per rAF frame: the live scroller's offset and the count of canvas paint events.
 //   moveGaps   intervals between consecutive offset changes of the live scroller during a gesture longer than 2 frame intervals (the native scroll stalled)
@@ -8,7 +8,7 @@
 // Chrome trace: RunTask > 8.33 / > 16.7 ms on the renderer main thread between marks; each long task attributed by trace slice names and, with --profile, by the
 // CPU profile samples inside it (self time per function). Snapshot stats: scroll compositor counters (composed vs fallback steps). Correctness: the settled
 // canvas is non-blank. CPU throttling (Emulation.setCPUThrottlingRate) approximates a slower device; it slows the renderer main thread only, not the GPU or raster.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as H from '../harness/index.mjs';
 
@@ -21,6 +21,7 @@ const HEADLESS = process.argv.includes('--headless');
 const PROFILE = process.argv.includes('--profile');
 /** touch streams start with the mouse pointer outside the page (a phone has no hover before the finger lands): without it the pointer rests over the scroller */
 const TOUCH_COLD = process.argv.includes('--touch-cold');
+const KEEP_TRACES = process.argv.includes('--keep-traces');
 
 const SC = '/test/gates/fixtures/scroll-cadence.html';
 /** page path, query, the drawn scroller, a script run before the measurement (refused-scroller variants) */
@@ -183,6 +184,8 @@ try {
       try { nonBlank = canvasSel ? H.pixelStats(await H.readCanvas(page, canvasSel)).nonBlank : null; } catch { nonBlank = 'unreadable'; }
       const rep_ = H.analyzeTrace(file, { windowMarks: ['m0', 'm1'], thresholdMs: H.FRAME_120, top: 3 });
       const evs = PROFILE ? H.loadTraceEvents(file) : null;
+      // a run's trace is 100-300 MB: kept only on request (a full matrix filled the disk)
+      if (!KEEP_TRACES) unlinkSync(file);
       const m0 = evs?.find((e) => e.name === 'm0' && ['R', 'I', 'i', 'b', 'n'].includes(e.ph));
       const startTs = m0?.ts ?? 0;
       const sDelta = sc0.map((a, i) => (a && sc1[i] ? Object.fromEntries(Object.entries(sc1[i]).filter(([, v]) => typeof v === 'number').map(([k, v]) => [k, v - (a[k] ?? 0)])) : null));
@@ -191,7 +194,7 @@ try {
       const long = (rep_.longFrames ?? []).map((l) => ({ at: +l.tsMs.toFixed(1), ms: +l.durMs.toFixed(1), gesture: inGesture(l), slices: l.topEvents.slice(0, 4).map(([n, d]) => `${n} ${d}`),
         ...(profile ? { js: profileSlice(profile, startTs + l.tsMs * 1000, startTs + (l.tsMs + l.durMs) * 1000), ours: profileStacks(profile, startTs + l.tsMs * 1000, startTs + (l.tsMs + l.durMs) * 1000).top } : {}) }));
       const run = { name, rate, input, rep, ...fm, runTask: rep_.runTask, long, scroll: sDelta, nonBlank, errors: page.errors({ includeWarnings: false }).slice(0, 3).map((e) => e.text ?? String(e)),
-        highLoad: load.highLoad, trace: file, ...(profile ? { ours: profileStacks(profile, startTs, startTs + 1e12).top } : {}) };
+        highLoad: load.highLoad, trace: KEEP_TRACES ? file : null, ...(profile ? { ours: profileStacks(profile, startTs, startTs + 1e12).top } : {}) };
       out.runs.push(run);
       const rt = run.runTask ?? {};
       run.longInGesture = { over8_33: long.filter((l) => l.gesture).length, over16_7: long.filter((l) => l.gesture && l.ms > 16.7).length };
