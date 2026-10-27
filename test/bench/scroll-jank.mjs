@@ -1,5 +1,5 @@
 // REPORTED DATA, no thresholds: scroll jank of drawn scrollers under trusted wheel and touch streams, at several CPU throttling rates.
-//   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--out=file] [--profile] [--touch-cold] [--keep-traces]
+//   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--dpr=N] [--out=file] [--profile] [--touch-cold] [--keep-traces]
 // Per case x rate x input, in a fresh tab: a stream of three gestures with pauses between them (the pauses let the settle tile, the plan and the page builds run, as
 // they do between a user's gestures). Measured in the page, per rAF frame: the live scroller's offset and the count of canvas paint events.
 //   moveGaps   intervals between consecutive offset changes of the live scroller during a gesture longer than 2 frame intervals (the native scroll stalled)
@@ -18,6 +18,8 @@ const RATES = arg('rates', '1,4,6').split(',').map(Number);
 const INPUTS = arg('inputs', 'wheel,touch').split(',');
 const REPS = Number(arg('reps', '1'));
 const HEADLESS = process.argv.includes('--headless');
+/** --force-device-scale-factor (the display's own ratio when absent) */
+const DPR = arg('dpr') ? Number(arg('dpr')) : undefined;
 const PROFILE = process.argv.includes('--profile');
 /** touch streams start with the mouse pointer outside the page (a phone has no hover before the finger lands): without it the pointer rests over the scroller */
 const TOUCH_COLD = process.argv.includes('--touch-cold');
@@ -122,8 +124,8 @@ async function gesture(page, input, at, dir) {
 }
 
 const srv = await H.startServer();
-const browser = await H.launchChrome({ name: 'scroll-jank', scrollbars: 'overlay', ...(HEADLESS ? { extraArgs: ['--headless=new'] } : {}) });
-const out = { at: new Date().toISOString(), chrome: browser.version?.Browser, bundle: BUNDLE, headless: HEADLESS, pointerPark: browser.pointerPark, runs: [] };
+const browser = await H.launchChrome({ name: 'scroll-jank', scrollbars: 'overlay', ...(DPR ? { dpr: DPR } : {}), ...(HEADLESS ? { extraArgs: ['--headless=new'] } : {}) });
+const out = { at: new Date().toISOString(), chrome: browser.version?.Browser, bundle: BUNDLE, headless: HEADLESS, dpr: DPR ?? null, pointerPark: browser.pointerPark, runs: [] };
 const traceDir = resolve(H.PROJECT_ROOT, '.scratch/results/traces'); mkdirSync(traceDir, { recursive: true });
 try {
   const page = await browser.newPage();
