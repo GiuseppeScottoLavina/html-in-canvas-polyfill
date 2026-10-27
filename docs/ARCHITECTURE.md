@@ -384,7 +384,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
     (1) The image document lays out with the font metrics and border widths of a 1x display whatever the page's devicePixelRatio, while the page snaps both to its device
     pixels (30 rows of 13 px text: 420 css px in the image at every ratio, 408 / 420 / 405 live at 1.25 / 1.5 / 2; 30 rows with a 1 px border: 630 in the image, 624 / 620
     live at 1.25 / 1.5), and the port, the pinned elements and the spacers come from the live layout: only a 1x page is planned (the same gap makes every Gecko snapshot at
-    another ratio differ from the page by that drift, a fidelity limit of its own). (2) A clip edge crossing a rounded corner changes how Gecko paints it (a 24 x 16.8 px box
+    another ratio differ from the page by that drift, a fidelity limit of its own). Composing at 2x anyway (the rule removed) was exact on lists whose rows have an explicit
+    line height, and on a 300-row list of 13 px text with `line-height: normal` left 12,000-267,000 pixels over 16 in each composed frame (the same list at 1x: 0). (2) A clip edge crossing a rounded corner changes how Gecko paints it (a 24 x 16.8 px box
     with 6 px corners cut 2 px below its top: its top corner pixels change by up to 159 of 255), and so does one crossing a dotted line (up to 28) or a transformed box
     (up to 25); pages cut the content at other rows than the settled tile, so such content (on an element or its `::before`, `::after`, `::first-letter`) is refused, as is
     content not verified (images, SVG, MathML, form controls, which the engines bundle skins with rounded backgrounds). Verified unchanged under such a cut: text, square
@@ -393,8 +394,11 @@ Tick RUN(now), for each canvas record in reverse tree order:
     (not verified), classic bar gutters and a rounded port with a translucent background are refused as on WebKit; an opaque rounded port is composed source-over. Oracle
     (`G-xbrowser scrollCompose`, headless Firefox 157 at 1x): the composed-scrolling fixture with square badges and the scroll-cadence list (300 and 2000 rows, square
     badges) compose 9 of 10 jumps each with no pixel differing from the settled tile; with the fixtures' rounded badges, the F2 fixture and the scroll-and-resize example
-    (checkboxes in its rows) nothing is composed, and composing them anyway (the planner's content rule removed) left up to 8 pixels per frame over 16 at the badges'
-    corners.
+    (checkboxes in its rows) nothing is composed, and composing them anyway (the planner's content rule removed) left up to 7 pixels per frame over 16 at the badges'
+    corners (and up to 123 below 16). The rounded port of the fixture differs from the settled tile only on its antialiased arc, by at most 12 levels (about 105 pixels).
+    Under a scripted rAF scroll in headless Firefox 157 at 1x (`test/bench`-style recorder, 3 strokes, 2 runs), the composable lists went from 39-71 to 110-117 canvas
+    updates per second and from 25-55 to 1-3 stutters per run, and with 8 ms of extra work per frame from 52-68 to 105-111 updates per second; pages it refuses are
+    unchanged (the example about 30, F2 about 24).
   - **Page build cost.** The pages of one scroller cut the same flow container at different rows; the truncation test (one Range rect over the rest of the container, about
     2.5 ms over 2000 rows) is measured once per scroller in blocks of 64 children (`CaptureRequest.scroll.memo`, `clone.js` `tailClear`), and each page measures only the rest of
     its own block. The memo lives with the scroller's pages, is emptied by every damage inside the content, and is read only while the cut row and the last row sit where they

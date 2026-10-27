@@ -63,6 +63,7 @@ strict fraction over 16 in brackets. Chrome rows come from the Chromium gates (s
 | install / uninstall descriptor identity | 60 props, 0 left | 102 props, 0 left | 108 props, 0 left (2 always-new getters ignored) |
 | taint: canvas readable, WebGL `texElementSubImage2D`, WebGPU `drawElementImageToTexture` non-blank | pass | pass (raw: data: SVG -> 2D, createImageBitmap, texImage2D all allowed) | pass (raw: same, all allowed in 27.0.1) |
 | raw foreignObject decode of an F1-size snapshot (p50 / p95 ms) | n/m | 22.1 / 27.4 | 5.2 / 18.2 |
+| composed scroll frames vs the settled canvas (`scrollCompose`, added 2026-10-27; Firefox 157.0.1 headless, DPR 1, overlay bars) | G-scroll-cadence | square badges: 9 of 10 jumps composed per scroller, 0 pixels over 16 (a rounded port's arc within 12 levels); rounded badges: refused; at DPR 2: refused; controls red | G-mobile `scrollCompose` |
 
 What differs and why (classification):
 - **fidelity limit of foreignObject**: Gecko themes no widget in SVG images (checkbox/radio absent, fields with the UA inset border, range thumb only); WebKit draws controls in
