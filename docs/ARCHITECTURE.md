@@ -239,9 +239,9 @@ Tick RUN(now), for each canvas record in reverse tree order:
    A long build defers its decode start to the next task, a `scheduler.postTask` user-blocking task like the post-frame pump, so the tile still lands before the app's queued tasks.
    Ordering 3-before-4 means DOM writes made in the paint handler are captured by the build started in the same frame, and the capture reads freshly laid-out DOM (no forced layout).
    The pump runs in a task after the rendering update, except while the window is being resized, for the first scroll step of a stream and for the first snapshot of a canvas
-   that has a drawable: those build inside the tick. Side builds (scroll plans and pages) run only in the post-frame pump. A canvas without a drawable fires no paint, so it never
-   waits for a first snapshot: up to 0.1.0-preview.9 it did, kept every pump of the page inside the tick and starved the scroll compositor of every canvas (unit test in
-   `scheduler.test.mjs`, G-mobile `scrollCompose`).
+   that has a drawable, for at most `paintGateMaxWaitMs` after it got one: those build inside the tick. Side builds (scroll plans and pages) run only in the post-frame pump.
+   A canvas that never paints (no drawable, or a drawable added after the mount that has no box or never commits) waited for good up to 0.1.0-preview.9, kept every pump
+   of the page inside the tick and starved the scroll compositor of every canvas (unit tests in `scheduler.test.mjs`, G-mobile `scrollCompose`).
 5. Frame hooks (`addFrameHook`: the effect host renders here, after the new source version is committed); a hook returning `true` keeps ticking.
 6. Re-arm only if: damage pending, builds in flight/landed, `force`, the gate is waiting, a hook asked, or the cap deferred work (there is no timer). Idle page = zero rAF and zero ResizeObserver from the polyfill (the only remaining timer is the caret blink while a text control is focused; the 1 s presentation poll was replaced by events; G-idle).
 

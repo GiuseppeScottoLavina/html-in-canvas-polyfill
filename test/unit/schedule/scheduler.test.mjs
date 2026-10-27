@@ -634,6 +634,40 @@ test('focus / active (and urgent value changes) are built in a microtask of the 
   assert.equal(t.store.pumps, before + 3, 'and are pumped after it');
 });
 
+/** a store with side builds (scroll plans, pages): an urgent pump (inside the tick) leaves them, a post-frame pump runs one; returns the probe counters */
+function sideBuilds(t) {
+  const st = { side: 0, inTick: 0 };
+  t.store.needsPump = () => st.side > 0;
+  t.store.pump = (now, budget) => {
+    t.store.pumps++;
+    if (budget.urgent) st.inTick++;
+    else if (st.side > 0) st.side--;
+    return { started: 0, spentMs: 0, moreWork: st.side > 0, nextDueAt: st.side > 0 ? now : null };
+  };
+  return st;
+}
+
+for (const [what, ready] of [['has no box (zero size, hidden)', { ready: true, reason: 'no-drawables' }], ['never commits (its builds keep failing)', { ready: false, reason: 'first-commit' }]]) {
+  test(`a drawable added after the mount of a canvas that never painted, which ${what}, keeps other canvases' builds inside the tick for at most paintGateMaxWaitMs`, () => {
+    const t = setup();
+    const el = fakeElement();
+    const record = mounted(t, [el]);
+    const late = t.addRecord([]);
+    t.scheduler.register(late);
+    t.run(100);
+    // no forced paint is owed (the canvas mounted empty) and the drawable gives the paint nothing to report: the canvas never paints
+    t.store.readyFor.set(late, ready);
+    late.layer.drawables.push(fakeElement());
+    t.bus.emit(BUS.DRAWABLES_CHANGED, { record: late, added: late.layer.drawables, removed: [] });
+    const st = sideBuilds(t);
+    st.side = 4;
+    t.scheduler.wake(record);
+    t.run(1000);
+    assert.equal(st.side, 0, 'every side build ran');
+    assert.equal(late.paint.everFired, false, 'the canvas still never painted');
+  });
+}
+
 test('a canvas without a drawable keeps no other canvas\'s builds inside the tick: the side builds (scroll plans, pages) still run after the frame, and the ticks stop', () => {
   const t = setup();
   const el = fakeElement();

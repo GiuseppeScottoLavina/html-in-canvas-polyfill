@@ -279,7 +279,7 @@ opaque and square + transparent, each jumped 10 times; the first paint after a j
 no pixel over 16 outside the rounded corners (class grid), none off the antialiased arc inside them and at most 2 % of the arc (class corner), each scroller composed at least 3
 times; then the scroll-and-resize example with an empty drawable canvas added, a scripted scroll of its inbox composed in at least half of its steps (class empty); its
 control serves three mutant cores instead of the RECORDER sabotage, one snapping to device pixels (grid), one drawing the rounded port with `copy` (corner) and one that takes
-a canvas without a drawable for one whose first snapshot is due (empty)), rotation, keyboard, selection, controls (F6 `?narrow=1`, 62 regions, iOS look / Chromium's Android theme;
+a canvas that never painted for one whose first snapshot is due for good (empty)), rotation, keyboard, selection, controls (F6 `?narrow=1`, 62 regions, iOS look / Chromium's Android theme;
 the scrolled light listbox has its own 4 % structural bound on Android; informative on the stand-in), unsupported (an older browser refused with the version named; control: the same page with a supported user agent). Positive controls: the RECORDER sabotage
 (`?xbsab=1`), the accent / outline sabotage for controls and `?xbua=1` for the refusal. Results: `.scratch/results/mobile-<ts>.json`.
 
