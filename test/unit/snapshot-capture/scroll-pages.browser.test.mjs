@@ -62,6 +62,28 @@ test('a plain list with an opaque sticky header has a plan; the header is pinned
   assert.equal(plan.port.height, list.clientHeight);
 });
 
+test('a list of fractional width (420.4 px, a grid track): the port is its padding box at layout size, the sticky header fits it, and pages compose the live capture', async () => {
+  const m = mount(html, { css: css.replace('.d{width:420px', '.d{width:420.4px'), width: 440, height: 320 });
+  const list = m.layerEl.querySelector('.list');
+  await frames(2);
+  const stale = await tileOf(m);
+  const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+  assert.ok(plan, 'planned');
+  const frame = m.layer.frameRect(list);
+  assert.ok(Math.abs(plan.port.width - frame.width) < 1e-3 && plan.port.width !== list.clientWidth, `port width ${plan.port.width} = the layout width ${frame.width} (clientWidth ${list.clientWidth} is rounded)`);
+  assert.deepEqual(plan.client, { width: list.clientWidth, height: list.clientHeight }, 'the rounded client size is kept for the layout check');
+  const geo = geoOf(m, stale);
+  const R = snapPx(plan.port, geo);
+  const head = snapPx(m.layer.frameRect(list.querySelector('.head')), geo);
+  assert.ok(head.x >= R.x && head.x + head.width <= R.x + R.width, `the pinned header ${JSON.stringify(head)} lies inside the port ${JSON.stringify(R)} (the store refuses a plan otherwise)`);
+  list.scrollTop = 137;
+  await frames(2);
+  const want = await tileOf(m);
+  await composeAt(m, plan, stale, [0, 260], list.scrollTop);
+  const got = diffFraction(stale, want);
+  assert.ok(got <= 0.001, `composed vs live capture: ${(got * 100).toFixed(3)} % differ`);
+});
+
 for (const [from, to, tops] of [[0, 137, [0, 260]], [500, 380, [260, 500]], [900, 1013, [900, 1160]], [0, 0.5, [0, 260]]]) {
   test(`composition from pages ${tops.join('+')} at offset ${to} equals the live capture (stale view at ${from})`, async () => {
     const m = mount(html, { css, width: 440, height: 320 });
@@ -149,6 +171,21 @@ test('a large scroller (9000 elements) is planned in steps; a change of its subt
   let last;
   while (!(last = again.next()).done);
   assert.equal(last.value, null, 'the subtree changed between steps: no plan');
+});
+
+test('the obstruction grid is hit-tested in steps (a small list too); the list scrolling between them keeps the plan, the list moving ends it', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  const list = m.layerEl.querySelector('.list');
+  await frames(1);
+  const it = planSteps(document, m.layer, list, m.layerEl.firstElementChild);
+  let steps = 0, r;
+  while (!(r = it.next()).done) { steps++; if (steps === 1) list.scrollTop = 90; }
+  assert.ok(steps >= 2, `the ${Math.ceil(420 / 32) + 1} x ${Math.ceil(list.clientHeight / 32) + 1} hit tests yielded between steps (${steps})`);
+  assert.ok(r.value, 'its own scrolling between two steps keeps the plan');
+  const again = planSteps(document, m.layer, list, m.layerEl.firstElementChild);
+  let n = 0, last;
+  while (!(last = again.next()).done) if (++n === 1) m.layerEl.firstElementChild.style.gridTemplateRows = '60px 1fr';
+  assert.equal(last.value, null, 'the list moved between steps: no plan');
 });
 
 test('covers(): gaps, edges and pixel rounding', () => {

@@ -128,3 +128,35 @@ test('a tile that shows an older offset is composed over at the live one in the 
   assert.deepEqual(rig.css(a, 20, 15), RGBA.lime, 'and its port, built at 0, was recomposed at 20');
   assert.deepEqual(rig.css(a, 20, 45), RGBA.blue);
 });
+
+// A plan in several steps (planSteps yields while it scans a large subtree or hit-tests the port) read the DOM before the damage that comes between its steps.
+for (const [what, rect, cause] of [['a change over the port', { x: 20, y: 20, width: 8, height: 8 }, 'mutation'], ['a change of the scroller itself', null, 'style']]) {
+  test(`${what} between the steps of a plan: ${rect ? 'hit-tested before the first composition' : 'the plan is not used'}`, async (t) => {
+    const scroller = { scrollTop: 0, nodeType: 1, localName: 'div' };
+    /** @type {any[][]} */
+    const cleared = [];
+    let a = null;
+    const rig = await makeRig(t, {
+      scrollPlan: () => (function* () {
+        yield;
+        rig.store.markDamage(a, rect, cause);
+        return { frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040, clear: (rects) => { cleared.push(rects); return false; } };
+      })(),
+    });
+    a = rig.add('a', 100, 60);
+    await rig.build(a);
+    rig.script.push({ color: 'lime' }, { color: 'blue' }, { color: 'lime' });
+    rig.store.scrollSettled(a, scroller);
+    // the plan's two steps, its page builds and the build of the damage it heard; commits land the tiles
+    await until(() => { rig.pump(); rig.store.commitLanded(); return rig.store.isSettled(a); }, 3000, 'settled');
+    const sc = rig.store.stats().scroll;
+    if (!rect) {
+      assert.equal(sc.pages + sc.pins, 0, 'nothing built from a plan the scroller changed under');
+      assert.equal(sc.refusals, 0, 'not a refusal: the scroller is planned again at its next scroll');
+      assert.equal(cleared.length, 0);
+      return;
+    }
+    assert.deepEqual(cleared, [[rect]], 'the change heard during the plan was hit-tested before the first composition');
+    assert.equal(sc.obstructed, 1, 'and its obstruction stopped the composition');
+  });
+}
