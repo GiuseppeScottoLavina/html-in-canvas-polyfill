@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><link rel="icon" href="data:,">
 <title>scroll cadence: an inner list drawn into a canvas, and its plain-DOM twin</title>
 <script>
-  // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1
+  // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1  frac=0|1 (a list column of fractional width, 400.4 px)
   var q = new URLSearchParams(location.search); window.__q = q;
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
 </script>
@@ -43,6 +43,7 @@
   document.getElementById('count').textContent = N;
   const list = document.getElementById('list');
   if (q.get('round') === '1') list.classList.add('round');
+  if (q.get('frac') === '1') document.getElementById('app').style.gridTemplateColumns = '400.4px 1fr';
   if (q.get('hover') === '1') { const st = document.createElement('style'); st.textContent = '#list li:hover { background: #cfdcf8; }'; document.head.append(st); }
   let canvas = document.getElementById('stage');
   const app = document.getElementById('app');

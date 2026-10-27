@@ -173,21 +173,6 @@ test('a large scroller (9000 elements) is planned in steps; a change of its subt
   assert.equal(last.value, null, 'the subtree changed between steps: no plan');
 });
 
-test('the obstruction grid is hit-tested in steps (a small list too); the list scrolling between them keeps the plan, the list moving ends it', async () => {
-  const m = mount(html, { css, width: 440, height: 320 });
-  const list = m.layerEl.querySelector('.list');
-  await frames(1);
-  const it = planSteps(document, m.layer, list, m.layerEl.firstElementChild);
-  let steps = 0, r;
-  while (!(r = it.next()).done) { steps++; if (steps === 1) list.scrollTop = 90; }
-  assert.ok(steps >= 2, `the ${Math.ceil(420 / 32) + 1} x ${Math.ceil(list.clientHeight / 32) + 1} hit tests yielded between steps (${steps})`);
-  assert.ok(r.value, 'its own scrolling between two steps keeps the plan');
-  const again = planSteps(document, m.layer, list, m.layerEl.firstElementChild);
-  let n = 0, last;
-  while (!(last = again.next()).done) if (++n === 1) m.layerEl.firstElementChild.style.gridTemplateRows = '60px 1fr';
-  assert.equal(last.value, null, 'the list moved between steps: no plan');
-});
-
 test('covers(): gaps, edges and pixel rounding', () => {
   assert.equal(covers([0], 0, 100, 2), true);
   assert.equal(covers([0], 10, 100, 2), false);

@@ -17,11 +17,6 @@ import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts,
 const MAX_SCAN = 20000;
 /** elements inspected per step of a large scroller's scan (planSteps) */
 const SCAN_STEP = 2500;
-/**
- * hit tests per step of the obstruction grid (planSteps): a port of 400 x 530 css px takes 252, about 5 ms on a fast desktop and 22 ms with the CPU slowed 4x; done
- * in one task they held the first frames of a touch scroll, which plans the scroller when the finger lands
- */
-const HIT_STEP = 64;
 const UNSAFE_TAGS = new Set(['video', 'canvas', 'iframe', 'embed', 'object']);
 
 /** @param {string} v @returns {number} */
@@ -85,15 +80,12 @@ function pinnable(el, cs) {
 
 /**
  * Nothing but the scroller or its descendants is hit on a grid over its scrollport (32 css px), and every point lies in the viewport. Points outside a rounded
- * corner of the port are skipped (what is hit there is what lies behind the corner). In steps: yields after every HIT_STEP hit tests (the caller checks that the
- * scroller is still where it was before it goes on).
+ * corner of the port are skipped (what is hit there is what lies behind the corner).
  * @param {Document} doc @param {Element} scroller @param {DOMRect} port viewport rect of the scrollport @param {ScrollPlan['round']} round
- * @returns {Generator<void, boolean, void>}
  */
-function* portUnobstructed(doc, scroller, port, round) {
+function portUnobstructed(doc, scroller, port, round) {
   const win = doc.defaultView;
   if (!win || port.left < 0 || port.top < 0 || port.right > win.innerWidth || port.bottom > win.innerHeight) return false;
-  let tests = 0;
   const root = /** @type {Document|ShadowRoot} */ (scroller.getRootNode());
   const hit = typeof root.elementFromPoint === 'function' ? root : doc;
   const cols = Math.min(32, Math.ceil(port.width / 32) + 1);
@@ -103,7 +95,6 @@ function* portUnobstructed(doc, scroller, port, round) {
     for (let r = 0; r < rows; r++) {
       const y = port.top + 1 + ((port.height - 2) * r) / Math.max(1, rows - 1);
       if (round && outsideCorner(x - port.left, y - port.top, port.width, port.height, round)) continue;
-      if (tests++ && tests % HIT_STEP === 1) yield;
       const top = hit.elementFromPoint(x, y);
       if (!top || (top !== scroller && !scroller.contains(top))) return false;
     }
@@ -142,10 +133,13 @@ export function* planSteps(doc, layer, scroller, drawable) {
   if (!win || currentEngine().engine !== 'chromium' || layer.nearestDrawable(scroller) !== drawable && scroller !== drawable) return null;
   const s = /** @type {HTMLElement} */ (scroller);
   const cs = win.getComputedStyle(s);
-  const gutterX = s.offsetWidth - s.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth);
-  const gutterY = s.offsetHeight - s.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth);
+  // the bar gutters from whole-pixel sizes: offsetWidth and clientWidth are rounded each on its own, so a fractional layout (a 400.4 px track at DPR 1.25: 400 and 399)
+  // shows a gutter of -1 or +1 px that is not there; a classic bar is far wider
+  const gutter = (/** @type {number} */ g) => (Math.abs(g) <= 1 ? 0 : g);
+  const gutterX = gutter(s.offsetWidth - s.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth));
+  const gutterY = gutter(s.offsetHeight - s.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth));
   // a vertical classic bar is composed from its track and thumb tiles; a horizontal one (or a corner) is not
-  if (!/^(auto|scroll)$/.test(cs.overflowY) || s.scrollHeight <= s.clientHeight || s.scrollWidth > s.clientWidth || s.scrollLeft !== 0 || gutterX < -0.5 || Math.abs(gutterY) > 0.5) return null;
+  if (!/^(auto|scroll)$/.test(cs.overflowY) || s.scrollHeight <= s.clientHeight || s.scrollWidth > s.clientWidth + 1 || s.scrollLeft !== 0 || gutterX < -0.5 || Math.abs(gutterY) > 0.5) return null;
   // the author's values: the scroll synchronisation (LiveLayer.syncScroll) overrides these three on the live scroller while it scrolls
   const own = layer.scrollAuthorStyle?.(s) ?? cs;
   if (/ inset/.test(` ${own.boxShadow}`) || !plainEffects(cs) || (own.backgroundImage !== 'none' && !/^local/.test(own.backgroundAttachment))) return null;
@@ -205,15 +199,7 @@ export function* planSteps(doc, layer, scroller, drawable) {
   }
   if (pinned.some((p) => Number(win.getComputedStyle(p).zIndex) <= otherZ)) return null;
   const vr = s.getBoundingClientRect();
-  const hits = portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round);
-  for (let r = hits.next(); ; r = hits.next()) {
-    if (r.done) { if (!r.value) return null; break; }
-    yield;
-    // the grid is valid for the layout it was started on: a scroller that moved, changed size or lost or gained elements between two steps is planned again later
-    // (its own scrolling between two steps changes nothing the grid tests: what lies over the port from outside the scroller)
-    const now = s.getBoundingClientRect();
-    if (!s.isConnected || all.length !== count || now.left !== vr.left || now.top !== vr.top || now.width !== vr.width || now.height !== vr.height) return null;
-  }
+  if (!portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round)) return null;
   let bar = null;
   if (gutterX > 0.5) {
     const f = scrollFacts(s, cs);

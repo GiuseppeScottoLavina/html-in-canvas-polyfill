@@ -248,7 +248,9 @@ export function createScrollCompositor(deps) {
       if (!r) return null;
       const px = snapPx(r, geo);
       const port = portPx;
-      if (px.x < port.x || px.y < port.y || px.x + px.width > port.x + port.width || px.y + px.height > port.y + port.height) return refuse();
+      // one device pixel of slack at each edge: the pinned box and the port are snapped each on its own (a 398.4 px header at DPR 1.25 came out 499 px wide in a
+      // 498 px port); compose() clips every pinned tile to the port
+      if (px.x < port.x - 1 || px.y < port.y - 1 || px.x + px.width > port.x + port.width + 1 || px.y + px.height > port.y + port.height + 1) return refuse();
       const slot = { pad: /** @type {Surface|null} */ (null), w: px.width, h: px.height };
       cache.pins.set(p, slot);
       build(entry, cache, px, { el, top: live, hide: [], shape }, slot);
