@@ -148,3 +148,59 @@ test('a scroll composed for 4 s with no other change is input, not a runaway loo
   assert.ok(rig.store.stats().commits >= 190, 'each one a commit');
   assert.deepEqual(trips, [], 'no runaway report');
 });
+
+// WebKit (ScrollPlan.grid = 1): the image snaps box edges and scroll offsets to whole css px in its layout coordinates (frame + ink, INK = 4 here), then scales them.
+// The port 10.4 .. 50.6 (frame css) is 14.4 .. 54.6 in the image: whole css px 14 .. 55, rows 42 .. 165 at DPR 3 (surface pixels would give 43 .. 164).
+const GFRAME = { x: 10.4, y: 10.4, width: 60, height: 40.2 };
+/** surface pixel at device row `y`, x in css @param {any} rig @param {Element} a @param {number} y */
+const row = (rig, a, y) => rig.css(a, 30, y / rig.scale - rig.INK);
+
+async function gridSetup(t, plan = {}) {
+  const scroller = { scrollTop: 0, nodeType: 1, localName: 'div' };
+  const rig = await makeRig(t, { scale: 3, scrollPlan: () => ({ frame: GFRAME, port: GFRAME, pinned: [], maxTop: 1000, scrollHeight: 1040, grid: 1, ...plan }) });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  return { rig, a, scroller };
+}
+
+test('on a css px grid (WebKit) pages are rendered at whole css px and composed on the port the image snapped', async (t) => {
+  const { rig, a, scroller } = await gridSetup(t);
+  await warm(rig, a, scroller, ['lime', 'blue']);
+  const tops = rig.calls.filter((c) => c.scroll).map((c) => c.scroll.top);
+  assert.ok(tops.length >= 2 && tops.every((x) => Number.isInteger(x)), `page offsets at whole css px (${tops}); WebKit renders 40.333 at 40, one device pixel off`);
+  assert.ok(tops.includes(41), `the second page one port (41 css px) down (${tops})`);
+  scroller.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, scroller), true);
+  rig.store.commitLanded();
+  assert.deepEqual(row(rig, a, 41), RGBA.red, 'row 41: above the port');
+  assert.deepEqual(row(rig, a, 42), RGBA.lime, 'row 42: the first port row (css 14), from the page at 0 shifted by 60 rows');
+  assert.deepEqual(row(rig, a, 104), RGBA.lime, 'row 104: the last row of the page at 0 (port row 62 = content row 80 = 20 + 60)');
+  assert.deepEqual(row(rig, a, 105), RGBA.blue, 'row 105: the page at 41 begins (content row 123 = 41 css px)');
+  assert.deepEqual(row(rig, a, 164), RGBA.blue, 'row 164: the last port row (css 55 is its end)');
+  assert.deepEqual(row(rig, a, 165), RGBA.red, 'row 165: below the port');
+  scroller.scrollTop = 20.4;
+  rig.store.scrollCompose(a, scroller);
+  rig.store.commitLanded();
+  assert.deepEqual([row(rig, a, 104), row(rig, a, 105)], [RGBA.lime, RGBA.blue], 'a fractional live offset is composed where the image renders it (20)');
+});
+
+test('on a css px grid a rounded port with a translucent background is refused (its corners are blended source-over, exact over opaque pages only)', async (t) => {
+  const round = { tl: { x: 6, y: 6 }, tr: { x: 6, y: 6 }, br: { x: 6, y: 6 }, bl: { x: 6, y: 6 } };
+  const { rig, a, scroller } = await gridSetup(t, { round, opaque: false });
+  rig.script.push({ color: 'lime' }, { color: 'blue' }, { color: 'lime' });
+  rig.store.scrollCompose(a, scroller);
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'planned');
+  assert.ok(rig.store.stats().scroll.refusals >= 1, 'refused');
+  assert.equal(rig.calls.filter((c) => c.scroll).length, 0, 'no page, pin or backdrop was built');
+  scroller.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'every step keeps the plain path');
+});
+
+test('a grid that is not a whole number of surface pixels (a reduced scale) is refused', async (t) => {
+  const { rig, a, scroller } = await gridSetup(t, { grid: 0.5 });
+  rig.store.scrollCompose(a, scroller);
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'planned');
+  assert.ok(rig.store.stats().scroll.refusals >= 1, 'grid 0.5 at scale 3: 1.5 surface px');
+});
