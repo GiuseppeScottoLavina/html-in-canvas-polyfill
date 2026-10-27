@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [0.1.0-preview.8] - 2026-10-27
 
-A bug fix release for scrolling. A long composed scroll (about 3 s of uninterrupted wheel, trackpad or fling scrolling over a list drawn from cached pages) made the polyfill uninstall itself, leaving the canvas frozen until the page was reloaded; any page with a long scrollable list inside a drawable could hit it. The first wheel or trackpad gesture over a drawn scroller no longer stutters, and a scroller of fractional width is composed from cached pages again instead of rebuilt at every step. The headed browser suites now run on GitHub-hosted macOS runners. The minified core grows to 332,769 bytes (116,096 gzipped).
+A bug fix release for scrolling. A long composed scroll (about 3 s of uninterrupted wheel, trackpad or fling scrolling over a list drawn from cached pages) made the polyfill uninstall itself, leaving the canvas frozen until the page was reloaded; in Chrome and Edge (the only engines where scroll steps are composed), any drawn scroller that the compositor accepts could hit it. The first wheel or trackpad gesture over a drawn scroller no longer stutters, and a scroller of fractional width is composed from cached pages again instead of rebuilt at every step. The headed browser suites now run on GitHub-hosted macOS runners. The minified core grows to 332,769 bytes (116,096 gzipped).
 
 ### Added
 
