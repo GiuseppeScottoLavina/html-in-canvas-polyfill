@@ -43,5 +43,7 @@ elif cmd == 'drag':
         post(Q.kCGEventLeftMouseDragged, x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
         time.sleep(ms / 1000 / steps)
     post(Q.kCGEventLeftMouseUp, x2, y2)
+elif cmd == 'windows':
+    print(json.dumps([[w.get('kCGWindowOwnerName'), w.get('kCGWindowLayer'), w.get('kCGWindowIsOnscreen'), dict(w['kCGWindowBounds'])] for w in Q.CGWindowListCopyWindowInfo(Q.kCGWindowListOptionAll, Q.kCGNullWindowID) if 'imulator' in str(w.get('kCGWindowOwnerName'))]))
 elif cmd == 'park':
     post(Q.kCGEventMouseMoved, 2, 2)
