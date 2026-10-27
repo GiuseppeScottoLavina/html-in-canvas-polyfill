@@ -105,7 +105,9 @@ if (!docsOnly) {
   // 15425 -> 15475 (2026-10-23, measured 15,457; 15,419 before this step): the macOS overlay thumb of a scrollable listbox select (scroll-emulation.js macOverlayThumb).
   // 15875 -> 15975 (2026-10-26, measured 15,959 with both step lists above merged; 15,861 with the animated images and the WPT steps alone): the two lists were
   // measured on separate branches; merged, the external <use> documents and the overlay listbox thumb add their lines on top.
-  if (total > 15975) problems.push(`G-size: core is ${total} code lines (> 15975)`);
+  // 15975 -> 16000 (2026-10-27, measured 15,994; 15,965 before this step): the scroll compositor on WebKit (+29: the css px layout grid of the snapshot image in the
+  // planner and the store, snapPx / outPx / rowOf, the source-over rounded port and its opaque flag).
+  if (total > 16000) problems.push(`G-size: core is ${total} code lines (> 16000)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
