@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Smaller minified bundles: every `.min.js` classic bundle (the core, effects, native bridge, engines, GPU, worker and each plugin) now gets a second pass by Terser after esbuild, with options that change no behaviour (no unsafe transform, no property mangling, ASCII output). The minified core shrinks from 335,744 to 331,972 bytes, 117,183 to 112,066 gzipped (-4.4 %) and 100,388 to 95,252 with brotli; all minified bundles together lose 7,756 bytes gzipped (-3.4 %). The readable `.js` bundles and the ES modules are unchanged. Terser is a devDependency; the package still has no runtime dependencies.
+
 ## [0.1.0-preview.10] - 2026-10-27
 
 Smoother scrolling on iPhone, and in Firefox where it can be made exact. On iOS, one empty drawable canvas anywhere on a page (a canvas whose content is added later) kept the scroll compositor from running for every canvas of the page and kept the scheduler busy on an idle page; this is fixed (iOS Simulator: 58 canvas updates per second instead of 29-30 on the scroll-and-resize example with such a canvas, 210-212 composed steps instead of 0). Firefox now composes scroll steps at a device pixel ratio of 1, for square scrollers whose content has no rounded corners, dotted lines, transforms, images, SVG or form controls (headless Firefox: 110-117 updates per second instead of 39-71); elsewhere it still rebuilds. The field test gains a scroll smoothness step, so testers on real phones and PCs can send back comparable numbers.

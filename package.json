@@ -150,6 +150,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "terser": "5.51.2",
     "typescript": "^7.0.2"
   }
 }

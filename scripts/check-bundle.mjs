@@ -116,7 +116,9 @@ const LIMITS = {
   //   elements), whole-pixel offsets in the store (wholeRow), the refused rounded port, the re-plan after a change inside the content
   // 335.5 -> 335.75 KB (+338 / +127 bytes, 2026-10-27, measured 335,743 / 117,182): a canvas that never paints no longer counts as waiting for its first snapshot for good
   //   (it kept every build inside the frame and stopped the scroll compositor of the page), a refused scroller is planned again once it has moved on screen
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 335.75 * KB, gzip: 117.25 * KB },
+  // 335.75 -> 332 KB, gzip 117.25 -> 112.25 KB (-3,772 / -5,117 bytes, 2026-10-27, measured 331,972 / 112,066): a Terser pass over esbuild's minified output
+  //   (scripts/build.mjs TERSER; the same code, the readable bundle unchanged)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 332 * KB, gzip: 112.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -128,38 +130,45 @@ const LIMITS = {
   //   source provider and its paint-driven frame source with the cap phase, the hit-test geometry and the native interposer, the native API checks of createHost)
   // 39 -> 39.25 KB (+329 / +162 bytes, 2026-10-22, measured 39,081 / 14,430): the hover sync element of mode native shared per document and changed inside a closed
   //   shadow root, so the page's MutationObservers see no record per pointer move and no author rule can give it a box
-  'hic-live-effects.iife.min.js': { target: 39.25 * KB, ceiling: 39.25 * KB, gzip: 14.5 * KB },
+  // 39.25 -> 38.75 KB, gzip 14.5 -> 14 KB (-360 / -619 bytes, 2026-10-27, measured 38,721 / 13,811): the Terser pass over esbuild's minified output
+  'hic-live-effects.iife.min.js': { target: 38.75 * KB, ceiling: 38.75 * KB, gzip: 14 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
-  'hic-live-native-bridge.iife.min.js': { target: 14 * KB, ceiling: 14 * KB, gzip: 5.5 * KB },
+  // gzip 5.5 -> 5.25 KB (-60 / -206 bytes, 2026-10-27, measured 13,827 / 5,113): the Terser pass over esbuild's minified output
+  'hic-live-native-bridge.iife.min.js': { target: 14 * KB, ceiling: 14 * KB, gzip: 5.25 * KB },
   // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
   // 38.5 -> 42 KB, gzip 15 -> 16.25 KB (+3,509 / +1,244 bytes, 2026-10-16, measured 41,804 / 16,038): the iOS control look (system tint, pill buttons and pop-ups from the computed
   //   style, the colour-well hue ring, medium-style date pills, no spin button, popup labels pinned) and the iOS classification of the engine
   // 42 -> 42.25 KB (+411 bytes, 2026-10-16, measured 42,215): the search field's magnifier is probed from layout (Safari Technology Preview 254 has none) instead of
   //   assumed from Safari >= 27
-  'hic-live-engines.iife.min.js': { target: 42.25 * KB, ceiling: 42.25 * KB, gzip: 16.25 * KB },
+  // 42.25 -> 41.75 KB, gzip 16.25 -> 16 KB (-563 / -254 bytes, 2026-10-27, measured 41,576 / 15,925): the Terser pass over esbuild's minified output
+  'hic-live-engines.iife.min.js': { target: 41.75 * KB, ceiling: 41.75 * KB, gzip: 16 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
   //   OffscreenCanvas.getElementTransform removed
-  'hic-live-worker.iife.min.js': { target: 9.25 * KB, ceiling: 9.25 * KB, gzip: 4 * KB },
-  'hic-live-gpu.iife.min.js': { target: 10.75 * KB, ceiling: 10.75 * KB, gzip: 4.25 * KB },
+  // gzip 4 -> 3.75 KB (-117 / -144 bytes, 2026-10-27, measured 9,098 / 3,646): the Terser pass over esbuild's minified output
+  'hic-live-worker.iife.min.js': { target: 9.25 * KB, ceiling: 9.25 * KB, gzip: 3.75 * KB },
+  // 10.75 -> 10.5 KB, gzip 4.25 -> 4 KB (-82 / -66 bytes, 2026-10-27, measured 10,403 / 3,947): the Terser pass over esbuild's minified output
+  'hic-live-gpu.iife.min.js': { target: 10.5 * KB, ceiling: 10.5 * KB, gzip: 4 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
 /**
  * Per plugin: the measured minified size (2026-10-14; 2026-10-16 for the plugins with actions) plus a small margin, so that growth is a decision, not an accident. disintegrate and
  * shatter are above the 16 KB default: most of each is its WGSL, inlined by the build (shatter also builds its crack pattern on the CPU).
+ * 2026-10-27, the Terser pass over esbuild's minified output: every plugin is smaller gzipped (-1.5 to -2.6 %); the raw size of the plugins with WGSL grows by up to ~100 bytes
+ * (the shader template literals become strings with a \n escape per line), so those ceilings hold; the others are lowered to the new measured size plus the margin.
  */
 const PLUGIN_LIMITS = {
-  crt: 14 * KB, // 13,669; 10.5 -> 14 KB: the arcade look (glow rings, aperture grille, glass), the presets and their picker
-  disintegrate: 26.5 * KB, // 25,807; 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
-  glitch: 13.75 * KB, // 13,510; 13.5 -> 13.75 KB: the action 'burst' (handle.trigger) in place of the `trigger` option
-  'holo-card': 12.75 * KB, // 12,358
-  'liquid-glass': 12.25 * KB, // 11,810
-  'page-curl': 33.5 * KB, // 32,375; 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
-  shatter: 29 * KB, // 28,363; 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
-  water: 11.75 * KB, // 11,623; 10.5 -> 10.75 KB: meta.reducedMotion; 10.75 -> 11.75 KB: the action 'drop' (handle.trigger, settled when calm)
+  crt: 14 * KB, // 13,796 (13,766 before the Terser pass); 10.5 -> 14 KB: the arcade look (glow rings, aperture grille, glass), the presets and their picker
+  disintegrate: 26.25 * KB, // 26,080 (25,983 before the Terser pass); 26.5 -> 26.25 KB (2026-10-27); 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
+  glitch: 13.75 * KB, // 13,500 (13,510 before the Terser pass); 13.5 -> 13.75 KB: the action 'burst' (handle.trigger) in place of the `trigger` option
+  'holo-card': 12.5 * KB, // 12,486 (12,513 before the Terser pass); 12.75 -> 12.5 KB (2026-10-27)
+  'liquid-glass': 12 * KB, // 11,905 (11,932 before the Terser pass); 12.25 -> 12 KB (2026-10-27)
+  'page-curl': 33 * KB, // 32,986 (32,899 before the Terser pass); 33.5 -> 33 KB (2026-10-27); 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
+  shatter: 29 * KB, // 28,902 (28,892 before the Terser pass); 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
+  water: 11.75 * KB, // 11,629 (11,623 before the Terser pass); 10.5 -> 10.75 KB: meta.reducedMotion; 10.75 -> 11.75 KB: the action 'drop' (handle.trigger, settled when calm)
 };
 const problems = [];
 const known = [];
