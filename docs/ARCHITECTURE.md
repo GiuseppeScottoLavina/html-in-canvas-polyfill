@@ -357,6 +357,17 @@ Tick RUN(now), for each canvas record in reverse tree order:
     or refreshes. A dirty part is never composed: the step falls back to the plain path, and the fallback tile, copied from the retained surface, repairs the pages it covers (pinned
     elements, grown by the offset change since its build, and rounded corners excluded); a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is
     hit-tested (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages.
+  - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko is not verified and keeps the plain path. The composition must land every rect, page offset and row
+    where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. WebKit lays it out at css scale
+    and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
+    rendered at the nearest whole css px (a page asked at 133.333 shows 133; `scrollTop = 133.9` on a live WebKit scroller reads 133), then scaled. A WebKit plan carries
+    `grid: 1` and the store snaps to it (`snapPx`, `rowOf`); without it the composed frames were one device pixel lower than the tile at DPR 3 and the port one device row
+    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused. A rounded
+    port on WebKit is drawn source-over the backdrop under the rounded clip, and only for a scroller with an opaque background: an accelerated WebKit canvas drawing with
+    `copy` under an antialiased clip multiplies the source by the coverage and drops the destination (canvases of 200 px and more; a 60 px one blends like Skia), which left
+    the curve semi-transparent. Refused on WebKit besides what Chromium refuses: a classic bar gutter (the thumb geometry is Chromium's). In the rounded corners both engines
+    blend a page rendered with square corners (content over the scroller's background) into the backdrop by the clip's coverage, where the engine clips the content alone
+    over background and border: up to a few pixels of the antialiased arc differ where translucent content crosses it (G-mobile scrollCompose: 0-3 of 504 at DPR 3).
   - **Page build cost.** The pages of one scroller cut the same flow container at different rows; the truncation test (one Range rect over the rest of the container, about
     2.5 ms over 2000 rows) is measured once per scroller in blocks of 64 children (`CaptureRequest.scroll.memo`, `clone.js` `tailClear`), and each page measures only the rest of
     its own block. The memo lives with the scroller's pages, is emptied by every damage inside the content, and is read only while the cut row and the last row sit where they
