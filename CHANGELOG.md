@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- The core bundle grows to 334,080 bytes minified, 116,578 gzipped (333,701 / 116,437 with the scroll compositor on WebKit; 332,769 / 116,096 in 0.1.0-preview.8), +379 / +141 bytes for the exact stand-in lengths below (measured in `scripts/check-bundle.mjs`).
+
 ### Fixed
 
 - Scroll: a list of rows of fractional height (such as 36.6 px) no longer jumps by a device pixel when a composed scroll settles. The rows above the visible part are left out of a snapshot and stand-ins of the same height take their place; the stand-in's height was written rounded to the nearest 0.001 px, and the browser truncates a length to its layout units (1/64 of a device pixel) and keeps 6 significant digits of a length, so a stand-in was often one layout unit short. The pages of the scroll compositor and the settled snapshot leave out different rows, so the same row landed a pixel apart (headless Chrome, up to 5,665 pixels in a composed frame at DPR 3 and 3,153 at DPR 2; 0 after). Not fixed: where the snapshot is rasterised at a lower scale than the screen's (above `maxDpr`, 2.5 on desktops; a surface over its pixel budget), border widths snap differently in the snapshot and composed frames still differ from the settled one by a few pixels.

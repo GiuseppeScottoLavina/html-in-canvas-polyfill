@@ -163,12 +163,19 @@ test('nothing the walk measures outlives a build: mutation, resize, style change
   ]);
   t.cleanup(() => { document.fonts.delete(face); });
   let previous = outcome(cloneDrawable, c.env, req(), document.implementation.createHTMLDocument(''), [true, true, true]);
+  const rowRect = () => JSON.stringify(list.querySelector('li')?.getBoundingClientRect());
   for (const [name, change] of steps) {
+    const before = rowRect();
     await change();
     await frames(1);
     const r = req();
     const now = outcome(cloneDrawable, c.env, r, document.implementation.createHTMLDocument(''), [true, true, true]);
-    assert.notEqual(now, previous, `positive control: ${name} changes the snapshot`);
+    // a scaled ancestor and an applied geometry transform change every client rect the walk reads but not the snapshot: frame rects are in the drawable's own css px,
+    // and the stand-ins' lengths are put on the live layout grid (clone.js onLiveGrid), so the float noise of dividing by the scale (which alone made these snapshots
+    // differ) is gone. Their positive control is that the measured input changed; a walk that kept the old scale would write every stand-in 0.8 or 1.25 times its
+    // length, which the comparison with the released walk below catches.
+    if (name === 'scaled ancestor' || name === 'applied geometry') assert.notEqual(rowRect(), before, `positive control: ${name} changes the client rects the walk measures`);
+    else assert.notEqual(now, previous, `positive control: ${name} changes the snapshot`);
     assert.equal(mismatch(c.env, r, [true, true, true]), null, `${name}: the same snapshot as the released walk`);
     previous = now;
   }

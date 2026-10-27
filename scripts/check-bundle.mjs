@@ -109,7 +109,9 @@ const LIMITS = {
   //   scheduler (its plan and pages before the first gesture), a composed scroll step is input for the runaway guard, the scrollport at its layout size
   // 333 -> 333.75 KB, gzip 116.25 -> 116.5 KB (+932 / +341 bytes, 2026-10-27, measured 333,701 / 116,437): the scroll compositor on WebKit (iOS / Safari): the image's
   //   css px layout grid in the planner and the store (snapPx, rowOf), the source-over rounded port and the opaque flag
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 333.75 * KB, gzip: 116.5 * KB },
+  // 333.75 -> 334.25 KB, gzip 116.5 -> 116.75 KB (+379 / +141 bytes, 2026-10-27, measured 334,080 / 116,578): spacers reach the clone at the live length to the
+  //   LayoutUnit (clone.js onLiveGrid, layoutPx, runs below 1000 px): the drift between composed frames and the settled tile on rows of fractional height
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 334.25 * KB, gzip: 116.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
