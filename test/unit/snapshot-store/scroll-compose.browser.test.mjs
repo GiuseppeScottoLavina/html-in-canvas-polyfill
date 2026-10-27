@@ -225,7 +225,7 @@ test('Gecko: a live offset on a whole surface pixel is composed, one between two
   assert.equal(rig.store.scrollCompose(a, scroller), false, '20.25 css px = surface row 40.5: the image shows the edges of that offset rounded one by one');
 });
 
-test('Gecko: a change inside the content drops the pages and re-plans the scroller (Chromium dirties them)', async (t) => {
+test('Gecko: a change inside the content drops the pages; the scroller is planned again after newer damage, at most every second (Chromium dirties them)', async (t) => {
   const { rig, a, scroller } = await geckoSetup(t);
   await warm(rig, a, scroller, ['lime', 'blue']);
   const before = rig.store.stats().scroll;
@@ -233,10 +233,18 @@ test('Gecko: a change inside the content drops the pages and re-plans the scroll
   const after = rig.store.stats().scroll;
   assert.equal(after.dirtied, before.dirtied, 'no page was dirtied');
   assert.equal(after.dropped, before.dropped + 1, 'the scroller was dropped');
-  scroller.scrollTop = 6;
-  assert.equal(rig.store.scrollCompose(a, scroller), false, 'cold again: planned anew');
   rig.store.markDamage(a, { x: 80, y: 0, width: 15, height: 15 }, 'mutation');
   assert.equal(rig.store.stats().scroll.dropped, after.dropped, 'a change beside the scroller drops nothing');
+  scroller.scrollTop = 6;
+  assert.equal(rig.store.scrollCompose(a, scroller), false, 'no pages: the plain path');
+  rig.pump();
+  assert.equal(rig.store.stats().scroll.plans, after.plans, 'not planned again at once (rows changing under a resting pointer would re-plan it at every step)');
+  await new Promise((ok) => setTimeout(ok, 1050));
+  rig.script.push({ color: 'lime' }, { color: 'blue' });
+  rig.store.markDamage(a, { x: 10, y: 35, width: 60, height: 5 }, 'hover');
+  rig.store.scrollCompose(a, scroller);
+  rig.pump();
+  assert.equal(rig.store.stats().scroll.plans, after.plans + 1, 'planned again a second later, after newer damage');
 });
 
 test('Gecko: a raster scale that is not a whole number is refused', async (t) => {

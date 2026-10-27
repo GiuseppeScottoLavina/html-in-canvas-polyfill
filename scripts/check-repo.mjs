@@ -109,7 +109,9 @@ if (!docsOnly) {
   // planner and the store, snapPx / outPx / rowOf, the source-over rounded port and its opaque flag).
   // 16000 -> 16025 (2026-10-27, measured 16,010; 15,994 before this step): spacers reach the clone at the live height to the LayoutUnit (+16: clone.js onLiveGrid,
   // layoutPx and the 1000 px bound of a spacer and a merged run; the drift between composed frames and settled tiles on Chromium).
-  if (total > 16025) problems.push(`G-size: core is ${total} code lines (> 16025)`);
+  // 16025 -> 16050 (2026-10-27, measured 16,038; 16,010 before this step): the scroll compositor on Gecko (+28: scroll-pages.js clipInvariant and the 1x rule,
+  // scroll-compose.js wholeRow and the re-plan after a change inside the content)
+  if (total > 16050) problems.push(`G-size: core is ${total} code lines (> 16050)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

@@ -462,8 +462,16 @@ export function createScrollCompositor(deps) {
         // pages hold scrollport pixels only: a change that reaches none of the content (a counter beside the list) leaves them as they are
         if (!content) { counters.kept++; continue; }
         // Gecko (ScrollPlan.whole): the plan vouched for the styles of the content when it was made (scroll-pages.js clipInvariant); a change inside it may bring
-        // a rounded corner or a transform, so the scroller is planned again instead of repairing its pages
-        if (c.plan.whole) { counters.dropped++; drop(entry, c); continue; }
+        // a rounded corner or a transform, so the scroller is planned again instead of repairing its pages: after newer damage and at most every REPLAN_MS, as
+        // after a refusal (rows changing under a resting pointer would otherwise re-plan it and rebuild its pages at every step)
+        if (c.plan.whole) {
+          counters.dropped++;
+          drop(entry, c);
+          let r = refused.get(entry);
+          if (!r) refused.set(entry, (r = new Map()));
+          r.set(c.el, { at: now(), seq: n });
+          continue;
+        }
         // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
         // the content box is none of the pages' business, the scroller clips its content to the port)
         c.memo.clear();

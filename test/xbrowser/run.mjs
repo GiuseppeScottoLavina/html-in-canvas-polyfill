@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // G-xbrowser: the most important scenarios on desktop Firefox, Safari and (optional) Safari Technology Preview through W3C WebDriver (test/harness/lib/webdriver.mjs), each judged against the
 // plain-DOM twin in the SAME engine, each with a positive control (a sabotaged run that must turn every declared check class red).
-//   node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=explainer,form,clickEffect,controls,resize,scroll,unsupported,uninstall,decodeTiming] [--no-control] [--bundle-file=/abs/x.js]
+//   node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=explainer,form,clickEffect,controls,resize,scroll,scrollCompose,unsupported,uninstall,decodeTiming] [--no-control] [--bundle-file=/abs/x.js]
 // One browser at a time. Safari is skipped (and reported NOT RUN, which fails the gate) when remote automation is not enabled on the machine.
 // Safari Technology Preview ('stp') is OPTIONAL: SKIPPED (the gate still passes) when it is not installed or its remote automation is not allowed. Its native surface
 // is read first: absent -> the polyfill scenarios, as on Safari, and the native-flag scenarios are reported SKIPPED with the reason; usable (its HTML-in-Canvas
@@ -82,13 +82,13 @@ async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
   const pids = (s.caps?.pids ?? []).map(Number);
   for (const [name, fn] of Object.entries(scenarios)) {
     if (only && !only.includes(name)) continue;
-    if (control && !(CONTROL_CLASSES[name] ?? []).length) continue;
+    if (control && !(typeof CONTROL_CLASSES[name] === 'function' || (CONTROL_CLASSES[name] ?? []).length)) continue;
     for (let attempt = 1; ; attempt++) {
       const checks = [];
       /** the attempt's report lines, printed once it is known whether the attempt counts (an attempt disturbed by the environment is run again) */
       const lines = [];
       const ctx = {
-        s, srv, bundle: BUNDLE, control, numbers,
+        s, srv, bundle: BUNDLE, control, numbers, files, coreFile: bundleFile ? resolve(bundleFile) : null,
         check: (label, ok, data, cls) => { checks.push({ label, ok: !!ok, cls, data }); if (!control) lines.push(`  ${ok ? 'ok  ' : 'FAIL'} [${engine}] ${label}${ok ? '' : ' ' + JSON.stringify(data)?.slice(0, 300)}`); },
         save: (n, img) => writeFileSync(join(pngDir, `${engine}${control ? '-control' : ''}-${n}.png`), encodePng(img)),
       };
@@ -137,7 +137,9 @@ async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
 }
 
 const report = { gate: 'G-xbrowser', at: new Date().toISOString(), engines: {}, pass: true };
-const srv = await startServer({ inject: RECORDER, files: bundleFile ? { [CORE]: resolve(bundleFile) } : {} });
+/** URL paths the server maps onto files: the --bundle-file core, and the mutant cores of scrollCompose's control (added while it runs) */
+const files = bundleFile ? { [CORE]: resolve(bundleFile) } : {};
+const srv = await startServer({ inject: RECORDER, files });
 try {
   for (const engine of engines) {
     const load = await waitLoad();
@@ -175,7 +177,9 @@ try {
     for (const row of E.real.rows) {
       const ok = !row.threw && row.checks.length > 0 && row.checks.every((c) => c.ok);
       let control = noControl ? 'skipped' : 'n/a';
-      const want = CONTROL_CLASSES[row.scenario] ?? [];
+      // a scenario that only reported a documented skip (class n/a) has nothing to control; a function names the classes from what the real run checked
+      const decl = CONTROL_CLASSES[row.scenario];
+      const want = row.checks.every((c) => c.cls === 'n/a') ? [] : typeof decl === 'function' ? decl(row) : (decl ?? []);
       if (!noControl && want.length) {
         const cr = E.control.rows.find((r) => r.scenario === row.scenario);
         const red = new Set((cr?.checks ?? []).filter((c) => !c.ok).map((c) => c.cls));
