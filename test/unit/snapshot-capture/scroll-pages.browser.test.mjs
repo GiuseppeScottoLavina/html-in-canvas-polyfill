@@ -2,8 +2,8 @@
 // header's own tile must equal a capture at the live offset; every scroller the composition cannot reproduce must get no plan.
 import { test, assert, frames } from '/test/unit/lib/t.js';
 import { mount, rasterize, diffFraction, inkFraction } from './_support.mjs';
-import { planScrollPages, planSteps } from '/src/snapshot/capture/scroll-pages.js';
-import { cornerSquares, covers, snapPx } from '/src/snapshot/store/scroll-compose.js';
+import { planScrollPages, planSteps, composeGrid } from '/src/snapshot/capture/scroll-pages.js';
+import { cornerSquares, covers, snapPx, rowOf } from '/src/snapshot/store/scroll-compose.js';
 
 const S = 2;
 const rows = Array.from({ length: 120 }, (_, i) => `<div class="row" style="${i % 2 ? 'background:#19263d' : ''}"><span class="b" style="background:hsl(${(i * 37) % 360} 70% 45%)">${i}</span><span>Row ${i} amber fjord kelp ${i * 7}</span></div>`).join('');
@@ -171,6 +171,36 @@ test('a large scroller (9000 elements) is planned in steps; a change of its subt
   let last;
   while (!(last = again.next()).done);
   assert.equal(last.value, null, 'the subtree changed between steps: no plan');
+});
+
+/** @param {Generator<void, any, void>} g */
+const run = (g) => { let r; while (!(r = g.next()).done); return r.value; };
+
+test('the engines: Chromium composes on surface pixels, WebKit on its css px grid (an opaque flag for its rounded ports), Gecko and others not at all', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  await frames(2);
+  const list = m.layerEl.querySelector('.list');
+  const d = m.layerEl.firstElementChild;
+  assert.deepEqual([composeGrid('chromium'), composeGrid('webkit'), composeGrid('gecko'), composeGrid('other')], [0, 1, undefined, undefined]);
+  const chromium = run(planSteps(document, m.layer, list, d, 'chromium'));
+  assert.ok(chromium && !('grid' in chromium), 'Chromium: a plan without a grid (the arithmetic of every Chromium composition is unchanged)');
+  const webkit = run(planSteps(document, m.layer, list, d, 'webkit'));
+  assert.equal(webkit?.grid, 1, 'WebKit: a plan on the 1 css px grid');
+  assert.equal(webkit.opaque, true, 'the list has an opaque background');
+  assert.equal(run(planSteps(document, m.layer, list, d, 'gecko')), null, 'Gecko: no plan (not verified)');
+  list.style.background = 'transparent';
+  assert.equal(run(planSteps(document, m.layer, list, d, 'webkit'))?.opaque, false, 'a transparent scroller is not opaque');
+});
+
+test('snapPx / rowOf / covers on a css px grid: edges and offsets snap as WebKit renders them (DPR 3)', () => {
+  const geo = { scale: 3, ink: { left: 4, top: 4, right: 4, bottom: 4 } };
+  const r = { x: 10.4, y: 10.4, width: 60, height: 40.2 };
+  // image layout coordinates: 14.4 .. 74.4 and 14.4 .. 54.6
+  assert.deepEqual(snapPx(r, geo), { x: 43, y: 43, width: 180, height: 121 }, 'surface pixels (Chromium)');
+  assert.deepEqual(snapPx(r, geo, 1), { x: 42, y: 42, width: 180, height: 123 }, 'whole css px, then scaled (WebKit: 14 .. 74 and 14 .. 55)');
+  assert.deepEqual([rowOf(133.333, 3), rowOf(133.333, 3, 1), rowOf(133.5, 3, 1), rowOf(133.4, 3, 1)], [400, 399, 402, 399], 'WebKit renders an offset at the nearest whole css px');
+  assert.equal(covers([0, 41], 20, 123, 3, 1), true, 'pages at 0 and 41 cover a 41 px port at 20');
+  assert.equal(covers([0, 42], 20, 123, 3, 1), false, 'a page at 42 leaves rows 63 .. 66 of the port uncovered');
 });
 
 test('covers(): gaps, edges and pixel rounding', () => {

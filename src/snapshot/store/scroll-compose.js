@@ -70,21 +70,47 @@ const MAX_MISSES = 2;
  * @property {() => number} [now]
  */
 
-/** @param {Rect} r @param {Geometry} geo @returns {Rect} css rect of the drawable frame -> whole surface pixels */
-export function snapPx(r, geo) {
+/**
+ * css rect of the drawable frame -> whole surface pixels, each edge snapped as the image snaps it: to the nearest surface pixel (an image laid out at device scale), or,
+ * with `grid` (ScrollPlan.grid, css px), to the nearest multiple of the grid in the image's layout coordinates (frame + ink) and then scaled (WebKit lays the image out
+ * at css scale and snaps every box edge to whole css px before its transform scales it).
+ * @param {Rect} r @param {Geometry} geo @param {number} [grid]
+ * @returns {Rect}
+ */
+export function snapPx(r, geo, grid) {
   const s = geo.scale;
+  if (grid) {
+    const g = (/** @type {number} */ v) => Math.round(v / grid) * grid * s;
+    const gx = g(r.x + geo.ink.left), gy = g(r.y + geo.ink.top);
+    return { x: gx, y: gy, width: g(r.x + r.width + geo.ink.left) - gx, height: g(r.y + r.height + geo.ink.top) - gy };
+  }
   const x0 = Math.round((r.x + geo.ink.left) * s);
   const y0 = Math.round((r.y + geo.ink.top) * s);
   return { x: x0, y: y0, width: Math.round((r.x + r.width + geo.ink.left) * s) - x0, height: Math.round((r.y + r.height + geo.ink.top) * s) - y0 };
 }
 
-/** @param {Rect} r @param {Geometry} geo @returns {Rect} css rect of the drawable frame -> surface pixels, rounded out */
-const outPx = (r, geo) => {
+/** @param {Rect} r @param {Geometry} geo @param {number} [grid] see snapPx @returns {Rect} css rect of the drawable frame -> surface pixels, rounded out (to the grid) */
+const outPx = (r, geo, grid) => {
   const s = geo.scale;
+  if (grid) {
+    const x0 = Math.floor((r.x + geo.ink.left) / grid) * grid * s, y0 = Math.floor((r.y + geo.ink.top) / grid) * grid * s;
+    return { x: x0, y: y0, width: Math.ceil((r.x + r.width + geo.ink.left) / grid) * grid * s - x0, height: Math.ceil((r.y + r.height + geo.ink.top) / grid) * grid * s - y0 };
+  }
   const x0 = Math.floor((r.x + geo.ink.left) * s);
   const y0 = Math.floor((r.y + geo.ink.top) * s);
   return { x: x0, y: y0, width: Math.ceil((r.x + r.width + geo.ink.left) * s) - x0, height: Math.ceil((r.y + r.height + geo.ink.top) * s) - y0 };
 };
+
+/**
+ * PURE. The surface row of scroll offset `top`: the offset the image renders, in surface pixels. Without a grid, the nearest surface pixel (Chromium renders a
+ * fractional offset); with one, the nearest multiple of the grid (WebKit renders a scroll offset at whole css px: a page asked at 133.333 shows 133, one at 133.5
+ * shows 134, measured in Mobile Safari 26.4 at DPR 3).
+ * @param {number} top css px @param {number} s scale @param {number} [grid] css px
+ * @returns {number}
+ */
+export function rowOf(top, s, grid) {
+  return grid ? Math.round(top / grid) * grid * s : Math.round(top * s);
+}
 
 /** @param {Rect} px @param {Geometry} geo @returns {Rect} surface pixels -> css rect of the drawable frame */
 const toCss = (px, geo) => ({ x: px.x / geo.scale - geo.ink.left, y: px.y / geo.scale - geo.ink.top, width: px.width / geo.scale, height: px.height / geo.scale });
@@ -108,13 +134,13 @@ const sameGeo = (a, b) => a.scale === b.scale && a.widthPx === b.widthPx && a.he
 const topOf = (el) => /** @type {HTMLElement} */ (el).scrollTop;
 
 /**
- * PURE. Does a set of pages cover the scrollport at `top`? Rows are surface pixels; a page at `p` shows port row j at view row j + round(p * s) - round(top * s).
- * @param {number[]} tops @param {number} top @param {number} rows port height in surface pixels @param {number} s
+ * PURE. Does a set of pages cover the scrollport at `top`? Rows are surface pixels; a page at `p` shows port row j at view row j + rowOf(p) - rowOf(top).
+ * @param {number[]} tops @param {number} top @param {number} rows port height in surface pixels @param {number} s @param {number} [grid] see rowOf
  * @returns {boolean}
  */
-export function covers(tops, top, rows, s) {
-  const base = Math.round(top * s);
-  const spans = tops.map((p) => Math.round(p * s) - base).map((off) => [Math.max(0, off), Math.min(rows, off + rows)]).filter(([a, b]) => b > a).sort((u, v) => u[0] - v[0]);
+export function covers(tops, top, rows, s, grid) {
+  const base = rowOf(top, s, grid);
+  const spans = tops.map((p) => rowOf(p, s, grid) - base).map((off) => [Math.max(0, off), Math.min(rows, off + rows)]).filter(([a, b]) => b > a).sort((u, v) => u[0] - v[0]);
   let reach = 0;
   for (const [a, b] of spans) {
     if (a > reach) return false;
@@ -221,12 +247,17 @@ export function createScrollCompositor(deps) {
     };
     if (!plan) return refuse();
     refused.get(entry)?.delete(el);
-    const portPx = snapPx(plan.port, geo);
+    const grid = plan.grid;
+    // a grid that is not a whole number of surface pixels (WebKit with a reduced or fractional scale) cannot be shifted by whole pixels
+    if (grid && !Number.isInteger(grid * geo.scale)) return refuse();
+    const portPx = snapPx(plan.port, geo, grid);
     if (portPx.width <= 0 || portPx.height <= 0) return null;
     const live = topOf(el);
     const round = plan.round ?? null;
+    // a rounded port on a grid (WebKit) is composed source-over (compose()): exact over opaque pages only
+    if (round && grid && !plan.opaque) return refuse();
     const shape = round ? /** @type {const} */ ('square') : undefined;
-    const padPx = snapPx(paddingBox(plan), geo);
+    const padPx = snapPx(paddingBox(plan), geo, grid);
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
@@ -234,8 +265,8 @@ export function createScrollCompositor(deps) {
     };
     if (plan.bar) {
       const b = plan.bar;
-      const trackPx = snapPx(b.gutter, geo);
-      const thumbPx = snapPx({ x: b.gutter.x + b.thumbX, y: b.gutter.y + b.thumbY(live), width: b.thumbW, height: b.thumbH }, geo);
+      const trackPx = snapPx(b.gutter, geo, grid);
+      const thumbPx = snapPx({ x: b.gutter.x + b.thumbX, y: b.gutter.y + b.thumbY(live), width: b.thumbW, height: b.thumbH }, geo, grid);
       cache.bar = { track: { pad: null, px: trackPx }, thumb: { pad: null, px: thumbPx, top: live } };
       build(entry, cache, trackPx, { el, top: live, hide: [], bars: 'track', shape }, cache.bar.track);
       build(entry, cache, thumbPx, { el, top: live, hide: [], bars: 'thumb', shape }, cache.bar.thumb);
@@ -244,7 +275,7 @@ export function createScrollCompositor(deps) {
     for (const p of plan.pinned) {
       const r = entry.record.layer?.frameRect(p);
       if (!r) return null;
-      const px = snapPx(r, geo);
+      const px = snapPx(r, geo, grid);
       const port = portPx;
       // one device pixel of slack at each edge: the pinned box and the port are snapped each on its own (a 398.4 px header at DPR 1.25 came out 499 px wide in a
       // 498 px port); compose() clips every pinned tile to the port
@@ -268,7 +299,9 @@ export function createScrollCompositor(deps) {
     const P = cache.portPx.height / s;
     const dir = top >= cache.last ? 1 : -1;
     cache.last = top;
-    const at = (/** @type {number} */ k) => Math.round(Math.min(cache.plan.maxTop, Math.max(0, k * P)) * s) / s;
+    const grid = cache.plan.grid;
+    // an offset the image renders exactly: a whole surface pixel, or a multiple of the grid (rowOf)
+    const at = (/** @type {number} */ k) => { const t = Math.min(cache.plan.maxTop, Math.max(0, k * P)); return grid ? Math.round(t / grid) * grid : Math.round(t * s) / s; };
     const lo = Math.floor((top - (dir > 0 ? P / 2 : P)) / P);
     const hi = Math.floor((top + P + (dir > 0 ? P : P / 2)) / P);
     const want = [];
@@ -300,13 +333,14 @@ export function createScrollCompositor(deps) {
     if (c.bar && (!c.bar.track.pad || !c.bar.thumb.pad)) return null;
     if (c.backdrop && !c.backdrop.pad) return null;
     const s = c.geo.scale;
+    const grid = c.plan.grid;
     const R = c.portPx;
-    const base = Math.round(top * s);
+    const base = rowOf(top, s, grid);
     /** @type {Page[]} */
     const clean = [];
     for (const p of [...c.pages]) {
       if (!p.pad) continue;
-      const off = Math.round(p.top * s) - base;
+      const off = rowOf(p.top, s, grid) - base;
       const y0 = Math.max(0, off), y1 = Math.min(R.height, off + R.height);
       if (y1 <= y0) continue;
       const need = { x: R.x, y: base + y0, width: R.width, height: y1 - y0 };
@@ -317,7 +351,7 @@ export function createScrollCompositor(deps) {
       if (count) p.misses = 0;
       clean.push(p);
     }
-    if (!covers(clean.map((p) => p.top), top, R.height, s)) return null;
+    if (!covers(clean.map((p) => p.top), top, R.height, s, grid)) return null;
     return clean.sort((a, b) => Math.abs(b.top - top) - Math.abs(a.top - top));
   }
 
@@ -417,15 +451,15 @@ export function createScrollCompositor(deps) {
         // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
         // the content box is none of the pages' business, the scroller clips its content to the port)
         c.memo.clear();
-        const px = outPx(content, c.geo);
-        const d = { x: px.x, y: px.y - c.portPx.y + Math.round(top * c.geo.scale), width: px.width, height: px.height };
+        const px = outPx(content, c.geo, c.plan.grid);
+        const d = { x: px.x, y: px.y - c.portPx.y + rowOf(top, c.geo.scale, c.plan.grid), width: px.width, height: px.height };
         for (const p of c.pages) if (p.seq !== null) { p.dirty.push(d); p.dirtySeq.push(n); }
         const visible = intersectRect(rect, P);
         if (visible) c.unverified.push(visible);
         // a pinned element the change reaches is rendered again (no composition until its tile is back)
         for (const [el, pin] of c.pins) {
           const r = entry.record.layer?.frameRect(el);
-          if (r && meets(r, rect)) { pin.pad = null; build(entry, c, snapPx(r, c.geo), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
+          if (r && meets(r, rect)) { pin.pad = null; build(entry, c, snapPx(r, c.geo, c.plan.grid), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
         }
         counters.dirtied++;
       }
@@ -505,17 +539,17 @@ export function createScrollCompositor(deps) {
     for (const el of c.pins.keys()) {
       const r = entry.record.layer?.frameRect(el);
       if (!r) return;
-      const px = outPx(r, c.geo);
+      const px = outPx(r, c.geo, c.plan.grid);
       out.push({ x: px.x, y: px.y - drift, width: px.width, height: px.height + 2 * drift });
     }
-    const base = Math.round(top * s);
+    const base = rowOf(top, s, c.plan.grid);
     const shift = base - R.y;
     /** @type {Rect[]} tile pixels that are content, in content pixels */
     const good = subtractRects(crop, out).map((r) => ({ ...r, y: r.y + shift }));
     for (const p of c.pages) {
       if (!p.pad || !p.dirty.length) continue;
       const ctx = /** @type {CanvasRenderingContext2D} */ (p.pad.getContext('2d'));
-      const pb = Math.round(p.top * s);
+      const pb = rowOf(p.top, s, c.plan.grid);
       /** @type {Rect[]} */ const keep = [];
       /** @type {number[]} */ const keepSeq = [];
       p.dirty.forEach((d, i) => {
@@ -547,28 +581,33 @@ export function createScrollCompositor(deps) {
     if (!ctx || ctx.isContextLost?.()) return false;
     const R = c.portPx;
     const s = c.geo.scale;
-    const base = Math.round(top * s);
+    const grid = c.plan.grid;
+    const base = rowOf(top, s, grid);
     /** @type {Array<{pad: Surface, px: Rect}>} */
     const pins = [];
     for (const [el, pin] of c.pins) {
       const r = entry.record.layer?.frameRect(el);
       if (!r || !pin.pad) return false;
-      const px = snapPx(r, c.geo);
+      const px = snapPx(r, c.geo, grid);
       if (px.width !== pin.w || px.height !== pin.h) return false;
       pins.push({ pad: pin.pad, px });
     }
     const round = c.plan.round ?? null;
-    /** clip to the rounded padding box (exact edges, antialiased like the engine's own clip) */
+    /** clip to the rounded padding box (exact edges, antialiased like the engine's own clip; on a grid, the box the image snapped to it) */
     const shape = () => {
       if (!round) return;
       const P = paddingBox(c.plan);
       const g = c.geo;
-      const x = (P.x + g.ink.left) * s, y = (P.y + g.ink.top) * s;
+      const box = grid ? snapPx(P, g, grid) : { x: (P.x + g.ink.left) * s, y: (P.y + g.ink.top) * s, width: P.width * s, height: P.height * s };
       const sc = (/** @type {{x: number, y: number}} */ r) => ({ x: r.x * s, y: r.y * s });
       ctx.beginPath();
-      ctx.roundRect(x, y, P.width * s, P.height * s, [sc(round.tl), sc(round.tr), sc(round.br), sc(round.bl)]);
+      ctx.roundRect(box.x, box.y, box.width, box.height, [sc(round.tl), sc(round.tr), sc(round.br), sc(round.bl)]);
       ctx.clip();
     };
+    // under the rounded clip on a grid (WebKit): an accelerated WebKit canvas drawing with 'copy' multiplies the source by the clip's coverage and drops the
+    // destination (Mobile Safari 26.4: canvases of 200 px and more; 60 px blends like Skia), so the curve of the port came out semi-transparent (alpha 172-192).
+    // The opaque pages and pins (install) are drawn source-over the backdrop instead, which blends them by the coverage as 'copy' does in Chromium
+    const over = round && grid ? 'source-over' : 'copy';
     ctx.save();
     try {
       ctx.globalCompositeOperation = 'copy';
@@ -581,7 +620,7 @@ export function createScrollCompositor(deps) {
         }
       }
       for (const p of pages) {
-        const off = Math.round(p.top * s) - base;
+        const off = rowOf(p.top, s, grid) - base;
         const y0 = Math.max(0, off);
         const y1 = Math.min(R.height, off + R.height);
         if (y1 <= y0) continue;
@@ -590,6 +629,7 @@ export function createScrollCompositor(deps) {
         ctx.beginPath();
         ctx.rect(R.x, R.y + y0, R.width, y1 - y0);
         ctx.clip();
+        ctx.globalCompositeOperation = over;
         ctx.drawImage(/** @type {Surface} */ (p.pad), R.x, R.y + off);
         ctx.restore();
       }
@@ -615,6 +655,7 @@ export function createScrollCompositor(deps) {
         ctx.beginPath();
         ctx.rect(x0, y0, x1 - x0, y1 - y0);
         ctx.clip();
+        ctx.globalCompositeOperation = over;
         ctx.drawImage(pad, px.x, px.y);
         ctx.restore();
       }

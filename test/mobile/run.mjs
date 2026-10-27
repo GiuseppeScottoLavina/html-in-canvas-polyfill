@@ -53,7 +53,7 @@ async function runScenarios(s, srv, label, platform, control, scenarios, extra =
     if (control && !(CONTROL_CLASSES[name] ?? []).length) continue;
     const checks = [];
     const ctx = {
-      s, srv, bundle: BUNDLES[platform], control, numbers, platform, ...extra,
+      s, srv, files, bundle: BUNDLES[platform], control, numbers, platform, ...extra,
       check: (l, ok, data, cls) => { checks.push({ label: l, ok: !!ok, cls, data }); if (!control) console.log(`  ${ok ? 'ok  ' : 'FAIL'} [${label}] ${l}${ok ? '' : ' ' + JSON.stringify(data)?.slice(0, 300)}`); },
       save: (n, img) => writeFileSync(join(pngDir, `${label.replace(/\W+/g, '_')}${control ? '-control' : ''}-${n}.png`), encodePng(img)),
     };
@@ -84,7 +84,9 @@ function verdicts(real, control) {
 }
 
 const report = { gate: 'G-mobile', at: new Date().toISOString(), note: 'simulators and emulators only; no physical device', devices: {}, pass: true };
-const srv = await startServer({ inject: RECORDER });
+// files: URL paths the scenarios map onto files of their own (scrollCompose's mutant bundles under .scratch)
+const files = {};
+const srv = await startServer({ inject: RECORDER, files });
 const port = Number(new URL(srv.url).port);
 
 async function device(label, launch, plan, { optional = false } = {}) {
