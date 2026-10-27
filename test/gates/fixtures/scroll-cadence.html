@@ -3,6 +3,7 @@
 <title>scroll cadence: an inner list drawn into a canvas, and its plain-DOM twin</title>
 <script>
   // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1  frac=0|1 (a list column of fractional width, 400.4 px)
+  //   fracrows=1 (rows of fractional height: 36.6 css px, their content's own height)
   var q = new URLSearchParams(location.search); window.__q = q;
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
 </script>
@@ -14,8 +15,10 @@
   #list.round { border-radius: 12px; }
   #list header { position: sticky; top: 0; z-index: 1; padding: 10px 12px; font-weight: 700; background: #e6ecf7; border-bottom: 1px solid #c9d1de; }
   #list ol { margin: 0; padding: 0; list-style: none; }
-  /* whole-pixel rows: a list of fractional rows (36.6 px) shows one row 1 device px off in the plain tile at some offsets (a capture issue of its own, not of scrolling) */
+  /* whole-pixel rows by default; fracrows=1 gives them their content's height, 36.6 px (padding 16 + line 19.6 + border 1): a spacer of the pruned rows written 1/64 px short
+     put the rows after it one device px off at some offsets (clone.js layoutPx) */
   #list li { display: flex; gap: 10px; box-sizing: border-box; height: 37px; padding: 8px 12px; border-bottom: 1px solid #e6eaf2; }
+  #list.fracrows li { height: auto; }
   #list li i { min-width: 30px; text-align: center; border-radius: 6px; color: #fff; font-style: normal; font-weight: 700; }
   #panel { display: grid; gap: 12px; align-content: start; }
   #panel h2 { margin: 0; font-size: 26px; }
@@ -43,6 +46,7 @@
   document.getElementById('count').textContent = N;
   const list = document.getElementById('list');
   if (q.get('round') === '1') list.classList.add('round');
+  if (q.get('fracrows') === '1') list.classList.add('fracrows');
   if (q.get('frac') === '1') document.getElementById('app').style.gridTemplateColumns = '400.4px 1fr';
   if (q.get('hover') === '1') { const st = document.createElement('style'); st.textContent = '#list li:hover { background: #cfdcf8; }'; document.head.append(st); }
   let canvas = document.getElementById('stage');

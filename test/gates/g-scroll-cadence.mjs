@@ -1,6 +1,8 @@
 // G-scroll-cadence: an inner list drawn into a canvas follows a trusted wheel stream at the display rate, and every frame it shows is a correct one.
 //   Cases (fixture scroll-cadence.html, the same trusted input for each): a plain list with a sticky header, the same with rounded corners, with :hover rows, a long
-//   list (2000 rows, 6000+ elements), and the plain list in a column of fractional width (400.4 px: its clientWidth is rounded, its layout is not). The pointer rests over the list before the stream (no warm-up gesture: the FIRST gesture is measured).
+//   list (2000 rows, 6000+ elements), the plain list in a column of fractional width (400.4 px: its clientWidth is rounded, its layout is not), and a list of rows of
+//   fractional height (36.6 px, 900+ elements: the pages and tiles are pruned, and a spacer that was a LayoutUnit short put the rows after it a device pixel off
+//   between a composed frame and the settled tile, clone.js layoutPx). The pointer rests over the list before the stream (no warm-up gesture: the FIRST gesture is measured).
 //   cadence  per rAF frame of the stream: the live scroller moved (the compositor delivered the offset to the main thread) and the canvas got a paint for it.
 //            Thresholds MOVE_CASE / MOVE_MEAN and the per-case paint shares, from this machine (120 Hz, DPR 2 and 1.25): the plain DOM list and a native drawable
 //            (Canary 158) move and paint in 97 % of the frames; the old behaviour painted 61, 61, 49 and 4 times per second (plain, rounded, hover, long).
@@ -22,6 +24,7 @@ const CASES = [
   { name: 'hover', params: { rows: 300, hover: 1 }, paint: 0.8, compose: 0 },
   { name: 'long', params: { rows: 2000 }, paint: 0.85, compose: 0.7 },
   { name: 'fractional', params: { rows: 300, frac: 1 }, paint: 0.9, compose: 0.8 },
+  { name: 'fracrows', params: { rows: 300, fracrows: 1 }, paint: 0.9, compose: 0.8 },
 ];
 /**
  * Share of the stream's frames in which the live list moved (and the canvas with it): at least MOVE_CASE in every case and MOVE_MEAN over the cases. The plain DOM list
