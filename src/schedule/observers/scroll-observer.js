@@ -60,8 +60,9 @@ export function observeScroll(env, record) {
     }
     under = next;
     // the plan and the pages are side builds of the post-frame pump, which runs only in a frame with work: without the wake they waited for the first scroll event,
-    // and that gesture began with a plain build inside its first frame and the plan and page builds in the frames after it
-    if (seen) env.scheduler.wake(record);
+    // and that gesture began with a plain build inside its first frame and the plan and page builds in the frames after it. Not for a finger: its gesture starts
+    // within a few frames, and the builds woken at touchstart delayed its first step (measured: +10 to +35 ms at 4x / 6x CPU throttling)
+    if (seen && /** @type {PointerEvent} */ (ev).pointerType !== 'touch') env.scheduler.wake(record);
   };
   /** @param {Event} ev */
   const onOut = (ev) => {

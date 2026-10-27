@@ -194,6 +194,9 @@ test('the pointer entering a scroller inside a drawable asks the compositor to p
   assert.equal(rig.sink.wakes, again, 'and wakes nothing');
   rig.layerEl.querySelector('#b').dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
   assert.equal(rig.sink.wakes, again, 'the pointer over no scroller wakes nothing');
+  sc.firstElementChild.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'touch' }));
+  assert.deepEqual(seen, [sc, sc], 'a finger landing on the scroller prepares it too');
+  assert.equal(rig.sink.wakes, again, 'but wakes nothing: its gesture follows at once, and builds woken at touchstart delayed its first step');
 });
 
 test('scroll of the layer itself (not inside a drawable) damages the whole canvas', async t => {
