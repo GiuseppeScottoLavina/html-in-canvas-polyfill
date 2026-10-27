@@ -114,9 +114,9 @@ const LIMITS = {
   // 334.25 -> 335.5 KB, gzip 116.75 -> 117.25 KB (+1,325 / +477 bytes, 2026-10-27, measured 335,405 / 117,055): the scroll compositor on Gecko (Firefox): the
   //   planner's Gecko rules (1x only, the content whose painting no clip edge changes: clipInvariant over every element and its pseudo-elements, the unverified
   //   elements), whole-pixel offsets in the store (wholeRow), the refused rounded port, the re-plan after a change inside the content
-  // 334.25 -> 334.5 KB (+323 bytes, 2026-10-27, measured 334,403 / 116,692): a canvas that never paints no longer counts as waiting for its first snapshot for good
+  // 335.5 -> 335.75 KB (+338 / +127 bytes, 2026-10-27, measured 335,743 / 117,182): a canvas that never paints no longer counts as waiting for its first snapshot for good
   //   (it kept every build inside the frame and stopped the scroll compositor of the page), a refused scroller is planned again once it has moved on screen
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 335.5 * KB, gzip: 117.25 * KB },
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 335.75 * KB, gzip: 117.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

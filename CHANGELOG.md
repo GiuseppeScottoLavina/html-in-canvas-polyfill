@@ -12,7 +12,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
-- The core bundle grows to 335,405 bytes minified, 117,055 gzipped (+1,325 / +477 bytes for the scroll compositor on Gecko).
+- The core bundle grows to 335,743 bytes minified, 117,182 gzipped (+1,325 / +477 bytes for the scroll compositor on Gecko, +338 / +127 bytes for the empty-canvas and refusal fixes).
 
 ### Fixed
 

@@ -111,7 +111,9 @@ if (!docsOnly) {
   // layoutPx and the 1000 px bound of a spacer and a merged run; the drift between composed frames and settled tiles on Chromium).
   // 16025 -> 16050 (2026-10-27, measured 16,039; 16,010 before this step): the scroll compositor on Gecko (+29: scroll-pages.js clipInvariant and the 1x rule,
   // scroll-compose.js wholeRow and the re-plan after a change inside the content)
-  if (total > 16050) problems.push(`G-size: core is ${total} code lines (> 16050)`);
+  // 16050 -> 16075 (2026-10-27, measured 16,052; 16,039 before this step): a canvas that never paints stops asking for an in-frame first snapshot (+13: scheduler.js
+  // firstDue and Entry.firstSince; scroll-compose.js placeOf, a refused scroller planned again once it has moved on screen)
+  if (total > 16075) problems.push(`G-size: core is ${total} code lines (> 16075)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
