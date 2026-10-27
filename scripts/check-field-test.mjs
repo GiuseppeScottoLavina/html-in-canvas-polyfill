@@ -2,12 +2,13 @@
 // G-field-test: the field test page (examples/field-test/) runs end to end in HEADLESS Chrome and produces a valid report.
 //
 //   npm run build && npm run test:field
-//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing] [--headed] [--scrollbars=overlay|classic]
+//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing,smooth-drop,smooth-shift] [--headed] [--scrollbars=overlay|classic]
 //
 // Runs (each in a fresh page of one headless Chrome, trusted input through CDP):
 //   clean    every step with an accepted tab capture (--auto-select-tab-capture-source-by-title picks this tab): the capture calibrates,
 //            the picture comparisons of box A (canvas) and box B (plain page) PASS, typing and scrolling are measured on screen, the
-//            effect step runs, the zoom step sees an emulated 125 % zoom, the report downloads through the page's own button and validates
+//            scroll smoothness step measures the scripted scroll, the composed-vs-settled pixels and a trusted wheel stream as the tester's
+//            own scrolling (green in headless Chrome), the effect step runs, the zoom step sees an emulated 125 % zoom, the report downloads through the page's own button and validates
 //            (page validator + the independent assertions below), the in-page self-check passes.
 //   dpr125   the same at a device pixel ratio of 1.25 (--force-device-scale-factor, the common Windows setting), without the zoom step.
 //   broken   POSITIVE CONTROL: drawElementImage is wrapped to draw 8 grid px lower (a deliberately broken polyfill canvas); the pixel
@@ -15,6 +16,11 @@
 //   denied   getDisplayMedia rejects with NotAllowedError: the report records 'denied', the canvas-only checks still run.
 //   refused  the user agent says Chrome 120: the polyfill refuses, the page still runs and records the refusal.
 //   missing  the core bundle answers 404: the page still runs and records that the script did not load.
+//   smooth-drop   POSITIVE CONTROL of the scroll smoothness metrics: every second canvas paint event is stopped before the page's onpaint (a canvas that
+//            updates in every other frame, as WebKit's rebuild per scroll step did before 0.1.0-preview.9): the scripted scroll must be red. The tester
+//            does not scroll: the touch part must end by its (shortened) timeout and be recorded as skipped.
+//   smooth-shift  POSITIVE CONTROL of the composed-vs-settled oracle: the first canvas paint after each scroll of a list is drawn 1 px lower (a composed
+//            frame that lands a pixel off): the pixel check must be red. The tester presses "I cannot scroll here": the touch part is skipped.
 // Results: .scratch/results/field-test-<timestamp>/ (the downloaded report of each run, a screenshot of the finished page, a summary JSON).
 // Headless by default; --headed runs the same steps in a visible window (it takes the screen focus).
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -110,7 +116,7 @@ function assertShape(run, r) {
   run.check('environment: user agent, DPR, refresh rate, media, system colours, scrollbars, fonts, WebGPU, WebGL', !!(r.environment.browser.userAgent && r.environment.display.devicePixelRatio > 0 && r.environment.display.refresh.hz > 0
     && r.environment.media.colorGamut && r.environment.systemColors.Highlight && r.environment.scrollbars.type && Array.isArray(r.environment.fonts.available) && 'available' in r.environment.webgpu && 'available' in r.environment.webgl),
   { dpr: r.environment.display.devicePixelRatio, hz: r.environment.display.refresh.hz, highlight: r.environment.systemColors.Highlight, scrollbars: r.environment.scrollbars });
-  run.check('every step has a status', ['welcome', 'capture', 'picture', 'typing', 'scrolling', 'effect', 'zoom', 'finish'].every((id) => r.steps[id] && r.steps[id].status), Object.fromEntries(Object.entries(r.steps).map(([k, v]) => [k, v.status])));
+  run.check('every step has a status', ['welcome', 'capture', 'picture', 'typing', 'scrolling', 'smoothness', 'effect', 'zoom', 'finish'].every((id) => r.steps[id] && r.steps[id].status), Object.fromEntries(Object.entries(r.steps).map(([k, v]) => [k, v.status])));
   run.check('the summary counts the verdicts', r.summary && Object.values(r.summary.verdicts).reduce((a, b) => a + b, 0) === r.checks.length, r.summary);
 }
 
@@ -140,6 +146,7 @@ async function runClean(browser, site, { name = 'clean', zoom = true } = {}) {
     await page.wheel(box.x, box.y, 0, Math.floor(i / 10) % 2 ? -40 : 40);
     await H.sleep(16);
   }
+  await runSmoothness(page, { scroll: 'wheel' });
   // effect: move the pointer over the effect canvas
   await waitStep(page, 'effect', 30000);
   const fx = await need(() => page.evaluate(`(() => { const e = document.querySelector('#ft-canvas-effect'); if (!e || e.closest('[hidden]')) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`), 15000, 'the effect canvas');
@@ -172,6 +179,7 @@ async function runClean(browser, site, { name = 'clean', zoom = true } = {}) {
   const scrolling = r.steps.scrolling.results;
   run.check('scrolling: canvas and plain-page update rates measured on screen', scrolling.onScreen?.canvasChangesPerSec > 0 && scrolling.onScreen?.plainChangesPerSec > 0, scrolling.onScreen);
   run.check('scroll-end: box A equals box B where the scrolling stopped', checkById(r, 'scrolling.scroll-end')?.verdict === 'pass', checkById(r, 'scrolling.scroll-end'));
+  assertSmooth(run, r);
   run.check('effect: the step ran and recorded its path', r.steps.effect.status === 'done' && ['effect', '2d'].includes(r.steps.effect.results.path), r.steps.effect.results);
   if (zoom) run.check('zoom: the emulated 125 % zoom was seen and measured', r.steps.zoom.status === 'done' && r.steps.zoom.results.zoomPercent === 125 && checkById(r, 'zoom.rest')?.verdict === 'pass', { zoom: r.steps.zoom.results.zoomPercent, rest: checkById(r, 'zoom.rest') });
   run.check('crops: PNG pictures within the 2 MB budget', Object.keys(r.crops.images).length >= 5 && r.crops.usedChars <= 2e6, { n: Object.keys(r.crops.images).length, used: r.crops.usedChars, omitted: r.crops.omitted.length });
@@ -184,6 +192,74 @@ async function runClean(browser, site, { name = 'clean', zoom = true } = {}) {
   await page.close();
   return run;
 }
+
+/**
+ * The scroll smoothness step: Start, the automatic parts (scripted scroll, pixel jumps), then the tester's part: `wheel` a trusted wheel stream over the
+ * Rounded list until the step has its seconds of movement, `none` nothing (the part ends by its timeout), `skip` the "I cannot scroll here" button. Then Continue.
+ */
+async function runSmoothness(page, { scroll }) {
+  await waitStep(page, 'smoothness', 30000);
+  await press(page, 'start-smooth');
+  await need(() => page.evaluate("!!document.querySelector('#ft-step-buttons [data-action=\"skip-touch\"]')"), 90000, 'the touch part of the scroll smoothness step');
+  if (scroll === 'skip') await press(page, 'skip-touch');
+  else if (scroll === 'wheel') {
+    const box = await centerOf(page, '#ft-canvas-smooth .ft-round');
+    const t0 = Date.now();
+    for (let i = 0; Date.now() - t0 < 30000 && !(await page.evaluate("!!document.querySelector('#ft-step-buttons [data-action=\"continue\"]')")); i++) {
+      await page.wheel(box.x, box.y, 0, Math.floor(i / 25) % 2 ? -40 : 40);
+      await H.sleep(16);
+    }
+  }
+  await press(page, 'continue', 30000);
+}
+/** the scroll smoothness record of a report where the step ran to its end: shape and sane numbers, and the green verdicts headless Chrome gets */
+function assertSmooth(run, r, { touch = 'done', expect = { script: 'pass', pixels: 'pass', touch: 'pass' } } = {}) {
+  const sm = r.scrollSmoothness;
+  run.check('smoothness: the step ran to its end', r.steps.smoothness.status === 'done' && sm?.complete === true, { status: r.steps.smoothness.status, sm: sm && { complete: sm.complete, verdict: sm.verdict } });
+  if (!sm?.complete) return;
+  run.check('smoothness: device facts (UA, DPR, screen, raster scale, frame interval)', typeof sm.device.userAgent === 'string' && sm.device.devicePixelRatio > 0 && sm.device.screen?.[0] > 0 && sm.device.rasterScale > 0 && sm.script.round.frameMs > 0, sm.device);
+  for (const k of ['round', 'square']) {
+    const m = sm.script[k];
+    run.check(`smoothness: the scripted scroll of the ${k} list moved and was measured (moves, updates per second, compositor counters, clone and decode times)`,
+      m.moves >= 60 && m.paintHz > 0 && m.startLag.length === 3 && m.stats?.scroll && typeof m.stats.scroll.composed === 'number' && typeof m.stats.cloneMsP50 === 'number', { moves: m.moves, paintHz: m.paintHz, startLag: m.startLag, stats: m.stats });
+  }
+  run.check(`smoothness: scripted verdict ${expect.script}`, r.checks.find((c) => c.id === 'smoothness.script')?.verdict === expect.script, { check: r.checks.find((c) => c.id === 'smoothness.script'), round: sm.script.round, square: sm.script.square });
+  if (expect.pixels) run.check('smoothness: every pixel jump measured (12 jumps, each repainted and compared)', sm.pixels.jumps === 12 && [...sm.pixels.round.jumps, ...sm.pixels.square.jumps].every((j) => typeof j.diff === 'number'), sm.pixels);
+  if (expect.pixels) run.check(`smoothness: pixel verdict ${expect.pixels}`, r.checks.find((c) => c.id === 'smoothness.pixels')?.verdict === expect.pixels, { check: r.checks.find((c) => c.id === 'smoothness.pixels'), worst: sm.pixels.worst });
+  run.check(`smoothness: the tester's part ended as '${touch}'`, sm.touch.outcome === touch, { outcome: sm.touch.outcome, moves: sm.touch.moves, activeMs: sm.touch.activeMs });
+  if (touch === 'done') run.check(`smoothness: the wheel stream was measured as the tester's scrolling (verdict ${expect.touch})`, sm.touch.moves >= 60 && sm.touch.activeMs >= 6000 && sm.touch.verdict === expect.touch, { ...sm.touch, stats: undefined });
+  else run.check("smoothness: the tester's part without scrolling records no measurement verdict", r.checks.find((c) => c.id === 'smoothness.touch')?.verdict === 'skipped', r.checks.find((c) => c.id === 'smoothness.touch'));
+}
+
+/** a positive control of the scroll smoothness step: every other step skipped, `init` run in the page before its scripts */
+async function runSmoothControl(browser, site, name, { init, scroll, touch, expect }) {
+  const run = new Run(name);
+  const page = await browser.newPage({ reuseFirst: false });
+  await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await page.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__fieldTestOptions = { touchTimeoutMs: 4000, summaryMs: 60000 }; ${init}` });
+  await page.navigate(site.url + '/examples/field-test/');
+  await need(() => page.evaluate('!!window.__fieldTest'), 15000, 'the page script');
+  await press(page, 'start');
+  await waitStep(page, 'capture', 30000);
+  await skipUntil(page, 'smoothness');
+  await runSmoothness(page, { scroll });
+  await skipUntil(page, 'finish');
+  const r = await finishAndDownload(page, run, join(outDir, name));
+  if (r) assertSmooth(run, r, { touch, expect });
+  await page.close();
+  return run;
+}
+/** smooth-drop: every second paint event of the smoothness canvas is stopped before the page's onpaint (the canvas updates in every other frame) */
+const DROP_PAINTS = "(() => { let n = 0; addEventListener('paint', (e) => { if (e.target && e.target.id === 'ft-canvas-smooth' && (n++ % 2)) e.stopImmediatePropagation(); }, true); })();";
+/** smooth-shift: the first paint of the smoothness canvas after a scroll of one of its lists is drawn 1 px lower */
+const SHIFT_FIRST = `(() => { let armed = false;
+  document.addEventListener('scroll', (e) => { if (e.target && e.target.closest && e.target.closest('#ft-canvas-smooth')) armed = true; }, true);
+  addEventListener('DOMContentLoaded', () => {
+    const proto = CanvasRenderingContext2D.prototype, original = proto.drawElementImage;
+    if (!original) return;
+    proto.drawElementImage = function (el, x, y, ...rest) { if (armed && this.canvas.id === 'ft-canvas-smooth') { armed = false; return original.call(this, el, x, y + 1, ...rest); } return original.call(this, el, x, y, ...rest); };
+  });
+})();`;
 
 async function runBroken(browser, site) {
   const run = new Run('broken (positive control)');
@@ -232,8 +308,9 @@ async function runDenied(browser, site) {
     const c = checkById(r, 'picture.select-input');
     run.check('without the capture the canvas-only checks still run (select-input: the selection is drawn)', c?.verdict === 'info' && c.numbers?.roiChangedPct > 0.5, c);
     run.check('without the capture the canvas backing store is kept as a picture', Object.keys(r.crops.images).some((k) => k.endsWith('canvas-backing-store')), Object.keys(r.crops.images));
-    run.check('skipped steps are recorded as skipped', ['typing', 'scrolling', 'effect', 'zoom'].every((id) => r.steps[id].status === 'skipped'), Object.fromEntries(Object.entries(r.steps).map(([k, v]) => [k, v.status])));
-    run.check('a skipped step records no measurement verdict', r.checks.filter((c) => ['typing', 'scrolling', 'effect', 'zoom'].includes(c.id.split('.')[0])).every((c) => c.verdict === 'skipped'), r.checks.filter((c) => ['typing', 'scrolling', 'effect', 'zoom'].includes(c.id.split('.')[0])));
+    run.check('skipped steps are recorded as skipped', ['typing', 'scrolling', 'smoothness', 'effect', 'zoom'].every((id) => r.steps[id].status === 'skipped'), Object.fromEntries(Object.entries(r.steps).map(([k, v]) => [k, v.status])));
+    run.check('a skipped step records no measurement verdict', r.checks.filter((c) => ['typing', 'scrolling', 'smoothness', 'effect', 'zoom'].includes(c.id.split('.')[0])).every((c) => c.verdict === 'skipped'), r.checks.filter((c) => ['typing', 'scrolling', 'smoothness', 'effect', 'zoom'].includes(c.id.split('.')[0])));
+    run.check('a skipped scroll smoothness step leaves scrollSmoothness empty', r.scrollSmoothness === null || r.scrollSmoothness.complete === false, r.scrollSmoothness);
   }
   await page.close();
   return run;
@@ -272,7 +349,7 @@ async function runWithoutPolyfill(browser, site, name, setup) {
  * --scrollbars=overlay|classic sets every run.
  * @type {Record<string, 'overlay'|'classic'>}
  */
-const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay' };
+const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay', 'smooth-drop': 'overlay', 'smooth-shift': 'overlay' };
 
 const RUNS = {
   clean: (b, s) => runClean(b, s),
@@ -283,6 +360,8 @@ const RUNS = {
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     userAgentMetadata: { brands: [{ brand: 'Chromium', version: '120' }, { brand: 'Google Chrome', version: '120' }], fullVersion: '120.0.0.0', platform: 'macOS', platformVersion: '15.0.0', architecture: 'arm', model: '', mobile: false } })),
   missing: (b, s) => runWithoutPolyfill(b, s, 'missing', async () => {}),
+  'smooth-drop': (b, s) => runSmoothControl(b, s, 'smooth-drop', { init: DROP_PAINTS, scroll: 'none', touch: 'timeout', expect: { script: 'fail' } }),
+  'smooth-shift': (b, s) => runSmoothControl(b, s, 'smooth-shift', { init: SHIFT_FIRST, scroll: 'skip', touch: 'skipped', expect: { script: 'pass', pixels: 'fail' } }),
 };
 
 const results = [];

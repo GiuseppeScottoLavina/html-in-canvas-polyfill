@@ -129,6 +129,25 @@
   .ft-effect-sample h3 { margin: 0; font-size: 18px; }
   .ft-effect-sample input { width: 220px; padding: 4px 6px; font: inherit; }
 
+  /* Scroll smoothness: two lists in one canvas, rows of fractional height (36.6 px) and sticky headers, a rounded opaque list and a square transparent one
+     (the scroll compositor's two port shapes; as test/fixtures/mobile/scroll-compose.html). */
+  #ft-smooth-pair[hidden] { display: none; }
+  #ft-smooth-pair figure { width: 100%; max-width: 560px; }
+  .ft-smooth-prompt { margin: 0 0 6px; padding: 8px 10px; border-radius: 8px; background: #fff3c4; font-weight: 600; min-height: 2.6em; }
+  .ft-smooth-prompt[data-tone=idle] { background: #eef1f6; color: var(--muted); font-weight: 400; }
+  .ft-smooth-prompt[data-tone=go] { background: #d9f2e4; color: #11532f; }
+  .pair .frame.smooth { width: 100%; height: 380px; }
+  .ft-smooth-sample { box-sizing: border-box; width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px; padding: 12px; font: 14px/1.4 system-ui, -apple-system, sans-serif; color: #1b2330; background: #fff; }
+  .ft-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .ft-list header { position: sticky; top: 0; z-index: 1; padding: 8px 10px; font-weight: 700; background: #e6ecf7; border-bottom: 1px solid #c9d1de; }
+  .ft-list ol { margin: 0; padding: 0; list-style: none; }
+  .ft-list li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #e6eaf2; white-space: nowrap; overflow: hidden; }
+  .ft-list li b { min-width: 24px; text-align: center; border-radius: 6px; color: #fff; font-size: 12px; }
+  .ft-list.ft-round { border: 1px solid #c9d1de; border-radius: 10px; background: #fbfcfe; }
+  .ft-list.ft-square { margin-top: 7.4px; border-top: 1px solid #9aa4b8; }
+  .smooth-summary { margin: .4rem 0 .6rem; }
+  .smooth-summary td:first-child { white-space: nowrap; }
+
   /* Measurement aids: a full-page calibration card shown for a moment, and the frame marker in a corner. */
   #ft-calib { position: fixed; inset: 0; z-index: 2147483646; background: #fff; pointer-events: none; }
   #ft-calib i { position: absolute; width: 16px; height: 16px; background: #000; }
@@ -172,6 +191,11 @@
       <figure><figcaption>Box B: the same HTML as a plain page</figcaption>
         <div id="ft-twin-scroll" class="frame scroll twin"></div></figure>
     </div>
+    <div class="pair" id="ft-smooth-pair" hidden>
+      <figure><figcaption>Scroll smoothness: two lists drawn into one canvas</figcaption>
+        <p class="ft-smooth-prompt" id="ft-smooth-prompt" data-tone="idle" aria-live="polite"></p>
+        <canvas id="ft-canvas-smooth" class="frame smooth" content="drawable"></canvas></figure>
+    </div>
     <div class="pair" id="ft-effect-pair" hidden>
       <figure><figcaption>An effect plugin (water) on live HTML</figcaption>
         <canvas id="ft-canvas-effect" class="frame effect" content="drawable"></canvas></figure>
@@ -197,6 +221,12 @@
 </template>
 <template id="ft-scroll-template">
   <div class="ft-scroll-sample"><div class="ft-scroller"></div></div>
+</template>
+<template id="ft-smooth-template">
+  <div class="ft-smooth-sample">
+    <section class="ft-list ft-round" aria-label="Rounded list"><header>Rounded</header><ol></ol></section>
+    <section class="ft-list ft-square" aria-label="Square list"><header>Square</header><ol></ol></section>
+  </div>
 </template>
 <template id="ft-effect-template">
   <form class="ft-effect-sample" onsubmit="return false">

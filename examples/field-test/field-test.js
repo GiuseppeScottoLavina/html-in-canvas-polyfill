@@ -4,7 +4,7 @@
 (() => {
   'use strict';
 
-  const TOOL_VERSION = 'field-test/1';
+  const TOOL_VERSION = 'field-test/2'; // 2: the scroll smoothness step and the report key scrollSmoothness (additive: the schema stays 1)
   const SCHEMA = 'hic-field-test/1';
   const CROP_BUDGET = 2000000; // characters of PNG data URLs in one report
   const ISSUE_URL = 'https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues/new?template=field_test.yml';
@@ -38,7 +38,7 @@
       'browser name and version, operating system and version, CPU architecture and device model as the browser reports them',
       'screen size, pixel ratio, zoom, colour and contrast settings, system colours, scrollbar type, which of a short list of common fonts exist',
       'graphics adapter name (WebGPU and WebGL) when the browser exposes it',
-      'timings of the steps (typing, scrolling, effect frame rates)',
+      'timings of the steps (typing, scrolling, scroll smoothness, effect frame rates)',
       'small pictures of the test boxes of this page only (with the tab capture you allowed); nothing outside this tab',
     ],
     environment: null,
@@ -46,6 +46,8 @@
     capture: { state: 'not-asked', supported: null },
     steps: {},
     checks: [],
+    /** the scroll smoothness step (null when it did not run): device facts, the scripted and the tester's scrolling, composed-vs-settled pixels, the verdicts */
+    scrollSmoothness: null,
     summary: null,
     console: boot.console,
     errors: boot.errors,
@@ -741,6 +743,171 @@
   }
 
   // ------------------------------------------------------------------------------------------------------------------------------
+  // Scroll smoothness: the metrics of the repository's scroll benches (test/bench/scroll-jank.mjs, test/bench/scroll-jank-ios.mjs), measured on this device so that
+  // the numbers compare with theirs: per animation frame the lists' offsets and the count of canvas paints (frameMetrics), the polyfill's snapshot stats, and the
+  // composed-vs-settled oracle (the first canvas paint after a jump of a list against the settled canvas at the same offset). docs/guides/FIELD-TEST.md has the basis
+  // of every threshold below.
+  const SMOOTH = {
+    /** share of the frames in which a list moved that also got a canvas update (a scripted scroll moves every frame, so this is the benches' updates per second / frame rate) */
+    painted: { pass: 0.85, fail: 0.6 },
+    /** stutters (canvas update gaps longer than 2.5 frame intervals while a list moves) per second of movement */
+    stutters: { pass: 0.5, fail: 2 },
+    /** worst share of canvas pixels (any channel more than 16 levels apart) where the first paint after a jump differs from the settled canvas */
+    pixels: { pass: 0.0001, fail: 0.01 },
+    /** below this many moved frames a phase is not judged */
+    minMoves: 20,
+    /** the touch phase: seconds of movement wanted, and the longest wait for them */
+    touchNeedMs: 6000, touchTimeoutMs: 60000,
+    /** the oracle's jumps per list (css px; as the benches' offsets: short jumps the cached pages serve, and long ones) */
+    jumps: [100, 130, 437, 851, 61, 1203],
+  };
+  /** options a test harness may set before the step starts (window.__fieldTestOptions); a tester never needs them */
+  const testOptions = () => /** @type {any} */ (window).__fieldTestOptions || {};
+
+  /** per animation frame [t, offsets of the lists, canvas paints so far] until stop() (the benches' RECORDER) */
+  function frameRecorder(lists, pair) {
+    const frames = []; let on = true;
+    const f = (t) => { if (!on) return; frames.push([t, lists.map((l) => l.scrollTop).join(','), pair.paints]); requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+    return { frames, stop() { on = false; return frames; } };
+  }
+  /**
+   * The benches' frameMetrics over frames [t, offsets, paints] inside the movement windows [t0, t1]: a move in frame m is painted in that frame and counted in row m + 1.
+   *   moves       frames in which a list's offset changed          moveGaps   intervals between consecutive moves longer than 2.5 frames (the native scroll stalled)
+   *   unpainted   moves without a canvas update in their frame      paintGaps  stutters: canvas update gaps longer than 2.5 frames over an unpainted move
+   *   paintHz     canvas updates per second from the first move to one frame after the last                    startLag   first move to first canvas update, per window
+   */
+  function frameMetrics(frames, windows) {
+    const dts = []; for (let i = 1; i < frames.length; i++) dts.push(frames[i][0] - frames[i - 1][0]);
+    const iv = quantile(dts, 0.5) || 16.7;
+    const lim = 2.5 * iv;
+    let moves = 0, moveGaps = 0, paintGaps = 0, rafGaps = 0, maxMoveGap = 0, maxPaintGap = 0, maxRaf = 0, unpainted = 0;
+    const startLag = [];
+    let paintsIn = 0, spanIn = 0;
+    for (const [w0, w1] of windows) {
+      const idx = []; for (let i = 1; i < frames.length; i++) if (frames[i][0] >= w0 && frames[i][0] <= w1) idx.push(i);
+      const mv = idx.filter((i) => frames[i][1] !== frames[i - 1][1]);
+      if (!mv.length) continue;
+      moves += mv.length;
+      const first = mv[0], last = mv[mv.length - 1];
+      for (let k = 1; k < mv.length; k++) { const d = frames[mv[k]][0] - frames[mv[k - 1]][0]; if (d > lim) { moveGaps++; maxMoveGap = Math.max(maxMoveGap, d); } }
+      for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; }
+      const painted = (m) => m + 1 < frames.length && frames[m + 1][2] > frames[m][2];
+      for (const m of mv) if (!painted(m)) unpainted++;
+      const pi = []; for (let i = first + 1; i <= Math.min(frames.length - 1, last + 1); i++) if (frames[i][2] > frames[i - 1][2]) pi.push(i);
+      let a = first;
+      for (const b of [...pi, Math.min(frames.length - 1, last + 1)]) {
+        const d = frames[b][0] - frames[a][0];
+        if (d > lim && mv.some((m) => m >= a && m <= b - 1 && !painted(m))) { paintGaps++; maxPaintGap = Math.max(maxPaintGap, d); }
+        a = b;
+      }
+      paintsIn += pi.length; spanIn += frames[Math.min(frames.length - 1, last + 1)][0] - frames[first][0];
+      startLag.push(round((pi.length ? frames[pi[0]][0] : frames[frames.length - 1][0]) - frames[first][0], 1));
+    }
+    return { frameMs: round(iv, 2), frames: frames.length, moves, moveGaps, maxMoveGap: round(maxMoveGap, 1), paintGaps, maxPaintGap: round(maxPaintGap, 1), unpainted,
+      paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: round(maxRaf, 1), startLag, movingMs: Math.round(spanIn),
+      paintedShare: moves ? round(1 - unpainted / moves, 3) : null, stuttersPerSec: spanIn ? round(paintGaps / (spanIn / 1000), 2) : null };
+  }
+  /** the stretches of frames in which a list moved, split where no move came for `gap` ms (a finger at rest, the end of a fling) */
+  function movementWindows(frames, gap = 150) {
+    const out = [];
+    for (let i = 1; i < frames.length; i++) {
+      if (frames[i][1] === frames[i - 1][1]) continue;
+      const t = frames[i][0], w = out[out.length - 1];
+      if (w && t - w[1] <= gap) w[1] = t; else out.push([frames[i - 1][0], t]);
+    }
+    return out;
+  }
+  /** the polyfill's snapshot stats (one store for the page: the same numbers on every canvas entry); null where there are none (a native implementation, no polyfill) */
+  function snapshotStats() {
+    try {
+      const c = (window.__HIC__?.installed?.report?.().canvases ?? []).find((x) => x.stats && x.stats.snapshot)?.stats.snapshot;
+      if (!c) return null;
+      return { commits: c.commits, tiles: c.tiles, cloneMsP50: round(c.cloneMsP50), cloneMsP95: round(c.cloneMsP95), decodeMsP50: round(c.decodeMsP50), decodeMsP95: round(c.decodeMsP95),
+        decodeMainMsP95: round(c.decodeMainMsP95), nodesLast: c.nodesLast, rasterScale: c.rasterScale ?? null, scroll: c.scroll ? { ...c.scroll } : null };
+    } catch (e) { return { error: errInfo(e).message }; }
+  }
+  /** the counters that changed during a phase (scroll compositor: composed steps, fallbacks to a rebuild, refusals, plans, pages...) and the stats at its end */
+  function statsOfPhase(before, after) {
+    const delta = (a, b) => (a && b ? Object.fromEntries(Object.entries(b).filter(([, v]) => typeof v === 'number').map(([k, v]) => [k, v - (a[k] ?? 0)])) : null);
+    return { scroll: delta(before?.scroll, after?.scroll), tiles: after && before ? after.tiles - before.tiles : null, commits: after && before ? after.commits - before.commits : null,
+      cloneMsP50: after?.cloneMsP50 ?? null, cloneMsP95: after?.cloneMsP95 ?? null, decodeMsP50: after?.decodeMsP50 ?? null, decodeMsP95: after?.decodeMsP95 ?? null, decodeMainMsP95: after?.decodeMainMsP95 ?? null };
+  }
+  /** a momentum-like scroll from requestAnimationFrame (scrollTop += v, v decaying; the benches' `script` mode); ends after 6 s whatever happens (rAF stops in a hidden tab) */
+  function scriptedFling(el, v0, dir) {
+    return Promise.race([new Promise((ok) => {
+      let v = v0;
+      const f = () => { el.scrollTop += v * dir; v *= 0.95; if (v < 0.5) return ok(true); requestAnimationFrame(f); };
+      requestAnimationFrame(f);
+    }), sleep(6000).then(() => false)]);
+  }
+  function smoothVerdict(m) {
+    if (!m || m.moves < SMOOTH.minMoves || !m.movingMs) return 'info';
+    const p = m.paintedShare, s = m.stuttersPerSec;
+    if (p >= SMOOTH.painted.pass && s <= SMOOTH.stutters.pass) return 'pass';
+    if (p < SMOOTH.painted.fail || s > SMOOTH.stutters.fail) return 'fail';
+    return 'warn';
+  }
+  function pixelsVerdict(o) {
+    if (!o || !o.jumps.length) return 'info';
+    if (o.jumps.some((j) => !j.painted)) return 'fail';
+    if (o.jumps.some((j) => j.ink < 0.5)) return 'fail';
+    return o.worst <= SMOOTH.pixels.pass ? 'pass' : o.worst <= SMOOTH.pixels.fail ? 'warn' : 'fail';
+  }
+  /**
+   * The benches' oracle: per jump of a list, the first canvas paint after it (a frame composed from cached pages when the compositor serves it) against the settled
+   * canvas at the same offset 700 ms later. Both pictures are copies of the canvas (drawImage into a scratch canvas), so the measured canvas is never read back itself.
+   */
+  async function smoothOracle(pair, el, offsets, signal) {
+    const canvas = pair.canvas;
+    const scratch = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1) : document.createElement('canvas');
+    let sctx = null;
+    const grab = () => {
+      const w = canvas.width, h = canvas.height;
+      if (!w || !h) return null;
+      if (scratch.width !== w || scratch.height !== h) { scratch.width = w; scratch.height = h; }
+      sctx ||= /** @type {any} */ (scratch).getContext('2d', { willReadFrequently: true });
+      sctx.clearRect(0, 0, w, h); sctx.drawImage(canvas, 0, 0);
+      return sctx.getImageData(0, 0, w, h);
+    };
+    const composed = () => snapshotStats()?.scroll?.composed ?? 0;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const jumps = [];
+    for (const t of offsets) {
+      if (signal.aborted) break;
+      await sleep(700);
+      const c0 = composed();
+      const target = Math.min(t, max);
+      const painted = new Promise((ok) => {
+        const on = () => { clearTimeout(timer); try { ok(grab()); } catch (e) { ok({ error: errInfo(e).message }); } };
+        const timer = setTimeout(() => { canvas.removeEventListener('paint', on); ok(null); }, 2000);
+        canvas.addEventListener('paint', on, { once: true });
+      });
+      el.scrollTop = target;
+      const a = await painted;
+      const wasComposed = composed() > c0, paintsAtA = pair.paints;
+      if (!a || a.error) { jumps.push({ t: target, live: el.scrollTop, painted: false, composed: wasComposed, ...(a?.error ? { error: a.error } : {}) }); continue; }
+      await sleep(700);
+      const b = grab(), settlePaints = pair.paints - paintsAtA;
+      if (!b || b.width !== a.width || b.height !== a.height) { jumps.push({ t: target, live: el.scrollTop, painted: true, composed: wasComposed, resized: true }); continue; }
+      const A = a.data, B = b.data, w = a.width;
+      let n = 0, ink = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      for (let i = 0; i < A.length; i += 4) {
+        if (Math.max(Math.abs(A[i] - B[i]), Math.abs(A[i + 1] - B[i + 1]), Math.abs(A[i + 2] - B[i + 2]), Math.abs(A[i + 3] - B[i + 3])) > 16) {
+          n++; const p = i / 4, x = p % w, y = (p - x) / w; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+        }
+        if (B[i + 3] > 0) ink++;
+      }
+      const px = A.length / 4;
+      jumps.push({ t: target, live: round(el.scrollTop, 2), painted: true, composed: wasComposed, settlePaints, diff: round(n / px, 6), pixels: n, ink: round(ink / px, 3), ...(n ? { box: [x0, y0, x1, y1] } : {}) });
+    }
+    const measured = jumps.filter((j) => typeof j.diff === 'number');
+    return { jumps, size: [canvas.width, canvas.height], composedJumps: jumps.filter((j) => j.composed).length, worst: measured.length ? Math.max(...measured.map((j) => j.diff)) : null,
+      worstComposed: measured.some((j) => j.composed) ? Math.max(...measured.filter((j) => j.composed).map((j) => j.diff)) : null };
+  }
+  const SMOOTH_WORDS = { pass: 'green', warn: 'amber', fail: 'red', info: 'not judged', skipped: 'skipped', error: 'error' };
+
+  // ------------------------------------------------------------------------------------------------------------------------------
   // The guided steps
   const ui = {
     show({ meta, title, html, buttons = [] }) {
@@ -988,6 +1155,154 @@
       },
     },
     {
+      id: 'smoothness', title: 'Scroll smoothness', skippable: true,
+      async run(rec, ctx) {
+        if (!apiAvailable()) { check('smoothness', 'skipped', 'no HTML-in-Canvas API: scroll smoothness inside a canvas cannot be measured'); return 'skipped'; }
+        const touch = coarse();
+        ui.show({ meta: ctx.meta, title: 'Scroll smoothness', html: `<p>This step measures how smoothly a long list drawn into a canvas scrolls on this device. It takes about a minute.</p>
+          <p>First the page scrolls the lists by itself for about 25 seconds: please <strong>do not touch the ${touch ? 'screen' : 'mouse or keyboard'}</strong>.
+          Then it asks you to ${touch ? '<strong>flick the list with your finger</strong>' : '<strong>scroll the list with the mouse wheel or the touchpad</strong>'} for a few seconds.</p>`,
+          buttons: [{ id: 'start-smooth', label: 'Start', primary: true, onClick: () => ctx.next('start') }] });
+        $('ft-smooth-pair').hidden = false;
+        const prompt = $('ft-smooth-prompt');
+        const say = (text, tone = 'idle') => { prompt.textContent = text; prompt.dataset.tone = tone; };
+        say('Press Start above when you are ready.');
+        const pair = pairs.smooth || makePair('smooth', 'ft-smooth-template', (root) => {
+          let i = 0;
+          for (const ol of root.querySelectorAll('ol')) {
+            let html = '';
+            for (let k = 0; k < 60; k++, i++) html += `<li><b style="background:hsl(${(i * 37) % 360} 65% 42%)">${k}</b><span>Row ${k} amber fjord kelp</span></li>`;
+            ol.innerHTML = html;
+          }
+        });
+        const round_ = /** @type {HTMLElement} */ (pair.source.querySelector('.ft-round')), square = /** @type {HTMLElement} */ (pair.source.querySelector('.ft-square'));
+        const lists = [round_, square];
+        const out = report.scrollSmoothness = { complete: false, thresholds: SMOOTH, device: null, script: null, touch: null, pixels: null, verdict: null,
+          method: 'per animation frame the offsets of the two lists and the count of canvas paint events (the frame metrics of test/bench/scroll-jank.mjs and scroll-jank-ios.mjs); the polyfill snapshot stats before and after each phase; the first canvas paint after each jump of a list against the settled canvas 700 ms later' };
+        const hide = () => { $('ft-smooth-pair').hidden = true; };
+        try {
+          if ((await ctx.wait()) !== 'start' || ctx.signal.aborted) return 'skipped';
+          ui.show({ meta: ctx.meta, title: 'Scroll smoothness', html: `<p>Please <strong>do not touch the ${touch ? 'screen' : 'mouse or keyboard'}</strong> while the page scrolls the lists by itself.</p>` });
+          bringIntoView(pair.canvas.closest('.pair'));
+          await waitPaint(pair, 0, 5000);
+          await sleep(1500);
+          const s0 = snapshotStats();
+          out.device = {
+            userAgent: navigator.userAgent, platform: platformLabel(), browser: browserLabel(), devicePixelRatio, screen: [screen.width, screen.height], viewport: [innerWidth, innerHeight],
+            pointer: touch ? 'coarse' : 'fine', maxTouchPoints: navigator.maxTouchPoints ?? 0, refreshHz: report.environment?.display?.refresh?.hz ?? null,
+            polyfillMode: window.__HIC__?.installed?.mode ?? null, polyfillVersion: window.HicLivePolyfill?.version ?? null, rasterScale: s0?.rasterScale ?? null,
+            canvas: { backingStore: [pair.canvas.width, pair.canvas.height], cssBox: [pair.canvas.clientWidth, pair.canvas.clientHeight] }
+          };
+          if (!pair.drawn) { check('smoothness', 'fail', 'the scroll smoothness canvas was not drawn within 5 s'); return 'done'; }
+          // 1. scripted baseline: three momentum-like scrolls of each list from requestAnimationFrame (comparable with the benches' script mode)
+          out.script = {};
+          let phase = 0;
+          for (const [name, el] of [['round', round_], ['square', square]]) {
+            if (ctx.signal.aborted) return 'skipped';
+            say(`Hands off: the page is scrolling the ${name === 'round' ? 'Rounded' : 'Square'} list by itself.`);
+            ui.status(`Scripted scroll of the ${name === 'round' ? 'Rounded' : 'Square'} list...`); ui.meter(phase++ / 4);
+            el.scrollTop = 0; await sleep(600);
+            const before = snapshotStats(), recorder = frameRecorder(lists, pair);
+            await sleep(300);
+            const windows = [];
+            for (const dir of [1, 1, -1]) {
+              if (ctx.signal.aborted) break;
+              const a = performance.now();
+              const ended = await scriptedFling(el, 40, dir);
+              windows.push([a, performance.now()]);
+              if (!ended) windows.timedOut = true;
+              await sleep(500);
+            }
+            const frames = recorder.stop();
+            if (ctx.signal.aborted) return 'skipped';
+            const m = frameMetrics(frames, windows);
+            out.script[name] = { ...m, verdict: smoothVerdict(m), stats: statsOfPhase(before, snapshotStats()), pageHidden: document.visibilityState !== 'visible', ...(windows.timedOut ? { timedOut: true } : {}) };
+          }
+          const scriptWorst = ['fail', 'warn', 'pass', 'info'].find((v) => Object.values(out.script).some((r) => r.verdict === v));
+          const sr = out.script.round;
+          check('smoothness.script', scriptWorst, `scripted scroll (baseline): canvas updated in ${round(100 * (sr.paintedShare ?? 0), 0)} % of the frames the Rounded list moved (${sr.paintHz} updates per second at ${round(1000 / sr.frameMs, 0)} frames per second), ${sr.paintGaps} stutters (longest gap ${sr.maxPaintGap} ms); Square list ${round(100 * (out.script.square.paintedShare ?? 0), 0)} %, ${out.script.square.paintGaps} stutters`,
+            { round: { paintedShare: sr.paintedShare, paintHz: sr.paintHz, paintGaps: sr.paintGaps, frameMs: sr.frameMs }, square: { paintedShare: out.script.square.paintedShare, paintHz: out.script.square.paintHz, paintGaps: out.script.square.paintGaps } });
+          // 2. composed vs settled pixels: jumps of each list
+          say('Hands off: the page is checking the pictures of the lists.');
+          const pixels = { round: null, square: null };
+          for (const [name, el] of [['round', round_], ['square', square]]) {
+            if (ctx.signal.aborted) return 'skipped';
+            ui.status(`Comparing scroll frames of the ${name === 'round' ? 'Rounded' : 'Square'} list...`); ui.meter(phase++ / 4);
+            el.scrollTop = 0;
+            pixels[name] = await smoothOracle(pair, el, SMOOTH.jumps, ctx.signal);
+          }
+          if (ctx.signal.aborted) return 'skipped';
+          const all = [...pixels.round.jumps, ...pixels.square.jumps];
+          const ws = [pixels.round.worst, pixels.square.worst].filter((v) => v != null);
+          out.pixels = { ...pixels, worst: ws.length ? Math.max(...ws) : null, composedJumps: pixels.round.composedJumps + pixels.square.composedJumps, jumps: all.length };
+          out.pixels.verdict = pixelsVerdict({ jumps: all, worst: out.pixels.worst });
+          check('smoothness.pixels', out.pixels.verdict, out.pixels.worst == null ? 'scroll frames: no jump of the lists was painted' : `scroll frames: the first canvas update after a jump differs from the settled canvas on at most ${round(100 * out.pixels.worst, 3)} % of the pixels (${out.pixels.composedJumps} of ${all.length} jumps composed from cached pages)${all.some((j) => !j.painted) ? `; ${all.filter((j) => !j.painted).length} jumps not repainted within 2 s` : ''}`,
+            { worst: out.pixels.worst, composedJumps: out.pixels.composedJumps, jumps: all.length });
+          for (const el of lists) el.scrollTop = 0;
+          ui.meter(1);
+          // 3. the tester's own scrolling: a finger flick (or the wheel / touchpad); bounded, skippable on its own
+          const need = testOptions().touchNeedMs ?? SMOOTH.touchNeedMs, limit = testOptions().touchTimeoutMs ?? SMOOTH.touchTimeoutMs;
+          let skipTouch = false;
+          ui.show({ meta: ctx.meta, title: 'Scroll smoothness: your turn', html: touch
+            ? '<p><strong>Flick the Rounded list</strong> (the list on the left inside the canvas) up and down with your finger, several times, until the counter reaches zero.</p>'
+            : '<p>Put the pointer over <strong>the Rounded list</strong> (the list on the left inside the canvas) and <strong>scroll it up and down</strong> with the mouse wheel or two fingers on the touchpad until the counter reaches zero.</p>',
+          buttons: [{ id: 'skip-touch', label: touch ? 'I cannot flick here' : 'I cannot scroll here', onClick: () => { skipTouch = true; } }] });
+          bringIntoView(pair.canvas.closest('.pair'));
+          const before = snapshotStats(), recorder = frameRecorder(lists, pair);
+          let active = 0, lastScroll = -1e9, events = 0;
+          const onScroll = (e) => { const t = e.timeStamp || performance.now(); if (t - lastScroll < 150) active += t - lastScroll; lastScroll = t; events++; };
+          for (const el of lists) el.addEventListener('scroll', onScroll, { passive: true });
+          const start = performance.now();
+          let outcome = 'done';
+          try {
+            for (;;) {
+              if (ctx.signal.aborted) { outcome = 'aborted'; break; }
+              if (skipTouch) { outcome = 'skipped'; break; }
+              if (active >= need) break;
+              const left = limit - (performance.now() - start);
+              if (left <= 0) { outcome = 'timeout'; break; }
+              const remain = Math.max(0, Math.ceil((need - active) / 1000));
+              say(active > 0 ? `Keep ${touch ? 'flicking' : 'scrolling'} the Rounded list: ${remain} s` : `Your turn: ${touch ? 'flick' : 'scroll'} the Rounded list up and down (${remain} s of scrolling needed).`, 'go');
+              ui.status(active > 0 ? `Keep ${touch ? 'flicking' : 'scrolling'}... ${remain} s` : `Waiting for you to ${touch ? 'flick' : 'scroll'} the Rounded list (this part ends by itself in ${Math.ceil(left / 1000)} s).`);
+              ui.meter(active / need);
+              await sleep(250);
+            }
+            say(outcome === 'done' ? 'Thank you. You can stop scrolling.' : 'Scrolling part ended.');
+            if (outcome === 'done') await sleep(1000); // a fling still moving is measured to its end
+          } finally {
+            for (const el of lists) el.removeEventListener('scroll', onScroll);
+          }
+          const frames = recorder.stop();
+          if (outcome === 'aborted') return 'skipped';
+          const m = frameMetrics(frames, movementWindows(frames));
+          out.touch = { outcome, input: touch ? 'touch' : 'wheel or touchpad', activeMs: Math.round(active), scrollEvents: events, waitedMs: Math.round(performance.now() - start), ...m, verdict: smoothVerdict(m), stats: statsOfPhase(before, snapshotStats()) };
+          if (outcome === 'skipped' && !m.moves) check('smoothness.touch', 'skipped', `your own scrolling: skipped (${out.touch.input})`);
+          else if (!m.moves) check('smoothness.touch', 'skipped', `your own scrolling: no scrolling of the lists within ${Math.round(limit / 1000)} s`);
+          else check('smoothness.touch', out.touch.verdict, `your own scrolling (${out.touch.input}${outcome === 'done' ? '' : ', ' + outcome}): canvas updated in ${round(100 * (m.paintedShare ?? 0), 0)} % of the frames a list moved (${m.paintHz} updates per second at ${round(1000 / m.frameMs, 0)} frames per second), ${m.paintGaps} stutters in ${round(m.movingMs / 1000, 1)} s of movement (longest gap ${m.maxPaintGap} ms), first update ${quantile(m.startLag, 0.5) ?? '?'} ms after a scroll starts (median)`,
+            { paintedShare: m.paintedShare, paintHz: m.paintHz, paintGaps: m.paintGaps, stuttersPerSec: m.stuttersPerSec, movingMs: m.movingMs, frameMs: m.frameMs });
+          // the summary: the worst of the judged parts
+          const parts = { touch: out.touch.moves ? out.touch.verdict : 'skipped', script: scriptWorst, pixels: out.pixels.verdict };
+          const order = ['fail', 'warn', 'pass'];
+          out.verdict = { ...parts, overall: order.find((v) => Object.values(parts).includes(v)) ?? 'info' };
+          out.complete = true;
+          rec.results = { verdict: out.verdict, see: 'scrollSmoothness' };
+          const row = (label, v, text) => `<tr><td class="v-${v}">${SMOOTH_WORDS[v] ?? v}</td><td><strong>${label}</strong>: ${escapeHtml(text)}</td></tr>`;
+          const ms = (r) => `${round(100 * (r.paintedShare ?? 0), 0)} % of the moving frames updated, ${r.paintGaps} stutters`;
+          ui.show({ meta: ctx.meta, title: `Scroll smoothness: ${SMOOTH_WORDS[out.verdict.overall]}`, html: `<table class="results smooth-summary">
+            ${row('Your scrolling', parts.touch, out.touch.moves ? ms(out.touch) : 'not measured')}
+            ${row('Scripted scroll', parts.script, `Rounded list ${ms(out.script.round)}; Square list ${ms(out.script.square)}`)}
+            ${row('Scroll frames', parts.pixels, out.pixels.worst == null ? 'not measured' : `at most ${round(100 * out.pixels.worst, 3)} % of the pixels differ from the settled picture`)}
+            </table><p class="step-meta">Green: smooth. Amber: some frames skipped or a slight drift. Red: visible stutter or wrong frames. The numbers are in the report.</p>`,
+          buttons: [{ id: 'continue', label: 'Continue', primary: true, onClick: () => ctx.next('continue') }] });
+          say(`Result: ${SMOOTH_WORDS[out.verdict.overall]}.`);
+          await Promise.race([ctx.wait(), sleep(testOptions().summaryMs ?? 120000)]);
+          return 'done';
+        } finally {
+          hide();
+        }
+      },
+    },
+    {
       id: 'effect', title: 'Effect plugin', skippable: true,
       async run(rec, ctx) {
         const mode = report.polyfill?.mode;
@@ -1205,6 +1520,15 @@
     need(isObj(r.steps), 'steps missing');
     for (const id of STEP_IDS) need(isObj(r.steps?.[id]) && STATUSES.includes(r.steps[id].status), `steps.${id} missing or with an unknown status`);
     need(Array.isArray(r.checks) && r.checks.length > 0, 'checks missing');
+    need(r.scrollSmoothness === null || isObj(r.scrollSmoothness), 'scrollSmoothness is neither null nor an object');
+    if (r.steps?.smoothness?.status === 'done' && r.scrollSmoothness?.complete) {
+      const sm = r.scrollSmoothness, num = (v) => typeof v === 'number' && Number.isFinite(v);
+      need(isObj(sm.device) && num(sm.device.devicePixelRatio) && typeof sm.device.userAgent === 'string', 'scrollSmoothness.device missing');
+      for (const k of ['round', 'square']) need(isObj(sm.script?.[k]) && num(sm.script[k].frameMs) && num(sm.script[k].moves) && num(sm.script[k].paintHz) && VERDICTS.includes(sm.script[k].verdict), `scrollSmoothness.script.${k} missing`);
+      need(isObj(sm.touch) && ['done', 'timeout', 'skipped'].includes(sm.touch.outcome) && num(sm.touch.moves), 'scrollSmoothness.touch missing');
+      need(isObj(sm.pixels) && Array.isArray(sm.pixels.round?.jumps) && Array.isArray(sm.pixels.square?.jumps), 'scrollSmoothness.pixels missing');
+      need(isObj(sm.verdict) && VERDICTS.includes(sm.verdict.overall), 'scrollSmoothness.verdict missing');
+    }
     for (const c of r.checks || []) {
       need(typeof c.id === 'string' && VERDICTS.includes(c.verdict) && typeof c.text === 'string', `check ${c.id}: bad shape`);
       if (c.numbers && 'over16Pct' in c.numbers) need(typeof c.numbers.over16Pct === 'number' && typeof c.numbers.over100Pct === 'number', `check ${c.id}: pixel numbers are not numbers`);
