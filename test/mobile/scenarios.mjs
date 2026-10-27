@@ -1,5 +1,5 @@
 // The scenarios of the mobile gate (test/mobile/run.mjs), on iOS Simulator (Mobile Safari through safaridriver) and Android Emulator (Chrome through CDP).
-// ctx = { s, srv, bundle, control, check(label, ok, data, cls), numbers, save(name, img), platform: 'ios'|'android', standIn, forced, plainBundle }
+// ctx = { s, srv, files, bundle, control, check(label, ok, data, cls), numbers, save(name, img), platform: 'ios'|'android', standIn, forced, plainBundle }; `files`: the server's map of URL paths onto files (scrollCompose serves its mutant bundles through it)
 // `forced`: the browser has a usable native implementation (Chromium 158 on Android), so `bundle` ends with force-polyfill.js (install({ forcePolyfill: true })) and the
 // polyfill scenarios run the polyfill's path on that engine; `nativeFirst` loads `plainBundle` and checks that the polyfill steps aside and the native result passes.
 // The session `s` offers navigate, evaluate, waitFor, screenshot, viewportOffset, tap, swipe, longPress, typeText (false when not drivable), rotate (false when not
@@ -8,6 +8,10 @@
 import { pixelStats, cropImage } from '../harness/lib/pixels.mjs';
 import { decodePng } from '../harness/lib/png.mjs';
 import { readCanvas, oracle, regionChanged, pageErrors, sleep } from '../xbrowser/lib.mjs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { PROJECT_ROOT } from '../harness/lib/util.mjs';
+import { buildMutant } from '../gates/mutants/build.mjs';
 
 function url(ctx, path, params = {}) {
   const u = new URL(path, ctx.srv.url);
@@ -326,6 +330,125 @@ export async function selection(ctx) {
   await noErrors(ctx, 'selection');
 }
 
+/**
+ * In the page: jumps of each scroller (a far one, then a near one the cached pages cover); the first canvas paint after each jump (a COMPOSED frame when the scroll
+ * compositor served it) against the settled canvas at the same offset (the exact tile). A pixel differs when a channel differs by more than 16. Inside the corner squares
+ * of a rounded scroller (radius + 2 css px) the pixels within 1.5 device px of the padding box's curve (the ARC, antialiased by the clip) are counted apart from the
+ * rest (OFF the arc), with the number of arc pixels.
+ */
+export const COMPOSE_ORACLE = (sels, offsets) => `(async () => {
+  const canvas = document.getElementById('hic-surface');
+  const stats = () => window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll ?? {};
+  const grab = () => { const c = new OffscreenCanvas(canvas.width, canvas.height); const x = c.getContext('2d'); x.drawImage(canvas, 0, 0); return x.getImageData(0, 0, c.width, c.height).data; };
+  const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const out = [];
+  for (const sel of ${JSON.stringify(sels)}) {
+    const s = document.querySelector(sel);
+    const cr = canvas.getBoundingClientRect(), k = canvas.width / cr.width, r = s.getBoundingClientRect(), cs = getComputedStyle(s);
+    const rad = parseFloat(cs.borderTopLeftRadius) || 0, m = (rad + 2) * k;
+    const box = { x0: (r.left - cr.left) * k, y0: (r.top - cr.top) * k, x1: (r.right - cr.left) * k, y1: (r.bottom - cr.top) * k };
+    const corner = (x, y) => rad > 0 && (x < box.x0 + m || x > box.x1 - m) && (y < box.y0 + m || y > box.y1 - m);
+    // the padding box and its inner radii (uniform radius and border here), device px
+    const bw = parseFloat(cs.borderTopWidth) || 0, pb = { x0: box.x0 + bw * k, y0: box.y0 + bw * k, x1: box.x1 - bw * k, y1: box.y1 - bw * k }, ri = Math.max(0, rad - bw) * k;
+    const arc = (x, y) => {
+      const px = x + 0.5, py = y + 0.5;
+      const cx = px < (pb.x0 + pb.x1) / 2 ? pb.x0 + ri : pb.x1 - ri, cy = py < (pb.y0 + pb.y1) / 2 ? pb.y0 + ri : pb.y1 - ri;
+      if (!(ri > 0) || (px - cx) * (cx - (pb.x0 + pb.x1) / 2) < 0 || (py - cy) * (cy - (pb.y0 + pb.y1) / 2) < 0) return false;
+      return Math.abs(Math.hypot(px - cx, py - cy) - ri) < 1.5;
+    };
+    let arcPixels = 0;
+    for (let y = Math.floor(box.y0); y < box.y1; y++) for (let x = Math.floor(box.x0); x < box.x1; x++) if (corner(x, y) && arc(x, y)) arcPixels++;
+    for (const t of ${JSON.stringify(offsets)}) {
+      await wait(700);
+      const c0 = stats().composed ?? 0;
+      const painted = new Promise((ok) => canvas.addEventListener('paint', () => ok(grab()), { once: true }));
+      s.scrollTop = t;
+      const a = await Promise.race([painted, wait(5000).then(() => null)]);
+      if (!a) { out.push({ sel, t, painted: false }); continue; }
+      const composed = (stats().composed ?? 0) > c0;
+      await wait(700);
+      const b = grab();
+      let grid = 0, onArc = 0, offArc = 0, max = 0, maxArc = 0;
+      for (let i = 0; i < a.length; i += 4) {
+        const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]), Math.abs(a[i + 3] - b[i + 3]));
+        if (d <= 16) continue;
+        const p = i / 4, x = p % canvas.width, y = (p - x) / canvas.width;
+        if (!corner(x, y)) { grid++; max = Math.max(max, d); } else if (arc(x, y)) { onArc++; maxArc = Math.max(maxArc, d); } else { offArc++; max = Math.max(max, d); }
+      }
+      let ink = 0; for (let i = 3; i < b.length; i += 4) if (b[i] > 0) ink++;
+      out.push({ sel, t, live: s.scrollTop, composed, grid, offArc, onArc, arcPixels, max, maxArc, ink: +(ink / (b.length / 4)).toFixed(3) });
+    }
+  }
+  return { dpr: devicePixelRatio, size: [canvas.width, canvas.height], jumps: out, scroll: stats() };
+})()`;
+
+/**
+ * Mutants of the readable core bundle for the scrollCompose control: each takes back one part of the WebKit composition (an anchor that drifted fails loudly).
+ * grid: pages and rects on device pixels (the Chromium snapping): the composed frames came out one device pixel low. corner: a rounded port composed with 'copy':
+ * an accelerated WebKit canvas drops the destination under the antialiased curve.
+ */
+const COMPOSE_MUTANTS = {
+  grid: [['...grid ? { grid } : {},', '...{},']],
+  corner: [['const over = round && grid ? "source-over" : "copy";', 'const over = "copy";']],
+};
+
+/**
+ * The scroll compositor on WebKit at the phone's DPR (3 on the iPhone 17 Pro, 2 on the iPhone 17): every composed frame equals the tile the snapshot settles on at
+ * that offset, everywhere but on the antialiased arc of a rounded port. On the arc a few pixels may differ (at most 2 % of them, measured 0-3 of about 250 at DPR 3):
+ * the compositor blends a page rendered with square corners (content over the scroller's background) into the backdrop by the clip's coverage, where the engine
+ * clips the content alone over background and border; the two differ where translucent content (a glyph's edge, a row's border) crosses the curve. The Chromium path
+ * composes rounded ports the same way (test/unit/snapshot-capture/scroll-pages.browser.test.mjs). The control serves a mutant core (COMPOSE_MUTANTS) instead of
+ * sabotaging the page, and each mutant must turn its own class red.
+ */
+export async function scrollCompose(ctx) {
+  const { s } = ctx;
+  if (ctx.platform !== 'ios') { ctx.check('scrollCompose: WebKit only (Chrome for Android runs the Chromium compositor that the desktop gates cover)', true, null, 'n/a'); return; }
+  const sels = ['#round', '#square'];
+  const offsets = [100, 131, 400, 437, 800, 851, 20, 61, 1203, 1170];
+  const run = async (bundle, tag) => {
+    const u = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
+    u.searchParams.set('iso', '0'); u.searchParams.set('mode', 'poly'); u.searchParams.set('bundle', bundle);
+    await s.navigate(u.href);
+    await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
+    await sleep(1500);
+    const r = await s.evaluate(COMPOSE_ORACLE(sels, offsets), { timeoutMs: 90000 });
+    ctx.numbers[`scrollCompose${tag}`] = r;
+    return r;
+  };
+  /** @param {any} r @param {string} label @param {'grid'|'corner'} cls */
+  const judgeCompose = (r, label, cls) => {
+    const composed = r.jumps.filter((j) => j.composed);
+    const per = sels.map((sel) => composed.filter((j) => j.sel === sel).length);
+    const bad = composed.filter((j) => (cls === 'grid' ? j.grid > 0 : j.offArc > 0 || j.onArc > 0.02 * j.arcPixels));
+    ctx.check(`scrollCompose ${label}: each scroller composed at least 3 of its ${offsets.length} jumps (composed: ${per.join(' / ')}) and every jump painted, the canvas non-blank`,
+      per.every((n) => n >= 3) && r.jumps.every((j) => j.painted !== false && j.ink > 0.5), { per, scroll: r.scroll }, 'surface');
+    ctx.check(`scrollCompose ${label}: every composed frame equals the settled tile at its offset at DPR ${r.dpr} (${cls === 'grid' ? 'outside the rounded corners: no pixel over 16' : 'in the rounded corners: no pixel over 16 off the antialiased arc, at most 2 % of the arc'})`,
+      composed.length > 0 && bad.length === 0, bad.slice(0, 4), cls);
+  };
+  if (!ctx.control) {
+    const r = await run(ctx.bundle, '');
+    judgeCompose(r, '', 'grid');
+    judgeCompose(r, '', 'corner');
+    await noErrors(ctx, 'scrollCompose');
+    return;
+  }
+  const core = '/dist/hic-live-polyfill.iife.js';
+  if (!ctx.bundle.split(',').includes(core) || !ctx.files) throw new Error(`scrollCompose control: the bundle list has no ${core} to replace, or the server serves no mutants`);
+  const text = readFileSync(resolve(PROJECT_ROOT, 'dist/hic-live-polyfill.iife.js'), 'utf8');
+  const dir = resolve(PROJECT_ROOT, '.scratch/mobile-mutants');
+  mkdirSync(dir, { recursive: true });
+  for (const [cls, edits] of Object.entries(COMPOSE_MUTANTS)) {
+    const m = buildMutant(text, { edits });
+    if ('drift' in m) throw new Error(`scrollCompose control: mutant ${cls}: ${m.drift}`);
+    const file = resolve(dir, `core-${cls}.js`);
+    writeFileSync(file, m.text);
+    const path = `/__mutant/core-${cls}.js`;
+    ctx.files[path] = file;
+    const r = await run(ctx.bundle.split(',').map((b) => (b === core ? path : b)).join(','), `Mutant_${cls}`);
+    judgeCompose(r, `(mutant ${cls})`, /** @type {'grid'|'corner'} */ (cls));
+  }
+}
+
 /** iOS: every F6 control region in the iOS look vs the plain-DOM twin (the controls thresholds of G-xbrowser). */
 export async function controls(ctx) {
   const { s } = ctx; const P = '/test/fixtures/f6-controls/index.html';
@@ -388,5 +511,5 @@ export async function nativeFirst(ctx) {
   ctx.numbers.nativeFirst = numbers;
 }
 
-export const SCENARIOS = { gate, nativeFirst, explainer, form, moved, touchScroll, rotation, keyboard, selection, controls };
-export const CONTROL_CLASSES = { gate: [], nativeFirst: ['pixel', 'hit', 'typing'], explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit'], moved: ['hit'], touchScroll: ['scroll'], rotation: ['hit'], keyboard: ['hit'], selection: ['hit'], controls: ['control-look'], unsupported: ['refusal'] };
+export const SCENARIOS = { gate, nativeFirst, explainer, form, moved, touchScroll, scrollCompose, rotation, keyboard, selection, controls };
+export const CONTROL_CLASSES = { gate: [], nativeFirst: ['pixel', 'hit', 'typing'], explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit'], moved: ['hit'], touchScroll: ['scroll'], scrollCompose: ['grid', 'corner'], rotation: ['hit'], keyboard: ['hit'], selection: ['hit'], controls: ['control-look'], unsupported: ['refusal'] };
