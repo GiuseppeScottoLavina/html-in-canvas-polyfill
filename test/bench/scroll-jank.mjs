@@ -145,6 +145,9 @@ try {
       if (c.prep) await page.evaluate(c.prep);
       await H.sleep(1200);
       if (!(await page.evaluate(RECORDER(c.scroller)))) throw new Error(`${name}: no scroller`);
+      // a scroller below the fold is brought into view first (a page scroll, as a user would)
+      await page.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(c.scroller)}); const r = e.getBoundingClientRect(); if (r.bottom > innerHeight || r.top < 0) e.scrollIntoView({ block: 'center' }); })()`);
+      await H.sleep(300);
       const r = await page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(c.scroller)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 200), w: innerWidth, h: innerHeight }; })()`);
       if (r.y > r.h - 20) throw new Error(`${name}: scroller below the viewport`);
       const at = { x: r.x, y: r.y };
