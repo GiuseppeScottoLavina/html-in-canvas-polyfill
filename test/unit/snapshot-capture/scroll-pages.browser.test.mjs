@@ -3,7 +3,7 @@
 import { test, assert, frames } from '/test/unit/lib/t.js';
 import { mount, rasterize, diffFraction, inkFraction } from './_support.mjs';
 import { planScrollPages, planSteps, composeGrid } from '/src/snapshot/capture/scroll-pages.js';
-import { cornerSquares, covers, snapPx, rowOf } from '/src/snapshot/store/scroll-compose.js';
+import { cornerSquares, covers, snapPx, rowOf, wholeRow } from '/src/snapshot/store/scroll-compose.js';
 
 const S = 2;
 const rows = Array.from({ length: 120 }, (_, i) => `<div class="row" style="${i % 2 ? 'background:#19263d' : ''}"><span class="b" style="background:hsl(${(i * 37) % 360} 70% 45%)">${i}</span><span>Row ${i} amber fjord kelp ${i * 7}</span></div>`).join('');
@@ -176,20 +176,71 @@ test('a large scroller (9000 elements) is planned in steps; a change of its subt
 /** @param {Generator<void, any, void>} g */
 const run = (g) => { let r; while (!(r = g.next()).done); return r.value; };
 
-test('the engines: Chromium composes on surface pixels, WebKit on its css px grid (an opaque flag for its rounded ports), Gecko and others not at all', async () => {
-  const m = mount(html, { css, width: 440, height: 320 });
+/** run `f` with window.devicePixelRatio reading `dpr` @param {number} dpr @param {() => any} f */
+const atDpr = (dpr, f) => {
+  Object.defineProperty(window, 'devicePixelRatio', { value: dpr, configurable: true });
+  try { return f(); } finally { delete (/** @type {any} */ (window)).devicePixelRatio; }
+};
+
+test('the engines: Chromium composes on surface pixels, WebKit on its css px grid (an opaque flag for its rounded ports), Gecko on whole surface pixels at 1x, others not at all', async () => {
+  const m = mount(html, { css: css + '.b{border-radius:0}', width: 440, height: 320 });
   await frames(2);
   const list = m.layerEl.querySelector('.list');
   const d = m.layerEl.firstElementChild;
-  assert.deepEqual([composeGrid('chromium'), composeGrid('webkit'), composeGrid('gecko'), composeGrid('other')], [0, 1, undefined, undefined]);
+  assert.deepEqual([composeGrid('chromium'), composeGrid('webkit'), composeGrid('gecko'), composeGrid('other')], [0, 1, 0, undefined]);
   const chromium = run(planSteps(document, m.layer, list, d, 'chromium'));
-  assert.ok(chromium && !('grid' in chromium), 'Chromium: a plan without a grid (the arithmetic of every Chromium composition is unchanged)');
+  assert.ok(chromium && !('grid' in chromium) && !('whole' in chromium), 'Chromium: a plan without a grid (the arithmetic of every Chromium composition is unchanged)');
   const webkit = run(planSteps(document, m.layer, list, d, 'webkit'));
   assert.equal(webkit?.grid, 1, 'WebKit: a plan on the 1 css px grid');
+  assert.ok(!('whole' in webkit), 'WebKit: no whole-offset rule');
   assert.equal(webkit.opaque, true, 'the list has an opaque background');
-  assert.equal(run(planSteps(document, m.layer, list, d, 'gecko')), null, 'Gecko: no plan (not verified)');
+  const gecko = atDpr(1, () => run(planSteps(document, m.layer, list, d, 'gecko')));
+  assert.ok(gecko && !('grid' in gecko) && gecko.whole === true, 'Gecko at 1x: a plan on surface pixels, whole offsets only');
+  assert.equal(atDpr(2, () => run(planSteps(document, m.layer, list, d, 'gecko'))), null, 'Gecko at 2x: no plan (the image lays out with 1x font metrics and borders)');
+  assert.equal(atDpr(1.25, () => run(planSteps(document, m.layer, list, d, 'gecko'))), null, 'nor at 1.25x');
   list.style.background = 'transparent';
   assert.equal(run(planSteps(document, m.layer, list, d, 'webkit'))?.opaque, false, 'a transparent scroller is not opaque');
+});
+
+// Gecko paints a rounded corner, a dotted line or a transformed box differently once a clip edge (the scrollport, a page's edge) crosses it, and the content kinds it
+// was not verified with are refused too. Each case: Chromium and WebKit still plan it, Gecko does not; the control (square badges, nothing else) plans on all three.
+const geckoRefusals = [
+  ['rounded badges (the default rows)', ''],
+  ['a rotated row', '.row:nth-child(5){transform:rotate(1deg)}'],
+  ['a row moved by the translate property', '.row:nth-child(5){translate:0 1px}'],
+  ['a dotted border', '.row:nth-child(5){border-bottom-style:dotted}'],
+  ['a rounded ::before', '.row:nth-child(5)::before{content:"";width:8px;height:8px;border-radius:4px;background:red}'],
+  ['a rounded corner on the scroller\'s own ::after', '.list::after{content:"";display:block;height:8px;border-radius:4px;background:red}'],
+  ['a dotted underline', '.row:nth-child(5) span{text-decoration:underline dotted}'],
+  ['a radial gradient', '.row:nth-child(6){background-image:radial-gradient(red,blue)}'],
+];
+for (const [what, extra] of geckoRefusals) {
+  test(`Gecko: no plan for ${what}; Chromium and WebKit plan it`, async () => {
+    const m = mount(html, { css: css + (extra ? '.b{border-radius:0}' + extra : ''), width: 440, height: 320 });
+    await frames(2);
+    const list = m.layerEl.querySelector('.list');
+    const d = m.layerEl.firstElementChild;
+    assert.ok(run(planSteps(document, m.layer, list, d, 'chromium')) && run(planSteps(document, m.layer, list, d, 'webkit')), 'Chromium and WebKit plan it');
+    assert.equal(atDpr(1, () => run(planSteps(document, m.layer, list, d, 'gecko'))), null, 'Gecko does not');
+  });
+}
+for (const [what, tag] of [['an image', 'img'], ['an inline SVG', 'svg'], ['a form control (skinned by the engines bundle)', 'input']]) {
+  test(`Gecko: no plan for ${what} in the content`, async () => {
+    const m = mount(html, { css: css + '.b{border-radius:0}', width: 440, height: 320 });
+    await frames(2);
+    const list = m.layerEl.querySelector('.list');
+    const d = m.layerEl.firstElementChild;
+    assert.ok(atDpr(1, () => run(planSteps(document, m.layer, list, d, 'gecko'))), 'control: planned before');
+    const el = tag === 'svg' ? document.createElementNS('http://www.w3.org/2000/svg', 'svg') : document.createElement(tag);
+    list.querySelectorAll('.row')[6].append(el);
+    await frames(1);
+    assert.equal(atDpr(1, () => run(planSteps(document, m.layer, list, d, 'gecko'))), null);
+  });
+}
+
+test('wholeRow: Gecko composes an offset only on a whole surface pixel (it renders a scroll offset at its exact value)', () => {
+  assert.deepEqual([wholeRow(133, 1), wholeRow(133, 3), wholeRow(133.5, 2), wholeRow(400 / 3, 3)], [true, true, true, true]);
+  assert.deepEqual([wholeRow(133.5, 1), wholeRow(133.2, 3), wholeRow(133.25, 2), wholeRow(0.4, 1)], [false, false, false, false]);
 });
 
 test('snapPx / rowOf / covers on a css px grid: edges and offsets snap as WebKit renders them (DPR 3)', () => {

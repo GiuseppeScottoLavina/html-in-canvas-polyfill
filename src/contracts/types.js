@@ -575,6 +575,8 @@ export {};
  * @property {boolean} [opaque]  the scroller's background colour is opaque: every page pixel is (a page renders the port with square corners)
  * @property {number} [grid]  css px: the snapshot image snaps box edges and scroll offsets to multiples of it in its layout coordinates (WebKit: 1, scroll-pages.js
  *   composeGrid); absent = to surface pixels (Chromium). Every rect, page offset and row of the composition is snapped the same way (scroll-compose.js snapPx, rowOf)
+ * @property {boolean} [whole]  the snapshot image renders a scroll offset at its exact value and snaps each box edge to surface pixels on its own (Gecko): a page is a
+ *   whole-pixel shift of another only when both offsets are whole surface pixels, so only such offsets are composed (scroll-compose.js wholeRow)
  */
 
 /** @typedef {(req: CaptureRequest) => CaptureResult} CaptureFn  SYNCHRONOUS part of a capture: clone + css + serialise + encode to a data: URL. Decode is the store's job. Must not throw: failures become result.unsupported + a placeholder. */

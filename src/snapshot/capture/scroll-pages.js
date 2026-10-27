@@ -28,6 +28,28 @@ function plainEffects(cs) {
     && ((/** @type {any} */ (cs)).maskImage ?? 'none') === 'none';
 }
 
+/** elements whose painting in a Gecko image was not verified under a moving clip (images, SVG and MathML, form controls: the engines bundle skins them) */
+const GECKO_UNVERIFIED = new Set(['img', 'picture', 'svg', 'math', 'input', 'select', 'textarea', 'meter', 'progress']);
+/** line styles a Gecko image paints the same whatever clips them (dotted lines are rows of round dots) */
+const GECKO_LINES = /^(none|hidden|solid|dashed)$/;
+
+/**
+ * Gecko: does this box (an element of the scroller's content, or one of its pseudo-elements) paint the same pixels wherever the scrollport or a page edge cuts it? A Gecko
+ * image paints a rounded corner, a dotted line or a transformed box differently once a clip edge crosses it (Firefox 157, a 24 x 16.8 px box with 6 px corners cut 2 px
+ * below its top: its top corner pixels change by up to 159 of 255; dotted borders by up to 28, a rotated box by up to 25), so a composed frame, whose pages cut the content
+ * at other rows than the settled tile, would differ there. Verified unchanged under such a cut: text, square solid and dashed borders, colours, linear gradients, url()
+ * backgrounds, box and text shadows, opacity, list markers, wavy underlines, nested square clips. Everything else is refused.
+ * @param {CSSStyleDeclaration} cs @returns {boolean}
+ */
+function clipInvariant(cs) {
+  const any = /** @type {any} */ (cs);
+  return square(cs) && cs.transform === 'none' && (any.rotate ?? 'none') === 'none' && (any.scale ?? 'none') === 'none' && (any.translate ?? 'none') === 'none'
+    && plainEffects(cs) && GECKO_LINES.test(cs.borderTopStyle) && GECKO_LINES.test(cs.borderRightStyle) && GECKO_LINES.test(cs.borderBottomStyle)
+    && GECKO_LINES.test(cs.borderLeftStyle) && GECKO_LINES.test(cs.outlineStyle) && GECKO_LINES.test(any.columnRuleStyle ?? 'none')
+    && (any.borderImageSource ?? 'none') === 'none' && cs.listStyleImage === 'none' && (any.textEmphasisStyle ?? 'none') === 'none'
+    && (cs.textDecorationLine === 'none' || /^(solid|wavy)$/.test(cs.textDecorationStyle)) && !/radial|conic|image-set|cross-fade|element\(|paint\(/.test(cs.backgroundImage);
+}
+
 /** @param {CSSStyleDeclaration} cs @returns {boolean} square corners */
 const square = (cs) => px(cs.borderTopLeftRadius) === 0 && px(cs.borderTopRightRadius) === 0 && px(cs.borderBottomLeftRadius) === 0 && px(cs.borderBottomRightRadius) === 0;
 
@@ -114,12 +136,14 @@ function outsideCorner(x, y, w, h, r) {
  * - WebKit lays it out at css scale and a CSS transform scales it ('transform'): every box edge is snapped to whole css px and a scroll offset is rendered at whole
  *   css px, then scaled. Measured in Mobile Safari 26.4 at DPR 3 (test/bench/scroll-jank-ios.mjs oracle): pages at the device-pixel offsets of the Chromium path
  *   came out one device pixel lower than the tile at the same offset, and the port one device row taller. Grid 1.
- * - Gecko (viewBox scaling) is not verified: no composition.
+ * - Gecko lays it out at css scale and the image scales it ('viewBox'): every box edge is snapped to surface pixels as on Chromium (Firefox 157, a box at top 10.2 px,
+ *   20.3 px tall: surface rows 31-91 at scale 3, 13-37 at 1.25), but a scroll offset is rendered at its exact value: only whole-pixel offsets compose
+ *   (ScrollPlan.whole, scroll-compose.js wholeRow), and only on a 1x page with content whose painting no clip edge changes (planSteps).
  * @param {string} engine
  * @returns {number|undefined}
  */
 export function composeGrid(engine) {
-  return engine === 'chromium' ? 0 : engine === 'webkit' ? 1 : undefined;
+  return engine === 'chromium' || engine === 'gecko' ? 0 : engine === 'webkit' ? 1 : undefined;
 }
 
 /**
@@ -146,6 +170,11 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   const win = doc.defaultView;
   const grid = composeGrid(engine);
   if (!win || grid === undefined || layer.nearestDrawable(scroller) !== drawable && scroller !== drawable) return null;
+  const gecko = engine === 'gecko';
+  // Gecko lays an SVG image out with the font metrics and border widths of a 1x display whatever the page's devicePixelRatio, while the page snaps both to its device
+  // pixels (Firefox 157, 30 rows of 13 px text: 420 css px in the image at every ratio, 408 / 420 / 405 live at 1.25 / 1.5 / 2; 30 rows with a 1 px border: 630 in the
+  // image, 624 / 620 live at 1.25 / 1.5). The port, the pinned elements and the spacers of pruned rows come from the live layout, so only a 1x page composes
+  if (gecko && win.devicePixelRatio !== 1) return null;
   const s = /** @type {HTMLElement} */ (scroller);
   const cs = win.getComputedStyle(s);
   // the bar gutters from whole-pixel sizes: offsetWidth and clientWidth are rounded each on its own, so a fractional layout (a 400.4 px track at DPR 1.25: 400 and 399)
@@ -186,6 +215,8 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   if (active && s.contains(active) && active !== s) return null;
   const sel = doc.getSelection();
   if (sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(s)) return null;
+  // the scroller's own generated boxes scroll with its content
+  if (gecko && !['::before', '::after', '::first-letter'].every((p) => clipInvariant(win.getComputedStyle(s, p)))) return null;
   const all = s.getElementsByTagName('*');
   if (all.length > MAX_SCAN) return null;
   const drawables = new Set(layer.drawableElements());
@@ -202,6 +233,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     const el = all[i];
     if (drawables.has(el) || UNSAFE_TAGS.has(el.localName) || animated.has(el) || el.shadowRoot) return null;
     const ecs = win.getComputedStyle(el);
+    if (gecko && (GECKO_UNVERIFIED.has(el.localName) || !clipInvariant(ecs) || !['::before', '::after', '::first-letter'].every((p) => clipInvariant(win.getComputedStyle(el, p))))) return null;
     const pos = ecs.position;
     if (pos === 'static') continue;
     if (pos === 'fixed' || (pos === 'absolute' && cs.position === 'static')) return null;
@@ -228,7 +260,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   }
   return {
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
-    ...(grid ? { grid } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, clear: (rects) => clearOver(doc, layer, s, port, rects),
+    ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, clear: (rects) => clearOver(doc, layer, s, port, rects),
   };
 }
 

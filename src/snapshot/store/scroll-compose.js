@@ -112,6 +112,16 @@ export function rowOf(top, s, grid) {
   return grid ? Math.round(top / grid) * grid * s : Math.round(top * s);
 }
 
+/**
+ * PURE. Is scroll offset `top` a whole number of surface pixels (ScrollPlan.whole)? Gecko renders a scroll offset at its exact value (app units of 1/60 css px) and then
+ * snaps each box edge to surface pixels on its own (Firefox 157, a 1 px line 22 css px below the port: at scale 3 an offset of 133 puts it on surface row 66, 133.2 on
+ * row 65, 133.6 on 64), so a page is a whole-pixel shift of the image at another offset only when both offsets are whole surface pixels.
+ * @param {number} top css px @param {number} s scale @returns {boolean}
+ */
+export function wholeRow(top, s) {
+  return Math.abs(top * s - Math.round(top * s)) < 1e-6;
+}
+
 /** @param {Rect} px @param {Geometry} geo @returns {Rect} surface pixels -> css rect of the drawable frame */
 const toCss = (px, geo) => ({ x: px.x / geo.scale - geo.ink.left, y: px.y / geo.scale - geo.ink.top, width: px.width / geo.scale, height: px.height / geo.scale });
 
@@ -250,12 +260,17 @@ export function createScrollCompositor(deps) {
     const grid = plan.grid;
     // a grid that is not a whole number of surface pixels (WebKit with a reduced or fractional scale) cannot be shifted by whole pixels
     if (grid && !Number.isInteger(grid * geo.scale)) return refuse();
+    // Gecko (ScrollPlan.whole) at a scale that is not a whole number: not verified (a page offset n / scale css px reaches the image in app units of 1/60 css px)
+    if (plan.whole && !Number.isInteger(geo.scale)) return refuse();
     const portPx = snapPx(plan.port, geo, grid);
     if (portPx.width <= 0 || portPx.height <= 0) return null;
     const live = topOf(el);
     const round = plan.round ?? null;
     // a rounded port on a grid (WebKit) is composed source-over (compose()): exact over opaque pages only
     if (round && grid && !plan.opaque) return refuse();
+    // Gecko: its own rounded clip and the canvas's clip antialias the arc differently (Firefox 157, an opaque port at a fractional position: up to 26 levels on 6 of
+    // its 168 arc pixels, more than the 2 % of the arc accepted on Chromium and WebKit)
+    if (round && plan.whole) return refuse();
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
     /** @type {Cache} */
@@ -333,6 +348,7 @@ export function createScrollCompositor(deps) {
     if (c.bar && (!c.bar.track.pad || !c.bar.thumb.pad)) return null;
     if (c.backdrop && !c.backdrop.pad) return null;
     const s = c.geo.scale;
+    if (c.plan.whole && !wholeRow(top, s)) return null;
     const grid = c.plan.grid;
     const R = c.portPx;
     const base = rowOf(top, s, grid);
@@ -448,6 +464,17 @@ export function createScrollCompositor(deps) {
         const content = intersectRect(rect, { x: P.x, y: P.y - top, width: P.width, height: Math.max(c.plan.scrollHeight, P.height) });
         // pages hold scrollport pixels only: a change that reaches none of the content (a counter beside the list) leaves them as they are
         if (!content) { counters.kept++; continue; }
+        // Gecko (ScrollPlan.whole): the plan vouched for the styles of the content when it was made (scroll-pages.js clipInvariant); a change inside it may bring
+        // a rounded corner or a transform, so the scroller is planned again instead of repairing its pages: after newer damage and at most every REPLAN_MS, as
+        // after a refusal (rows changing under a resting pointer would otherwise re-plan it and rebuild its pages at every step)
+        if (c.plan.whole) {
+          counters.dropped++;
+          drop(entry, c);
+          let r = refused.get(entry);
+          if (!r) refused.set(entry, (r = new Map()));
+          r.set(c.el, { at: now(), seq: n });
+          continue;
+        }
         // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
         // the content box is none of the pages' business, the scroller clips its content to the port)
         c.memo.clear();
@@ -530,6 +557,8 @@ export function createScrollCompositor(deps) {
    */
   function repair(entry, c, cropPx, top, tileSeq, surface) {
     const s = c.geo.scale;
+    // a tile at an offset that is not a whole surface pixel is no whole-pixel shift of a page (wholeRow)
+    if (c.plan.whole && !wholeRow(top, s)) return;
     const R = c.portPx;
     const crop = intersectRect(cropPx, R);
     if (!crop) return;
