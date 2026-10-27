@@ -238,6 +238,10 @@ Tick RUN(now), for each canvas record in reverse tree order:
    builds may start one 120 Hz frame apart, never three (it replaced a phase accumulator whose catch-up allowed that second build or not depending on the phase left by earlier builds).
    A long build defers its decode start to the next task, a `scheduler.postTask` user-blocking task like the post-frame pump, so the tile still lands before the app's queued tasks.
    Ordering 3-before-4 means DOM writes made in the paint handler are captured by the build started in the same frame, and the capture reads freshly laid-out DOM (no forced layout).
+   The pump runs in a task after the rendering update, except while the window is being resized, for the first scroll step of a stream and for the first snapshot of a canvas
+   that has a drawable, for at most `paintGateMaxWaitMs` after it got one: those build inside the tick. Side builds (scroll plans and pages) run only in the post-frame pump.
+   A canvas that never paints (no drawable, or a drawable added after the mount that has no box or never commits) waited for good up to 0.1.0-preview.9, kept every pump
+   of the page inside the tick and starved the scroll compositor of every canvas (unit tests in `scheduler.test.mjs`, G-mobile `scrollCompose`).
 5. Frame hooks (`addFrameHook`: the effect host renders here, after the new source version is committed); a hook returning `true` keeps ticking.
 6. Re-arm only if: damage pending, builds in flight/landed, `force`, the gate is waiting, a hook asked, or the cap deferred work (there is no timer). Idle page = zero rAF and zero ResizeObserver from the polyfill (the only remaining timer is the caret blink while a text control is focused; the 1 s presentation poll was replaced by events; G-idle).
 
@@ -332,7 +336,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
 - **DPR change** (page zoom, monitor move; `matchMedia('(resolution: Ndppx)')` + window resize): `BUS.DPR`; raster scale is recomputed from the grid; old surfaces keep being used until re-rastered (`dpr` damage, whole drawable).
 - **Scroll.** Page scroll moves canvas and layer together natively; no re-snapshot is needed because a drawable's surface does not depend on its page position. Scrolling INSIDE the drawable (a `overflow:auto`
   element): native on the live element (wheel, keyboard, touch, scrollbar drag, focus reveal, sticky, anchoring all native); a capture-phase `scroll` listener publishes `scroll` damage on the scroller's box;
-  the clone mirrors `scrollTop/Left` (state sync). Strip-translate scrolling (S-b) failed the pixel oracle at 26-28 % and is discarded [E5]. Eligible scrollers are shown in the scroll step's own rendering update by the scroll compositor (cached pages of the scrollport rendered at other offsets + pinned sticky tiles, exact tile after the scrolling stops). Prototype: pixel-exact incl. sticky header, p50 18 ms lag [E5 scroll].
+  the clone mirrors `scrollTop/Left` (state sync). Strip-translate scrolling (S-b) failed the pixel oracle at 26-28 % and is discarded [E5]. Eligible scrollers are shown in the scroll step's own rendering update by the scroll compositor (cached pages of the scrollport rendered at other offsets + pinned sticky tiles, exact tile after the scrolling stops; a refused scroller is planned again after newer damage or once it has moved on screen, at most once a second). Prototype: pixel-exact incl. sticky header, p50 18 ms lag [E5 scroll].
   Large lists are pruned to the visible window (node budget).
   - **Scroll synchronisation** (`live/scroll-sync.js`, Chromium). The canvas shows the live scroller's MAIN-THREAD offset. During a precise scroll (trackpad, a wheel without
     smooth scrolling) of a composited scroller Chromium's compositor lets impl latency take priority (`SMOOTHNESS_TAKES_PRIORITY`): it draws the scroll without waiting for the

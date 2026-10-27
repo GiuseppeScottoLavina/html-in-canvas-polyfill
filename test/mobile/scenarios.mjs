@@ -383,13 +383,36 @@ export const COMPOSE_ORACLE = (sels, offsets) => `(async () => {
 })()`;
 
 /**
+ * In the scroll-and-resize example with an empty drawable canvas (no drawable child yet, as a page that fills a canvas later has) added to the page: a momentum-like
+ * scroll of the inbox driven from requestAnimationFrame (scrollTop += v, v decaying, as test/bench/scroll-jank-ios.mjs `script`), its scroll steps and the composed
+ * commits they made. Such a canvas once stopped the compositor for every canvas of the page (0 of about 200 steps composed). The jumps of COMPOSE_ORACLE wait 700 ms
+ * each and did not see it on the fixture: it needs a post-frame pump that leaves side builds for the next one.
+ */
+const EMPTY_CANVAS_SCROLL = `(async () => {
+  const c = document.createElement('canvas'); c.setAttribute('content', 'drawable'); c.style.cssText = 'display:block;width:40px;height:40px'; document.body.append(c);
+  const stats = () => window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll ?? {};
+  const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const s = document.getElementById('inbox');
+  await wait(1500);
+  const c0 = stats().composed ?? 0;
+  let steps = 0;
+  for (const dir of [1, 1, -1]) {
+    await new Promise((ok) => { let v = 40; const f = () => { const t = s.scrollTop; s.scrollTop += v * dir; if (s.scrollTop !== t) steps++; v *= 0.95; if (v < 0.5) return ok(); requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await wait(500);
+  }
+  return { steps, composed: (stats().composed ?? 0) - c0, canvases: window.__HIC__.installed.report().canvases.map((x) => x.state + ':' + x.drawables) };
+})()`;
+
+/**
  * Mutants of the readable core bundle for the scrollCompose control: each takes back one part of the WebKit composition (an anchor that drifted fails loudly).
  * grid: pages and rects on device pixels (the Chromium snapping): the composed frames came out one device pixel low. corner: a rounded port composed with 'copy':
- * an accelerated WebKit canvas drops the destination under the antialiased curve.
+ * an accelerated WebKit canvas drops the destination under the antialiased curve. empty: a canvas that never painted counts as one whose first snapshot is due, for
+ * good, so the scheduler builds inside the frame, where the side builds (plans, pages) never run: nothing is composed while an empty drawable canvas is on the page.
  */
 const COMPOSE_MUTANTS = {
   grid: [['...grid ? { grid } : {},', '...{},']],
   corner: [['const over = round && grid ? "source-over" : "copy";', 'const over = "copy";']],
+  empty: [['entry.resized || firstDue(entry, now)', 'entry.resized || !entry.record.paint.everFired']],
 };
 
 /**
@@ -397,8 +420,9 @@ const COMPOSE_MUTANTS = {
  * that offset, everywhere but on the antialiased arc of a rounded port. On the arc a few pixels may differ (at most 2 % of them, measured 0-3 of about 250 at DPR 3):
  * the compositor blends a page rendered with square corners (content over the scroller's background) into the backdrop by the clip's coverage, where the engine
  * clips the content alone over background and border; the two differ where translucent content (a glyph's edge, a row's border) crosses the curve. The Chromium path
- * composes rounded ports the same way (test/unit/snapshot-capture/scroll-pages.browser.test.mjs). The control serves a mutant core (COMPOSE_MUTANTS) instead of
- * sabotaging the page, and each mutant must turn its own class red.
+ * composes rounded ports the same way (test/unit/snapshot-capture/scroll-pages.browser.test.mjs). Then the composed share of a scripted scroll beside an empty
+ * drawable canvas (EMPTY_CANVAS_SCROLL, class `empty`). The control serves a mutant core (COMPOSE_MUTANTS) instead of sabotaging the page, and each mutant must turn
+ * its own class red.
  */
 export async function scrollCompose(ctx) {
   const { s } = ctx;
@@ -415,6 +439,22 @@ export async function scrollCompose(ctx) {
     ctx.numbers[`scrollCompose${tag}`] = r;
     return r;
   };
+  /** the example loads the minified core: a mutant is served at its path (`core`: a file to serve there, null for the built one) @param {string|null} core @param {string} tag */
+  const runEmpty = async (core, tag) => {
+    const min = '/dist/hic-live-polyfill.iife.min.js';
+    if (core) /** @type {Record<string, string>} */ (ctx.files)[min] = core;
+    try {
+      const u = new URL('/examples/scroll-and-resize/index.html', ctx.srv.url);
+      u.searchParams.set('iso', '0');
+      await s.navigate(u.href);
+      await until(s, '!!(window.__HIC__ && window.__HIC__.installed && window.__HIC__.installed.report().canvases.length)', 20000);
+      await sleep(1000);
+      const r = await s.evaluate(EMPTY_CANVAS_SCROLL, { timeoutMs: 60000 });
+      ctx.numbers[`scrollComposeEmpty${tag}`] = r;
+      ctx.check(`scrollCompose${tag ? ` (mutant ${tag})` : ''}: an empty drawable canvas on the page leaves the compositor running: a scripted scroll of the example's inbox composed at least half of its steps (${r.composed} of ${r.steps}; canvases ${r.canvases.join(' ')})`,
+        r.steps > 50 && r.composed >= r.steps / 2, r, 'empty');
+    } finally { if (core) delete /** @type {Record<string, string>} */ (ctx.files)[min]; }
+  };
   /** @param {any} r @param {string} label @param {'grid'|'corner'} cls */
   const judgeCompose = (r, label, cls) => {
     const composed = r.jumps.filter((j) => j.composed);
@@ -430,6 +470,8 @@ export async function scrollCompose(ctx) {
     judgeCompose(r, '', 'grid');
     judgeCompose(r, '', 'corner');
     await noErrors(ctx, 'scrollCompose');
+    await runEmpty(null, '');
+    await noErrors(ctx, 'scrollCompose (empty drawable canvas)');
     return;
   }
   const core = '/dist/hic-live-polyfill.iife.js';
@@ -444,6 +486,7 @@ export async function scrollCompose(ctx) {
     writeFileSync(file, m.text);
     const path = `/__mutant/core-${cls}.js`;
     ctx.files[path] = file;
+    if (cls === 'empty') { await runEmpty(file, cls); continue; }
     const r = await run(ctx.bundle.split(',').map((b) => (b === core ? path : b)).join(','), `Mutant_${cls}`);
     judgeCompose(r, `(mutant ${cls})`, /** @type {'grid'|'corner'} */ (cls));
   }
@@ -512,4 +555,4 @@ export async function nativeFirst(ctx) {
 }
 
 export const SCENARIOS = { gate, nativeFirst, explainer, form, moved, touchScroll, scrollCompose, rotation, keyboard, selection, controls };
-export const CONTROL_CLASSES = { gate: [], nativeFirst: ['pixel', 'hit', 'typing'], explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit'], moved: ['hit'], touchScroll: ['scroll'], scrollCompose: ['grid', 'corner'], rotation: ['hit'], keyboard: ['hit'], selection: ['hit'], controls: ['control-look'], unsupported: ['refusal'] };
+export const CONTROL_CLASSES = { gate: [], nativeFirst: ['pixel', 'hit', 'typing'], explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit'], moved: ['hit'], touchScroll: ['scroll'], scrollCompose: ['grid', 'corner', 'empty'], rotation: ['hit'], keyboard: ['hit'], selection: ['hit'], controls: ['control-look'], unsupported: ['refusal'] };

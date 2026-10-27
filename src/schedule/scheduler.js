@@ -38,6 +38,7 @@ import { shadowIncludingOrder } from '../util/tree-order.js';
  * @property {boolean} afterNested  a canvas nested in its drawables fired a paint (its handler may have drawn into the bitmap the snapshot shows): the next paint waits for a fresh snapshot
  * @property {boolean} resized  resize / DPR damage is pending: this tick builds inside the rendering update (see runTick)
  * @property {number} firedFrame  the tick (frame) in whose interval this canvas last fired a paint: at most one per frame
+ * @property {number|null} firstSince  when the canvas, never painted yet, last got a drawable (firstDue: the window in which its first snapshot is built inside the frame)
  */
 
 /** Damage that comes from the user's hands: it may use options.interactionFloorFps. */
@@ -66,7 +67,7 @@ const FRAME_TICK = Symbol.for('hic.frame-tick');
 function createEntry(record) {
   return {
     record, registered: false, hooks: new Set(), dirty: false, interaction: false, hookKeep: false, wake: false,
-    dispatching: false, due: false, committed: false, changed: new Set(), removed: new Set(), batches: 0, afterNested: false, resized: false, firedFrame: -1,
+    dispatching: false, due: false, committed: false, changed: new Set(), removed: new Set(), batches: 0, afterNested: false, resized: false, firedFrame: -1, firstSince: null,
   };
 }
 
@@ -181,6 +182,7 @@ export function createScheduler(env, store, hooks) {
     const paint = entry.record.paint;
     paint.waitingSince = null;
     paint.gateReason = null;
+    entry.firstSince = null;
     // A canvas without a drawable has nothing to snapshot: native fires no paint for it (WPT moved-webgl-canvas would see an exception thrown by its handler); the first drawable added damages it.
     paint.force = (entry.record.layer?.drawableElements().length ?? 0) > 0;
     capGate.reset(entry.record.id);
@@ -395,6 +397,19 @@ export function createScheduler(env, store, hooks) {
       return false;
     }
     return true;
+  }
+
+  /**
+   * The first snapshot of the canvas is still due: it never painted, has a drawable, and has waited less than options.paintGateMaxWaitMs since it got one. A canvas that
+   * never paints (no drawable at all, or one added after the mount that has no box or never commits: no forced paint is owed then) kept asking, and every tick it took
+   * part in pumped inside the frame, where the side builds of every other canvas (scroll plans and pages) wait; their leftover work made it tick again (iOS Simulator,
+   * the scroll-and-resize example beside an empty canvas: 0 composed scroll steps instead of 211, the scheduler ticking at 61 Hz while idle).
+   * @param {Entry} entry @param {number} now
+   */
+  function firstDue(entry, now) {
+    if (entry.record.paint.everFired || !(entry.record.layer?.drawableElements().length ?? 0)) { entry.firstSince = null; return false; }
+    entry.firstSince ??= now;
+    return now - entry.firstSince < env.options.paintGateMaxWaitMs;
   }
 
   /** @param {Entry} entry */
@@ -646,8 +661,8 @@ export function createScheduler(env, store, hooks) {
     }
     // a resize frame is long (the page relayouts) and the browser runs the NEXT rendering update before a task posted from it, so a post-frame build would land a frame later
     // (measured: resize convergence p95 17 -> 25 ms); resize / DPR damage is built inside the tick. Everything else builds after the frame.
-    // ... and so is the FIRST snapshot of a canvas (so its first paint is not a frame late: WPT onpaint-zindex expects the initial paint within the first frame)
-    const resized = now < resizingUntil || work.some((entry) => entry.resized || !entry.record.paint.everFired);
+    // ... and so is the FIRST snapshot of a canvas (so its first paint is not a frame late: WPT onpaint-zindex expects the initial paint within the first frame).
+    const resized = now < resizingUntil || work.some((entry) => entry.resized || firstDue(entry, now));
     const pumped = resized ? pump(now, interaction, true) : null;
     if (resized) for (const entry of work) entry.resized = false;
     // no pump without something to build: a pump task left queued behind a quiet frame would take the next DOM change BEFORE the rendering update that should observe it

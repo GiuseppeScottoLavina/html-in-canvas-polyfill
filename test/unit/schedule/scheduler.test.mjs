@@ -633,3 +633,66 @@ test('focus / active (and urgent value changes) are built in a microtask of the 
   t.step();
   assert.equal(t.store.pumps, before + 3, 'and are pumped after it');
 });
+
+/** a store with side builds (scroll plans, pages): an urgent pump (inside the tick) leaves them, a post-frame pump runs one; returns the probe counters */
+function sideBuilds(t) {
+  const st = { side: 0, inTick: 0 };
+  t.store.needsPump = () => st.side > 0;
+  t.store.pump = (now, budget) => {
+    t.store.pumps++;
+    if (budget.urgent) st.inTick++;
+    else if (st.side > 0) st.side--;
+    return { started: 0, spentMs: 0, moreWork: st.side > 0, nextDueAt: st.side > 0 ? now : null };
+  };
+  return st;
+}
+
+for (const [what, ready] of [['has no box (zero size, hidden)', { ready: true, reason: 'no-drawables' }], ['never commits (its builds keep failing)', { ready: false, reason: 'first-commit' }]]) {
+  test(`a drawable added after the mount of a canvas that never painted, which ${what}, keeps other canvases' builds inside the tick for at most paintGateMaxWaitMs`, () => {
+    const t = setup();
+    const el = fakeElement();
+    const record = mounted(t, [el]);
+    const late = t.addRecord([]);
+    t.scheduler.register(late);
+    t.run(100);
+    // no forced paint is owed (the canvas mounted empty) and the drawable gives the paint nothing to report: the canvas never paints
+    t.store.readyFor.set(late, ready);
+    late.layer.drawables.push(fakeElement());
+    t.bus.emit(BUS.DRAWABLES_CHANGED, { record: late, added: late.layer.drawables, removed: [] });
+    const st = sideBuilds(t);
+    st.side = 4;
+    t.scheduler.wake(record);
+    t.run(1000);
+    assert.equal(st.side, 0, 'every side build ran');
+    assert.equal(late.paint.everFired, false, 'the canvas still never painted');
+  });
+}
+
+test('a canvas without a drawable keeps no other canvas\'s builds inside the tick: the side builds (scroll plans, pages) still run after the frame, and the ticks stop', () => {
+  const t = setup();
+  const el = fakeElement();
+  const record = mounted(t, [el]);
+  // an empty drawable canvas (no drawable child yet) never fires a paint (native fires none): it was taken for a canvas whose FIRST snapshot is due, so every tick it
+  // was part of pumped inside the rendering update, where side builds wait, and the work they left made every canvas tick again (iOS: 0-1 composed scroll steps of ~215)
+  const empty = t.addRecord([]);
+  t.scheduler.register(empty);
+  t.run(100);
+  let side = 0, inTick = 0;
+  t.store.needsPump = () => side > 0;
+  // side builds run only in a post-frame pump (store.pump), one per pump here: the work left after each makes the scheduler mark every canvas dirty again
+  t.store.pump = (now, budget) => {
+    t.store.pumps++;
+    if (budget.urgent) inTick++;
+    else if (side > 0) side--;
+    return { started: 0, spentMs: 0, moreWork: side > 0, nextDueAt: side > 0 ? now : null };
+  };
+  side = 4;
+  t.scheduler.wake(record);
+  t.run(200);
+  assert.equal(side, 0, 'every side build ran');
+  assert.equal(inTick, 0, 'no pump inside the tick');
+  const rafs = t.fw.counters.rafRequests;
+  t.run(500);
+  assert.equal(t.fw.counters.rafRequests, rafs, 'idle afterwards: no rAF');
+  assert.equal(empty.paint.everFired, false, 'the empty canvas still fires no paint');
+});

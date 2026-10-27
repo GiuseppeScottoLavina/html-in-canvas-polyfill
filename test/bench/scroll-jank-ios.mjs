@@ -1,12 +1,13 @@
 // REPORTED DATA, no thresholds: scroll jank of a drawn inner scroller in Mobile Safari on the iOS SIMULATOR (safaridriver). The simulator runs on the Mac's CPU and GPU:
 // it is not a phone (recent iPhones have a similar single-core speed, older ones are slower; raster and compositing differ), so the numbers show WebKit's code paths
 // and their relative costs, not a device's frame times.
-//   node test/bench/scroll-jank-ios.mjs [--udid=...] [--pages=mobile,inbox] [--modes=script,drag] [--load=MS] [--reps=N] [--core=path] [--out=file]
+//   node test/bench/scroll-jank-ios.mjs [--udid=...] [--pages=mobile,inbox] [--modes=script,drag] [--load=MS] [--reps=N] [--core=path] [--empty] [--out=file]
 // Modes: oracle  jumps of the scroller: the first canvas paint after each (composed when the compositor serves it) vs the settled canvas at that offset;
 //        script  a momentum-like scroll driven from requestAnimationFrame (scrollTop += v, v decaying), no OS input;
 //        drag    a real flick: an OS mouse drag over the Simulator window (test/bench/sim-pointer.py, Quartz) that the Simulator turns into a touch with momentum.
 //                It moves the Mac's pointer: run it only on an unattended machine. It needs the Simulator app's window (`open -a Simulator`); the
 //                Xcode 27 install measured on 2026-10-27 had none, so only `script` and `oracle` ran there.
+// --empty adds an empty drawable canvas (no drawable child) to the page after the install, as a page that fills a canvas later has.
 // --load=MS busy-waits MS ms in every animation frame (a crude stand-in for a slower CPU: it takes main-thread time, it does not slow the polyfill's own work).
 // Metrics as test/bench/scroll-jank.mjs (rAF frames [t, scrollTop, paints]; canvas update gaps > 2.5 frame intervals while the scroller moves), plus the snapshot
 // stats (clone / decode percentiles, tiles) of the run.
@@ -21,6 +22,7 @@ const UDID = arg('udid') ?? 'DFB90FE1-E3F4-451A-8369-3B50C67BD0A5';
 const MODES = (arg('modes') ?? 'script').split(',');
 const LOAD = Number(arg('load') ?? 0);
 const REPS = Number(arg('reps') ?? 1);
+const EMPTY = process.argv.includes('--empty');
 const BUNDLE = arg('bundle') ?? ['/dist/hic-live-engines.iife.js', '/dist/hic-live-gpu.iife.js', '/dist/hic-live-polyfill.iife.js'].join(',');
 const PAGES = {
   mobile: { path: '/test/fixtures/mobile/index.html', q: { mode: 'poly', bundle: BUNDLE }, scroller: '#list', fixture: true },
@@ -108,7 +110,7 @@ const STATS = `(() => { const c = window.__HIC__?.installed?.report?.().canvases
 const CORE = arg('core');
 const srv = await startServer(CORE ? { files: { '/dist/hic-live-polyfill.iife.js': resolve(PROJECT_ROOT, CORE), '/dist/hic-live-polyfill.iife.min.js': resolve(PROJECT_ROOT, CORE) } } : {});
 const s = await launchIosSimulator({ udid: UDID });
-const out = { at: new Date().toISOString(), udid: UDID, load: LOAD, core: CORE ?? null, bundle: BUNDLE, caps: { browserVersion: s.caps.browserVersion, platformVersion: s.caps.platformVersion }, runs: [] };
+const out = { at: new Date().toISOString(), udid: UDID, load: LOAD, empty: EMPTY, core: CORE ?? null, bundle: BUNDLE, caps: { browserVersion: s.caps.browserVersion, platformVersion: s.caps.platformVersion }, runs: [] };
 try {
   if (MODES.includes('drag')) spawnSync('open', ['-a', 'Simulator']);
   for (let rep = 0; rep < REPS; rep++) for (const [name, p] of Object.entries(PAGES)) {
@@ -119,6 +121,7 @@ try {
       await s.waitFor(`!!(window.__HIC__ && window.__HIC__.installed && window.__HIC__.installed.report().canvases.length)`, { timeoutMs: 20000 }).catch(async (e) => {
         throw new Error(`${e.message}; page: ${JSON.stringify(await s.evaluate('({ hic: window.__HIC__ ? { mode: window.__HIC__.installed?.mode, error: String(window.__HIC__.error?.message ?? "") } : null, fixture: window.__HIC_FIXTURE ? { ready: window.__HIC_FIXTURE.ready, fatal: window.__HIC_FIXTURE.fatal } : null, url: location.href })').catch((x) => String(x)))}`);
       });
+      if (EMPTY) await s.evaluate(`(() => { const c = document.createElement('canvas'); c.setAttribute('content', 'drawable'); c.style.cssText = 'display:block;width:40px;height:40px'; document.body.append(c); return true; })()`);
       await sleep(1500);
       await s.evaluate(RECORDER(p.scroller, LOAD));
       let toScreen = null;
