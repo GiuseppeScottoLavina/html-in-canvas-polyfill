@@ -27,7 +27,7 @@ import { subtractRects } from './damage.js';
 const MAX_PAGES = 4;
 /** scrollers with a cache per drawable */
 const MAX_SCROLLERS = 2;
-/** a refused scroller is planned again only after newer damage and at most this often (a scan of its subtree, a hit-test grid) */
+/** a refused scroller is planned again only after newer damage or a move on screen, and at most this often (a scan of its subtree, a hit-test grid) */
 const REPLAN_MS = 1000;
 /** consecutive steps a needed page may stay dirty before it is rebuilt instead of waiting for a tile to repair it */
 const MAX_MISSES = 2;
@@ -143,6 +143,13 @@ const sameGeo = (a, b) => a.scale === b.scale && a.widthPx === b.widthPx && a.he
 /** @param {Element} el @returns {number} */
 const topOf = (el) => /** @type {HTMLElement} */ (el).scrollTop;
 
+/** @param {Element} el @returns {string} the scroller's box in the viewport ('' for the fake scrollers of the unit tests, which have none) */
+const placeOf = (el) => {
+  if (typeof el.getBoundingClientRect !== 'function') return '';
+  const r = el.getBoundingClientRect();
+  return `${r.left},${r.top},${r.width},${r.height}`;
+};
+
 /**
  * PURE. Does a set of pages cover the scrollport at `top`? Rows are surface pixels; a page at `p` shows port row j at view row j + rowOf(p) - rowOf(top).
  * @param {number[]} tops @param {number} top @param {number} rows port height in surface pixels @param {number} s @param {number} [grid] see rowOf
@@ -179,7 +186,7 @@ export function createScrollCompositor(deps) {
   const now = deps.now ?? (() => performance.now());
   /** @type {WeakMap<Entry, Map<Element, Cache>>} */
   const caches = new WeakMap();
-  /** @type {WeakMap<Entry, Map<Element, {at: number, seq: number}>>} scrollers without a plan: planned again after newer damage, at most every REPLAN_MS */
+  /** @type {WeakMap<Entry, Map<Element, {at: number, seq: number, place: string}>>} scrollers without a plan: planned again after newer damage or a move, at most every REPLAN_MS */
   const refused = new WeakMap();
   /** @type {WeakMap<Entry, Set<Element>>} scrollers of a drawable whose plan waits for the pump */
   const planning = new WeakMap();
@@ -237,10 +244,17 @@ export function createScrollCompositor(deps) {
     return Math.abs(h.scrollHeight - c.plan.scrollHeight) < 0.5 && Math.abs(h.clientHeight - client.height) < 0.5 && Math.abs(h.clientWidth - client.width) < 0.5;
   }
 
-  /** @param {Entry} entry @param {Element} el @returns {boolean} a refusal of `el` still stands (no damage since, or too recent) */
+  /**
+   * A refusal of `el` still stands: too recent, or neither damage nor a move since. The plan reads the page as well as the drawable (the whole port must lie in the
+   * viewport, nothing outside the scroller over it): a list that was below the fold when its scrolling began and was then brought into view by a page scroll, which
+   * damages no drawable, stayed refused for good.
+   * @param {Entry} entry @param {Element} el @returns {boolean}
+   */
   function stillRefused(entry, el) {
     const no = refused.get(entry)?.get(el);
-    return !!no && (no.seq === seq || now() - no.at < REPLAN_MS);
+    if (!no) return false;
+    if (now() - no.at < REPLAN_MS) return true;
+    return no.seq === seq && placeOf(el) === no.place;
   }
 
   /** @param {Entry} entry @param {Element} el @param {ScrollPlan|null} plan @returns {Cache|null} */
@@ -252,7 +266,7 @@ export function createScrollCompositor(deps) {
       counters.refusals++;
       let r = refused.get(entry);
       if (!r) refused.set(entry, (r = new Map()));
-      r.set(el, { at: now(), seq });
+      r.set(el, { at: now(), seq, place: placeOf(el) });
       return null;
     };
     if (!plan) return refuse();
