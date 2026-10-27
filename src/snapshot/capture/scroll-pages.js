@@ -133,10 +133,13 @@ export function* planSteps(doc, layer, scroller, drawable) {
   if (!win || currentEngine().engine !== 'chromium' || layer.nearestDrawable(scroller) !== drawable && scroller !== drawable) return null;
   const s = /** @type {HTMLElement} */ (scroller);
   const cs = win.getComputedStyle(s);
-  const gutterX = s.offsetWidth - s.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth);
-  const gutterY = s.offsetHeight - s.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth);
+  // the bar gutters from whole-pixel sizes: offsetWidth and clientWidth are rounded each on its own, so a fractional layout (a 400.4 px track at DPR 1.25: 400 and 399)
+  // shows a gutter of -1 or +1 px that is not there; a classic bar is far wider
+  const gutter = (/** @type {number} */ g) => (Math.abs(g) <= 1 ? 0 : g);
+  const gutterX = gutter(s.offsetWidth - s.clientWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth));
+  const gutterY = gutter(s.offsetHeight - s.clientHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth));
   // a vertical classic bar is composed from its track and thumb tiles; a horizontal one (or a corner) is not
-  if (!/^(auto|scroll)$/.test(cs.overflowY) || s.scrollHeight <= s.clientHeight || s.scrollWidth > s.clientWidth || s.scrollLeft !== 0 || gutterX < -0.5 || Math.abs(gutterY) > 0.5) return null;
+  if (!/^(auto|scroll)$/.test(cs.overflowY) || s.scrollHeight <= s.clientHeight || s.scrollWidth > s.clientWidth + 1 || s.scrollLeft !== 0 || gutterX < -0.5 || Math.abs(gutterY) > 0.5) return null;
   // the author's values: the scroll synchronisation (LiveLayer.syncScroll) overrides these three on the live scroller while it scrolls
   const own = layer.scrollAuthorStyle?.(s) ?? cs;
   if (/ inset/.test(` ${own.boxShadow}`) || !plainEffects(cs) || (own.backgroundImage !== 'none' && !/^local/.test(own.backgroundAttachment))) return null;
@@ -145,7 +148,9 @@ export function* planSteps(doc, layer, scroller, drawable) {
   if (!frame || Math.abs(frame.width - s.offsetWidth) > 0.51 || Math.abs(frame.height - s.offsetHeight) > 0.51) return null;
   const bl = px(cs.borderLeftWidth);
   const bt = px(cs.borderTopWidth);
-  const port = { x: frame.x + bl, y: frame.y + bt, width: s.clientWidth, height: s.clientHeight };
+  // the padding box at its layout size: clientWidth / clientHeight are rounded to whole css px, and in a fractional layout (a grid track of 541.33 px) a port of
+  // 541 px left the last device pixel column out of every page, and refused the sticky header, which is 541.33 px wide (a classic bar keeps the client size)
+  const port = { x: frame.x + bl, y: frame.y + bt, width: gutterX > 0.5 ? s.clientWidth : frame.width - bl - px(cs.borderRightWidth), height: frame.height - bt - px(cs.borderBottomWidth) };
   for (let a = s.parentElement; a && scroller !== drawable; a = a.parentElement) {
     const acs = win.getComputedStyle(a);
     if (!plainEffects(acs) || (a !== drawable && acs.transform !== 'none')) return null;
@@ -204,7 +209,7 @@ export function* planSteps(doc, layer, scroller, drawable) {
       : verticalBar(f.gv, s.clientHeight, s.scrollHeight, f.styled, !f.styled && !!parseScrollbarColor(cs.scrollbarColor), f.styled ? styledMinThumb(win, s) : 0);
     bar = { gutter: { x: port.x + (f.cw ?? s.clientWidth), y: port.y, width: f.gv, height: s.clientHeight }, ...v };
   }
-  return { port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, round, clear: (rects) => clearOver(doc, layer, s, port, rects) };
+  return { port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round, clear: (rects) => clearOver(doc, layer, s, port, rects) };
 }
 
 /**

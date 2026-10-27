@@ -926,7 +926,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     scrollCompose(drawable, scroller) {
       const entry = entries.get(drawable);
-      return !!entry && !!extras.scrollPlan && compositor.serve(entry, scroller);
+      const served = !!entry && !!extras.scrollPlan && compositor.serve(entry, scroller);
+      // a composed step is asked for by the page (a scroll event) as much as a built one is: without this, a scroll composed for 3 s with no other change (a long
+      // fling, a stream that starts composed) looked like a feedback loop to the runaway guard, and the polyfill uninstalled itself
+      if (served) runaway.damage('scroll', env.now());
+      return served;
     },
     hasLanded(record) {
       for (const el of pendingChanged) if (!record || entries.get(el)?.record === record) return true;

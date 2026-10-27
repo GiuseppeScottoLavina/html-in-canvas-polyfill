@@ -52,12 +52,17 @@ export function observeScroll(env, record) {
     const next = new Set();
     if (drawable) for (let el = /** @type {Element|null} */ (t); el && el !== root; el = el.parentElement) { if (scrolls(el)) next.add(el); if (el === drawable) break; }
     for (const el of under) if (!next.has(el) && !settle.has(el)) sync(el, false);
+    let seen = false;
     for (const el of next) {
       sync(el, true);
       // seen before its first scroll: the compositor plans it and builds its first pages after this frame, so the whole first gesture can be composed
-      if (!under.has(el) && drawable) env.store.scrollSettled?.(drawable, el);
+      if (!under.has(el) && drawable) { env.store.scrollSettled?.(drawable, el); seen = true; }
     }
     under = next;
+    // the plan and the pages are side builds of the post-frame pump, which runs only in a frame with work: without the wake they waited for the first scroll event,
+    // and that gesture began with a plain build inside its first frame and the plan and page builds in the frames after it. Not for a finger: its gesture starts
+    // within a few frames, and the builds woken at touchstart delayed its first step (measured: +10 to +35 ms at 4x / 6x CPU throttling)
+    if (seen && /** @type {PointerEvent} */ (ev).pointerType !== 'touch') env.scheduler.wake(record);
   };
   /** @param {Event} ev */
   const onOut = (ev) => {

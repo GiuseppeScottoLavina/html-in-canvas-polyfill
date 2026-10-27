@@ -1,6 +1,6 @@
 // G-scroll-cadence: an inner list drawn into a canvas follows a trusted wheel stream at the display rate, and every frame it shows is a correct one.
-//   Cases (fixture scroll-cadence.html, the same trusted input for each): a plain list with a sticky header, the same with rounded corners, with :hover rows, and a long
-//   list (2000 rows, 6000+ elements). The pointer rests over the list before the stream (no warm-up gesture: the FIRST gesture is measured).
+//   Cases (fixture scroll-cadence.html, the same trusted input for each): a plain list with a sticky header, the same with rounded corners, with :hover rows, a long
+//   list (2000 rows, 6000+ elements), and the plain list in a column of fractional width (400.4 px: its clientWidth is rounded, its layout is not). The pointer rests over the list before the stream (no warm-up gesture: the FIRST gesture is measured).
 //   cadence  per rAF frame of the stream: the live scroller moved (the compositor delivered the offset to the main thread) and the canvas got a paint for it.
 //            Thresholds MOVE_CASE / MOVE_MEAN and the per-case paint shares, from this machine (120 Hz, DPR 2 and 1.25): the plain DOM list and a native drawable
 //            (Canary 158) move and paint in 97 % of the frames; the old behaviour painted 61, 61, 49 and 4 times per second (plain, rounded, hover, long).
@@ -21,9 +21,10 @@ const CASES = [
   { name: 'rounded', params: { rows: 300, round: 1 }, paint: 0.9, compose: 0.8 },
   { name: 'hover', params: { rows: 300, hover: 1 }, paint: 0.8, compose: 0 },
   { name: 'long', params: { rows: 2000 }, paint: 0.85, compose: 0.7 },
+  { name: 'fractional', params: { rows: 300, frac: 1 }, paint: 0.9, compose: 0.8 },
 ];
 /**
- * Share of the stream's frames in which the live list moved (and the canvas with it): at least MOVE_CASE in every case and MOVE_MEAN over the four. The plain DOM list
+ * Share of the stream's frames in which the live list moved (and the canvas with it): at least MOVE_CASE in every case and MOVE_MEAN over the cases. The plain DOM list
  * and a native drawable move in 97 % of them (116 of 120 per second). Chromium's input pipeline is bistable here (a frame with two wheel events can start an
  * alternation that lasts a few frames or the rest of the stream), so single cases spread: measured 0.80-0.96 per case and 0.88-0.94 on average with the scroll
  * synchronisation, 0.51-0.78 per case and 0.65-0.73 on average without it (the old behaviour).
@@ -167,9 +168,13 @@ runGate('G-scroll-cadence', async (ctx) => {
       let best = null;
       for (const [top, hov] of cands) {
         const tw = await twinAt(top, hov);
-        const d = H.compareImages(shot, tw.img, { tolerance: TOLERANCE, diffImage: false });
+        // a list of fractional width: the element screenshot of the twin rounds its device-pixel width one way, the crop of the canvas the other (800 / 801 px at
+        // DPR 2 for 400.4 css px); both start at the list's left edge, so the canvas crop is cut to the twin's size (one device pixel at most)
+        const sh = Math.abs(shot.width - tw.img.width) <= 1 && Math.abs(shot.height - tw.img.height) <= 1 ? H.cropImage(shot, 0, 0, Math.min(shot.width, tw.img.width), Math.min(shot.height, tw.img.height)) : shot;
+        const ti = sh === shot ? tw.img : H.cropImage(tw.img, 0, 0, sh.width, sh.height);
+        const d = H.compareImages(sh, ti, { tolerance: TOLERANCE, diffImage: false });
         const f = d.sizeMatch ? d.fraction : 1;
-        if (!best || f < best.fraction) best = { top, hov, fraction: f, corner: d.sizeMatch ? cornerDiff(shot, tw.img, geo.dpr) : 1, sizes: d.sizes, bbox: d.overBBox };
+        if (!best || f < best.fraction) best = { top, hov, fraction: f, corner: d.sizeMatch ? cornerDiff(sh, ti, geo.dpr) : 1, sizes: d.sizes, bbox: d.overBBox };
       }
       checked++;
       worstCorner = Math.max(worstCorner, best?.corner ?? 1);

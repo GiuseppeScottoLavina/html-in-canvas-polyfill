@@ -569,6 +569,7 @@ export {};
  * @property {{gutter: Rect, thumbX: number, thumbW: number, thumbH: number, thumbY: (top: number) => number}|null} bar  the vertical classic scrollbar the polyfill paints in the gutter (null: overlay bars, no gutter)
  * @property {number} maxTop
  * @property {number} scrollHeight
+ * @property {{width: number, height: number}} [client]  clientWidth / clientHeight when planned (whole css px; the port is the padding box at its layout size); absent = the port's size
  * @property {{tl: {x: number, y: number}, tr: {x: number, y: number}, br: {x: number, y: number}, bl: {x: number, y: number}}|null} [round]  inner radii of a rounded padding box (the port and a classic bar gutter; css px); null/absent = square
  * @property {(rects: Rect[]) => boolean} [clear]  hit test: true when nothing outside the scroller covers the port inside these rects (frame css px), now
  */
