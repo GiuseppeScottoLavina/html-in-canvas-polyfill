@@ -277,7 +277,7 @@ button), moved (a drawable drawn away from its layout box), touchScroll, rotatio
 the scrolled light listbox has its own 4 % structural bound on Android; informative on the stand-in), unsupported (an older browser refused with the version named; control: the same page with a supported user agent). Positive controls: the RECORDER sabotage
 (`?xbsab=1`), the accent / outline sabotage for controls and `?xbua=1` for the refusal. Results: `.scratch/results/mobile-<ts>.json`.
 
-### 2.11 Platform probe G-platform (`node test/platform/run.mjs`; CI on Linux and Windows, headless)
+### 2.11 Platform probe G-platform (`node test/platform/run.mjs`; CI on Linux, Windows and macOS, headless)
 
 `node test/platform/run.mjs [--chrome=stable|canary|<path>] [--only=fonts,controls,scrollers,dpr,selection] [--dpr=1.25,1.5] [--scrollbars=classic|overlay] [--allow-known]`. What the platform's own theme
 puts on screen, against native pixels of the same browser: the polyfill's canvas backing store against a compositor screenshot of the plain-DOM twin (fixture `mode=ref`).

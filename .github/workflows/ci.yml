@@ -1,6 +1,6 @@
 # Repo checks, types, unit tests (Node 22 and 24, headless Chrome), build, bundle check, the platform probe and package contents, on Linux and on
-# Windows. The browser gates, the WPT subset, Firefox/Safari and the framework apps need headed browsers on a real, unlocked screen and run locally
-# on macOS (CONTRIBUTING.md, "Browser gates").
+# Windows. The headed browser suites (the Chrome gates, the mutation suite, Firefox, the example and framework apps) run on hosted macOS runners
+# (ci-macos.yml); the WPT subset, Safari and what needs a 120 Hz display or continuous WebGPU frames run locally on macOS (CONTRIBUTING.md, "Where the suites run").
 name: CI
 
 on:
