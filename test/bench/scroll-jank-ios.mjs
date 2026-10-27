@@ -5,7 +5,8 @@
 // Modes: oracle  jumps of the scroller: the first canvas paint after each (composed when the compositor serves it) vs the settled canvas at that offset;
 //        script  a momentum-like scroll driven from requestAnimationFrame (scrollTop += v, v decaying), no OS input;
 //        drag    a real flick: an OS mouse drag over the Simulator window (test/bench/sim-pointer.py, Quartz) that the Simulator turns into a touch with momentum.
-//                It moves the Mac's pointer: run it only on an unattended machine.
+//                It moves the Mac's pointer: run it only on an unattended machine. It needs the Simulator app's window (`open -a Simulator`); the
+//                Xcode 27 install measured on 2026-10-27 had none, so only `script` and `oracle` ran there.
 // --load=MS busy-waits MS ms in every animation frame (a crude stand-in for a slower CPU: it takes main-thread time, it does not slow the polyfill's own work).
 // Metrics as test/bench/scroll-jank.mjs (rAF frames [t, scrollTop, paints]; canvas update gaps > 2.5 frame intervals while the scroller moves), plus the snapshot
 // stats (clone / decode percentiles, tiles) of the run.
