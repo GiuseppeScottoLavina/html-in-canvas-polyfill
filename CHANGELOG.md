@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.11] - 2026-10-28
+
+Smaller downloads, same library. The minified bundles get a second minification pass: the core is 112,066 bytes gzipped instead of 117,183 (95,252 with brotli, as jsDelivr serves it, instead of 100,388). Behaviour is unchanged: the browser gates, the WPT subject run and the examples give the same results on the new minified core as on the previous one, and its performance is within measurement noise.
+
 ### Changed
 
 - Smaller minified bundles: every `.min.js` classic bundle (the core, effects, native bridge, engines, GPU, worker and each plugin) now gets a second pass by Terser after esbuild, with options that change no behaviour (no unsafe transform, no property mangling, ASCII output). The minified core shrinks from 335,744 to 331,972 bytes, 117,183 to 112,066 gzipped (-4.4 %) and 100,388 to 95,252 with brotli; all minified bundles together lose 7,756 bytes gzipped (-3.4 %). The readable `.js` bundles and the ES modules are unchanged. Terser is a devDependency; the package still has no runtime dependencies.
@@ -232,7 +236,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.10...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.11...HEAD
+[0.1.0-preview.11]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.10...v0.1.0-preview.11
 [0.1.0-preview.10]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.9...v0.1.0-preview.10
 [0.1.0-preview.9]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.8...v0.1.0-preview.9
 [0.1.0-preview.8]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.7...v0.1.0-preview.8
