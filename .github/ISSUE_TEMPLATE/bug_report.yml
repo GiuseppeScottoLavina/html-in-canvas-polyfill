@@ -12,7 +12,7 @@ body:
     attributes:
       label: Polyfill version
       description: The npm version, or the commit if you built from source (`HicLivePolyfill.version` with the classic script, `VERSION` of the ES module, or `version` in `__HIC__.installed.report()`).
-      placeholder: 0.1.0-preview.10
+      placeholder: 0.1.0-preview.11
     validations:
       required: true
   - type: input
