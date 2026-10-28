@@ -1,6 +1,6 @@
-// Build (docs/BUNDLES.md). esbuild is a devDependency only; the library has no runtime deps.
+// Build (docs/BUNDLES.md). esbuild and Terser are devDependencies only; the library has no runtime deps.
 //
-//   classic IIFE, each as .js (readable; the gates and the mutants run on it) and .min.js:
+//   classic IIFE, each as .js (readable; the gates and the mutants run on it) and .min.js (esbuild's minified output, then a Terser pass: see TERSER):
 //     hic-live-polyfill.iife        core, the 2D path (src/iife.js)
 //     hic-live-effects.iife         window.HTMLInCanvasEffects: host, plugin ABI, GPU presenter, interposer (src/effects-iife.js); needs the core
 //     hic-live-native-bridge.iife   the native bridge for Chrome 154-156 behind the flag (src/native-bridge.js); loaded BEFORE the core
@@ -18,6 +18,7 @@
 //
 //   node scripts/build.mjs [--no-esm] [--quiet] [--analyze]     writes dist/ and dist/sizes.json; --analyze prints the minified core's bytes per module group and module
 import { build } from 'esbuild';
+import { minify } from 'terser';
 import { cpSync, existsSync, readFileSync, readdirSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -79,6 +80,31 @@ const IIFES = [
   { name: 'hic-live-worker', entry: 'src/worker.js', plugins: [] },
 ];
 
+/**
+ * Every classic .min.js (the six bundles above and each plugin's .iife.min.js) gets a second pass: Terser over esbuild's minified output (2026-10-27).
+ * Terser's compressor and mangler find what esbuild leaves (sequences, joined declarations, shorter names in large scopes); over the readable
+ * bundle it did slightly worse, so it runs after esbuild. The options are the conservative ones:
+ *   - no unsafe* transform (Terser's default) and mangle.properties off: option names and the cross-bundle seams are public property names;
+ *   - pure_getters: false, like esbuild: a property read is kept for its side effects (a layout read such as offsetWidth may be one);
+ *   - ecma 2020 (the highest Terser models; the chrome130 target supports it), so no transform emits syntax beyond what esbuild already emits;
+ *   - ascii_only: esbuild escapes strings to ASCII and Terser would unescape them; with it the whole output is ASCII (the core's one non-ASCII regular expression
+ *     too, as \u escapes that match the same characters), so a page that serves a bundle without a charset reads it right;
+ *   - comments: false, the same as esbuild's legalComments 'none';
+ *   - function and class names are not kept: esbuild's minifier already renames them, and nothing reads a renamed function's .name (the observer
+ *     labels of src/schedule/observers/index.js are esbuild's short names already; the .name reads of src/api/ are of native functions).
+ * Measured on this tree (bytes / gzip level 9 / brotli 11, esbuild alone -> with Terser): core 335,744 / 117,183 / 100,388 -> 331,972 / 112,066 / 95,252;
+ * effects 39,081 / 14,430 / 12,883 -> 38,721 / 13,811 / 12,293; native bridge 13,887 / 5,319 / 4,709 -> 13,827 / 5,113 / 4,532; engines 42,139 / 16,179 / 14,317 ->
+ * 41,576 / 15,925 / 13,990; gpu 10,485 / 4,013 / 3,544 -> 10,403 / 3,947 / 3,501; worker 9,215 / 3,790 / 3,403 -> 9,098 / 3,646 / 3,270; the eight plugins together
+ * 151,118 / 64,018 / 56,679 -> 151,284 / 62,668 / 55,513 (the shader template literals become strings with a \n escape per line: a few bytes more raw, fewer compressed).
+ */
+const TERSER = { ecma: 2020, module: false, compress: { passes: 2, pure_getters: false }, mangle: true, format: { comments: false, ascii_only: true } };
+/** @param {string} path */
+const terse = async (path) => {
+  const r = await minify(readFileSync(path, 'utf8'), /** @type {any} */ (TERSER));
+  if (typeof r.code !== 'string') throw new Error(`terser produced no code for ${path}`);
+  writeFileSync(path, r.code + '\n');
+};
+
 mkdirSync(join(root, 'dist'), { recursive: true });
 // a classic bundle that is no longer built (a renamed or removed entry) must not stay in dist/, where the package and the Pages site would pick it up
 const built = new Set(IIFES.flatMap(({ name }) => [`${name}.iife.js`, `${name}.iife.min.js`]));
@@ -97,6 +123,7 @@ for (const { name, entry, plugins } of IIFES) {
     const core = analyze && min && name === 'hic-live-polyfill';
     const r = await build({ ...common, entryPoints: [join(root, entry)], format: 'iife', minify: min, plugins, outfile: join(root, 'dist', file), metafile: core });
     if (core) coreMeta = r.metafile;
+    if (min) await terse(join(root, 'dist', file));
     measure(file, join(root, 'dist', file));
   }
 }
@@ -126,6 +153,7 @@ for (const p of plugins) {
   for (const min of [false, true]) {
     const file = `plugins/${p.name}.iife${min ? '.min' : ''}.js`;
     await build({ ...common, stdin: { contents: register, resolveDir: p.dir, sourcefile: `${p.name}-register.js`, loader: 'js' }, format: 'iife', minify: min, plugins: [inlineWgsl(p)], outfile: join(root, 'dist', file) });
+    if (min) await terse(join(root, 'dist', file));
     measure(file, join(root, 'dist', file));
   }
   const files = { iife: `${p.name}.iife.js`, min: `${p.name}.iife.min.js` };
@@ -174,7 +202,7 @@ if (!process.argv.includes('--no-esm')) {
 }
 if (!quiet) for (const r of rows) console.log(r.file.padEnd(40), String(r.raw).padStart(8), 'bytes', String(r.gzip).padStart(8), 'gzip');
 
-// --analyze: where the bytes of the minified core come from (esbuild's bytes in the output per source module, by module group and the largest modules)
+// --analyze: where the bytes of the minified core come from (esbuild's bytes in its output, before the Terser pass, per source module, by module group and the largest modules)
 if (analyze && coreMeta) {
   const inputs = Object.entries(/** @type {any} */ (Object.values(coreMeta.outputs)[0]).inputs).map(([f, v]) => [f.split(sep).join('/'), /** @type {any} */ (v).bytesInOutput]);
   const total = inputs.reduce((n, [, b]) => n + b, 0);
