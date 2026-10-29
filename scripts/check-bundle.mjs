@@ -122,7 +122,8 @@ const LIMITS = {
   //   device the visible scrollers the tiles found are planned ahead at rest (two pages each, once until scrolled; the work still queued stops when a finger lands),
   //   and a touch contact or pan changes no :hover chain, only a tap does, as natively (the contact's damage dropped the list's pages at every gesture). iOS Simulator: 0 plain builds at the start of a gesture
   //   instead of 2-9, the first canvas update 1-8 ms after the first scroll event
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 333.75 * KB, gzip: 112.75 * KB },
+  // 333.75 -> 334 KB (+39 / +3 bytes, 2026-10-29, measured 333,786 / 112,654): the caret colour asks the engines bundle first (Safari's accent caret for `caret-color: auto`)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 334 * KB, gzip: 112.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -147,7 +148,9 @@ const LIMITS = {
   // 42 -> 42.25 KB (+411 bytes, 2026-10-16, measured 42,215): the search field's magnifier is probed from layout (Safari Technology Preview 254 has none) instead of
   //   assumed from Safari >= 27
   // 42.25 -> 41.75 KB, gzip 16.25 -> 16 KB (-563 / -254 bytes, 2026-10-27, measured 41,576 / 15,925): the Terser pass over esbuild's minified output
-  'hic-live-engines.iife.min.js': { target: 41.75 * KB, ceiling: 41.75 * KB, gzip: 16 * KB },
+  // 41.75 -> 44.25 KB, gzip 16 -> 17 KB (+2,428 / +938 bytes, 2026-10-29, measured 44,004 / 16,863): Safari's accent caret (webkit-caret.js: `caret-color: auto` paints the
+  //   system accent unless an author colour applies, which Safari does not expose: the page's colour and caret-color declarations are read and matched on the caret's chain)
+  'hic-live-engines.iife.min.js': { target: 44.25 * KB, ceiling: 44.25 * KB, gzip: 17 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
   //   OffscreenCanvas.getElementTransform removed

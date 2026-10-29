@@ -4,6 +4,7 @@
  */
 
 import { setInlineStyle } from './inline-style.js';
+import { engineSkins } from './engine-skins.js';
 import { fallbackCaretIndex, selectionApiMissing } from '../../util/caret-index.js';
 import { rangeRectsIn } from '../../util/selection-rects.js';
 
@@ -50,8 +51,8 @@ export function transformText(text, cs) {
   }
 }
 
-/** @param {CSSStyleDeclaration} cs @returns {string} */
-const caretColor = (cs) => (cs.caretColor && cs.caretColor !== 'auto' ? cs.caretColor : cs.color);
+/** @param {Document} doc @param {Element} el @param {CSSStyleDeclaration} cs @returns {string} the painted caret colour: Safari's accent for `auto` (engines bundle), else the computed one */
+const caretColor = (doc, el, cs) => engineSkins()?.caretColor?.(doc, el, cs) || (cs.caretColor && cs.caretColor !== 'auto' ? cs.caretColor : cs.color);
 
 /**
  * Horizontal geometry of a single-line input: where text starts and how wide a prefix is.
@@ -179,7 +180,7 @@ export function measureCaret(doc, focus, frame) {
     if (focus.selectionStart !== focus.selectionEnd) return null;
     rect = textareaCaret(focus, cs, ctx, frame);
   } else if (/** @type {HTMLElement} */ (focus).isContentEditable) rect = editableCaret(doc, focus, frame);
-  return rect ? { rect, color: caretColor(cs) } : null;
+  return rect ? { rect, color: caretColor(doc, focus, cs) } : null;
 }
 
 /** @param {string} css a computed colour, rgb()/rgba() @returns {number[]|null} [r, g, b, a] */
