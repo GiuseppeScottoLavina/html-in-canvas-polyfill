@@ -30,7 +30,7 @@ install(); // synchronous; throws HicUnsupportedError in a browser it refuses
 Or with a script tag (load it before your own scripts; it installs while the tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.12/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.13/dist/hic-live-polyfill.iife.min.js"></script>
 ```
 
 Then use the standard API. This is the explainer's own example, unchanged:
@@ -75,7 +75,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
 | one update in a 1000-element drawable, main thread | 19.2 ms | 40.9 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 97 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 334 KB / 113 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 337 KB / 114 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome Canary 157+ (no flag needed) |
 
 The WPT row is this polyfill as released ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)), the other package as measured on 2026-10-13, and native Chrome at the build whose copy of the tests is pinned (newer Canary builds already implement later API changes that the pinned tests predate); the latency, resize, update and first-paint rows were measured from 2026-10-13 to 2026-10-19 with earlier builds of this polyfill (native: Canary 157.0.8101.0); the bundle row is the current build. The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -100,12 +100,12 @@ On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check,
 
 - **The picture lags the DOM by one to two frames.** Each update is cloned, serialised and decoded by the browser before it can be drawn; on Chromium a snapshot that needs no font or image to load is painted one frame after the change, others about two. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native (inner scrolling in Chrome and Safari, and in Firefox at a device pixel ratio of 1 for square scrollers whose content has no rounded corners, form controls or images; otherwise Firefox rebuilds the scroller at every step); other updates do not. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 113 KB gzipped (334 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 114 KB gzipped (337 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS, as the browser itself leaves them out of a canvas (the element's box without its content) plus one console message, never a silent gap; native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Animated images:** an animated GIF, APNG, WebP or AVIF `<img>` plays where the browser has `ImageDecoder` (WebCodecs), in a secure context; Safari 27, which has none, shows its first frame. Animated CSS images (`background-image` and the like) show their first frame everywhere.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only; pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it). The headed gates run on macOS at DPR 2 (some also at DPR 1 or 1.25), and at DPR 1.25 and 1.5 against Chrome's native implementation.
-- **Preview.** `0.1.0-preview.12` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Preview.** `0.1.0-preview.13` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 
