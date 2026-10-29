@@ -116,7 +116,10 @@ if (!docsOnly) {
   // 16075 -> 16125 (2026-10-29, measured 16,121; 16,052 before this step): the first touch gesture is composed (+69: the scrollers a tile finds, clone.js
   // maybeScroll; store.scrollWarm and its candidates; scroll-compose.js prepare `early`, AHEAD_PAGES and yieldToInput; scroll-observer.js the rest timer after a
   // commit on a touch-first device; interaction-tracker.js a finger hovers only by a tap)
-  if (total > 16125) problems.push(`G-size: core is ${total} code lines (> 16125)`);
+  // 16125 -> 16475 (2026-10-29, measured 16,457; 16,121 before this step): wheel scrolling under a resting mouse over rows with a :hover rule is composed (+336:
+  // scroll-compose.js hover strips, planStrips / stripCapture / fill / differ / sameDepth and the hover damage a composition serves; store.js hoverModel; css-rewrite.js
+  // hoverSubjects and the ink-stable :hover properties; interaction-tracker.js the resting pointer; util/reach.js)
+  if (total > 16475) problems.push(`G-size: core is ${total} code lines (> 16475)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

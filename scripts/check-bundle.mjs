@@ -122,7 +122,11 @@ const LIMITS = {
   //   device the visible scrollers the tiles found are planned ahead at rest (two pages each, once until scrolled; the work still queued stops when a finger lands),
   //   and a touch contact or pan changes no :hover chain, only a tap does, as natively (the contact's damage dropped the list's pages at every gesture). iOS Simulator: 0 plain builds at the start of a gesture
   //   instead of 2-9, the first canvas update 1-8 ms after the first scroll event
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 333.75 * KB, gzip: 112.75 * KB },
+  // 333.75 -> 343 KB, gzip 112.75 -> 116 KB (+9,070 / +3,322 bytes, 2026-10-29, measured 342,817 / 115,973): wheel scrolling under a resting mouse over rows with a
+  //   :hover rule is composed: the pages are rendered with no row hovered and the hovered rows drawn from hover strips built ahead (scroll-compose.js planStrips,
+  //   stripCapture, fill, differ, sameDepth, the stop of strips that fall behind; store.js hoverModel; the :hover subjects and ink-stable rules of css-rewrite.js; util/reach.js). G-scroll-cadence hover:
+  //   0 -> every moved frame composed at DPR 2 and 1.25; 92-100 % on a table, a card grid, grouped lists and the scroll-and-resize example (test/bench/hover-strips.mjs)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 343 * KB, gzip: 116 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

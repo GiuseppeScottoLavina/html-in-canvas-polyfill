@@ -361,6 +361,28 @@ Tick RUN(now), for each canvas record in reverse tree order:
     or refreshes. A dirty part is never composed: the step falls back to the plain path, and the fallback tile, copied from the retained surface, repairs the pages it covers (pinned
     elements, grown by the offset change since its build, and rounded corners excluded); a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is
     hit-tested (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages.
+  - **Hover strips** (`scroll-compose.js`, `store.js hoverModel`). A wheel scroll under a resting mouse moves `:hover` to another row at every step (Chromium updates it at the
+    new offset before the scroll event), so pages that showed the hovered row were dirty at every step and every step fell back to a plain build (G-scroll-cadence `hover`:
+    0 of 114 moved frames composed). Where every `:hover` rule only recolours (`CssBundle.pseudo`: `hoverLayout` false, `hoverInk` false: no shadow, outline or decoration that
+    could paint beyond the element's present extent) and the pointer is a mouse or pen (`InteractionSnapshot.pointer`; not a finger, not while an effect maps the pointer, not
+    on Gecko), a page is rendered with no element of the content hovered and records that hover set (`PageRequest.hover`, `Page.hov`). A step then needs other pixels only
+    where an element whose hover differs between a page and the live DOM reaches (`util/reach.js`, the reach a hover change damages; elements no `:hover` compound can match,
+    `CssBundle.pseudo.hoverSubjects`, do not count). Those holes are filled from strips: the elements at the hovered row's depth below the scroller (`sameDepth`: its
+    siblings, then the next list under a heading or the next table body) that a `:hover` compound may match, across the pointer's column, within a port and a half of it,
+    each with its own hovered chain below what every row shares (a table cell and its row), rendered hovered at offsets where they lie in the port, several per capture as long as their reaches stay apart (each row's reach then shows it as the only
+    hovered one), pruned to their band, built in the post-frame pump after every page build, in batches once a row within half a port of the pointer has none, and kept up
+    to four port heights of rows (the farthest from the pointer go first). A strip fills a hole only where no element whose hover differs between it and the live DOM reaches;
+    a change inside the content that is not a hover change drops the strips it reaches; nothing is filled while an animation or a transition runs in the scroller. A hover
+    change whose differing elements all lie in the content is served by the next commit's composition (no build); a hole no strip can fill falls back to the plain path,
+    and a tile repairs a tracked page only where its hover set and the page's render alike. Measured (Chrome 155, 120 Hz, DPR 2, `test/bench/scroll-jank.mjs` and
+    `test/bench/hover-strips.mjs`): G-scroll-cadence `hover` every moved frame composed at DPR 2 and 1.25; on other pages at 1x the scroll-and-resize example 99 %, a table
+    with `tr:hover` and `td:hover` 92 %, a three-column card grid with gaps 94 %, lists under headings 99 %, a rule on a descendant 100 %, every sampled frame equal to
+    the plain DOM (a `text-decoration` rule keeps the plain path: 0 %). Main thread busy 27.0 -> 22.4 % of the wheel streams at 1x. At 4x and 6x CPU throttling the
+    strips fall behind the pointer: 6-40 % of the moved frames composed, busy 47.5 -> 65.2 % (4x) and 59.6 -> 84.7 % (6x) with 41 / 26 canvas updates per second
+    instead of 30 / 19, and most strips built are never used (4x: 20 of 102). A scroller whose gesture left two steps unfilled (its strips fell behind the pointer) stops
+    them within that gesture and, at the next rest, goes back to pages with the live hover (the path without strips) for 30 s, then gets one trial gesture, the wait
+    doubling up to 8 min at each failed trial (`slow`, kept across caches). With it, busy at 4x / 6x is 53.6 / 70.9 % (main 48.5 / 59.5 %) for 36 / 31 canvas updates
+    per second (main 30 / 18): the first gesture still pays for its strips.
   - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1, only square scrollers and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row
     where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. WebKit lays it out at css scale
     and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
