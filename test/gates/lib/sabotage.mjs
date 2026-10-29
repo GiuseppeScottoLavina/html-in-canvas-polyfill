@@ -12,6 +12,7 @@
 //   nopagescroll the polyfill's window scroll listener (the page-scroll watch of sticky / fixed drawables) is never added: the build before that watch existed
 //   nosync  the scroll synchronisation attribute (data-hic-scroll) is never set on a live scroller: the compositor draws a precise scroll without waiting for the main frame
 //   nocompose an empty position:fixed element is put into every scroller the pointer reaches (nothing visible): the scroll compositor has no plan for it, every step is built
+//   halfpaint every second paint event of a canvas is dropped (no handler runs, nothing is drawn): a renderer that paints in every other frame, the old scroll cadence
 export const SABOTAGE_JS = {
   blank: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (...a) { try { o.apply(this, a); } finally { this.save(); this.setTransform(1,0,0,1,0,0); this.globalCompositeOperation='copy'; this.fillStyle='#000'; this.fillRect(0,0,this.canvas.width,this.canvas.height); this.restore(); } }; return 'blank'; })()`,
   stale: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; let n = 0; p.drawElementImage = function (...a) { if (n++ === 0) return o.apply(this, a); }; window.__sabotageStale = () => n; return 'stale'; })()`,
@@ -25,6 +26,7 @@ SABOTAGE_JS.nopagescroll = `(() => { const add = EventTarget.prototype.addEventL
 
 SABOTAGE_JS.nosync = `(() => { const set = Element.prototype.setAttribute; Element.prototype.setAttribute = function (n, v) { if (n === 'data-hic-scroll') return; return set.call(this, n, v); }; return 'nosync'; })()`;
 SABOTAGE_JS.nocompose = `(() => { addEventListener('pointerover', (e) => { for (let el = e.target; el && el.nodeType === 1; el = el.parentElement) { if (el.scrollHeight > el.clientHeight + 1 && !el.__gateFixed) { el.__gateFixed = true; const d = document.createElement('div'); d.style.cssText = 'position:fixed;width:0;height:0'; el.prepend(d); } } }, { capture: true, passive: true }); return 'nocompose'; })()`;
+SABOTAGE_JS.halfpaint = `(() => { const d = EventTarget.prototype.dispatchEvent; const n = new WeakMap(); EventTarget.prototype.dispatchEvent = function (e) { if (e.type === 'paint' && this instanceof HTMLCanvasElement) { const k = (n.get(this) ?? 0) + 1; n.set(this, k); if (k % 2 === 0) return true; } return d.call(this, e); }; return 'halfpaint'; })()`;
 
 /** The bundle text with the sabotage of every kind in `kinds` appended (each wrapped so a failure is visible, not silent). */
 export function controlBundleText(bundleText, kinds) {

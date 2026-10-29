@@ -12,8 +12,10 @@
 //            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row;
 //            the twin must then show that row hovered in its screenshot (the reference's own precondition, class twin: a resting OS pointer over the window was
 //            delivered to the twin at every clipped screenshot and took its hover away, 2026-10-22; the harness now parks the pointer and reports foreign input).
-// Positive control (sabotage stale + nosync + nocompose): only the first draw reaches the canvas, the live scroller is never synchronised, and every scroll
-// scroller under the pointer gets an empty position:fixed child (no plan for it): every class must go red.
+// Positive control (sabotage stale + nosync + nocompose + halfpaint): only the first draw reaches the canvas, the live scroller is never synchronised, every
+// scroller under the pointer gets an empty position:fixed child (no plan for it), and every second paint event is dropped: every class must go red. With the
+// dropped paints every cadence check is red in every case (paint share 0.49-0.51, movement 0.67-0.68; 6 of 6 runs at DPR 2 and 1.25, Chrome 155, 2026-10-29).
+// Without them the live list still moved in 0.66-0.96 of the frames per case and 0.83-0.85 on average: the class went red only when one case fell under 0.70.
 import { runGate, H } from './lib/gate.mjs';
 
 const FIXTURE = '/test/gates/fixtures/scroll-cadence.html';
@@ -30,7 +32,9 @@ const CASES = [
  * Share of the stream's frames in which the live list moved (and the canvas with it): at least MOVE_CASE in every case and MOVE_MEAN over the cases. The plain DOM list
  * and a native drawable move in 97 % of them (116 of 120 per second). Chromium's input pipeline is bistable here (a frame with two wheel events can start an
  * alternation that lasts a few frames or the rest of the stream), so single cases spread: measured 0.80-0.96 per case and 0.88-0.94 on average with the scroll
- * synchronisation, 0.51-0.78 per case and 0.65-0.73 on average without it (the old behaviour).
+ * synchronisation, 0.51-0.78 per case and 0.65-0.73 on average without it (the old behaviour). With Chrome 155 the list without the synchronisation moved
+ * in 0.66-0.96 per case and 0.83-0.85 on average (2026-10-29, DPR 2 and 1.25): these checks still catch the old pace of 61 moves per second, but not reliably
+ * the missing synchronisation alone.
  */
 const MOVE_CASE = 0.7;
 const MOVE_MEAN = 0.82;
@@ -209,4 +213,4 @@ runGate('G-scroll-cadence', async (ctx) => {
   const errs = page.errors({ includeWarnings: false }).slice(errors0).filter((e) => !/unsupported node-budget/.test(e.text ?? ''));
   ctx.check('no page error or console error', errs.length === 0, errs.slice(0, 3), 'surface');
   return { numbers };
-}, { scrollbars: 'overlay', controlSabotage: ['stale', 'nosync', 'nocompose'], controlClasses: ['cadence', 'compose', 'pixel'] });
+}, { scrollbars: 'overlay', controlSabotage: ['stale', 'nosync', 'nocompose', 'halfpaint'], controlClasses: ['cadence', 'compose', 'pixel'] });
