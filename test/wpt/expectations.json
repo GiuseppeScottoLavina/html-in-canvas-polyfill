@@ -26,24 +26,24 @@
     "updateElementGeometry() on ancestor and nested drawable": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "fixable, not done: natively every drawable, nested ones included, is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestors' canvas transforms; it keeps its layout space, and while an ancestor is drawn it is hit-tested there (measured on Canary 158.0.8112.1: an undrawn nested drawable laid out 40 px down reports the canvas origin and is hit at the origin, not at its layout position). The polyfill places only the direct children at the origin (the layer grid) and lets nested drawables follow their layout and their ancestor. Matching it means a placement rule for every nested drawable, drawn or not, re-measured whenever the layout moves it, which changes hit testing and the measured geometry of every page with nested drawables; not done in this round"
+     "note": "natively every drawable, nested ones included, is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestors' canvas transforms: re-measured on Canary 159.0.8128.2, #nested-block (laid out below the two inline drawables) reports getBoundingClientRect() at the canvas origin (10, 20). The polyfill places only the direct children at the origin (the layer grid); a nested drawable follows its layout and its ancestor. What blocks it: (1) a placement for every nested drawable, drawn or not, as a CSS translation by minus its layout offset in the canvas, re-measured whenever the layout moves it, changes hit testing and the measured geometry of every page with nested drawables (fixable, not done); (2) the margin step writes margin-left and reads getBoundingClientRect() in the same task: natively the canvas transform is independent of the layout, while a measured CSS correction keeps the old offset until it is measured again (only a patched getBoundingClientRect could hide it)"
     },
     "updateElementGeometry() affects getBoundingClientRect() on a block nested": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "as above (canvas-origin placement of a nested drawable), and its margin step needs a position independent of layout read synchronously after a style write; also follows the ancestor test in the same page"
+     "note": "natively every drawable, nested ones included, is placed at the canvas origin by its own canvas transform (identity by default), whatever its layout position and its ancestors' canvas transforms: re-measured on Canary 159.0.8128.2, #nested-block (laid out below the two inline drawables) reports getBoundingClientRect() at the canvas origin (10, 20). The polyfill places only the direct children at the origin (the layer grid); a nested drawable follows its layout and its ancestor. What blocks it: (1) a placement for every nested drawable, drawn or not, as a CSS translation by minus its layout offset in the canvas, re-measured whenever the layout moves it, changes hit testing and the measured geometry of every page with nested drawables (fixable, not done); (2) the margin step writes margin-left and reads getBoundingClientRect() in the same task: natively the canvas transform is independent of the layout, while a measured CSS correction keeps the old offset until it is measured again (only a patched getBoundingClientRect could hide it)"
     },
     "A non-drawable descendant inherits": {
      "category": "deviation",
      "reason": "nested-geometry",
-     "note": "passes alone: the ancestor test above fails before its cleanup and leaves the ancestor transformed"
+     "note": "passes alone (its own steps are met): it follows the ancestor subtest above, which fails before its cleanup (clearElementGeometry) and leaves #target and #nested-block transformed"
     }
    }
   },
   "css-backdrop-filter-image.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
   },
   "css-backdrop-filter-with-mix-blend-mode-and-opacity.tentative.html": {
    "category": "impossible",
@@ -54,6 +54,11 @@
    "category": "impossible",
    "reason": "backdrop-isolation",
    "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Here the descendant `.foreground` has `backdrop-filter: blur(20px)` and `mix-blend-mode: multiply`: the blend is drawn, the blur of its backdrop is not (7500 pixels within 71-79 levels)"
+  },
+  "css-object-fit-nested-canvas.tentative.html": {
+   "category": "deviation",
+   "reason": "drawable-canvas-element",
+   "note": "as nested-canvas-scale: the nested canvas (the drawable itself, object-fit: contain) is painted into and drawn from in the same task, outside a paint event; natively the outer snapshot refers to the nested canvas's live bitmap, so a draw in the same task shows what was just painted into it; the polyfill's snapshot is an SVG image built (and decoded asynchronously) from the bitmap read when the build started, so the draw shows the bitmap of the last paint (empty: 90,000 px differ, the whole 300 x 300 content box). With a paint between the two (probe) the object-fit placement matches the reference. Fixable for a canvas that is itself the drawable, not done (see nested-canvas-scale)"
   },
   "display-contents.tentative.html": {
    "category": "impossible",
@@ -75,10 +80,15 @@
    "reason": "paint-dom-write-timing",
    "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). DOM written in the paint handler must be in the snapshot drawn by the same handler"
   },
-  "nested-canvas-scale.tentative.html": {
+  "nested-canvas-filter.tentative.html": {
    "category": "impossible",
    "reason": "drawable-canvas-element",
-   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). the nested canvas is drawn into and drawn from in the same task: the outer snapshot still holds its previous bitmap"
+   "note": "the inner canvas is painted into and the outer drawable that contains it under filter: invert(100%) is drawn in the same task, outside a paint event: natively the outer snapshot refers to the nested canvas's live bitmap, so a draw in the same task shows what was just painted into it; the polyfill's snapshot is an SVG image built (and decoded asynchronously) from the bitmap read when the build started, so the draw shows the bitmap of the last paint (empty: 10,000 px differ, #eee where the inverted #ff00ff belongs). Unlike a canvas that is itself the drawable, the new bitmap would have to be rasterised again inside the outer drawable, with its ancestors' effects (here a filter), which a userland polyfill can only do asynchronously (an SVG image decode). With a paint between the two (probe) the result matches the reference"
+  },
+  "nested-canvas-scale.tentative.html": {
+   "category": "deviation",
+   "reason": "drawable-canvas-element",
+   "note": "the nested canvas is painted into and drawn from in the same task, outside a paint event: natively the outer snapshot refers to the nested canvas's live bitmap, so a draw in the same task shows what was just painted into it; the polyfill's snapshot is an SVG image built (and decoded asynchronously) from the bitmap read when the build started, so the draw shows the bitmap of the last paint. Fixable for a canvas that is itself the drawable (as here), not done: build its snapshot without the bitmap and draw the live bitmap over the snapshot's content box at draw time (object-fit / object-position mapping, the box's border radius, opacity and filter applied by the draw). Was classed impossible until 2026-10-29: the reason (synchronous rasterisation) holds only for a canvas nested deeper inside a drawable (nested-canvas-filter)"
   },
   "onpaint-changedElements.tentative.html": {
    "category": "impossible",
@@ -123,17 +133,22 @@
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
+  },
+  "privacy/filtered-outside-subtree-ignored.tentative.html": {
+   "category": "impossible",
+   "reason": "backdrop-isolation",
+   "note": "the first failing assertion is a backdrop-filter of a DESCENDANT of the drawable (#backdrop-internal inside #backdrop-wrapper): a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). The filter assertions themselves are met: with the four backdrop assertions removed (probe, 3 runs each), native and the polyfill pass every check before the move (an SVG filter inside the canvas applies with its unvisited style, one outside is ignored, on HTML and SVG content); after the atomic move the polyfill repaints the drawables that refer to the moved filter, but its single waitForCanvasPaint can see the paint of the two moved-in drawables before all five rebuilt tiles land (paint-timing: at most two rebuilds per canvas in flight); with a 500 ms wait every check passes"
   },
   "privacy/selection-alone-with-decorations-painted.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "the ::selection decoration and shadow are drawn since 2026-10-22 (354 -> 8 differing pixels): natively they end at the whole-pixel highlight rect, in the clone at the text box (a sub-pixel antialiased end)"
+   "note": "the selection background, foreground, decoration and shadow are drawn (354 -> 8 differing pixels since 2026-10-22). The 8 pixels are the right end of the 2px underline and of its shadow: the clone paints them as text-decoration and text-shadow of the wrapper of the selected run, so they span the run's own sub-pixel extent and end in an antialiased column; natively the selection painter clips them to the pixel-snapped highlight rect. A clip path can only shorten the decoration (where the native rect rounds inward), not lengthen it where it rounds outward, and a decoration drawn as a separate box would need the font's underline offset and thickness, which no API reports (TextMetrics has none)"
   },
   "privacy/selection-painted-overlay-path.tentative.html": {
    "category": "deviation",
    "reason": "caret-selection",
-   "note": "a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone; the ::selection part is. Drawing it (its ranges wrapped like the selection) would not make the file pass: its ::selection decoration has the same edge as privacy/selection-alone-with-decorations-painted (natively it ends at the whole-pixel highlight rect, in the clone at the text box), so it was not done"
+   "note": "two differences: a CSS Custom Highlight (::highlight, CSS.highlights) is not drawn in the clone (the ::selection part is), and the ::selection decoration ends at the selected run, not at the pixel-snapped highlight rect (as privacy/selection-alone-with-decorations-painted). Drawing the custom highlight (its ranges wrapped like the selection) is feasible but would not make the file pass because of the second difference, so it was not done"
   },
   "scale.tentative.html": {
    "category": "impossible",
@@ -186,8 +201,10 @@
   "compositing-op-non-opaque-element.tentative.html",
   "containment.tentative.html",
   "content-drawable-no-hit-test.tentative.html",
+  "content-not-culled.tentative.html",
   "css-backdrop-filter-and-mask.tentative.html",
   "css-backdrop-filter-on-div.tentative.html",
+  "css-backdrop-filter-with-blend-mode-over-content.tentative.html",
   "css-backdrop-filter-with-sibling.tentative.html",
   "css-backdrop-filter.tentative.html",
   "css-blend-mode-over-both.tentative.html",
@@ -241,6 +258,7 @@
   "nested-canvas-reset.tentative.html",
   "nested-content-drawable-canvas.tentative.html",
   "nested-div-content-drawable-canvas.tentative.html",
+  "nested-drawable-filter.tentative.html",
   "nested-drawable.tentative.html",
   "non-opaque-element.tentative.html",
   "offscreen/animated-gif-worker.tentative.html",
@@ -277,13 +295,16 @@
   "privacy/box-mask-svg-ignored.tentative.https.sub.html",
   "privacy/box-reflect-images-ignored.tentative.https.sub.html",
   "privacy/box-reflect-images-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/box-reflect-images-in-iframe-multicol-moved-ignored.tentative.https.sub.html",
   "privacy/canvas-in-custom-element-images-ignored.tentative.html",
   "privacy/embed-image-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-drawable-added-ignored.tentative.https.sub.html",
   "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-external-svg-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-removed-contain-paint.tentative.https.sub.html",
   "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html",
   "privacy/filtered-svg-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
   "privacy/fragment-mask-png-ignored.tentative.https.sub.html",
@@ -335,9 +356,11 @@
   "privacy/svg/svg-mask-on-svg-content-ignored.tentative.https.sub.html",
   "privacy/svg/svg-mask-visited.tentative.https.sub.html",
   "privacy/svg/svg-pattern-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-filter-transformed-text.tentative.https.sub.html",
   "privacy/svg/svg-pattern-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-pattern-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-with-feImage-transformed-text.tentative.https.sub.html",
   "privacy/svg/svg-radial-gradient-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-radial-gradient-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-use-chained-outside-subtree-images-ignored.tentative.https.sub.html",
@@ -376,6 +399,7 @@
   "canvas-transform-get-bounding-client-rect.tentative.html": 2,
   "display-contents.tentative.html": 1,
   "draw-element-image-get-image-data.tentative.html": 1,
+  "onpaint-changedElements.tentative.html": 1,
   "onpaint-iframe-post-tree-order.tentative.html": 1,
   "onpaint-post-tree-order.tentative.html": 2,
   "onpaint-remove-drawable-element.tentative.html": 5
@@ -405,9 +429,11 @@
   "compositing-op-non-opaque-element.tentative.html",
   "containment.tentative.html",
   "content-drawable-no-hit-test.tentative.html",
+  "content-not-culled.tentative.html",
   "css-backdrop-filter-and-mask.tentative.html",
   "css-backdrop-filter-image.tentative.html",
   "css-backdrop-filter-on-div.tentative.html",
+  "css-backdrop-filter-with-blend-mode-over-content.tentative.html",
   "css-backdrop-filter-with-mix-blend-mode-and-opacity.tentative.html",
   "css-backdrop-filter-with-mix-blend-mode.tentative.html",
   "css-backdrop-filter-with-sibling.tentative.html",
@@ -421,6 +447,7 @@
   "css-filter-on-div.tentative.html",
   "css-filter-reference-on-div.tentative.html",
   "css-mask-on-div.tentative.html",
+  "css-object-fit-nested-canvas.tentative.html",
   "css-opacity-on-div.tentative.html",
   "css-transform-on-div.tentative.html",
   "date-input-slot-assignment-crash.tentative.html",
@@ -467,12 +494,14 @@
   "layout-canvas-children.tentative.html",
   "moved-nested-content-drawable-canvas.tentative.html",
   "moved-webgl-canvas.tentative.html",
+  "nested-canvas-filter.tentative.html",
   "nested-canvas-invalidation.tentative.html",
   "nested-canvas-not-rendered.tentative.html",
   "nested-canvas-reset.tentative.html",
   "nested-canvas-scale.tentative.html",
   "nested-content-drawable-canvas.tentative.html",
   "nested-div-content-drawable-canvas.tentative.html",
+  "nested-drawable-filter.tentative.html",
   "nested-drawable.tentative.html",
   "non-opaque-element.tentative.html",
   "offscreen/animated-gif-worker.tentative.html",
@@ -520,13 +549,17 @@
   "privacy/box-mask-svg-ignored.tentative.https.sub.html",
   "privacy/box-reflect-images-ignored.tentative.https.sub.html",
   "privacy/box-reflect-images-in-iframe-moved-ignored.tentative.https.sub.html",
+  "privacy/box-reflect-images-in-iframe-multicol-moved-ignored.tentative.https.sub.html",
   "privacy/canvas-in-custom-element-images-ignored.tentative.html",
   "privacy/embed-image-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-drawable-added-ignored.tentative.https.sub.html",
   "privacy/filtered-div-multi-filters-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-external-svg-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-feimage-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html",
+  "privacy/filtered-div-removed-contain-paint.tentative.https.sub.html",
+  "privacy/filtered-outside-subtree-ignored.tentative.html",
   "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html",
   "privacy/filtered-svg-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
   "privacy/fragment-mask-png-ignored.tentative.https.sub.html",
@@ -580,9 +613,11 @@
   "privacy/svg/svg-mask-on-svg-content-ignored.tentative.https.sub.html",
   "privacy/svg/svg-mask-visited.tentative.https.sub.html",
   "privacy/svg/svg-pattern-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-filter-transformed-text.tentative.https.sub.html",
   "privacy/svg/svg-pattern-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-pattern-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-pattern-with-feImage-cross-origin-image.tentative.https.sub.html",
+  "privacy/svg/svg-pattern-with-feImage-transformed-text.tentative.https.sub.html",
   "privacy/svg/svg-radial-gradient-href-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-radial-gradient-outside-subtree-ignored.tentative.html",
   "privacy/svg/svg-use-chained-outside-subtree-images-ignored.tentative.https.sub.html",

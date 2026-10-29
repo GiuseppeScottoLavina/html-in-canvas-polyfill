@@ -31,7 +31,7 @@
   },
   "chromium": {
     "tag": "159.0.8128.2",
-    "match": "exact (test files)",
+    "match": "exact for every test file",
     "note": "From 159.0.8128.0 to 159.0.8129.0 third_party/blink/web_tests/external/wpt/html/canvas/element/manual/draw-element-image is tree 617f21f47704c0ad6b4a9ad65ab7bd91e0677b4e, the tree of WPT 4d0cdba6d4 (the newest commit that changes a test): all 325 files byte-identical. The pinned commit adds only WEB_FEATURES.yml (metadata, not imported by these builds). The offscreen directory is identical too (tree 6e1f5371c9e73cff7ec3d6be533de50fd33dc566 without WEB_FEATURES.yml), and so are draw-element-image-utils.js, wait-for-canvas-paint.js, draw-element-image-styles.css, color-grid-component.js, testharness.js, reftest-wait.js and scroll_support.js. The two Chromium changes that were unexported at the previous pin (63444, 63519) are now in WPT (8336f81eac, 143d46141d). 158.0.8126.0 to 158.0.8127.1 import an older tree (0808feeb); 159.0.8130.0 and later add exported-pending tests (hit-test/elementsFromPoint-object-fit-{contain,cover,fill,none}-{tall,wide}). 159.0.8128.2 is the installed Chrome Canary and is inside the matching range."
   },
   "paths": [
