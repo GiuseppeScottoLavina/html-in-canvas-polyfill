@@ -1,5 +1,6 @@
 // G-scroll-cadence: an inner list drawn into a canvas follows a trusted wheel stream at the display rate, and every frame it shows is a correct one.
-//   Cases (fixture scroll-cadence.html, the same trusted input for each): a plain list with a sticky header, the same with rounded corners, with :hover rows, a long
+//   Cases (fixture scroll-cadence.html, the same trusted input for each): a plain list with a sticky header, the same with rounded corners, with :hover rows (composed
+//   from hover strips, scroll-compose.js), with :hover rows that also get an inset shadow (a rule that may paint beyond the row: each step built), a long
 //   list (2000 rows, 6000+ elements), the plain list in a column of fractional width (400.4 px: its clientWidth is rounded, its layout is not), and a list of rows of
 //   fractional height (36.6 px, 900+ elements: the pages and tiles are pruned, and a spacer that was a LayoutUnit short put the rows after it a device pixel off
 //   between a composed frame and the settled tile, clone.js layoutPx). The pointer rests over the list before the stream (no warm-up gesture: the FIRST gesture is measured).
@@ -25,7 +26,16 @@ const FIXTURE = '/test/gates/fixtures/scroll-cadence.html';
 const CASES = [
   { name: 'plain', params: { rows: 300 }, paint: 0.9, compose: 0.8 },
   { name: 'rounded', params: { rows: 300, round: 1 }, paint: 0.9, compose: 0.8 },
-  { name: 'hover', params: { rows: 300, hover: 1 }, paint: 0.8, compose: 0 },
+  // hover: rows under the still pointer are composed from hover strips (scroll-compose.js). Measured 2026-10-29 (Chrome 155, 120 Hz): composed >= the moved frames
+  // (118 steps for 100-105 moved frames, 0 unfilled) at DPR 2 and 1.25; before the strips 0 of 114-115, every step a plain build
+  { name: 'hover', params: { rows: 300, hover: 1 }, paint: 0.8, compose: 0.8 },
+  // hovershadow: a :hover rule that may paint beyond the row (an inset shadow) keeps the plain build per step (no strips: the reach of a row measured unhovered would
+  // not bound it); measured with the hover case's old numbers: composed 0, every step a plain build
+  { name: 'hovershadow', params: { rows: 300, hover: 2 }, paint: 0.8, compose: 0 },
+  // table / sections: the hover strips on other row structures (a table with tr:hover and td:hover; lists of 25 under headings, the pointer crossing into the
+  // next list: scroll-compose.js sameDepth)
+  { name: 'table', params: { rows: 300, hover: 1, kind: 'table' }, paint: 0.8, compose: 0.8 },
+  { name: 'sections', params: { rows: 300, hover: 1, kind: 'sections' }, paint: 0.8, compose: 0.8 },
   { name: 'long', params: { rows: 2000 }, paint: 0.85, compose: 0.7 },
   { name: 'fractional', params: { rows: 300, frac: 1 }, paint: 0.9, compose: 0.8 },
   { name: 'fracrows', params: { rows: 300, fracrows: 1 }, paint: 0.9, compose: 0.8 },
@@ -42,6 +52,11 @@ const MOVE_CASE = 0.7;
 const MOVE_MEAN = 0.82;
 const SAMPLE_EVERY = 9;
 const SAMPLES = 8;
+/**
+ * with :hover rows, the first EARLY paints after the list starts moving are sampled too: the row hovered at rest leaves the view within about 7 steps, before the
+ * first every-9th sample, so a page that kept it hovered (rendered with the live hover instead of none, the mutant hover-pages-live) was never seen
+ */
+const EARLY = 6;
 const TOLERANCE = 6;
 const MAX_FRACTION = 0.004;
 /** css px of each corner square of the list, and the share of it that may differ (delta > 16): the rounded clip's antialiasing is compared there, where a whole-list fraction would drown it */
@@ -140,7 +155,7 @@ runGate('G-scroll-cadence', async (ctx) => {
     await page.mouseMove(geo.at.x, geo.at.y);
     await H.sleep(800);
     const sc0 = await page.evaluate('window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll');
-    await page.evaluate(`window.__rec.start(${SAMPLE_EVERY}, ${SAMPLES})`);
+    await page.evaluate(`window.__rec.start(${SAMPLE_EVERY}, ${SAMPLES}, ${c.params.hover ? EARLY : 0})`);
     await H.wheelStream(page, { ...geo.at, deltaY: 40, count: 60, intervalMs: 8 });
     await H.wheelStream(page, { ...geo.at, deltaY: -40, count: 60, intervalMs: 8 });
     await H.sleep(400);
@@ -148,7 +163,7 @@ runGate('G-scroll-cadence', async (ctx) => {
     const sc1 = await page.evaluate('window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll');
     const k = cadence(frames);
     const composed = sc1.composed - sc0.composed;
-    numbers[c.name] = { ...k, composed, fallbacks: sc1.fallbacks - sc0.fallbacks, plans: sc1.plans - sc0.plans, refusals: sc1.refusals - sc0.refusals };
+    numbers[c.name] = { ...k, composed, ...Object.fromEntries(['fallbacks', 'plans', 'refusals', 'pages', 'dropped', 'dirtied', 'patched', 'dirtyMisses', 'obstructed', 'strips', 'filled', 'unfilled'].map((n) => [n, (sc1[n] ?? 0) - (sc0[n] ?? 0)])) };
     shares.push(k.moveShare ?? 0);
     ctx.check(`${c.name}: the wheel stream scrolled the live list (>= 40 frames with movement)`, k.moved >= 40, k, 'cadence');
     ctx.check(`${c.name}: the live list moved in >= ${MOVE_CASE * 100} % of the frames of the stream (plain DOM and native: 97 %)`, k.moveShare >= MOVE_CASE, { moveShare: k.moveShare, pattern: k.pattern }, 'cadence');
@@ -171,13 +186,13 @@ runGate('G-scroll-cadence', async (ctx) => {
       if (twin.has(key)) return twin.get(key);
       await ref.evaluate(`document.getElementById('list').scrollTop = ${top}`);
       if (withHover) {
-        const at = hov < 0 ? { x: geo.at.x + 500, y: geo.at.y } : await ref.evaluate(`(() => { const r = document.getElementById('rows').children[${hov}].getBoundingClientRect(); const l = document.getElementById('list').getBoundingClientRect(); return { x: ${geo.at.x}, y: Math.min(l.bottom - 2, Math.max(l.top + 46, r.top + r.height / 2)) }; })()`);
+        const at = hov < 0 ? { x: geo.at.x + 500, y: geo.at.y } : await ref.evaluate(`(() => { const r = window.__hoverables()[${hov}].getBoundingClientRect(); const l = document.getElementById('list').getBoundingClientRect(); return { x: ${geo.at.x}, y: Math.min(l.bottom - 2, Math.max(l.top + 46, r.top + r.height / 2)) }; })()`);
         await ref.mouseMove(at.x, at.y);
       }
       await H.sleep(250);
       const shot = await H.screenshotElement(ref, '#list');
       if (withHover) {
-        const got = await ref.evaluate(`(() => { const h = document.querySelector('#rows li:hover'); return h ? Array.prototype.indexOf.call(document.getElementById('rows').children, h) : -1; })()`);
+        const got = await ref.evaluate(`window.__hoverables().findIndex((e) => e.matches(':hover'))`);
         if (got !== hov) twinMisses.push({ top, want: hov, got });
       }
       twin.set(key, { img: shot.img, top: await ref.evaluate(`document.getElementById('list').scrollTop`) });

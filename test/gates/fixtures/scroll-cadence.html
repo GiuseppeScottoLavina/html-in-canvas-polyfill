@@ -2,8 +2,9 @@
 <html lang="en"><head><meta charset="utf-8"><link rel="icon" href="data:,">
 <title>scroll cadence: an inner list drawn into a canvas, and its plain-DOM twin</title>
 <script>
-  // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1  frac=0|1 (a list column of fractional width, 400.4 px)
+  // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1|2  frac=0|1 (a list column of fractional width, 400.4 px)
   //   fracrows=1 (rows of fractional height: 36.6 css px, their content's own height)
+  //   kind=table (the rows are table rows: tr:hover and td:hover rules with hover=1)  kind=sections (the rows are grouped in lists of 25 under headings)
   var q = new URLSearchParams(location.search); window.__q = q;
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
 </script>
@@ -19,6 +20,10 @@
      put the rows after it one device px off at some offsets (clone.js layoutPx) */
   #list li { display: flex; gap: 10px; box-sizing: border-box; height: 37px; padding: 8px 12px; border-bottom: 1px solid #e6eaf2; }
   #list.fracrows li { height: auto; }
+  #list table { width: 100%; border-collapse: collapse; }
+  #list td { height: 36px; padding: 0 12px; border-bottom: 1px solid #e6eaf2; white-space: nowrap; }
+  #list h3 { margin: 0; padding: 6px 12px; font-size: 13px; background: #eef2f9; border-bottom: 1px solid #e6eaf2; }
+  #list ul { margin: 0; padding: 0; list-style: none; }
   #list li i { min-width: 30px; text-align: center; border-radius: 6px; color: #fff; font-style: normal; font-weight: 700; }
   #panel { display: grid; gap: 12px; align-content: start; }
   #panel h2 { margin: 0; font-size: 26px; }
@@ -44,11 +49,28 @@
     rows.append(li);
   }
   document.getElementById('count').textContent = N;
+  const kind = q.get('kind');
+  if (kind === 'table') {
+    // the same rows as table rows: a cell per field
+    const t = document.createElement('table');
+    const tb = t.createTBody();
+    for (const li of [...rows.children]) { const tr = tb.insertRow(); for (const v of [li.firstChild.textContent, li.lastChild.textContent, (+li.firstChild.textContent * 37) % 1000 + ' units']) tr.insertCell().textContent = v; }
+    rows.replaceWith(t);
+  } else if (kind === 'sections') {
+    // the same rows grouped in lists of 25 under a heading each
+    const box = document.createElement('div');
+    const all = [...rows.children];
+    for (let g = 0; g * 25 < all.length; g++) { const h = document.createElement('h3'); h.textContent = 'Group ' + g; const ul = document.createElement('ul'); ul.append(...all.slice(g * 25, g * 25 + 25)); box.append(h, ul); }
+    rows.replaceWith(box);
+  }
+  /** the elements a frame's hovered row is one of, in order (the gate puts the twin's pointer on the one a frame had) */
+  window.__hoverables = () => (kind === 'table' ? [...document.querySelectorAll('#list tr')] : [...document.querySelectorAll('#list li')]);
   const list = document.getElementById('list');
   if (q.get('round') === '1') list.classList.add('round');
   if (q.get('fracrows') === '1') list.classList.add('fracrows');
   if (q.get('frac') === '1') document.getElementById('app').style.gridTemplateColumns = '400.4px 1fr';
-  if (q.get('hover') === '1') { const st = document.createElement('style'); st.textContent = '#list li:hover { background: #cfdcf8; }'; document.head.append(st); }
+  // hover=2: the hovered row also gets an inset shadow, a rule that may paint beyond a row's present extent (the compositor's hover strips do not serve it)
+  if (q.get('hover')) { const st = document.createElement('style'); st.textContent = (kind === 'table' ? '#list tr:hover { background: #cfdcf8; } #list td:hover { color: #c0262d; }' : '#list li:hover { background: #cfdcf8; }') + (q.get('hover') === '2' ? ' #list li:hover { box-shadow: inset 0 0 0 2px #7d97d6; }' : ''); document.head.append(st); }
   let canvas = document.getElementById('stage');
   const app = document.getElementById('app');
   window.__paints = 0;
@@ -69,17 +91,20 @@
       window.__paints++;
       ctx.reset();
       ctx.drawElementImage(app, 0, 0);
-      if (R.on && R.every && R.samples.length < R.max && window.__paints % R.every === 0) {
+      // the first `first` paints once the list has moved are copied too (the frames in which the rows of the rest state are still in view), then every `every`-th one
+      const early = R.on && R.early < R.first && list.scrollTop !== R.top0;
+      if (early) R.early++;
+      if (early || (R.on && R.every && R.samples.length < R.max + R.early && window.__paints % R.every === 0)) {
         const copy = new OffscreenCanvas(canvas.width, canvas.height);
         copy.getContext('2d').drawImage(canvas, 0, 0);
         R.samples.push({ t: performance.now(), top: list.scrollTop, hov: R.hov ? R.hov() : -1, copy });
       }
     };
     new ResizeObserver((e) => { const b = e[0].devicePixelContentBoxSize[0]; canvas.width = b.inlineSize; canvas.height = b.blockSize; }).observe(canvas, { box: 'device-pixel-content-box' });
-    R.start = (every, max) => {
-      Object.assign(R, { on: true, frames: [], samples: [], every, max });
+    R.start = (every, max, first = 0) => {
+      Object.assign(R, { on: true, frames: [], samples: [], every, max, first, early: 0, top0: list.scrollTop });
       // the hovered row of each frame: during a scroll the engine moves :hover to the row under the still pointer a frame or so after the row arrives there
-      const hov = () => { const h = rows.querySelector('li:hover'); return h ? Array.prototype.indexOf.call(rows.children, h) : -1; };
+      const hov = () => window.__hoverables().findIndex((e) => e.matches(':hover'));
       R.hov = hov;
       const f = (t) => { if (!R.on) return; R.frames.push([t, list.scrollTop, window.__paints, hov()]); requestAnimationFrame(f); };
       requestAnimationFrame(f);
