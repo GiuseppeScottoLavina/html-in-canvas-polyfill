@@ -57,7 +57,7 @@ export function geckoDisabledBorder(buttonBorder, dark) {
 }
 
 /** @param {number} v 0-255 */
-const lin =(v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const lin = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
 /** @param {number} v linear */
 const gam = (v) => { const c = Math.min(1, Math.max(0, v)); return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055); };
 
