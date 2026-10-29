@@ -47,7 +47,7 @@ concurrency:
 
 env:
   # The runner's virtual display is 1x and offers no HiDPI mode: gates without a DPR of their own run at 2, as on the Retina screens their thresholds were set on
-  # (test/gates/lib/gate.mjs). Gates with their own DPRs (G-regress-capture 1 and 2, G-pixel-dpr 1.25 and 1.5) keep them.
+  # (test/gates/lib/gate.mjs). Gates with their own DPRs (G-regress-capture 1 and 2, G-pixel-dpr 1, 1.25 and 1.5) keep them.
   HIC_GATE_DPR: '2'
   # the whole mutation suite on the nightly run, on release tags and on request; one mutant per gate otherwise
   MUTANTS_ALL: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.mutants == 'all') }}
