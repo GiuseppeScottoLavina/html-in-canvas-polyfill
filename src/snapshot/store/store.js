@@ -59,6 +59,9 @@ const MAX_BACKOFF_MS = 5000;
 /** Weight of the newest sample in the per-drawable tile cost EMA. */
 const COST_EMA_WEIGHT = 0.3;
 const SAMPLES = 64;
+/** scrollers remembered per drawable as candidates of scrollWarm, and planned ahead per drawable (the compositor keeps caches for 2) */
+const MAX_WARM_CANDIDATES = 8;
+const WARM_PER_DRAWABLE = 2;
 /** Damage causes that may change what a refused drawable needs, so a refusal is retried. */
 const RETRY_CAUSES = new Set(['resize', 'dpr', 'forced', 'stylesheet', 'content-attr']);
 /** Damage of typing in a field: it cannot move anything over the field (every other cause may, so the overlay planner re-checks). */
@@ -185,6 +188,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       el, record, incarnation: 0, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
       notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
       unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
+      scrollers: new Set(),
     };
     entries.set(el, entry);
     return entry;
@@ -367,6 +371,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
       if (!isLive(l.entry, l.incarnation)) { releaseImage(l.image); return; }
       l.entry.lastNodes = l.result.nodes;
       counters.nodesLast = l.result.nodes;
+      for (const el of l.result.scrollers ?? []) {
+        if (l.entry.scrollers.has(el)) continue;
+        if (l.entry.scrollers.size >= MAX_WARM_CANDIDATES) l.entry.scrollers.delete(/** @type {Element} */ (l.entry.scrollers.values().next().value));
+        l.entry.scrollers.add(el);
+      }
       landed.push(l);
       // landed inside the task that built it: the scheduler can paint it now rather than at the next frame
       if (decodedAtOnce(l.image)) env.bus.emit(BUS.LANDED, { record: l.entry.record });
@@ -924,6 +933,30 @@ export function createSnapshotStore(env, capture, extras = {}) {
       const entry = entries.get(drawable);
       if (entry && extras.scrollPlan) compositor.prepare(entry, scroller);
     },
+    scrollWarm(record) {
+      if (!extras.scrollPlan) return false;
+      const win = env.window;
+      let queued = false;
+      for (const entry of entriesOf(record)) {
+        if (!entry.version || !entry.surface || entry.lost || !entry.scrollers.size) continue;
+        /** @type {Array<[Element, number]>} */
+        const seen = [];
+        for (const el of entry.scrollers) {
+          const h = /** @type {HTMLElement} */ (el);
+          if (!el.isConnected || !entry.el.contains(el)) { entry.scrollers.delete(el); continue; }
+          if (h.scrollHeight <= h.clientHeight + 1) continue;
+          // the plan composes a port that lies wholly in the viewport (scroll-pages.js): one that does not would be refused
+          const r = el.getBoundingClientRect();
+          if (r.width < 1 || r.height < 1 || r.left < 0 || r.top < 0 || r.right > win.innerWidth || r.bottom > win.innerHeight) continue;
+          seen.push([el, r.width * r.height]);
+        }
+        // the largest first, as many as the compositor keeps caches per drawable
+        seen.sort((a, b) => b[1] - a[1]);
+        for (const [el] of seen.slice(0, WARM_PER_DRAWABLE)) if (compositor.prepare(entry, el, true)) queued = true;
+      }
+      return queued;
+    },
+    scrollYield: () => compositor.yieldToInput(),
     scrollCompose(drawable, scroller) {
       const entry = entries.get(drawable);
       const served = !!entry && !!extras.scrollPlan && compositor.serve(entry, scroller);

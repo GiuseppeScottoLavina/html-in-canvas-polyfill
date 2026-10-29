@@ -112,7 +112,7 @@ export async function makeRig(t, cfg = {}) {
   });
 
   const calls = /** @type {any[]} */ ([]);
-  /** Per-call overrides, consumed in order: {color, complete, caret, unsupported, url, layoutOffset}. */
+  /** Per-call overrides, consumed in order: {color, complete, caret, unsupported, url, layoutOffset, scrollers}. */
   const script = /** @type {any[]} */ ([]);
   const rig = {
     env, record, reports, calls, script, bus, BUS, options, INK, scale, color: 'red', decodes: 0, deferDecode: false,
@@ -138,7 +138,7 @@ export async function makeRig(t, cfg = {}) {
     const heightPx = Math.ceil(crop.height * req.scale - 1e-6);
     return {
       url: o.url ?? solidUrl(widthPx, heightPx, o.color ?? rig.color), cropCss: crop, widthPx, heightPx, nodes: 10, complete: o.complete ?? true,
-      unsupported: o.unsupported ?? [], layoutOffset: o.layoutOffset ?? { x: 1, y: 2 }, caret: o.caret ?? null,
+      unsupported: o.unsupported ?? [], layoutOffset: o.layoutOffset ?? { x: 1, y: 2 }, caret: o.caret ?? null, scrollers: o.scrollers ?? [],
       timings: { cloneMs: 0.1, cssMs: 0, shakeMs: 0, svgMs: 0, bytes: 1 },
     };
   };

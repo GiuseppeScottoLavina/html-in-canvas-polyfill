@@ -26,6 +26,20 @@ export async function pressKeys(page, keys, { intervalMs = 8, probe = false } = 
   return run(page, 'keys', ['keydown'], probe, keys.length, intervalMs, i => page.key(keys[i]));
 }
 
+/**
+ * A finger flick at (x, y) through the browser's touch pipeline (Input.dispatchTouchEvent; the page needs Emulation.setTouchEmulationEnabled to see a touch-first
+ * device): the contact, `restMs` of rest, `count` moves of `step` css px every `intervalMs` (dir 1 moves the finger up: the content scrolls down), the release
+ * (the browser flings). No OS input.
+ */
+export async function touchDrag(page, { x, y, dir = 1, step = 12, count = 12, intervalMs = 16, restMs = 50 } = {}) {
+  const at = (/** @type {number} */ py) => [{ x, y: py, radiusX: 4, radiusY: 4, force: 1, id: 1 }];
+  await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(y) });
+  await new Promise((ok) => setTimeout(ok, restMs));
+  const r = await paced(count, intervalMs, (/** @type {number} */ i) => page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(y - step * dir * (i + 1)) }));
+  await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  return { kind: 'touch', ...r };
+}
+
 /** `count` wheel events of (deltaX, deltaY) at (x,y). deltaY > 0 scrolls down. */
 export async function wheelStream(page, { x, y, deltaX = 0, deltaY = 40, count = 30, intervalMs = 8, probe = false } = {}) {
   return run(page, 'wheel', ['wheel'], probe, count, intervalMs, () => page.wheel(x, y, deltaX, deltaY));

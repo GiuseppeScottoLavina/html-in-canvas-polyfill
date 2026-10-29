@@ -236,12 +236,18 @@ export function createInteractionTracker(env, capture) {
     const root = /** @type {HTMLElement} */ (record.layer?.element);
     /** @type {Array<[string, (ev: any) => void]>} */
     const table = [
+      // A finger hovers only by a TAP: Chrome and Mobile Safari match no :hover while a finger rests or pans (measured in Chrome with a CDP touch: the touched row was
+      // never :hover until a tap), and after a tap the tapped element stays :hover until the next tap elsewhere (a CSS :hover menu opens on a tap). Its pointerover /
+      // pointerout at each contact and at the start of each pan put the whole chain of the touched row in and out of the hover set: two rebuilds of the drawable per
+      // gesture, whose damage covered every scroller on the chain and dropped its cached scroll pages (iOS Simulator: every gesture over a list with a :hover rule
+      // began with 5 to 9 plain builds). The tap is its pointerup (a pan ends in pointercancel), handled with the other releases (onRelease).
       ['pointerover', (ev) => {
+        if (ev.pointerType === 'touch') return;
         nativeTarget.set(record, ev.target);
         if (!mapped.has(record)) setHover(record, ev.target);
       }],
       ['pointerout', (ev) => {
-        if (ev.relatedTarget && root.contains(ev.relatedTarget)) return;
+        if (ev.pointerType === 'touch' || (ev.relatedTarget && root.contains(ev.relatedTarget))) return;
         nativeTarget.set(record, null);
         if (!mapped.has(record)) setHover(record, null);
       }],
@@ -280,6 +286,16 @@ export function createInteractionTracker(env, capture) {
   const onRelease = (ev) => {
     if (ev.type === 'keyup' && /** @type {KeyboardEvent} */ (ev).key !== ' ') return;
     releaseAll();
+    // a tap: the tapped element of a canvas becomes the hovered one, and a tap elsewhere ends the hover a tap left in another canvas (see pointerover above)
+    if (ev.type === 'pointerup' && /** @type {PointerEvent} */ (ev).pointerType === 'touch') {
+      const t = /** @type {Element|null} */ (ev.target);
+      for (const record of attached.keys()) {
+        const inside = !!t && t.nodeType === 1 && !!record.layer?.element.contains(t);
+        if (!inside && !hover.get(record)?.size) continue;
+        nativeTarget.set(record, inside ? t : null);
+        if (!mapped.has(record)) setHover(record, inside ? t : null);
+      }
+    }
   };
 
   let windowActive = true;

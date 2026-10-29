@@ -265,3 +265,95 @@ test('Gecko: a rounded port is refused, opaque or not (Gecko and the canvas anti
   assert.ok(rig.store.stats().scroll.refusals >= 1, 'refused');
   assert.equal(rig.calls.filter((c) => c.scroll).length, 0, 'no page, pin or backdrop was built');
 });
+
+/** a live scroller inside drawable `a`, wholly in the viewport (scrollWarm plans only such a port) */
+function liveScroller(t, a) {
+  const sc = document.createElement('div');
+  sc.style.cssText = 'position:fixed;left:0;top:0;width:60px;height:40px;overflow-y:auto';
+  sc.innerHTML = '<div style="height:1040px"></div>';
+  a.append(sc);
+  t.cleanup(() => sc.remove());
+  return sc;
+}
+
+test('planned ahead (a touch-first device at rest): the scrollers a tile found get a plan and two pages, so the first step of the first gesture is composed', async (t) => {
+  const rig = await makeRig(t, { scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 }) });
+  const a = rig.add('a', 100, 60);
+  const sc = liveScroller(t, a);
+  rig.script.push({ color: 'red', scrollers: [sc] });
+  await rig.build(a);
+  rig.script.push({ color: 'lime' }, { color: 'blue' });
+  const calls = rig.calls.length;
+  assert.equal(rig.store.scrollWarm(rig.record), true, 'the scroller the tile found is planned');
+  assert.equal(rig.calls.length, calls, 'nothing is built inside the call: the plan and pages are side builds');
+  rig.pump();
+  assert.equal(rig.calls.length - calls, 2, 'two pages, the one under the port and the next (AHEAD_PAGES)');
+  await until(() => rig.store.isSettled(a), 3000, 'pages decoded');
+  assert.equal(rig.store.scrollWarm(rig.record), false, 'planned already: nothing more to do at rest');
+  sc.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, sc), true, 'the first scroll step is composed (before: a plain build, then the plan, then the pages)');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 20, 15), RGBA.lime);
+  assert.deepEqual(rig.css(a, 20, 45), RGBA.blue);
+});
+
+test('planned ahead once until scrolled: a cache dropped at rest is not rebuilt ahead again (no work loop on a page that changes), one dropped after a gesture is', async (t) => {
+  const rig = await makeRig(t, { scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 }) });
+  const a = rig.add('a', 100, 60);
+  const sc = liveScroller(t, a);
+  rig.script.push({ color: 'red', scrollers: [sc] });
+  await rig.build(a);
+  assert.equal(rig.store.scrollWarm(rig.record), true);
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'pages decoded');
+  await rig.build(a, null, 'stylesheet');
+  assert.equal(rig.store.stats().scroll.dropped, 1);
+  assert.equal(rig.store.scrollWarm(rig.record), false, 'dropped while nobody scrolled it: not planned ahead again');
+  sc.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, sc), false, 'its gesture plans it as before');
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'pages decoded');
+  await rig.build(a, null, 'stylesheet');
+  assert.equal(rig.store.stats().scroll.dropped, 2);
+  assert.equal(rig.store.scrollWarm(rig.record), true, 'scrolled since: planned ahead again');
+});
+
+test('planning ahead skips a scroller that left the drawable, no longer overflows, or whose port is not wholly in the viewport', async (t) => {
+  const rig = await makeRig(t, { scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 }) });
+  const a = rig.add('a', 100, 60);
+  const sc = liveScroller(t, a);
+  rig.script.push({ color: 'red', scrollers: [sc] });
+  await rig.build(a);
+  sc.style.top = `${innerHeight - 10}px`;
+  assert.equal(rig.store.scrollWarm(rig.record), false, 'below the fold: its plan would be refused');
+  sc.style.top = '0px';
+  /** @type {HTMLElement} */ (sc.firstElementChild).style.height = '10px';
+  assert.equal(rig.store.scrollWarm(rig.record), false, 'nothing to scroll');
+  /** @type {HTMLElement} */ (sc.firstElementChild).style.height = '1040px';
+  sc.remove();
+  assert.equal(rig.store.scrollWarm(rig.record), false, 'gone');
+});
+
+test('a finger landing stops what is planned ahead and still waits to be built (its gesture must not wait for it); the scroller is planned ahead again at the next rest', async (t) => {
+  const rig = await makeRig(t, { scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 }) });
+  const a = rig.add('a', 100, 60);
+  const sc = liveScroller(t, a);
+  rig.script.push({ color: 'red', scrollers: [sc] });
+  await rig.build(a);
+  const calls = rig.calls.length;
+  assert.equal(rig.store.scrollWarm(rig.record), true);
+  rig.store.scrollYield();
+  rig.pump();
+  assert.equal(rig.calls.length, calls, 'the plan queued before the finger landed is not made, no page is built');
+  assert.equal(rig.store.scrollWarm(rig.record), true, 'planned ahead again later');
+  rig.pump({ ...rig.budget, mainThreadMs: 0 });
+  assert.equal(rig.calls.length, calls, 'one side job: the plan, which queues the pages');
+  rig.store.scrollYield();
+  rig.pump();
+  assert.equal(rig.calls.length, calls, 'the pages queued before the finger landed are not built');
+  sc.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, sc), false, 'its gesture plans it as before');
+  rig.script.push({ color: 'lime' }, { color: 'blue' }, { color: 'lime' }, { color: 'blue' });
+  rig.pump();
+  assert.ok(rig.calls.length > calls, 'and its pages are built');
+});

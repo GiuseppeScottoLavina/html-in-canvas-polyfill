@@ -3,7 +3,8 @@
  * the scrollport of the retained surface is composed from cached PAGES (the port rendered at other offsets, pinned sticky elements hidden) shifted by whole surface
  * pixels, then every pinned element is drawn from its own tile at its live position. A rounded scrollport is composed inside its rounded clip, over a BACKDROP tile
  * (the scroller without its content), from pages and pins rendered with square corners. Pages are built ahead in the post-frame pump (side builds), from the moment
- * the scroller is seen (the pointer over it, or its first scroll event). The snapshot stays the authority: a tile always lands when the scrolling stops.
+ * the scroller is seen (the pointer over it, or its first scroll event), or, on a touch-first device, while the page is quiet (prepare `early`: a finger's first
+ * contact is its gesture). The snapshot stays the authority: a tile always lands when the scrolling stops.
  *
  * Validity, per scroller: damage that does not reach into the scroller's content box (a counter elsewhere in the drawable) leaves its pages as they are; damage
  * inside the content box (a :hover row, a row updated by script) marks that part of every page captured before it DIRTY; damage that crosses the scroller's edge,
@@ -31,6 +32,8 @@ const MAX_SCROLLERS = 2;
 const REPLAN_MS = 1000;
 /** consecutive steps a needed page may stay dirty before it is rebuilt instead of waiting for a tile to repair it */
 const MAX_MISSES = 2;
+/** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
+const AHEAD_PAGES = 2;
 
 /**
  * @typedef {Object} Page
@@ -58,6 +61,7 @@ const MAX_MISSES = 2;
  * @property {number} last  previous live scrollTop seen (direction of the next page)
  * @property {Rect[]} unverified  damage rects inside the visible port (frame css) not yet checked for an obstruction
  * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
+ * @property {boolean} early  planned ahead and not scrolled yet: its builds queued before a finger landed stop (yieldToInput)
  */
 
 /**
@@ -192,6 +196,10 @@ export function createScrollCompositor(deps) {
   const planning = new WeakMap();
   /** @type {WeakMap<Entry, number>} side builds in flight per drawable */
   const inFlight = new WeakMap();
+  /** @type {WeakSet<Element>} scrollers planned ahead (prepare `ahead`) and not scrolled since: not planned ahead again, whatever drops their cache */
+  const ahead = new WeakSet();
+  /** input epoch: a finger landing (yieldToInput) stops the builds of what is planned ahead */
+  let epoch = 0;
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
   let seq = 0;
   /** diagnostics (SnapshotStats.scroll) */
@@ -212,8 +220,10 @@ export function createScrollCompositor(deps) {
    * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {{pad: Surface|null, seq?: number|null}} slot
    */
   function build(entry, cache, px, scroll, slot) {
+    const at = epoch;
     deps.schedule(entry, () => {
       if (mapOf(entry).get(cache.el) !== cache) return;
+      if (cache.early && at !== epoch) { ahead.delete(cache.el); drop(entry, cache); return; }
       if ('seq' in slot) slot.seq = seq;
       const url = deps.capture(entry, toCss(px, cache.geo), cache.geo, scroll);
       if (!url) { counters.failed++; drop(entry, cache); return; }
@@ -257,8 +267,8 @@ export function createScrollCompositor(deps) {
     return no.seq === seq && placeOf(el) === no.place;
   }
 
-  /** @param {Entry} entry @param {Element} el @param {ScrollPlan|null} plan @returns {Cache|null} */
-  function install(entry, el, plan) {
+  /** @param {Entry} entry @param {Element} el @param {ScrollPlan|null} plan @param {boolean} early  see Cache.early @returns {Cache|null} */
+  function install(entry, el, plan, early) {
     const m = mapOf(entry);
     m.delete(el);
     const geo = /** @type {Geometry} */ (entry.geo);
@@ -290,7 +300,7 @@ export function createScrollCompositor(deps) {
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [], memo: new Map(),
+      shown: null, queued: false, last: live, unverified: [], memo: new Map(), early,
     };
     if (plan.bar) {
       const b = plan.bar;
@@ -321,9 +331,9 @@ export function createScrollCompositor(deps) {
   /**
    * Pages on a grid of one port height (page k renders the port at k * P, the last one at maxTop): the pages under the port at `top`, one more in the scrolling direction
    * and half a port behind, nearest first. At most MAX_PAGES are kept; the farthest from `top` is evicted.
-   * @param {Entry} entry @param {Cache} cache @param {number} top
+   * @param {Entry} entry @param {Cache} cache @param {number} top @param {number} [most]  new pages at most (the nearest)
    */
-  function prefetch(entry, cache, top) {
+  function prefetch(entry, cache, top, most = MAX_PAGES) {
     const s = cache.geo.scale;
     const P = cache.portPx.height / s;
     const dir = top >= cache.last ? 1 : -1;
@@ -338,6 +348,7 @@ export function createScrollCompositor(deps) {
     want.sort((a, b) => Math.abs(a - top) - Math.abs(b - top));
     for (const t of [...new Set(want)]) {
       if (cache.pages.some((p) => p.top === t)) continue;
+      if (most-- <= 0) break;
       if (cache.pages.length >= MAX_PAGES) {
         let far = 0;
         for (let i = 1; i < cache.pages.length; i++) if (Math.abs(cache.pages[i].top - top) > Math.abs(cache.pages[far].top - top)) far = i;
@@ -407,8 +418,10 @@ export function createScrollCompositor(deps) {
      */
     serve(entry, scroller) {
       if (!entry.surface || !entry.geo || !entry.version || entry.lost) return false;
+      ahead.delete(scroller);
       const known = mapOf(entry).get(scroller);
       if (!known || !sameGeo(known.geo, entry.geo) || !sameLayout(known)) { this.prepare(entry, scroller); return false; }
+      known.early = false;
       const top = topOf(scroller);
       prefetch(entry, known, top);
       if (!usable(known, top, false)) return false;
@@ -418,21 +431,26 @@ export function createScrollCompositor(deps) {
 
     /**
      * `scroller` was seen (the pointer is over it, or it scrolled, or its scrolling settled): plan it and build its first pages in the post-frame pump (side builds,
-     * never inside a frame), so its next scroll steps can be composed.
-     * @param {Entry} entry @param {Element} scroller
+     * never inside a frame), so its next scroll steps can be composed. `early`: planned AHEAD, before anything showed it will scroll (store.scrollWarm): only
+     * AHEAD_PAGES pages, and once until it is scrolled. Returns true when a plan was queued.
+     * @param {Entry} entry @param {Element} scroller @param {boolean} [early]
+     * @returns {boolean}
      */
-    prepare(entry, scroller) {
-      if (!entry.surface || !entry.geo || entry.lost) return;
+    prepare(entry, scroller, early = false) {
+      if (!entry.surface || !entry.geo || entry.lost) return false;
       const known = mapOf(entry).get(scroller);
-      if (known && sameGeo(known.geo, entry.geo) && sameLayout(known)) return;
+      if (known && sameGeo(known.geo, entry.geo) && sameLayout(known)) return false;
+      if (early && ahead.has(scroller)) return false;
       let set = planning.get(entry);
       if (!set) planning.set(entry, (set = new Set()));
-      if (set.has(scroller) || stillRefused(entry, scroller)) return;
+      if (set.has(scroller) || stillRefused(entry, scroller)) return false;
       set.add(scroller);
+      if (early) ahead.add(scroller);
+      const at = epoch;
       counters.plans++;
       /** @param {Iterator<void, ScrollPlan|null, void>|null} steps */
       const step = (steps) => deps.schedule(entry, () => {
-        if (!entry.surface || !entry.geo || entry.lost || scroller.isConnected === false) { set.delete(scroller); return; }
+        if (!entry.surface || !entry.geo || entry.lost || scroller.isConnected === false || (early && at !== epoch)) { set.delete(scroller); ahead.delete(scroller); return; }
         const got = steps ?? deps.plan(scroller, entry.el);
         /** @type {ScrollPlan|null} */
         let plan;
@@ -443,11 +461,18 @@ export function createScrollCompositor(deps) {
           plan = r.value;
         } else plan = /** @type {ScrollPlan|null} */ (got);
         set.delete(scroller);
-        const c = install(entry, scroller, plan);
-        if (c) prefetch(entry, c, topOf(scroller));
+        const c = install(entry, scroller, plan, early);
+        if (c) prefetch(entry, c, topOf(scroller), early ? AHEAD_PAGES : MAX_PAGES);
       });
       step(null);
+      return true;
     },
+
+    /**
+     * A finger landed: what is planned ahead and still building stops (planned again at the next rest). Its gesture follows within a few frames, and a page build
+     * running then delays its first step (headless Chrome at 6x CPU throttling: +4 to +27 ms when a gesture began while the page was planning ahead).
+     */
+    yieldToInput() { epoch++; },
 
     /** @param {Entry} entry @returns {boolean} a composition waits for the next commit */
     queued(entry) {
