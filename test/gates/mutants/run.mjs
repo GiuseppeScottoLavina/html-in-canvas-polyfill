@@ -1,6 +1,8 @@
 // Mutant suite runner: `npm run test:mutants`.
-//   node test/gates/mutants/run.mjs [--only=a,b] [--gate=g-explainer] [--shard=k/n] [--list] [--check-anchors] [--no-baseline] [--wait-quiet=SECONDS]
+//   node test/gates/mutants/run.mjs [--only=a,b] [--gate=g-explainer] [--shard=k/n] [--repeat=N] [--list] [--check-anchors] [--no-baseline] [--wait-quiet=SECONDS]
 // --shard=k/n runs the k-th of n parts of the selection (shard.mjs: every mutant in exactly one part; CI runs the parts on separate machines).
+// --repeat=N runs every selected mutant N times against the same clean baseline and prints how often each was caught: a control that is caught only on some runs is
+// timing-dependent, and one run cannot tell (stale-after-resize was missed in 8 of 20 runs on the macOS runner before G-resize-drag compared the pixels at rest, 2026-10-28). Every run counts: one miss fails the suite.
 // For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>), and compare the
 // failed checks with the CLEAN bundle's run of the same gate (cached per gate). A mutant is CAUGHT when a check goes red that is green on the clean bundle.
 //   CAUGHT        ok
@@ -64,8 +66,9 @@ const baseline = (gate) => {
   return baselines.get(gate);
 };
 
+const repeat = Math.max(1, Math.floor(+(arg('repeat') ?? 1)) || 1);
 const rows = [];
-for (const m of selected) {
+for (const m of selected.flatMap((x) => Array.from({ length: repeat }, () => x))) {
   const b = built.get(m.name);
   if (b.drift) { rows.push({ mutant: m.name, status: 'ANCHOR DRIFT', detail: b.drift, perGate: {} }); continue; }
   const file = resolve(dir, `${m.name}.js`);
@@ -83,7 +86,11 @@ for (const m of selected) {
   const caught = m.expect === 'all' ? entries.every((e) => e.caught) : entries.some((e) => e.caught);
   const status = !usable ? 'NOT USABLE' : caught ? 'CAUGHT' : m.pendingFix ? 'PENDING' : 'MISSED';
   rows.push({ mutant: m.name, status, pendingFix: m.pendingFix ?? null, expect: m.expect ?? 'any', perGate });
-  console.log(`${status.padEnd(12)} ${m.name.padEnd(32)} ${Object.entries(perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'GREEN'}`).join(' ')}`);
+  console.log(`${status.padEnd(12)} ${m.name.padEnd(32)} ${Object.entries(perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'GREEN'}${e.caught ? ' (' + e.newlyRed.join(' | ').slice(0, 160) + ')' : ''}`).join(' ')}`);
+}
+if (repeat > 1) for (const m of selected) {
+  const mine = rows.filter((r) => r.mutant === m.name);
+  console.log(`repeat ${m.name}: caught ${mine.filter((r) => r.status === 'CAUGHT').length}/${mine.length}${mine.some((r) => r.status !== 'CAUGHT') ? ' (' + mine.map((r) => r.status).join(', ') + ')' : ''}`);
 }
 console.table(rows.map((r) => ({ mutant: r.mutant, status: r.status + (r.pendingFix ? ` (${r.pendingFix})` : ''), gates: Object.entries(r.perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'green'}`).join(' ') || r.detail })));
 mkdirSync(resolve(root, '.scratch/results'), { recursive: true });

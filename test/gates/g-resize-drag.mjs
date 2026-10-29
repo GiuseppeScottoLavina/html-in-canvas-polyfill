@@ -1,5 +1,6 @@
 // G-resize-drag: F3 under a REAL window drag (Browser.setWindowBounds in steps) at 50 ms and 8 ms cadence.
-//   zero blank frames after the first non-blank paint; final pixels (CANVAS BACKING STORE, tight) equal the plain-DOM twin at 1400 and 700 px; the live layout converges within
+//   zero blank frames after the first non-blank paint; at rest after each drag to 700 px, before any input, and at the end, the pixels (CANVAS BACKING STORE, tight) equal the
+//   plain-DOM twin at 700 px (and at 1400 px at the end); the live layout converges within
 //   4 rendering updates; a trusted click ~50 ms after the last resize event at the INNER EDGE of the drawn button lands on it and on none of its neighbours; the edge
 //   probe of every control after the drag matches the twin.
 // Positive control (pre-first-paint sabotage: black renderer + geometry never applied + a layer that keeps a stale width): a named check of EVERY class goes red.
@@ -41,6 +42,16 @@ runGate('G-resize-drag', async (ctx) => {
     for (const [from, to] of [[BIG, SMALL], [SMALL, BIG]]) {
       const d = await H.dragResize(page, { from, to, steps: 30, intervalMs: cadence, settleMs: 500 });
       drags.push({ cadence, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk });
+      // at rest after a drag to 700 with NO input since: nothing but the resize can re-raster the tile here. The later 700 px check cannot tell a stale tile: the click of the
+      // hit check damages the focused button, and any damage re-rasters the whole drawable at the new size (the stale-after-resize mutant passed it in 8 of 20 runs, 2026-10-28)
+      if (to === SMALL) {
+        const name = `at rest after the ${cadence} ms drag to 700 px, before any input`;
+        const shot = await canvasShot(page, '#hic-surface');
+        ctx.check(`${name}: the canvas size equals the twin size`, shot.img.width === refSmall.img.width && shot.img.height === refSmall.img.height, { canvas: [shot.img.width, shot.img.height], twin: [refSmall.img.width, refSmall.img.height] }, 'pixel');
+        checkSurface(ctx, { name, poly: shot.img, twin: refSmall.img, dpr: refSmall.geo.dpr, numbers, minContent: 0.03, tight: { tolerance: 6, max: 0.03 } }); // the thresholds of the final 700 px check
+        const r = numbers[name];
+        if (!ctx.control && !(r.sizeMatch && r.tightFraction <= 0.03)) await dumpFailure(ctx, `rest-700-${cadence}ms`, shot.img, refSmall.img);
+      }
     }
   }
   const report = await detector.stop();
