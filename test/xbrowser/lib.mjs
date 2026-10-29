@@ -128,6 +128,29 @@ export function regionChanged(a, b, rect) {
   return compareImages(ca, cb, { tolerance: 16, diffImage: false }).countOver16;
 }
 
+/**
+ * The caret's colour in a series of images of a focused, empty field (the caret blinks: the images are taken over more than one blink period): the median of the strong
+ * pixels (some channel >= 96 below white) inside `rect`, a part of the field's content box that holds nothing but the caret, over the images that show it; null when none does.
+ * @param {{width: number, height: number, data: Uint8Array|Uint8ClampedArray}[]} imgs @param {{x: number, y: number, w: number, h: number}} rect device px
+ * @returns {{color: number[], frames: number, pixels: number}|null}
+ */
+export function caretColorOf(imgs, rect) {
+  const px = [[], [], []]; let frames = 0;
+  for (const img of imgs) {
+    let seen = 0;
+    for (let y = rect.y; y < Math.min(img.height, rect.y + rect.h); y++) for (let x = rect.x; x < Math.min(img.width, rect.x + rect.w); x++) {
+      const i = (y * img.width + x) * 4;
+      if (255 - Math.min(img.data[i], img.data[i + 1], img.data[i + 2]) < 96) continue;
+      for (let c = 0; c < 3; c++) px[c].push(img.data[i + c]);
+      seen++;
+    }
+    if (seen) frames++;
+  }
+  if (!frames) return null;
+  const median = (a) => a.sort((p, q) => p - q)[a.length >> 1];
+  return { color: px.map(median), frames, pixels: px[0].length };
+}
+
 /** In-page blank-frame sampler: after every rendering update (a task posted from rAF) it reads a 32x32 downscale of the canvas; a frame whose alpha is 0 everywhere is blank. */
 export const BLANK_START = (sel) => `(() => { const c = document.querySelector(${JSON.stringify(sel)}); const t = document.createElement('canvas'); t.width = t.height = 32; const x = t.getContext('2d', { willReadFrequently: true });
   const st = window.__XB_BLANK = { frames: 0, blank: 0, seenNonBlank: false, sizes: new Set(), on: true }; const ch = new MessageChannel();

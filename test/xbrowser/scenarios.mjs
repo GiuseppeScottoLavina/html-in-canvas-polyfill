@@ -5,7 +5,7 @@
 import { IDENTITY_EXPR, diffIdentity } from '../gates/lib/identity.mjs';
 import { KEYS } from '../harness/lib/webdriver.mjs';
 import { pixelStats } from '../harness/lib/pixels.mjs';
-import { shotRect, rectOf, readCanvas, oracle, regionChanged, BLANK_START, BLANK_STOP, pageErrors, until, sleep } from './lib.mjs';
+import { shotRect, rectOf, readCanvas, oracle, regionChanged, caretColorOf, BLANK_START, BLANK_STOP, pageErrors, until, sleep } from './lib.mjs';
 import { cropImage } from '../harness/lib/pixels.mjs';
 import { SCROLLBAR_PROBE_EXPR } from '../harness/lib/env.mjs';
 import { COMPOSE_ORACLE } from '../mobile/scenarios.mjs';
@@ -58,6 +58,14 @@ const LATENCY = (sel, region, n) => `(async () => {
 
 /** largest distance (device px) between an edge of the canvas content's bounding box and the twin's (explainer) */
 const BOX_EDGE = 1;
+/** css px of ink overflow the explainer's focused ink check draws around the form (Safari's focus ring reaches 3 px beyond the field, Firefox's 1 px) */
+const INK = 8;
+/** caret samples after the first focused image, and their spacing: 6 x 150 ms span more than one blink period of both engines */
+const CARET_SHOTS = 6, CARET_GAP_MS = 150;
+/** largest channel difference between the caret colours (the Safari screenshot is converted from Display P3, a few levels off) */
+const CARET_DELTA = 40;
+/** @param {string} css an rgb() / rgba() computed colour @returns {number[]} */
+const rgbOf = (css) => (css.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
 
 export async function explainer(ctx) {
   const { s } = ctx; const P = '/test/fixtures/explainer/index.html';
@@ -66,6 +74,14 @@ export async function explainer(ctx) {
   const refRest = (await shotRect(s, twin)).img;
   await s.click(center(inputR).x, center(inputR).y); await sleep(300);
   const refFocused = (await shotRect(s, twin)).img;
+  // the caret over more than one blink period (Firefox's WebDriver screenshot draws no caret: there the expected colour is the text colour, measured by an OS screen capture)
+  const refCaretShots = [refFocused];
+  for (let i = 0; i < CARET_SHOTS; i++) { await sleep(CARET_GAP_MS); refCaretShots.push((await shotRect(s, twin)).img); }
+  const twinField = await s.evaluate('(() => { const cs = getComputedStyle(document.getElementById("name")); return { color: cs.color, caret: cs.caretColor }; })()');
+  // the focus ring with the drawable's ink overflow: the form unclipped by INK css px, as a source rect reaching INK px beyond its border box draws it
+  await s.evaluate(`document.getElementById('twinform').style.clipPath = 'inset(-${INK}px)'`); await sleep(150);
+  const refFocusedInk = (await shotRect(s, twin)).img;
+  await s.evaluate("document.getElementById('twinform').style.clipPath = 'inset(0)'");
   await s.typeText('hello'); await s.evaluate('document.getElementById("name").blur()'); await sleep(300);
   const refTyped = (await shotRect(s, twin)).img;
 
@@ -84,6 +100,25 @@ export async function explainer(ctx) {
   ctx.numbers.explainerFocusedBox = focused.box;
   ctx.check(`explainerFocused: the content bounding box (delta > 16 from the twin's background) matches the twin's, every edge within ${BOX_EDGE} device px (catches a whole-content shift while a control has focus)`, focused.box.edge <= BOX_EDGE, focused.box, 'pixel');
   if (focused.box.edge > BOX_EDGE) { ctx.save('explainerFocused.surface', focused.surface); ctx.save('explainerFocused.ref', focused.ref); }
+  // the caret's colour: Safari paints `caret-color: auto` in the system accent (unless an author colour applies), Firefox in the text colour
+  const shots = [focused.surface];
+  for (let i = 0; i < CARET_SHOTS; i++) { await sleep(CARET_GAP_MS); shots.push(await readCanvas(s, 'canvas')); }
+  const caretRect = devRect({ x: inputR.x + 3, y: inputR.y + 4, width: 24, height: inputR.height - 8 }, twin, k);
+  const want = caretColorOf(refCaretShots, caretRect) ?? (s.engine === 'firefox' ? { color: rgbOf(twinField.color), frames: 0, pixels: 0, from: 'text colour (no caret in the WebDriver screenshot)' } : null);
+  const got = caretColorOf(shots, caretRect);
+  const caretDelta = want && got ? Math.max(...got.color.map((v, i) => Math.abs(v - want.color[i]))) : Infinity;
+  ctx.numbers.explainerCaret = { canvas: got, twin: want, delta: caretDelta, twinField };
+  ctx.check(`explainerFocused: the caret is drawn in the colour the engine paints in the twin (every channel within ${CARET_DELTA})`, caretDelta <= CARET_DELTA, ctx.numbers.explainerCaret, 'pixel');
+  if (caretDelta > CARET_DELTA) { ctx.save('explainerCaret.surface', got ? shots.find((img) => caretColorOf([img], caretRect)) : shots[0]); ctx.save('explainerCaret.ref', refCaretShots.find((img) => caretColorOf([img], caretRect)) ?? refCaretShots[0]); }
+  // the drawable's ink overflow: a source rect INK css px beyond the form's border box draws the focus ring that overflows it (native: WPT ink-overflow), placed as before
+  await s.evaluate(`(() => { const c = document.querySelector('canvas'), f = document.querySelector('canvas form'), x = c.getContext('2d'), o = ${INK}, d = devicePixelRatio, r = f.getBoundingClientRect();
+    window.__xbPaint = c.onpaint; c.onpaint = () => { x.reset(); x.drawElementImage(f, -o, -o, r.width + 2 * o, r.height + 2 * o, 100 - o * d, -o * d); }; c.requestPaint(); return true; })()`);
+  await sleep(400);
+  const ink = oracle(await readCanvas(s, 'canvas'), refFocusedInk, { maxEdge: BOX_EDGE });
+  ctx.numbers.explainerFocusedInkBox = ink.box;
+  ctx.check(`explainerFocusedInk: drawn with a source rect ${INK} css px beyond the form, the content box (focus ring included) matches the unclipped twin's, every edge within ${BOX_EDGE} device px`, ink.box.edge <= BOX_EDGE, ink.box, 'pixel');
+  if (ink.box.edge > BOX_EDGE) { ctx.save('explainerFocusedInk.surface', ink.surface); ctx.save('explainerFocusedInk.ref', ink.ref); }
+  await s.evaluate("(() => { const c = document.querySelector('canvas'); c.onpaint = window.__xbPaint; c.requestPaint(); return true; })()"); await sleep(300);
   await s.evaluate(LATENCY('canvas', region, 5));
   await s.typeText('hello', { intervalMs: 120 }); await sleep(600);
   const value = await s.evaluate('document.getElementById("name").value');

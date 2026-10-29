@@ -9,6 +9,7 @@ import { controlBundleText } from '../../gates/lib/sabotage.mjs';
 import { diffIdentity } from '../../gates/lib/identity.mjs';
 import { buildMutant } from '../../gates/mutants/build.mjs';
 import { MUTANTS } from '../../gates/mutants/mutants.mjs';
+import { SCENARIOS } from '../../xbrowser/scenarios.mjs';
 
 test('edgePoints: 4 points 2 px inside and 4 points 3 px outside the middle of each side', () => {
   const p = edgePoints({ x: 100, y: 50, width: 80, height: 30 });
@@ -47,7 +48,7 @@ test('mutant definitions: unique names, edit pairs, existing gate files, no dupl
   for (const m of MUTANTS) {
     assert.ok(!names.has(m.name), 'duplicate ' + m.name); names.add(m.name);
     assert.ok(m.proves.length > 10 && m.gates.length > 0, m.name);
-    for (const g of m.gates) assert.ok(existsSync(resolve(here, '../../gates', g + '.mjs')), `${m.name}: gate ${g} does not exist`);
+    for (const g of m.gates) assert.ok(g.startsWith('xbrowser-') ? g.slice(9) in SCENARIOS : existsSync(resolve(here, '../../gates', g + '.mjs')), `${m.name}: gate ${g} does not exist`);
     if (m.edits !== 'EMPTY') for (const e of m.edits) assert.ok(Array.isArray(e) && e.length === 2 && e[0].length > 5, m.name);
   }
   assert.ok(MUTANTS.length >= 30);
