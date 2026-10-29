@@ -19,6 +19,24 @@ on:
         type: choice
         options: [all, pr]
         default: all
+      # A stability check of a few gates or mutants: run them several times, on several machines. One failure fails the job, as on any other run.
+      gates:
+        description: 'gates to run instead of every gate the runner judges (comma-separated file stems, e.g. g-regress-paint; empty: test/ci/macos-plan.mjs --gates)'
+        type: string
+        default: ''
+      mutant_names:
+        description: 'mutants to run instead of the scope above (comma-separated names; empty: the scope); they are still split over its machines'
+        type: string
+        default: ''
+      repeat:
+        description: 'runs of every selected gate (real + control) and of every selected mutant, one after the other on each machine'
+        type: string
+        default: '1'
+      machines:
+        description: 'machines that each run the gates'
+        type: choice
+        options: ['1', '2', '3', '4', '5']
+        default: '1'
 
 permissions:
   contents: read
@@ -50,9 +68,15 @@ jobs:
         run: node test/ci/macos-plan.mjs --report
 
   gates:
-    # every gate of test/gates that the runner can judge, each with its positive control (G-pixel-dpr takes its reference from Chrome Canary)
+    # every gate of test/gates that the runner can judge, each with its positive control (G-pixel-dpr takes its reference from Chrome Canary); a dispatch can pick
+    # the gates, repeat them and run them on several machines (the inputs above)
+    name: ${{ strategy.job-total > 1 && format('gates {0}/{1}', matrix.machine, strategy.job-total) || 'gates' }}
     runs-on: macos-15
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        machine: ${{ fromJSON(inputs.machines == '5' && '[1, 2, 3, 4, 5]' || inputs.machines == '4' && '[1, 2, 3, 4]' || inputs.machines == '3' && '[1, 2, 3]' || inputs.machines == '2' && '[1, 2]' || '[1]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,11 +86,22 @@ jobs:
           canary: 'true'
       - name: Browser gates (real + control)
         timeout-minutes: 35
-        run: node test/gates/run-all.mjs --only="$(node test/ci/macos-plan.mjs --gates)"
+        env:
+          GATES: ${{ inputs.gates }}
+          REPEAT: ${{ inputs.repeat || '1' }}
+        run: |
+          gates="${GATES:-$(node test/ci/macos-plan.mjs --gates)}"
+          failed=0
+          for run in $(seq "$REPEAT"); do
+            [ "$REPEAT" = 1 ] || echo "=== run $run of $REPEAT"
+            node test/gates/run-all.mjs --only="$gates" || failed=1
+            [ "$REPEAT" = 1 ] || cp .scratch/results/summary.json ".scratch/results/summary-run$run.json" || true
+          done
+          exit "$failed"
       - uses: ./.github/actions/macos-results
         if: always()
         with:
-          name: gates
+          name: ${{ strategy.job-total > 1 && format('gates-{0}', matrix.machine) || 'gates' }}
           failed: ${{ job.status == 'failure' }}
 
   mutants:
@@ -89,9 +124,11 @@ jobs:
         timeout-minutes: 45
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+          MUTANT_NAMES: ${{ inputs.mutant_names }}
+          REPEAT: ${{ inputs.repeat || '1' }}
         run: |
           if [ "$MUTANTS_ALL" = true ]; then scope="all"; else scope="pr"; fi
-          node test/gates/mutants/run.mjs --only="$(node test/ci/macos-plan.mjs --mutants=$scope)" --shard="$SHARD"
+          node test/gates/mutants/run.mjs --only="${MUTANT_NAMES:-$(node test/ci/macos-plan.mjs --mutants=$scope)}" --shard="$SHARD" --repeat="$REPEAT"
       - uses: ./.github/actions/macos-results
         if: always()
         with:
