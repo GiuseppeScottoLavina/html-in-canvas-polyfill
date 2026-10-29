@@ -1,16 +1,19 @@
-// G-regress-paint: end-to-end regression gates for three correctness findings (REVIEW-correctness):
+// G-regress-paint: end-to-end regression gates for correctness findings (REVIEW-correctness). Every check here is a correctness check; the paint RATE checks of M5 and
+// M6 are G-regress-paint-rate (a throughput measurement that stays on a local Mac, test/ci/macos-plan.mjs).
 //   M1 a drawable appended after mount is tracked and painted (paint fires, the draw does not throw, its pixels are in the canvas) without any other damage
 //   M2 three drawables drawn in ONE task all stay hit-testable (elementsFromPoint + a trusted click reaches each one and no other)
 //   M3 `canvas.width = N` inside onpaint does not start a paint loop (paint count over 1.5 s stays small)
 //   M4 digits changing at 60 Hz on a TRANSPARENT drawable (a counter whose text-shadow reaches past its box + ink margin, and a clock) leave no ghost of older digits: the canvas after the
-//      run equals a fresh page that shows the same texts (the app clears its canvas on every paint, so any old ink left in it comes from the retained surface)
-//   M5 a 60 Hz counter in proportional digits (its width changes; in a line of text every change supersedes the build in flight) paints at the rate of a tabular one, and ends pixel-exact
-//   M6 the same counter beside 2,000 inline cells paints at that rate too (row damage, cells below the tile left out of the clone), and ends pixel-exact after a final
-//      narrow-to-wide change that moves its neighbours far
-// Positive control per finding: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop, M4 composites tiles source-over
-// instead of replacing them, M5 and M6 hold every snapshot decode 60 ms; every check class must go red.
+//      run, and again after one more change once the run settled, equals a fresh page that shows the same texts (the app clears its canvas on every paint, so any old
+//      ink left in it comes from the retained surface)
+//   M5 a 60 Hz counter in proportional digits (its width changes, so its neighbours in the row move) ends pixel-exact after 2 s of changes
+//   M6 the same counter beside 2,000 inline cells (row damage, cells below the tile left out of the clone) ends pixel-exact after the run and a final narrow-to-wide change
+//      that moves its neighbours far
+// Positive control per class: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop, M4 composites tiles
+// source-over instead of replacing them; every class (append, hit, loop, ghost) must go red. The final-canvas checks of M5 and M6 share the class `ghost`; the
+// mutants moved-siblings-ignored and truncation-cuts-inside-tile show that they can fail (test/gates/mutants/mutants.mjs).
 import { runGate, H } from './lib/gate.mjs';
-import { openRegress } from './lib/regress.mjs';
+import { openRegress, differingPixels, LARGE_COUNTER } from './lib/regress.mjs';
 import { canvasShot, assertLayerHidden } from './lib/pixel.mjs';
 
 runGate('G-regress-paint', async (ctx) => {
@@ -60,72 +63,67 @@ runGate('G-regress-paint', async (ctx) => {
   ctx.check('M3: a canvas.width write inside onpaint does not start a paint loop (<= 6 paints in 1.5 s; the buggy build made ~180)', w1 - w0 <= 6, { paints: w1 - w0 }, 'loop');
 
   // --- M4: no ghost of older digits on a transparent drawable -----------------------------------------------------------------------------------------
+  // the canvas against a fresh page: pixels that differ (> 8 levels in a channel), ghost pixels (ink where the fresh page has none), and the fresh page's ink
+  const compareGhost = (/** @type {string} */ ranPx, /** @type {string} */ freshPx) => {
+    const A = Buffer.from(ranPx, 'base64'), B = Buffer.from(freshPx, 'base64');
+    let differ = 0, ghost = 0, ink = 0;
+    for (let p = 0; p < A.length; p += 4) {
+      let m = 0; for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(A[p + k] - B[p + k]));
+      if (m > 8) differ++;
+      if (A[p + 3] > 8 && B[p + 3] === 0) ghost++;
+      if (B[p + 3] > 0) ink++;
+    }
+    return { sameSize: A.length === B.length, differ, ghost, ink };
+  };
   await openRegress(ctx, page, 'ghost-digits.html', ctx.control ? { sabotage: 1 } : {});
   await page.evaluate('window.__run(1500)');
   const ran = await page.evaluate('window.__pixels()');
+  // then one change on the settled page: what the last commits of the 60 Hz run repaint depends on timing (with a damage that leaves out the shadow, the run alone ended
+  // pixel-exact in 1 of 2 runs on the macOS runner), a lone change does not.
+  // Its damage must cover the counter's text-shadow, 110 px right of its box: where the old digits' shadow was, and where the new one is.
+  await page.evaluate("document.getElementById('glow').firstChild.data = '1'");
+  await H.sleep(300);
+  await page.evaluate("document.getElementById('glow').firstChild.data = '888'");
+  const settled = await page.evaluate('window.__pixels()');
   await openRegress(ctx, page, 'ghost-digits.html', { init: JSON.stringify(ran.texts) });
   const fresh = await page.evaluate('window.__pixels()');
-  const A = Buffer.from(ran.px, 'base64'), B = Buffer.from(fresh.px, 'base64');
-  let differ = 0, ghost = 0, ink = 0;
-  for (let p = 0; p < A.length; p += 4) {
-    let m = 0; for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(A[p + k] - B[p + k]));
-    if (m > 8) differ++;
-    if (A[p + 3] > 8 && B[p + 3] === 0) ghost++;
-    if (B[p + 3] > 0) ink++;
-  }
-  numbers.ghost = { texts: ran.texts, paints: ran.paints, differ, ghost, freshInkPixels: ink, size: [ran.w, ran.h], errors: [...ran.errors, ...fresh.errors] };
-  ctx.check('M4: the run painted its changes and the fresh page is not blank', ran.paints > 20 && ink > 200 && ran.errors.length + fresh.errors.length === 0, numbers.ghost, 'surface');
-  ctx.check('M4: no ghost of older digits: the canvas after 1.5 s of 60 Hz changes equals a fresh page with the same texts (<= 4 px differ)', A.length === B.length && differ <= 4 && ghost === 0, numbers.ghost, 'ghost');
+  await openRegress(ctx, page, 'ghost-digits.html', { init: JSON.stringify(settled.texts) });
+  const freshSettled = await page.evaluate('window.__pixels()');
+  const run = compareGhost(ran.px, fresh.px), last = compareGhost(settled.px, freshSettled.px);
+  numbers.ghost = { texts: ran.texts, paints: ran.paints, differ: run.differ, ghost: run.ghost, freshInkPixels: run.ink, size: [ran.w, ran.h], errors: [...ran.errors, ...fresh.errors] };
+  numbers.ghostAfterOneChange = { texts: settled.texts, differ: last.differ, ghost: last.ghost, freshInkPixels: last.ink, errors: [...settled.errors, ...freshSettled.errors] };
+  ctx.check('M4: the run painted its changes and the fresh page is not blank', ran.paints > 20 && run.ink > 200 && ran.errors.length + fresh.errors.length === 0, numbers.ghost, 'surface');
+  ctx.check('M4: no ghost of older digits: the canvas after 1.5 s of 60 Hz changes equals a fresh page with the same texts (<= 4 px differ)', run.sameSize && run.differ <= 4 && run.ghost === 0, numbers.ghost, 'ghost');
+  ctx.check('M4: no ghost after one more change once the run settled (the counter to 1, then 888): the canvas equals a fresh page with the same texts (<= 4 px differ)', last.sameSize && last.differ <= 4 && last.ghost === 0 && last.ink > 200 && !numbers.ghostAfterOneChange.errors.length, numbers.ghostAfterOneChange, 'ghost');
 
-  // --- M5: a 60 Hz counter in proportional digits paints at the display rate ---------------------------------------------------------------------------
-  // Its box changes width on most changes. In a line of text (layout=inline) each change is whole-drawable damage that supersedes the build in flight; when every superseded
-  // build was dropped the canvas froze (0 to 30 paints/s against ~55 for tabular digits). In the fixed-size flex row the damage is the row (M6 follows that path with a large drawable).
-  // Reference: the same counter in a monospace font on the same machine.
-  const rate = {};
-  for (const [key, font, bg, layout] of [['mono', 'mono', 'transparent'], ['georgia', 'georgia', 'transparent'], ['impact', 'impact', 'opaque'], ['georgia-inline', 'georgia', 'transparent', 'inline']]) {
-    await openRegress(ctx, page, 'proportional-counter.html', { font, bg, ...(layout ? { layout } : {}), ...(ctx.control ? { slow: 1 } : {}) });
-    const r = await page.evaluate('window.__run(2000)');
-    rate[key] = { paints: Math.round(r.paintsPerSec * 10) / 10, changed: Math.round(r.changedPerSec * 10) / 10, store: r.store, errors: r.errors };
-    if (key === 'georgia') {
-      const after = await page.evaluate('window.__pixels()');
-      await openRegress(ctx, page, 'proportional-counter.html', { font, bg, init: after.text });
-      const ref = await page.evaluate('window.__pixels()');
-      const P = Buffer.from(after.px, 'base64'), R = Buffer.from(ref.px, 'base64');
-      let differ = 0;
-      for (let p = 0; p < P.length; p += 4) { let m = 0; for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(P[p + k] - R[p + k])); if (m > 8) differ++; }
-      rate.pixels = { text: after.text, differ };
-      ctx.check('M5: after the run the canvas equals a fresh page that shows the same counter (<= 4 px differ)', P.length === R.length && differ <= 4 && !after.errors.length, rate.pixels, 'ghost');
-    }
-  }
-  numbers.proportional = rate;
-  const floor = Math.max(20, 0.75 * rate.mono.paints);
-  for (const font of ['georgia', 'impact', 'georgia-inline']) {
-    const r = rate[font];
-    ctx.check(`M5: a ${font} counter changing at 60 Hz paints at least 75 % of the tabular rate and >= 20/s, every paint a changed picture`, r.paints >= floor && r.changed >= floor && !r.errors.length, { ...r, floor }, 'rate');
-  }
+  // --- M5: a 60 Hz counter in proportional digits ends pixel-exact ---------------------------------------------------------------------------------------
+  // Its box changes width on most changes; in the fixed-size flex row the damage is the row (M6 follows that path with a large drawable). The paint rate of this run is
+  // recorded, not judged: G-regress-paint-rate judges it against a tabular reference.
+  await openRegress(ctx, page, 'proportional-counter.html', { font: 'georgia', bg: 'transparent' });
+  const counter = await page.evaluate('window.__run(2000)');
+  const counterAfter = await page.evaluate('window.__pixels()');
+  await openRegress(ctx, page, 'proportional-counter.html', { font: 'georgia', bg: 'transparent', init: counterAfter.text });
+  const counterRef = await page.evaluate('window.__pixels()');
+  const counterDiffer = differingPixels(counterAfter.px, counterRef.px);
+  numbers.proportional = { paints: Math.round(counter.paintsPerSec * 10) / 10, changed: Math.round(counter.changedPerSec * 10) / 10, store: counter.store, text: counterAfter.text, differ: counterDiffer, errors: [...counter.errors, ...counterAfter.errors] };
+  ctx.check('M5: after the run the canvas equals a fresh page that shows the same counter (<= 4 px differ)', counterDiffer !== null && counterDiffer <= 4 && !counterAfter.errors.length, numbers.proportional, 'ghost');
 
-  // a label wider than the ink margins around the counter, so the counter's own damage cannot cover where it moves
-  const LONG_LABEL = 'your total score';
-  // --- M6: the same counter beside 2,000 inline cells (a large drawable) still paints at that rate, and ends pixel-exact --------------------------------------------
-  // Its width change moves its neighbours in the row, not the cells below: the damage is the row, and the clone leaves out the cells below the tile. When every change
-  // rebuilt the whole drawable (or cloned every cell into a row tile) the rate fell to ~27/s at 2,000 cells.
-  await openRegress(ctx, page, 'proportional-counter.html', { font: 'georgia', filler: 2000, label: LONG_LABEL, ...(ctx.control ? { slow: 1 } : {}) });
+  // --- M6: the same counter beside 2,000 inline cells (a large drawable) ends pixel-exact ----------------------------------------------------------------
+  // Its width change moves its neighbours in the row, not the cells below: the damage is the row, and the clone leaves out the cells below the tile.
+  await openRegress(ctx, page, 'proportional-counter.html', LARGE_COUNTER);
   const big = await page.evaluate('window.__run(2000)');
   // then one narrow-to-wide change, so the counter's neighbours move far, out of its own old and new place: their new place must be painted too
   await page.evaluate("document.getElementById('n').firstChild.data = '1'");
   await H.sleep(300);
   await page.evaluate("document.getElementById('n').firstChild.data = '8888'");
   const bigAfter = await page.evaluate('window.__pixels()');
-  await openRegress(ctx, page, 'proportional-counter.html', { font: 'georgia', filler: 2000, label: LONG_LABEL, init: bigAfter.text });
+  await openRegress(ctx, page, 'proportional-counter.html', { ...LARGE_COUNTER, init: bigAfter.text });
   const bigRef = await page.evaluate('window.__pixels()');
-  const G = Buffer.from(bigAfter.px, 'base64'), F = Buffer.from(bigRef.px, 'base64');
-  let bigDiffer = 0;
-  for (let p = 0; p < G.length; p += 4) { let m = 0; for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(G[p + k] - F[p + k])); if (m > 8) bigDiffer++; }
-  numbers.large = { paints: Math.round(big.paintsPerSec * 10) / 10, changed: Math.round(big.changedPerSec * 10) / 10, store: big.store, floor, text: bigAfter.text, differ: bigDiffer, errors: [...big.errors, ...bigAfter.errors, ...bigRef.errors] };
-  ctx.check('M6: a georgia counter beside 2,000 inline cells paints at least 75 % of the tabular rate and >= 20/s, every paint a changed picture', big.paintsPerSec >= floor && big.changedPerSec >= floor && !big.errors.length, numbers.large, 'rate');
-  ctx.check('M6: after the run the canvas equals a fresh page with the same counter and cells (<= 4 px differ)', G.length === F.length && bigDiffer <= 4 && !numbers.large.errors.length, numbers.large, 'ghost');
+  const bigDiffer = differingPixels(bigAfter.px, bigRef.px);
+  numbers.large = { paints: Math.round(big.paintsPerSec * 10) / 10, changed: Math.round(big.changedPerSec * 10) / 10, store: big.store, text: bigAfter.text, differ: bigDiffer, errors: [...big.errors, ...bigAfter.errors, ...bigRef.errors] };
+  ctx.check('M6: after the run the canvas equals a fresh page with the same counter and cells (<= 4 px differ)', bigDiffer !== null && bigDiffer <= 4 && !numbers.large.errors.length, numbers.large, 'ghost');
 
   const errs = page.errors({ includeWarnings: false }).slice(errors0);
   ctx.check('no page error or console error', errs.length === 0, errs.slice(0, 3), 'surface');
   return { numbers };
-}, { controlSabotage: ['nogeom'], controlClasses: ['append', 'hit', 'loop', 'ghost', 'rate'] });
+}, { controlSabotage: ['nogeom'], controlClasses: ['append', 'hit', 'loop', 'ghost'] });

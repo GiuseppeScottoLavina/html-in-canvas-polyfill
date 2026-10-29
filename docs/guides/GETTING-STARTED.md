@@ -107,7 +107,7 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Verified on iOS Simulator / Android Emulator only | MOBILE |
 | older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
-Measured on macOS: Chrome 154 and 155, Chrome Canary 157 and 158 (native), Firefox 155.0.1 and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (10 of the 15 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.
+Measured on macOS: Chrome 154 and 155, Chrome Canary 157 and 158 (native), Firefox 155.0.1 and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (11 of the 16 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.
 
 ## 6. When something looks wrong
 

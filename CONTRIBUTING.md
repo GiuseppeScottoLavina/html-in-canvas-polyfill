@@ -50,14 +50,14 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 
 | suite | where | why |
 | --- | --- | --- |
-| 10 of the 15 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS, every push | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
-| mutation suite, the 24 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 24 nightly and on release tags (4 machines) | |
+| 11 of the 16 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS, every push | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
+| mutation suite, the 30 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 30 nightly and on release tags (4 machines) | |
 | `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
 | `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS, every push | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
 | the scroll scenario of `test:xbrowser` on Firefox | local | at the runner's DPR 1 the scrolled list differs from its twin on 6.6-6.8 % of the pixels (bound 5 %), the text antialiasing of a 1x macOS display; Firefox cannot be given a real DPR 2 there |
 | G-scroll-cadence and its 6 mutants | local | thresholds from a 120 Hz display; at 60 Hz the live list moved in 61-74 % of the frames (70 % / 82 % required) |
 | G-scroll-inner and the mutants that target it | local | its page-scroll step ended with unequal page offsets on the runner (polyfill 200 px, plain DOM 300 px after a 3-tick wheel stream, both settled): not yet explained; every other step passed |
-| G-regress-paint and its 7 mutants | local | its rate checks (M5, M6: >= 75 % of a tabular reference's paint rate) sit on the edge on the 3 vCPU runner: M6 measured 34.3-44.8 paints/s against a floor of 33.5-34.2 and failed 1 of 7 runs; its correctness checks passed every time |
+| G-regress-paint-rate and its mutant (superseded-whole-tile-dropped) | local | the paint rate checks of M5 and M6 (>= 75 % of a tabular reference's paint rate) sit on the edge on the 3 vCPU runner: M6 measured 34.3-44.8 paints/s against a floor of 33.5-34.2 and failed 1 of 7 runs; as a gate of its own it failed 3 of 10 runs (35.9-41.8 paints/s against 40.7-43.3). The correctness checks of the same findings are G-regress-paint, which runs in CI with its 6 mutants |
 | G-f1-form-effect, G-interposer-strong (and 2 mutants), `test:plugins`, the WebGPU examples (effect-plugin, plugins, the wobble-plugin smoke page), `test:native-effects` | local | continuous WebGPU effects present no frames on the virtual GPU (a transition effect does, and plain WebGPU presents at 60 fps): not yet explained; and the virtual GPU lost its WebGPU device in 1 of 10 runs (Metal command buffer timeout) |
 | `test:field` | local | the tab capture is not reliable on the runner: 2 of 12 runs got no usable captured frame |
 | `test:wpt` | local | 3 of 237 files unstable between repetitions on the runner; its oracle, Canary, changes daily |
@@ -71,6 +71,8 @@ caffeinate -dimsu npm run test:local            # add -- --skip=mobile without t
 ```
 
 Leave the Mac alone while it runs. The harness moves the OS pointer outside the browser windows, records every pointer movement and application activation it did not cause, and reports such a run as NOT USABLE (Chrome gates, mutants) or runs the scenario again and marks it ENVIRONMENT after three disturbed attempts (cross-browser); a disturbed run is never counted as a product result.
+
+To check on the runner that a gate or mutant is stable, start the workflow by hand from your branch (`gh workflow run ci-macos.yml --ref <branch> -f gates=g-regress-paint -f mutant_names=hit-last-only -f repeat=5 -f machines=2`, or Actions > CI macOS > Run workflow): `gates` and `mutant_names` pick what runs instead of the whole plan, `repeat` runs each selected gate (real + control) and mutant that many times on every machine, and `machines` runs the gates on up to five runners at once. One failed run fails the job, as on any other run.
 
 ## Rules the codebase keeps
 
