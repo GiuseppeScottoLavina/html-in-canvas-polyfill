@@ -436,6 +436,9 @@ export {};
  * @property {(el: Element) => boolean} isSettled  no damage pending, nothing building/decoding for el
  * @property {(record: CanvasRecord) => boolean} isFresh  no eligible, laid-out drawable of the canvas has damage waiting for a build or a build in flight (refused, lost and repeatedly failing ones do not count)
  * @property {(drawable: Element, scroller: Element) => void} scrollSettled  `scroller` was seen (the pointer is over it, it scrolled, or its scrolling paused): a scroller the compositor does not know yet is planned and its first pages are built in the next post-frame pump
+ * @property {(record: CanvasRecord) => boolean} [scrollWarm]  the canvas is quiet on a touch-first device: the visible scrollers its tiles found (CaptureResult.scrollers) and the compositor does
+ *   not know yet are planned and their first pages built in the post-frame pump, once per scroller until it is scrolled. true: work was queued (the caller wakes the scheduler)
+ * @property {() => void} [scrollYield]  a finger landed on the canvas: the builds of what scrollWarm planned and has not finished stop (its gesture must not wait for them)
  * @property {(drawable: Element, scroller: Element) => boolean} scrollCompose  a scroll event of `scroller`: true when the next commit shows its live offset by composing cached pages (the caller then asks for the exact tile only once the scrolling stops); false = damage it as usual
  * @property {(drawable: Element, control: Element|null) => void} caretNow  the focus moved: the next commit shows the caret of `control` measured from the live field (null: the drawable loses its caret), before the tile with the focus styles lands
  * @property {(drawable: Element, control: Element) => boolean} overlayText  optimistic text overlay: the next commit paints the live value of the focused field `control` into `drawable`'s surface (no-op without StoreExtras.textOverlay). true: the field's last overlay worked, so its snapshot may wait for the typing to pause (if this one fails, the store damages the field itself)
@@ -599,6 +602,7 @@ export {};
  * @property {UnsupportedEntry[]} unsupported
  * @property {{x:number,y:number}|null} layoutOffset  see SnapshotVersion.layoutOffset
  * @property {{rect: Rect, color: string}|null} caret  measured caret of the focused text control in the border-box frame; NOT part of the tile: the store paints it onto the retained surface (ADR-D.2)
+ * @property {Element[]} [scrollers]  elements of the tile that scroll vertically (overflow-y auto or scroll, with overflow): candidates the store plans ahead (SnapshotStore.scrollWarm)
  * @property {{cloneMs:number, cssMs:number, shakeMs:number, svgMs:number, bytes:number}} timings
  */
 

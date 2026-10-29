@@ -39,6 +39,7 @@ import { currentEngine } from '../../util/engine.js';
  * @property {{rect: Rect, color: string}|null} caret
  * @property {string} extraCss     per-capture rules (scroll markers, the selection wrapper) that go after the shaken sheet
  * @property {CSSStyleDeclaration} layerStyle  computed style of the layer element: the source of the custom properties the root inherits
+ * @property {Element[]} scrollers  elements of the clone that scroll vertically (CaptureResult.scrollers)
  */
 
 /** Thrown when the drawable has more nodes than the absolute budget; capture turns it into a placeholder. */
@@ -122,6 +123,7 @@ export function layoutPx(v) {
  * @property {PageSelection|null} selection  the page text selection recoloured inside the clone, or null (no selection here, or it is drawn as overlay rectangles)
  * @property {import('./selection-paint.js').SelectionPainter|null} painter  selection colours of this capture (created on first use)
  * @property {(el: Element, sized?: boolean) => Rect|null} frame  LiveLayer.frameRect of the elements of this drawable, with the drawable-level reads made once (LiveLayer.frameMeasurer)
+ * @property {Element[]} scrollers  cloned elements with vertical overflow to scroll (CloneResult.scrollers)
  */
 
 /**
@@ -294,6 +296,8 @@ function maybeScroll(ctx, src, clone, cs) {
   // is a cheaper read than the four scroll metrics, and it is the answer for most elements.
   if (!over && cs.overflowX === 'visible' && cs.overflowY === 'visible' && !OWN_SCROLLERS.has(src.localName)) return;
   if (!(src.scrollTop || src.scrollLeft || src.scrollHeight > src.clientHeight || src.scrollWidth > src.clientWidth) && !hasBarGutter(src, cs)) return;
+  // a candidate of the scroll compositor's planning ahead (store.scrollWarm); the reads are the ones just made
+  if (!over && !OWN_SCROLLERS.has(src.localName) && /^(auto|scroll)$/.test(cs.overflowY) && src.scrollHeight > src.clientHeight + 1) ctx.scrollers.push(src);
   const live = scrollFacts(src, cs);
   const f = over ? { ...(live ?? { sL: src.scrollLeft, gv: 0, gh: 0, scrollableY: true, scrollableX: false, styled: false }), sT: over.top } : live;
   if (src.localName === 'select') listboxThumb(src, /** @type {HTMLElement} */ (clone), cs, f?.sT ?? src.scrollTop);
@@ -615,7 +619,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   const ctx = {
     env, req, doc, layer, drawable: el, drawables: new Set(layer.drawableElements()), unsupported: [], tokens: createTokenCollector(), ix: interactionContext(req.interaction, layer.element),
     animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, scope: el.getRootNode(), topLayer: topLayerIn(el),
-    shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el),
+    shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el), scrollers: [],
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
   if (req.scroll?.hide.length || req.scroll?.shape === 'backdrop') ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
@@ -683,7 +687,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   const caret = addSelectionAndCaret(ctx, root, size, ink);
   return {
     root, nodes: Math.max(ctx.nodes, sizeTotal), unsupported: ctx.unsupported, complete: !isPending(ctx.unsupported), tokens: ctx.tokens.finish(), frame,
-    layoutOffset: dRect ? { x: dRect.x, y: dRect.y } : null, caret, extraCss: ctx.scroll.rules.join('') + uses.css, layerStyle: layerCs,
+    layoutOffset: dRect ? { x: dRect.x, y: dRect.y } : null, caret, extraCss: ctx.scroll.rules.join('') + uses.css, layerStyle: layerCs, scrollers: ctx.scrollers,
   };
 }
 

@@ -125,7 +125,7 @@ export function createCapture(env) {
     const { widthPx, heightPx } = cropPixels(cropRel, req.scale);
     return {
       url, cropCss: crop, widthPx, heightPx, nodes: clone.nodes, complete: clone.complete && bundle.pendingUrls.length === 0 && !filters.pending && !feImages.pending, unsupported: finish(req, [...entries, ...clone.unsupported]),
-      layoutOffset: clone.layoutOffset, caret: clone.caret, timings: { cloneMs: t2 - t1, cssMs: t1 - t0, shakeMs: t3 - t2, svgMs: t4 - t3, bytes },
+      layoutOffset: clone.layoutOffset, caret: clone.caret, scrollers: clone.scrollers, timings: { cloneMs: t2 - t1, cssMs: t1 - t0, shakeMs: t3 - t2, svgMs: t4 - t3, bytes },
     };
   }
 

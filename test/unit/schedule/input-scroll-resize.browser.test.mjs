@@ -199,6 +199,54 @@ test('the pointer entering a scroller inside a drawable asks the compositor to p
   assert.equal(rig.sink.wakes, again, 'but wakes nothing: its gesture follows at once, and builds woken at touchstart delayed its first step');
 });
 
+/** `(pointer: coarse)` matches (a touch-first device) until the cleanup */
+function touchFirst(t) {
+  const own = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+  const real = window.matchMedia.bind(window);
+  window.matchMedia = (q) => (q === '(pointer: coarse)' ? /** @type {any} */ ({ matches: true, media: q }) : real(q));
+  t.cleanup(() => { if (own) Object.defineProperty(window, 'matchMedia', own); else delete window.matchMedia; });
+}
+
+test('on a touch-first device the scrollers are planned ahead once the canvas is quiet: WARM_MS after its last commit, once per burst of commits', async t => {
+  touchFirst(t);
+  const rig = createRig({ html: FORM });
+  let warms = 0, queued = true;
+  rig.env.store.scrollWarm = (record) => { assert.equal(record, rig.record); warms++; return queued; };
+  const stop = observeScroll(rig.env, rig.record);
+  t.cleanup(stop);
+  const wakes = rig.sink.wakes;
+  rig.bus.emit(BUS.COMMIT, { record: rig.record, changed: [], removed: [] });
+  await sleep(100);
+  rig.bus.emit(BUS.COMMIT, { record: rig.record, changed: [], removed: [] });
+  rig.bus.emit(BUS.COMMIT, { record: { id: 'other' }, changed: [], removed: [] });
+  await sleep(150);
+  assert.equal(warms, 0, 'not while commits keep coming');
+  await sleep(250);
+  assert.equal(warms, 1, 'once, after the last commit');
+  assert.equal(rig.sink.wakes, wakes + 1, 'its plan and pages are side builds of the post-frame pump: the scheduler is woken');
+  await sleep(400);
+  assert.equal(warms, 1, 'and nothing more while the page stays quiet (no timer, no frame)');
+  queued = false;
+  rig.bus.emit(BUS.COMMIT, { record: rig.record, changed: [], removed: [] });
+  await sleep(400);
+  assert.equal(warms, 2);
+  assert.equal(rig.sink.wakes, wakes + 1, 'nothing queued: nothing woken');
+  stop();
+  rig.bus.emit(BUS.COMMIT, { record: rig.record, changed: [], removed: [] });
+  await sleep(400);
+  assert.equal(warms, 2, 'disposed: no timer');
+});
+
+test('on a device whose primary pointer is fine (a mouse) nothing is planned ahead: the pointer reaching a scroller plans it before its gesture', async t => {
+  const rig = createRig({ html: FORM });
+  let warms = 0;
+  rig.env.store.scrollWarm = () => { warms++; return true; };
+  t.cleanup(observeScroll(rig.env, rig.record));
+  rig.bus.emit(BUS.COMMIT, { record: rig.record, changed: [], removed: [] });
+  await sleep(400);
+  assert.equal(warms, window.matchMedia('(pointer: coarse)').matches ? 1 : 0);
+});
+
 test('scroll of the layer itself (not inside a drawable) damages the whole canvas', async t => {
   const rig = createRig({ html: FORM });
   rig.layerEl.style.overflow = 'auto';

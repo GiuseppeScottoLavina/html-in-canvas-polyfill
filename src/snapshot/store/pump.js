@@ -93,6 +93,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {Element|null|undefined} caretAsk  store.caretNow: undefined = nothing asked; null = drop the caret; an element = measure its caret at the next commit
  * @property {string} blend  computed mix-blend-mode of the drawable, read with its transform-origin when a build starts (SnapshotVersion.blend)
  * @property {string} backdrop  its computed backdrop-filter, read at the same time (SnapshotVersion.backdrop)
+ * @property {Set<Element>} scrollers  elements its tiles found scrolling (CaptureResult.scrollers): the candidates of SnapshotStore.scrollWarm
  */
 
 /**

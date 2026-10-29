@@ -6,7 +6,9 @@
 //   cadence  per rAF frame of the stream: the live scroller moved (the compositor delivered the offset to the main thread) and the canvas got a paint for it.
 //            Thresholds MOVE_CASE / MOVE_MEAN and the per-case paint shares, from this machine (120 Hz, DPR 2 and 1.25): the plain DOM list and a native drawable
 //            (Canary 158) move and paint in 97 % of the frames; the old behaviour painted 61, 61, 49 and 4 times per second (plain, rounded, hover, long).
-//   compose  the scroll compositor drew the steps (snapshot stats): a scroll is not re-photographed per frame.
+//   compose  the scroll compositor drew the steps (snapshot stats): a scroll is not re-photographed per frame. Case touch (CDP touch emulation, a touch-first
+//            device): the first touch gesture over a list with :hover rows, and the next, are composed from their first canvas update (no plain build
+//            before it: 0 in every run of the sound build, headed and headless; the mutants scroll-ahead-off and touch-hover left 1 on a fast machine, 2 headless).
 //   pixel    samples of the canvas taken INSIDE paint handlers during the stream each equal the plain-DOM twin at one of the offsets the list had in the frames
 //            just before (a composed frame shows the live offset, a fallback tile a slightly older one; anything else is a wrong frame), and the settled canvas
 //            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row;
@@ -75,6 +77,24 @@ async function open(ctx, page, params, poly) {
 /** list rect relative to the stage (css px) and the pointer point (viewport css px) */
 const GEO = `(() => { const s = document.getElementById('stage').getBoundingClientRect(); const l = document.getElementById('list').getBoundingClientRect();
   return { list: { x: l.left - s.left, y: l.top - s.top, width: l.width, height: l.height }, at: { x: l.left + l.width / 2, y: l.top + l.height / 2 + 20 }, dpr: devicePixelRatio }; })()`;
+
+/**
+ * In the page: the canvas paints of each touch gesture (scroll events closer than 300 ms apart), with the scroll compositor's count at each one. plainBefore: the
+ * paints of the gesture before its first composed one.
+ */
+const TOUCH_REC = `(() => {
+  const list = document.getElementById('list');
+  const composed = () => window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll.composed;
+  const R = window.__touchRec = { g: [] };
+  list.addEventListener('scroll', () => {
+    const t = performance.now(), last = R.g.at(-1);
+    if (!last || t - last.lastScroll > 300) R.g.push({ start: t, lastScroll: t, base: composed(), moves: 0, paints: [] });
+    const g = R.g.at(-1); g.lastScroll = t; g.moves++;
+  }, { passive: true });
+  addEventListener('paint', () => { const g = R.g.at(-1); if (g && performance.now() - g.lastScroll < 200) g.paints.push(composed()); }, true);
+  R.gestures = () => R.g.map((g) => { let prev = g.base, plainBefore = 0, seen = false; for (const c of g.paints) { if (c > prev) seen = true; else if (!seen) plainBefore++; prev = c; } return { moves: g.moves, paints: g.paints.length, composed: g.paints.at(-1) - g.base, plainBefore }; });
+  return true;
+})()`;
 
 /** cadence numbers of the recorded rAF frames [t, scrollTop, paints] */
 function cadence(frames) {
@@ -205,6 +225,45 @@ runGate('G-scroll-cadence', async (ctx) => {
     numbers[`${c.name}Settled`] = d.sizeMatch ? { top: fin, fraction: d.fraction, countOver: d.countOver16, bbox: d.overBBox } : { sizes: d.sizes };
     ctx.check(`${c.name}: the settled canvas equals the twin at the final offset (whole stage, tolerance ${TOLERANCE}, <= ${MAX_FRACTION * 100} %)`, d.sizeMatch && d.fraction <= MAX_FRACTION && H.pixelStats(poly).nonBlank, numbers[`${c.name}Settled`], 'pixel');
     await ctx.focus(page);
+  }
+  // a finger on a touch-first device (CDP touch emulation: primary pointer coarse, no hover). The list has :hover rows, nothing rests over it, and the measured gesture
+  // is the FIRST one: a touch drag with its fling, then one back. A finger's first contact is its gesture, so the plan and the pages must be there before it (planned
+  // ahead while the page is quiet), and touching a row must not put its chain under :hover (a finger does not hover; that damage covered the list and dropped its
+  // pages at every gesture). Before both fixes every gesture began with plain builds (headless Chrome, 1x: 1-2 of them, the first composed step 31-68 ms after the
+  // first scroll event; iOS Simulator: 4-9, 83-267 ms).
+  if (!only || only.includes('touch')) {
+    const params = { rows: 300, hover: 1 };
+    await open(ctx, ref, params, false);
+    // the mouse leaves the canvas (the earlier cases left it over the list, where its hover would hide what a touch does to the hover chain)
+    await page.mouseMove(1390, 870);
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    try {
+      await open(ctx, page, params, true);
+      const geo = await page.evaluate(GEO);
+      await H.sleep(800);
+      await page.evaluate(TOUCH_REC);
+      for (const dir of [1, -1]) {
+        await H.touchDrag(page, { ...geo.at, dir });
+        await H.sleep(900);
+      }
+      const g = await page.evaluate('window.__touchRec.gestures()');
+      numbers.touch = { gestures: g };
+      ctx.check('touch: two touch gestures scrolled the live list', g.length === 2 && g.every((x) => x.moves >= 10), g, 'cadence');
+      ctx.check('touch: each gesture is composed from its first canvas update (planned ahead at rest; a touched row is not hovered)', g.length === 2 && g.every((x) => x.paints > 0 && x.plainBefore === 0), g, 'compose');
+      const fin = await page.evaluate(`document.getElementById('list').scrollTop`);
+      const poly = await H.readCanvas(page, '#stage');
+      await ctx.focus(ref);
+      await ref.evaluate(`document.getElementById('list').scrollTop = ${fin}`);
+      await ref.mouseMove(geo.at.x + 600, geo.at.y);
+      await H.sleep(250);
+      const want = await H.screenshotElement(ref, '#stage');
+      const d = H.compareImages(H.compositeOver(poly, [255, 255, 255]), want.img, { tolerance: TOLERANCE, diffImage: false });
+      numbers.touchSettled = d.sizeMatch ? { top: fin, fraction: d.fraction, countOver: d.countOver16, bbox: d.overBBox } : { sizes: d.sizes };
+      ctx.check(`touch: the settled canvas equals the twin at the final offset, no row hovered (whole stage, tolerance ${TOLERANCE}, <= ${MAX_FRACTION * 100} %)`, d.sizeMatch && d.fraction <= MAX_FRACTION && H.pixelStats(poly).nonBlank, numbers.touchSettled, 'pixel');
+      await ctx.focus(page);
+    } finally {
+      await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   }
   const mean = shares.reduce((a, b) => a + b, 0) / Math.max(1, shares.length);
   numbers.moveShareMean = mean;

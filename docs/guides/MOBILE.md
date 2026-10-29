@@ -49,7 +49,10 @@ reached the drawable is rastered at a lower scale and reported (`surface-size`),
 - **Scrolling.** A finger drag over a drawn scroller scrolls the live scroller, not the page; a drag over the canvas outside drawn scrollers scrolls the page. A scroller
   that the scroll compositor accepts is drawn from its cached pages at each step (on iOS too), and the exact picture follows when the scroll stops. The scroll-and-resize
   example under a scripted scroll on the iOS Simulator (iPhone 17 Pro, DPR 3): 58 canvas updates per second instead of 30 before 0.1.0-preview.9. The Simulator runs on
-  the Mac's CPU, so a phone is slower.
+  the Mac's CPU, so a phone is slower. A phone has no pointer that rests over a list before its gesture, so the visible lists are planned and get their first pages
+  while the page is quiet: the first step of a gesture is composed, the first gesture included (iOS Simulator, the touch events of a pan emulated: the first canvas
+  update 1-8 ms after the first scroll event, 0 plain builds, instead of 2-9 plain builds and the first composed update 33-268 ms later). This holds memory: two pages
+  of each visible list (at DPR 3, 5.3 MB for the example's list, 16 MB for the two lists of the mobile fixture), held from the first rest instead of the first touch.
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
 - **Effects.** The effect plugins re-target touch input like mouse input (unit-tested with touch pointer events), but neither simulator has a WebGPU adapter, so effects
   with touch were not run.

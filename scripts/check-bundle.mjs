@@ -118,7 +118,11 @@ const LIMITS = {
   //   (it kept every build inside the frame and stopped the scroll compositor of the page), a refused scroller is planned again once it has moved on screen
   // 335.75 -> 332 KB, gzip 117.25 -> 112.25 KB (-3,772 / -5,117 bytes, 2026-10-27, measured 331,972 / 112,066): a Terser pass over esbuild's minified output
   //   (scripts/build.mjs TERSER; the same code, the readable bundle unchanged)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 332 * KB, gzip: 112.25 * KB },
+  // 332 -> 333.75 KB, gzip 112.25 -> 112.75 KB (+1,775 / +585 bytes, 2026-10-29, measured 333,747 / 112,651): the first touch gesture is composed: on a touch-first
+  //   device the visible scrollers the tiles found are planned ahead at rest (two pages each, once until scrolled; the work still queued stops when a finger lands),
+  //   and a touch contact or pan changes no :hover chain, only a tap does, as natively (the contact's damage dropped the list's pages at every gesture). iOS Simulator: 0 plain builds at the start of a gesture
+  //   instead of 2-9, the first canvas update 1-8 ms after the first scroll event
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 333.75 * KB, gzip: 112.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

@@ -3,6 +3,7 @@
  * Module: schedule (src/schedule/observers/*).
  */
 
+import { BUS } from '../../contracts/events.js';
 import { typingDeferred } from './input-observer.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -11,6 +12,8 @@ import { typingDeferred } from './input-observer.js';
 
 /** ms without a scroll event after which a composed scroller gets its exact tile */
 const SETTLE_MS = 100;
+/** ms without a commit of the canvas after which, on a touch-first device, the scrollers of its drawables are planned ahead (store.scrollWarm) */
+const WARM_MS = 250;
 
 /** @param {Element} el @returns {boolean} el is a scroll container with overflow to scroll (layout reads; cheap while the layout is clean) */
 function scrolls(el) {
@@ -45,6 +48,8 @@ export function observeScroll(env, record) {
   const sync = (/** @type {Element} */ el, /** @type {boolean} */ on) => layer.syncScroll?.(el, on);
   /** @param {Event} ev */
   const onOver = (ev) => {
+    // a finger landed: its gesture follows at once, the builds of the scrollers planned ahead stop (warm below)
+    if (/** @type {PointerEvent} */ (ev).pointerType === 'touch') env.store.scrollYield?.();
     const t = /** @type {Element|null} */ (ev.target);
     if (!layer.syncScroll || !t || t.nodeType !== 1) return;
     const drawable = layer.nearestDrawable(t);
@@ -61,9 +66,28 @@ export function observeScroll(env, record) {
     under = next;
     // the plan and the pages are side builds of the post-frame pump, which runs only in a frame with work: without the wake they waited for the first scroll event,
     // and that gesture began with a plain build inside its first frame and the plan and page builds in the frames after it. Not for a finger: its gesture starts
-    // within a few frames, and the builds woken at touchstart delayed its first step (measured: +10 to +35 ms at 4x / 6x CPU throttling)
+    // within a few frames, and the builds woken at touchstart delayed its first step (measured: +10 to +35 ms at 4x / 6x CPU throttling). On a touch-first device the
+    // visible scrollers are planned AHEAD instead, while the canvas is quiet (warm below), so a finger's first gesture finds its pages ready
     if (seen && /** @type {PointerEvent} */ (ev).pointerType !== 'touch') env.scheduler.wake(record);
   };
+  /**
+   * Planning ahead, on a touch-first device (primary pointer coarse): a finger's first contact is its gesture, so the plan and the first pages cannot be built
+   * between the two as they are for a mouse (onOver). WARM_MS after the last commit of the canvas, the visible scrollers its tiles found are planned and get their first
+   * two pages (store.scrollWarm, side builds of the post-frame pump), each one once until it is scrolled. Without it, the first gesture over each list began with
+   * plain builds until its plan and pages were ready (iOS Simulator: 4 builds, the first composed step 83 ms after the first scroll event). A timer per commit, none
+   * while the page is quiet; nothing on a desktop.
+   */
+  const coarse = env.window.matchMedia?.('(pointer: coarse)') ?? null;
+  let warmTimer = 0;
+  const warm = () => {
+    warmTimer = 0;
+    if (record.layer === layer && coarse?.matches && env.store.scrollWarm?.(record)) env.scheduler.wake(record);
+  };
+  const offCommit = env.bus.on(BUS.COMMIT, (/** @type {{record: CanvasRecord}} */ e) => {
+    if (e.record !== record || !coarse?.matches) return;
+    env.window.clearTimeout(warmTimer);
+    warmTimer = env.window.setTimeout(warm, WARM_MS);
+  });
   /** @param {Event} ev */
   const onOut = (ev) => {
     const to = /** @type {PointerEvent} */ (ev).relatedTarget;
@@ -109,6 +133,8 @@ export function observeScroll(env, record) {
   root.addEventListener('pointerover', onOver, { capture: true, passive: true });
   root.addEventListener('pointerout', onOut, { capture: true, passive: true });
   return () => {
+    offCommit();
+    env.window.clearTimeout(warmTimer);
     root.removeEventListener('scroll', onScroll, { capture: true });
     root.removeEventListener('pointerover', onOver, { capture: true });
     root.removeEventListener('pointerout', onOut, { capture: true });

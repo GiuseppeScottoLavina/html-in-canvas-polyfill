@@ -393,6 +393,9 @@ const EMPTY_CANVAS_SCROLL = `(async () => {
   const stats = () => window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll ?? {};
   const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const s = document.getElementById('inbox');
+  // a phone plans the visible inbox ahead while the page rests, before this canvas came: a layout change of the inbox drops that plan, so the plan and the pages are
+  // built during the scroll, beside the empty canvas (the stuck pump this check is for left exactly those side builds unrun)
+  s.style.paddingBottom = '1px';
   await wait(1500);
   const c0 = stats().composed ?? 0;
   let steps = 0;

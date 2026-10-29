@@ -37,6 +37,38 @@ test('hover chain: pointerover builds target + ancestors inside the layer; point
   assert.equal(s.tracker.snapshot().hover.size, 0);
 });
 
+test('a finger does not hover: the pointerover / pointerout of a touch contact change no hover chain and publish no damage (a mouse still does)', async t => {
+  const s = setup(t);
+  s.fire(s.$('b1'), 'pointerover', { pointerType: 'touch' });
+  assert.equal(s.tracker.snapshot().hover.size, 0, 'Chrome and Mobile Safari match no :hover while a finger rests or pans');
+  assert.equal(s.sink.damage.length, 0, 'no rebuild of the chain (it covered every scroller on it and dropped its scroll pages at each gesture)');
+  s.fire(s.$('b1'), 'pointerout', { pointerType: 'touch', relatedTarget: document.body });
+  assert.equal(s.sink.damage.length, 0);
+  s.fire(s.$('b1'), 'pointerover', { pointerType: 'mouse' });
+  assert.deepEqual([...s.tracker.snapshot().hover].map(e => e.id).sort(), ['b1', 'card', 'd']);
+  s.fire(s.$('b1'), 'pointerout', { pointerType: 'touch', relatedTarget: document.body });
+  assert.equal(s.tracker.snapshot().hover.size, 3, 'a touch leaving does not end the hover of the mouse');
+  assert.deepEqual(s.sink.causes(), ['hover']);
+});
+
+test('a tap hovers like a native tap: the tapped chain stays :hover after the finger lifts, a pan (pointercancel) changes nothing, a tap elsewhere ends it', async t => {
+  const s = setup(t);
+  const tap = (el) => { s.fire(el, 'pointerover', { pointerType: 'touch' }); s.fire(el, 'pointerdown', { pointerType: 'touch' }); s.fire(el, 'pointerup', { pointerType: 'touch' }); s.fire(el, 'pointerout', { pointerType: 'touch', relatedTarget: document.body }); };
+  tap(s.$('b1'));
+  assert.deepEqual([...s.tracker.snapshot().hover].map(e => e.id).sort(), ['b1', 'card', 'd'], 'after a tap the tapped element matches :hover (a CSS :hover menu opens on a tap)');
+  s.sink.clear();
+  s.fire(s.$('b2'), 'pointerover', { pointerType: 'touch' });
+  s.fire(s.$('b2'), 'pointerdown', { pointerType: 'touch' });
+  s.fire(s.$('b2'), 'pointercancel', { pointerType: 'touch' });
+  s.fire(s.$('b2'), 'pointerout', { pointerType: 'touch', relatedTarget: document.body });
+  assert.deepEqual([...s.tracker.snapshot().hover].map(e => e.id).sort(), ['b1', 'card', 'd'], 'a pan does not move the hover');
+  assert.ok(!s.sink.causes().includes('hover'), 'and publishes no hover damage (the scroll pages stay)');
+  tap(s.$('b2'));
+  assert.deepEqual([...s.tracker.snapshot().hover].map(e => e.id).sort(), ['b2', 'card', 'd'], 'the next tap moves it');
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+  assert.equal(s.tracker.snapshot().hover.size, 0, 'a tap outside the canvas ends it');
+});
+
 test('hover damage is published only when a rule uses :hover, as a reach rect of the changed elements', async t => {
   const s = setup(t);
   s.fire(s.$('b1'), 'pointerover');
