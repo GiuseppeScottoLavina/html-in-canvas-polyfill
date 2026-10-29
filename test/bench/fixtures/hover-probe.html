@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="icon" href="data:,">
+<title>hover probe: scrollers whose content has :hover rules, drawn into a canvas</title>
+<script>
+  // ?bundle=<core> loads the polyfill (absent: the page as plain DOM, the bench turns the canvas into a box)  case=table|grid|sections|desc|underline
+  //   table     a table, tr:hover { background } and td:hover { color }
+  //   grid      three columns of cards with gaps, .card:hover { background }
+  //   sections  lists grouped under headings in one scroller, li:hover { background }
+  //   desc      a rule on a descendant of the hovered row, li:hover .title { color }
+  //   underline li:hover { text-decoration: underline } (a rule that may paint beyond the row: the scroll compositor keeps the plain path)
+  var q = new URLSearchParams(location.search);
+  if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
+</script>
+<style>
+  body { margin: 0; padding: 20px; font: 14px/1.4 Arial, sans-serif; background: #eef1f6; color: #1b2330; }
+  #stage { display: block; width: 900px; height: 560px; background: #fff; }
+  #app { box-sizing: border-box; width: 900px; height: 560px; display: grid; grid-template-columns: 620px 1fr; gap: 16px; padding: 16px; background: #23164a; color: #e8f6ff; }
+  #sc { min-height: 0; overflow-y: auto; border: 1px solid #c9d1de; background: #fbfcfe; color: #1b2330; }
+  #sc header { position: sticky; top: 0; z-index: 1; padding: 10px 12px; font-weight: 700; background: #e6ecf7; border-bottom: 1px solid #c9d1de; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e6eaf2; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 12px; }
+  .card { height: 84px; padding: 10px; border: 1px solid #d7deea; border-radius: 8px; background: #fff; }
+  h3 { margin: 0; padding: 8px 12px; font-size: 13px; background: #eef2f9; }
+  ul { margin: 0; padding: 0; list-style: none; }
+  li { padding: 8px 12px; border-bottom: 1px solid #e6eaf2; }
+  .title { font-weight: 700; margin-right: 8px; }
+  #panel h2 { margin: 0; font-size: 22px; }
+</style></head>
+<body>
+<canvas id="stage" content="drawable">
+  <div id="app" drawable>
+    <section id="sc"><header>Probe</header><div id="body"></div></section>
+    <section id="panel"><h2>Hover probe</h2></section>
+  </div>
+</canvas>
+<script>
+  const kase = q.get('case') || 'table';
+  const words = ['amber', 'fjord', 'kelp', 'prairie', 'umber', 'harbor', 'meadow', 'reef', 'willow', 'basalt'];
+  const body = document.getElementById('body');
+  let html = '';
+  if (kase === 'table') {
+    html = '<table><tbody>';
+    for (let i = 0; i < 300; i++) html += `<tr><td>${i}</td><td>${words[i % 10]} ${words[(i * 3) % 10]}</td><td>${(i * 37) % 1000} units</td></tr>`;
+    html += '</tbody></table>';
+  } else if (kase === 'grid') {
+    html = '<div class="grid">';
+    for (let i = 0; i < 180; i++) html += `<div class="card"><b>Card ${i}</b><br>${words[i % 10]} ${words[(i * 7) % 10]}</div>`;
+    html += '</div>';
+  } else if (kase === 'sections') {
+    html = '<div class="sections">';
+    for (let s = 0; s < 12; s++) {
+      html += `<h3>Section ${s}</h3><ul>`;
+      for (let i = 0; i < 25; i++) html += `<li>Item ${s}.${i} ${words[(s + i) % 10]}</li>`;
+      html += '</ul>';
+    }
+    html += '</div>';
+  } else {
+    html = `<ul class="${kase}">`;
+    for (let i = 0; i < 300; i++) html += `<li><span class="title">Row ${i}</span>${words[i % 10]} ${words[(i * 3) % 10]} notes</li>`;
+    html += '</ul>';
+  }
+  body.innerHTML = html;
+  // each case has only its own :hover rules (a rule of another case would change what the polyfill may do for this one)
+  const rules = { table: 'tr:hover { background: #cfdcf8; } td:hover { color: #c0262d; }', grid: '.card:hover { background: #cfdcf8; }', sections: 'li:hover { background: #cfdcf8; }',
+    desc: 'li:hover .title { color: #c0262d; }', underline: 'li:hover { text-decoration: underline; }' };
+  const st = document.createElement('style'); st.textContent = rules[kase] ?? ''; document.head.append(st);
+  const canvas = document.getElementById('stage');
+  const app = document.getElementById('app');
+  if (q.get('bundle')) {
+    const ctx = canvas.getContext('2d');
+    canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(app, 0, 0); };
+    new ResizeObserver((e) => { const b = e[0].devicePixelContentBoxSize[0]; canvas.width = b.inlineSize; canvas.height = b.blockSize; }).observe(canvas, { box: 'device-pixel-content-box' });
+  }
+  window.__ready = true;
+</script>
+</body></html>

@@ -32,6 +32,9 @@ const CASES = {
   rounded: { path: SC, q: { rows: 300, round: 1 }, scroller: '#list' },
   hover: { path: SC, q: { rows: 300, hover: 1 }, scroller: '#list' },
   long: { path: SC, q: { rows: 2000 }, scroller: '#list' },
+  // :hover rows on other structures (test/bench/fixtures/hover-probe.html): a table with tr:hover and td:hover, lists grouped under headings
+  'probe-table': { path: '/test/bench/fixtures/hover-probe.html', q: { case: 'table' }, scroller: '#sc' },
+  'probe-sections': { path: '/test/bench/fixtures/hover-probe.html', q: { case: 'sections' }, scroller: '#sc' },
   // refused by the compositor's plan: a canvas inside the list (UNSAFE_TAGS), horizontal overflow
   'refused-canvas': { path: SC, q: { rows: 300 }, scroller: '#list', prep: `(() => { const c = document.createElement('canvas'); c.width = 30; c.height = 10; document.querySelector('#rows li:nth-child(3)').append(c); })()` },
   'refused-hscroll': { path: SC, q: { rows: 300 }, scroller: '#list', prep: `(() => { document.querySelector('#rows li:nth-child(3) span').style.cssText = 'white-space:nowrap;min-width:900px'; })()` },
