@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- G-pixel-dpr also runs at DPR 1 and compares a text fixture with native (`test/fixtures/text-weight`: light-on-dark and dark-on-light rows at 12, 14 and 16 px in system-ui and Georgia): the canvas must equal native's within the pixel bounds, and every row's ink (the summed coverage of its glyphs) must be within 2 % of native's. Light text on a dark background was suspected to be drawn thinner at DPR 1 on macOS; this does not reproduce in Chrome: the plain page, the polyfill's canvas and native's canvas have the same ink in every row (ratio 1.000) at DPR 1, 1.25, 1.5 and 2, headless and headed, because the SVG image keeps macOS font smoothing, also over transparent pixels (docs/SUPPORT-MATRIX.md, row "text weight"). New mutant `text-smoothing-off` (52 mutants): text set without font smoothing loses 26-30 % of its ink on the light rows and is caught by the new check. Nothing in the polyfill changes.
+
 ## [0.1.0-preview.12] - 2026-10-29
 
 Smoother touch scrolling on phones and tablets. On iPhone Safari a touch scroll over a list drawn into a canvas stuttered for a few frames at the start of each gesture: on a page with a `:hover` rule every gesture began with 4 to 9 plain builds (the first composed frame 115 to 268 ms after the first scroll event, iOS Simulator), and on any page the first gesture over a list began with 2 to 3. Now no gesture begins with a plain build, and the first frame lands 1 to 6 ms after the first scroll event. A tap still hovers the tapped element, as natively. Nothing changes with a mouse. The test suite's weaker controls are hardened (G-resize-drag, G-regress-paint, G-explainer, G-scroll-cadence).
