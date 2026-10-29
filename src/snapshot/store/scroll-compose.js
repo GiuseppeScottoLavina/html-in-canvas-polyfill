@@ -11,10 +11,17 @@
  * has no rect, or touches a pinned element drops the cache. A dirty part is never composed: the step falls back to the plain path, whose tile repairs the pages
  * (its pixels are copied into them), and a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is checked for an obstruction (an
  * element outside the scroller over the port, which a page must not carry) before the next composition. Everything the plan cannot vouch for keeps the plain path.
+ *
+ * Rows hovered under a resting mouse (deps.hover: :hover rules that only recolour, painting nothing beyond what the element already paints): each scroll step moves
+ * the pointer onto another row, and pages that showed the hovered row would be dirty at every step. So, under a mouse, the pages are rendered with no element of
+ * the content hovered (Page.hov), hover damage leaves them clean, and a step needs other pixels only where an element whose hover state differs between a page and
+ * the live DOM reaches (the damage model of a hover change: the element's reach, util/reach.js). Those holes are filled from HOVER STRIPS: the rows the still pointer
+ * will be over (the siblings of the hovered row across its column), rendered hovered and built ahead in the post-frame pump, several per capture while their reaches
+ * stay apart. A strip fills a hole only where no element whose hover differs between the strip and the live DOM reaches; a hole it cannot fill keeps the plain path.
  * Module: snapshot-store (src/snapshot/store/*).
  */
 
-import { intersectRect } from '../../util/rect.js';
+import { intersectRect, unionRect } from '../../util/rect.js';
 import { subtractRects } from './damage.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
@@ -22,7 +29,8 @@ import { subtractRects } from './damage.js';
 /** @typedef {import('./pump.js').Entry} Entry */
 /** @typedef {import('./pump.js').Geometry} Geometry */
 /** @typedef {HTMLCanvasElement|OffscreenCanvas} Surface */
-/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop', memo?: Map<Element, import('../../contracts/types.js').TailMemo>}} PageRequest */
+/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop', memo?: Map<Element, import('../../contracts/types.js').TailMemo>, hover?: ReadonlySet<Element>, prune?: boolean}} PageRequest */
+/** @typedef {import('../../contracts/types.js').HoverModel} HoverModel */
 
 /** pages kept per scroller (each one scrollport of surface pixels) */
 const MAX_PAGES = 4;
@@ -34,6 +42,15 @@ const REPLAN_MS = 1000;
 const MAX_MISSES = 2;
 /** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
 const AHEAD_PAGES = 2;
+/** hover strips kept per scroller, in scrollport heights of surface rows (the farthest from the pointer go first) */
+const STRIP_PORTS = 4;
+/** steps of one gesture whose hovered rows no strip filled before the scroller's strips stop (`slow`): they fell behind the pointer */
+const STRIP_MISSES = 2;
+/** how long strips stay stopped for a scroller whose strips fell behind, before a trial gesture (doubling up to SLOW_MAX_MS at each failed trial) */
+const SLOW_MS = 30000;
+const SLOW_MAX_MS = 480000;
+/** changes inside the content remembered for the strips being built (Cache.hits) */
+const HITS = 16;
 
 /**
  * @typedef {Object} Page
@@ -43,6 +60,17 @@ const AHEAD_PAGES = 2;
  * @property {Rect[]} dirty  stale parts, CONTENT pixels (x: surface px; y: surface px from the scroll origin, i.e. port row + round(offset * scale))
  * @property {number[]} dirtySeq  the damage sequence number of each dirty rect
  * @property {number} misses  steps in a row that needed a dirty part of this page
+ * @property {ReadonlySet<Element>|null} hov  the hovered elements it was rendered with (null: the live ones at its build, not tracked: hover damage makes it dirty)
+ */
+
+/**
+ * @typedef {Object} Strip  one row the still pointer will be over, rendered hovered (see the file comment)
+ * @property {Element} el
+ * @property {Rect} px  CONTENT pixels it holds (as Page.dirty)
+ * @property {Surface} pad
+ * @property {ReadonlySet<Element>} hov  the hovered elements of its capture
+ * @property {Map<Element, Rect>} near  CONTENT pixels of the reach of the rows hovered with it (measured when it was planned)
+ * @property {boolean} [used]  it filled a hole once
  */
 
 /**
@@ -62,6 +90,12 @@ const AHEAD_PAGES = 2;
  * @property {Rect[]} unverified  damage rects inside the visible port (frame css) not yet checked for an obstruction
  * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
  * @property {boolean} early  planned ahead and not scrolled yet: its builds queued before a finger landed stop (yieldToInput)
+ * @property {Strip[]} strips
+ * @property {Set<Element>} building  rows whose strip is being built
+ * @property {boolean} stripsDue  planStrips waits for the pump
+ * @property {ReadonlySet<Element>|null} chain  the hovered elements at the last hover damage (null: not known)
+ * @property {number} missed  steps since the last rest whose hovered rows no strip filled
+ * @property {Array<{seq: number, px: Rect}>} hits  the latest damage inside the content that is not a hover change (CONTENT pixels): a strip it reaches is not kept
  */
 
 /**
@@ -70,7 +104,8 @@ const AHEAD_PAGES = 2;
  * @property {(entry: Entry, rectCss: Rect, geo: Geometry, scroll: PageRequest) => string|null} capture  data: URL of a crop, null on failure
  * @property {(url: string) => Promise<HTMLImageElement>} decode
  * @property {(w: number, h: number) => Surface} canvas
- * @property {(entry: Entry, run: () => void) => void} schedule  queue a side build for the post-frame pump
+ * @property {(entry: Entry, run: () => void, later?: boolean) => void} schedule  queue a side build for the post-frame pump (`later`: after every other one: hover strips wait for pages)
+ * @property {(entry: Entry) => HoverModel|null} [hover]
  * @property {() => number} [now]
  */
 
@@ -185,6 +220,30 @@ export function cornerSquares(portPx, round, s) {
   ].filter((r) => r.width > 1 && r.height > 1);
 }
 
+/**
+ * The elements at the depth of `anchor` below `scroller`, in tree order from it in direction `dir` (1 forward, -1 backward), `anchor` excluded: its siblings, then
+ * those of the next group (the items of the next list under a heading, the rows of the next table body). The rows a still pointer meets while the scroller moves.
+ * @param {Element} scroller @param {Element} anchor @param {number} dir
+ * @returns {Generator<Element>}
+ */
+export function* sameDepth(scroller, anchor, dir) {
+  let e = /** @type {Element|null} */ (anchor), up = 0;
+  while (e) {
+    const sib = /** @type {Element|null} */ (dir < 0 ? e.previousElementSibling : e.nextElementSibling);
+    if (!sib) {
+      // out of an exhausted parent, one level up
+      e = e.parentElement;
+      if (!e || e === scroller) return;
+      up++;
+      continue;
+    }
+    e = sib;
+    // and back down to the anchor's depth, where this subtree reaches it
+    for (let k = /** @type {Element|null} */ (dir < 0 ? e.lastElementChild : e.firstElementChild); up > 0 && k; k = /** @type {Element|null} */ (dir < 0 ? e.lastElementChild : e.firstElementChild)) { e = k; up--; }
+    if (!up) yield e;
+  }
+}
+
 /** @param {ComposeDeps} deps */
 export function createScrollCompositor(deps) {
   const now = deps.now ?? (() => performance.now());
@@ -203,7 +262,14 @@ export function createScrollCompositor(deps) {
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
   let seq = 0;
   /** diagnostics (SnapshotStats.scroll) */
-  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0 };
+  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, strips: 0, stripsUsed: 0, filled: 0, unfilled: 0, late: 0, slow: 0 };
+  /** @param {Entry} entry @param {Cache} c @returns {HoverModel|null} the hover model where strips apply (not on Gecko, ScrollPlan.whole: a change inside the content re-plans) */
+  const modelOf = (entry, c) => (c.plan.whole || (slow.has(c.el) && !slow.get(c.el)?.trial) ? null : deps.hover?.(entry) ?? null);
+  /**
+   * @type {WeakMap<Element, {until: number, wait: number, trial: boolean}>} scrollers whose strips fell behind the pointer (a slow device): no strips, pages with the live
+   * hover, exactly the path without them, until `until`; then one trial gesture at the next rest, and `wait` doubles when it falls behind again. Kept across caches
+   */
+  const slow = new WeakMap();
 
   /** @param {Entry} entry @returns {Map<Element, Cache>} */
   const mapOf = (entry) => {
@@ -300,7 +366,7 @@ export function createScrollCompositor(deps) {
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [], memo: new Map(), early,
+      shown: null, queued: false, last: live, unverified: [], memo: new Map(), early, strips: [], building: new Set(), hits: [], stripsDue: false, chain: null, missed: 0,
     };
     if (plan.bar) {
       const b = plan.bar;
@@ -346,6 +412,7 @@ export function createScrollCompositor(deps) {
     const want = [];
     for (let k = Math.max(0, lo); k <= hi; k++) want.push(at(k));
     want.sort((a, b) => Math.abs(a - top) - Math.abs(b - top));
+    const model = modelOf(entry, cache);
     for (const t of [...new Set(want)]) {
       if (cache.pages.some((p) => p.top === t)) continue;
       if (most-- <= 0) break;
@@ -355,11 +422,204 @@ export function createScrollCompositor(deps) {
         if (Math.abs(cache.pages[far].top - top) <= Math.abs(t - top)) continue;
         cache.pages.splice(far, 1);
       }
+      // under a resting mouse a page shows no element of the content hovered (strips fill the hovered rows); otherwise (a finger: a tap hovers) the live state
+      const hov = model?.pointer ? new Set([...model.chain].filter((e) => !inside(cache, e))) : null;
       /** @type {Page} */
-      const page = { top: t, pad: null, seq: null, dirty: [], dirtySeq: [], misses: 0 };
+      const page = { top: t, pad: null, seq: null, dirty: [], dirtySeq: [], misses: 0, hov };
       cache.pages.push(page);
-      build(entry, cache, cache.portPx, { el: cache.el, top: t, hide: cache.plan.pinned, shape: cache.backdrop ? 'square' : undefined, memo: cache.memo }, page);
+      build(entry, cache, cache.portPx, { el: cache.el, top: t, hide: cache.plan.pinned, shape: cache.backdrop ? 'square' : undefined, memo: cache.memo, ...(hov ? { hover: hov } : {}) }, page);
     }
+    // the strips are planned in the post-frame pump (the rows are measured there, not inside a scroll event)
+    if (!cache.stripsDue && model?.pointer) {
+      cache.stripsDue = true;
+      deps.schedule(entry, () => { cache.stripsDue = false; if (mapOf(entry).get(cache.el) === cache) planStrips(entry, cache, topOf(cache.el), dir); }, true);
+    }
+  }
+
+  /** @param {Cache} c @param {Element} e @returns {boolean} `e` is in the scroller's content */
+  const inside = (c, e) => e !== c.el && c.el.contains(e);
+
+  /** @param {Cache} c @param {Rect} r frame css, measured at live offset `top` @param {number} top @returns {Rect} CONTENT pixels (as damaged()) */
+  function contentPx(c, r, top) {
+    const px = outPx(r, c.geo, c.plan.grid);
+    return { ...px, y: px.y - c.portPx.y + rowOf(top, c.geo.scale, c.plan.grid) };
+  }
+
+  /**
+   * CONTENT pixels where a render with the hovered elements `a` may differ from the live DOM (hovered: `model.chain`): the reach of every relevant element hovered in
+   * one and not in the other (pinned elements excepted: they are drawn from their own tiles). null when one of them is not laid out.
+   * @param {Cache} c @param {HoverModel} model @param {ReadonlySet<Element>} a @param {number} top  live offset @param {Map<Element, Rect>} [known]
+   * @returns {Rect[]|null}
+   */
+  function differ(c, model, a, top, known) {
+    /** @type {Rect[]} */
+    const out = [];
+    for (const e of [...a].filter((x) => !model.chain.has(x)).concat([...model.chain].filter((x) => !a.has(x)))) {
+      if (!model.relevant(e) || c.plan.pinned.some((pin) => pin.contains(e))) continue;
+      const k = known?.get(e);
+      if (k) { out.push(k); continue; }
+      const r = model.reach(e);
+      if (!r) return null;
+      out.push(contentPx(c, r, top));
+    }
+    return out;
+  }
+
+  /**
+   * Plan the hover strips of the rows the resting pointer will be over within a scrollport of it either way, nearest first (the scrolling direction first): one
+   * window of rows (a port height) at a time, its rows split into captures whose reaches stay apart (hovered together, each row's reach shows it as if it were the
+   * only hovered one).
+   * @param {Entry} entry @param {Cache} c @param {number} top @param {number} dir
+   */
+  function planStrips(entry, c, top, dir) {
+    const model = modelOf(entry, c);
+    const p = model?.pointer;
+    const P = c.plan.port;
+    // behind the pointer in this gesture: nothing more is planned until the rest decides (prepare)
+    if (!model || !p || c.missed >= STRIP_MISSES || c.building.size || p.x < P.x || p.x >= P.x + P.width || p.y < P.y || p.y >= P.y + P.height) return;
+    const s = c.geo.scale, grid = c.plan.grid, H = P.height, end = Math.max(c.plan.scrollHeight, H);
+    // the hovered element of the content under the pointer (the deepest of the chain): its siblings are the rows
+    const own = [...model.chain].filter((e) => inside(c, e) && model.relevant(e));
+    const anchor = own.find((e) => own.every((o) => o === e || o.contains(e)));
+    if (!anchor) return;
+    const py = p.y - P.y + top;
+    const range = (/** @type {number} */ a, /** @type {number} */ b) => model.rows(c.el, anchor, p.x, Math.max(0, py + a) - top + P.y, Math.min(end, py + b) - top + P.y);
+    // planned in batches: only once a row within half a port of the pointer has no strip (a capture renders the whole drawable, whatever its crop)
+    if (range(-H / 2, H / 2).every((el) => c.strips.some((x) => x.el === el))) return;
+    // the rows within a port and a half of the pointer, nearest first (the scrolling direction first), as many as the pixel budget holds: the others' strips go
+    /** @type {Array<{el: Element, own: Map<Element, Rect>, r: Rect, y0: number, y1: number, cost: number}>} y0, y1: content css of the reach */
+    const want = [];
+    const rows = range(-1.5 * H, 1.5 * H);
+    // a row's own elements: its chain below the elements every row shares (a table row and its cell; not the table body), each hovered with it
+    let shared = rows[0].parentElement;
+    while (shared && shared !== c.el && !rows.every((x) => shared?.contains(x))) shared = shared.parentElement;
+    for (const el of rows) {
+      /** @type {Map<Element, Rect>} */
+      const own = new Map();
+      /** @type {Rect|null} */
+      let r = null;
+      for (let e = /** @type {Element|null} */ (el); e && e !== shared && e !== c.el; e = e.parentElement) {
+        if (!model.relevant(e)) continue;
+        const q = model.reach(e);
+        if (!q) { r = null; break; }
+        own.set(e, q);
+        r = r ? unionRect(r, q) : q;
+      }
+      if (!r) continue;
+      const y0 = Math.max(0, r.y - P.y + top), y1 = Math.min(end, r.y + r.height - P.y + top), mid = (y0 + y1) / 2;
+      if (y1 > y0 && y1 - y0 <= H) want.push({ el, own, r, y0, y1, cost: Math.abs(mid - py) + (Math.sign(mid - py) === dir ? 0 : H / 4) });
+    }
+    want.sort((a, b) => a.cost - b.cost);
+    let area = STRIP_PORTS * c.portPx.height;
+    const kept = want.filter((x) => (area -= Math.ceil((x.y1 - x.y0) * s) + 2) >= 0);
+    c.strips = c.strips.filter((x) => kept.some((k) => k.el === x.el));
+    let todo = kept.filter((x) => !c.strips.some((o) => o.el === x.el));
+    const base = [...model.chain].filter((e) => !inside(c, e));
+    const planSeq = seq;
+    // a window of a port height at a time, from the nearest row: its rows split into groups whose reaches stay apart, one capture each
+    while (todo.length) {
+      // two surface pixels of slack at the window's edges: a strip takes a pixel more than its row's reach each way
+      const first = todo[0], m = 2 / s;
+      const w = Math.min(c.plan.maxTop, Math.max(0, (first.y0 + first.y1) / 2 >= py ? first.y0 - m : first.y1 - H + m));
+      const tv = grid ? Math.round(w / grid) * grid : Math.round(w * s) / s;
+      const fit = todo.filter((x) => x === first || (x.y0 >= tv + m && x.y1 <= tv + H - m));
+      todo = todo.filter((x) => !fit.includes(x));
+      /** @type {Array<typeof fit>} */
+      const groups = [];
+      for (const x of fit.sort((a, b) => a.y0 - b.y0)) {
+        const g = groups.find((m) => m.every((o) => x.y0 >= o.y1 + 1 || x.y1 + 1 <= o.y0));
+        if (g) g.push(x); else groups.push([x]);
+      }
+      for (const g of groups) stripCapture(entry, c, g, base, tv, top, planSeq);
+    }
+  }
+
+  /**
+   * One capture of hover strips: the rows of `g` hovered together at offset `tv`, cut into one strip per row once decoded.
+   * @param {Entry} entry @param {Cache} c @param {Array<{el: Element, own: Map<Element, Rect>, r: Rect, y0: number, y1: number}>} g @param {Element[]} base  hovered elements outside the content
+   * @param {number} tv @param {number} top  live offset the rows were measured at @param {number} planSeq
+   */
+  function stripCapture(entry, c, g, base, tv, top, planSeq) {
+    const s = c.geo.scale, grid = c.plan.grid, P = c.plan.port;
+    const hov = new Set(base);
+    for (const x of g) for (let e = /** @type {Element|null} */ (x.el); e && e !== c.el; e = e.parentElement) hov.add(e);
+    // CONTENT pixels of every row's own elements (differ() takes them as known), and of each row's whole reach (its strip)
+    const near = new Map(g.flatMap((x) => [...x.own].map(([e, q]) => /** @type {[Element, Rect]} */ ([e, contentPx(c, q, top)]))));
+    const whole = new Map(g.map((x) => [x.el, contentPx(c, x.r, top)]));
+    // the rows' content rows at offset tv, as surface rows of the port, with the pixel of slack each strip takes (below)
+    const out = outPx({ x: P.x, y: g[0].y0 - tv + P.y, width: P.width, height: Math.max(...g.map((x) => x.y1)) - g[0].y0 }, c.geo, grid);
+    const crop = intersectRect({ ...out, y: out.y - 2, height: out.height + 4 }, c.portPx);
+    if (!crop) return;
+    for (const x of g) c.building.add(x.el);
+    const done = () => { for (const x of g) c.building.delete(x.el); };
+    deps.schedule(entry, () => {
+      if (mapOf(entry).get(c.el) !== c) { done(); return; }
+      const url = deps.capture(entry, toCss(crop, c.geo), c.geo, { el: c.el, top: tv, hide: c.plan.pinned, shape: c.backdrop ? 'square' : undefined, memo: c.memo, hover: hov, prune: true });
+      if (!url) { counters.failed++; done(); return; }
+      track(entry, 1);
+      deps.decode(url).then((img) => {
+        if (mapOf(entry).get(c.el) !== c) { img.src = ''; return; }
+        const shift = rowOf(tv, s, grid) - c.portPx.y;
+        const k = (img.naturalWidth || crop.width) / crop.width;
+        for (const x of g) {
+          // the row's reach, a surface pixel more each way (measured again at other offsets, it rounds out differently), inside the capture
+          const n = /** @type {Rect} */ (whole.get(x.el));
+          const px = intersectRect({ x: n.x, y: n.y - 1, width: n.width, height: n.height + 2 }, { ...crop, y: crop.y + shift });
+          // a change inside the content since the plan (not a hover change: those are what the strip is checked against) may have reached it
+          if (!px || c.hits.some((d) => d.seq > planSeq && meets(d.px, px)) || (c.hits.length >= HITS && c.hits[0].seq > planSeq)) continue;
+          const pad = deps.canvas(px.width, px.height);
+          /** @type {CanvasRenderingContext2D} */ (pad.getContext('2d')).drawImage(img, (px.x - crop.x) * k, (px.y - shift - crop.y) * k, px.width * k, px.height * k, 0, 0, px.width, px.height);
+          c.strips = c.strips.filter((o) => o.el !== x.el);
+          c.strips.push({ el: x.el, px, pad, hov, near });
+          counters.strips++;
+        }
+        img.src = '';
+      }, () => {}).finally(() => { done(); track(entry, -1); });
+    }, true);
+  }
+
+  /**
+   * The strip pieces (CONTENT pixels) that fill the holes of the pages that compose the port at `top`: [] when there is none, null when one cannot be filled.
+   * @param {Entry} entry @param {Cache} c @param {number} top @param {Page[]} pages
+   * @returns {Array<{strip: Strip, px: Rect}>|null}
+   */
+  function fill(entry, c, top, pages) {
+    if (pages.every((p) => !p.hov)) return [];
+    const model = modelOf(entry, c);
+    if (!model) return null;
+    const live = topOf(c.el);
+    const s = c.geo.scale, R = c.portPx, base = rowOf(top, s, c.plan.grid);
+    /** @type {Rect[]} */
+    let holes = [];
+    for (const p of pages) {
+      if (!p.hov) continue;
+      const d = differ(c, model, p.hov, live);
+      if (!d) return null;
+      const off = rowOf(p.top, s, c.plan.grid) - base;
+      const band = { x: R.x, y: base + Math.max(0, off), width: R.width, height: Math.min(R.height, off + R.height) - Math.max(0, off) };
+      for (const r of d) { const h = intersectRect(r, band); if (h) holes.push(h); }
+    }
+    if (!holes.length) return [];
+    if (model.animating(c.el)) return null;
+    /** @type {Array<{strip: Strip, px: Rect}>} */
+    const out = [];
+    for (const strip of c.strips) {
+      if (!holes.some((h) => meets(h, strip.px))) continue;
+      const bad = differ(c, model, strip.hov, live, strip.near);
+      if (!bad) continue;
+      const good = subtractRects(strip.px, bad);
+      /** @type {Rect[]} */
+      const left = [];
+      for (const h of holes) {
+        /** @type {Rect[]} */
+        const got = [];
+        for (const g of good) { const x = intersectRect(h, g); if (x) { out.push({ strip, px: x }); got.push(x); if (!strip.used) { strip.used = true; counters.stripsUsed++; } } }
+        left.push(...(got.length ? subtractRects(h, got) : [h]));
+      }
+      holes = left;
+      if (!holes.length) break;
+    }
+    return holes.length ? null : out;
   }
 
   /**
@@ -424,7 +684,8 @@ export function createScrollCompositor(deps) {
       known.early = false;
       const top = topOf(scroller);
       prefetch(entry, known, top);
-      if (!usable(known, top, false)) return false;
+      const pages = usable(known, top, false);
+      if (!pages || !fill(entry, known, top, pages)) return false;
       known.queued = true;
       return true;
     },
@@ -438,7 +699,20 @@ export function createScrollCompositor(deps) {
      */
     prepare(entry, scroller, early = false) {
       if (!entry.surface || !entry.geo || entry.lost) return false;
-      const known = mapOf(entry).get(scroller);
+      let known = mapOf(entry).get(scroller);
+      // at rest: the strips of a gesture that left STRIP_MISSES steps unfilled fell behind the pointer; the scroller goes back to pages with the live hover (planned
+      // again now) for SLOW_MS, doubling at each failed trial (a strip capture costs a snapshot; behind, it is built for rows already passed)
+      if (known && !early) {
+        const g = slow.get(scroller);
+        if (known.missed >= STRIP_MISSES && modelOf(entry, known)) {
+          slow.set(scroller, { until: now() + (g ? g.wait * 2 : SLOW_MS), wait: g ? Math.min(g.wait * 2, SLOW_MAX_MS) : SLOW_MS, trial: false });
+          counters.slow++;
+          drop(entry, known);
+          known = undefined;
+        } else if (g?.trial) slow.delete(scroller);
+        else if (g && now() >= g.until) { g.trial = true; drop(entry, known); known = undefined; }
+        if (known) known.missed = 0;
+      }
       if (known && sameGeo(known.geo, entry.geo) && sameLayout(known)) return false;
       if (early && ahead.has(scroller)) return false;
       let set = planning.get(entry);
@@ -489,10 +763,12 @@ export function createScrollCompositor(deps) {
     /**
      * Damage of the drawable (any cause but a caret blink): what it means for each composed scroller. See the file comment.
      * @param {Entry} entry @param {Rect|null} rect @param {string} cause
+     * @returns {boolean} the damage is served by the next composition (a hover change of rows inside a composed scroller, the strips have their pixels): no build
      */
     damaged(entry, rect, cause) {
       const m = caches.get(entry);
       const n = ++seq;
+      let served = false;
       for (const c of [...(m?.values() ?? [])]) {
         // its own scrolling (a step that was not composed)
         if (cause === 'scroll' && rect && sameRect(c.plan.frame, rect)) continue;
@@ -515,20 +791,39 @@ export function createScrollCompositor(deps) {
           continue;
         }
         // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
-        // the content box is none of the pages' business, the scroller clips its content to the port)
-        c.memo.clear();
-        const px = outPx(content, c.geo, c.plan.grid);
-        const d = { x: px.x, y: px.y - c.portPx.y + rowOf(top, c.geo.scale, c.plan.grid), width: px.width, height: px.height };
-        for (const p of c.pages) if (p.seq !== null) { p.dirty.push(d); p.dirtySeq.push(n); }
+        // the content box is none of the pages' business, the scroller clips its content to the port). A hover change under the hover model leaves the pages
+        // whose hovered elements are known as they are (fill() compares them with the live ones), and the layout as it is (its rules only recolour)
+        const model = cause === 'hover' ? modelOf(entry, c) : null;
+        const hover = !!model;
+        if (!hover) c.memo.clear();
+        // every element whose hover differs from the pages' is in the content: no pixel outside the port changed, and the next commit composes the port from the
+        // pages and the strips (or, when it cannot, falls back to the plain path) instead of building the change
+        if (model && c.missed < STRIP_MISSES && c.pages.length && c.pages.every((p) => p.hov && [...p.hov].filter((x) => !model.chain.has(x)).concat([...model.chain].filter((x) => !p.hov?.has(x))).every((x) => !model.relevant(x) || inside(c, x)))) {
+          c.queued = true;
+          c.shown = null;
+          served = true;
+        }
+        const d = contentPx(c, content, top);
+        for (const p of c.pages) if (p.seq !== null && !(hover && p.hov)) { p.dirty.push(d); p.dirtySeq.push(n); }
+        if (!hover) {
+          c.strips = c.strips.filter((x) => !meets(x.px, d));
+          c.hits.push({ seq: n, px: d });
+          if (c.hits.length > HITS) c.hits.shift();
+        }
         const visible = intersectRect(rect, P);
         if (visible) c.unverified.push(visible);
-        // a pinned element the change reaches is rendered again (no composition until its tile is back)
+        // a pinned element the change reaches is rendered again (no composition until its tile is back); a hover change known element by element (the chain
+        // seen last) reaches it only where one of the changed elements does (the damage rect bounds every row between two far apart)
+        const was = c.chain;
+        c.chain = model ? model.chain : null;
+        const changed = model && was ? [...was].filter((x) => !model.chain.has(x)).concat([...model.chain].filter((x) => !was.has(x))).filter((x) => model.relevant(x)) : null;
         for (const [el, pin] of c.pins) {
           const r = entry.record.layer?.frameRect(el);
-          if (r && meets(r, rect)) { pin.pad = null; build(entry, c, snapPx(r, c.geo, c.plan.grid), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
+          if (r && meets(r, rect) && (!changed || changed.some((x) => { const q = model?.reach(x); return !q || meets(q, r); }))) { pin.pad = null; build(entry, c, snapPx(r, c.geo, c.plan.grid), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
         }
         counters.dirtied++;
       }
+      return served;
     },
 
     /**
@@ -536,15 +831,16 @@ export function createScrollCompositor(deps) {
      * Its pixels are exact for every change before its build (`tileSeq`): they repair the dirty parts of the pages they cover (pinned elements and rounded corners
      * excepted: a page has neither).
      * @param {Entry} entry @param {Rect} cropPx @param {number|null} top @param {Element|null} scroller @param {number|null} tileSeq @param {Surface|null} surface
+     * @param {ReadonlySet<Element>|null} [tileHov]  the hovered elements of its build
      */
-    tileLanded(entry, cropPx, top, scroller, tileSeq, surface) {
+    tileLanded(entry, cropPx, top, scroller, tileSeq, surface, tileHov = null) {
       for (const c of caches.get(entry)?.values() ?? []) {
         const p = c.portPx;
         const inside = cropPx.x <= p.x && cropPx.y <= p.y && cropPx.x + cropPx.width >= p.x + p.width && cropPx.y + cropPx.height >= p.y + p.height;
         const touches = cropPx.x < p.x + p.width && cropPx.x + cropPx.width > p.x && cropPx.y < p.y + p.height && cropPx.y + cropPx.height > p.y;
         if (inside) c.shown = scroller === c.el ? top : topOf(c.el);
         else if (touches) c.shown = null;
-        if (scroller === c.el && top !== null && tileSeq !== null && surface && touches) repair(entry, c, cropPx, top, tileSeq, surface);
+        if (scroller === c.el && top !== null && tileSeq !== null && surface && touches) repair(entry, c, cropPx, top, tileSeq, surface, tileHov);
       }
     },
 
@@ -564,12 +860,20 @@ export function createScrollCompositor(deps) {
         const top = topOf(c.el);
         if (c.shown === top) continue;
         const pages = verified(entry, c) ? usable(c, top, true) : null;
-        const surface = pages ? surfaceOf() : null;
-        if (!pages || !surface || !compose(entry, c, surface, top, pages)) {
+        const pieces = pages && fill(entry, c, top, pages);
+        if (pages && !pieces) {
+          counters.unfilled++;
+          c.missed++;
+          // the hovered row's strip is still being built: the step is built although its strip was queued
+          if ([...(modelOf(entry, c)?.chain ?? [])].some((e) => c.building.has(e))) counters.late++;
+        }
+        const surface = pieces ? surfaceOf() : null;
+        if (!pages || !pieces || !surface || !compose(entry, c, surface, top, pages, pieces)) {
           if (promised || c.shown !== null) { fallback.push(c.plan.frame); counters.fallbacks++; }
           continue;
         }
         counters.composed++;
+        if (pieces.length) counters.filled++;
         c.shown = top;
         dirty.push(c.plan.bar ? { ...c.plan.port, width: c.plan.port.width + c.plan.bar.gutter.width } : c.plan.port);
       }
@@ -592,9 +896,10 @@ export function createScrollCompositor(deps) {
   /**
    * Copy the parts of a landed tile that repair dirty page pixels. The tile shows content pixel row y at surface row y - base(top) + port.y. A pinned element may
    * have moved by as much as the scroll offset changed since the tile's build: its rect, grown by that, is left out.
-   * @param {Entry} entry @param {Cache} c @param {Rect} cropPx @param {number} top @param {number} tileSeq @param {Surface} surface
+   * A page whose hovered elements are known takes the tile's pixels only where the two hovered sets render alike.
+   * @param {Entry} entry @param {Cache} c @param {Rect} cropPx @param {number} top @param {number} tileSeq @param {Surface} surface @param {ReadonlySet<Element>|null} tileHov
    */
-  function repair(entry, c, cropPx, top, tileSeq, surface) {
+  function repair(entry, c, cropPx, top, tileSeq, surface, tileHov) {
     const s = c.geo.scale;
     // a tile at an offset that is not a whole surface pixel is no whole-pixel shift of a page (wholeRow)
     if (c.plan.whole && !wholeRow(top, s)) return;
@@ -614,8 +919,17 @@ export function createScrollCompositor(deps) {
     const shift = base - R.y;
     /** @type {Rect[]} tile pixels that are content, in content pixels */
     const good = subtractRects(crop, out).map((r) => ({ ...r, y: r.y + shift }));
+    const model = modelOf(entry, c);
     for (const p of c.pages) {
       if (!p.pad || !p.dirty.length) continue;
+      /** @type {Rect[]} */
+      let ok = good;
+      if (p.hov) {
+        // the tile's hover against the page's, as differ() compares the live one
+        const d = model && tileHov ? differ(c, { ...model, chain: tileHov }, p.hov, topOf(c.el)) : null;
+        if (!d) continue;
+        for (const r of d) ok = ok.flatMap((g) => subtractRects(g, [r]));
+      }
       const ctx = /** @type {CanvasRenderingContext2D} */ (p.pad.getContext('2d'));
       const pb = rowOf(p.top, s, c.plan.grid);
       /** @type {Rect[]} */ const keep = [];
@@ -623,7 +937,7 @@ export function createScrollCompositor(deps) {
       p.dirty.forEach((d, i) => {
         if (p.dirtySeq[i] > tileSeq) { keep.push(d); keepSeq.push(p.dirtySeq[i]); return; }
         const done = [];
-        for (const g of good) {
+        for (const g of ok) {
           const x = intersectRect(d, g);
           if (!x) continue;
           ctx.save();
@@ -643,8 +957,8 @@ export function createScrollCompositor(deps) {
     }
   }
 
-  /** @param {Entry} entry @param {Cache} c @param {Surface} surface @param {number} top @param {Page[]} pages @returns {boolean} */
-  function compose(entry, c, surface, top, pages) {
+  /** @param {Entry} entry @param {Cache} c @param {Surface} surface @param {number} top @param {Page[]} pages @param {Array<{strip: Strip, px: Rect}>} pieces @returns {boolean} */
+  function compose(entry, c, surface, top, pages, pieces) {
     const ctx = /** @type {CanvasRenderingContext2D|null} */ (surface.getContext('2d'));
     if (!ctx || ctx.isContextLost?.()) return false;
     const R = c.portPx;
@@ -699,6 +1013,19 @@ export function createScrollCompositor(deps) {
         ctx.clip();
         ctx.globalCompositeOperation = over;
         ctx.drawImage(/** @type {Surface} */ (p.pad), R.x, R.y + off);
+        ctx.restore();
+      }
+      // the hovered rows (and those no longer hovered), from their strips
+      for (const { strip, px } of pieces) {
+        const v = intersectRect({ ...px, y: px.y - base + R.y }, R);
+        if (!v) continue;
+        ctx.save();
+        shape();
+        ctx.beginPath();
+        ctx.rect(v.x, v.y, v.width, v.height);
+        ctx.clip();
+        ctx.globalCompositeOperation = over;
+        ctx.drawImage(strip.pad, strip.px.x, strip.px.y - base + R.y);
         ctx.restore();
       }
       if (c.bar && c.plan.bar) {

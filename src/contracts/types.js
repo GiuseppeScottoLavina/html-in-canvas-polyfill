@@ -416,7 +416,7 @@ export {};
  * @property {number} dropped  results discarded as stale
  * @property {number} redamaged  dropped results whose uncovered rect was re-marked as damage (ADR-B)
  * @property {number} surfaceRestores  retained surfaces re-rastered after a 2D context loss (ADR-B)
- * @property {{plans: number, refusals: number, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number}} [scroll]  scroll compositor counters (scroll-compose.js): `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile
+ * @property {{plans: number, refusals: number, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number, strips: number, stripsUsed: number, filled: number, unfilled: number, late: number, slow: number}} [scroll]  scroll compositor counters (scroll-compose.js): `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile, `strips` hover strips built, `stripsUsed` those that filled a hole at least once, `filled` compositions that drew hovered rows from them, `unfilled` steps whose hovered rows no strip could fill, `late` those whose strip was still being built, `slow` scrollers whose strips fell behind a gesture and stopped (pages with the live hover until a later trial)
  */
 
 /**
@@ -505,6 +505,7 @@ export {};
  * @property {Element|null} focus              document.activeElement when inside the layer, else null
  * @property {boolean} focusVisible            focus ring should be painted (keyboard modality or text input)
  * @property {boolean} caretVisible            blink phase (tiles are caret-free; the store applies it when it paints the caret patch)
+ * @property {{x: number, y: number}|null} [pointer]  client px of the last mouse or pen pointerover on a layer (null: none, a touch, or an effect maps the pointer)
  */
 
 /**
@@ -518,7 +519,7 @@ export {};
  * @typedef {Object} CssBundle  Flattened stylesheet text for one capture (snapshot/css-collector.js). Cached by `key`.
  * @property {string} css
  * @property {string} key       changes whenever css would change (viewport, dpr, stylesheet set/version, color-scheme)
- * @property {{hover:boolean, active:boolean, focus:boolean, focusVisible:boolean, focusWithin:boolean, hoverLayout?:boolean}} pseudo  which interaction pseudo-classes appear in any rule (skip damage for the others); `hoverLayout`: a :hover rule sets a property that is not paint-only (absent = assume it does)
+ * @property {{hover:boolean, active:boolean, focus:boolean, focusVisible:boolean, focusWithin:boolean, hoverLayout?:boolean, hoverInk?:boolean, hoverSubjects?:string[]|null}} pseudo  which interaction pseudo-classes appear in any rule (skip damage for the others); `hoverLayout`: a :hover rule sets a property that is not paint-only (absent = assume it does); with paint-only rules, `hoverInk`: one sets a property that may paint beyond the element's present extent (a shadow, an outline), `hoverSubjects`: the compounds whose hover a rule tests (css-rewrite.js hoverSubjects; null = not known)
  * @property {string[]} pendingUrls  url()s still being fetched (result.complete will be false)
  */
 
@@ -532,6 +533,17 @@ export {};
  * @property {(control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null} [textOverlay]  plans the optimistic text overlay (Capture.textOverlay); absent = no overlay
  * @property {(control: Element, frame: Rect) => {rect: Rect, color: string}|null} [caretOf]  measures the caret of a focused text control (Capture.caretOf); absent = the caret comes with the next tile
  * @property {(scroller: Element, drawable: Element, layer: LiveLayer) => ScrollPlan|null|Iterator<void, ScrollPlan|null, void>} [scrollPlan]  plans the scroll compositor (Capture.scrollPlan: the steps of the plan, one post-frame task each); absent = every scroll step is built
+ * @property {(entry: any) => HoverModel|null} [hoverModel]  replaces the live hover model of the scroll compositor's hover strips (tests)
+ */
+
+/**
+ * @typedef {Object} HoverModel  the live hover state of a drawable as the compositor needs it (snapshot/store/store.js hoverModel, snapshot/store/scroll-compose.js); null where hover strips cannot be exact
+ * @property {ReadonlySet<Element>} chain  the hovered elements (InteractionSnapshot.hover)
+ * @property {{x: number, y: number}|null} pointer  the resting mouse, frame css px (null: none, or a finger)
+ * @property {(el: Element) => boolean} relevant  some :hover rule may apply to `el` (CssBundle.pseudo.hoverSubjects)
+ * @property {(el: Element) => Rect|null} reach  how far the painting of `el` reaches now, frame css px (util/reach.js; null: not laid out)
+ * @property {(scroller: Element, anchor: Element, x: number, from: number, to: number) => Element[]} rows  the elements at the depth of `anchor` below `scroller` (its siblings, and those of the next list or table body) that some :hover rule may match, whose box spans frame column `x` and meets frame rows from..to
+ * @property {(scroller: Element) => boolean} animating  an animation or a transition runs inside `scroller` (its pixels are not the static style a strip renders)
  */
 
 /**

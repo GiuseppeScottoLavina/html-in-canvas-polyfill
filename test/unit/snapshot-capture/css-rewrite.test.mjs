@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hoverChangesLayout, parseRules, serializeRules, splitSelectorList, mapSelectors, rewriteViewportUnits, rewriteRootSelectors, rewriteInteractionPseudos, detectPseudos,
+  hoverChangesLayout, hoverSubjects, parseRules, serializeRules, splitSelectorList, mapSelectors, rewriteViewportUnits, rewriteRootSelectors, rewriteInteractionPseudos, detectPseudos,
   dropUnclonableSelectors, rewriteCanvasSelectors, rewriteHostSelectors, rewriteLinkPseudos,
 } from '../../../src/snapshot/capture/css-rewrite.js';
 
@@ -62,7 +62,7 @@ test('pseudo rewrite keeps escaped class names, pseudo-element compounds and att
 });
 
 test('detectPseudos reports which interaction pseudo-classes occur', () => {
-  assert.deepEqual(detectPseudos('a:hover{} b:focus-visible{}'), { hover: true, active: false, focus: false, focusVisible: true, focusWithin: false, hoverLayout: false });
+  assert.deepEqual(detectPseudos('a:hover{} b:focus-visible{}'), { hover: true, active: false, focus: false, focusVisible: true, focusWithin: false, hoverLayout: false, hoverInk: false, hoverSubjects: ['a'] });
   assert.deepEqual(detectPseudos('a{} .x\\:hover{}'), { hover: false, active: false, focus: false, focusVisible: false, focusWithin: false, hoverLayout: false });
   assert.equal(detectPseudos('a:focus-within{}').focus, false);
   assert.equal(detectPseudos('a:focus-within{}').focusWithin, true);
@@ -98,6 +98,25 @@ test('rewriteLinkPseudos: :link and :any-link become :where(a,area)[href] (same 
   assert.equal(rewriteLinkPseudos('a:link{a:b}:any-link{c:d}.x:not(:link) b{e:f}'), 'a:where(a,area)[href]{a:b}:where(a,area)[href]{c:d}.x:not(:where(a,area)[href]) b{e:f}');
   assert.equal(rewriteLinkPseudos('.a::before{content:":link"}.l:linked{a:b}.hover-link{c:d}'), '.a::before{content:":link"}.l:linked{a:b}.hover-link{c:d}');
   assert.equal(dropUnclonableSelectors(rewriteLinkPseudos('a:visited{a:b}a:link, a:visited{c:d}')), 'a:where(a,area)[href]{c:d}');
+});
+
+test('detectPseudos: with paint-only :hover rules, hoverInk tells a rule that may paint beyond the element (a shadow, an outline, a decoration) from one that recolours', () => {
+  assert.equal(detectPseudos('li:hover{background:#cfdcf8;color:red;border-color:blue;outline-color:red;opacity:.5;transition:background .2s}').hoverInk, false);
+  for (const decl of ['box-shadow:0 0 2px red', 'outline:1px solid', 'text-shadow:0 0 1px', 'text-decoration:underline', 'outline-width:2px'])
+    assert.equal(detectPseudos(`li:hover{${decl}}`).hoverInk, true, decl);
+  assert.equal(detectPseudos('li:hover{padding:2px}').hoverInk, undefined, 'a layout change says nothing more');
+});
+
+test('hoverSubjects: the compounds whose hover a rule tests (an element that matches none looks the same hovered or not); null when the text cannot tell', () => {
+  assert.deepEqual(hoverSubjects('#list li:hover{background:red}'), ['li']);
+  assert.deepEqual(hoverSubjects('ul > li.row:hover span, a:hover::after, :hover{color:red}'), ['li.row', 'a', '*']);
+  assert.deepEqual(hoverSubjects('.card:hover .title{color:red} .x{color:blue}'), ['.card'], 'the hovered compound, not the subject');
+  assert.deepEqual(hoverSubjects('@media (min-width:1px){tr:hover td{background:red}}'), ['tr'], 'inside a group rule');
+  assert.deepEqual(hoverSubjects('li{color:red; b:hover{color:blue}}'), ['b'], 'a rule nested without the nesting selector');
+  assert.equal(hoverSubjects('li:not(:hover){opacity:.5}'), null, ':hover inside a functional pseudo-class');
+  assert.equal(hoverSubjects('ul:has(li:hover){color:red}'), null);
+  assert.equal(hoverSubjects('li{&:hover{color:red}}'), null, 'the nesting selector');
+  assert.deepEqual(hoverSubjects('li{color:red}'), []);
 });
 
 test('hoverChangesLayout: only paint properties under :hover are paint-only; a box, a display or a custom property is not', () => {

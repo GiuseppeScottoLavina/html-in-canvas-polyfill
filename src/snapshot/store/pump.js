@@ -113,6 +113,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {number} ovSeq  Entry.ovSeq when the build started: the tile shows every overlaid value up to it
  * @property {Map<Element, number>|null} scTops  scrollTop of every composed scroller when the build read the DOM (scroll-compose.js)
  * @property {number|null} scSeq  the scroll compositor's damage sequence number when the build read the DOM: its tile repairs the pages for every damage up to it
+ * @property {ReadonlySet<Element>|null} [scHover]  the hovered elements the build rendered (with scTops: the compositor repairs pages rendered with other ones only where both look alike)
  * @property {boolean} first  the first build of the drawable (never measured): charged its fixed estimate only, see pumpRecord
  */
 
@@ -456,7 +457,7 @@ function startBuild(env, deps, entry, now, batch) {
   const est = entry.costEma ?? DEFAULT_TILE_COST_MS;
   deps.state.bucket.spend(est);
   /** @type {Job} */
-  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null, scSeq: null };
+  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null, scSeq: null, scHover: null };
   const scrollers = host.scrollers?.(entry) ?? [];
   if (scrollers.length) { job.scTops = new Map(scrollers.map((s) => [s, /** @type {HTMLElement} */ (s).scrollTop])); job.scSeq = host.scrollSeq?.() ?? null; }
   const t0 = env.now();
@@ -464,7 +465,9 @@ function startBuild(env, deps, entry, now, batch) {
   let result;
   try {
     job.translation = host.translationOf(entry);
-    const req = requestOf(env, record, el, taken.rect, taken.generation, { geo, lastNodes: entry.lastNodes, resources: deps.resources, interaction: deps.interaction(record) });
+    const interaction = deps.interaction(record);
+    if (job.scTops) job.scHover = interaction.hover;
+    const req = requestOf(env, record, el, taken.rect, taken.generation, { geo, lastNodes: entry.lastNodes, resources: deps.resources, interaction });
     result = deps.capture(req);
   } catch (err) {
     job.syncMs = env.now() - t0;

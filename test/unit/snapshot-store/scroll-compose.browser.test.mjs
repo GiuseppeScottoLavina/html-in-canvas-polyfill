@@ -357,3 +357,174 @@ test('a finger landing stops what is planned ahead and still waits to be built (
   rig.pump();
   assert.ok(rig.calls.length > calls, 'and its pages are built');
 });
+
+// ---- rows hovered under a resting mouse: hover strips (scroll-compose.js, file comment) --------------------------------------------------------------------------
+// A fake list in FRAME: rows of 10 css px (content y 10 i), the mouse resting at frame (40, 30), so the row under it at offset t is floor((20 + t) / 10). The model
+// stands in for the live DOM (store.js hoverModel): the hovered chain follows the pointer, a row's reach is its box grown by the rig's ink margin (4 css px).
+
+/** @param {{rows?: boolean, animating?: boolean}} [o] */
+function hoverList(o = {}) {
+  const list = /** @type {any} */ ({ scrollTop: 0, nodeType: 1, localName: 'div', contains: (/** @type {any} */ e) => e === ol || rows.includes(e) });
+  const ol = /** @type {any} */ ({ parentElement: list, nodeType: 1, contains: (/** @type {any} */ e) => e === ol || rows.includes(e) });
+  const rows = Array.from({ length: 104 }, (_, i) => /** @type {any} */ ({ i, parentElement: ol, nodeType: 1 }));
+  const under = () => rows[Math.floor((20 + list.scrollTop) / 10)];
+  const frameOf = (/** @type {any} */ r) => ({ x: 10, y: 10 + 10 * r.i - list.scrollTop, width: 60, height: 10 });
+  const model = {
+    get chain() { return new Set([under(), ol]); },
+    pointer: { x: 40, y: 30 },
+    relevant: (/** @type {any} */ e) => rows.includes(e),
+    reach: (/** @type {any} */ e) => { const f = frameOf(e); return { x: f.x - 4, y: f.y - 4, width: f.width + 8, height: f.height + 8 }; },
+    rows: (/** @type {any} */ _s, /** @type {any} */ _a, /** @type {number} */ _x, /** @type {number} */ from, /** @type {number} */ to) => (o.rows === false ? [_a] : rows.filter((r) => { const f = frameOf(r); return f.y < to && f.y + f.height > from; })),
+    animating: () => !!o.animating,
+  };
+  return { list, rows, model };
+}
+
+/** pages lime (0) and blue (40), every other build black: the hover strips */
+async function warmHover(t, o) {
+  const { list, rows, model } = hoverList(o);
+  const rig = await makeRig(t, { scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 }), hoverModel: () => model });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  rig.color = 'black';
+  await warm(rig, a, list, ['lime', 'blue']);
+  return { rig, a, list, rows, model };
+}
+
+test('hover strips: under a resting mouse the pages show no row hovered, the rows the pointer will be over are rendered hovered ahead, and a step that moves the hover is composed', async (t) => {
+  const { rig, a, list, rows } = await warmHover(t);
+  const pages = rig.calls.filter((r) => r.scroll && !r.scroll.hover?.has(rows[0]) && !r.scroll.hover?.has(rows[1]) && !r.scroll.hover?.has(rows[2]) && r.rect.height >= 40);
+  assert.ok(pages.length >= 2 && pages.every((r) => r.scroll.hover && !rows.some((x) => r.interaction.hover.has(x))), 'the pages are rendered with no row hovered');
+  const strips = rig.calls.filter((r) => r.scroll?.hover && rows.some((x) => r.interaction.hover.has(x)));
+  assert.ok(strips.length >= 2, 'rows hovered in captures of their own');
+  for (const r of strips) {
+    const hovered = rows.filter((x) => r.interaction.hover.has(x)).map((x) => x.i);
+    assert.ok(hovered.every((i, k) => k === 0 || i - hovered[k - 1] >= 2), `rows hovered together are apart (their reaches do not meet): ${hovered}`);
+  }
+  assert.ok(rig.store.stats().scroll.strips >= 5, 'a strip per row near the pointer');
+  // the hover moves from row 2 to row 3 with the step (the engine updates it before the scroll event)
+  list.scrollTop = 10;
+  rig.store.markDamage(a, { x: 6, y: 16, width: 68, height: 28 }, 'hover');
+  assert.equal(rig.store.scrollCompose(a, list), true, 'composed: the hovered row comes from its strip');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 20, 35), RGBA.black, 'row 3 (frame 30..40) and its reach from the strip');
+  assert.deepEqual(rig.css(a, 20, 15), RGBA.lime, 'the rows above from the page at 0 (no row hovered there)');
+  assert.deepEqual(rig.css(a, 20, 48), RGBA.blue, 'the rows below from the page at 40');
+  assert.equal(rig.store.stats().scroll.filled, 1);
+  assert.equal(rig.store.stats().scroll.dirtied, 1, 'the hover change was seen inside the content');
+  assert.equal(rig.store.stats().scroll.fallbacks, 0, 'and left the pages clean');
+});
+
+test('hover strips (positive control): without strips for the rows ahead, a step that moves the hover keeps the plain path', async (t) => {
+  const { rig, a, list } = await warmHover(t, { rows: false });
+  assert.equal(rig.store.stats().scroll.strips, 1, 'the row under the pointer only');
+  list.scrollTop = 10;
+  rig.store.markDamage(a, { x: 6, y: 16, width: 68, height: 28 }, 'hover');
+  assert.equal(rig.store.scrollCompose(a, list), false, 'the hovered row has no pixels: built as before');
+});
+
+test('hover strips: a change inside the content that is not a hover change drops the strips it reaches; an animation inside the scroller stops them filling', async (t) => {
+  const { rig, a, list } = await warmHover(t);
+  // row 3 (content 30..40) changes by script: its strip goes, and the pages are dirty there until a tile repairs them
+  rig.store.markDamage(a, { x: 10, y: 40, width: 60, height: 10 }, 'mutation');
+  list.scrollTop = 10;
+  assert.equal(rig.store.scrollCompose(a, list), false, 'row 3 is hovered now and has no strip any more');
+  const anim = await warmHover(t, { animating: true });
+  anim.list.scrollTop = 10;
+  assert.equal(anim.rig.store.scrollCompose(anim.a, anim.list), false, 'a transition runs in the list: the live row is not the style a strip renders');
+});
+
+test('hover strips: a page rendered without a pointer (a finger: a tap hovers) keeps the live hover, and a hover change makes it dirty as before', async (t) => {
+  const { list, model } = hoverList();
+  const touch = { ...model, pointer: null, get chain() { return model.chain; } };
+  const rig = await makeRig(t, { scrollPlan: () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 }), hoverModel: () => touch });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  await warm(rig, a, list, ['lime', 'blue']);
+  assert.ok(rig.calls.filter((r) => r.scroll).every((r) => !r.scroll.hover), 'no hover override: the live state');
+  assert.equal(rig.store.stats().scroll.strips, 0, 'no strips without a resting mouse');
+  list.scrollTop = 4;
+  assert.equal(rig.store.scrollCompose(a, list), true, 'no hover change: composed');
+  rig.store.commitLanded();
+  rig.store.markDamage(a, { x: 10, y: 35, width: 60, height: 5 }, 'hover');
+  list.scrollTop = 6;
+  assert.equal(rig.store.scrollCompose(a, list), false, 'the hover change dirtied the page');
+});
+
+test('hover strips: a hover change inside the list is served by the next commit\'s composition, without a build; one the strips cannot fill falls back to the plain path', async (t) => {
+  const o = { animating: false };
+  const { rig, a, list, rows, model } = await warmHover(t, o);
+  list.scrollTop = 10;
+  assert.equal(rig.store.scrollCompose(a, list), true);
+  rig.store.commitLanded();
+  const calls = rig.calls.length;
+  // the mouse moves down a row at rest: row 4 is hovered now
+  const chain = model.chain;
+  Object.defineProperty(model, 'chain', { get: () => new Set([rows[4], ...[...chain].filter((e) => !rows.includes(e))]), configurable: true });
+  rig.store.markDamage(a, { x: 6, y: 26, width: 68, height: 28 }, 'hover');
+  assert.equal(rig.store.hasLanded(rig.record), true, 'a composition is due');
+  rig.pump();
+  assert.equal(rig.calls.length, calls, 'nothing is built');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 20, 45), RGBA.black, 'row 4 (frame 40..50) from its strip');
+  assert.deepEqual(rig.css(a, 20, 15), RGBA.lime);
+  assert.equal(rig.store.isSettled(a), true);
+  // the hover goes back to row 3 while a transition runs in the list: no strip may fill it, the promised composition falls back to a build of the list
+  o.animating = true;
+  Object.defineProperty(model, 'chain', { get: () => new Set([rows[3], ...[...chain].filter((e) => !rows.includes(e))]), configurable: true });
+  rig.store.markDamage(a, { x: 6, y: 26, width: 68, height: 28 }, 'hover');
+  rig.store.commitLanded();
+  assert.equal(rig.store.isSettled(a), false, 'the fallback damage waits for a build');
+  rig.pump();
+  assert.ok(rig.calls.length > calls, 'and it is built');
+});
+
+test('hover strips: the rows a still pointer meets go on into the next group (a list under headings, the next table body), at the depth of the hovered row', async () => {
+  const { sameDepth } = await import('/src/snapshot/store/scroll-compose.js');
+  const box = document.createElement('div');
+  box.innerHTML = '<section><h3>A</h3><ul><li id="a1"></li><li id="a2"></li></ul></section><section><h3>B</h3><ul></ul></section><section><h3>C</h3><ul><li id="c1"><b></b></li><li id="c2"></li></ul></section>';
+  const ids = (/** @type {Element} */ from, /** @type {number} */ dir) => [...sameDepth(box, from, dir)].map((e) => e.id || e.localName);
+  const $ = (/** @type {string} */ id) => /** @type {Element} */ (box.querySelector('#' + id));
+  assert.deepEqual(ids($('a1'), 1), ['a2', 'c1', 'c2'], 'forward: the rest of its list, an empty list skipped, the next list (headings are one level up, the bold child one down)');
+  assert.deepEqual(ids($('c2'), -1), ['c1', 'a2', 'a1'], 'backward the same way');
+  const t = document.createElement('table');
+  t.innerHTML = '<tbody><tr><td id="r1a"></td><td id="r1b"></td></tr></tbody><tbody><tr><td id="r2a"></td></tr></tbody>';
+  assert.deepEqual([...sameDepth(t, /** @type {Element} */ (t.querySelector('#r1b')), 1)].map((e) => e.id), ['r2a'], 'the cells of the next table body');
+  // positive control: the siblings alone (the walk before groups were crossed) stop at the end of the first list
+  assert.deepEqual([...$('a1').parentElement.children].slice(1).map((e) => e.id), ['a2']);
+});
+
+
+test('hover strips that fall behind a gesture stop for that scroller (pages with the live hover, no strips) across gestures; a scroller whose strips keep up keeps them', async (t) => {
+  /** two steps that move the hover, then the rest */
+  const gesture = async (/** @type {any} */ rig, /** @type {Element} */ a, /** @type {any} */ list) => {
+    for (const top of [10, 20]) {
+      list.scrollTop = top;
+      rig.store.markDamage(a, { x: 6, y: 16, width: 68, height: 28 }, 'hover');
+      rig.store.scrollCompose(a, list);
+      rig.store.commitLanded();
+    }
+    rig.store.scrollSettled(a, list);
+    await settle(rig, a);
+  };
+  /** pump and commit until nothing is pending */
+  const settle = async (/** @type {any} */ rig, /** @type {Element} */ a) => {
+    for (let i = 0; i < 50 && !rig.store.isSettled(a); i++) { rig.pump(); await new Promise((ok) => setTimeout(ok, 20)); rig.store.commitLanded(); }
+    assert.equal(rig.store.isSettled(a), true, 'settled');
+  };
+  // slow: the strips do not reach the rows the pointer moves onto (only the row under it has one)
+  const slow = await warmHover(t, { rows: false });
+  await gesture(slow.rig, slow.a, slow.list);
+  assert.equal(slow.rig.store.stats().scroll.slow, 1, 'stopped at the rest after a gesture with unfilled steps');
+  const calls = slow.rig.calls.length;
+  slow.list.scrollTop = 200;
+  slow.rig.store.scrollCompose(slow.a, slow.list);
+  await settle(slow.rig, slow.a);
+  const later = slow.rig.calls.slice(calls).filter((/** @type {any} */ r) => r.scroll);
+  assert.ok(later.length > 0 && later.every((/** @type {any} */ r) => !r.scroll.hover), 'its pages are rendered with the live hover, no strip is built');
+  // positive control: strips that fill every step stay on
+  const fast = await warmHover(t);
+  await gesture(fast.rig, fast.a, fast.list);
+  assert.equal(fast.rig.store.stats().scroll.slow, 0, 'kept');
+  assert.ok(fast.rig.store.stats().scroll.filled >= 2);
+});

@@ -8,7 +8,8 @@
  * because siblings may have shifted.
  */
 
-import { inflateRect, unionRect } from '../../util/rect.js';
+import { unionRect } from '../../util/rect.js';
+import { measureReach } from '../../util/reach.js';
 
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
 /** @typedef {import('../../contracts/types.js').LiveLayer} LiveLayer */
@@ -46,24 +47,8 @@ export function getRectMemory(env) {
 function createRectMemory(ink) {
   /** @type {WeakMap<Element, {box: Rect, reach: Rect, own: Rect, painted: boolean}>} */
   const last = new WeakMap();
-
   /** @param {LiveLayer} layer @param {Element} el */
-  function measure(layer, el) {
-    const box = layer.frameRect(el);
-    if (!box) return null;
-    const scrollW = /** @type {HTMLElement} */ (el).scrollWidth;
-    const scrollH = /** @type {HTMLElement} */ (el).scrollHeight;
-    const width = Math.max(box.width, Number.isFinite(scrollW) ? scrollW : 0);
-    const height = Math.max(box.height, Number.isFinite(scrollH) ? scrollH : 0);
-    const p = layer.paintInk?.(el) ?? null;
-    const painted = !!p && p.left + p.top + p.right + p.bottom > 0;
-    /** @param {Rect} r */
-    const grow = (r) => {
-      const g = inflateRect(r, ink);
-      return painted && p ? { x: g.x - p.left, y: g.y - p.top, width: g.width + p.left + p.right, height: g.height + p.top + p.bottom } : g;
-    };
-    return { box, reach: grow({ x: box.x, y: box.y, width, height }), own: grow(box), painted };
-  }
+  const measure = (layer, el) => measureReach(ink, layer, el);
 
   return {
     own(layer, el) {

@@ -68,7 +68,7 @@ export function forceContextLoss(surface) {
  * A SnapshotStore wired to a fake canvas record, a fake live layer, a scripted CaptureFn that returns real SVG data: URLs, and a controllable decoder.
  * Surface geometry: border box w x h, ink 4 css px on every side, raster scale `scale` (default 1), so a css point (x, y) of a drawable is surface pixel ((x+4)*scale, (y+4)*scale).
  * @param {{cleanup: (fn: () => any) => void}} t
- * @param {{scale?: number, options?: Record<string, any>, interaction?: {snapshot: () => any}, textOverlay?: any, scrollPlan?: any, caretOf?: any, nextTask?: any, frameRect?: (el: Element) => any, virtualBusy?: boolean}} [cfg]
+ * @param {{scale?: number, options?: Record<string, any>, interaction?: {snapshot: () => any}, textOverlay?: any, scrollPlan?: any, caretOf?: any, nextTask?: any, hoverModel?: any, frameRect?: (el: Element) => any, virtualBusy?: boolean}} [cfg]
  * `virtualBusy`: the store's clock (`env.now`) does not see the real time the scripted capture takes, only its `busyMs` (a build's measured synchronous
  * time is then exactly what the test scripts, whatever the machine's speed).
  */
@@ -149,7 +149,7 @@ export async function makeRig(t, cfg = {}) {
       rig.pending.push({ url, release: () => decodeDataUrl(url).then(resolve, reject), fail: (e) => reject(e ?? new Error('decode failed')) });
     });
   };
-  rig.store = createSnapshotStore(env, capture, { decode, buildsPerDrawable: cfg.buildsPerDrawable ?? 1, interaction: cfg.interaction, textOverlay: cfg.textOverlay, scrollPlan: cfg.scrollPlan, caretOf: cfg.caretOf, nextTask: cfg.nextTask });
+  rig.store = createSnapshotStore(env, capture, { decode, buildsPerDrawable: cfg.buildsPerDrawable ?? 1, interaction: cfg.interaction, textOverlay: cfg.textOverlay, scrollPlan: cfg.scrollPlan, caretOf: cfg.caretOf, nextTask: cfg.nextTask, hoverModel: cfg.hoverModel });
   t.cleanup(() => { rig.store.dispose(); });
 
   /** A drawable of w x h css px (laid out, announced to the store). @param {string} id @param {number} w @param {number} h @param {{announce?: boolean}} [o] */

@@ -283,7 +283,9 @@ export function rewriteInteractionPseudos(css) {
 export function detectPseudos(css) {
   const has = (/** @type {string} */ name) => new RegExp(`(?<![\\\\:]):${name}(?![\\w-])`).test(css);
   const hover = has('hover');
-  return { hover, active: has('active'), focus: has('focus'), focusVisible: has('focus-visible'), focusWithin: has('focus-within'), hoverLayout: hover && hoverChangesLayout(css) };
+  const layout = hover && hoverChangesLayout(css);
+  return { hover, active: has('active'), focus: has('focus'), focusVisible: has('focus-visible'), focusWithin: has('focus-within'), hoverLayout: layout,
+    ...(hover && !layout ? { hoverInk: hoverDeclares(css, INK_STABLE), hoverSubjects: hoverSubjects(css) } : {}) };
 }
 /** properties that change only how a box paints, never its size or position nor anyone else's */
 const PAINT_ONLY = /^(?:color|background(?:-[a-z-]+)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?-color|outline(?:-[a-z]+)?|box-shadow|text-shadow|text-decoration(?:-[a-z]+)?|text-emphasis-color|opacity|visibility|cursor|fill(?:-opacity)?|stroke(?:-[a-z]+)?|caret-color|accent-color|column-rule-color|-webkit-text-(?:fill|stroke)-color|transition(?:-[a-z]+)?)$/;
@@ -296,6 +298,21 @@ const HOVER = /(?<![\\:]):hover(?![\w-])/;
  * @returns {boolean}
  */
 export function hoverChangesLayout(css) {
+  return hoverDeclares(css, PAINT_ONLY);
+}
+
+/**
+ * properties whose change keeps every painted pixel inside the extent the element already paints (its box, its overflow, its shadows and outline as they are): a
+ * colour, a background, an opacity. A :hover rule that sets anything else (a shadow, an outline, a text decoration) may paint beyond the reach measured while the
+ * element is not hovered (scroll-compose.js hover strips measure rows that were never hovered)
+ */
+const INK_STABLE = /^(?:color|background(?:-color|-image|-position(?:-[xy])?|-size|-repeat|-origin|-clip|-attachment)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?-color|outline-color|text-decoration-color|text-emphasis-color|opacity|visibility|cursor|fill(?:-opacity)?|stroke(?:-opacity)?|caret-color|accent-color|column-rule-color|-webkit-text-(?:fill|stroke)-color|transition(?:-[a-z]+)?)$/;
+
+/**
+ * PURE. Does any :hover rule (see hoverChangesLayout) declare a property that `allowed` does not match?
+ * @param {string} css @param {RegExp} allowed @returns {boolean}
+ */
+function hoverDeclares(css, allowed) {
   /** @param {RuleNode[]} nodes @param {boolean} inHover @returns {boolean} */
   const walk = (nodes, inHover) => nodes.some((r) => {
     if (r.k === 'group') return walk(/** @type {RuleNode[]} */ (r.kids), inHover);
@@ -306,7 +323,7 @@ export function hoverChangesLayout(css) {
       for (const d of inner) {
         if (d.k !== 'stmt') continue;
         const name = /^\s*(-?-?[\w-]+)\s*:/.exec(d.pre)?.[1]?.toLowerCase();
-        if (name && !PAINT_ONLY.test(name)) return true;
+        if (name && !allowed.test(name)) return true;
       }
     }
     return walk(inner.filter((d) => d.k !== 'stmt'), hover);
@@ -314,6 +331,58 @@ export function hoverChangesLayout(css) {
   return walk(parseRules(css), false);
 }
 
+
+/**
+ * PURE. The compounds whose :hover state some rule tests, :hover and pseudo-elements left out ('li' for `#list li:hover::after`, '*' for a bare `:hover`): an element that
+ * matches none of them looks the same hovered or not. null when that cannot be told from the text: :hover inside a functional pseudo-class (:is, :not, :has), or a
+ * compound with the nesting selector.
+ * @param {string} css @returns {string[]|null}
+ */
+export function hoverSubjects(css) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  /** @param {RuleNode[]} nodes @returns {boolean} every :hover was understood */
+  const walk = (nodes) => nodes.every((r) => {
+    if (r.k === 'group') return !HOVER.test(r.pre) && walk(/** @type {RuleNode[]} */ (r.kids));
+    if (r.k !== 'style') return true;
+    if (HOVER.test(r.pre) && !splitSelectorList(r.pre.trim()).every((sel) => compoundsOf(sel, out))) return false;
+    return !r.body.includes('{') || walk(parseRules(r.body).filter((d) => d.k !== 'stmt'));
+  });
+  return walk(parseRules(css)) ? [...out] : null;
+}
+
+/**
+ * The :hover compounds of one complex selector into `out`; false when one is not understood.
+ * @param {string} sel @param {Set<string>} out @returns {boolean}
+ */
+function compoundsOf(sel, out) {
+  let start = 0;
+  /** @param {number} end */
+  const take = (end) => {
+    const c = sel.slice(start, end).trim();
+    if (!HOVER.test(c)) return true;
+    if (c.includes('&')) return false;
+    let depth = 0;
+    for (let i = 0; i < c.length; i++) {
+      if (c[i] === '(') depth++;
+      else if (c[i] === ')') depth--;
+      else if (depth && c.startsWith(':hover', i)) return false;
+    }
+    out.add(c.replace(/(?<![\\:]):hover(?![\w-])/g, '').replace(/::?(?:before|after|first-line|first-letter|marker|placeholder|selection|backdrop|file-selector-button|[\w-]+\(.*)$/, '').replace(/::[\w-]+$/, '') || '*');
+    return true;
+  };
+  for (let i = 0; i < sel.length; i++) {
+    const ch = sel.charCodeAt(i);
+    if (ch === 40) i = skipParens(sel, i) - 1;
+    else if (ch === 91) { const e = sel.indexOf(']', i); i = e < 0 ? sel.length : e; } else if (ch === 34 || ch === 39) i = skipString(sel, i) - 1;
+    else if (ch === 92) i++;
+    else if (ch === 32 || ch === 62 || ch === 43 || ch === 126 || ch === 10 || ch === 9) {
+      if (!take(i)) return false;
+      start = i + 1;
+    }
+  }
+  return take(sel.length);
+}
 
 /**
  * Selectors the clone must not carry: :visited (privacy), ::-webkit-scrollbar* (scrollbars are painted by the polyfill, ADR-E).

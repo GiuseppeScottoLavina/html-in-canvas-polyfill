@@ -96,6 +96,8 @@ export function createInteractionTracker(env, capture) {
   let focusVisible = false;
   let caretVisible = true;
   let blinkTimer = 0;
+  /** @type {{x: number, y: number}|null} where the last mouse or pen pointerover happened (client px) */
+  let pointer = null;
   /** @type {InteractionSnapshot|null} */
   let snap = null;
   let documentListeners = 0;
@@ -243,11 +245,15 @@ export function createInteractionTracker(env, capture) {
       // began with 5 to 9 plain builds). The tap is its pointerup (a pan ends in pointercancel), handled with the other releases (onRelease).
       ['pointerover', (ev) => {
         if (ev.pointerType === 'touch') return;
+        pointer = { x: ev.clientX, y: ev.clientY };
+        snap = null;
         nativeTarget.set(record, ev.target);
         if (!mapped.has(record)) setHover(record, ev.target);
       }],
       ['pointerout', (ev) => {
         if (ev.pointerType === 'touch' || (ev.relatedTarget && root.contains(ev.relatedTarget))) return;
+        pointer = null;
+        snap = null;
         nativeTarget.set(record, null);
         if (!mapped.has(record)) setHover(record, null);
       }],
@@ -289,6 +295,8 @@ export function createInteractionTracker(env, capture) {
     // a tap: the tapped element of a canvas becomes the hovered one, and a tap elsewhere ends the hover a tap left in another canvas (see pointerover above)
     if (ev.type === 'pointerup' && /** @type {PointerEvent} */ (ev).pointerType === 'touch') {
       const t = /** @type {Element|null} */ (ev.target);
+      pointer = null;
+      snap = null;
       for (const record of attached.keys()) {
         const inside = !!t && t.nodeType === 1 && !!record.layer?.element.contains(t);
         if (!inside && !hover.get(record)?.size) continue;
@@ -380,13 +388,14 @@ export function createInteractionTracker(env, capture) {
         snap = Object.freeze({
           hover: new Set([...hover.values()].flatMap((chain) => [...chain])),
           active: new Set([...active.values()].flatMap((chain) => [...chain])),
-          focus, focusVisible, caretVisible,
+          focus, focusVisible, caretVisible, pointer: mapped.size ? null : pointer,
         });
       }
       return snap;
     },
 
     setMappedTarget(record, target) {
+      snap = null;
       if (!target) {
         mapped.delete(record);
         setHover(record, nativeTarget.get(record));

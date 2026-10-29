@@ -18,8 +18,9 @@ import { createPumpState, defaultInteraction, NULL_RESOURCES, planGeometry, requ
 import { rasterSourceFor } from './raster-source.js';
 import { createRunawayGuard } from './runaway.js';
 import { createBackdropCache, paintTextOverlay } from './text-paint.js';
-import { createScrollCompositor } from './scroll-compose.js';
+import { createScrollCompositor, sameDepth } from './scroll-compose.js';
 import { allocateSurface, forkSurface, makeCanvas, surfaceBytes, watchSurfaceLoss } from './surfaces.js';
+import { measureReach } from '../../util/reach.js';
 import { newVersion, parseTransformOrigin, reviseVersion } from './versions.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -282,11 +283,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
       return;
     }
     if (!TYPING_CAUSES.has(cause)) entry.ovEpoch++;
-    compositor.damaged(entry, rect, cause);
+    const served = compositor.damaged(entry, rect, cause);
     if (entry.failures >= 3) entry.failures = 0;
     if (RETRY_CAUSES.has(cause)) entry.refused = false;
     runaway.damage(cause, env.now());
-    damage.mark(el, rect, cause, env.now());
+    if (!served) damage.mark(el, rect, cause, env.now());
   }
 
   /** @param {Iterable<Entry>} list @param {DamageCause} cause */
@@ -401,7 +402,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     nextTask: extras.nextTask ?? (extras.decode ? undefined : nextTask),
   };
 
-  /** @type {Array<{entry: Entry, run: () => void}>} side builds (scroll pages, pinned tiles, overlay backdrops): run by the post-frame pump after the regular builds */
+  /** @type {Array<{entry: Entry, run: () => void, later?: boolean}>} side builds (scroll pages, pinned tiles, overlay backdrops; hover strips `later`, after the others): run by the post-frame pump after the regular builds */
   const side = [];
 
   const compositor = createScrollCompositor({
@@ -411,7 +412,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     capture(entry, rectCss, geo, scroll) {
       try {
-        const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });
+        const live = pumpDeps.interaction(entry.record);
+        // a page or a hover strip may be rendered with other hovered elements than the live ones (scroll-compose.js PageRequest.hover)
+        const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: scroll.prune ? Infinity : entry.lastNodes, resources: pumpDeps.resources, interaction: scroll.hover ? { ...live, hover: scroll.hover } : live });
         const result = capture({ ...req, scroll });
         // a 'limited' entry (node-budget: a large scroller) describes a page that renders like the tiles do
         return (result.unsupported ?? []).some((u) => featureById(u.feature)?.status !== 'limited') || !result.complete ? null : result.url;
@@ -422,8 +425,80 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     decode: (url) => pumpDeps.decode(url),
     canvas: makeCanvas,
-    schedule: (entry, run) => { side.push({ entry, run }); },
+    schedule: (entry, run, later = false) => {
+      const at = later ? -1 : side.findIndex((j) => j.later);
+      if (at < 0) side.push({ entry, run, later }); else side.splice(at, 0, { entry, run, later });
+    },
+    hover: extras.hoverModel ?? hoverModel,
   });
+
+  /** @type {WeakMap<Entry, {snap: import('../../contracts/types.js').InteractionSnapshot, model: import('../../contracts/types.js').HoverModel|null}>} */
+  const hoverModels = new WeakMap();
+  /**
+   * The live hover state for the hover strips of the scroll compositor (scroll-compose.js HoverModel), null where they cannot be exact: :hover rules that change
+   * more than colours (a layout property, a shadow or an outline: the reach of a row measured unhovered would not hold hovered), or no tracker. One per hover state.
+   * @param {Entry} entry @returns {import('../../contracts/types.js').HoverModel|null}
+   */
+  function hoverModel(entry) {
+    const layer = entry.record.layer;
+    if (!interaction || !layer) return null;
+    const snap = interaction.snapshot();
+    const known = hoverModels.get(entry);
+    if (known?.snap === snap) return known.model;
+    /** @type {import('../../contracts/types.js').HoverModel|null} */
+    let model = null;
+    try {
+      const pseudo = /** @type {Partial<import('../../contracts/types.js').Capture>} */ (capture).cssBundle?.(entry.record, pumpDeps.resources).pseudo;
+      if (pseudo?.hover && pseudo.hoverLayout === false && pseudo.hoverInk === false) {
+        const subjects = pseudo.hoverSubjects ?? null;
+        /** @type {Map<Element, boolean>} */
+        const seen = new Map();
+        const relevant = (/** @type {Element} */ el) => {
+          let r = seen.get(el);
+          if (r === undefined) seen.set(el, (r = !subjects || subjects.some((sel) => { try { return el.matches(sel); } catch { return true; } })));
+          return r;
+        };
+        const p = snap.pointer;
+        const box = p ? layer.frameRect(entry.el) : null;
+        const cr = box ? entry.el.getBoundingClientRect() : null;
+        const pointer = p && box && cr && cr.width > 0 && cr.height > 0 ? { x: box.x + ((p.x - cr.left) * box.width) / cr.width, y: box.y + ((p.y - cr.top) * box.height) / cr.height } : null;
+        model = {
+          chain: snap.hover, pointer, relevant,
+          reach: (el) => measureReach(options.inkMargin, layer, el)?.reach ?? null,
+          rows(scroller, anchor, x, from, to) {
+            const frame = layer.frameMeasurer(entry.el);
+            /** @type {Element[]} */
+            const out = [anchor];
+            // the elements at the anchor's depth below the scroller, in tree order outward from it (the rows of every list or table body of the scroller: a list
+            // grouped under headings goes on into the next group), that some :hover rule may match, while they stay inside from..to (laid out in order)
+            for (const dir of [-1, 1]) {
+              let n = 0;
+              for (const e of sameDepth(scroller, anchor, dir)) {
+                if (++n > 1024) break;
+                if (!relevant(e)) continue;
+                const r = frame(e, true);
+                if (!r) continue;
+                if (dir < 0 ? r.y + r.height <= from : r.y >= to) break;
+                if (x >= r.x && x < r.x + r.width && r.y < to && r.y + r.height > from) out.push(e);
+              }
+            }
+            return out;
+          },
+          animating(scroller) {
+            try {
+              return env.document.getAnimations().some((a) => { const t = /** @type {KeyframeEffect|null} */ (a.effect)?.target; return !!t && scroller.contains(t); });
+            } catch {
+              return true;
+            }
+          },
+        };
+      }
+    } catch (err) {
+      env.reporter.caught(err, 'snapshot-store:hover-model');
+    }
+    hoverModels.set(entry, { snap, model });
+    return model;
+  }
 
   /** Side builds while the pump's budget allows (at least one when no regular build started). @param {import('../../contracts/types.js').PumpResult} out @param {import('../../contracts/types.js').PumpBudget} budget */
   function runSide(out, budget) {
@@ -606,7 +681,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     round.layoutOffset = l.result.layoutOffset ?? round.layoutOffset;
     round.translation = l.translation ?? round.translation;
     round.tileSeq = Math.max(round.tileSeq ?? 0, l.ovSeq ?? 0);
-    for (const sc of compositor.scrollers(entry)) compositor.tileLanded(entry, crop, l.scTops?.get(sc) ?? null, l.scTops?.has(sc) ? sc : null, l.scSeq ?? null, target.surface);
+    for (const sc of compositor.scrollers(entry)) compositor.tileLanded(entry, crop, l.scTops?.get(sc) ?? null, l.scTops?.has(sc) ? sc : null, l.scSeq ?? null, target.surface, l.scHover ?? null);
     entry.ovTileSeq = Math.max(entry.ovTileSeq, round.tileSeq);
     counters.tiles++;
     if (l.rect === null) counters.fullTiles++;

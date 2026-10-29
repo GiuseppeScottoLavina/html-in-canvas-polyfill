@@ -51,6 +51,24 @@ test('a finger does not hover: the pointerover / pointerout of a touch contact c
   assert.deepEqual(s.sink.causes(), ['hover']);
 });
 
+test('the snapshot carries where a mouse rests (the scroll compositor\'s hover strips): not a finger, not after the mouse left the layer or a tap, not while an effect maps the pointer', async t => {
+  const s = setup(t);
+  assert.equal(s.tracker.snapshot().pointer, null);
+  s.fire(s.$('b1'), 'pointerover', { clientX: 12, clientY: 34 });
+  assert.deepEqual(s.tracker.snapshot().pointer, { x: 12, y: 34 });
+  s.fire(s.$('b2'), 'pointerover', { pointerType: 'touch', clientX: 50, clientY: 60 });
+  assert.deepEqual(s.tracker.snapshot().pointer, { x: 12, y: 34 }, 'a finger is no resting pointer');
+  s.fire(s.$('b1'), 'pointerout', { relatedTarget: document.body });
+  assert.equal(s.tracker.snapshot().pointer, null, 'the mouse left the layer');
+  s.fire(s.$('b1'), 'pointerover', { clientX: 12, clientY: 34 });
+  s.tracker.setMappedTarget(s.record, s.$('b2'));
+  assert.equal(s.tracker.snapshot().pointer, null, 'an effect maps the pointer: its live position is not the hovered element');
+  s.tracker.setMappedTarget(s.record, null);
+  assert.deepEqual(s.tracker.snapshot().pointer, { x: 12, y: 34 });
+  s.fire(s.$('b2'), 'pointerup', { pointerType: 'touch' });
+  assert.equal(s.tracker.snapshot().pointer, null, 'a tap: the hover is the finger\'s now');
+});
+
 test('a tap hovers like a native tap: the tapped chain stays :hover after the finger lifts, a pan (pointercancel) changes nothing, a tap elsewhere ends it', async t => {
   const s = setup(t);
   const tap = (el) => { s.fire(el, 'pointerover', { pointerType: 'touch' }); s.fire(el, 'pointerdown', { pointerType: 'touch' }); s.fire(el, 'pointerup', { pointerType: 'touch' }); s.fire(el, 'pointerout', { pointerType: 'touch', relatedTarget: document.body }); };
