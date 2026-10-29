@@ -3,7 +3,7 @@
 // --shard=k/n runs the k-th of n parts of the selection (shard.mjs: every mutant in exactly one part; CI runs the parts on separate machines).
 // --repeat=N runs every selected mutant N times against the same clean baseline and prints how often each was caught: a control that is caught only on some runs is
 // timing-dependent, and one run cannot tell (stale-after-resize was missed in 8 of 20 runs on the macOS runner before G-resize-drag compared the pixels at rest, 2026-10-28). Every run counts: one miss fails the suite.
-// For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>), and compare the
+// For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`, dist/hic-live-engines.iife.js for `bundle: 'engines'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>, --engines-file=<copy>), and compare the
 // failed checks with the CLEAN bundle's run of the same gate (cached per gate). A mutant is CAUGHT when a check goes red that is green on the clean bundle.
 //   CAUGHT        ok
 //   MISSED        the gates did not notice: the suite fails
@@ -31,6 +31,8 @@ mkdirSync(dir, { recursive: true });
 const BUNDLES = {
   core: { text: readFileSync(resolve(root, 'dist/hic-live-polyfill.iife.js'), 'utf8'), flag: 'bundle-file' },
   effects: { text: readFileSync(resolve(root, 'dist/hic-live-effects.iife.js'), 'utf8'), flag: 'effects-file' },
+  // the Gecko / WebKit painters: only G-xbrowser scenarios load it (`xbrowser-<scenario>` gates)
+  engines: { text: readFileSync(resolve(root, 'dist/hic-live-engines.iife.js'), 'utf8'), flag: 'engines-file' },
 };
 for (const [name, b] of Object.entries(BUNDLES)) { b.clean = resolve(dir, `clean-${name}.js`); writeFileSync(b.clean, b.text); }
 const basePath = BUNDLES.core.clean;
@@ -53,7 +55,7 @@ if (has('check-anchors')) {
 }
 
 const passArgs = ['--no-control', ...(arg('wait-quiet') ? [`--wait-quiet=${arg('wait-quiet')}`] : [])];
-/** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'} [which] which of the bundles `file` replaces */
+/** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'|'engines'} [which] which of the bundles `file` replaces */
 function runGate(gate, file, which = 'core') {
   // `xbrowser-<scenario>`: that G-xbrowser scenario on Safari and Firefox (it prints the same result line as a gate)
   const xb = /^xbrowser-(.+)$/.exec(gate);

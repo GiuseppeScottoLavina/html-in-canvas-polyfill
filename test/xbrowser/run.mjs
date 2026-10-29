@@ -28,8 +28,11 @@ const only = arg('only')?.split(',');
 const noControl = process.argv.includes('--no-control');
 const CORE = '/dist/hic-live-polyfill.iife.js';
 /** Firefox / Safari pages load the engines bundle (form-control skins) and the GPU bundle (element textures) with the core (docs/BUNDLES.md). */
-const BUNDLE = ['/dist/hic-live-engines.iife.js', '/dist/hic-live-gpu.iife.js', CORE].join(',');
+const ENGINES = '/dist/hic-live-engines.iife.js';
+const BUNDLE = [ENGINES, '/dist/hic-live-gpu.iife.js', CORE].join(',');
 const bundleFile = arg('bundle-file');
+/** --engines-file: the engines bundle served instead of dist's (the mutant suite's `bundle: 'engines'` mutants) */
+const enginesFile = arg('engines-file');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outRoot = resolve(PROJECT_ROOT, '.scratch/results'); const pngDir = join(outRoot, `xbrowser-${stamp}`);
 mkdirSync(pngDir, { recursive: true });
@@ -137,8 +140,8 @@ async function runOnce(s, srv, engine, control, scenarios = SCENARIOS) {
 }
 
 const report = { gate: 'G-xbrowser', at: new Date().toISOString(), engines: {}, pass: true };
-/** URL paths the server maps onto files: the --bundle-file core, and the mutant cores of scrollCompose's control (added while it runs) */
-const files = bundleFile ? { [CORE]: resolve(bundleFile) } : {};
+/** URL paths the server maps onto files: the --bundle-file core, the --engines-file engines bundle, and the mutant cores of scrollCompose's control (added while it runs) */
+const files = { ...(bundleFile ? { [CORE]: resolve(bundleFile) } : {}), ...(enginesFile ? { [ENGINES]: resolve(enginesFile) } : {}) };
 const srv = await startServer({ inject: RECORDER, files });
 try {
   for (const engine of engines) {
