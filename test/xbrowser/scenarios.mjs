@@ -28,8 +28,12 @@ const devRect = (r, origin, k, pad = 0) => ({ x: Math.max(0, Math.floor((r.x - o
 function judge(ctx, name, o, cls = 'pixel') {
   ctx.numbers[name] = { fraction: +(o.fraction ?? 1).toFixed(5), shiftTolerant: +(o.shiftTolerant ?? 1).toFixed(5), structural: +(o.structural ?? 1).toFixed(5), countOver16: o.countOver16, maxDiff: o.maxDiff, size: o.size, refSize: o.refSize, surfaceNonBlank: o.surfaceNonBlank, refNonBlank: o.refNonBlank };
   ctx.check(`${name}: canvas vs plain-DOM twin: <= 5 % of pixels over 16 and <= 1 % over 100 (+-1 device row), both non-blank`, o.pass, ctx.numbers[name], cls);
+  if (o.box) {
+    ctx.numbers[name].box = o.box;
+    ctx.check(`${name}: the content bounding box (delta > 16 from the twin's background) matches the twin's, every edge within ${o.box.maxEdge} device px (catches a whole-content shift of any size)`, o.box.edge <= o.box.maxEdge, o.box, cls);
+  }
   if (o.diffImage) ctx.save(name + '.diff', o.diffImage);
-  if (!o.pass) { ctx.save(name + '.surface', o.surface); ctx.save(name + '.ref', o.ref); }
+  if (!o.pass || (o.box && o.box.edge > o.box.maxEdge)) { ctx.save(name + '.surface', o.surface); ctx.save(name + '.ref', o.ref); }
 }
 
 async function noErrors(ctx, label) {
@@ -52,24 +56,34 @@ const LATENCY = (sel, region, n) => `(async () => {
   document.addEventListener('keydown', () => { const h0 = hash(); const t0 = performance.now(); const tick = () => { if (hash() !== h0) st.out.push(performance.now() - t0); else if (performance.now() - t0 < 1000) requestAnimationFrame(tick); else st.out.push(-1); }; requestAnimationFrame(tick); }, true);
   return true; })()`;
 
+/** largest distance (device px) between an edge of the canvas content's bounding box and the twin's (explainer) */
+const BOX_EDGE = 1;
+
 export async function explainer(ctx) {
   const { s } = ctx; const P = '/test/fixtures/explainer/index.html';
   await s.navigate(url(ctx, P, { mode: 'ref' })); await until(s, 'window.__ready === true');
   const twin = await rectOf(s, '#twin'); const inputR = await rectOf(s, '#name');
   const refRest = (await shotRect(s, twin)).img;
-  await s.click(center(inputR).x, center(inputR).y); await s.typeText('hello'); await s.evaluate('document.getElementById("name").blur()'); await sleep(300);
+  await s.click(center(inputR).x, center(inputR).y); await sleep(300);
+  const refFocused = (await shotRect(s, twin)).img;
+  await s.typeText('hello'); await s.evaluate('document.getElementById("name").blur()'); await sleep(300);
   const refTyped = (await shotRect(s, twin)).img;
 
   await s.navigate(url(ctx, P, { mode: 'poly', bundle: ctx.bundle }));
   await until(s, '(window.__paints || 0) >= 1').catch(() => null); await sleep(700);
   await mode(ctx, 'explainer');
   const rest = await readCanvas(s, 'canvas');
-  judge(ctx, 'explainerRest', oracle(rest, refRest));
+  judge(ctx, 'explainerRest', oracle(rest, refRest, { maxEdge: BOX_EDGE }));
   const k = rest.width / twin.width; const region = devRect(inputR, twin, k, 2);
 
   await s.click(center(inputR).x, center(inputR).y); await sleep(250);
   const focus = await s.evaluate('document.activeElement && document.activeElement.id');
   ctx.check('explainer: a trusted click at the drawn input focuses the live input', focus === 'name', { focus }, 'hit');
+  // focused, before typing: the caret blinks and the pixel budgets are not compared here, only the position of the content (the twin was focused the same way)
+  const focused = oracle(await readCanvas(s, 'canvas'), refFocused, { maxEdge: BOX_EDGE });
+  ctx.numbers.explainerFocusedBox = focused.box;
+  ctx.check(`explainerFocused: the content bounding box (delta > 16 from the twin's background) matches the twin's, every edge within ${BOX_EDGE} device px (catches a whole-content shift while a control has focus)`, focused.box.edge <= BOX_EDGE, focused.box, 'pixel');
+  if (focused.box.edge > BOX_EDGE) { ctx.save('explainerFocused.surface', focused.surface); ctx.save('explainerFocused.ref', focused.ref); }
   await s.evaluate(LATENCY('canvas', region, 5));
   await s.typeText('hello', { intervalMs: 120 }); await sleep(600);
   const value = await s.evaluate('document.getElementById("name").value');
@@ -80,7 +94,7 @@ export async function explainer(ctx) {
   const changed = regionChanged(rest, typed, region);
   ctx.check('explainer: typing changes the canvas pixels of the input', changed > 8, { countOver16: changed }, 'typing');
   await s.evaluate('document.getElementById("name").blur()'); await sleep(600);
-  judge(ctx, 'explainerTyped', oracle(await readCanvas(s, 'canvas'), refTyped));
+  judge(ctx, 'explainerTyped', oracle(await readCanvas(s, 'canvas'), refTyped, { maxEdge: BOX_EDGE }));
   ctx.numbers.taint = await s.evaluate(TAINT_PROBE, { timeoutMs: 20000 }).catch((e) => ({ error: e.message.slice(0, 300) }));
   const t = ctx.numbers.taint;
   ctx.check('explainer: the canvas stays readable and the WebGL / WebGPU texture paths upload non-blank pixels', !t.error && t.canvasReadable && t.webgl?.nonZero > 0 && (t.webgpu?.nonZero > 0 || t.webgpu?.skipped), t, 'pixel');

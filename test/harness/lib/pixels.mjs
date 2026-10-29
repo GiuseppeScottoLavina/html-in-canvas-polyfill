@@ -73,3 +73,20 @@ export function compareImages(a, b, { tolerance = 16, diffImage = true } = {}) {
     diffImage: diff ? { width: a.width, height: a.height, data: diff } : null,
   };
 }
+
+/** Bounding box (device px) of the pixels farther than `tolerance` (largest channel difference) from the surface background `bg`; null when there are none. */
+export function contentBox({ width, height, data }, bg, tolerance = 16) {
+  let x0 = width, y0 = height, x1 = -1, y1 = -1;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 4;
+    if (Math.max(Math.abs(data[i] - bg[0]), Math.abs(data[i + 1] - bg[1]), Math.abs(data[i + 2] - bg[2])) <= tolerance) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/** Largest distance (device px) between the matching edges of two boxes; Infinity when either is missing. */
+export function boxEdgeDistance(a, b) {
+  if (!a || !b) return Infinity;
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.x + a.w - b.x - b.w), Math.abs(a.y + a.h - b.y - b.h));
+}
