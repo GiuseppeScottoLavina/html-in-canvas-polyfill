@@ -180,3 +180,65 @@ test('browser m8: a draw without a snapshot throws InvalidStateError whose messa
   assert.ok(/paintGateMaxWaitMs/.test(e.message), e.message);
   assert.ok(/split it into several/.test(e.message));
 });
+
+test('a drawable inside a modal dialog of the canvas has no snapshot: draw and capture throw InvalidStateError while it is open and after it closes until the next paint, a non-modal dialog draws (WPT error-conditions; Chromium "Suppress snapshot generation for drawables in top layer"); control: its sibling outside the dialog keeps drawing', async t => {
+  const i = inst(t);
+  const c = await mk(t, i, { inner: '<div id="a" drawable style="width:100px;height:50px;background:rgb(255,0,0)"></div><dialog id="dlg"><div id="dc" drawable style="width:40px;height:40px;background:rgb(0,128,0)"></div></dialog>' });
+  const ctx = /** @type {any} */ (c.getContext('2d'));
+  const a = /** @type {HTMLElement} */ (c.querySelector('#a'));
+  const dc = /** @type {HTMLElement} */ (c.querySelector('#dc'));
+  const dlg = /** @type {HTMLDialogElement} */ (c.querySelector('#dlg'));
+  dlg.showModal();
+  t.cleanup(() => dlg.close());
+  c.requestPaint();
+  await i.whenPainted(c);
+  await frames(3);
+  assert.equal(thrown(() => ctx.drawElementImage(dc, 0, 0))?.name, 'InvalidStateError', 'draw while the dialog is modal');
+  assert.equal(thrown(() => c.captureElementImage(dc))?.name, 'InvalidStateError', 'capture while the dialog is modal');
+  assert.equal(thrown(() => ctx.drawElementImage(a, 0, 0)), null, 'control: the sibling outside the dialog draws');
+  dlg.close();
+  assert.equal(thrown(() => ctx.drawElementImage(dc, 0, 0))?.name, 'InvalidStateError', 'after close, until repainted');
+  dlg.show();
+  for (let k = 0; k < 20 && thrown(() => ctx.drawElementImage(dc, 0, 0)); k++) { c.requestPaint(); await i.whenPainted(c); await frames(1); }
+  assert.equal(thrown(() => ctx.drawElementImage(dc, 0, 0)), null, 'control: shown again NON-modally (not in the top layer), it is drawn after the next paint');
+});
+
+// Measured on the native oracle (Canary 159) with the same filters: url(#in-canvas) applies, url(#outside) and url(#cross-origin feImage) are dropped from the list (the canvas
+// stays readable), and the rest of the list still applies (`url(#outside) invert(1)` inverts).
+test('the backdrop-filter of a drawable applied by the draw keeps only the url() filters inside a drawable canvas whose images are same-origin: the canvas is never tainted (it was, by a cross-origin feImage); the rest of the list applies; control: a filter inside the canvas applies', async t => {
+  const i = inst(t);
+  const cross = `http://localhost:${location.port}/test/unit/snapshot-capture/assets/red.svg`;
+  const outside = document.createElement('div');
+  outside.innerHTML = '<svg width="0" height="0"><filter id="bk-out" x="0" y="0" width="1" height="1"><feFlood flood-color="rgb(0,255,0)"/></filter></svg>';
+  document.body.append(outside);
+  t.cleanup(() => outside.remove());
+  const box = (id, f) => `<div drawable id="${id}" style="width:40px;height:20px;backdrop-filter:${f}"></div>`;
+  const c = await mk(t, i, { w: 40, h: 80, inner: '<svg width="0" height="0"><filter id="bk-in" x="0" y="0" width="1" height="1"><feFlood flood-color="rgb(0,255,0)"/></filter>'
+    + `<filter id="bk-x" x="0" y="0" width="1" height="1"><feImage href="${cross}"/></filter></svg>`
+    + box('k1', 'url(#bk-in)') + box('k2', 'url(#bk-out)') + box('k3', 'url(#bk-x)') + box('k4', 'url(#bk-out) invert(1)') });
+  await sleep(300);
+  c.requestPaint();
+  await i.whenPainted(c);
+  const ctx = /** @type {any} */ (c.getContext('2d'));
+  ctx.fillStyle = 'rgb(0,0,255)';
+  ctx.fillRect(0, 0, 40, 80);
+  ['k1', 'k2', 'k3', 'k4'].forEach((id, k) => ctx.drawElementImage(c.querySelector(`#${id}`), 0, k * 20));
+  const px = (y) => Array.from(ctx.getImageData(20, y, 1, 1).data).join();
+  assert.deepEqual([px(10), px(30), px(50), px(70)], ['0,255,0,255', '0,0,255,255', '0,0,255,255', '255,255,0,255']);
+});
+
+test('a canvas that is itself in the top layer (inside a modal dialog, or fullscreen: WPT fullscreen-canvas) keeps the snapshots of its drawables: only a top-layer element BELOW the canvas suppresses them (the parent facade answers the canvas as the drawable\'s parent)', async t => {
+  const i = inst(t);
+  const host = document.createElement('dialog');
+  host.innerHTML = '<canvas content="drawable" width="40" height="20"><div id="m" drawable style="width:40px;height:20px;background:rgb(0,128,0)"></div></canvas>';
+  document.body.append(host);
+  t.cleanup(() => { host.close(); host.remove(); });
+  host.showModal();
+  const c = /** @type {HTMLCanvasElement} */ (host.querySelector('canvas'));
+  c.requestPaint();
+  await i.whenPainted(c);
+  await frames(2);
+  const ctx = /** @type {any} */ (c.getContext('2d'));
+  for (let k = 0; k < 10 && thrown(() => ctx.drawElementImage(c.querySelector('#m'), 0, 0)); k++) { c.requestPaint(); await i.whenPainted(c); await frames(1); }
+  assert.equal(thrown(() => ctx.drawElementImage(c.querySelector('#m'), 0, 0)), null);
+});

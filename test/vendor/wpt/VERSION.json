@@ -1,37 +1,38 @@
 {
   "source": "https://github.com/web-platform-tests/wpt",
-  "sha": "850b36a56cfc15b9117a9d222d32a63104662f49",
-  "commit": "[HiC] Make canvas break out of the enclosing decorating box (2026-10-18T02:51:31Z)",
-  "newestTestCommit": "the newest WPT commit that touches html/canvas/{element,offscreen}/manual/draw-element-image (verified 2026-10-22 against WPT master f6880eca1af36e5572d433b6032915d1fd7e3725, where both directories have the same tree ids as at this commit)",
+  "sha": "5ccef26dd9f159b58cffd6e89aa786a6f1e47305",
+  "commit": "Add WEB_FEATURES.yml for HTML-in-Canvas draw-element-image tests (#64256) (2026-10-28T02:44:47Z)",
+  "newestTestCommit": "the newest WPT commit that touches html/canvas/{element,offscreen}/manual/draw-element-image (verified 2026-10-29 against WPT master d574da8afa2976320d80119074d7ce20c264a1c5, where both directories have the same tree ids as at this commit). It adds only WEB_FEATURES.yml metadata; the newest commit that changes a test is 4d0cdba6d4 (2026-10-27).",
   "trees": {
-    "html/canvas/element/manual/draw-element-image": "31dd11e2619df7884b124740f3690d06ed63d2a5",
-    "html/canvas/offscreen/manual/draw-element-image": "6e1f5371c9e73cff7ec3d6be533de50fd33dc566"
+    "html/canvas/element/manual/draw-element-image": "45362c9c9e4cda05f8e68ae4ebca03d433e5461e",
+    "html/canvas/offscreen/manual/draw-element-image": "2fd3e4477b69f5fbe2b94bc9b19080fa8e3441b6"
   },
   "previous": {
-    "sha": "d9b949e562d5064aa1cab263dcfb678139646766",
-    "date": "2026-10-07T05:45:45Z",
-    "chromium": "157.0.8091.0",
+    "sha": "850b36a56cfc15b9117a9d222d32a63104662f49",
+    "date": "2026-10-18T02:51:31Z",
+    "chromium": "158.0.8112.1",
     "commitsSince": [
-      "136493f8c1 2026-10-07 [HiC] Privacy fix for popovers in the canvas subtree",
-      "30d4d7d411 2026-10-07 [HiC] Draw nothing and return for non-finite rects",
-      "beed7c13e3 2026-10-08 [html-in-canvas] Do not treat canvas content as effectively invisible",
-      "dcdb8e113c 2026-10-09 [html-in-canvas] Switch to canvas getter for element width/height",
-      "3e22fa4e75 2026-10-09 [html-in-canvas] Remove blink-specific terms in WPTs",
-      "b59184b6ef 2026-10-09 [html-in-canvas] Remove legacy getElementTransform API",
-      "d9984257b4 2026-10-10 [html-in-canvas] Keep MailboxTextureBacking single-threaded",
-      "2a13b3b97c 2026-10-12 Remove stray end tags from WPT tests",
-      "e723d22ab2 2026-10-13 [HiC] Fix backdrop-filter combined with mix-blend-mode",
-      "a7242745c4 2026-10-13 [HiC] Invalidate filters when an element moves into canvas",
-      "0f068db84a 2026-10-14 [HiC] Disallow SVG masks on SVG content in readback-allowed mode",
-      "850b36a56c 2026-10-18 [HiC] Make canvas break out of the enclosing decorating box",
-      "helpers: 0ca9782406 html/canvas/resources/canvas-tests.js (redirect sources, unused by these tests); d191fa8, c3b8918 resources/testdriver.js (two BiDi emulation commands, unused)"
+      "8336f81eac 2026-10-22 [HiC] Suppress snapshot generation for drawables in top layer (Chromium export 63444: error-conditions)",
+      "143d46141d 2026-10-22 [html-in-canvas] Sync CanvasPaintEvent&ElementGeometryUpdateEvent IDL (Chromium export 63519: onpaint-changedElements, canvas-transform-update-element-image)",
+      "5caead786a 2026-10-22 [HiC] Additional test for mix-blend-mode and a backdrop-filter (new: css-backdrop-filter-with-blend-mode-over-content)",
+      "f3af6a89e7 2026-10-22 [html-in-canvas] Fully update property nodes on drawable changes (new: privacy/filtered-div-drawable-added-ignored)",
+      "91c843b8c9 2026-10-22 [html-in-canvas] Fix nested drawable under filter (new: nested-drawable-filter)",
+      "fe2bd4102f 2026-10-22 [html-in-canvas] Fix nested canvas drawable in filter (new: nested-canvas-filter)",
+      "55d460664b 2026-10-24 [HiC] Fix CSS object-fit for nested canvas (new: css-object-fit-nested-canvas)",
+      "7bec10997c 2026-10-24 [html-in-canvas] Add test that content is not culled (new: content-not-culled)",
+      "98fef2dabe 2026-10-24 [html-in-canvas] Disallow canvas-external SVG filters (new: privacy/filtered-outside-subtree-ignored; 10 filter tests move their SVG filter definitions inside the canvas)",
+      "ac7939c9e8 2026-10-26 [html-in-canvas] Fix filter dirty bit clearing (new: privacy/box-reflect-images-in-iframe-multicol-moved-ignored)",
+      "5d13573aea 2026-10-27 [html-in-canvas] Strip tainted filters when painting box contents (new: privacy/svg/svg-pattern-filter-transformed-text)",
+      "1b91f9cc9e 2026-10-27 [html-in-canvas] Keep drawable subtree flag in SVG hidden containers (new: privacy/svg/svg-pattern-with-feImage-transformed-text)",
+      "4d0cdba6d4 2026-10-27 [html-in-canvas] Fully update when clearing origin-tainted filters (new: privacy/filtered-div-removed-contain-paint)",
+      "5ccef26dd9 2026-10-28 Add WEB_FEATURES.yml for HTML-in-Canvas draw-element-image tests (metadata only)",
+      "helpers: 6517c819b1, 5af3c135c9 dom/events/scrolling/scroll_support.js (ensureOverlayScrollbarVisible, waitForScrollReset in a frame; neither used by these tests); c555a98a4d resources/testdriver.js (one BiDi emulation command, unused)"
     ]
   },
   "chromium": {
-    "tag": "158.0.8112.1",
-    "commit": "fd48b1bd6692dd5b4d2e2b13c986692d3af083fe",
-    "match": "closest, not exact",
-    "note": "No Chromium build has a byte-identical copy: Chromium is where these tests are written, and two of its test changes have not been exported to WPT (pull requests 63444 'Suppress snapshot generation for drawables in top layer', open since 2026-10-09, and 63519 'Sync CanvasPaintEvent&ElementGeometryUpdateEvent IDL', open since 2026-10-10). From 158.0.8112.0 to 158.0.8115.0 third_party/blink/web_tests/external/wpt/html/canvas/element/manual/draw-element-image (tree 588ace872a4b17bb52451cf83f371188ca0df681) has the same 309 files as this commit and 306 of them are byte-identical (git blob sha1); the 3 others are this commit's files plus those two unexported changes, which only ADD assertions: error-conditions.tentative.html (drawables inside a modal dialog cannot be drawn or captured), onpaint-changedElements.tentative.html and canvas-transform-update-element-image.tentative.html (CanvasPaintEvent constructor, frozen [SameObject] changedElements and elements). The offscreen directory is identical (tree 6e1f5371c9e73cff7ec3d6be533de50fd33dc566), and so are draw-element-image-utils.js, wait-for-canvas-paint.js, draw-element-image-styles.css, color-grid-component.js, testharness.js and reftest-wait.js. 158.0.8116.0 and later add exported-pending tests (css-backdrop-filter-with-blend-mode-over-content, privacy/filtered-div-drawable-added-ignored, nested-*-filter). 158.0.8112.1 is the installed Chrome Canary and is inside the matching range."
+    "tag": "159.0.8128.2",
+    "match": "exact for every test file",
+    "note": "From 159.0.8128.0 to 159.0.8129.0 third_party/blink/web_tests/external/wpt/html/canvas/element/manual/draw-element-image is tree 617f21f47704c0ad6b4a9ad65ab7bd91e0677b4e, the tree of WPT 4d0cdba6d4 (the newest commit that changes a test): all 325 files byte-identical. The pinned commit adds only WEB_FEATURES.yml (metadata, not imported by these builds). The offscreen directory is identical too (tree 6e1f5371c9e73cff7ec3d6be533de50fd33dc566 without WEB_FEATURES.yml), and so are draw-element-image-utils.js, wait-for-canvas-paint.js, draw-element-image-styles.css, color-grid-component.js, testharness.js, reftest-wait.js and scroll_support.js. The two Chromium changes that were unexported at the previous pin (63444, 63519) are now in WPT (8336f81eac, 143d46141d). 158.0.8126.0 to 158.0.8127.1 import an older tree (0808feeb); 159.0.8130.0 and later add exported-pending tests (hit-test/elementsFromPoint-object-fit-{contain,cover,fill,none}-{tall,wide}). 159.0.8128.2 is the installed Chrome Canary and is inside the matching range."
   },
   "paths": [
     "html/canvas/element/manual/draw-element-image/**",
@@ -48,5 +49,5 @@
     "resources/testharnessreport.js is served as the upstream stub plus test/wpt/lib/report.js",
     "resources/testdriver-vendor.js is served as test/wpt/lib/testdriver-vendor.js (CDP input)"
   ],
-  "fetchedOn": "2026-10-22"
+  "fetchedOn": "2026-10-29"
 }

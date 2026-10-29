@@ -9,6 +9,7 @@
 
 import { chooseScale, gridRasterScale } from './surfaces.js';
 import { inflateRect, intersectRect, roundOutRect } from '../../util/rect.js';
+import { inTopLayerBelow } from '../../util/top-layer.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').CaptureFn} CaptureFn */
@@ -60,6 +61,7 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {Element} el
  * @property {CanvasRecord} record
  * @property {number} incarnation  bumped by drop(): results of an older incarnation are discarded
+ * @property {boolean} [topLayer]  in the top layer below its canvas when the pump last saw it: no snapshot, and the first paint does not wait for one
  * @property {Surface|null} surface
  * @property {Geometry|null} geo   geometry of `surface`
  * @property {SnapshotVersion|null} version
@@ -405,7 +407,9 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
   let paced = false;
   for (const entry of list) {
     if (entry.refused || entry.lost) continue;
-    if (!record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); continue; }
+    // a drawable in the top layer below the canvas (a modal dialog, an open popover) has no snapshot, like one without a box (util/top-layer.js)
+    entry.topLayer = inTopLayerBelow(entry.el, record.layer.element);
+    if (entry.topLayer || !record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); continue; }
     if (entry.decoding >= deps.maxPerDrawable) continue;
     const scrollOnly = scrollDue && deps.damage.pendingScroll(entry.el, SCROLL_RIDERS, env.options.inkMargin + 1);
     const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard && !scrollOnly ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);

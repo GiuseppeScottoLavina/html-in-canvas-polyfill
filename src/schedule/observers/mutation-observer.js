@@ -16,11 +16,16 @@ import { INHERITED_PROPS } from '../../util/inherited-props.js';
 const OWN_ATTRIBUTE = /^(data-hic-|aria-owns$)/;
 /** Attributes that decide which elements are drawables. */
 const DRAWABLE_ATTRIBUTES = new Set(['drawable', 'layoutsubtree']);
+/** SVG resources a drawable can use from OUTSIDE its own subtree when they lie in a drawable canvas (snapshot/capture/svg-refs.js) */
+const RESOURCES = 'filter, clipPath, mask, linearGradient, radialGradient, pattern, marker';
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
  * Map each mutation to its nearest drawable via record.layer.nearestDrawable and a frame rect via layer.frameRect; structural changes -> whole drawable; ignore polyfill nodes/attributes (env.isManagedLayerNode, MARK).
  * A mutation that can move a drawable inside the layer (movesDrawables) also asks the layer to re-measure its geometry offsets, once per batch (LiveLayer.revalidateGeometry). childList is structural (rect null: the store widens it and bumps the epoch). Attribute and text changes use the rect memory: the union of the element's old and new reach while its box keeps its size, otherwise
- * the whole drawable, because siblings may have moved. A mutation outside every drawable paints nothing and is ignored, except that the drawable set is recomputed and BUS.DRAWABLES_CHANGED is emitted when it differs.
+ * the whole drawable, because siblings may have moved. A mutation outside every drawable paints nothing and is ignored, except that the drawable set is recomputed and BUS.DRAWABLES_CHANGED is emitted when it differs,
+ * and that one that changes an SVG resource there (a filter, mask, clip path, paint server or marker, or a subtree holding one, added or removed) repaints every drawable of the canvas:
+ * a drawable draws the resources of its canvas by reference (WPT privacy/filtered-outside-subtree-ignored moves a filter out of the canvas).
  * @param {HicEnv} env
  * @param {CanvasRecord} record
  * @returns {() => void}
@@ -68,6 +73,7 @@ export function observeMutations(env, record) {
     const attrOwners = new Set();
     let structural = false;
     let moved = false;
+    let resources = false;
     for (const m of batch) {
       if (isOwnWrite(m)) continue;
       const target = m.target.nodeType === 1 ? /** @type {Element} */ (m.target) : m.target.parentElement ?? /** @type {ShadowRoot} */ (m.target).host ?? null;
@@ -81,6 +87,7 @@ export function observeMutations(env, record) {
         continue;
       }
       const drawable = layer.nearestDrawable(element);
+      if (!drawable && !resources) resources = touchesResource(m, element);
       if (drawable === element && m.type === 'attributes' && m.attributeName === 'style' && onlyZIndex(m.oldValue, element.getAttribute('style'))) continue;
       moved ||= movesDrawables(m, element, drawable);
       if (m.type === 'childList' && textOnly(m)) {
@@ -89,6 +96,10 @@ export function observeMutations(env, record) {
       } else if (m.type === 'childList') {
         structural = true;
         if (drawable) damage.add(drawable, null);
+      } else if (m.type === 'attributes' && m.attributeName === 'open') {
+        // a dialog shown or closed: the drawables inside a modal one have no snapshot (util/top-layer.js), so they are all built again or dropped
+        for (const d of layer.drawableElements()) if (element.contains(d)) damage.add(d, null);
+        if (drawable) attrOwners.add(element);
       } else if (m.type === 'attributes' && DRAWABLE_ATTRIBUTES.has(m.attributeName ?? '')) {
         structural = true;
         const ancestor = layer.nearestDrawable(element.parentNode ?? element);
@@ -100,6 +111,7 @@ export function observeMutations(env, record) {
       const drawable = layer.nearestDrawable(element);
       if (drawable) damage.add(drawable, memory.reach(layer, element));
     }
+    if (resources) for (const drawable of layer.drawableElements()) damage.add(drawable, null);
     damage.flush((drawable, rect) => env.scheduler.damage(record, 'mutation', drawable, rect));
     if (moved) layer.revalidateGeometry();
   }
@@ -127,6 +139,15 @@ export function observeMutations(env, record) {
       }
     }
     return true;
+  }
+
+  /** @param {MutationRecord} m @param {Element} element its target element @returns {boolean} the mutation changes, adds or removes an SVG resource */
+  function touchesResource(m, element) {
+    if (element.namespaceURI === SVG_NS && element.closest(RESOURCES)) return true;
+    for (const list of [m.addedNodes, m.removedNodes]) {
+      for (const n of list) if (n.nodeType === 1 && (/** @type {Element} */ (n).matches(RESOURCES) || /** @type {Element} */ (n).querySelector(RESOURCES))) return true;
+    }
+    return false;
   }
 
   /** @param {MutationRecord} m @returns {boolean} only text nodes were added or removed (no element can appear, vanish or carry a drawable) */
@@ -221,8 +242,12 @@ export function observeMutations(env, record) {
    */
   const onToggle = (e) => {
     const t = /** @type {Element} */ (e.target);
-    if (!stopped && t.nodeType === 1 && t.hasAttribute('popover')) frameChanged(lightHost(t));
+    if (stopped || t.nodeType !== 1 || !t.hasAttribute('popover')) return;
+    frameChanged(lightHost(t));
+    for (const d of layer.drawableElements()) if (d !== t && t.contains(d)) env.scheduler.damage(record, 'mutation', d, null);
   };
+  /** An element inside the layer entered or left fullscreen (the top layer): its drawables are built again or dropped. */
+  const onFullscreen = () => { if (!stopped) for (const d of layer.drawableElements()) env.scheduler.damage(record, 'mutation', d, null); };
   // the listeners on shadow roots are not removed one by one (the roots are only weakly known): they do nothing once stopped
   let stopped = false;
 
@@ -245,6 +270,7 @@ export function observeMutations(env, record) {
   watchFrames();
   root.addEventListener('load', onLoad, true);
   root.addEventListener('toggle', onToggle, true);
+  root.addEventListener('fullscreenchange', onFullscreen, true);
   const stopAncestors = watchAncestors(env, record);
   return () => {
     stopped = true;
@@ -253,6 +279,7 @@ export function observeMutations(env, record) {
     stopAncestors();
     root.removeEventListener('load', onLoad, true);
     root.removeEventListener('toggle', onToggle, true);
+    root.removeEventListener('fullscreenchange', onFullscreen, true);
     for (const known of frames.values()) known.mo.disconnect();
     frames.clear();
   };

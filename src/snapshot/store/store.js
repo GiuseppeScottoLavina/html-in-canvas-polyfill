@@ -11,6 +11,7 @@ import { BUS } from '../../contracts/events.js';
 import { HicUnsupportedError, invalidState } from '../../contracts/errors.js';
 import { featureById } from '../../contracts/features.js';
 import { inflateRect, intersectRect, roundOutRect, unionRect } from '../../util/rect.js';
+import { scopedFilterList } from '../../util/canvas-scope.js';
 import { createCaretPatch } from './caret-patch.js';
 import { DamageTracker } from './damage.js';
 import { decodeDataUrl, decodedAtOnce, drawTileAtomic, releaseImage } from './decode.js';
@@ -185,7 +186,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (known) dropEntry(known, false);
     /** @type {Entry} */
     const entry = {
-      el, record, incarnation: 0, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
+      el, record, incarnation: 0, topLayer: false, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
       notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
       unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
       scrollers: new Set(),
@@ -363,7 +364,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     translationOf(entry) {
       const cs = env.window.getComputedStyle(entry.el);
       entry.blend = cs.mixBlendMode || 'normal';
-      entry.backdrop = cs.backdropFilter || 'none';
+      entry.backdrop = scopedFilterList(env.document, cs.backdropFilter || 'none');
       const origin = parseTransformOrigin(cs.transformOrigin);
       return new DOMMatrixReadOnly([1, 0, 0, 1, origin.x, origin.y]);
     },
@@ -985,7 +986,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     isFresh(record) {
       for (const entry of entriesOf(record)) {
-        if (entry.refused || entry.lost || entry.failures >= 3 || !record.layer?.isLaidOut(entry.el)) continue;
+        if (entry.refused || entry.lost || entry.topLayer || entry.failures >= 3 || !record.layer?.isLaidOut(entry.el)) continue;
         if (damage.hasPending(entry.el) || entry.decoding > 0) return false;
       }
       return true;
@@ -997,7 +998,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
         if (!layer?.isLaidOut(el)) continue;
         any = true;
         const entry = entries.get(el);
-        if (!entry?.version && !entry?.refused && !(entry && firstTileLanded(entry))) return { ready: false, reason: 'first-commit' };
+        if (!entry?.version && !entry?.refused && !entry?.topLayer && !(entry && firstTileLanded(entry))) return { ready: false, reason: 'first-commit' };
       }
       if (!any) return { ready: true, reason: 'no-drawables' };
       if (options.coherentPaint && coherenceOpen(record)) return { ready: false, reason: 'coherence' };

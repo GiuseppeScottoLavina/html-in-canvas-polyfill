@@ -414,3 +414,22 @@ test('a popover inside an open shadow root of a drawable damages that drawable w
   await microtasks();
   assert.equal(rig.sink.damage.length, 0, 'unobserved: nothing');
 });
+
+test('an SVG resource outside every drawable that changes, or a subtree holding one that is added or removed, repaints every drawable of the canvas (a drawable draws the resources of its canvas by reference); control: other changes outside the drawables paint nothing', async t => {
+  const defs = '<svg id="defs" width="0" height="0"><linearGradient id="g"><stop id="stop" stop-color="red"/></linearGradient><g id="plain"><rect/></g></svg>';
+  const rig = createRig({ html: defs + PAGE });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const ids = () => rig.sink.damage.map((d) => d.drawable.id).sort().join();
+  rig.layerEl.querySelector('#plain rect').setAttribute('width', '5');
+  const extra = document.createElement('div');
+  rig.layerEl.append(extra);
+  await microtasks();
+  assert.equal(ids(), '', 'control: an SVG element that is no resource, and a plain element, outside the drawables');
+  rig.layerEl.querySelector('#stop').setAttribute('stop-color', 'green');
+  await microtasks();
+  assert.equal(ids(), 'd1,d2', 'a gradient stop changed');
+  rig.sink.clear();
+  rig.layerEl.querySelector('#defs').remove();
+  await microtasks();
+  assert.equal(ids(), 'd1,d2', 'the subtree holding the gradient left the canvas');
+});
