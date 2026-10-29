@@ -96,22 +96,42 @@ const save = (/** @type {string} */ name, /** @type {any} */ img) => writeFileSy
 
 
 /**
+ * A browser session of the probe ends within this time (one takes 3-10 s on the CI runner). Twice on 2026-10-29 the macOS runner's job stalled after a DPR 1.25
+ * session until the step's 25 min timeout, with no output saying where: the session now fails with the stage it was in, and the probe goes on.
+ */
+const SESSION_MS = 120_000;
+
+/**
  * One headless browser at a real device pixel ratio (--force-device-scale-factor), classic scrollbars, grayscale text.
  * @param {number} dpr @param {(page: any) => Promise<void>} fn
  */
 async function atDpr(dpr, fn) {
-  const browser = await H.launchChrome({ name: 'platform', chrome: opt.chrome, dpr, windowSize: [1400, 1000], scrollbars: CLASSIC ? 'classic' : 'overlay', extraArgs: ['--headless=new', '--disable-lcd-text'] });
-  try {
+  /** @type {any} */
+  let browser = null;
+  let stage = 'launch';
+  const run = (async () => {
+    browser = await H.launchChrome({ name: 'platform', chrome: opt.chrome, dpr, windowSize: [1400, 1000], scrollbars: CLASSIC ? 'classic' : 'overlay', extraArgs: ['--headless=new', '--disable-lcd-text'] });
     facts.browser = browser.version?.Browser;
+    stage = 'new page';
     const page = await browser.newPage();
+    stage = 'page facts';
     facts.userAgent ??= await page.evaluate('navigator.userAgent');
     facts.systemColors ??= await page.evaluate(`(() => { const x = document.createElement('canvas').getContext('2d'); const o = {};
       for (const k of ['Highlight', 'HighlightText', 'Canvas', 'CanvasText', 'ButtonFace', 'Field']) { x.fillStyle = '#123456'; x.fillStyle = k; o[k] = String(x.fillStyle); } return o; })()`);
+    stage = `probe (after ${checks.length} checks, the last: ${checks.at(-1)?.name ?? 'none'})`;
     await fn(page);
     const errs = page.errors({ includeWarnings: false });
     check(`dpr ${dpr}`, 'no page error', errs.length === 0, errs.length ? errs.slice(0, 3) : undefined);
+    return 'done';
+  })();
+  run.catch(() => {}); // after a stall the session is closed under it: its late rejection is not news
+  let timer;
+  try {
+    const hung = new Promise((ok) => { timer = setTimeout(() => ok('hung'), SESSION_MS); });
+    if ((await Promise.race([run, hung])) === 'hung') check(`dpr ${dpr}`, `the browser session ended within ${SESSION_MS / 1000} s`, false, { stalledAt: stage });
   } finally {
-    await browser.close();
+    clearTimeout(timer);
+    await browser?.close();
   }
 }
 
