@@ -1,0 +1,34 @@
+<!doctype html>
+<!-- Text weight fixture: light-on-dark and dark-on-light text at 12-16 px in system-ui and a serif, one row per case (data-case), for coverage measurements
+     (the ink of a row, sum over its pixels) of the plain DOM, the polyfill canvas and the native canvas. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>text weight</title>
+<style>
+  html, body { margin: 0; background: #fff; }
+  #hic-surface { display: block; width: 480px; height: 264px; margin: 8px; background: #fff; }
+  #root { width: 480px; }
+  .row { height: 22px; line-height: 22px; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+  .dk { background: #fff; color: #111; }
+  .lt { background: #111; color: #f2f2f2; }
+  .sans { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .serif { font-family: Georgia, "Times New Roman", serif; }
+  /* ?transparent=1: the rows have no background of their own; the canvas element's background shows through the transparent pixels around the glyphs */
+  html.transparent .row { background: transparent; }
+  html.transparent #hic-surface { background: linear-gradient(#fff 0 132px, #111 132px 264px); }
+  /* ?aa=body|canvas: -webkit-font-smoothing: antialiased inherited from the body or from the canvas element; ?geo=canvas: text-rendering: geometricPrecision from the canvas */
+  html.aa-body body, html.aa-canvas #hic-surface { -webkit-font-smoothing: antialiased; }
+  html.geo-canvas #hic-surface { text-rendering: geometricPrecision; }
+</style>
+<script>
+  (function () { var q = new URLSearchParams(location.search), c = document.documentElement.classList;
+    if (q.get('transparent') === '1') c.add('transparent'); if (q.get('aa')) c.add('aa-' + q.get('aa')); if (q.get('geo')) c.add('geo-' + q.get('geo')); })();
+</script></head>
+<body>
+<canvas id="hic-surface" width="480" height="264" content="drawable" aria-label="text weight surface"><div id="root" drawable><div class="row dk sans" style="font-size:12px" data-case="dark-sans-12">Hamburgefonstiv quick brown fox 0123456789</div><div class="row dk sans" style="font-size:14px" data-case="dark-sans-14">Hamburgefonstiv quick brown fox 0123456789</div><div class="row dk sans" style="font-size:16px" data-case="dark-sans-16">Hamburgefonstiv quick brown fox 0123456789</div><div class="row dk serif" style="font-size:12px" data-case="dark-serif-12">Hamburgefonstiv quick brown fox 0123456789</div><div class="row dk serif" style="font-size:14px" data-case="dark-serif-14">Hamburgefonstiv quick brown fox 0123456789</div><div class="row dk serif" style="font-size:16px" data-case="dark-serif-16">Hamburgefonstiv quick brown fox 0123456789</div><div class="row lt sans" style="font-size:12px" data-case="light-sans-12">Hamburgefonstiv quick brown fox 0123456789</div><div class="row lt sans" style="font-size:14px" data-case="light-sans-14">Hamburgefonstiv quick brown fox 0123456789</div><div class="row lt sans" style="font-size:16px" data-case="light-sans-16">Hamburgefonstiv quick brown fox 0123456789</div><div class="row lt serif" style="font-size:12px" data-case="light-serif-12">Hamburgefonstiv quick brown fox 0123456789</div><div class="row lt serif" style="font-size:14px" data-case="light-serif-14">Hamburgefonstiv quick brown fox 0123456789</div><div class="row lt serif" style="font-size:16px" data-case="light-serif-16">Hamburgefonstiv quick brown fox 0123456789</div></div></canvas>
+<script>
+  // ?side=1: a plain-DOM copy of the rows to the right of the canvas, so one screen capture holds both (measurement of what the display shows)
+  if (/[?&]side=1/.test(location.search)) { var d = document.createElement('div'); d.id = 'side'; d.innerHTML = document.querySelector('#root').outerHTML.replace('id="root" drawable', 'id="side-root"');
+    document.body.style.background = '#f0f'; d.style.cssText = 'position:absolute;left:504px;top:8px;width:480px;height:264px;overflow:hidden;background:#fff'; document.body.appendChild(d); }
+</script>
+<script src="/test/fixtures/shared/boot.js"></script>
+</body></html>
