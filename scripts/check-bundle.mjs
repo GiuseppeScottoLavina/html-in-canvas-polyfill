@@ -123,7 +123,11 @@ const LIMITS = {
   //   and a touch contact or pan changes no :hover chain, only a tap does, as natively (the contact's damage dropped the list's pages at every gesture). iOS Simulator: 0 plain builds at the start of a gesture
   //   instead of 2-9, the first canvas update 1-8 ms after the first scroll event
   // 333.75 -> 334 KB (+39 / +3 bytes, 2026-10-29, measured 333,786 / 112,654): the caret colour asks the engines bundle first (Safari's accent caret for `caret-color: auto`)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 334 * KB, gzip: 112.75 * KB },
+  // 334 -> 337.25 KB, gzip 112.75 -> 114 KB (+3,334 / +1,181 bytes, 2026-10-29, measured 337,120 / 113,835): the WPT re-pin at 5ccef26d (Canary 159 rules): SVG resources
+  //   scoped to the drawable canvases (any resource inside one is copied with its painting properties pinned, outside them a filter, paint server or marker is
+  //   ignored), descendant filters stripped under a tainted filter in copied resources, the own backdrop-filter without foreign url() filters (it tainted the
+  //   canvas), resource changes outside the drawables repaint them, and no snapshot for a drawable in the top layer
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 337.25 * KB, gzip: 114 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

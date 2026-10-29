@@ -340,13 +340,16 @@ test('display:contents shells: padding, margin and border of plain ancestors do 
 
 // ---------------------------------------------------------------------------------------------- WPT regressions (2026-10 conformance run)
 
-test('filter: url(#id) naming an SVG <filter> OUTSIDE the drawable is applied (WPT css-filter-reference-on-div); positive control: without the filter the tile is red', async () => {
-  const css = '.d{width:60px;height:40px;background:red;filter:url(#hic-green)}';
-  const m = mount('<div class="d" drawable></div>', { css });
-  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-green"><feFlood flood-color="green"/></filter></svg>');
+test('filter: url(#id) naming an SVG <filter> outside the drawable and inside the canvas is applied (WPT css-filter-reference-on-div); one outside the canvas is not (Canary 159, WPT privacy/filtered-outside-subtree-ignored); positive control: without the filter the tile is red', async () => {
+  const css = '.d{width:60px;height:40px;background:red;filter:url(#hic-green)} .e{width:60px;height:40px;background:red;filter:url(#hic-green-out)}';
+  const m = mount('<div class="d" drawable></div><div class="e" drawable></div>', { css });
+  m.layerEl.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-green"><feFlood flood-color="green"/></filter></svg>');
+  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-green-out"><feFlood flood-color="green"/></filter></svg>');
   const got = await rasterize(m.capture(m.request(m.layerEl.firstElementChild)));
   const px = got.getImageData(30, 20, 1, 1).data;
   assert.deepEqual([px[0], px[1], px[2], px[3]], [0, 128, 0, 255], 'the flood replaces the red box');
+  const out = (await rasterize(m.capture(m.request(m.layerEl.children[1])))).getImageData(30, 20, 1, 1).data;
+  assert.deepEqual([out[0], out[1], out[2], out[3]], [255, 0, 0, 255], 'the filter outside the canvas is ignored: drawn unfiltered');
   const plain = mount('<div class="p" drawable></div>', { css: '.p{width:60px;height:40px;background:red}' });
   const red = (await rasterize(plain.capture(plain.request(plain.layerEl.firstElementChild)))).getImageData(30, 20, 1, 1).data;
   assert.deepEqual([red[0], red[1], red[2]], [255, 0, 0], 'positive control');
@@ -354,7 +357,7 @@ test('filter: url(#id) naming an SVG <filter> OUTSIDE the drawable is applied (W
 
 test('a filter whose feImage is a same-origin URL that does not load keeps applying with an empty image (the platform does the same; measured on the native oracle)', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:40px;height:40px;background:red;filter:url(#hic-img)}' });
-  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-img"><feImage href="/test/unit/snapshot-capture/assets/missing.png" result="i"/><feFlood flood-color="blue"/></filter></svg>');
+  m.layerEl.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-img"><feImage href="/test/unit/snapshot-capture/assets/missing.png" result="i"/><feFlood flood-color="blue"/></filter></svg>');
   const el = m.layerEl.firstElementChild;
   m.capture(m.request(el));
   await new Promise((ok) => setTimeout(ok, 400));
@@ -368,10 +371,10 @@ test('a filter whose feImage is a same-origin URL that does not load keeps apply
 test('a filter whose feImage cannot be read (cross-origin without CORS, or a URL that does not parse) is not applied at all, as the platform ignores it (WPT privacy/filtered-div-*-ignored); positive control: a readable one applies', async () => {
   const css = '.d{width:40px;height:40px;background:rgb(0,128,0)} #a{filter:url(#hic-x)} #b{filter:url(#hic-bad) blur(2px)} #c{filter:url(#hic-ok)}';
   const m = mount('<div id="a" class="d" drawable></div><div id="b" class="d" drawable></div><div id="c" class="d" drawable></div>', { css });
-  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-x"><feImage href="http://127.0.0.1:9/x.png"/></filter>'
+  m.layerEl.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-x"><feImage href="http://127.0.0.1:9/x.png"/></filter>'
     + '<filter id="hic-bad"><feImage href="https://127.0.0.1:9x.png" result="o"/><feGaussianBlur in="o" stdDeviation="2"/></filter>'
     + '<filter id="hic-ok"><feImage href="/test/unit/snapshot-capture/assets/red.svg" x="0" y="0" width="40" height="40" preserveAspectRatio="none"/></filter></svg>');
-  const [a, b, c] = m.layerEl.children;
+  const [a, b, c] = m.layerEl.querySelectorAll('[drawable]');
   for (const el of [a, b, c]) m.capture(m.request(el));
   await new Promise((ok) => setTimeout(ok, 400));
   const center = async (el) => { const r = m.capture(m.request(el)); return { r, px: Array.from((await rasterize(r)).getImageData(20, 20, 1, 1).data) }; };
@@ -527,7 +530,7 @@ test('the drawable root does not match `div > div` (its clone parent is not a di
 
 test('a same-origin feImage of a referenced filter is inlined as a data: URL once loaded (first capture is incomplete), WPT privacy/filtered-div-ref-svg-feimage-ignored', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:40px;height:40px;filter:url(#hic-self)}' });
-  m.host.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-self"><feImage href="/test/unit/snapshot-capture/assets/red.svg" width="40" height="40"/></filter></svg>');
+  m.layerEl.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-self"><feImage href="/test/unit/snapshot-capture/assets/red.svg" width="40" height="40"/></filter></svg>');
   const el = m.layerEl.firstElementChild;
   const first = m.capture(m.request(el));
   assert.equal(first.complete, false, 'the filter image is still loading');

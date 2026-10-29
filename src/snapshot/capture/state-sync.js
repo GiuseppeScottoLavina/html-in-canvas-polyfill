@@ -4,6 +4,7 @@
  */
 
 import { MARK } from '../../contracts/events.js';
+import { inTopLayer } from '../../util/top-layer.js';
 import { inlineCssUrls, resolveResource } from './inline-resources.js';
 import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 import { scaleMode } from './svg-builder.js';
@@ -185,17 +186,8 @@ function inlineStyleUrls(env, clone, req, unsupported, src) {
 /** @type {WeakSet<UnsupportedEntry[]>} capture sinks (the `unsupported` array of one capture) that had to leave a resource out */
 const pendingSinks = new WeakSet();
 
-/**
- * True for an element that is rendered in the top layer (modal dialog, open popover, fullscreen element). Natively it is painted in the page's top layer and NOT into the canvas
- * (WPT top-layer-not-painted-in-canvas); the live element does exactly that from the layer (top-layer rendering escapes the layer's opacity), so the clone leaves it out.
- * @param {Element} src @returns {boolean}
- */
-export function inTopLayer(src) {
-  for (const sel of [':modal', ':popover-open', ':fullscreen']) {
-    try { if (src.matches(sel)) return true; } catch { /* selector unknown to this engine */ }
-  }
-  return false;
-}
+// a top-layer element is left out of the clone: the live element shows in the page top layer from the layer (util/top-layer.js)
+export { inTopLayer };
 
 /**
  * The elements of `root`'s subtree (and `root` itself) rendered in the top layer, in its own tree scope: one query per pseudo-class instead of three matches() per cloned element.
