@@ -1,6 +1,6 @@
 {
   "name": "@giuseppe-scotto-lavina/html-in-canvas-polyfill",
-  "version": "0.1.0-preview.11",
+  "version": "0.1.0-preview.12",
   "description": "Polyfill for the proposed HTML-in-Canvas API (content=\"drawable\", drawElementImage, the paint event) over a live DOM, for desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iOS 26+. Native-first: steps aside where the browser implements it.",
   "keywords": [
     "html-in-canvas",

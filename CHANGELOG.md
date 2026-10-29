@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.12] - 2026-10-29
+
+Smoother touch scrolling on phones and tablets. On iPhone Safari a touch scroll over a list drawn into a canvas stuttered for a few frames at the start of each gesture: on a page with a `:hover` rule every gesture began with 4 to 9 plain builds (the first composed frame 115 to 268 ms after the first scroll event, iOS Simulator), and on any page the first gesture over a list began with 2 to 3. Now no gesture begins with a plain build, and the first frame lands 1 to 6 ms after the first scroll event. A tap still hovers the tapped element, as natively. Nothing changes with a mouse. The test suite's weaker controls are hardened (G-resize-drag, G-regress-paint, G-explainer, G-scroll-cadence).
+
 ### Fixed
 
 - Touch scrolling: a finger puts an element under `:hover` only by a tap, as natively. Chrome and Mobile Safari match no `:hover` while a finger rests or pans (measured in Chrome with a real touch: the touched row was never `:hover` until a tap), but the polyfill put the whole chain of the touched row (the row, the list, every ancestor) in and out of its hover set at each contact and at the start of each pan. On a page with a `:hover` rule that damage rebuilt the drawable twice per gesture and dropped the scroll compositor's cached pages of the list, so every touch gesture began with plain builds (iOS Simulator, the scroll-and-resize example: 4 to 9 plain builds at the start of each gesture and the first composed update 115 to 268 ms after the first scroll event; now none, and the first update 1 to 5 ms after it). After a tap the tapped element stays `:hover` until the next tap elsewhere, as natively (a CSS `:hover` menu opens on a tap); a pan changes nothing.
@@ -16,8 +20,10 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 
 - G-mobile `scrollCompose`: the empty-canvas check changes the inbox's layout once the empty canvas is on the page, so the inbox is planned during the scroll. Planned ahead at rest, before the empty canvas came, it hid the stuck pump the check is for: its control mutant `empty` no longer turned the check red.
-- The core bundle grows to 333,530 bytes minified, 112,599 gzipped (+1,558 / +533 bytes).
-
+- The core bundle grows to 333,747 bytes minified, 112,651 gzipped (+1,775 / +585 bytes; 95,776 with brotli).
+- G-resize-drag compares the canvas with its plain-DOM twin at rest after each drag to 700 px, before any input: the click of its hit check re-rasters the whole drawable, which let a tile left stale by a resize pass the later checks in 8 of 20 runs (mutant `stale-after-resize`, now caught 20 of 20). The mutant runner has `--repeat=N`.
+- G-regress-paint is split: its correctness checks run in CI, and the paint rate checks of the 60 Hz counters are G-regress-paint-rate, which stays on a local Mac (a throughput measurement on the shared CI runners sat on the edge). CI now runs 11 of the 16 gates; a `workflow_dispatch` of CI macOS can choose the gates and mutants, repeat them and spread them over several machines.
+- G-scroll-cadence's positive control also drops every second paint event: without the scroll synchronisation alone, Chrome 155 still moved the list in 0.83-0.85 of the frames on average, so the `cadence` class went red only by a frame or two; now every cadence check is red in every case.
 - G-explainer checks where the content is drawn, not only how much of it differs: in every phase it compares (at rest, typed, each caret-blink sample with the field focused on both pages, the dense form while typing) the bounding box of the canvas content must sit on the plain-DOM twin's to 1 device px. On the sparse explainer page the fraction budgets could not see a shift: drawn content moved 40 device px to the right while a field had focus passed every check. The new mutant `shift40-while-focused` (49 mutants) is caught by the new check.
 
 ## [0.1.0-preview.11] - 2026-10-28
@@ -252,7 +258,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.11...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.12...HEAD
+[0.1.0-preview.12]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.11...v0.1.0-preview.12
 [0.1.0-preview.11]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.10...v0.1.0-preview.11
 [0.1.0-preview.10]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.9...v0.1.0-preview.10
 [0.1.0-preview.9]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.8...v0.1.0-preview.9
