@@ -38,9 +38,12 @@ runGate('G-resize-drag', async (ctx) => {
   const detector = await H.startBlankDetector(page);
   await H.sleep(300);
   const drags = [];
-  for (const cadence of [50, 8]) {
+  // the page sees one size per rendering update, so a drag must last enough updates for the "many sizes" precondition: 30 steps at 8 ms (240 ms) gave 15-16 sizes
+  // on a quiet machine but 7-13 on a loaded one (the plain DOM page the same as the polyfill's, 2026-10-29) and 7 once on the CI runner; 60 steps at 8 ms keep
+  // the cadence and double the updates
+  for (const [cadence, steps] of [[50, 30], [8, 60]]) {
     for (const [from, to] of [[BIG, SMALL], [SMALL, BIG]]) {
-      const d = await H.dragResize(page, { from, to, steps: 30, intervalMs: cadence, settleMs: 500 });
+      const d = await H.dragResize(page, { from, to, steps, intervalMs: cadence, settleMs: 500 });
       drags.push({ cadence, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk });
       // at rest after a drag to 700 with NO input since: nothing but the resize can re-raster the tile here. The later 700 px check cannot tell a stale tile: the click of the
       // hit check damages the focused button, and any damage re-rasters the whole drawable at the new size (the stale-after-resize mutant passed it in 8 of 20 runs, 2026-10-28)
