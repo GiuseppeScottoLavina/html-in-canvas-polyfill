@@ -5,7 +5,7 @@
 import { IDENTITY_EXPR, diffIdentity } from '../gates/lib/identity.mjs';
 import { KEYS } from '../harness/lib/webdriver.mjs';
 import { pixelStats } from '../harness/lib/pixels.mjs';
-import { shotRect, rectOf, readCanvas, oracle, regionChanged, BLANK_START, BLANK_STOP, pageErrors, until, sleep } from './lib.mjs';
+import { shotRect, rectOf, readCanvas, oracle, regionChanged, caretColorOf, BLANK_START, BLANK_STOP, pageErrors, until, sleep } from './lib.mjs';
 import { cropImage } from '../harness/lib/pixels.mjs';
 import { SCROLLBAR_PROBE_EXPR } from '../harness/lib/env.mjs';
 import { COMPOSE_ORACLE } from '../mobile/scenarios.mjs';
@@ -28,8 +28,12 @@ const devRect = (r, origin, k, pad = 0) => ({ x: Math.max(0, Math.floor((r.x - o
 function judge(ctx, name, o, cls = 'pixel') {
   ctx.numbers[name] = { fraction: +(o.fraction ?? 1).toFixed(5), shiftTolerant: +(o.shiftTolerant ?? 1).toFixed(5), structural: +(o.structural ?? 1).toFixed(5), countOver16: o.countOver16, maxDiff: o.maxDiff, size: o.size, refSize: o.refSize, surfaceNonBlank: o.surfaceNonBlank, refNonBlank: o.refNonBlank };
   ctx.check(`${name}: canvas vs plain-DOM twin: <= 5 % of pixels over 16 and <= 1 % over 100 (+-1 device row), both non-blank`, o.pass, ctx.numbers[name], cls);
+  if (o.box) {
+    ctx.numbers[name].box = o.box;
+    ctx.check(`${name}: the content bounding box (delta > 16 from the twin's background) matches the twin's, every edge within ${o.box.maxEdge} device px (catches a whole-content shift of any size)`, o.box.edge <= o.box.maxEdge, o.box, cls);
+  }
   if (o.diffImage) ctx.save(name + '.diff', o.diffImage);
-  if (!o.pass) { ctx.save(name + '.surface', o.surface); ctx.save(name + '.ref', o.ref); }
+  if (!o.pass || (o.box && o.box.edge > o.box.maxEdge)) { ctx.save(name + '.surface', o.surface); ctx.save(name + '.ref', o.ref); }
 }
 
 async function noErrors(ctx, label) {
@@ -52,24 +56,69 @@ const LATENCY = (sel, region, n) => `(async () => {
   document.addEventListener('keydown', () => { const h0 = hash(); const t0 = performance.now(); const tick = () => { if (hash() !== h0) st.out.push(performance.now() - t0); else if (performance.now() - t0 < 1000) requestAnimationFrame(tick); else st.out.push(-1); }; requestAnimationFrame(tick); }, true);
   return true; })()`;
 
+/** largest distance (device px) between an edge of the canvas content's bounding box and the twin's (explainer) */
+const BOX_EDGE = 1;
+/** css px of ink overflow the explainer's focused ink check draws around the form (Safari's focus ring reaches 3 px beyond the field, Firefox's 1 px) */
+const INK = 8;
+/** caret samples after the first focused image, and their spacing: 6 x 150 ms span more than one blink period of both engines */
+const CARET_SHOTS = 6, CARET_GAP_MS = 150;
+/** largest channel difference between the caret colours (the Safari screenshot is converted from Display P3, a few levels off) */
+const CARET_DELTA = 40;
+/** @param {string} css an rgb() / rgba() computed colour @returns {number[]} */
+const rgbOf = (css) => (css.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+
 export async function explainer(ctx) {
   const { s } = ctx; const P = '/test/fixtures/explainer/index.html';
   await s.navigate(url(ctx, P, { mode: 'ref' })); await until(s, 'window.__ready === true');
   const twin = await rectOf(s, '#twin'); const inputR = await rectOf(s, '#name');
   const refRest = (await shotRect(s, twin)).img;
-  await s.click(center(inputR).x, center(inputR).y); await s.typeText('hello'); await s.evaluate('document.getElementById("name").blur()'); await sleep(300);
+  await s.click(center(inputR).x, center(inputR).y); await sleep(300);
+  const refFocused = (await shotRect(s, twin)).img;
+  // the caret over more than one blink period (Firefox's WebDriver screenshot draws no caret: there the expected colour is the text colour, measured by an OS screen capture)
+  const refCaretShots = [refFocused];
+  for (let i = 0; i < CARET_SHOTS; i++) { await sleep(CARET_GAP_MS); refCaretShots.push((await shotRect(s, twin)).img); }
+  const twinField = await s.evaluate('(() => { const cs = getComputedStyle(document.getElementById("name")); return { color: cs.color, caret: cs.caretColor }; })()');
+  // the focus ring with the drawable's ink overflow: the form unclipped by INK css px, as a source rect reaching INK px beyond its border box draws it
+  await s.evaluate(`document.getElementById('twinform').style.clipPath = 'inset(-${INK}px)'`); await sleep(150);
+  const refFocusedInk = (await shotRect(s, twin)).img;
+  await s.evaluate("document.getElementById('twinform').style.clipPath = 'inset(0)'");
+  await s.typeText('hello'); await s.evaluate('document.getElementById("name").blur()'); await sleep(300);
   const refTyped = (await shotRect(s, twin)).img;
 
   await s.navigate(url(ctx, P, { mode: 'poly', bundle: ctx.bundle }));
   await until(s, '(window.__paints || 0) >= 1').catch(() => null); await sleep(700);
   await mode(ctx, 'explainer');
   const rest = await readCanvas(s, 'canvas');
-  judge(ctx, 'explainerRest', oracle(rest, refRest));
+  judge(ctx, 'explainerRest', oracle(rest, refRest, { maxEdge: BOX_EDGE }));
   const k = rest.width / twin.width; const region = devRect(inputR, twin, k, 2);
 
   await s.click(center(inputR).x, center(inputR).y); await sleep(250);
   const focus = await s.evaluate('document.activeElement && document.activeElement.id');
   ctx.check('explainer: a trusted click at the drawn input focuses the live input', focus === 'name', { focus }, 'hit');
+  // focused, before typing: the caret blinks and the pixel budgets are not compared here, only the position of the content (the twin was focused the same way)
+  const focused = oracle(await readCanvas(s, 'canvas'), refFocused, { maxEdge: BOX_EDGE });
+  ctx.numbers.explainerFocusedBox = focused.box;
+  ctx.check(`explainerFocused: the content bounding box (delta > 16 from the twin's background) matches the twin's, every edge within ${BOX_EDGE} device px (catches a whole-content shift while a control has focus)`, focused.box.edge <= BOX_EDGE, focused.box, 'pixel');
+  if (focused.box.edge > BOX_EDGE) { ctx.save('explainerFocused.surface', focused.surface); ctx.save('explainerFocused.ref', focused.ref); }
+  // the caret's colour: Safari paints `caret-color: auto` in the system accent (unless an author colour applies), Firefox in the text colour
+  const shots = [focused.surface];
+  for (let i = 0; i < CARET_SHOTS; i++) { await sleep(CARET_GAP_MS); shots.push(await readCanvas(s, 'canvas')); }
+  const caretRect = devRect({ x: inputR.x + 3, y: inputR.y + 4, width: 24, height: inputR.height - 8 }, twin, k);
+  const want = caretColorOf(refCaretShots, caretRect) ?? (s.engine === 'firefox' ? { color: rgbOf(twinField.color), frames: 0, pixels: 0, from: 'text colour (no caret in the WebDriver screenshot)' } : null);
+  const got = caretColorOf(shots, caretRect);
+  const caretDelta = want && got ? Math.max(...got.color.map((v, i) => Math.abs(v - want.color[i]))) : Infinity;
+  ctx.numbers.explainerCaret = { canvas: got, twin: want, delta: caretDelta, twinField };
+  ctx.check(`explainerFocused: the caret is drawn in the colour the engine paints in the twin (every channel within ${CARET_DELTA})`, caretDelta <= CARET_DELTA, ctx.numbers.explainerCaret, 'pixel');
+  if (caretDelta > CARET_DELTA) { ctx.save('explainerCaret.surface', got ? shots.find((img) => caretColorOf([img], caretRect)) : shots[0]); ctx.save('explainerCaret.ref', refCaretShots.find((img) => caretColorOf([img], caretRect)) ?? refCaretShots[0]); }
+  // the drawable's ink overflow: a source rect INK css px beyond the form's border box draws the focus ring that overflows it (native: WPT ink-overflow), placed as before
+  await s.evaluate(`(() => { const c = document.querySelector('canvas'), f = document.querySelector('canvas form'), x = c.getContext('2d'), o = ${INK}, d = devicePixelRatio, r = f.getBoundingClientRect();
+    window.__xbPaint = c.onpaint; c.onpaint = () => { x.reset(); x.drawElementImage(f, -o, -o, r.width + 2 * o, r.height + 2 * o, 100 - o * d, -o * d); }; c.requestPaint(); return true; })()`);
+  await sleep(400);
+  const ink = oracle(await readCanvas(s, 'canvas'), refFocusedInk, { maxEdge: BOX_EDGE });
+  ctx.numbers.explainerFocusedInkBox = ink.box;
+  ctx.check(`explainerFocusedInk: drawn with a source rect ${INK} css px beyond the form, the content box (focus ring included) matches the unclipped twin's, every edge within ${BOX_EDGE} device px`, ink.box.edge <= BOX_EDGE, ink.box, 'pixel');
+  if (ink.box.edge > BOX_EDGE) { ctx.save('explainerFocusedInk.surface', ink.surface); ctx.save('explainerFocusedInk.ref', ink.ref); }
+  await s.evaluate("(() => { const c = document.querySelector('canvas'); c.onpaint = window.__xbPaint; c.requestPaint(); return true; })()"); await sleep(300);
   await s.evaluate(LATENCY('canvas', region, 5));
   await s.typeText('hello', { intervalMs: 120 }); await sleep(600);
   const value = await s.evaluate('document.getElementById("name").value');
@@ -80,7 +129,7 @@ export async function explainer(ctx) {
   const changed = regionChanged(rest, typed, region);
   ctx.check('explainer: typing changes the canvas pixels of the input', changed > 8, { countOver16: changed }, 'typing');
   await s.evaluate('document.getElementById("name").blur()'); await sleep(600);
-  judge(ctx, 'explainerTyped', oracle(await readCanvas(s, 'canvas'), refTyped));
+  judge(ctx, 'explainerTyped', oracle(await readCanvas(s, 'canvas'), refTyped, { maxEdge: BOX_EDGE }));
   ctx.numbers.taint = await s.evaluate(TAINT_PROBE, { timeoutMs: 20000 }).catch((e) => ({ error: e.message.slice(0, 300) }));
   const t = ctx.numbers.taint;
   ctx.check('explainer: the canvas stays readable and the WebGL / WebGPU texture paths upload non-blank pixels', !t.error && t.canvasReadable && t.webgl?.nonZero > 0 && (t.webgpu?.nonZero > 0 || t.webgpu?.skipped), t, 'pixel');

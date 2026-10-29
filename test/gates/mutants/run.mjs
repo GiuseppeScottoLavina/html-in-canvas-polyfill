@@ -55,7 +55,10 @@ if (has('check-anchors')) {
 const passArgs = ['--no-control', ...(arg('wait-quiet') ? [`--wait-quiet=${arg('wait-quiet')}`] : [])];
 /** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'} [which] which of the bundles `file` replaces */
 function runGate(gate, file, which = 'core') {
-  return gateRunOutcome(spawnSync(process.execPath, [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
+  // `xbrowser-<scenario>`: that G-xbrowser scenario on Safari and Firefox (it prints the same result line as a gate)
+  const xb = /^xbrowser-(.+)$/.exec(gate);
+  const cmd = xb ? [resolve(root, 'test/xbrowser/run.mjs'), `--engine=${process.env.HIC_MUTANT_ENGINES ?? 'safari,firefox'}`, `--only=${xb[1]}`, '--no-control'] : [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs];
+  return gateRunOutcome(spawnSync(process.execPath, [...cmd, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
 }
 const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 

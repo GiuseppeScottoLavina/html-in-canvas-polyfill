@@ -20,6 +20,7 @@ import { currentEngine } from '../../util/engine.js';
  * @property {(cs: {boxShadow: string, outlineStyle: string, filter: string, position: string}) => string} webkitShadowStyle  WebKit 'transform' mode shadow rewrite
  * @property {(win: Window, src: Element, clone: HTMLElement, f: any, dark: boolean) => void} paintWebkitBars  WebKit classic scrollbars
  * @property {(win: Window, src: Element) => boolean} webkitDarkBars
+ * @property {(doc: Document, el: Element, cs: CSSStyleDeclaration) => string|null} [caretColor]  Safari's `caret-color: auto` colour on macOS (webkit-caret.js), null = the computed one
  */
 
 const ENGINE_SKINS_KEY = Symbol.for('hic.engine-skins');

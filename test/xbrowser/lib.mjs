@@ -1,6 +1,6 @@
 // Shared helpers of the cross-browser gate (test/xbrowser/run.mjs): page recorder, plain-DOM twin oracle in the SAME engine, canvas readback, in-page probes.
 import { decodePng } from '../harness/lib/png.mjs';
-import { compareImages, cropImage, pixelStats } from '../harness/lib/pixels.mjs';
+import { compareImages, cropImage, pixelStats, contentBox, boxEdgeDistance } from '../harness/lib/pixels.mjs';
 import { sleep } from '../harness/lib/util.mjs';
 
 /**
@@ -103,7 +103,7 @@ export function shiftTolerantFraction(a, b, tol = 16) {
  * Gate: `shiftTolerant` (a pixel also matches the reference row above or below) <= 5 % at delta > 16, AND `structural` (same, at delta > 100) <= 1 %: missing or wrong
  * content (a blank surface, an absent control, a wrong scroll offset) moves many pixels by far more than 100 levels. Strict numbers are reported next to them.
  */
-export function oracle(surface, ref, { maxFraction = 0.05, maxStructural = 0.01 } = {}) {
+export function oracle(surface, ref, { maxFraction = 0.05, maxStructural = 0.01, maxEdge = null } = {}) {
   // a 1 device-pixel difference is the rounding of the css rect crop, not a renderer fault: compare the common area
   if (Math.abs(surface.width - ref.width) <= 1 && Math.abs(surface.height - ref.height) <= 1 && (surface.width !== ref.width || surface.height !== ref.height)) {
     const w = Math.min(surface.width, ref.width), h = Math.min(surface.height, ref.height);
@@ -114,13 +114,41 @@ export function oracle(surface, ref, { maxFraction = 0.05, maxStructural = 0.01 
   const sNon = pixelStats(surface, { minFraction: 0.002 }).nonBlank, rNon = pixelStats(ref, { minFraction: 0.002 }).nonBlank;
   const shiftTolerant = cmp.sizeMatch ? shiftTolerantFraction(surface, ref, 16) : 1;
   const structural = cmp.sizeMatch ? shiftTolerantFraction(surface, ref, 100) : 1;
-  return { surface, ref, pass: !!cmp.sizeMatch && sNon && rNon && shiftTolerant <= maxFraction && structural <= maxStructural, sizeMatch: cmp.sizeMatch, size: [surface.width, surface.height], refSize: [ref.width, ref.height], fraction: cmp.fraction, shiftTolerant, structural, countOver16: cmp.countOver16, maxDiff: cmp.maxDiff, surfaceNonBlank: sNon, refNonBlank: rNon, diffImage: cmp.diffImage };
+  // positional check (maxEdge): the bounding box of the content (delta > 16 from the twin's dominant colour) must sit on the twin's. The fraction budgets cannot
+  // see a whole-content shift on a sparse page: there a shift changes at most twice the content's pixels, which is below the 5 % budget
+  const bg = pixelStats(ref).dominantColor;
+  const box = maxEdge === null ? null : { canvas: contentBox(surface, bg), twin: contentBox(ref, bg), maxEdge };
+  if (box) box.edge = boxEdgeDistance(box.canvas, box.twin);
+  return { surface, ref, box, pass: !!cmp.sizeMatch && sNon && rNon && shiftTolerant <= maxFraction && structural <= maxStructural, sizeMatch: cmp.sizeMatch, size: [surface.width, surface.height], refSize: [ref.width, ref.height], fraction: cmp.fraction, shiftTolerant, structural, countOver16: cmp.countOver16, maxDiff: cmp.maxDiff, surfaceNonBlank: sNon, refNonBlank: rNon, diffImage: cmp.diffImage };
 }
 
 /** Region-hash change of a canvas between two reads (cheap typing check). */
 export function regionChanged(a, b, rect) {
   const ca = cropImage(a, rect.x, rect.y, rect.w, rect.h), cb = cropImage(b, rect.x, rect.y, rect.w, rect.h);
   return compareImages(ca, cb, { tolerance: 16, diffImage: false }).countOver16;
+}
+
+/**
+ * The caret's colour in a series of images of a focused, empty field (the caret blinks: the images are taken over more than one blink period): the median of the strong
+ * pixels (some channel >= 96 below white) inside `rect`, a part of the field's content box that holds nothing but the caret, over the images that show it; null when none does.
+ * @param {{width: number, height: number, data: Uint8Array|Uint8ClampedArray}[]} imgs @param {{x: number, y: number, w: number, h: number}} rect device px
+ * @returns {{color: number[], frames: number, pixels: number}|null}
+ */
+export function caretColorOf(imgs, rect) {
+  const px = [[], [], []]; let frames = 0;
+  for (const img of imgs) {
+    let seen = 0;
+    for (let y = rect.y; y < Math.min(img.height, rect.y + rect.h); y++) for (let x = rect.x; x < Math.min(img.width, rect.x + rect.w); x++) {
+      const i = (y * img.width + x) * 4;
+      if (255 - Math.min(img.data[i], img.data[i + 1], img.data[i + 2]) < 96) continue;
+      for (let c = 0; c < 3; c++) px[c].push(img.data[i + c]);
+      seen++;
+    }
+    if (seen) frames++;
+  }
+  if (!frames) return null;
+  const median = (a) => a.sort((p, q) => p - q)[a.length >> 1];
+  return { color: px.map(median), frames, pixels: px[0].length };
 }
 
 /** In-page blank-frame sampler: after every rendering update (a task posted from rAF) it reads a 32x32 downscale of the canvas; a frame whose alpha is 0 everywhere is blank. */

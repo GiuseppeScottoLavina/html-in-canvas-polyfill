@@ -1,6 +1,9 @@
 <!doctype html>
 <!-- The WICG HTML-in-Canvas explainer "Basic Example" (https://github.com/WICG/html-in-canvas), markup and script verbatim.
-     Additions that are not part of the example: this loader (?mode=poly&bundle=... | ?mode=ref), a paint counter, and the plain-DOM twin for the pixel oracle. -->
+     Additions that are not part of the example: this loader (?mode=poly&bundle=... | ?mode=ref), a paint counter, and the plain-DOM twin for the pixel oracle.
+     The twin's form is clipped to its border box (clip-path: inset(0)) as drawElementImage(form, x, y) clips it: the default source rect is the border box, and
+     ink that a descendant paints beyond it (a focus ring outset from a field at the form's edge, Safari 3 px, Firefox 1 px) is not drawn (WPT element-shadow;
+     measured on Chrome's native implementation, 2026-10-29: a 4 px outline of the input, which ends at the form's right and bottom edges, is cut at the form's box). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -41,7 +44,7 @@
   }).observe(canvas, { box: 'device-pixel-content-box' });
 </script>
 <!-- end of the example -->
-<!-- --><script>if (window.__mode === 'ref') document.write('<div id="twin" style="position:relative;width:400px;height:200px;overflow:hidden;display:inline-block;vertical-align:top"><form id="twinform" style="position:absolute;top:0;margin:0"><label for="name">name:</label> <input id="name"></form></div>');</script>
+<!-- --><script>if (window.__mode === 'ref') document.write('<div id="twin" style="position:relative;width:400px;height:200px;overflow:hidden;display:inline-block;vertical-align:top"><form id="twinform" style="position:absolute;top:0;margin:0;clip-path:inset(0)"><label for="name">name:</label> <input id="name"></form></div>');</script>
 <script>
   if (window.__mode === 'ref') {
     // drawElementImage(form, 100, 0) places the form at x=100 GRID pixels = 100/dpr css px
