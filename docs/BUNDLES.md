@@ -65,13 +65,13 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-effects.iife.min.js` | 38,721 | 13,811 |
 | `hic-live-native-bridge.iife.js` | 32,004 | 8,739 |
 | `hic-live-native-bridge.iife.min.js` | 13,827 | 5,113 |
-| `hic-live-engines.iife.js` | 72,097 | 21,342 |
-| `hic-live-engines.iife.min.js` | 44,004 | 16,863 |
+| `hic-live-engines.iife.js` | 72,338 | 21,439 |
+| `hic-live-engines.iife.min.js` | 44,143 | 16,915 |
 | `hic-live-gpu.iife.js` | 20,090 | 5,541 |
 | `hic-live-gpu.iife.min.js` | 10,403 | 3,947 |
 | `hic-live-worker.iife.js` | 17,981 | 5,350 |
 | `hic-live-worker.iife.min.js` | 9,098 | 3,646 |
-| `esm/index.js` | 709,608 | 190,679 |
+| `esm/index.js` | 710,189 | 190,948 |
 | `esm/effects.js` | 67,660 | 18,061 |
 | `esm/native-bridge.js` | 21,963 | 5,811 |
 | `esm/worker.js` | 6,977 | 2,403 |

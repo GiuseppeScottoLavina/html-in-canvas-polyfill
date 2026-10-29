@@ -19,7 +19,8 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'node:net';
 import { PROJECT_ROOT, sleep } from './util.mjs';
 
-export const FIREFOX_APP = '/Applications/Firefox.app';
+// HIC_FIREFOX_APP overrides the Firefox application bundle (another release than the installed one, e.g. the CI runner image's version)
+export const FIREFOX_APP = process.env.HIC_FIREFOX_APP || '/Applications/Firefox.app';
 export const GECKODRIVER = resolve(PROJECT_ROOT, '.scratch/geckodriver-dl/geckodriver');
 export const KEYS = Object.freeze({ Tab: '', Enter: '', Backspace: '', PageDown: '', PageUp: '', ArrowDown: '', Escape: '' });
 
@@ -185,10 +186,12 @@ const FIREFOX_PREFS = {
 };
 
 async function launchFirefox({ app = FIREFOX_APP, prefs = {}, headless = process.env.HIC_FIREFOX_HEADLESS === '1' } = {}) {
+  if (!existsSync(app)) throw new Error(`Firefox application missing at ${app} (HIC_FIREFOX_APP)`);
   if (!existsSync(GECKODRIVER)) throw new Error(`geckodriver missing at ${GECKODRIVER}: download the official release into .scratch/geckodriver-dl/ (docs/TEST-PLAN.md, G-xbrowser)`);
   const profile = mkdtempSync(join(tmpdir(), 'hic-xb-firefox-'));
   const mport = await freePort();
   // HIC_FIREFOX_PREFS (JSON) adds prefs for a machine: the macOS CI job turns WebGL on for the virtual GPU that Firefox's blocklist refuses
+  // HIC_FIREFOX_APP (path to a Firefox .app bundle) replaces /Applications/Firefox.app: FIREFOX_APP above
   const envPrefs = process.env.HIC_FIREFOX_PREFS ? JSON.parse(process.env.HIC_FIREFOX_PREFS) : {};
   const all = { ...FIREFOX_PREFS, ...envPrefs, ...prefs, 'marionette.port': mport };
   writeFileSync(join(profile, 'user.js'), Object.entries(all).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');
