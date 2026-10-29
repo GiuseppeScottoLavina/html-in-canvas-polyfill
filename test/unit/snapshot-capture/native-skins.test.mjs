@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { foregroundOn, luminance, over, rangeSkin, tintWithContrast, toggleSkin, withLuminance, popupGlyph, spinGlyph } from '../../../src/snapshot/capture/webkit-skins.js';
-import { accentPalette, adjustLuminance, geckoProgressSkin, geckoRangeSkin, geckoToggleSkin } from '../../../src/snapshot/capture/gecko-skins.js';
+import { accentPalette, adjustLuminance, geckoDisabledBorder, geckoProgressSkin, geckoRangeSkin, geckoToggleSkin } from '../../../src/snapshot/capture/gecko-skins.js';
 import { webkitBarColors, webkitBarGeometry } from '../../../src/snapshot/capture/webkit-bars.js';
 import { meterRegion, popupPadding } from '../../../src/snapshot/capture/native-controls.js';
 
@@ -71,6 +71,24 @@ test('Gecko skins: checkbox radius 4 with a 1 px border, check polyline x side/1
   assert.match(geckoToggleSkin(14, 14, { type: 'checkbox', checked: false, indeterminate: false, disabled: false, hover: true, accent: acc }, p), /stroke="rgba\(103,103,116,1\)"/);
   assert.match(geckoRangeSkin(130, 20, { ratio: 0.5, disabled: false, accent: acc }), /<rect x="56" y="1" width="18" height="18" rx="9"/);
   assert.match(geckoProgressSkin(80, 16, { meter: true, position: 0.5, region: 'optimum', accent: acc }), /y="2\.5" width="79" height="11" rx="5\.5" fill="rgba\(0,171,96,1\)"/);
+});
+
+test('Gecko disabled border by release: ButtonBorder #8f8f9d (Firefox 155-157) keeps the old one, the 158+ ButtonBorder gets bug 2063178\'s (measured pixels: 157 light 199,199,206 / dark 143,143,157; 159 light 227,227,229 over white, dark 55,55,57 over #1e1e1e)', () => {
+  const old = [0x8f, 0x8f, 0x9d, 1], newLight = [0x81, 0x7f, 0x84, 1], newDark = [0x94, 0x92, 0x97, 1];
+  assert.deepEqual(geckoDisabledBorder(old, false), [199, 199, 206, 1]);
+  assert.deepEqual(geckoDisabledBorder(old, true), [143, 143, 157, 1]);
+  const l = geckoDisabledBorder(newLight, false), d = geckoDisabledBorder(newDark, true);
+  assert.deepEqual(over(l, [255, 255, 255, 1]).slice(0, 3).map(Math.round), [227, 227, 229]);
+  assert.deepEqual(over(d, [30, 30, 30, 1]).slice(0, 3).map(Math.round), [55, 55, 57]);
+  // the dark checked radio: the disabled disc over the ring of white at 40 % over the page (measured 159: 100,100,102)
+  assert.ok(near(over(d, over([255, 255, 255, 0.4], [30, 30, 30, 1])), [100, 100, 102], 1));
+  assert.deepEqual(geckoDisabledBorder([10, 20, 30, 1], true), d, 'an unknown ButtonBorder gets the current palette');
+  // positive control: the two palettes are told apart in the skin a disabled checked checkbox gets
+  const acc = accentPalette([0, 122, 255, 1], [255, 255, 255, 1], false);
+  const skin = (/** @type {number[]} */ border) => geckoToggleSkin(14, 14, { type: 'checkbox', checked: true, indeterminate: false, disabled: true, accent: acc }, /** @type {any} */ ({ dark: false, disabledBorder: geckoDisabledBorder(border, false) }));
+  assert.match(skin(old), /fill="rgba\(199,199,206,1\)"/);
+  assert.match(skin(newLight), /fill="rgba\(199,198,203,0\.498\)"/);
+  assert.notEqual(skin(old), skin(newLight));
 });
 
 test('WebKit classic bars (measured Safari 27): 11 px lane 3 px into a 17 px gutter, inset 3 px at both ends, knob >= 18 px; light black 52 % / dark white 57 % knob', () => {

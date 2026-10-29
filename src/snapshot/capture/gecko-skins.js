@@ -41,8 +41,23 @@ const WHITE = /** @type {Rgba} */ ([255, 255, 255, 1]);
 const NONE = /** @type {Rgba} */ ([0, 0, 0, 0]);
 const METER = { optimum: [[0x00, 0xab, 0x60, 1], [0x05, 0x61, 0x39, 1]], suboptimal: [[0xff, 0xbd, 0x4f, 1], [0xd2, 0x81, 0x1e, 1]], 'even-less-good': [[0xe2, 0x28, 0x50, 1], [0x81, 0x02, 0x20, 1]] };
 
+/** ButtonBorder of Firefox 155-157 in both schemes (nsXPLookAndFeel stand-in #8f8f9d). */
+const BUTTONBORDER_157 = [0x8f, 0x8f, 0x9d];
+
+/**
+ * -moz-buttondisabledborder, which content cannot read. Firefox 158 (bug 2063178, "Differentiate default and disabled checkbox/radio more") replaced it together with
+ * ButtonBorder, which content can read: Firefox 155-157 ButtonBorder #8f8f9d, disabled border #8f8f9d at 0x7f alpha (light; as composited over white, #c7c7ce) and opaque
+ * #8f8f9d (dark); Firefox 158+ ButtonBorder #817f84 (light) / #949297 (dark), disabled border #c7c6cb (light) / #515054 (dark), both at 0x7f alpha. The live ButtonBorder
+ * therefore tells the two apart; any other ButtonBorder gets the current palette. Measured on macOS in Firefox 155.0.1, 157.0.1, 158.0 and 159.0.
+ * @param {Rgba} buttonBorder the live ButtonBorder of the scheme @param {boolean} dark @returns {Rgba}
+ */
+export function geckoDisabledBorder(buttonBorder, dark) {
+  if (BUTTONBORDER_157.every((v, i) => buttonBorder[i] === v)) return dark ? [0x8f, 0x8f, 0x9d, 1] : [0xc7, 0xc7, 0xce, 1];
+  return dark ? [0x51, 0x50, 0x54, 0x7f / 255] : [0xc7, 0xc6, 0xcb, 0x7f / 255];
+}
+
 /** @param {number} v 0-255 */
-const lin = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const lin =(v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
 /** @param {number} v linear */
 const gam = (v) => { const c = Math.min(1, Math.max(0, v)); return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055); };
 

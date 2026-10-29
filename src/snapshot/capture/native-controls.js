@@ -11,7 +11,7 @@
 import { appendInlineStyle } from './inline-style.js';
 import { currentEngine } from '../../util/engine.js';
 import { pressOnThumb } from '../../util/native-states.js';
-import { accentPalette, geckoArrow, geckoBoxSkin, geckoListboxBar, geckoListboxThumb, geckoProgressSkin, geckoRangeSkin, geckoToggleSkin } from './gecko-skins.js';
+import { accentPalette, geckoArrow, geckoBoxSkin, geckoDisabledBorder, geckoListboxBar, geckoListboxThumb, geckoProgressSkin, geckoRangeSkin, geckoToggleSkin } from './gecko-skins.js';
 import { usedColorScheme } from './color-scheme.js';
 import {
   THUMB, alpha, buttonSkin, cancelGlyph, css, inactiveTints, iosColorWellSkin, luminance, magnifierGlyph, pressedShade, searchSkin, svgDoc, colorWellSkin, foregroundOn, meterSkin, over, popupGlyph, progressSkin, rangeSkin, resizerGlyph, skinUrl, spinGlyph, textFieldSkin,
@@ -520,7 +520,7 @@ const GECKO_OUT = 8;
 
 /**
  * Firefox's widget colours of one scheme: the content-visible system colours from a hidden probe, the -moz-* ones from nsXPLookAndFeel's stand-ins (light: ButtonFace / white
- * at 50 %; dark: #2b2a33 at 40 % over #1c1b22), the disabled border as measured on macOS (light #c7c7ce, dark #8f8f9d).
+ * at 50 %; dark: #2b2a33 at 40 % over #1c1b22), the disabled border by the Firefox release the live ButtonBorder identifies (gecko-skins.js geckoDisabledBorder).
  * @param {Document} doc @param {boolean} dark
  */
 function geckoPaletteOf(doc, dark) {
@@ -531,12 +531,12 @@ function geckoPaletteOf(doc, dark) {
   probe.style.cssText = `color-scheme:${key};${PROBE_BOX}`;
   doc.documentElement.appendChild(probe);
   const read = (/** @type {string} */ kw) => { probe.style.color = kw; return rgbaOf(doc, getComputedStyle(probe).color); };
-  const face = read('ButtonFace');
+  const face = read('ButtonFace'), border = read('ButtonBorder');
   const p = {
-    dark, border: read('ButtonBorder'), face, field: read('Field'), accent: read('AccentColor'), accentText: read('AccentColorText'),
+    dark, border, face, field: read('Field'), accent: read('AccentColor'), accentText: read('AccentColorText'),
     disabledFace: /** @type {Rgba} */ (dark ? over([43, 42, 51, 0.4], [28, 27, 34, 1]) : [face[0], face[1], face[2], 128 / 255]),
     disabledField: /** @type {Rgba} */ (dark ? over([43, 42, 51, 0.4], [28, 27, 34, 1]) : [255, 255, 255, 128 / 255]),
-    disabledBorder: /** @type {Rgba} */ (dark ? [0x8f, 0x8f, 0x9d, 1] : [0xc7, 0xc7, 0xce, 1]),
+    disabledBorder: geckoDisabledBorder(border, dark),
     hoverFace: /** @type {Rgba} */ (dark ? [82, 82, 94, 1] : [0xd0, 0xd0, 0xd7, 1]), activeFace: /** @type {Rgba} */ (dark ? [91, 91, 102, 1] : [0xb1, 0xb1, 0xb9, 1]),
     hoverBorder: /** @type {Rgba} */ (dark ? [0xb1, 0xb1, 0xb1, 1] : [0x67, 0x67, 0x74, 1]), activeBorder: /** @type {Rgba} */ (dark ? [0xd0, 0xd0, 0xd7, 1] : [0x48, 0x48, 0x51, 1]),
   };
