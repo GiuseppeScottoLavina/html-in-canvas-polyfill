@@ -95,11 +95,41 @@ export function checkSurface(ctx, { name, poly, twin, dpr, origin = { x: 0, y: 0
   return rec;
 }
 
+/** Bounding box (device px) of the pixels farther than `tolerance` (largest channel difference) from the surface background `bg`; null when there are none. */
+export function contentBox({ width, height, data }, bg, tolerance = 16) {
+  let x0 = width, y0 = height, x1 = -1, y1 = -1;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 4;
+    if (Math.max(Math.abs(data[i] - bg[0]), Math.abs(data[i + 1] - bg[1]), Math.abs(data[i + 2] - bg[2])) <= tolerance) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/** Largest distance (device px) between the matching edges of two boxes; Infinity when either is missing. */
+export function boxEdgeDistance(a, b) {
+  if (!a || !b) return Infinity;
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.x + a.w - b.x - b.w), Math.abs(a.y + a.h - b.y - b.h));
+}
+
+/**
+ * Positional check: the canvas content lands where the twin's does, every edge of its bounding box within `maxEdge` device px of the twin's.
+ * A fraction budget cannot see a shift on a sparse page: there the pixels a shift changes are at most twice the content, which can be close to the budget
+ * itself (the explainer's typed state has 0.8 % content against a 1 % budget). The box moves by the whole shift, however little content the page has.
+ */
+export function checkContentBox(ctx, { name, poly, twin, bg, tolerance = 16, maxEdge = 1, numbers = {} }) {
+  const canvas = contentBox(poly, bg, tolerance), plain = contentBox(twin, bg, tolerance);
+  const edge = boxEdgeDistance(canvas, plain);
+  numbers[`${name} content box`] = { canvas, twin: plain, edge };
+  ctx.check(`${name}: the content bounding box (delta > ${tolerance} from the background) matches the twin's, every edge within ${maxEdge} device px: catches a whole-content shift of any size`, edge <= maxEdge, { canvas, twin: plain, edge }, 'pixel');
+  return { canvas, twin: plain, edge };
+}
+
 /**
  * Read both pages and run checkSurface. The twin is read from a compositor screenshot (it is plain DOM), the polyfill page from the CANVAS BACKING STORE.
- * Each page is brought to the foreground before it is read.
+ * Each page is brought to the foreground before it is read. `box: {maxEdge, tolerance}` adds the positional check (checkContentBox) over the same two images.
  */
-export async function compareToTwin(ctx, { ref, page, name, selector = '#hic-surface', refSelector = selector, numbers, polyFirst = false, ...opts }) {
+export async function compareToTwin(ctx, { ref, page, name, selector = '#hic-surface', refSelector = selector, numbers, polyFirst = false, box = null, ...opts }) {
   const rest = opts;
   // polyFirst: read the polyfill canvas while its tab is still in front. Hiding the tab and showing it again makes the polyfill re-snapshot everything, which would hide a missed damage.
   let poly;
@@ -112,6 +142,7 @@ export async function compareToTwin(ctx, { ref, page, name, selector = '#hic-sur
   const sizeOk = poly.img.width === twin.img.width && poly.img.height === twin.img.height;
   ctx.check(`${name}: canvas backing store size equals the twin's device-pixel size`, sizeOk, { canvas: [poly.img.width, poly.img.height], twin: [twin.img.width, twin.img.height] }, 'pixel');
   const rec = checkSurface(ctx, { name, poly: poly.img, twin: twin.img, dpr: twin.geo.dpr, origin: { x: twin.geo.x, y: twin.geo.y }, numbers, ...opts, regions: regions ?? [] });
+  if (box) rec.box = checkContentBox(ctx, { name, poly: poly.img, twin: twin.img, bg: poly.geo.bg, numbers, ...box });
   return { poly, twin, rec };
 }
 

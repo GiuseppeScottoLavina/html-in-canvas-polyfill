@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- G-explainer checks where the content is drawn, not only how much of it differs: in every phase it compares (at rest, typed, each caret-blink sample with the field focused on both pages, the dense form while typing) the bounding box of the canvas content must sit on the plain-DOM twin's to 1 device px. On the sparse explainer page the fraction budgets could not see a shift: drawn content moved 40 device px to the right while a field had focus passed every check. The new mutant `shift40-while-focused` (49 mutants) is caught by the new check.
+
 ## [0.1.0-preview.11] - 2026-10-28
 
 Smaller downloads, same library. The minified bundles get a second minification pass: the core is 112,066 bytes gzipped instead of 117,183 (95,252 with brotli, as jsDelivr serves it, instead of 100,388). Behaviour is unchanged: the browser gates, the WPT subject run and the examples give the same results on the new minified core as on the previous one, and its performance is within measurement noise.
