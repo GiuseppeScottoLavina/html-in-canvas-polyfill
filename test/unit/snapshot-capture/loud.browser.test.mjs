@@ -4,6 +4,19 @@ import { test, assert } from '/test/unit/lib/t.js';
 import { mount, rasterize } from './_support.mjs';
 
 const svgOf = (r) => decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
+/**
+ * Capture until no resource is pending (a refused connection settles in a few ms on macOS and Linux, but Windows retries it for about 2 s), at most `ms` (under the 5 s test timeout).
+ * @returns the settled capture
+ */
+const settled = async (m, el, ms = 3500) => {
+  const t0 = performance.now();
+  for (;;) {
+    const r = m.capture(m.request(el));
+    if (r.complete !== false) return r;
+    assert.ok(performance.now() - t0 < ms, `the capture still had a pending resource after ${ms} ms`);
+    await new Promise((ok) => setTimeout(ok, 50));
+  }
+};
 
 /** Resolves once every frame under `root` left its initial about:blank document (a cross-origin one then reads as null). @param {Element} root */
 async function framesSettled(root) {
@@ -77,8 +90,7 @@ test('cross-origin image without CORS: first pending, then reported with cross-o
   const el = m.layerEl.firstElementChild;
   const first = m.capture(m.request(el));
   assert.equal(first.complete, false);
-  await new Promise((ok) => setTimeout(ok, 300));
-  const second = m.capture(m.request(el));
+  const second = await settled(m, el);
   assert.deepEqual(second.unsupported.map((e) => e.feature), ['cross-origin-resource']);
   assert.ok(second.unsupported[0].message.includes('127.0.0.1:9'));
   assert.ok(!svgOf(second).includes('data-hic-node'), 'no hatched box');
@@ -99,8 +111,7 @@ test('<picture> whose selected source is cross-origin: the <img> box without the
   for (let i = 0; i < 50 && !img.currentSrc; i++) await new Promise((ok) => setTimeout(ok, 20));
   assert.equal(img.currentSrc, other, 'the source is selected');
   m.capture(m.request(el));
-  await new Promise((ok) => setTimeout(ok, 300));
-  const r = m.capture(m.request(el));
+  const r = await settled(m, el);
   assert.deepEqual(r.unsupported.map((e) => e.feature), ['cross-origin-resource']);
   assert.ok(!svgOf(r).includes('data-hic-node') && !svgOf(r).includes('localhost'));
   const px = (await rasterize(r)).getImageData(20, 20, 1, 1).data;
