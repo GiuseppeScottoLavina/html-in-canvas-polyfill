@@ -66,7 +66,10 @@ right element (measured on the Android Emulator with a 2.2x pinch).
 
 ## What is not verified
 
-- No physical iPhone or iPad. The one physical phone is a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625, 2026-10-30): the gate's 11 scenarios PASS there
+- No physical iPhone. Two physical devices ran the gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
+  iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose` with every composed frame equal to the settled tile, a canvas
+  resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` and were skipped, as on the simulator.
+  And a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625, 2026-10-30): the gate's 11 scenarios PASS there
   with their controls red (`nativeFirst` and `scrollCompose` not applicable), in a tab of the phone's own Chrome. On no device were memory and canvas limits pushed to
   their edge, frame timing measured on the phone's GPU, or battery use measured.
 - Chrome for Android: Chrome 156 on the phone has no native HTML-in-Canvas, so it ran the polyfill as users get it. The emulator ran Chromium 158.0.8108.0 (a Chromium
@@ -74,7 +77,7 @@ right element (measured on the Android Emulator with a 2.2x pinch).
   the same engine with `install({ forcePolyfill: true })` (a test-only option). The refusal of an older Chrome ran on the emulator image's own Chrome 124.
 - On the iOS Simulator, WebDriver cannot drag a finger (the session hangs), type text, show the virtual keyboard, rotate the device or long-press: those scenarios are
   skipped there and documented; they ran on Android.
-- iOS 27: not run. The iOS 27.0 simulator runtime is installed, but no `safaridriver` offers it as a session host: neither Safari 27.0.1's nor Safari Technology
+- iOS 27 on an iPhone: not run (iPadOS 27.2 ran on the physical iPad above). The iOS 27.0 simulator runtime is installed, but no `safaridriver` offers it as a session host: neither Safari 27.0.1's nor Safari Technology
   Preview 254's (Xcode 27 ships none). With `safari:deviceUDID` the driver answers "Could not find any session hosts" at once, without contacting the device; without it the
   driver boots an iOS 26.4 simulator instead. Inside the simulator everything was in place: remote automation and the developer extras on (`com.apple.WebInspector` and
   `com.apple.mobilesafari`), the system Automation Mode on, Mobile Safari running and connected to the simulator's `webinspectord`. It needs a `safaridriver` that lists iOS 27
@@ -85,7 +88,7 @@ right element (measured on the Android Emulator with a 2.2x pinch).
 
 `npm run test:mobile` needs a full Xcode with an iOS 26 simulator runtime (Mobile Safari is driven by `safaridriver` with `safari:useSimulator`) and the Android SDK with an AVD
 (`ANDROID_AVD_HOME`, `--avd=<name>`, default `hicmobile`). One simulator or emulator runs at a time and is shut down afterwards. Options: `--platform=ios|android`,
-`--only=<scenarios>`, `--ios-devices=<udid,...>`, `--ipad=<udid>|none`, `--ios-old=<udid>|none`, `--android-package=<package>`, `--no-stand-in`, `--android-serial=<serial>` (a physical phone, below). The simulator's Safari must allow
+`--only=<scenarios>`, `--ios-devices=<udid,...>`, `--ipad=<udid>|none`, `--ios-old=<udid>|none`, `--android-package=<package>`, `--no-stand-in`, `--android-serial=<serial>` (a physical phone, below), `--ios-device=<udid>` (a physical iPhone or iPad over USB: paired and unlocked, Safari's Web Inspector and Remote Automation on, Developer Mode on; the test server then listens on the Mac's local network address, `--lan-host=<ip>`, so the device must share that network). The simulator's Safari must allow
 remote automation: the gate writes that setting into the simulated device when it is missing (it is a setting of the simulator, not of the Mac).
 
 Android browser: the gate drives the newest browser installed on the AVD. To run a current Chromium, install the `ChromePublic.apk` of a Chromium snapshot

@@ -89,11 +89,16 @@ function verdicts(real, control) {
 }
 
 const physicalSerial = arg('android-serial');
-const report = { gate: 'G-mobile', at: new Date().toISOString(), note: physicalSerial && platforms.includes('android') ? `physical Android device ${physicalSerial}${platforms.includes('ios') ? '; iOS on simulators only' : ''}` : 'simulators and emulators only; no physical device', devices: {}, pass: true };
+const iosDevices = platforms.includes('ios') ? arg('ios-device')?.split(',').filter(Boolean) : undefined;
+const noteParts = [
+  ...(platforms.includes('ios') ? [iosDevices ? `physical iOS device${iosDevices.length > 1 ? 's' : ''} ${iosDevices.join(', ')}` : 'iOS on simulators'] : []),
+  ...(platforms.includes('android') ? [physicalSerial ? `physical Android device ${physicalSerial}` : 'Android on the emulator'] : []),
+];
+const report = { gate: 'G-mobile', at: new Date().toISOString(), note: noteParts.join('; '), devices: {}, pass: true };
 // files: URL paths the scenarios map onto files of their own (scrollCompose's mutant bundles under .scratch)
 const files = {};
 // a physical iOS device cannot reach the Mac's loopback: the server then listens on the Mac's address on the local network (--lan-host, default en0's), for this run only
-const physicalIos = platforms.includes('ios') ? arg('ios-device')?.split(',').filter(Boolean) : undefined;
+const physicalIos = iosDevices;
 const lanHost = physicalIos ? (arg('lan-host') ?? spawnSync('ipconfig', ['getifaddr', 'en0'], { encoding: 'utf8' }).stdout.trim()) : null;
 if (physicalIos && !lanHost) throw new Error('--ios-device needs the Mac on a local network the device shares (no address on en0; pass --lan-host=<ip>)');
 const srv = await startServer({ inject: RECORDER, files, ...(lanHost ? { host: lanHost } : {}) });

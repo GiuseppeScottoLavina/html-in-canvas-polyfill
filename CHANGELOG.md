@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 
 - The core bundle grows to 341,036 bytes minified, 115,193 gzipped (+302 / +130 bytes), and to 16,465 code lines, for the fractional box scale. The effects bundle grows to 39,319 bytes (+598) and the engines bundle to 45,515 (+615; 17,295 gzipped), which share it.
+- The mobile gate runs on a physical iPhone or iPad over USB: `node test/mobile/run.mjs --platform=ios --ios-device=<udid>` (paired and unlocked, Safari's Web Inspector, Remote Automation and Developer Mode on; the test server then listens on the Mac's local network address, `--lan-host`). Measured on an iPad Pro 11-inch (M1), iPadOS 27.2, Safari 27.2: the scenarios WebDriver can drive on iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose`, a canvas resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` on iOS. Test tooling: the PNG decoder reads 16-bit images (the iPad's wide-colour screenshots), a WebDriver evaluation longer than 30 s raises the session's script timeout first (the driver answered 408 otherwise), and a transient "device is not paired" answer of `safaridriver` is retried.
 
 ### Fixed
 
