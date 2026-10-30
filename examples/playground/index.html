@@ -42,8 +42,7 @@
 
   /* ---- the two panes */
   .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
-  /* no overflow clip on the card: under a rounded clip Chrome hit-tests pointer events into the out-of-process preview frame asynchronously (an
-     irregular clip); without it the frame is a plain rectangle. The parts that touch the rounded corners round themselves instead. */
+  /* the card does not clip its content: the parts that touch its rounded corners round themselves */
   .card { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
   .card > :last-child { border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px); }
   .bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-height: 3rem; padding: .45rem .6rem .45rem .9rem; border-bottom: 1px solid var(--line); }
