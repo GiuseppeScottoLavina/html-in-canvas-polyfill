@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.14`, a preview on npm under the dist-tags `next` and `latest` (a plain `npm install` gets it), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on simulators and emulators only). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.14`, a preview on npm under the dist-tags `next` and `latest` (a plain `npm install` gets it), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (Android verified on a physical phone and the emulator, iOS on the simulator only). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 Live demo: [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · Try it in the browser: [playground](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/playground/)
 
@@ -107,7 +107,7 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14 and 158.0.8112.1 on 2026-10-22, with or without `--enable-blink-features=CanvasDrawElement`; 159.0.8128.2 on 2026-10-29 with the flag) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
-| Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Verified on iOS Simulator / Android Emulator only | MOBILE |
+| Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Android verified on a physical Pixel 7 Pro (Chrome 156) and the Android Emulator; iOS on the iOS Simulator only | MOBILE |
 | older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
 Measured on macOS: Chrome 154 and 155, Chrome Canary 157, 158 and 159 (native), Firefox 155.0.1 and 157.0.1, and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (11 of the 16 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.

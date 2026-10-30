@@ -164,7 +164,8 @@ class AndroidSession {
     try { this.ws.close(); } catch { /* gone */ }
     await closeTab(this.cdpPort, this.targetId);
     adb(this.serial, 'forward', '--remove', `tcp:${this.cdpPort}`);
-    adb(this.serial, 'reverse', '--remove-all');
+    if (this.physical) for (const p of this.serverPorts ?? []) adb(this.serial, 'reverse', '--remove', `tcp:${p}`);
+    else adb(this.serial, 'reverse', '--remove-all');
     if (this.standIn) { adb(this.serial, 'shell', 'rm', '-f', FLAGS_FILE); adb(this.serial, 'shell', 'am', 'clear-debug-app'); }
     // a physical device: the rotation settings the run may have changed go back to what they were
     if (this.restoreSettings) for (const [key, value] of Object.entries(this.restoreSettings)) adb(this.serial, 'shell', 'settings', 'put', 'system', key, value);
@@ -205,18 +206,20 @@ const topActivity = (serial) => /topResumedActivity=\S+ \S+ (\S+)/.exec(adb(seri
  * Open a tab of our own in `pkg` on a booted emulator and attach CDP (any other known browser is stopped first: they share the DevTools socket name).
  * @param {{serial: string, pkg: string, serverPorts: number[], standIn?: boolean}} o
  */
-async function openBrowser({ serial, pkg, serverPorts, standIn = false }) {
+async function openBrowser({ serial, pkg, serverPorts, standIn = false, physical = false }) {
   const chromeVersion = versionOf(serial, pkg);
   if (!chromeVersion) throw new AndroidUnavailable(`${pkg} is not installed on the AVD`);
   const major = Number(chromeVersion.split('.')[0]);
-  for (const b of BROWSERS) adb(serial, 'shell', 'am', 'force-stop', b);
-  standIn = standIn && major < STAND_IN_MAJOR && pkg === STOCK_CHROME;
-  if (standIn) {
+  // a physical device is the owner's phone: its browsers are not stopped, its debug app and Chrome command-line file are not touched, no tab is opened by intent and no
+  // first-run screen is dismissed (uiautomator writes files on the device); only the test tab (CDP) and this run's adb forward / reverse ports are added and removed
+  if (!physical) for (const b of BROWSERS) adb(serial, 'shell', 'am', 'force-stop', b);
+  standIn = standIn && !physical && major < STAND_IN_MAJOR && pkg === STOCK_CHROME;
+  if (physical) { /* nothing to set up */ } else if (standIn) {
     adb(serial, 'shell', `echo "_ --enable-blink-features=CSSAnchorPositioning --disable-fre --no-default-browser-check --no-first-run" > ${FLAGS_FILE}`);
     adb(serial, 'shell', 'am', 'set-debug-app', '--persistent', pkg);
   } else { adb(serial, 'shell', 'rm', '-f', FLAGS_FILE); adb(serial, 'shell', 'am', 'clear-debug-app'); }
   for (const p of serverPorts) adb(serial, 'reverse', `tcp:${p}`, `tcp:${p}`);
-  adb(serial, 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', 'about:blank', '-n', `${pkg}/com.google.android.apps.chrome.Main`);
+  adb(serial, 'shell', 'am', 'start', ...(physical ? [] : ['-a', 'android.intent.action.VIEW', '-d', 'about:blank']), '-n', `${pkg}/com.google.android.apps.chrome.Main`);
   const cdpPort = await freePort();
   let target = null;
   for (let i = 0; i < 60 && !target; i++) {
@@ -224,12 +227,12 @@ async function openBrowser({ serial, pkg, serverPorts, standIn = false }) {
     adb(serial, 'forward', `tcp:${cdpPort}`, 'localabstract:chrome_devtools_remote');
     try { target = await newTab(cdpPort); } catch { target = null; }
     // a fresh profile opens DevTools only after its first-run screens
-    if (!target && i % 4 === 3 && /firstrun|FirstRun/.test(topActivity(serial))) dismissFirstRun(serial);
+    if (!target && !physical && i % 4 === 3 && /firstrun|FirstRun/.test(topActivity(serial))) dismissFirstRun(serial);
   }
   if (!target?.webSocketDebuggerUrl) throw new Error(`${pkg}: Chrome DevTools did not answer over adb forward (top activity ${topActivity(serial)})`);
   await sleep(1500);
-  for (let i = 0; i < 4 && dismissFirstRun(serial); i++) await sleep(1500); // the notification prompt over the first tab would take the OS taps
-  const s = new AndroidSession({ serial, pkg, ownEmulator: false, chromeVersion, chromeMajor: major, standIn, cdpPort, targetId: target.id });
+  for (let i = 0; i < 4 && !physical && dismissFirstRun(serial); i++) await sleep(1500); // the notification prompt over the first tab would take the OS taps
+  const s = new AndroidSession({ serial, pkg, ownEmulator: false, physical, chromeVersion, chromeMajor: major, standIn, cdpPort, targetId: target.id });
   s.ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((ok, bad) => { s.ws.addEventListener('open', ok); s.ws.addEventListener('error', bad); });
   s.ws.addEventListener('message', (e) => {
@@ -274,8 +277,9 @@ export async function launchAndroid({ avd = 'hicmobile', avdHome = process.env.A
 }
 
 /**
- * A physical device connected over USB with USB debugging on: the same session as on the emulator, in the device's own browser (no stand-in, nothing installed). The
- * rotation settings are read first and restored by `close()`; the screen must be unlocked (it is woken, never unlocked by this driver).
+ * A physical device connected over USB with USB debugging on: the same session as on the emulator, in a new tab of the device's own running browser (no stand-in, nothing
+ * installed, no browser stopped, no debug app or command-line file touched, no uiautomator). The rotation settings are read first and restored by `close()`, which also
+ * closes the tab and removes only this run's adb ports; the screen must be unlocked (it is woken, never unlocked by this driver).
  * @param {{serial: string, serverPorts: number[], pkg?: string}} o
  */
 export async function attachDevice({ serial, serverPorts, pkg }) {
@@ -286,7 +290,7 @@ export async function attachDevice({ serial, serverPorts, pkg }) {
   const browsers = installedBrowsers(serial);
   const chosen = pkg ?? (browsers.find((b) => b.pkg === STOCK_CHROME) ?? browsers[0])?.pkg;
   if (!chosen) throw new AndroidUnavailable(`no supported browser installed on ${serial} (${BROWSERS.join(', ')})`);
-  const s = await openBrowser({ serial, pkg: chosen, serverPorts, standIn: false });
+  const s = await openBrowser({ serial, pkg: chosen, serverPorts, physical: true });
   Object.assign(s, { ownEmulator: false, browsers, restoreSettings, model: adb(serial, 'shell', 'getprop', 'ro.product.model'), android: adb(serial, 'shell', 'getprop', 'ro.build.version.release') });
   return s;
 }
@@ -311,5 +315,5 @@ export async function plainTab(s) {
 export async function openPackage(s, pkg) {
   try { s.ws.close(); } catch { /* gone */ }
   adb(s.serial, 'forward', '--remove', `tcp:${s.cdpPort}`);
-  return openBrowser({ serial: s.serial, pkg, serverPorts: s.serverPorts ?? [] });
+  return openBrowser({ serial: s.serial, pkg, serverPorts: s.serverPorts ?? [], physical: !!s.physical });
 }
