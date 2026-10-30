@@ -1,7 +1,8 @@
 # Phones and tablets
 
-The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+. **Android was verified on a physical Pixel 7 Pro (Android 17, Chrome 156,
-2026-10-30: every scenario PASS with its control red) and on the Android Emulator; iOS and iPadOS only on the iOS Simulator, never on a physical iPhone or iPad.** The numbers
+The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+. **Android was verified on two physical phones, a Pixel 7 Pro (Android 17,
+Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156), 2026-10-30: every scenario PASS with its control red, and on the Android Emulator. iPadOS was verified on a physical iPad Pro (iPadOS 27.2, the scenarios WebDriver can
+drive), iOS 26 on the iOS Simulator only; a physical iPhone XR (iOS 18.7) ran the refusal.** The numbers
 are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them is `npm run test:mobile` (`docs/TEST-PLAN.md`).
 
 ## Which browsers install it
@@ -66,13 +67,14 @@ right element (measured on the Android Emulator with a 2.2x pinch).
 
 ## What is not verified
 
-- No physical iPhone on iOS 26 or later. A physical iPhone XR (iOS 18.7.11, the newest it can run) ran the refusal: refused with the version named, the page keeps running, the control (a supported agent) admitted. Two physical devices ran the full gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
+- No physical iPhone on iOS 26 or later. A physical iPhone XR (iOS 18.7.11, the newest it can run) ran the refusal: refused with the version named, the page keeps running, the control (a supported agent) admitted. Three physical devices ran the full gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
   iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose` with every composed frame equal to the settled tile, a canvas
   resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` and were skipped, as on the simulator.
-  And a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625, 2026-10-30): the gate's 11 scenarios PASS there
-  with their controls red (`nativeFirst` and `scrollCompose` not applicable), in a tab of the phone's own Chrome. On no device were memory and canvas limits pushed to
+  And two Android phones, 2026-10-30: a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625) and a Huawei Mate 10 Pro (Android 10, EMUI, Chrome 156.0.8078.79,
+  a display-size override of 720 x 1440 at 320 dpi on its 1080 x 2160 panel, so DPR 2 and a 360 x 600 css px viewport): the gate's 11 scenarios PASS on each with their
+  controls red (`nativeFirst` and `scrollCompose` not applicable), in a tab of the phone's own Chrome. On no device were memory and canvas limits pushed to
   their edge, frame timing measured on the phone's GPU, or battery use measured.
-- Chrome for Android: Chrome 156 on the phone has no native HTML-in-Canvas, so it ran the polyfill as users get it. The emulator ran Chromium 158.0.8108.0 (a Chromium
+- Chrome for Android: Chrome 156 on the phones has no native HTML-in-Canvas, so it ran the polyfill as users get it. The emulator ran Chromium 158.0.8108.0 (a Chromium
   snapshot's `ChromePublic.apk`, no flags, its real user agent), which implements HTML-in-Canvas natively: the polyfill steps aside there, and its own path was run on
   the same engine with `install({ forcePolyfill: true })` (a test-only option). The refusal of an older Chrome ran on the emulator image's own Chrome 124.
 - On the iOS Simulator, WebDriver cannot drag a finger (the session hangs), type text, show the virtual keyboard, rotate the device or long-press: those scenarios are
@@ -101,3 +103,10 @@ Physical Android device: `node test/mobile/run.mjs --platform=android --android-
 and unlock the screen: the gate wakes the screen but never unlocks it. The run opens one tab in the device's own Chrome (130 or later) and closes it at the end. It installs
 nothing, stops no browser and does not touch the debug app, Chrome's command-line file or any other setting, except the rotation settings, which the rotation scenario changes
 and the gate restores. Only the adb ports of the run are removed. Leave the phone alone while the gate runs: it taps, types and rotates through the OS.
+
+OS gestures (the keyboard tap and the long press) are placed through a calibration tap whose touch the page reports. A gesture whose point is outside the page's visual
+viewport is refused rather than sent, since it would land on the browser's toolbar or the system's bars. The tab must still be visible before and after each gesture.
+If it is not (another app came to the front), the scenario fails, and the browser is brought back to the front so the next scenario runs. On a phone with a display-size override (`adb shell wm size` reports an override size), the two calibration taps are placed
+from that size and the scale between css px and the coordinates of `adb shell input` is measured, not assumed to be the device pixel ratio. On the Mate 10 Pro both `input`
+and `screencap` use the override's 720 x 1440, which is css px x 2. Text is typed in sentence case ("Hello", "Ada"): a keyboard app that capitalises the start of a field (SwiftKey
+on the Mate 10 Pro, also with `autocapitalize="off"`) types it unchanged, and the comparison stays exact.

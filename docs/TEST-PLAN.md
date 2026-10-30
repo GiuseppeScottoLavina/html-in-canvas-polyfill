@@ -282,7 +282,9 @@ so touch scroll, typing through keys, the virtual keyboard, rotation and long-pr
 tap; rotation is replaced by a canvas resize). Screenshots are the whole device screen: crops are located with a marker drawn into the page in the same screenshot, and only
 from the upper half of the viewport (the toolbar's blur covers the bottom). Android: the emulator starts headless, the newest installed browser (Chromium from a snapshot's `ChromePublic.apk`, else the image's Chrome) is driven over
 `adb forward ... chrome_devtools_remote` (tabs through `Target.createTarget`; first-run screens dismissed through uiautomator, no command-line flags); taps and drags are CDP
-touch events, typing is the IME (`adb input text`), long press, keyboard taps and rotation go through the OS. When the browser implements HTML-in-Canvas natively (Chromium 158),
+touch events, typing is the IME (`adb input text`, sentence-case text: a keyboard app may capitalise the first letter of a field), long press, keyboard taps and rotation go through the OS.
+An OS gesture is placed by a calibration tap the page reports (two taps measuring the css -> input scale when `wm size` reports a display-size override), refused when its point is
+outside the visual viewport, and checked to leave the test tab visible (otherwise the scenario fails and the browser is brought back to the front). When the browser implements HTML-in-Canvas natively (Chromium 158),
 `nativeFirst` checks that the plain bundles step aside and that the native result passes the explainer's pixels, tap and typing, and the polyfill scenarios load
 `test/mobile/force-polyfill.js` after the core (`install({ forcePolyfill: true })`). The refusal runs on a browser below 130 (the image's Chrome 124). When no installed browser is
 130+, the polyfill scenarios run as a labelled stand-in on the old Chrome (the anchor-positioning flag and a Chromium 130 user agent). At a fractional DPR the
