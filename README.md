@@ -32,9 +32,9 @@ install(); // synchronous: call it before your code uses the API; throws HicUnsu
 Or from a CDN, with plain script tags placed before your own scripts (no `defer`, `async` or `type="module"`: the polyfill installs while its tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.13/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.14/dist/hic-live-polyfill.iife.min.js"></script>
 <!-- Firefox and Safari: this second bundle draws form controls in those engines' look. Chrome does not need it. -->
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.13/dist/hic-live-engines.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.14/dist/hic-live-engines.iife.min.js"></script>
 ```
 
 Then use the standard API. This is the explainer's own example, unchanged:
@@ -92,12 +92,12 @@ The headed browser gates run on macOS, at a device pixel ratio of 2 (some also a
 
 - **The picture lags the DOM by one to two frames.** Each update is cloned, serialised into an SVG image and decoded by the browser before it can be drawn. On Chromium a change that needs no font or image to load is painted one frame later, others about two. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. Firefox uses the scrolling shortcut only at a device pixel ratio of 1, for square scrollers without rounded corners, form controls or images inside; elsewhere it rebuilds the scroller at every step. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
-- **Size.** The core is about 114.5 KB gzipped (339 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 115 KB gzipped (341 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS. The browser itself leaves them out of a canvas; the polyfill draws the element's box without its content and logs one console message, never a silent gap. Also not drawn: native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Animated images:** an animated GIF, APNG, WebP or AVIF `<img>` plays where the browser has `ImageDecoder` (WebCodecs), in a secure context; Safari 27, which has none, shows its first frame. Animated CSS images (`background-image` and the like) show their first frame everywhere.
 - **Phones:** verified on the iOS Simulator and the Android Emulator only. Pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it).
-- **Preview.** `0.1.0-preview.13` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Preview.** `0.1.0-preview.14` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 
@@ -128,7 +128,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | blank frames during real window resizes | 0 of 3127 | 542 of 3128 | 0 of 3129 |
 | one update in a 1000-element drawable, main thread | 19.2 ms | 40.9 ms | 6.5 ms |
 | first paint of a form page (new tab), p50 | 97 ms | 69 ms | 71 ms |
-| core bundle, minified / gzipped | 339 KB / 114.5 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 341 KB / 115 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome, Firefox 155+, Safari 27+; Chrome for Android 130+, iOS / iPadOS Safari 26+ (simulator / emulator only) | claims all, including mobile (not verified here) | Chrome Canary 157+ (no flag needed) |
 
 The WPT row is this polyfill on 2026-10-29 ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)), the other package as measured on 2026-10-13, and native Chrome at the build whose copy of the tests is pinned (newer Canary builds already implement later API changes that the pinned tests predate); the latency, resize, update and first-paint rows were measured from 2026-10-13 to 2026-10-19 with earlier builds of this polyfill (native: Canary 157.0.8101.0); the bundle row is the current build. The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
@@ -164,8 +164,8 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 ## Testing and conformance
 
 - **Official WPT tests:** the 248 HTML-in-Canvas test files at the newest WPT commit that touches them (2026-10-28). The polyfill passes 214 files (333 of 381 subtests); native Chrome passes 236 (369) in every full run on Canary 159.0.8128.2, a build whose copy of the tests is byte-identical to that commit; without the polyfill at most 11 pass, all vacuously. Every difference has a written reason, and no polyfill bug is open ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 585 in Node and 902 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check (CI has no GPU, so the WebGPU tests skip there).
-- **Browser gates:** 16 gates in real, headed Chrome (20 runs: two of them run at two device pixel ratios, G-pixel-dpr at three) compare the canvas with the same HTML rendered as a plain page or, at DPR 1, 1.25 and 1.5, with Chrome's native implementation (pixels, text weight, hit testing through strong effects, typing, resize, scrolling and its cadence); two more run the effects over Chrome Canary's own implementation (G-native-effects, G-native-interposer). Each has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite checks that all 59 seeded bugs are caught. `npm run test:gates:all` runs them with the WPT gate, the static checks, the unit tests and the mutation suite. In CI, the platform probe (G-platform) checks fonts, form controls, scrollbars, fractional DPR and text selection against native pixels on Linux, Windows and macOS.
+- **Unit tests:** 585 in Node and 904 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check (CI has no GPU, so the WebGPU tests skip there).
+- **Browser gates:** 16 gates in real, headed Chrome (20 runs: two of them run at two device pixel ratios, G-pixel-dpr at three) compare the canvas with the same HTML rendered as a plain page or, at DPR 1, 1.25 and 1.5, with Chrome's native implementation (pixels, text weight, hit testing through strong effects, typing, resize, scrolling and its cadence); two more run the effects over Chrome Canary's own implementation (G-native-effects, G-native-interposer). Each has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite checks that all 60 seeded bugs are caught. `npm run test:gates:all` runs them with the WPT gate, the static checks, the unit tests and the mutation suite. In CI, the platform probe (G-platform) checks fonts, form controls, scrollbars, fractional DPR and text selection against native pixels on Linux, Windows and macOS.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
 - **Phones (simulators and emulators):** `npm run test:mobile` drives Mobile Safari in the iOS Simulator and Chrome in the Android Emulator: taps on moved drawables, typing, touch scroll, composed scroll frames against the settled picture (iOS), the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
