@@ -533,7 +533,7 @@ function paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled = tr
   const engine = currentEngine().engine;
   if (!styled && !authored && engine === 'webkit') {
     const skins = engineSkins();
-    if (skins) { skins.paintWebkitBars(win, src, cloneScroller, f, skins.webkitDarkBars(win, src)); return; }
+    if (skins) { skins.paintWebkitBars(win, src, cloneScroller, f, skins.webkitDarkBars(win, src), scrolled); return; }
   }
   const look = chromiumBarLook(win, src, cs, styled);
   if (look) { paintChromiumBars(look, src, cloneScroller, cs, f, scrolled); return; }

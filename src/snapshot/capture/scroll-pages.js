@@ -7,6 +7,8 @@
 
 import { currentEngine } from '../../util/engine.js';
 import { parseColor } from './caret-overlay.js';
+import { engineSkins } from './engine-skins.js';
+import { WEBKIT_SYSTEM_INSET, WEBKIT_SYSTEM_MIN, webkitSystemKnob } from './webkit-bar-geometry.js';
 import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts, styledMinThumb, verticalBar, webkitStyledBar, webkitStyledMinThumb } from './scroll-emulation.js';
 
 /** @typedef {import('../../contracts/types.js').LiveLayer} LiveLayer */
@@ -250,7 +252,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   let bar = null;
   if (gutterX > 0.5) {
     // a classic bar is composed where the thumb's geometry is the one the clone paints and moves by whole surface pixels: Chromium's bars (chromiumVerticalBar /
-    // verticalBar), and WebKit's author-styled bars (webkitStyledBar). Not WebKit's system bars (their thumb geometry was not measured) nor Gecko's
+    // verticalBar), WebKit's author-styled bars (webkitStyledBar) and its system bars (webkitSystemKnob). Not Gecko's
     if (engine !== 'chromium' && engine !== 'webkit') return null;
     const f = scrollFacts(s, cs);
     if (!f || !f.scrollableY) return null;
@@ -272,14 +274,16 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
 }
 
 /**
- * The vertical bar of a WebKit scroller the compositor can move (webkitStyledBar, the geometry paintClassicScrollbars draws), or null. Composed: an author-styled bar
- * (`::-webkit-scrollbar` with a width) on macOS whose thumb has a minimum the polyfill resolves and shows a thumb, and whose track is the whole bar (no buttons, no
- * track margins: the clone paints neither). Refused: the system's classic bars (their thumb geometry was not measured), and iOS / iPadOS.
+ * The vertical bar of a WebKit scroller the compositor can move, or null. On macOS only (iOS / iPadOS: refused):
+ * - an author-styled bar (`::-webkit-scrollbar` with a width; webkitStyledBar, the geometry paintClassicScrollbars draws) whose thumb has a minimum the polyfill resolves
+ *   and shows a thumb, and whose track is the whole bar (no buttons, no track margins: the clone paints neither);
+ * - the system's bar (webkitSystemBar).
  * @param {Window} win @param {HTMLElement} s @param {import('./scroll-emulation.js').ScrollFacts} f
  * @returns {ReturnType<typeof webkitStyledBar>|null}
  */
 function webkitBar(win, s, f) {
-  if (!f.styled || currentEngine().os !== 'desktop') return null;
+  if (currentEngine().os !== 'desktop') return null;
+  if (!f.styled) return webkitSystemBar(win, s, f);
   const pseudo = (/** @type {string} */ p) => win.getComputedStyle(s, p);
   const button = pseudo('::-webkit-scrollbar-button');
   if (px(button.height) > 0 || px(button.width) > 0) return null;
@@ -288,6 +292,24 @@ function webkitBar(win, s, f) {
   if (min === null) return null;
   const v = webkitStyledBar(f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight, min);
   return v.thumbH > 0 ? v : null;
+}
+
+/**
+ * WebKit's system classic bar (an unstyled scroller under "Show scroll bars: Always" or with a mouse attached) in the numbers of verticalBar, or null: the knob the
+ * engines bundle paints (paintWebkitBars, a `data-hic-bar="thumb"` box) where AppKit puts it (webkitSystemKnob), 3 css px into the gutter and as thick as the lane.
+ * Composed for the measured bars only: a regular (17 px) or thin (13 px) gutter and a knob that fits. Refused: a scrollbar-color (the clone draws another bar) and a
+ * page without the engines bundle (the clone then draws the generic bar). The lane is the rounded client height less 6, as the painter takes it.
+ * @param {Window} win @param {HTMLElement} s @param {import('./scroll-emulation.js').ScrollFacts} f
+ * @returns {ReturnType<typeof webkitStyledBar>|null}
+ */
+function webkitSystemBar(win, s, f) {
+  const min = WEBKIT_SYSTEM_MIN[f.gv];
+  if (min === undefined || !engineSkins() || parseScrollbarColor(win.getComputedStyle(s).scrollbarColor)) return null;
+  // the sizes of the plan (the plan is dropped when they change)
+  const client = s.clientHeight, total = s.scrollHeight, lane = client - 2 * WEBKIT_SYSTEM_INSET;
+  const at = (/** @type {number} */ top) => webkitSystemKnob(lane, client, total, top, min);
+  const k = at(0);
+  return k ? { thumbX: WEBKIT_SYSTEM_INSET, thumbW: f.gv - 2 * WEBKIT_SYSTEM_INSET, thumbH: k.length, thumbY: (top) => WEBKIT_SYSTEM_INSET + (at(top)?.start ?? 0) } : null;
 }
 
 /**

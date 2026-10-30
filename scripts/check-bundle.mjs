@@ -130,7 +130,10 @@ const LIMITS = {
   // 337.25 -> 338.5 KB, gzip 114 -> 114.5 KB (+1,235 / +455 bytes, 2026-10-30, measured 338,355 / 114,290): the scroll compositor composes Safari's author-styled
   //   classic bars: WebKit's thumb geometry in whole css px (webkit-bar-geometry.js, scroll-emulation.js webkitStyledBar / webkitStyledMinThumb, shared by the clone's bar)
   //   and the planner's checks (scroll-pages.js webkitBar: buttons, track margins, the minimum)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 338.5 * KB, gzip: 114.5 * KB },
+  // 338.5 -> 339 KB, gzip 114.5 -> 114.75 KB (+538 / +206 bytes, 2026-10-30, measured 338,893 / 114,496): the scroll compositor composes Safari's system classic
+  //   bars: AppKit's knob geometry (webkit-bar-geometry.js webkitSystemKnob, shared with the engines bundle's painter) and the planner's checks (scroll-pages.js
+  //   webkitSystemBar: the measured gutters, scrollbar-color, the engines bundle)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 339 * KB, gzip: 114.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -157,7 +160,9 @@ const LIMITS = {
   // 42.25 -> 41.75 KB, gzip 16.25 -> 16 KB (-563 / -254 bytes, 2026-10-27, measured 41,576 / 15,925): the Terser pass over esbuild's minified output
   // 41.75 -> 44.25 KB, gzip 16 -> 17 KB (+2,428 / +938 bytes, 2026-10-29, measured 44,004 / 16,863): Safari's accent caret (webkit-caret.js: `caret-color: auto` paints the
   //   system accent unless an author colour applies, which Safari does not expose: the page's colour and caret-color declarations are read and matched on the caret's chain)
-  'hic-live-engines.iife.min.js': { target: 44.25 * KB, ceiling: 44.25 * KB, gzip: 17 * KB },
+  // 44.25 -> 45 KB, gzip 17 -> 17.25 KB (+757 / +227 bytes, 2026-10-30, measured 44,900 / 17,142): Safari's system classic bar drawn with AppKit's knob geometry
+  //   (webkitSystemKnob: whole css px, a 20 / 16 px minimum) and its vertical knob as a box of its own, which the scroll compositor captures and moves
+  'hic-live-engines.iife.min.js': { target: 45 * KB, ceiling: 45 * KB, gzip: 17.25 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
   //   OffscreenCanvas.getElementTransform removed
