@@ -17,6 +17,32 @@ test('decodeDataUrl: a broken SVG rejects (the pump keeps the previous version)'
   await assert.rejects(() => loaded('data:image/svg+xml,%3Csvg%20not-closed'));
 });
 
+// WebKit rejects a malformed SVG with the 'Loading error.' of a failed load (iPadOS 27.2): the rejection must say which it was
+test('decodeDataUrl: a malformed SVG rejects with the parser error and the generated markup around it', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><foreignObject width="10" height="10"><div xmlns="http://www.w3.org/1999/xhtml"><b>x</i></div></foreignObject></svg>';
+  let err = null;
+  try { await loaded('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)); } catch (e) { err = e; }
+  assert.ok(err, 'rejected');
+  assert.equal(err.name, 'EncodingError', 'the engine error name is kept');
+  assert.ok(/The SVG is not well-formed XML \(\d+ chars\): .*(mismatch|closing tag).* at \d+: /i.test(err.message), err.message);
+  assert.ok(err.message.includes('<b>x</i>') && !err.message.includes('Below is a rendering'), `the markup around the error, no parser boilerplate: ${err.message}`);
+  assert.equal(err.cause?.name, 'EncodingError', 'the engine error is the cause');
+});
+
+test('decodeDataUrl: a well-formed SVG whose decode fails keeps the engine error as it is (control)', async () => {
+  const engineError = new DOMException('Loading error.', 'EncodingError');
+  const fake = /** @type {any} */ ({ src: '', decoding: '', complete: false, naturalWidth: 0, decode: () => Promise.reject(engineError) });
+  let err = null;
+  try { await decodeDataUrl(solidUrl(4, 4, 'red'), { create: () => fake }); } catch (e) { err = e; }
+  assert.equal(err, engineError, 'the same error, no XML note');
+  assert.equal(fake.src, '', 'the image was released');
+});
+
+test('decodeDataUrl: a timed-out decode of a well-formed SVG is reported as a timeout', async () => {
+  const fake = /** @type {any} */ ({ src: '', decoding: '', complete: false, naturalWidth: 0, decode: () => new Promise(() => {}) });
+  await assert.rejects(() => decodeDataUrl(solidUrl(4, 4, 'red'), { create: () => fake, timeoutMs: 20 }), /timed out after 20 ms$/);
+});
+
 test('drawTileAtomic: replaces ONLY the crop; pixels outside never change', async () => {
   const s = allocateSurface(40, 40);
   fill(s, 'red');

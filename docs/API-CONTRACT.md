@@ -506,7 +506,8 @@ Every refusal is a `HicUnsupportedError` (class extends `DOMException`, `name ==
    forever, a page that mutates the drawable every frame) is indistinguishable from an animation and is NOT stopped; those are bounded by the frame cap,
    the per-drawable depth of one build and the main-thread budget (ARCHITECTURE ADR-D). The decode of one tile is bounded as well: `decodeDataUrl` rejects
    after 4000 ms, the tile is dropped, its rect is re-damaged and the next build waits 100, 200, ... 5000 ms (consecutive failures), so the pump never waits
-   forever on `img.decode()`.
+   forever on `img.decode()`. When the generated SVG is not well-formed XML, the `snapshot-store:decode` entry of `report().errors` names the parser's first
+   error and quotes the generated markup around it (about 120 characters, which can include text of the drawable).
 
 ### 9.2 Refusal table
 | id | trigger | behaviour |

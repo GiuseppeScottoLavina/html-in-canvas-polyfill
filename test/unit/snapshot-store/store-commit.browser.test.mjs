@@ -165,6 +165,8 @@ test('decode failure keeps the previous version, is reported once, backs off, an
   rig.store.markDamage(a, A, 'input');
   rig.pump();
   await until(() => rig.reports.caught.length === 1, 3000, 'the decode failure report');
+  assert.equal(rig.reports.caught[0].where, 'snapshot-store:decode');
+  assert.ok(/not well-formed XML/.test(String(rig.reports.caught[0].err.message)), 'the report says the SVG was malformed');
   assert.equal(rig.store.version(a), v1);
   assert.equal(rig.store.hasLanded(), false);
   assert.equal(rig.store.isSettled(a), false, 'damage was reclaimed');
