@@ -54,6 +54,8 @@ export class WdSession {
 
   /** Evaluate an expression (a Promise is awaited). Page exceptions come back as a thrown Error with the page stack. */
   async evaluate(expr, { timeoutMs = 30000 } = {}) {
+    // the WebDriver script timeout is the session's (30 s by default): a longer evaluation raises it first, or the driver answers 408 whatever this client waits
+    if (timeoutMs > (this.scriptTimeoutMs ?? 30000)) { await this.cmd('POST', '/timeouts', { script: timeoutMs }); this.scriptTimeoutMs = timeoutMs; }
     const script = `const done = arguments[arguments.length - 1];
       Promise.resolve().then(() => (${expr})).then((v) => done({ ok: v === undefined ? null : v }), (e) => done({ err: String(e && (e.stack || e.message) || e) }));`;
     const v = await this.cmd('POST', '/execute/async', { script, args: [] }, { timeoutMs: timeoutMs + 5000 });
@@ -309,6 +311,37 @@ export async function launchIosSimulator({ udid }) {
   const s = new WdSession({ engine: 'ios', base, id: v.sessionId, caps: { ...v.capabilities, udid, bootedByUs: !booted }, cleanup });
   // measured: the simulator's Safari receives trusted keydown / keypress from WebDriver key actions but inserts no text (the plain DOM alike): typing is not drivable
   s.typeText = async () => false;
+  return s;
+}
+
+/**
+ * Mobile Safari on a PHYSICAL iPhone or iPad connected over USB (paired, unlocked; Settings > Apps > Safari > Advanced > Web Inspector and Remote Automation on), through
+ * the system safaridriver (`platformName: iOS` without `safari:useSimulator`). Nothing on the device is changed: the remote-automation switch is the owner's, never written.
+ * @param {{udid: string}} o
+ */
+export async function launchIosDevice({ udid }) {
+  const port = await freePort();
+  const drv = spawn('safaridriver', ['-p', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = ''; drv.stderr.on('data', (d) => { stderr += d; });
+  own([drv.pid]);
+  const base = `http://127.0.0.1:${port}`;
+  await waitHttp(base);
+  let v;
+  try {
+    // measured 2026-10-30 (iPad Pro, iPadOS 27.2, safaridriver of Safari 27.0.1): with the device paired, unlocked and Safari open, the driver answers "device is not
+    // paired" to some session requests and creates the session on a later one: such an answer is retried for up to 2 minutes
+    for (let attempt = 0; ; attempt++) {
+      try { v = await newSession(base, { browserName: 'Safari', platformName: 'iOS', 'safari:deviceUDID': udid }, 180000); break; } catch (e) {
+        if (attempt >= 12 || !/not paired|could not be used/.test(e.message)) throw e;
+        await sleep(10000);
+      }
+    }
+  } catch (e) {
+    killPids([drv.pid]);
+    if (/session hosts|not paired|Remote Automation|remote automation/i.test(e.message)) throw new EngineUnavailable(`safaridriver could not automate Safari on device ${udid}: is it unlocked, paired, with Web Inspector and Remote Automation on? (${e.message.replace(/^.*message":"/, '').replace(/".*$/, '')})`);
+    throw new Error(`${e.message}${stderr ? ' / ' + stderr.trim() : ''}`);
+  }
+  const s = new WdSession({ engine: 'ios', base, id: v.sessionId, caps: { ...v.capabilities, udid, physical: true }, cleanup: async () => { killPids([drv.pid]); } });
   return s;
 }
 

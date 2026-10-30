@@ -1,4 +1,4 @@
-// Minimal zero-dependency PNG decode/encode (8-bit, non-interlaced, color types 0/2/3/4/6).
+// Minimal zero-dependency PNG decode/encode (8-bit; decode also 16-bit, rounded to 8; non-interlaced, color types 0/2/3/4/6).
 // decodePng(buf) -> {width,height,data:Uint8Array RGBA}
 // encodePng({width,height,data}) -> Buffer
 import { inflateSync, deflateSync } from 'node:zlib';
@@ -19,12 +19,14 @@ export function decodePng(buf) {
     else if (type === 'IDAT') idat.push(body);
     else if (type === 'IEND') break;
   }
-  if (bitDepth !== 8) throw new Error('unsupported bit depth ' + bitDepth);
+  // 16-bit samples (screenshots of a wide-colour iPad display, Safari on iPadOS 27) are rounded to 8 bits; a palette image is 8-bit only
+  if (bitDepth !== 8 && !(bitDepth === 16 && colorType !== 3)) throw new Error('unsupported bit depth ' + bitDepth);
+  const bps = bitDepth / 8;
   if (interlace) throw new Error('interlaced PNG unsupported');
   const ch = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType];
   if (!ch) throw new Error('unsupported color type ' + colorType);
   const raw = inflateSync(Buffer.concat(idat));
-  const stride = width * ch;
+  const stride = width * ch * bps, unit = ch * bps;
   const out = Buffer.alloc(stride * height);
   let prev = Buffer.alloc(stride);
   for (let y = 0; y < height; y++) {
@@ -32,7 +34,7 @@ export function decodePng(buf) {
     const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
     const cur = out.subarray(y * stride, (y + 1) * stride);
     for (let i = 0; i < stride; i++) {
-      const a = i >= ch ? cur[i - ch] : 0, b = prev[i], c = i >= ch ? prev[i - ch] : 0;
+      const a = i >= unit ? cur[i - unit] : 0, b = prev[i], c = i >= unit ? prev[i - unit] : 0;
       let v = line[i];
       if (f === 1) v += a; else if (f === 2) v += b; else if (f === 3) v += (a + b) >> 1;
       else if (f === 4) { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); }
@@ -40,14 +42,16 @@ export function decodePng(buf) {
     }
     prev = cur;
   }
+  // the samples as 8-bit values: a 16-bit sample is big-endian, rounded (v * 255 / 65535)
+  const s8 = bps === 1 ? out : Uint8Array.from({ length: out.length / 2 }, (_, i) => Math.round(((out[i * 2] << 8) | out[i * 2 + 1]) / 257));
   const data = new Uint8Array(width * height * 4);
   for (let p = 0; p < width * height; p++) {
     let r, g, b, a = 255;
-    if (colorType === 6) { r = out[p * 4]; g = out[p * 4 + 1]; b = out[p * 4 + 2]; a = out[p * 4 + 3]; }
-    else if (colorType === 2) { r = out[p * 3]; g = out[p * 3 + 1]; b = out[p * 3 + 2]; }
-    else if (colorType === 0) { r = g = b = out[p]; }
-    else if (colorType === 4) { r = g = b = out[p * 2]; a = out[p * 2 + 1]; }
-    else { const i = out[p]; r = palette[i * 3]; g = palette[i * 3 + 1]; b = palette[i * 3 + 2]; if (trns && i < trns.length) a = trns[i]; }
+    if (colorType === 6) { r = s8[p * 4]; g = s8[p * 4 + 1]; b = s8[p * 4 + 2]; a = s8[p * 4 + 3]; }
+    else if (colorType === 2) { r = s8[p * 3]; g = s8[p * 3 + 1]; b = s8[p * 3 + 2]; }
+    else if (colorType === 0) { r = g = b = s8[p]; }
+    else if (colorType === 4) { r = g = b = s8[p * 2]; a = s8[p * 2 + 1]; }
+    else { const i = s8[p]; r = palette[i * 3]; g = palette[i * 3 + 1]; b = palette[i * 3 + 2]; if (trns && i < trns.length) a = trns[i]; }
     data[p * 4] = r; data[p * 4 + 1] = g; data[p * 4 + 2] = b; data[p * 4 + 3] = a;
   }
   return { width, height, data };
