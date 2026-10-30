@@ -66,7 +66,7 @@ right element (measured on the Android Emulator with a 2.2x pinch).
 
 ## What is not verified
 
-- No physical iPhone. Two physical devices ran the gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
+- No physical iPhone on iOS 26 or later. A physical iPhone XR (iOS 18.7.11, the newest it can run) ran the refusal: refused with the version named, the page keeps running, the control (a supported agent) admitted. Two physical devices ran the full gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
   iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose` with every composed frame equal to the settled tile, a canvas
   resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` and were skipped, as on the simulator.
   And a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625, 2026-10-30): the gate's 11 scenarios PASS there
