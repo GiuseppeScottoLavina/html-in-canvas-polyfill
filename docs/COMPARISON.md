@@ -80,7 +80,7 @@ These runs had machine load above threshold (another process above 15 % CPU; loa
 
 ## 6. Where the competitor is ahead (measured or factual)
 
-- About 8.9x smaller minified (29.7 KB vs 264 KB) and 9.5x smaller gzipped (9.7 KB vs 91.8 KB); published on npm and in use.
+- About 8.9x smaller minified (29.7 KB vs 264 KB) and 9.5x smaller gzipped (9.7 KB vs 91.8 KB) on 2026-10-13; against the current core (339 KB / 114.5 KB) about 11x and 12x; published on npm and in use.
 - Lower keystroke-to-canvas latency on the explainer while the text fits (p50 10.6 vs 17.3 ms).
 - 7 WPT files pass that ours fails (listed above).
 - Three.js integration, WebXR examples, a browser extension; claims mobile and WebView support (not verified here; this polyfill refused mobile browsers at the time and admits Chrome for Android and Safari on iOS since, WebViews still refused).
