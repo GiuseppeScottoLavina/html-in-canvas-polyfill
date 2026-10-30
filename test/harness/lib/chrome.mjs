@@ -183,6 +183,9 @@ export async function launchChrome(opts = {}) {
   browser.version = ver;
   browser.conn = await new CDPConnection(ver.webSocketDebuggerUrl).open();
   if (macBars) await closeStrayTab(browser, `http://${macBars.toLowerCase()}/`);
+  // headless with the scrollbar pair, the only tab Chrome starts with is that value's: newPage never reuses it, whether or not it was closed in time (on the macOS
+  // runner it can show up after closeStrayTab's 3 s; a newPage that took it stalled for good, 2026-10-29/30, G-platform 'new page')
+  browser.noReuse = !!macBars && headless;
   browser.pointerPark = { parked: false, reason: headless ? 'headless' : 'not requested' };
   if (process.platform === 'darwin' && !headless && (opts.parkPointer ?? process.env.HIC_PARK_POINTER !== '0')) {
     for (let i = 0; i < 20; i++) { const o = osPointer(child.pid); if (!o || o.windows.length) break; await sleep(250); }
@@ -203,29 +206,46 @@ async function closeStrayTab(browser, stray) {
   }
 }
 
+/** how long a new tab may take to answer its first commands (it takes milliseconds) */
+const NEW_PAGE_MS = 20000;
+
 export class Browser {
   constructor(o) { Object.assign(this, o); this.pid = o.child.pid; /** @type {Page[]} */ this.pages = []; }
+
+  /**
+   * A CDP command of newPage, or a promise, that must settle within NEW_PAGE_MS (it takes milliseconds): one that does not throws, naming it.
+   * @param {string|Promise<any>} what @param {any} [params]
+   */
+  bounded(what, params) {
+    const p = typeof what === 'string' ? this.conn.send(what, params) : what;
+    const name = typeof what === 'string' ? what : params;
+    /** @type {ReturnType<typeof setTimeout>|undefined} */
+    let timer;
+    const late = new Promise((_, no) => { timer = setTimeout(() => no(new Error(`newPage: ${name} did not answer within ${NEW_PAGE_MS / 1000} s`)), NEW_PAGE_MS); });
+    return Promise.race([p, late]).finally(() => clearTimeout(timer));
+  }
 
   /** Page for the first not-yet-wrapped tab (reuseFirst) or a freshly created one. */
   async newPage({ reuseFirst = true, url = 'about:blank' } = {}) {
     let targetId;
-    if (reuseFirst) {
-      const { targetInfos } = await this.conn.send('Target.getTargets');
+    if (reuseFirst && !this.noReuse) {
+      const { targetInfos } = await this.bounded('Target.getTargets');
       targetId = targetInfos.find(t => t.type === 'page' && !/^http:\/\/(always|whenscrolling)\//.test(t.url) && !this.pages.some(p => p.targetId === t.targetId))?.targetId;
     }
-    if (!targetId) ({ targetId } = await this.conn.send('Target.createTarget', { url }));
+    if (!targetId) ({ targetId } = await this.bounded('Target.createTarget', { url }));
     let sessionId;
-    try { ({ sessionId } = await this.conn.send('Target.attachToTarget', { targetId, flatten: true })); } catch (e) {
+    try { ({ sessionId } = await this.bounded('Target.attachToTarget', { targetId, flatten: true })); } catch (e) {
       // A tab that Target.getTargets still listed can be gone by the time we attach (seen once on the hosted macOS runner, headless with the macOS scrollbar
       // override, whose stray tab is closed during launch): a reused tab that vanished is replaced by a new one, and the event is written to stderr.
       if (!reuseFirst || !/No target with given id/.test(String(/** @type {any} */ (e)?.message))) throw e;
-      const { targetInfos } = await this.conn.send('Target.getTargets');
+      const { targetInfos } = await this.bounded('Target.getTargets');
       console.error(`newPage: tab ${targetId} closed before it could be attached; opening a new one (tabs now: ${targetInfos.map((t) => `${t.type} ${t.url}`).join(', ') || 'none'})`);
-      ({ targetId } = await this.conn.send('Target.createTarget', { url }));
-      ({ sessionId } = await this.conn.send('Target.attachToTarget', { targetId, flatten: true }));
+      ({ targetId } = await this.bounded('Target.createTarget', { url }));
+      ({ sessionId } = await this.bounded('Target.attachToTarget', { targetId, flatten: true }));
     }
     const page = new Page(this, targetId, sessionId);
-    await page.init();
+    // a tab that never answers fails here, naming the step, instead of stalling its caller
+    await this.bounded(page.init(), 'Page/Runtime/Log.enable');
     this.pages.push(page);
     return page;
   }
