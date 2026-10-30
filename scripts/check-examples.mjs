@@ -576,7 +576,7 @@ const SCENARIOS = {
       return { ok: value === 'hello world' && !!diff.img, value, changedPixels: diff.changedPixels, ...focus };
     });
     await run.step('interact', 'a message from another window that carries the run\'s token is not shown (only the preview frame is heard)', async () => {
-      const token = await page.evaluate(`(/\\)\\("([a-z0-9]+)", /.exec(document.getElementById('preview').srcdoc) || [])[1] || null`);
+      const token = await page.evaluate(`(/\\)\\("([a-z0-9]+)", /.exec(decodeURIComponent(document.getElementById('preview').src)) || [])[1] || null`);
       await page.evaluate(`window.postMessage({ token: ${q(token)}, kind: 'error', text: 'forged message' }, '*')`);
       await sleep(400);
       const s = await status();
@@ -588,7 +588,7 @@ const SCENARIOS = {
       await page.evaluate(`document.getElementById('code').focus()`);
       await page.key('Enter', { modifiers: 2 });                    // Ctrl
       const s = await settled(n + 1);
-      const shown = await H.until(async () => { const c = (await status()).console; return /TypeError: playground check/.test(c) && /unhandled rejection: Error: rejected, playground check/.test(c) ? c : null; }, 5000);
+      const shown = await H.until(async () => { const c = (await status()).console; return /TypeError: playground check \(line 5 of the code\)/.test(c) && /unhandled rejection: Error: rejected, playground check/.test(c) ? c : null; }, 5000);
       const injected = await page.evaluate(`!!document.getElementById('pg-injected')`);
       const asText = !!shown && shown.includes('<img id="pg-injected" src="data:,">');
       return { ok: !!s && s.state === st.state && !!shown && asText && !injected, state: s?.state, injected, asText, console: (shown ?? (await status()).console).slice(0, 400) };

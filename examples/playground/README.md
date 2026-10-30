@@ -14,7 +14,7 @@ Run locally: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/e
 
 ## The sandbox
 
-The preview is `<iframe sandbox="allow-scripts">` without `allow-same-origin`, its document built with `srcdoc`. Its origin is opaque, so code from a shared link never runs in the site's origin: it cannot read the site's cookies or storage or reach the page, and it cannot open windows, show dialogs (`alert()` is reported in the console instead) or submit forms. The bundles are loaded by absolute URL from the page's own location.
+The preview is `<iframe sandbox="allow-scripts">` without `allow-same-origin`, its document loaded as a `data:` URL with a `<base>` of the playground's folder (relative URLs in the code resolve as in a page next to it). Not `srcdoc`: Safari 27 reports every error of a sandboxed `srcdoc` (or `blob:`) document as "Script error." without its message, and reports them in full for a `data:` document; Chrome and Firefox report them in all three. Its origin is opaque, so code from a shared link never runs in the site's origin: it cannot read the site's cookies or storage or reach the page, and it cannot open windows, show dialogs (`alert()` is reported in the console instead) or submit forms. The bundles are loaded by absolute URL from the page's own location.
 
 The polyfill needs nothing more from the origin: it makes no request of its own, uses no worker and no storage, and installs, paints and takes typing in the opaque origin as on a page. One difference: images, fonts and style sheets that the drawn HTML references are read with a CORS request (their origin differs from the opaque one), so their server must allow cross-origin reads. GitHub Pages does.
 
@@ -25,7 +25,7 @@ The frame reports to the page with `postMessage`. The page accepts a message onl
 The page sends the frame a ping every second; a frame that leaves one unanswered for 3 seconds is reported as not responding. What happens then depends on the browser:
 
 - Chrome runs the sandboxed frame in a process of its own: the editor keeps working and the status line says the preview is not responding. A new frame of the page would land in that busy process, which Chrome ends about 10.5 seconds after its last frame is gone (measured on Chrome 156). So Run and Reset remove the stuck frame, say so, and run the editor's code about 11 seconds later in a new process.
-- Firefox and Safari run the frame in the page's process: an endless loop freezes the page too, until the browser offers to stop the script. After that, edit the code and run it again.
+- Firefox (157) and Safari (27) run the frame in the page's process: a loop of 4.5 s in the preview stopped the page's own timers for 4.6 s in both. An endless loop freezes the page too, until the browser offers to stop the script; then edit the code and run it again. The page does not report such a pause as a preview that stopped responding.
 
 ## Checked by `npm run test:examples`
 

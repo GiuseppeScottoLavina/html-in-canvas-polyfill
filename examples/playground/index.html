@@ -216,7 +216,7 @@
   const state = window.__playground = { run: 0, state: 'idle', mode: null, focus: null, messages: 0 };
 
   // ---- the reporter: runs in the preview before the polyfill. Every message carries the run's token and plain strings only.
-  function reporter(token, targetOrigin) {
+  function reporter(token, targetOrigin, firstLine) {
     const post = (kind, text, extra) => { try { parent.postMessage(Object.assign({ token, kind, text: String(text) }, extra), targetOrigin); } catch (_) { /* the page is gone */ } };
     const show = (v) => {
       if (v instanceof Error) return v.name + ': ' + v.message;
@@ -232,7 +232,9 @@
     addEventListener('error', (e) => {
       const t = e.target;
       if (t && t !== window && t.localName) { post('error', 'could not load ' + (t.src || t.href || '<' + t.localName + '>'), { load: t.localName === 'script' }); return; }
-      post('error', (e.error ? show(e.error) : e.message || 'error') + (e.lineno ? ' (line ' + e.lineno + ')' : ''));
+      // a muted error (thrown by a script of another origin) has no details here; the browser's own console has them
+      if (!e.error && /^Script error\.?$/.test(e.message || '')) { post('error', 'Script error: the browser hides the details of an error from a script of another origin; its developer console shows them'); return; }
+      post('error', (e.error ? show(e.error) : e.message || 'error') + (e.lineno >= firstLine ? ' (line ' + (e.lineno - firstLine + 1) + ' of the code)' : ''));
     }, true);
     addEventListener('unhandledrejection', (e) => { post('error', 'unhandled rejection: ' + show(e.reason)); });
     addEventListener('focusin', (e) => { post('focus', e.target.localName + (e.target.id ? '#' + e.target.id : '')); });
@@ -248,14 +250,22 @@
     };
   }
 
-  /** The preview document: the reporter, the two polyfill bundles (absolute URLs), the install report, then the user's code as the body. */
+  /**
+   * The preview document: a base URL (relative URLs of the code resolve against this page, as in a page next to it), the reporter, the two polyfill
+   * bundles (absolute URLs), the install report, then the user's code as the body. It is loaded as a data: URL, not srcdoc: Safari hides the message
+   * of every error of a sandboxed srcdoc (or blob:) document as "Script error.", and shows them for a data: document (Safari 27.0.1).
+   */
   function previewDocument(userCode, token) {
     const targetOrigin = location.origin === 'null' ? '*' : location.origin;   // a page opened from disk has an opaque origin of its own
     const json = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
-    return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-      + '<script>(' + reporter.toString() + ')(' + json(token) + ', ' + json(targetOrigin) + ');<\/script>\n'
-      + SCRIPTS.map((src) => '<script src="' + src.replace(/"/g, '&quot;') + '"><\/script>\n').join('')
-      + '<script>window.__playgroundReport();<\/script>\n</head>\n<body>\n' + userCode + '\n</body>\n</html>\n';
+    const attr = (v) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const head = (firstLine) => '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+      + '<base href="' + attr(new URL('.', location.href).href) + '">\n'
+      + '<script>(' + reporter.toString() + ')(' + json(token) + ', ' + json(targetOrigin) + ', ' + firstLine + ');<\/script>\n'
+      + SCRIPTS.map((src) => '<script src="' + attr(src) + '"><\/script>\n').join('')
+      + '<script>window.__playgroundReport();<\/script>\n</head>\n<body>\n';
+    const firstLine = head(0).split('\n').length;                       // the line of the document where the code starts
+    return head(firstLine) + userCode + '\n</body>\n</html>\n';
   }
 
   // ---- console panel and status line: every string from the preview is set as text, never parsed as HTML
@@ -358,7 +368,7 @@
     setStatus('running', 'running');
     const old = preview;
     const next = FRAME.cloneNode(false);
-    next.srcdoc = previewDocument(code.value, token);
+    next.src = 'data:text/html;charset=utf-8,' + encodeURIComponent(previewDocument(code.value, token));
     old.before(next);
     old.remove();
     preview = next;
