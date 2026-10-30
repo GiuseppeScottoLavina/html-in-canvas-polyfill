@@ -9,6 +9,8 @@
 //   M5 a 60 Hz counter in proportional digits (its width changes, so its neighbours in the row move) ends pixel-exact after 2 s of changes
 //   M6 the same counter beside 2,000 inline cells (row damage, cells below the tile left out of the clone) ends pixel-exact after the run and a final narrow-to-wide change
 //      that moves its neighbours far
+//   M7 sliders whose values a script writes (the CRT plugin's presets: range.value and the percentage beside it) are repainted: after each of two preset changes the
+//      canvas equals a fresh page that shows that preset; before the fix only the outputs' damage repainted, and a slider kept its old thumb beside the new one
 // Positive control per class: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop, M4 composites tiles
 // source-over instead of replacing them; every class (append, hit, loop, ghost) must go red. The final-canvas checks of M5 and M6 share the class `ghost`; the
 // mutants moved-siblings-ignored and truncation-cuts-inside-tile show that they can fail (test/gates/mutants/mutants.mjs).
@@ -122,6 +124,25 @@ runGate('G-regress-paint', async (ctx) => {
   const bigDiffer = differingPixels(bigAfter.px, bigRef.px);
   numbers.large = { paints: Math.round(big.paintsPerSec * 10) / 10, changed: Math.round(big.changedPerSec * 10) / 10, store: big.store, text: bigAfter.text, differ: bigDiffer, errors: [...big.errors, ...bigAfter.errors, ...bigRef.errors] };
   ctx.check('M6: after the run the canvas equals a fresh page with the same counter and cells (<= 4 px differ)', bigDiffer !== null && bigDiffer <= 4 && !numbers.large.errors.length, numbers.large, 'ghost');
+
+  // --- M7: sliders set by script are repainted (no ghost thumb) ------------------------------------------------------------------------------------------
+  await openRegress(ctx, page, 'control-state.html');
+  await page.evaluate("window.__preset('monitor')");
+  const monitor = await page.evaluate('window.__pixels()');
+  await page.evaluate("window.__preset('arcade')");
+  const arcade = await page.evaluate('window.__pixels()');
+  await openRegress(ctx, page, 'control-state.html', { init: 'monitor' });
+  const monitorRef = await page.evaluate('window.__pixels()');
+  await openRegress(ctx, page, 'control-state.html', { init: 'arcade' });
+  const arcadeRef = await page.evaluate('window.__pixels()');
+  numbers.controlState = {
+    monitor: { values: monitor.values, differ: differingPixels(monitor.px, monitorRef.px) }, arcade: { values: arcade.values, differ: differingPixels(arcade.px, arcadeRef.px) },
+    presetsDiffer: differingPixels(monitorRef.px, arcadeRef.px), errors: [...monitor.errors, ...arcade.errors, ...monitorRef.errors, ...arcadeRef.errors],
+  };
+  const cs = numbers.controlState;
+  const exact = (/** @type {number|null} */ d) => d !== null && d <= 4;
+  ctx.check('M7: the two presets look different (the comparison can see a stale slider)', cs.presetsDiffer !== null && cs.presetsDiffer > 200, cs, 'surface');
+  ctx.check('M7: sliders set by script are repainted: after Monitor, and after Arcade again, the canvas equals a fresh page that shows that preset (<= 4 px differ)', exact(cs.monitor.differ) && exact(cs.arcade.differ) && !cs.errors.length, cs, 'ghost');
 
   const errs = page.errors({ includeWarnings: false }).slice(errors0);
   ctx.check('no page error or console error', errs.length === 0, errs.slice(0, 3), 'surface');

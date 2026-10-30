@@ -6,6 +6,7 @@
 import { BUS } from '../../contracts/events.js';
 import { installAnimationHooks, observeAnimations } from './animation-observer.js';
 import { observeChildCanvases } from './canvas-child-observer.js';
+import { observeControlState } from './control-state.js';
 import { observeDpr } from './dpr-observer.js';
 import { observeFrameCap } from './framecap-observer.js';
 import { observeInput } from './input-observer.js';
@@ -27,7 +28,8 @@ const PER_CANVAS = [observeFrameCap, observeCanvasResize, observeMutations, obse
 
 /**
  * Subscribes to BUS.CANVAS_MOUNTED/UNMOUNTING; returns the disposer. Every observer publishes damage ONLY through env.scheduler.damage. Canvases that are already active are started at once.
- * `ledger` (third argument, optional) lets the stylesheet observer wrap CSSStyleSheet/CSSStyleDeclaration methods (and adoptedStyleSheets) and the animation hooks wrap element.animate / animation.play; without it only <style>/<link> mutations, load events and fonts are watched.
+ * `ledger` (third argument, optional) lets the stylesheet observer wrap CSSStyleSheet/CSSStyleDeclaration methods (and adoptedStyleSheets), the animation hooks wrap element.animate / animation.play and the control-state observer wrap the
+ * form-control state setters (control-state.js); without it only <style>/<link> mutations, load events and fonts are watched, and a control's state written by script is not.
  * One observer failing to start is reported and does not stop the others.
  * @param {HicEnv} env
  * @param {InteractionTracker} tracker  also driven through its attach/detach when it is a TrackerControl
@@ -71,7 +73,7 @@ export function startObservers(env, tracker, ledger) {
   }
 
   globals.push(safely('dpr', () => observeDpr(env)));
-  if (ledger) globals.push(safely('stylesheets', () => observeStylesheets(env, ledger)), safely('canvas-children', () => observeChildCanvases(env, ledger)), safely('animation-hooks', () => installAnimationHooks(env, ledger)));
+  if (ledger) globals.push(safely('stylesheets', () => observeStylesheets(env, ledger)), safely('canvas-children', () => observeChildCanvases(env, ledger)), safely('animation-hooks', () => installAnimationHooks(env, ledger)), safely('control-state', () => observeControlState(env, ledger)));
   globals.push(env.bus.on(BUS.CANVAS_MOUNTED, (/** @type {{record: CanvasRecord}} */ e) => begin(e.record)));
   globals.push(env.bus.on(BUS.CANVAS_UNMOUNTING, (/** @type {{record: CanvasRecord}} */ e) => end(e.record)));
   for (const record of env.registry.all()) if (record.state === 'active') begin(record);
