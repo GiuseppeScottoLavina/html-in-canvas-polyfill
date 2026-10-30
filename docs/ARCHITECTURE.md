@@ -377,9 +377,19 @@ Tick RUN(now), for each canvas record in reverse tree order:
     on Safari 27.0.1 at DPR 2 against the plain DOM: 10-14 px bars over 372, 2480 and 31000 px of content, 9-19 offsets each, every thumb edge on the predicted whole css
     px (whole device rows, the same antialiasing at every offset); the thumb neither fades nor hides while scrolling. A thumb moved by whole surface pixels then equals the
     settled one (G-xbrowser scrollCompose on Safari: 19 of 20 jumps composed, no pixel over 16; mutant `webkit-thumb-fractional`: a thumb left at its fractional offset
-    is not). Refused: bar buttons and track margins (the clone paints neither), a thumb length in % or fractional px, iOS / iPadOS, and WebKit's SYSTEM classic bars
-    (macOS "Show scroll bars: Always" or a mouse): their lane / knob geometry (`webkit-bars.js`) was measured at one offset only, and Safari's own preference could not be
-    set for a sweep. In the rounded corners both engines
+    is not). Refused: bar buttons and track margins (the clone paints neither), a thumb length in % or fractional px, and iOS / iPadOS. WebKit's SYSTEM classic bar
+    (macOS "Show scroll bars: Always" or a mouse attached) is composed too. AppKit draws it as a lane inset 3 css px from every edge of the gutter and a knob in it, both
+    pills as thick as the lane (11 px in a 17 px gutter, 7 px in a 13 px thin one), and puts the knob on whole css px (`webkit-bar-geometry.js` webkitSystemKnob, used by
+    the engines bundle's painter `webkit-bars.js` and by the planner's webkitSystemBar): length `floor(lane x visible / total)`, at least 20 px (16 px thin); offset
+    `v x (lane - max(min, lane x visible / total))`, with v = scrollTop / (scrollHeight - clientHeight) and the knob's UNROUNDED length, cut to 1/256 px and rounded
+    up (a share 1/256 px past a whole px moves the knob, 1/262 does not). Measured on Safari 27.0.1 at DPR 2 against the plain DOM: 523 knobs (19 content heights from
+    372 to 31000 px, clients of 300 and 120 px, light and dark, square, rounded and bordered scrollers, regular and thin bars), every one on the predicted rows; the knob
+    neither fades nor changes while scrolling. The painter draws the vertical knob as a `data-hic-bar="thumb"` box in the gutter the clone keeps as padding (the lanes
+    stay a background layer of the clone scroller), so the compositor captures the bar without the knob and the knob alone, as for the other classic bars. Composed for
+    the measured gutters (17 and 13 px), with the engines bundle loaded (without it the clone draws the generic bar) and no `scrollbar-color`; a lane of the rounded
+    client height, as the painter takes it (a list at a fractional css position: the whole bar may sit one device row off native, knob and lane alike). G-xbrowser
+    scrollCompose runs it when the system shows classic bars (19 of 20 jumps composed, no pixel over 16; at rest the knob on the twin's rows at 8 offsets of each list); mutants `webkit-system-knob-round` (the plan) and `webkit-system-knob-look` (the
+    painter). In the rounded corners both engines
     blend a page rendered with square corners (content over the scroller's background) into the backdrop by the clip's coverage, where the engine clips the content alone
     over background and border: up to a few pixels of the antialiased arc differ where translucent content crosses it (G-mobile scrollCompose: 0-3 of 504 at DPR 3).
     Rows of fractional height (36.6 css px) on the same fixture: a page placed a box edge one css px away from the tile at the same offset on desktop Safari 27 at DPR 2 (one
@@ -446,7 +456,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
   `scrollbar-color` as the engine applies them. The look is MEASURED: the thicknesses of an unstyled probe at `auto` and `thin` follow round(15k) / round(10k) on Fluent and trunc(15k) / trunc(11k) on
   macOS (k = the device scale), which differ at every common scale; only an ambiguous measurement (a page zoom) falls back to the platform. A listbox's bar (the clone renders only its options) is a
   background layer in the gutter. Measured by G-platform (Chrome 155, F6 and F7 at DPR 1, 1.25 and 1.5): every bar region within 0.7 % of native pixels over 16 on Linux and on macOS with classic bars
-  (it was 12-100 % with the macOS legacy constants used everywhere). Safari's bars come from the engines bundle (`webkit-bars.js`), Firefox's from its listbox skin and the constants of
+  (it was 12-100 % with the macOS legacy constants used everywhere). Safari's bars come from the engines bundle (`webkit-bars.js`; the system knob where AppKit puts it, webkitSystemKnob, see the
+  scroll compositor's engines above; it was drawn at its fractional share with an 18 px minimum before), Firefox's from its listbox skin and the constants of
   `paintClassicScrollbars`. Safari's author-styled vertical bar places its thumb as WebKit computes it, in whole css px (`webkitStyledBar`, see the scroll compositor's
   engines above); other engines' author-styled bars keep the generic geometry (`verticalBar`). The prototype ran with scrollbars hidden and measured 3-4 % difference on classic ones [E5]; gate G-pixel-f5 requires <= 4 % (author-styled bars).
 
