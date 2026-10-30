@@ -312,6 +312,28 @@ export async function launchIosSimulator({ udid }) {
   return s;
 }
 
+/**
+ * Mobile Safari on a PHYSICAL iPhone or iPad connected over USB (paired, unlocked; Settings > Apps > Safari > Advanced > Web Inspector and Remote Automation on), through
+ * the system safaridriver (`platformName: iOS` without `safari:useSimulator`). Nothing on the device is changed: the remote-automation switch is the owner's, never written.
+ * @param {{udid: string}} o
+ */
+export async function launchIosDevice({ udid }) {
+  const port = await freePort();
+  const drv = spawn('safaridriver', ['-p', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = ''; drv.stderr.on('data', (d) => { stderr += d; });
+  own([drv.pid]);
+  const base = `http://127.0.0.1:${port}`;
+  await waitHttp(base);
+  let v;
+  try { v = await newSession(base, { browserName: 'Safari', platformName: 'iOS', 'safari:deviceUDID': udid }, 180000); } catch (e) {
+    killPids([drv.pid]);
+    if (/session hosts|not paired|Remote Automation|remote automation/i.test(e.message)) throw new EngineUnavailable(`safaridriver could not automate Safari on device ${udid}: is it unlocked, paired, with Web Inspector and Remote Automation on? (${e.message.replace(/^.*message":"/, '').replace(/".*$/, '')})`);
+    throw new Error(`${e.message}${stderr ? ' / ' + stderr.trim() : ''}`);
+  }
+  const s = new WdSession({ engine: 'ios', base, id: v.sessionId, caps: { ...v.capabilities, udid, physical: true }, cleanup: async () => { killPids([drv.pid]); } });
+  return s;
+}
+
 /** @param {{engine:'firefox'|'safari'|'stp', width?:number, height?:number, prefs?:object, headless?:boolean}} o  'stp' = Safari Technology Preview (optional: EngineUnavailable when it cannot run); `headless` is Firefox only */
 export async function launchEngine({ engine, width = 1200, height = 900, prefs, headless } = {}) {
   const s = engine === 'firefox' ? await launchFirefox({ prefs, ...(headless === undefined ? {} : { headless }) }) : engine === 'safari' ? await launchSafari() : engine === 'stp' ? await launchSafari({ stp: true }) : null;

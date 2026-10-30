@@ -17,7 +17,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
-import { launchIosSimulator, EngineUnavailable } from '../harness/lib/webdriver.mjs';
+import { launchIosSimulator, launchIosDevice, EngineUnavailable } from '../harness/lib/webdriver.mjs';
 import { startServer } from '../harness/server.mjs';
 import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
@@ -92,7 +92,11 @@ const physicalSerial = arg('android-serial');
 const report = { gate: 'G-mobile', at: new Date().toISOString(), note: physicalSerial && platforms.includes('android') ? `physical Android device ${physicalSerial}${platforms.includes('ios') ? '; iOS on simulators only' : ''}` : 'simulators and emulators only; no physical device', devices: {}, pass: true };
 // files: URL paths the scenarios map onto files of their own (scrollCompose's mutant bundles under .scratch)
 const files = {};
-const srv = await startServer({ inject: RECORDER, files });
+// a physical iOS device cannot reach the Mac's loopback: the server then listens on the Mac's address on the local network (--lan-host, default en0's), for this run only
+const physicalIos = platforms.includes('ios') ? arg('ios-device')?.split(',').filter(Boolean) : undefined;
+const lanHost = physicalIos ? (arg('lan-host') ?? spawnSync('ipconfig', ['getifaddr', 'en0'], { encoding: 'utf8' }).stdout.trim()) : null;
+if (physicalIos && !lanHost) throw new Error('--ios-device needs the Mac on a local network the device shares (no address on en0; pass --lan-host=<ip>)');
+const srv = await startServer({ inject: RECORDER, files, ...(lanHost ? { host: lanHost } : {}) });
 const port = Number(new URL(srv.url).port);
 
 async function device(label, launch, plan, { optional = false } = {}) {
@@ -114,7 +118,18 @@ async function full(s, D, label, platform, scenarios, extra) {
 }
 
 try {
-  if (platforms.includes('ios')) {
+  // --ios-device=<udid>[,<udid>]: physical iPhones / iPads over USB (xcrun devicectl list devices) instead of simulators; a device below iOS 26 runs the refusal
+  if (physicalIos) {
+    for (const udid of physicalIos) {
+      const info = (k) => spawnSync('ideviceinfo', ['-u', udid, '-k', k], { encoding: 'utf8' }).stdout.trim();
+      const ios = parseFloat(info('ProductVersion')) || 0, model = info('ProductType') || 'iOS device';
+      const label = `${/^iPad/.test(model) ? 'iPadOS' : 'iOS'} ${info('ProductVersion')} ${model} (physical)`;
+      await device(label, () => launchIosDevice({ udid }), async (s, D) => {
+        Object.assign(D, { physical: true, model, ios });
+        await full(s, D, label, 'ios', ios >= 26 ? SCENARIOS : { unsupported });
+      });
+    }
+  } else if (platforms.includes('ios')) {
     const sims = simDevices();
     const iphones = sims.filter((d) => /^iPhone 17$/.test(d.name));
     const picked = arg('ios-devices')?.split(',').map((u) => sims.find((d) => d.udid === u)).filter(Boolean)
