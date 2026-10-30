@@ -14,6 +14,7 @@ import { inlineCssUrls } from './inline-resources.js';
 import { barColors, barParts, barThemeOf, cornerSvg, hasArrowGlyphs, svgUrl, trackSvg } from './chromium-bars.js';
 import { darkSchemeOf } from './color-scheme.js';
 import { backdropOf, parseColor } from './caret-overlay.js';
+import { webkitThumb } from './webkit-bar-geometry.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -439,6 +440,36 @@ export function verticalBar(gutter, clientHeight, scrollHeight, styled, authored
 }
 
 /**
+ * The length macOS WebKit lays an author-styled thumb of `height: auto` out at along a vertical bar, which is its minimum (RenderScrollbarPart: an `auto` thickness is the
+ * native bar thickness). Measured Safari 27.0.1: a 300 px track over 31000 px of content shows a 17 px thumb (round(2.9) = 3 without the minimum).
+ */
+const WEBKIT_AUTO_THUMB = 17;
+
+/**
+ * PURE. The minimum length of an author-styled WebKit thumb, css px: its laid-out height, max(min-height, min(max-height, height)) with `height: auto` the native
+ * thickness (WEBKIT_AUTO_THUMB). Measured Safari 27.0.1: `min-height: 60px` gives a 60 px thumb where round(visible / total x track) is 36. null for what the polyfill does
+ * not resolve (a percentage, a fractional length).
+ * @param {{height: string, minHeight: string, maxHeight: string}} part  computed style of ::-webkit-scrollbar-thumb
+ * @returns {number|null}
+ */
+export function webkitStyledMinThumb(part) {
+  const len = (/** @type {string} */ v, /** @type {number} */ unset) => (v === 'auto' || v === 'none' || v === '' ? unset : /^[\d.]+px$/.test(v) ? parseFloat(v) : NaN);
+  const v = Math.max(len(part.minHeight, 0), Math.min(len(part.maxHeight, Infinity), len(part.height, WEBKIT_AUTO_THUMB)));
+  return Number.isInteger(v) ? v : null;
+}
+
+/**
+ * PURE. An author-styled vertical WebKit bar (::-webkit-scrollbar) in the numbers of verticalBar: the thumb spans the gutter; its length and its offset are whole css px
+ * as WebKit computes them (webkitThumb). thumbH 0 when no thumb shows (its minimum does not fit the track).
+ * @param {number} gutter css px @param {number} track  the bar's length, css px @param {number} clientHeight @param {number} scrollHeight @param {number} min  webkitStyledMinThumb
+ * @returns {{thumbX: number, thumbW: number, thumbH: number, thumbY: (top: number) => number}}
+ */
+export function webkitStyledBar(gutter, track, clientHeight, scrollHeight, min) {
+  const at = (/** @type {number} */ top) => webkitThumb(track, clientHeight, scrollHeight, top, min);
+  return { thumbX: 0, thumbW: gutter, thumbH: at(0)?.length ?? 0, thumbY: (top) => at(top)?.start ?? 0 };
+}
+
+/**
  * The min-height of the author-styled thumb of `src` (`::-webkit-scrollbar-thumb { min-height }`), css px; 0 when unset.
  * @param {Window} win @param {Element} src @returns {number}
  */
@@ -517,9 +548,12 @@ function paintClassicScrollbars(env, req, res, src, cloneScroller, scrolled = tr
   const sT = scrolled ? f.sT : 0, sL = scrolled ? f.sL : 0;
   const cw = f.cw ?? src.clientWidth, ch = f.ch ?? src.clientHeight;
   if (f.scrollableY && f.gv) {
-    const v = verticalBar(f.gv, ch, src.scrollHeight, styled, !!authored, styled ? px(th.minHeight) : 0);
+    // WebKit's author-styled thumb: whole css px (webkitStyledBar); a minimum the polyfill does not resolve keeps the generic geometry
+    const wkMin = styled && engine === 'webkit' ? webkitStyledMinThumb(th) : null;
+    const v = wkMin !== null ? webkitStyledBar(f.gv, ch, src.clientHeight, src.scrollHeight, wkMin)
+      : verticalBar(f.gv, ch, src.scrollHeight, styled, !!authored, styled ? px(th.minHeight) : 0);
     box(doc, cloneScroller, `left:${cw + sL}px;top:${sT}px;width:${f.gv}px;height:${ch}px;${track}`, 'track');
-    box(doc, cloneScroller, `left:${cw + sL + v.thumbX}px;top:${sT + v.thumbY(f.sT)}px;width:${v.thumbW}px;height:${v.thumbH}px;${thumb}`, 'thumb');
+    if (v.thumbH > 0) box(doc, cloneScroller, `left:${cw + sL + v.thumbX}px;top:${sT + v.thumbY(f.sT)}px;width:${v.thumbW}px;height:${v.thumbH}px;${thumb}`, 'thumb');
   }
   if (f.scrollableX && f.gh) {
     const tl = Math.max(minThumb, cw * (src.clientWidth / src.scrollWidth));

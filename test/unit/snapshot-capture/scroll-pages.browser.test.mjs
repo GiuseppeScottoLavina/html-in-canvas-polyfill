@@ -401,6 +401,43 @@ test('classic scrollbar in a rounded scroller: square pages, track and thumb ins
   assert.ok(got <= 0.001, `composed rounded port with the classic bar vs live capture: ${(got * 100).toFixed(3)} %`);
 });
 
+test('WebKit: an author-styled classic bar is planned with WebKit\'s thumb (whole css px, webkitThumb); its system bars, Gecko bars and what the clone does not paint are refused (stubbed gutter)', async () => {
+  const styled = css.replace('scrollbar-width:none', 'scrollbar-width:auto') + '.list::-webkit-scrollbar{width:12px}.list::-webkit-scrollbar-thumb{background:#7d889e}';
+  /** @param {string} extra @param {string} engine */
+  const planWith = async (extra, engine) => {
+    const m = mount(html, { css: styled + extra, width: 440, height: 320 });
+    await frames(1);
+    const list = m.layerEl.querySelector('.list');
+    const w = list.clientWidth + (list.offsetWidth - list.clientWidth);
+    // headless Chrome may or may not lay the styled bar out: the gutter is stubbed at its 12 px
+    Object.defineProperty(list, 'clientWidth', { configurable: true, get: () => w - 12 });
+    Object.defineProperty(list, 'scrollWidth', { configurable: true, get: () => w - 12 });
+    const plan = run(planSteps(document, m.layer, list, m.layerEl.firstElementChild, engine));
+    const sizes = { client: list.clientHeight, total: list.scrollHeight };
+    m.host.remove();
+    return { plan, ...sizes };
+  };
+  const { plan, client, total } = await planWith('', 'webkit');
+  assert.ok(plan?.bar, 'WebKit: planned with its styled bar');
+  assert.equal(plan.grid, 1);
+  const len = Math.max(Math.round((client / total) * client), 17);
+  assert.equal(plan.bar.thumbH, len, `the thumb length WebKit computes (17 px minimum for height: auto): client ${client}, scroll ${total}, got ${plan.bar.thumbH}`);
+  assert.deepEqual([plan.bar.thumbX, plan.bar.thumbW], [0, 12], 'across the whole gutter');
+  const tops = [0, 1, 7, 50, 333, 1000, plan.maxTop];
+  for (const t of tops) assert.ok(Number.isInteger(plan.bar.thumbY(t)), `whole css px at ${t}`);
+  assert.equal(plan.bar.thumbY(1), 1, 'a share under 1 px shows as 1 px');
+  assert.equal(plan.bar.thumbY(plan.maxTop) + plan.bar.thumbH, client, 'the thumb ends the track');
+  // positive control: the same scroller on Chromium moves its thumb by the generic geometry, which differs
+  const chromium = (await planWith('', 'chromium')).plan;
+  assert.ok(chromium?.bar && tops.some((t) => chromium.bar.thumbY(t) !== plan.bar.thumbY(t)), 'the Chromium plan of the same bar moves the thumb differently');
+  assert.equal((await planWith('.list::-webkit-scrollbar-thumb{min-height:10%}', 'webkit')).plan, null, 'a minimum the polyfill does not resolve: refused');
+  assert.equal((await planWith('.list::-webkit-scrollbar-button{display:block;height:14px}', 'webkit')).plan, null, 'bar buttons (the clone paints none): refused');
+  assert.equal((await planWith('.list::-webkit-scrollbar-track-piece{margin-top:6px}', 'webkit')).plan, null, 'a track margin: refused');
+  assert.equal((await planWith('.list::-webkit-scrollbar{width:auto}', 'webkit')).plan, null, 'unstyled (the system bar, its geometry not measured): refused');
+  Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true });
+  try { assert.equal((await planWith('', 'gecko')).plan, null, 'Gecko at 1x: refused'); } finally { delete (/** @type {any} */ (window)).devicePixelRatio; }
+});
+
 test('a vertical classic gutter is planned WITH its bar (track column, thumb geometry of the clone); headless has no gutter, so its layout is stubbed', async () => {
   const m = mount(html, { css, width: 440, height: 320 });
   const list = m.layerEl.querySelector('.list');

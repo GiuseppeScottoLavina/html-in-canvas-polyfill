@@ -369,7 +369,17 @@ Tick RUN(now), for each canvas record in reverse tree order:
     taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused. A rounded
     port on WebKit is drawn source-over the backdrop under the rounded clip, and only for a scroller with an opaque background: an accelerated WebKit canvas drawing with
     `copy` under an antialiased clip multiplies the source by the coverage and drops the destination (canvases of 200 px and more; a 60 px one blends like Skia), which left
-    the curve semi-transparent. Refused on WebKit besides what Chromium refuses: a classic bar gutter (the thumb geometry is Chromium's). In the rounded corners both engines
+    the curve semi-transparent; a classic bar's track tile meets the same curve on the bar's side and is drawn the same way. Classic bars on WebKit: an author-styled
+    bar (`::-webkit-scrollbar` with a width, macOS) is composed, because Safari puts its thumb on whole css px and the clone paints the same geometry
+    (`webkit-bar-geometry.js` webkitThumb, `scroll-emulation.js` webkitStyledBar): length `round(visible / total x track)` and at least the thumb's laid-out height
+    (`height: auto` is the native 17 px; `min-height` / `max-height` / a px `height` apply), no thumb when that minimum does not fit the track, and the offset in the
+    track `trunc(scrollTop x (track - length) / (scrollHeight - clientHeight))` in single precision, an offset in (0, 1) showing as 1 (ScrollbarThemeComposite). Measured
+    on Safari 27.0.1 at DPR 2 against the plain DOM: 10-14 px bars over 372, 2480 and 31000 px of content, 9-19 offsets each, every thumb edge on the predicted whole css
+    px (whole device rows, the same antialiasing at every offset); the thumb neither fades nor hides while scrolling. A thumb moved by whole surface pixels then equals the
+    settled one (G-xbrowser scrollCompose on Safari: 19 of 20 jumps composed, no pixel over 16; mutant `webkit-thumb-fractional`: a thumb left at its fractional offset
+    is not). Refused: bar buttons and track margins (the clone paints neither), a thumb length in % or fractional px, iOS / iPadOS, and WebKit's SYSTEM classic bars
+    (macOS "Show scroll bars: Always" or a mouse): their lane / knob geometry (`webkit-bars.js`) was measured at one offset only, and Safari's own preference could not be
+    set for a sweep. In the rounded corners both engines
     blend a page rendered with square corners (content over the scroller's background) into the backdrop by the clip's coverage, where the engine clips the content alone
     over background and border: up to a few pixels of the antialiased arc differ where translucent content crosses it (G-mobile scrollCompose: 0-3 of 504 at DPR 3).
     Rows of fractional height (36.6 css px) on the same fixture: a page placed a box edge one css px away from the tile at the same offset on desktop Safari 27 at DPR 2 (one
@@ -437,7 +447,8 @@ Tick RUN(now), for each canvas record in reverse tree order:
   macOS (k = the device scale), which differ at every common scale; only an ambiguous measurement (a page zoom) falls back to the platform. A listbox's bar (the clone renders only its options) is a
   background layer in the gutter. Measured by G-platform (Chrome 155, F6 and F7 at DPR 1, 1.25 and 1.5): every bar region within 0.7 % of native pixels over 16 on Linux and on macOS with classic bars
   (it was 12-100 % with the macOS legacy constants used everywhere). Safari's bars come from the engines bundle (`webkit-bars.js`), Firefox's from its listbox skin and the constants of
-  `paintClassicScrollbars`. The prototype ran with scrollbars hidden and measured 3-4 % difference on classic ones [E5]; gate G-pixel-f5 requires <= 4 % (author-styled bars).
+  `paintClassicScrollbars`. Safari's author-styled vertical bar places its thumb as WebKit computes it, in whole css px (`webkitStyledBar`, see the scroll compositor's
+  engines above); other engines' author-styled bars keep the generic geometry (`verticalBar`). The prototype ran with scrollbars hidden and measured 3-4 % difference on classic ones [E5]; gate G-pixel-f5 requires <= 4 % (author-styled bars).
 
 ### ADR-F: geometry and hit testing
 

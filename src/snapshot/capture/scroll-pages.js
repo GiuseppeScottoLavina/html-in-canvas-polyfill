@@ -7,7 +7,7 @@
 
 import { currentEngine } from '../../util/engine.js';
 import { parseColor } from './caret-overlay.js';
-import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts, styledMinThumb, verticalBar } from './scroll-emulation.js';
+import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts, styledMinThumb, verticalBar, webkitStyledBar, webkitStyledMinThumb } from './scroll-emulation.js';
 
 /** @typedef {import('../../contracts/types.js').LiveLayer} LiveLayer */
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
@@ -249,19 +249,45 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   if (!portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round)) return null;
   let bar = null;
   if (gutterX > 0.5) {
-    // a classic bar is composed from the Chromium bar geometry (the thumb moves by chromiumVerticalBar / verticalBar); WebKit's own bar is not verified
-    if (engine !== 'chromium') return null;
+    // a classic bar is composed where the thumb's geometry is the one the clone paints and moves by whole surface pixels: Chromium's bars (chromiumVerticalBar /
+    // verticalBar), and WebKit's author-styled bars (webkitStyledBar). Not WebKit's system bars (their thumb geometry was not measured) nor Gecko's
+    if (engine !== 'chromium' && engine !== 'webkit') return null;
     const f = scrollFacts(s, cs);
     if (!f || !f.scrollableY) return null;
-    const look = chromiumBarLook(win, s, cs, f.styled);
-    const v = look ? chromiumVerticalBar(look, f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight)
-      : verticalBar(f.gv, s.clientHeight, s.scrollHeight, f.styled, !f.styled && !!parseScrollbarColor(cs.scrollbarColor), f.styled ? styledMinThumb(win, s) : 0);
+    let v;
+    if (engine === 'webkit') {
+      v = webkitBar(win, s, f);
+      if (!v) return null;
+    } else {
+      const look = chromiumBarLook(win, s, cs, f.styled);
+      v = look ? chromiumVerticalBar(look, f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight)
+        : verticalBar(f.gv, s.clientHeight, s.scrollHeight, f.styled, !f.styled && !!parseScrollbarColor(cs.scrollbarColor), f.styled ? styledMinThumb(win, s) : 0);
+    }
     bar = { gutter: { x: port.x + (f.cw ?? s.clientWidth), y: port.y, width: f.gv, height: s.clientHeight }, ...v };
   }
   return {
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
     ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, clear: (rects) => clearOver(doc, layer, s, port, rects),
   };
+}
+
+/**
+ * The vertical bar of a WebKit scroller the compositor can move (webkitStyledBar, the geometry paintClassicScrollbars draws), or null. Composed: an author-styled bar
+ * (`::-webkit-scrollbar` with a width) on macOS whose thumb has a minimum the polyfill resolves and shows a thumb, and whose track is the whole bar (no buttons, no
+ * track margins: the clone paints neither). Refused: the system's classic bars (their thumb geometry was not measured), and iOS / iPadOS.
+ * @param {Window} win @param {HTMLElement} s @param {import('./scroll-emulation.js').ScrollFacts} f
+ * @returns {ReturnType<typeof webkitStyledBar>|null}
+ */
+function webkitBar(win, s, f) {
+  if (!f.styled || currentEngine().os !== 'desktop') return null;
+  const pseudo = (/** @type {string} */ p) => win.getComputedStyle(s, p);
+  const button = pseudo('::-webkit-scrollbar-button');
+  if (px(button.height) > 0 || px(button.width) > 0) return null;
+  for (const part of [pseudo('::-webkit-scrollbar-track'), pseudo('::-webkit-scrollbar-track-piece')]) if (px(part.marginTop) !== 0 || px(part.marginBottom) !== 0) return null;
+  const min = webkitStyledMinThumb(pseudo('::-webkit-scrollbar-thumb'));
+  if (min === null) return null;
+  const v = webkitStyledBar(f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight, min);
+  return v.thumbH > 0 ? v : null;
 }
 
 /**
