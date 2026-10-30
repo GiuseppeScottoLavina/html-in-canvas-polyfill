@@ -70,7 +70,8 @@
   .stage { position: relative; height: 22rem; background: #ffffff; border-bottom: 1px solid var(--line); }
   .stage iframe { display: block; width: 100%; height: 100%; border: 0; background: #ffffff; }
   .stage .stopping { display: grid; place-items: center; height: 100%; margin: 0; font-size: .9rem; color: #545c68; }
-  #console { flex: 1; min-height: 8.5rem; max-height: 8.5rem; margin: 0; padding: .35rem 0; list-style: none; overflow: auto; font: 12px/1.5 var(--mono); background: var(--sunken); }
+  /* height 0 + flex-grow: the console fills the card's remaining height and scrolls; its messages never make the card taller */
+  #console { flex: 1 1 auto; height: 0; min-height: 8.5rem; margin: 0; padding: .35rem 0; list-style: none; overflow: auto; font: 12px/1.5 var(--mono); background: var(--sunken); }
   #console li { padding: .15rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
   #console li + li { border-top: 1px solid var(--line); }
   #console .error { color: var(--error); }
@@ -95,7 +96,12 @@
   }
   @media (max-width: 520px) {
     .wrap { padding-top: 1rem; }
-    #code { min-height: 17rem; font-size: 12.5px; }
+    /* 16px: Safari on iOS zooms into a focused field whose text is smaller */
+    #code { min-height: 17rem; font-size: 16px; }
+    /* the status may take two lines; they are reserved, so a longer status does not move the page */
+    #status { align-items: flex-start; min-height: 2.6em; }
+    #status::before { margin-top: .35em; }
+    #status-text { white-space: normal; }
     .stage { height: 17rem; }
     button .keys { display: none; }
   }
