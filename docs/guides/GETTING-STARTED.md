@@ -6,7 +6,7 @@ Status: `0.1.0-preview.13`, a preview on npm under the dist-tag `next` (on 2026-
 
 ## 1. Run the examples (about 3 minutes)
 
-Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next`.
+Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`.
 
 ```sh
 git clone https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill.git && cd html-in-canvas-polyfill

@@ -14,14 +14,14 @@ A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in
 
 ## Why
 
-HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome Canary exposes it without a flag (measured on 157.0.8103.0 and 158.0.8112.1), and Chrome is expected to ship it in 157 (Chromium marks the runtime feature `stable`). This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: wherever the browser implements the API in a usable form, it patches nothing of the standard surface and steps aside, and it never throws because a native build differs in a secondary member.
+HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, accessible HTML: forms, text, UI. Chrome Canary exposes it without a flag (measured on 157.0.8103.0, 158.0.8112.1 and 159.0.8128.2), and Chromium marks the runtime feature `stable`, so it is expected in an upcoming Chrome release. This package provides the same API now in Chrome stable, Firefox 155+ and Safari 27+, so code written against the standard runs today. It is native-first: wherever the browser implements the API in a usable form, it patches nothing of the standard surface and steps aside, and it never throws because a native build differs in a secondary member.
 
 ## Quick start
 
 From npm, for a bundler (TypeScript declarations included):
 
 ```sh
-npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next
+npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill
 ```
 
 ```js
