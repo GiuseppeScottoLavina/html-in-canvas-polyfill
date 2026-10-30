@@ -133,7 +133,10 @@ const LIMITS = {
   // 338.5 -> 339 KB, gzip 114.5 -> 114.75 KB (+538 / +206 bytes, 2026-10-30, measured 338,893 / 114,496): the scroll compositor composes Safari's system classic
   //   bars: AppKit's knob geometry (webkit-bar-geometry.js webkitSystemKnob, shared with the engines bundle's painter) and the planner's checks (scroll-pages.js
   //   webkitSystemBar: the measured gutters, scrollbar-color, the engines bundle)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 339 * KB, gzip: 114.75 * KB },
+  // 339 -> 340.75 KB, gzip 114.75 -> 115.25 KB (+1,841 / +567 bytes, 2026-10-30, measured 340,734 / 115,063): a form control's state written by script repaints it
+  //   (schedule/observers/control-state.js: the setters of value, valueAsNumber, valueAsDate, checked, indeterminate, selectedIndex and selected, stepUp / stepDown /
+  //   setRangeText and form.reset() wrapped; a slider set by script kept its old thumb beside the new one)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 340.75 * KB, gzip: 115.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
