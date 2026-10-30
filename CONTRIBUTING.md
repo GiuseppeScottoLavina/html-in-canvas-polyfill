@@ -36,7 +36,7 @@ npm run test:mutants     # every seeded bug must be caught by a gate
 npm run test:wpt         # the official WPT HTML-in-Canvas tests; Chrome Canary is the native oracle
 npm run test:gates:all   # lint, types, unit tests, the gates, the WPT gate, test:native-effects and the mutants, in one table
 npm run test:xbrowser    # Firefox and Safari through WebDriver (quit Safari first)
-npm run test:mobile      # the iOS Simulator and the Android Emulator (Xcode and the Android SDK; docs/guides/MOBILE.md)
+npm run test:mobile      # the iOS Simulator and the Android Emulator (Xcode and the Android SDK), or --android-serial=<serial> for a phone over USB (docs/guides/MOBILE.md)
 npm run test:frameworks  # React, Vue, Svelte and Lit apps in headless Chrome (run `npm install` in test/frameworks once)
 npm run test:stress      # repeated loads of the basic example with typing, bounded against hangs (headless)
 npm run bench:compare    # the performance comparison (docs/PERFORMANCE-COMPARISON.md, about 45 minutes)
@@ -51,7 +51,7 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 | suite | where | why |
 | --- | --- | --- |
 | 11 of the 16 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS, every push | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
-| mutation suite, the 33 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 33 nightly and on release tags (4 machines) | |
+| mutation suite, the 34 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 34 nightly and on release tags (4 machines) | |
 | `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture, playground and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
 | `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS, every push | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
 | the scroll scenario of `test:xbrowser` on Firefox | local | at the runner's DPR 1 the scrolled list differs from its twin on 6.6-6.8 % of the pixels (bound 5 %), the text antialiasing of a 1x macOS display; Firefox cannot be given a real DPR 2 there |

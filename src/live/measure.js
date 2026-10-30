@@ -8,6 +8,9 @@
  */
 
 import { isLayerElement, nativeDom } from './drawables.js';
+import { layoutSize } from '../util/box-scale.js';
+
+export { layoutSize };
 
 /** @typedef {import('../contracts/types.js').LiveLayer} LiveLayer */
 /** @typedef {import('../contracts/types.js').Rect} Rect */
@@ -31,23 +34,6 @@ const px = (value) => parseFloat(value) || 0;
 /** @param {Element} el @returns {CSSStyleDeclaration} computed style through the element's own window */
 export function styleOf(el) {
   return (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
-}
-
-/**
- * Used border-box size in css px before any transform, from the computed style (fractional). null for boxes whose width/height resolve to a keyword (inline).
- * @param {Element} el
- * @param {CSSStyleDeclaration} [style]
- * @returns {Size|null}
- */
-export function layoutSize(el, style = styleOf(el)) {
-  const w = parseFloat(style.width);
-  const h = parseFloat(style.height);
-  if (!Number.isFinite(w) || !Number.isFinite(h)) return null;
-  if (style.boxSizing === 'border-box') return { width: w, height: h };
-  return {
-    width: w + px(style.paddingLeft) + px(style.paddingRight) + px(style.borderLeftWidth) + px(style.borderRightWidth),
-    height: h + px(style.paddingTop) + px(style.paddingBottom) + px(style.borderTopWidth) + px(style.borderBottomWidth),
-  };
 }
 
 /** @param {Element} el @returns {HTMLElement|null} nearest polyfill layer above el (not el itself); reads the native parent chain, which the tree facade shadows */

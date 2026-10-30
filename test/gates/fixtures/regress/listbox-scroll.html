@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>regress: listbox selects scrolled to their selected option, fractional heights</title>
+<style>
+html,body{margin:0}
+body{font:13px/1.4 system-ui,sans-serif;background:#fff}
+#hic-surface{display:block;width:400px;height:160px;background:#fff}
+.s{display:flex;gap:12px;padding:10px;background:#fff}
+</style></head>
+<body>
+<!-- a listbox is scrolled to its selected option when it gets a box; under the canvas the polyfill does it (live-layer.js revealSelectedOptions). The first select has a
+     fractional height (52.6 css px: offsetHeight 53), as a size-3 listbox has at DPR 2.625 (52.524 css px): a scale read from the rounded offsetHeight scrolls it a css px or more
+     too far; the second has its natural size. -->
+<canvas id="hic-surface" width="400" height="160" content="drawable"><div class="s" drawable>
+<select id="frac" size="3" style="height:52.6px"><option>Option 1</option><option>Option 2</option><option>Option 3</option><option>Option 4</option><option>Option 5</option><option>Option 6</option><option>Option 7</option><option>Option 8</option><option>Option 9</option><option>Option 10</option><option>Option 11</option><option>Option 12</option><option>Option 13</option><option>Option 14</option><option>Option 15</option><option>Option 16</option><option>Option 17</option><option selected>Option 18</option><option>Option 19</option><option>Option 20</option></select>
+<select id="natural" size="3"><option>One</option><option>Two</option><option>Three</option><option>Four</option><option selected>Five</option><option>Six</option></select>
+</div></canvas>
+<script src="/test/fixtures/shared/boot.js"></script>
+</body></html>

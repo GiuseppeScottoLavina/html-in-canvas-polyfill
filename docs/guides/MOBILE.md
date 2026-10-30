@@ -1,7 +1,8 @@
 # Phones and tablets
 
-The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+. **Everything on this page was verified on the iOS Simulator and the Android Emulator,
-never on a physical device.** The numbers are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them is `npm run test:mobile` (`docs/TEST-PLAN.md`).
+The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+. **Android was verified on a physical Pixel 7 Pro (Android 17, Chrome 156,
+2026-10-30: every scenario PASS with its control red) and on the Android Emulator; iOS and iPadOS only on the iOS Simulator, never on a physical iPhone or iPad.** The numbers
+are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them is `npm run test:mobile` (`docs/TEST-PLAN.md`).
 
 ## Which browsers install it
 
@@ -65,13 +66,12 @@ right element (measured on the Android Emulator with a 2.2x pinch).
 
 ## What is not verified
 
-- No physical iPhone, iPad or Android phone: memory and canvas limits, frame timing, battery, a real GPU.
-- Chrome for Android between 130 and 157: the Android results come from Chromium 158.0.8108.0 (a Chromium snapshot's `ChromePublic.apk`, no flags, its real user
-  agent), **verified on the Android Emulator with Chromium 158**. That Chromium implements HTML-in-Canvas natively, so the polyfill steps aside there; the polyfill's own
-  path was run on the same engine with `install({ forcePolyfill: true })` (a test-only option). A Chrome for Android release without the native API was not run (the
-  emulator image's own Chrome 124 is below the minimum and serves the refusal).
-- A scrolled listbox (`<select size>`) in the light scheme: its option text sits about 2 device pixels off the page's inside the snapshot on Chromium for Android (2.4 % of
-  its pixels over 100 levels; the gate allows 4 % for that one region, every other of the 62 regions is within 1.5 %).
+- No physical iPhone or iPad. The one physical phone is a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625, 2026-10-30): the gate's 11 scenarios PASS there
+  with their controls red (`nativeFirst` and `scrollCompose` not applicable), in a tab of the phone's own Chrome. On no device were memory and canvas limits pushed to
+  their edge, frame timing measured on the phone's GPU, or battery use measured.
+- Chrome for Android: Chrome 156 on the phone has no native HTML-in-Canvas, so it ran the polyfill as users get it. The emulator ran Chromium 158.0.8108.0 (a Chromium
+  snapshot's `ChromePublic.apk`, no flags, its real user agent), which implements HTML-in-Canvas natively: the polyfill steps aside there, and its own path was run on
+  the same engine with `install({ forcePolyfill: true })` (a test-only option). The refusal of an older Chrome ran on the emulator image's own Chrome 124.
 - On the iOS Simulator, WebDriver cannot drag a finger (the session hangs), type text, show the virtual keyboard, rotate the device or long-press: those scenarios are
   skipped there and documented; they ran on Android.
 - iOS 27: not run. The iOS 27.0 simulator runtime is installed, but no `safaridriver` offers it as a session host: neither Safari 27.0.1's nor Safari Technology
@@ -85,7 +85,7 @@ right element (measured on the Android Emulator with a 2.2x pinch).
 
 `npm run test:mobile` needs a full Xcode with an iOS 26 simulator runtime (Mobile Safari is driven by `safaridriver` with `safari:useSimulator`) and the Android SDK with an AVD
 (`ANDROID_AVD_HOME`, `--avd=<name>`, default `hicmobile`). One simulator or emulator runs at a time and is shut down afterwards. Options: `--platform=ios|android`,
-`--only=<scenarios>`, `--ios-devices=<udid,...>`, `--ipad=<udid>|none`, `--ios-old=<udid>|none`, `--android-package=<package>`, `--no-stand-in`. The simulator's Safari must allow
+`--only=<scenarios>`, `--ios-devices=<udid,...>`, `--ipad=<udid>|none`, `--ios-old=<udid>|none`, `--android-package=<package>`, `--no-stand-in`, `--android-serial=<serial>` (a physical phone, below). The simulator's Safari must allow
 remote automation: the gate writes that setting into the simulated device when it is missing (it is a setting of the simulator, not of the Mac).
 
 Android browser: the gate drives the newest browser installed on the AVD. To run a current Chromium, install the `ChromePublic.apk` of a Chromium snapshot
@@ -93,3 +93,8 @@ Android browser: the gate drives the newest browser installed on the AVD. To run
 storage metadata) with `adb install -r ChromePublic.apk`; its first-run screens are dismissed by the gate. When the only browser is the image's Chrome 124, the polyfill scenarios
 run as a labelled stand-in (the anchor-positioning flag and a Chromium 130 user agent). When the browser implements HTML-in-Canvas natively, the scenario `nativeFirst` checks
 that the polyfill steps aside and the native result passes, and the other scenarios force the polyfill's path (`test/mobile/force-polyfill.js`).
+
+Physical Android device: `node test/mobile/run.mjs --platform=android --android-serial=<serial>`, with the serial from `adb devices`. Turn on USB debugging, authorise the Mac
+and unlock the screen: the gate wakes the screen but never unlocks it. The run opens one tab in the device's own Chrome (130 or later) and closes it at the end. It installs
+nothing, stops no browser and does not touch the debug app, Chrome's command-line file or any other setting, except the rotation settings, which the rotation scenario changes
+and the gate restores. Only the adb ports of the run are removed. Leave the phone alone while the gate runs: it taps, types and rotates through the OS.

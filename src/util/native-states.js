@@ -6,6 +6,8 @@
  * Module: util.
  */
 
+import { boxScale } from './box-scale.js';
+
 const GECKO_FIELD_TYPES = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'time', 'datetime-local', 'month', 'week', 'checkbox', 'radio', 'range', 'color', 'button', 'submit', 'reset']);
 const PRESS_TYPES = new Set(['button', 'submit', 'reset', 'color', 'range']);
 /** Safari 27.0.1: pressed push buttons, checkboxes, radios and sliders are drawn darker (lighter in the dark appearance); hover changes nothing. */
@@ -50,7 +52,7 @@ export function pressOnThumb(el, ratio, thumbWidth, rtl) {
   const min = Number(el.min || 0), max = Number(el.max || 100), v = Number(at.value);
   if (max > min && Number.isFinite(v)) ratio = Math.min(1, Math.max(0, (v - min) / (max - min)));
   const r = el.getBoundingClientRect();
-  const k = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+  const k = boxScale(el, r).x;
   const x0 = r.left + (rtl ? 1 - ratio : ratio) * (r.width - thumbWidth * k);
   return at.x >= x0 && at.x <= x0 + thumbWidth * k;
 }

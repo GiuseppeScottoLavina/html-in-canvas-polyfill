@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- The mobile gate runs on a physical Android device over USB: `node test/mobile/run.mjs --platform=android --android-serial=<serial>` (the serial from `adb devices`, USB debugging authorised, the screen unlocked). It opens one tab in the device's own Chrome and closes it. It installs nothing, stops no browser, and touches neither the debug app nor Chrome's command-line file. It restores the rotation settings that the rotation scenario changes, and the report names the device. On a Pixel 7 Pro (Android 17, Chrome 156, which has no native API, so the polyfill ran as users get it, DPR 2.625) on 2026-10-30, all 11 scenarios PASS with their controls red, `controls` with 62 of 62 regions within 1.5 %. iOS is still verified on the simulator only.
+- G-regress-capture checks that a listbox select under the canvas, one of them of fractional height, is scrolled to its selected option exactly as the engine scrolls the same select on the plain page (DPR 1 and 2 in the gate; also measured at 1.25 and 1.5). Its control scrolls the polyfill page's listboxes 2 px further. The mutant `listbox-reveal-rounded-scale` (CI) restores the rounded scale and is caught.
+
+### Changed
+
+- The core bundle grows to 341,036 bytes minified, 115,193 gzipped (+302 / +130 bytes), and to 16,465 code lines, for the fractional box scale. The effects bundle grows to 39,319 bytes (+598) and the engines bundle to 45,515 (+615; 17,295 gzipped), which share it.
+
+### Fixed
+
+- A listbox select (`<select size>` or `multiple`) under the canvas is scrolled to its selected option exactly as the browser scrolls it. Its scale was read as `offsetHeight / getBoundingClientRect().height`, and `offsetHeight` is rounded to a whole css px. On a box of fractional height, which is common at a fractional device pixel ratio, that ratio is not 1 although nothing is transformed. On Chrome for Android at DPR 2.625 a size-3 listbox (52.524 css px, `offsetHeight` 53) was scrolled 34.67 px instead of the browser's 33.90, and its options were drawn 2 device pixels too high. The scale now comes from the fractional layout size (`util/box-scale.js`). The scrollport height is the fractional one too, which matches Chrome at DPR 1, 1.25, 1.5, 2 and 2.625 on 18 listboxes each. The same rounded ratio is gone from the seven other places that used it: the snapshot's listbox scroll and overlay thumb, the clipping ancestors' visible rect, the caret of inputs without a selection API, the text-input overlay, the Safari slider press test and the effect host's canvas box.
+- The mobile gate's `controls` scenario no longer has its own 4 % bound for the scrolled light listbox on Android. That deviation was the bug above, not the browser drawing the text differently inside the snapshot. Every one of the 62 regions is now held to 1.5 %.
+
 ## [0.1.0-preview.14] - 2026-10-30
 
 A playground, and a fix for every page that sets a form control from a script. `examples/playground/` on the project's site edits and runs the explainer example in a sandboxed preview, with links that share the code. A script write to a control's state (a slider's or field's value, a checkbox, a select) was repainted only when other damage happened to cover the control, so a slider set from code could show its old thumb beside the new one; it is now repainted. On Safari a list with a classic scrollbar, author-styled or the system's, is composed while it scrolls instead of being rebuilt at every step, and the bar's thumb is drawn where Safari puts it. The documentation was audited end to end.

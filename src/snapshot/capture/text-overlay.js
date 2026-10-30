@@ -11,6 +11,7 @@
  */
 
 import { currentEngine } from '../../util/engine.js';
+import { layoutSize } from '../../util/box-scale.js';
 import { applyFont, inputMetrics, measureCaret, measuringContext, parseColor, transformText } from './caret-overlay.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
@@ -120,7 +121,7 @@ export function planTextOverlay(doc, control, drawable, frame, epoch = 0) {
   if (!plainText(cs) || (el.type === 'password') !== (((/** @type {any} */ (cs)).webkitTextSecurity ?? 'none') === 'disc')) return null;
   const fill = backdropColor(win, el, drawable);
   if (fill === undefined) return null;
-  const k = el.offsetWidth > 0 ? frame.width / el.offsetWidth : 1;
+  const k = frame.width / (layoutSize(el, cs)?.width || el.offsetWidth || frame.width);
   const left = frame.x + px(cs.borderLeftWidth) + px(cs.paddingLeft);
   const top = frame.y + px(cs.borderTopWidth) + px(cs.paddingTop);
   const width = el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight);

@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// G-mobile: the polyfill on phones, VERIFIED ON SIMULATORS / EMULATORS ONLY (no physical device): Mobile Safari in the iOS Simulator (safaridriver, full Xcode) and Chrome
-// in the Android Emulator (adb + Chrome DevTools Protocol). Each scenario has a positive control (the sabotaged page must turn every declared check class red).
+// G-mobile: the polyfill on phones: Mobile Safari in the iOS Simulator (safaridriver, full Xcode; iOS is verified on simulators only) and Chrome on Android, in the
+// Android Emulator or on a PHYSICAL Android device over USB (adb + Chrome DevTools Protocol). Each scenario has a positive control (the sabotaged page must turn every
+// declared check class red).
 //   node test/mobile/run.mjs [--platform=ios,android] [--only=gate,explainer,...] [--no-control] [--ios-devices=UDID,UDID] [--ipad=UDID|none] [--ios-old=UDID|none]
-//                            [--avd=hicmobile] [--android-package=org.chromium.chrome|com.android.chrome] [--no-stand-in]
+//                            [--avd=hicmobile] [--android-package=org.chromium.chrome|com.android.chrome] [--no-stand-in] [--android-serial=SERIAL]
+// Physical Android device (--android-serial=<serial from `adb devices`, e.g. --platform=android --android-serial=2B051FDH300HBN): USB debugging on and authorised, the screen
+// unlocked (the driver wakes it and never unlocks it). The run uses a new tab of the device's own Chrome (>= 130) and closes it; nothing is installed, no browser is stopped,
+// no debug app or Chrome command-line file is touched; the rotation settings that the rotation scenario changes are recorded and restored. Verified 2026-10-30 on a
+// Pixel 7 Pro (Android 17, Chrome 156): docs/guides/MOBILE.md.
 // Devices, one at a time (each is shut down before the next boots): iPhone 17 on the newest iOS 26.x (required) and on the newest iOS >= 27 runtime (optional: SKIPPED
 // when safaridriver cannot pair with it: no driver offers the iOS 27.0 runtime, measured 2026-10-16, docs/guides/MOBILE.md) (all scenarios), an iPad on iOS 26.x
 // (classification: iPadOS sends a desktop UA), an iPhone on iOS 18.x (refusal: Safari 18 is below the minimum 26), then the AVD (ANDROID_AVD_HOME or --avd-home) with
@@ -18,7 +23,7 @@ import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RECORDER } from '../xbrowser/lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, unsupported, gate, explainer } from './scenarios.mjs';
-import { launchAndroid, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
+import { launchAndroid, attachDevice, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
 
 const platforms = (arg('platform') ?? 'ios,android').split(',');
 const only = arg('only')?.split(',');
@@ -83,7 +88,8 @@ function verdicts(real, control) {
   return out;
 }
 
-const report = { gate: 'G-mobile', at: new Date().toISOString(), note: 'simulators and emulators only; no physical device', devices: {}, pass: true };
+const physicalSerial = arg('android-serial');
+const report = { gate: 'G-mobile', at: new Date().toISOString(), note: physicalSerial && platforms.includes('android') ? `physical Android device ${physicalSerial}${platforms.includes('ios') ? '; iOS on simulators only' : ''}` : 'simulators and emulators only; no physical device', devices: {}, pass: true };
 // files: URL paths the scenarios map onto files of their own (scrollCompose's mutant bundles under .scratch)
 const files = {};
 const srv = await startServer({ inject: RECORDER, files });
@@ -127,9 +133,12 @@ try {
     if (old) { const label = `iOS ${old.ios} ${old.name} (refusal)`; await device(label, () => launchIosSimulator({ udid: old.udid }), (s, D) => full(s, D, label, 'ios', { unsupported })); }
   }
   if (platforms.includes('android')) {
-    const label = 'Android Emulator';
-    await device(label, () => launchAndroid({ avd: arg('avd') ?? 'hicmobile', avdHome: arg('avd-home') ?? process.env.ANDROID_AVD_HOME, serverPorts: [port], standIn: !process.argv.includes('--no-stand-in'), pkg: arg('android-package') }), async (s, D) => {
+    // --android-serial=<serial>: a physical device over USB (adb devices) instead of the emulator
+    const physical = physicalSerial;
+    const label = physical ? `Android device ${physical}` : 'Android Emulator';
+    await device(label, () => (physical ? attachDevice({ serial: physical, serverPorts: [port], pkg: arg('android-package') }) : launchAndroid({ avd: arg('avd') ?? 'hicmobile', avdHome: arg('avd-home') ?? process.env.ANDROID_AVD_HOME, serverPorts: [port], standIn: !process.argv.includes('--no-stand-in'), pkg: arg('android-package') })), async (s, D) => {
       D.browsers = s.browsers;
+      if (physical) Object.assign(D, { physical: true, model: s.model, android: s.android });
       if (s.standIn) D.standInNote = `Chrome ${s.chromeVersion} with the anchor-positioning flag and a Chromium ${130} user agent: a stand-in for Chrome for Android >= 130, NOT a verification of it`;
       if (s.chromeMajor >= 130 || s.standIn) {
         // a usable native implementation (Chromium 158 ships it without a flag): the polyfill scenarios force the polyfill's path, nativeFirst checks the step-aside
@@ -157,5 +166,5 @@ for (const [label, D] of Object.entries(report.devices)) {
 console.table(table);
 writeFileSync(join(outRoot, `mobile-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));
 if (noControl) report.pass = false;
-console.log(report.pass ? 'G-mobile PASS (simulators / emulators only)' : 'G-mobile FAIL' + (noControl ? ' (--no-control never passes)' : ''));
+console.log(report.pass ? `G-mobile PASS (${report.note})` : 'G-mobile FAIL' + (noControl ? ' (--no-control never passes)' : ''));
 process.exit(report.pass ? 0 : 1);

@@ -124,7 +124,9 @@ if (!docsOnly) {
   // the thumb in whole css px as Safari computes it; scroll-emulation.js webkitStyledMinThumb / webkitStyledBar used by the clone's bar; scroll-pages.js webkitBar)
   // 16375 -> 16450 (2026-10-30, measured 16,448; 16,375 before this step): a form control's state written by script repaints it (+73: schedule/observers/control-state.js,
   // the wrapped setters and methods of the value, checkedness and selectedness; a slider set by script kept its old thumb beside the new one)
-  if (total > 16450) problems.push(`G-size: core is ${total} code lines (> 16450)`);
+  // 16450 -> 16470 (2026-10-30, measured 16,465; 16,448 before this step): scales read from fractional sizes (+17: util/box-scale.js boxScale, with layoutSize moved there
+  // from live/measure.js, imported by the eight places that divided a rect by the rounded offsetWidth / offsetHeight; the listbox reveal's fractional scrollport)
+  if (total > 16470) problems.push(`G-size: core is ${total} code lines (> 16470)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

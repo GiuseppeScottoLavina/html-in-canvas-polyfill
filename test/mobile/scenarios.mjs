@@ -510,17 +510,13 @@ export async function controls(ctx) {
   const poly = await readCanvas(s, '#hic-surface');
   const k = poly.width / surf.width;
   const bad = []; const per = {};
-  // measured deviations with their own (looser) bound, per platform: Chromium 158 on Android draws the light scrolled listbox's option text ~2 device px off the page's
-  // inside the image (2.4 % of pixels over 100 against 1.5 %); the dark one passes
-  const loose = ctx.platform === 'android' && !ctx.standIn ? { 'L-lb-sc': 0.04 } : {};
   rects.forEach((r, i) => {
     const ref = refs[i];
     const crop = cropImage(poly, Math.round((r.x - surf.x) * k), Math.round((r.y - surf.y) * k), ref.width, ref.height);
     const o = oracleBest(crop, ref, { maxFraction: 0.15, maxStructural: 0.015 });
     per[r.id] = [+(o.shiftTolerant * 100).toFixed(1), +(o.structural * 100).toFixed(1)];
-    if (!(o.sizeMatch && o.shiftTolerant <= 0.15 && o.structural <= (loose[r.id] ?? 0.015))) { bad.push(r.id); ctx.save(`controls-${r.id}.surface`, crop); ctx.save(`controls-${r.id}.ref`, o.ref); }
+    if (!(o.sizeMatch && o.shiftTolerant <= 0.15 && o.structural <= 0.015)) { bad.push(r.id); ctx.save(`controls-${r.id}.surface`, crop); ctx.save(`controls-${r.id}.ref`, o.ref); }
   });
-  if (Object.keys(loose).length) ctx.numbers.controlsLoose = Object.fromEntries(Object.entries(loose).map(([id, max]) => [id, { max, measured: per[id] }]));
   ctx.numbers.controls = per;
   if (ctx.standIn && !ctx.control) {
     // Chromium draws its own controls inside the image; on the stand-in (Chrome 124 with the anchor flag) the look is that OLD version's Android theme (measured: an outlined
@@ -529,7 +525,7 @@ export async function controls(ctx) {
     ctx.check(`controls: informative on the stand-in Chrome ${ctx.s.chromeVersion}: ${rects.length - bad.length} of ${rects.length} regions within the thresholds (not gated)`, true, { bad }, 'n/a');
     return;
   }
-  ctx.check(`controls: each of ${rects.length} control regions matches the plain-DOM twin (<= 15 % over 16, <= 1.5 % over 100${Object.keys(loose).length ? ` (${Object.entries(loose).map(([id, m]) => `${id} <= ${m * 100} %`).join(', ')})` : ''}, +-1 device row)`, bad.length === 0 && rects.length > 50, { bad, per: Object.fromEntries(bad.map((b) => [b, per[b]])) }, 'control-look');
+  ctx.check(`controls: each of ${rects.length} control regions matches the plain-DOM twin (<= 15 % over 16, <= 1.5 % over 100, +-1 device row)`, bad.length === 0 && rects.length > 50, { bad, per: Object.fromEntries(bad.map((b) => [b, per[b]])) }, 'control-look');
   await noErrors(ctx, 'controls');
 }
 
