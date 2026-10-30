@@ -362,13 +362,19 @@ export async function scrollCompose(ctx) {
 }
 
 /**
- * Mutants of the readable core for the Safari control of scrollCompose (an anchor that drifted fails loudly). thumb: the plan moves the thumb by the generic (Chromium)
- * geometry instead of WebKit's, which the clone paints: a composed frame shows the thumb elsewhere than the settled one. refusal: WebKit's author-styled bars are refused
- * again (what this case added): nothing composes.
+ * Mutants for the Safari control of scrollCompose (an anchor that drifted fails loudly), each with the bars it breaks and the bundle it edits. Author-styled bars (core):
+ * thumb: the plan moves the thumb by the generic (Chromium) geometry instead of WebKit's, which the clone paints: a composed frame shows the thumb elsewhere than the
+ * settled one. refusal: WebKit's author-styled bars are refused again: nothing composes. System bars: systemThumb (core): the plan rounds the knob's offset to the
+ * nearest css px where AppKit and the painter round it up (webkitSystemKnob); systemRefusal (core): the system bars are refused again; systemLook (engines): the painter
+ * rounds it so, the plan does not: the snapshot's knob leaves the twin's, and the composed frames the settled ones.
+ * @type {Record<string, {bars: 'styled'|'system', bundle: 'core'|'engines', edits: Array<[string, string]>}>}
  */
 const WEBKIT_BAR_MUTANTS = {
-  thumb: [['const v = webkitStyledBar(f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight, min);', 'const v = verticalBar(f.gv, s.clientHeight, s.scrollHeight, true, false, min);']],
-  refusal: [['if (!f.styled || currentEngine().os !== "desktop") return null;', 'return null;']],
+  thumb: { bars: 'styled', bundle: 'core', edits: [['const v = webkitStyledBar(f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight, min);', 'const v = verticalBar(f.gv, s.clientHeight, s.scrollHeight, true, false, min);']] },
+  refusal: { bars: 'styled', bundle: 'core', edits: [['if (!f.styled) return webkitSystemBar(win, s, f);', 'if (!f.styled) return webkitSystemBar(win, s, f);\n    return null;']] },
+  systemThumb: { bars: 'system', bundle: 'core', edits: [['Math.ceil(Math.floor(x * 256) / 256)', 'Math.round(x)']] },
+  systemRefusal: { bars: 'system', bundle: 'core', edits: [['if (!f.styled) return webkitSystemBar(win, s, f);', 'if (!f.styled) return null;']] },
+  systemLook: { bars: 'system', bundle: 'engines', edits: [['Math.ceil(Math.floor(x * 256) / 256)', 'Math.round(x)']] },
 };
 
 /**
@@ -383,32 +389,115 @@ const SCRIPTED_SHARE = (sel) => `(async () => {
   s.scrollTop = 1; await wait(1500);
   const c0 = stats().composed ?? 0;
   let steps = 0;
+  const t0 = performance.now();
   for (const dir of [1, -1, 1]) {
     await new Promise((ok) => { let v = 30; const f = () => { const t = s.scrollTop; s.scrollTop += v * dir; if (s.scrollTop !== t) steps++; v *= 0.97; if (v < 0.5) return ok(); requestAnimationFrame(f); }; requestAnimationFrame(f); });
   }
+  const ms = performance.now() - t0;
   await wait(300);
-  return { steps, composed: (stats().composed ?? 0) - c0, refusals: stats().refusals ?? 0 };
+  return { steps, composed: (stats().composed ?? 0) - c0, refusals: stats().refusals ?? 0, ms: Math.round(ms) };
 })()`;
 
+/** The lists of the composed-scrolling fixture, their vertical bar gutters (css px: 0 = overlay bars) */
+const LIST_GUTTERS = (sels) => `${JSON.stringify(sels)}.map((q) => { const e = document.querySelector(q); const cs = getComputedStyle(e); return e.offsetWidth - e.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth); })`;
+/** The gutter of each list relative to the surface (css px), and its scroll range */
+const GUTTER_RECTS = (sels) => `(() => { const c = document.getElementById('hic-surface').getBoundingClientRect(); return ${JSON.stringify(sels)}.map((q) => {
+  const e = document.querySelector(q); const cs = getComputedStyle(e); const r = e.getBoundingClientRect(); const br = parseFloat(cs.borderRightWidth), bt = parseFloat(cs.borderTopWidth);
+  const g = e.offsetWidth - e.clientWidth - parseFloat(cs.borderLeftWidth) - br;
+  return { sel: q, x: r.right - br - g - c.left, y: r.top + bt - c.top, width: g, height: e.clientHeight, max: e.scrollHeight - e.clientHeight }; }); })()`;
+/** the offsets (fractions of the scroll range) at which the snapshot's system bar is compared with the twin's at rest */
+const TWIN_AT = [0, 0.004, 0.13, 0.37, 0.5, 0.71, 0.93, 1];
+
 /**
- * The scroll compositor on desktop WebKit (Safari) with CLASSIC bars: the composed-scrolling fixture with author-styled bars (`bars=styled`: an 11 px
- * `::-webkit-scrollbar`, a track colour, a rounded thumb), whose thumb WebKit places on whole css px (webkitStyledBar). Both lists (one rounded and opaque, one square
- * and transparent) composed in at least 3 of 10 jumps, and every composed frame equal to the tile the snapshot settles on at that offset (outside the rounded corners no
- * pixel over 16; on their antialiased arc at most 2 % of the arc pixels, as G-mobile); a scripted scroll of each composes at least half of its steps. The system's
- * classic bars are not composed (their geometry was not measured) and are not covered here. The control serves mutant cores (WEBKIT_BAR_MUTANTS).
+ * The lane and the knob of a system bar in a gutter crop, device rows of the lane's middle column: the lane where it is darker than the gutter's first row (the lane is
+ * black 5 % over the scroller's background, inset 3 css px from the gutter's ends), the knob where it is darker than half-way between the lane and the knob (black 52 %).
+ * @param {{width: number, height: number, data: Uint8Array|Uint8ClampedArray}} img
+ * @returns {{lane: number[], knob: number[]}|null}
+ */
+function barRows(img) {
+  const x = Math.floor(img.width / 2);
+  const lum = (/** @type {number} */ y) => { const i = (y * img.width + x) * 4; return (img.data[i] + img.data[i + 1] + img.data[i + 2]) / 3; };
+  const bg = lum(0);
+  const lane = [-1, -1], knob = [-1, -1];
+  for (let y = 0; y < img.height; y++) {
+    const v = lum(y);
+    if (v < bg - 4) { if (lane[0] < 0) lane[0] = y; lane[1] = y; }
+    if (v < 185) { if (knob[0] < 0) knob[0] = y; knob[1] = y; }
+  }
+  return lane[0] < 0 || knob[0] < 0 ? null : { lane, knob };
+}
+
+/**
+ * The snapshot's system bar against the plain-DOM twin's at rest, both lists at TWIN_AT of their range: the knob's first and last device row relative to the lane's
+ * (barRows) are the twin's, the lane is as long and at most 1 device row off (a list at a fractional css position: the snapshot places the whole bar a row away), and
+ * at most 2 % of the gutter's pixels differ by more than 100.
+ * @param {any} ctx @param {string} bundle @param {string[]} sels
+ */
+async function systemBarTwin(ctx, bundle, sels) {
+  const { s } = ctx;
+  const page = async (/** @type {string} */ mode) => {
+    const u = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
+    u.searchParams.set('iso', '0'); u.searchParams.set('mode', mode);
+    if (mode === 'poly') u.searchParams.set('bundle', bundle);
+    await s.navigate(u.href);
+    await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
+    await sleep(1000);
+    return s.evaluate(GUTTER_RECTS(sels));
+  };
+  const crop = (/** @type {any} */ img, /** @type {any} */ g, /** @type {number} */ k) => cropImage(img, Math.round(g.x * k), Math.round(g.y * k), Math.round(g.width * k), Math.round(g.height * k));
+  const gutters = await page('poly');
+  const surf = await rectOf(s, '#hic-surface');
+  /** @type {Array<{sel: string, top: number, img: any}>} */
+  const poly = [];
+  for (const at of TWIN_AT) {
+    const tops = await s.evaluate(`${JSON.stringify(gutters)}.map((g) => { const e = document.querySelector(g.sel); e.scrollTop = Math.round(g.max * ${at}); return e.scrollTop; })`);
+    await sleep(900);
+    const img = await readCanvas(s, '#hic-surface');
+    const k = img.width / surf.width;
+    gutters.forEach((g, i) => poly.push({ sel: g.sel, top: tops[i], img: crop(img, g, k) }));
+  }
+  const twinGutters = await page('ref');
+  const out = [];
+  for (const p of poly) {
+    const g = twinGutters.find((t) => t.sel === p.sel);
+    await s.evaluate(`document.querySelector(${JSON.stringify(p.sel)}).scrollTop = ${p.top}`);
+    await sleep(250);
+    const shot = await shotRect(s, surf);
+    const ref = crop(shot.img, g, shot.scale);
+    let over16 = 0, over100 = 0;
+    for (let i = 0; i < ref.data.length; i += 4) {
+      const d = Math.max(Math.abs(ref.data[i] - p.img.data[i]), Math.abs(ref.data[i + 1] - p.img.data[i + 1]), Math.abs(ref.data[i + 2] - p.img.data[i + 2]));
+      if (d > 16) over16++;
+      if (d > 100) over100++;
+    }
+    const n = ref.data.length / 4;
+    out.push({ sel: p.sel, top: p.top, canvas: barRows(p.img), twin: barRows(ref), over16: +(over16 / n).toFixed(4), over100: +(over100 / n).toFixed(4), same: p.img.width === ref.width && p.img.height === ref.height });
+  }
+  return out;
+}
+
+/**
+ * The scroll compositor on desktop WebKit (Safari) with CLASSIC bars, on the composed-scrolling fixture (one list rounded and opaque, one square and transparent):
+ * - author-styled bars (`bars=styled`: an 11 px `::-webkit-scrollbar`, a track colour, a rounded thumb), whose thumb WebKit places on whole css px (webkitStyledBar);
+ * - the system's bars, when the system shows classic bars (its gutter decides: 17 px under "Show scroll bars: Always" or with a mouse attached; with overlay bars the
+ *   case records itself as not applicable), whose knob AppKit places on whole css px (webkitSystemKnob). The snapshot's knob is first compared with the twin's at rest.
+ * Each: both lists composed in at least 3 of 10 jumps, and every composed frame equal to the tile the snapshot settles on at that offset (outside the rounded corners no
+ * pixel over 16; on their antialiased arc at most 2 % of the arc pixels, as G-mobile); a scripted scroll of each composes at least half of its steps. The control serves
+ * mutant bundles (WEBKIT_BAR_MUTANTS).
  */
 async function scrollComposeWebkitBars(ctx) {
   const { s } = ctx;
   const sels = ['#square', '#round'];
   const offsets = [100, 131, 400, 437, 800, 851, 20, 61, 1203, 1170];
-  /** @param {string} bundle @param {string} tag */
-  const run = async (bundle, tag) => {
+  /** @param {string} bundle @param {string} tag @param {'styled'|'system'} bars */
+  const run = async (bundle, tag, bars) => {
     const u = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
-    u.searchParams.set('iso', '0'); u.searchParams.set('mode', 'poly'); u.searchParams.set('bundle', bundle); u.searchParams.set('bars', 'styled');
+    u.searchParams.set('iso', '0'); u.searchParams.set('mode', 'poly'); u.searchParams.set('bundle', bundle);
+    if (bars === 'styled') u.searchParams.set('bars', 'styled');
     await s.navigate(u.href);
     await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
     await sleep(1500);
-    const gutters = await s.evaluate(`${JSON.stringify(sels)}.map((q) => { const e = document.querySelector(q); const cs = getComputedStyle(e); return e.offsetWidth - e.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth); })`);
+    const gutters = await s.evaluate(LIST_GUTTERS(sels));
     const parts = [];
     for (const sel of sels) parts.push(await s.evaluate(COMPOSE_ORACLE([sel], offsets), { timeoutMs: 60000 }));
     const r = { ...parts[parts.length - 1], jumps: parts.flatMap((p) => p.jumps), gutters };
@@ -418,42 +507,62 @@ async function scrollComposeWebkitBars(ctx) {
     await sleep(1000);
     r.share = [];
     for (const sel of sels) r.share.push({ sel, ...(await s.evaluate(SCRIPTED_SHARE(sel), { timeoutMs: 60000 })) });
-    ctx.numbers[`scrollComposeStyledBars${tag}`] = { dpr: r.dpr, gutters, share: r.share, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc, arcPixels: j.arcPixels, max: j.max })) };
+    if (bars === 'system') r.twin = await systemBarTwin(ctx, bundle, sels);
+    ctx.numbers[`scrollCompose${bars === 'styled' ? 'Styled' : 'System'}Bars${tag}`] = { dpr: r.dpr, gutters, share: r.share, twin: r.twin, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc, arcPixels: j.arcPixels, max: j.max })) };
     return r;
   };
-  /** @param {any} r @param {string} label */
-  const judge = (r, label) => {
-    ctx.check(`scrollCompose${label}: both lists show the author-styled classic bar (an 11 px gutter: ${r.gutters.join(' / ')})`, r.gutters.every((g) => g === 11), r.gutters, 'environment-bars');
+  /** @param {any} r @param {string} label @param {'styled'|'system'} bars */
+  const judge = (r, label, bars) => {
+    const name = bars === 'styled' ? 'styled bars' : 'system bars';
+    if (bars === 'styled') ctx.check(`scrollCompose${label}: both lists show the author-styled classic bar (an 11 px gutter: ${r.gutters.join(' / ')})`, r.gutters.every((g) => g === 11), r.gutters, 'environment-bars');
+    else ctx.check(`scrollCompose${label}: both lists show the system's classic bar (a 17 px gutter: ${r.gutters.join(' / ')})`, r.gutters.every((g) => g === 17), r.gutters, 'environment-bars');
     const composed = r.jumps.filter((j) => j.composed);
     const per = sels.map((sel) => composed.filter((j) => j.sel === sel).length);
-    ctx.check(`scrollCompose${label} styled bars: each list composed at least 3 of its ${offsets.length} jumps (composed: ${per.join(' / ')}), every jump painted, the canvas non-blank`,
+    ctx.check(`scrollCompose${label} ${name}: each list composed at least 3 of its ${offsets.length} jumps (composed: ${per.join(' / ')}), every jump painted, the canvas non-blank`,
       per.every((n) => n >= 3) && r.jumps.every((j) => j.painted !== false && j.ink > 0.5), { per, scroll: r.scroll }, 'surface');
     const bad = composed.filter((j) => j.grid > 0);
-    ctx.check(`scrollCompose${label} styled bars: every composed frame equals the settled tile at its offset at DPR ${r.dpr}, the bar included (outside the rounded corners: no pixel over 16)`,
+    ctx.check(`scrollCompose${label} ${name}: every composed frame equals the settled tile at its offset at DPR ${r.dpr}, the bar included (outside the rounded corners: no pixel over 16)`,
       composed.length > 0 && bad.length === 0, bad.slice(0, 4), 'grid');
     const arc = composed.filter((j) => j.offArc > 0 || j.onArc > 0.02 * j.arcPixels);
-    ctx.check(`scrollCompose${label} styled bars: in the rounded corners no pixel over 16 off the antialiased arc, at most 2 % of the arc`, composed.length > 0 && arc.length === 0, arc.slice(0, 4), 'corner');
-    ctx.check(`scrollCompose${label} styled bars: a scripted scroll of each list composed at least half of its steps (${r.share.map((x) => `${x.sel} ${x.composed} of ${x.steps}`).join(', ')})`,
+    ctx.check(`scrollCompose${label} ${name}: in the rounded corners no pixel over 16 off the antialiased arc, at most 2 % of the arc`, composed.length > 0 && arc.length === 0, arc.slice(0, 4), 'corner');
+    ctx.check(`scrollCompose${label} ${name}: a scripted scroll of each list composed at least half of its steps (${r.share.map((x) => `${x.sel} ${x.composed} of ${x.steps}`).join(', ')})`,
       r.share.every((x) => x.steps > 50 && x.composed >= x.steps / 2), r.share, 'share');
+    if (bars === 'system') {
+      const rel = (/** @type {{lane: number[], knob: number[]}} */ b) => [b.knob[0] - b.lane[0], b.knob[1] - b.lane[0], b.lane[1] - b.lane[0]];
+      const off = r.twin.filter((t) => !t.same || !t.canvas || !t.twin || rel(t.canvas).join() !== rel(t.twin).join() || Math.abs(t.canvas.lane[0] - t.twin.lane[0]) > 1 || t.over100 > 0.02);
+      ctx.check(`scrollCompose${label} system bars: at rest the snapshot's knob is the twin's at ${TWIN_AT.length} offsets of each list (in the lane: the same first and last device row; the lane within 1 device row; at most 2 % of the gutter over 100)`,
+        r.twin.length === TWIN_AT.length * sels.length && off.length === 0, off.slice(0, 4), 'bar-look');
+    }
   };
+  // the system's bars apply when the system shows classic bars: the twin's gutter (0 with overlay bars)
+  const twinUrl = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
+  twinUrl.searchParams.set('iso', '0'); twinUrl.searchParams.set('mode', 'ref');
+  await s.navigate(twinUrl.href);
+  await until(s, 'window.__HIC_FIXTURE && window.__HIC_FIXTURE.ready', 20000).catch(() => null);
+  const systemGutters = await s.evaluate(LIST_GUTTERS(sels));
+  const system = systemGutters.some((g) => g > 0);
+  ctx.numbers.scrollComposeSystemBarsApplicable = { gutters: systemGutters, applicable: system };
   if (!ctx.control) {
-    judge(await run(ctx.bundle, ''), '');
+    judge(await run(ctx.bundle, '', 'styled'), '', 'styled');
+    if (system) judge(await run(ctx.bundle, '', 'system'), '', 'system');
+    else ctx.check(`scrollCompose system bars: not applicable, the system shows overlay bars (gutters ${systemGutters.join(' / ')}); set "Show scroll bars: Always" to run it`, true, systemGutters, 'n/a');
     await noErrors(ctx, 'scrollCompose');
     return;
   }
-  const core = '/dist/hic-live-polyfill.iife.js';
-  if (!ctx.bundle.split(',').includes(core) || !ctx.files) throw new Error(`scrollCompose control: the bundle list has no ${core} to replace, or the server serves no mutants`);
-  const text = readFileSync(ctx.coreFile ?? resolve(PROJECT_ROOT, 'dist/hic-live-polyfill.iife.js'), 'utf8');
+  const files = { core: '/dist/hic-live-polyfill.iife.js', engines: '/dist/hic-live-engines.iife.js' };
+  if (!ctx.bundle.split(',').includes(files.core) || !ctx.bundle.split(',').includes(files.engines) || !ctx.files) throw new Error('scrollCompose control: the bundle list has no core or engines bundle to replace, or the server serves no mutants');
+  const source = { core: ctx.coreFile ?? resolve(PROJECT_ROOT, 'dist/hic-live-polyfill.iife.js'), engines: ctx.files[files.engines] ?? resolve(PROJECT_ROOT, 'dist/hic-live-engines.iife.js') };
   const dir = resolve(PROJECT_ROOT, '.scratch/xbrowser-mutants');
   mkdirSync(dir, { recursive: true });
-  for (const [cls, edits] of Object.entries(WEBKIT_BAR_MUTANTS)) {
-    const m = buildMutant(text, { edits });
-    if ('drift' in m) throw new Error(`scrollCompose control: mutant ${cls}: ${m.drift}`);
-    const file = resolve(dir, `core-webkit-${cls}.js`);
-    writeFileSync(file, m.text);
-    const path = `/__mutant/core-webkit-${cls}.js`;
+  for (const [cls, m] of Object.entries(WEBKIT_BAR_MUTANTS)) {
+    if (m.bars === 'system' && !system) continue;
+    const built = buildMutant(readFileSync(source[m.bundle], 'utf8'), { edits: m.edits });
+    if ('drift' in built) throw new Error(`scrollCompose control: mutant ${cls}: ${built.drift}`);
+    const file = resolve(dir, `${m.bundle}-webkit-${cls}.js`);
+    writeFileSync(file, built.text);
+    const path = `/__mutant/${m.bundle}-webkit-${cls}.js`;
     ctx.files[path] = file;
-    judge(await run(ctx.bundle.split(',').map((b) => (b === core ? path : b)).join(','), `Mutant_${cls}`), ` (mutant ${cls})`);
+    judge(await run(ctx.bundle.split(',').map((b) => (b === files[m.bundle] ? path : b)).join(','), `Mutant_${cls}`, m.bars), ` (mutant ${cls})`, m.bars);
   }
 }
 
@@ -876,6 +985,6 @@ export async function nativeExamples(ctx) {
 export const NATIVE_SCENARIOS = { nativeSurface, nativeExplainer, nativeForm, nativeUninstall, nativeExamples };
 
 export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, scrollCompose, unsupported, uninstall, decodeTiming };
-/** classes each scenario's control must turn red; scrollCompose: on Safari (styled bars, a `share` check) the composed frames and the composed share, on Firefox the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
-export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share'] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
+/** classes each scenario's control must turn red; scrollCompose: on Safari (styled bars, a `share` check) the composed frames and the composed share, with the system's classic bars also the knob against the twin (`bar-look`), on Firefox the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
+export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share', ...(row.checks.some((c) => c.cls === 'bar-look') ? ['bar-look'] : [])] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
 export { KEYS };
