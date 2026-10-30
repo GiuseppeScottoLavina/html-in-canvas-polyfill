@@ -14,6 +14,7 @@ import {
   appliedMatrixOf, appliedOffsetOf, applyGeometryToElement, applyHitTestOrder, clearGeometry, flushGeometryWrites, revalidateOffsets, revalidateScrolled, scrollMovedElements,
 } from './geometry-apply.js';
 import { borderBoxSize, frameMeasurerOf, frameRectOf, inkOverflowOf, isLaidOut, paintInkOf, rectInLayer } from './measure.js';
+import { boxScale } from '../util/box-scale.js';
 import { resetLayerStyle, syncPresentation } from './presentation.js';
 import { sameContentRect } from '../util/rect.js';
 import { auditStacking } from './stacking-audit.js';
@@ -48,18 +49,22 @@ function rememberFocus(layerEl, root) {
  * A listbox select (size > 1 or multiple) laid out while the page loads shows its selected option: every engine scrolls it into view once the select has a box
  * (measured Chrome 155 desktop and Chromium 158 Android: scrollTop 34 for the 5th of 6 options in a size-3 list). Children of a canvas are fallback content without a
  * box while the page parses, so a select moved into the layer kept scrollTop 0 and showed its first options (G-mobile controls on Android). Once mounted, each such
- * select whose first selected option lies outside its scrollport is scrolled the nearest way, as the engine does.
+ * select whose first selected option lies outside its scrollport is scrolled the nearest way, as the engine does: with the FRACTIONAL option bottom and scrollport height
+ * (measured Chrome 156 at DPR 1, 1.25, 1.5, 2 and 2.625 on listboxes of fractional height: the engine's offset is that difference snapped to the device pixel, 90 of 90; the
+ * rounded clientHeight / offsetHeight were off by up to 2 device px).
  * @param {HTMLElement} layerEl
  */
 function revealSelectedOptions(layerEl) {
   if (!layerEl.isConnected) return;
   for (const sel of /** @type {NodeListOf<HTMLSelectElement>} */ (layerEl.querySelectorAll('select'))) {
     if (!(sel.multiple || sel.size > 1) || sel.selectedIndex < 0 || sel.scrollTop !== 0 || sel.scrollHeight <= sel.clientHeight) continue;
-    const r = sel.getBoundingClientRect();
+    const r = sel.getBoundingClientRect(), cs = (sel.ownerDocument.defaultView ?? window).getComputedStyle(sel), bt = parseFloat(cs.borderTopWidth) || 0;
     const o = sel.options[sel.selectedIndex].getBoundingClientRect();
-    const k = r.height > 0 ? sel.offsetHeight / r.height : 1; // the layer may be scaled (transform mode)
-    const bottom = (o.bottom - r.top) * k - sel.clientTop;
-    if (bottom > sel.clientHeight) sel.scrollTop = bottom - sel.clientHeight;
+    const k = 1 / boxScale(sel, r, cs).y; // the layer may be scaled (transform mode); never offsetHeight / r.height (offsetHeight is rounded: util/box-scale.js)
+    const bottom = (o.bottom - r.top) * k - bt;
+    // the fractional scrollport (clientHeight is rounded; a horizontal bar, when there is one, is taken from it)
+    const view = Math.min(r.height * k - bt - (parseFloat(cs.borderBottomWidth) || 0), sel.clientHeight + 0.5);
+    if (bottom > view) sel.scrollTop = bottom - view;
   }
 }
 

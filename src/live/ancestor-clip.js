@@ -4,6 +4,7 @@
  */
 
 import { onCanvasSuspension } from '../util/suspension.js';
+import { boxScale } from '../util/box-scale.js';
 import { cssPath } from './drawables.js';
 import { layoutSize, styleOf } from './measure.js';
 import { setLayerDeclaration } from './presentation.js';
@@ -44,8 +45,7 @@ function parentOf(el) {
 /** @param {HTMLElement} el @returns {{left: number, top: number, right: number, bottom: number, sx: number, sy: number}} visible (padding box) rect of a clipper in viewport px */
 function visibleRect(el) {
   const r = el.getBoundingClientRect();
-  const sx = el.offsetWidth ? r.width / el.offsetWidth : 1;
-  const sy = el.offsetHeight ? r.height / el.offsetHeight : 1;
+  const { x: sx, y: sy } = boxScale(el, r);
   const left = r.left + el.clientLeft * sx;
   const top = r.top + el.clientTop * sy;
   return { left, top, right: left + el.clientWidth * sx, bottom: top + el.clientHeight * sy, sx, sy };

@@ -14,6 +14,8 @@
  *   mouseover/out); it dispatches no pointermove.
  */
 
+import { boxScale } from '../util/box-scale.js';
+
 /** @typedef {{left: number, top: number, width: number, height: number, scale: number}} ContentBox */
 
 /**
@@ -26,7 +28,7 @@ export function contentBoxOf(canvas) {
   const view = /** @type {Window & typeof globalThis} */ (canvas.ownerDocument.defaultView);
   const cs = view.getComputedStyle(canvas);
   const px = (/** @type {string} */ v) => parseFloat(v) || 0;
-  const scale = canvas.offsetWidth > 0 && r.width > 0 ? r.width / canvas.offsetWidth : 1;
+  const scale = boxScale(canvas, r, cs).x;
   const left = px(cs.borderLeftWidth) + px(cs.paddingLeft);
   const top = px(cs.borderTopWidth) + px(cs.paddingTop);
   const width = Math.max(0, canvas.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight));

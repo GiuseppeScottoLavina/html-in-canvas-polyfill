@@ -173,7 +173,8 @@ test('native interaction states: Gecko themes hover on fields and toggles and pr
   assert.ok(!themedStateChange(el('button'), 'hover', 'webkit'));
   assert.ok(themedStateChange(el('input', 'checkbox'), 'active', 'webkit'));
   assert.ok(!themedStateChange(el('div'), 'hover', 'gecko'));
-  const range = /** @type {any} */ ({ localName: 'input', type: 'range', value: '30', min: '', max: '', offsetWidth: 129, getBoundingClientRect: () => ({ left: 239, width: 129 }) });
+  const range = /** @type {any} */ ({ localName: 'input', type: 'range', value: '30', min: '', max: '', offsetWidth: 129, offsetHeight: 16, getBoundingClientRect: () => ({ left: 239, width: 129, height: 16 }),
+    ownerDocument: { defaultView: { getComputedStyle: () => ({ width: '129px', height: '16px', boxSizing: 'border-box' }) } } });
   notePress(range, { x: 304, y: 23 });
   range.value = '50';
   assert.equal(pressOnThumb(range, 0.5, 24, false), false, 'a press on the track (thumb then at 30 %) is not a thumb press although the thumb jumped under it');

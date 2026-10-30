@@ -7,6 +7,7 @@ import { setInlineStyle } from './inline-style.js';
 import { engineSkins } from './engine-skins.js';
 import { fallbackCaretIndex, selectionApiMissing } from '../../util/caret-index.js';
 import { rangeRectsIn } from '../../util/selection-rects.js';
+import { layoutSize } from '../../util/box-scale.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 
@@ -169,7 +170,7 @@ export function measureCaret(doc, focus, frame) {
   let rect = null;
   if (focus instanceof HTMLInputElement && (SINGLE_LINE.has(focus.type) || NO_SELECTION_API.has(focus.type)) && selectionApiMissing(focus)) {
     const g = inputMetrics(focus, cs, ctx, frame);
-    const k = focus.offsetWidth > 0 ? frame.width / focus.offsetWidth : 1;
+    const k = frame.width / (layoutSize(focus, cs)?.width || focus.offsetWidth || frame.width);
     const index = fallbackCaretIndex(focus, (x) => nearestBoundary(g.x, focus.value.length, frame.x + x * k));
     rect = { x: g.x(index), y: g.top, width: 1, height: g.height };
   } else if (focus instanceof HTMLInputElement && SINGLE_LINE.has(focus.type)) {

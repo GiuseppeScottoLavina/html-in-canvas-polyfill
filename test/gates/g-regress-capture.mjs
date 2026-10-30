@@ -3,7 +3,10 @@
 //               inherited text properties (snippet 29) reach the clone
 //   browser M3  :last-child / :only-child / :nth-last-child(1) / flex :last-child lay out exactly like the plain DOM although the live layer is a sibling after the canvas
 //   browser M4  a <canvas> inside a drawable redrawn by SCRIPT (no DOM mutation) is repainted
-// Positive control: a black renderer (pixel pages), a sibling inserted after the canvas (layout pages), the redraw skipped on the polyfill page only (child canvas).
+//   listbox     a listbox select under the canvas is scrolled to its selected option exactly as the engine scrolls the same select on the plain page (scrollTop within 0.01 px),
+//               one of fractional height among them (Chrome for Android, DPR 2.625: a scale read from the rounded offsetHeight scrolled it 34.78 px instead of 34)
+// Positive control: a black renderer (pixel pages), a sibling inserted after the canvas (layout pages), the redraw skipped on the polyfill page only (child canvas),
+// the polyfill page's listboxes scrolled 2 css px further (listbox).
 import { runGate, H } from './lib/gate.mjs';
 import { compareToTwin, dumpFailure } from './lib/pixel.mjs';
 import { REGRESS, regressUrl } from './lib/regress.mjs';
@@ -52,11 +55,21 @@ async function layoutCases(ctx, numbers) {
   for (const r of rows) ctx.check(`layout: ${r.name}: P, the next element and the canvas box lay out like the plain DOM`, r.same, { poly: r.poly, ref: r.ref }, 'layout');
 }
 
+async function listboxScroll(ctx, numbers) {
+  const { ref, page } = await openPair(ctx, 'listbox-scroll.html');
+  const offsets = (p) => p.evaluate(`JSON.stringify(['frac', 'natural'].map((id) => document.getElementById(id).scrollTop))`).then(JSON.parse);
+  if (ctx.control) await page.evaluate(`(() => { for (const id of ['frac', 'natural']) document.getElementById(id).scrollTop += 2; return true; })()`);
+  const a = await offsets(page), b = await offsets(ref);
+  numbers.listbox = { poly: a, ref: b };
+  ['frac', 'natural'].forEach((id, i) => ctx.check(`listbox: the ${id === 'frac' ? 'fractional-height' : 'natural-size'} listbox is scrolled to its selected option as the engine scrolls it (scrollTop ${a[i]} vs ${b[i]})`, b[i] > 0 && Math.abs(a[i] - b[i]) <= 0.01, { poly: a[i], ref: b[i] }, 'listbox'));
+}
+
 runGate('G-regress-capture', async (ctx) => {
   const numbers = {};
   await pixelPage(ctx, 'ancestor-css.html', 'ancestor-scoped CSS (snippet 14)', numbers);
   await pixelPage(ctx, 'wrapper-vars.html', 'wrapper custom properties (snippet 29)', numbers);
   await layoutCases(ctx, numbers);
+  await listboxScroll(ctx, numbers);
 
   // child canvas redrawn by script
   const { ref, page } = await openPair(ctx, 'child-canvas.html');
@@ -70,4 +83,4 @@ runGate('G-regress-capture', async (ctx) => {
   if (!ctx.control) await dumpFailure(ctx, 'child-canvas', out.poly.img, out.twin.img);
   numbers.dpr = out.twin.geo.dpr;
   return { numbers };
-}, { controlSabotage: ['blank'], controlClasses: ['pixel', 'layout', 'region'] });
+}, { controlSabotage: ['blank'], controlClasses: ['pixel', 'layout', 'region', 'listbox'] });

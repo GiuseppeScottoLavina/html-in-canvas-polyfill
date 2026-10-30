@@ -9,6 +9,7 @@
 
 import { appendInlineStyle, setInlineStyle } from './inline-style.js';
 import { currentEngine, currentMacPlatform } from '../../util/engine.js';
+import { boxScale } from '../../util/box-scale.js';
 import { engineSkins } from './engine-skins.js';
 import { inlineCssUrls } from './inline-resources.js';
 import { barColors, barParts, barThemeOf, cornerSvg, hasArrowGlyphs, svgUrl, trackSvg } from './chromium-bars.js';
@@ -248,7 +249,7 @@ export function applyScrollState(env, src, cloneScroller, req, sink, known) {
   const f = known ?? scrollFacts(src, cs);
   if (!f) return res;
   if (src.localName === 'select') {
-    if (f.sT || f.sL || f.scrollableY || f.scrollableX) listboxScroll(src, cloneScroller);
+    if (f.sT || f.sL || f.scrollableY || f.scrollableX) listboxScroll(src, cloneScroller, cs);
     if (f.gv) chromiumListboxBar(win, src, cloneScroller, cs, f);
     return res;
   }
@@ -351,7 +352,7 @@ function macOverlayThumb(src, clone, top) {
     + `background-size:${w}px ${h}px!important;background-position:${lx}px ${ly}px!important;background-repeat:no-repeat!important;background-origin:${origin}!important;background-attachment:scroll!important;`);
   layer(clone, x, y, 'padding-box');
   const r = src.getBoundingClientRect();
-  const scale = r.height > 0 ? /** @type {HTMLElement} */ (src).offsetHeight / r.height : 1;
+  const scale = 1 / boxScale(src, r).y;
   const opts = clone.querySelectorAll('option'), live = /** @type {HTMLSelectElement} */ (src).options;
   for (let i = 0; i < live.length; i++) {
     const or = live[i].getBoundingClientRect();
@@ -367,12 +368,12 @@ function macOverlayThumb(src, clone, top) {
  * A listbox select renders only its options (no marker box, no bar boxes), and the image document scrolls the selected option into view on its own. The live offset is set
  * with snapping instead: the clone is a mandatory snap container whose only snap area is the first option at or below the live scrollport top, `scroll-padding-top` being
  * that option's distance from it (measured in Firefox 157 and Safari 27: snapping wins over the selected-option scroll in the image).
- * @param {Element} src @param {HTMLElement} clone
+ * @param {Element} src @param {HTMLElement} clone @param {CSSStyleDeclaration} cs
  */
-function listboxScroll(src, clone) {
+function listboxScroll(src, clone, cs) {
   const r = src.getBoundingClientRect();
-  const scale = r.height > 0 ? /** @type {HTMLElement} */ (src).offsetHeight / r.height : 1; // the layer may be scaled (transform mode)
-  const dist = (/** @type {Element} */ o) => (o.getBoundingClientRect().top - r.top) * scale - src.clientTop;
+  const scale = 1 / boxScale(src, r, cs).y; // the layer may be scaled (transform mode)
+  const dist = (/** @type {Element} */ o) => (o.getBoundingClientRect().top - r.top) * scale - px(cs.borderTopWidth); // fractional (clientTop is rounded)
   const live = Array.from(/** @type {HTMLSelectElement} */ (src).options);
   const k = live.findIndex((o) => dist(o) >= -0.5);
   const opt = k >= 0 ? clone.querySelectorAll('option')[k] : null;

@@ -136,7 +136,9 @@ const LIMITS = {
   // 339 -> 340.75 KB, gzip 114.75 -> 115.25 KB (+1,841 / +567 bytes, 2026-10-30, measured 340,734 / 115,063): a form control's state written by script repaints it
   //   (schedule/observers/control-state.js: the setters of value, valueAsNumber, valueAsDate, checked, indeterminate, selectedIndex and selected, stepUp / stepDown /
   //   setRangeText and form.reset() wrapped; a slider set by script kept its old thumb beside the new one)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 340.75 * KB, gzip: 115.25 * KB },
+  // 340.75 -> 341.25 KB (+302 / +130 bytes, 2026-10-30, measured 341,036 / 115,193): the scale of a box read from its fractional layout size (util/box-scale.js boxScale / layoutSize) instead of the rounded offsetWidth / offsetHeight, and the
+  //   listbox reveal's fractional scrollport (a listbox at DPR 2.625 was scrolled 2 device px too far)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 341.25 * KB, gzip: 115.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -149,7 +151,9 @@ const LIMITS = {
   // 39 -> 39.25 KB (+329 / +162 bytes, 2026-10-22, measured 39,081 / 14,430): the hover sync element of mode native shared per document and changed inside a closed
   //   shadow root, so the page's MutationObservers see no record per pointer move and no author rule can give it a box
   // 39.25 -> 38.75 KB, gzip 14.5 -> 14 KB (-360 / -619 bytes, 2026-10-27, measured 38,721 / 13,811): the Terser pass over esbuild's minified output
-  'hic-live-effects.iife.min.js': { target: 38.75 * KB, ceiling: 38.75 * KB, gzip: 14 * KB },
+  // 38.75 -> 39.5 KB (+598 / +185 bytes, 2026-10-30, measured 39,319 / 13,996): the scale of a box read from its fractional layout size (util/box-scale.js boxScale / layoutSize) instead of the rounded offsetWidth / offsetHeight
+  //   (native-geometry.js contentBoxOf: the canvas box of the effect host)
+  'hic-live-effects.iife.min.js': { target: 39.5 * KB, ceiling: 39.5 * KB, gzip: 14 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
@@ -165,7 +169,9 @@ const LIMITS = {
   //   system accent unless an author colour applies, which Safari does not expose: the page's colour and caret-color declarations are read and matched on the caret's chain)
   // 44.25 -> 45 KB, gzip 17 -> 17.25 KB (+757 / +227 bytes, 2026-10-30, measured 44,900 / 17,142): Safari's system classic bar drawn with AppKit's knob geometry
   //   (webkitSystemKnob: whole css px, a 20 / 16 px minimum) and its vertical knob as a box of its own, which the scroll compositor captures and moves
-  'hic-live-engines.iife.min.js': { target: 45 * KB, ceiling: 45 * KB, gzip: 17.25 * KB },
+  // 45 -> 45.75 KB, gzip 17.25 -> 17.5 KB (+615 / +153 bytes, 2026-10-30, measured 45,515 / 17,295): the scale of a box read from its fractional layout size (util/box-scale.js boxScale / layoutSize) instead of the rounded offsetWidth / offsetHeight
+  //   (native-states.js pressOnThumb: Safari's slider press test)
+  'hic-live-engines.iife.min.js': { target: 45.75 * KB, ceiling: 45.75 * KB, gzip: 17.5 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
   //   OffscreenCanvas.getElementTransform removed

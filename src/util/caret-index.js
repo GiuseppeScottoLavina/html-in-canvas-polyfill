@@ -1,12 +1,14 @@
 /**
  * Caret index of text inputs whose selection API is unavailable (type email, number: selectionStart is null in every engine, setSelectionRange throws).
- * The engine knows the caret but does not expose it, so it is derived from what the user did (leaf module, no imports):
+ * The engine knows the caret but does not expose it, so it is derived from what the user did (leaf module, importing only util):
  * - a press on the control: the caret goes where the pointer is (`x`, local css px of the border box; resolved by the caret measurement with the control's font);
  * - an edit (`input`): the caret follows the edit, from the diff of the old and new value (end of the common suffix), so it self-corrects on every keystroke;
  * - ArrowLeft/Right +-1, Home/End/ArrowUp/ArrowDown (and Meta/Ctrl + Left/Right) to the start/end;
  * - a focus without a press (Tab, script) or a value written by script: the end of the value.
  * Approximate by nature (no word-wise moves, no selection highlight: the selection is invisible to script); types with a selection API keep the native one.
  */
+
+import { boxScale } from './box-scale.js';
 
 /** @typedef {{value: string, index: number, x: number|null}} CaretState */
 
@@ -94,7 +96,7 @@ function set(s, index) {
  */
 export function noteCaretPoint(el, clientX) {
   const r = el.getBoundingClientRect();
-  const k = r.width > 0 && el.offsetWidth > 0 ? el.offsetWidth / r.width : 1;
+  const k = 1 / boxScale(el, r).x;
   states.set(el, { value: el.value, index: el.value.length, x: (clientX - r.left) * k });
 }
 
