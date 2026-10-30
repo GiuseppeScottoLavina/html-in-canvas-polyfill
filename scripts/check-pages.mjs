@@ -10,7 +10,7 @@
 //   - the plugin gallery with "Effect off" and with each plugin of dist/plugins/manifest.json (?effect=<name>): the effect is active, on
 //     the WebGPU path, and the presented canvas is not blank.
 // Per page: no console error, page exception or failed request (the server log is checked for 4xx too), and its largest canvas is not
-// blank (compositor screenshot). Controls: the same site with the core bundle missing must fail, and a flat image must be blank.
+// blank (compositor screenshot); on the playground, whose canvas is in a sandboxed frame, the status line must report the install and the frame must not be blank. Controls: the same site with the core bundle missing must fail, and a flat image must be blank.
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -75,6 +75,13 @@ async function visit(page, site, path, { gallery } = {}) {
     await H.sleep(300);
     const { img } = await H.screenshotElement(page, canvas);
     if (!H.pixelStats(img).nonBlank) problems.push(`the canvas ${canvas} is blank`);
+  } else if (await page.evaluate(`!!document.querySelector('iframe#preview[sandbox]')`)) {
+    // the playground: the canvas is inside its sandboxed preview frame; the status line reports the install, the frame's screenshot must not be blank
+    const installed = await page.waitForFunction(`['polyfill', 'native'].includes(document.getElementById('status').dataset.state)`, { timeout: 15000 }).then(() => true, () => false);
+    if (!installed) problems.push(`the playground preview did not install: ${await page.evaluate(`document.getElementById('status').textContent`)}`);
+    await H.sleep(500);
+    const { img } = await H.screenshotElement(page, '#preview');
+    if (!H.pixelStats(img).nonBlank) problems.push('the playground preview is blank');
   } else if (!/examples\/$|examples\/index\.html$|^$/.test(path)) problems.push('no canvas on the page');
   for (const e of page.errors({ includeWarnings: false })) if (!/favicon/.test(e.text ?? '')) problems.push(`console: ${String(e.text).slice(0, 200)}`);
   for (const r of site.log) if (r.status >= 400) problems.push(`HTTP ${r.status} ${r.url}`);

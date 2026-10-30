@@ -665,10 +665,11 @@ const SCENARIOS = {
       const stuck = await H.until(async () => (await status()).state === 'unresponsive' || null, 8000, 200);
       const pageAnswersMs = Date.now() - t0;                             // the page's own script answered every poll meanwhile
       await clickOn('#reset');
-      const back = await H.until(async () => { const s = await status(); return s.state === st.state ? s : null; }, 20000, 250);
+      const stopping = (await status()).state;                          // the stuck frame is removed; the code runs once the browser has ended its process
+      const back = await H.until(async () => { const s = await status(); return s.state === st.state ? s : null; }, 30000, 250);
       const img = back ? await H.until(async () => { const i = await canvasShot(); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250) : null;
       const isDefault = await page.evaluate(`document.getElementById('code').value === document.getElementById('code').defaultValue`);
-      return { ok: !!stuck && !!back && !!img && isDefault, stuck: !!stuck, notRespondingAfterMs: pageAnswersMs, recovered: !!back, notBlank: !!img, isDefault };
+      return { ok: !!stuck && stopping === 'stopping' && !!back && !!img && isDefault, stuck: !!stuck, notRespondingAfterMs: pageAnswersMs, stopping, recovered: !!back, notBlank: !!img, isDefault };
     });
   },
 };

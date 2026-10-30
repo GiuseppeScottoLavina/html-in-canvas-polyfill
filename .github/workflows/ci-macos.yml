@@ -153,7 +153,7 @@ jobs:
         if: matrix.part == 'examples'
         timeout-minutes: 25
         run: |
-          node scripts/check-examples.mjs --only=basic,form,scroll-and-resize,webgl-texture,smoke:esm-quickstart,smoke:doc-readme-basic,smoke:doc-getting-started
+          node scripts/check-examples.mjs --only=basic,form,scroll-and-resize,webgl-texture,playground,smoke:esm-quickstart,smoke:doc-readme-basic,smoke:doc-getting-started
           node scripts/check-pages.mjs
       - name: Framework apps, hang stress, platform probe
         if: matrix.part == 'apps'

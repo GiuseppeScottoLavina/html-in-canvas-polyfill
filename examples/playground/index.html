@@ -64,11 +64,12 @@
   #status[data-state="polyfill"]::before, #status[data-state="native"]::before { background: var(--ok); }
   #status[data-state="refused"], #status[data-state="failed"] { color: var(--error); }
   #status[data-state="refused"]::before, #status[data-state="failed"]::before { background: var(--error); }
-  #status[data-state="unresponsive"] { color: var(--warn); }
-  #status[data-state="unresponsive"]::before { background: var(--warn); }
+  #status[data-state="unresponsive"], #status[data-state="stopping"] { color: var(--warn); }
+  #status[data-state="unresponsive"]::before, #status[data-state="stopping"]::before { background: var(--warn); }
   /* the preview is a plain light page, as the example is on its own */
   .stage { position: relative; height: 22rem; background: #ffffff; border-bottom: 1px solid var(--line); }
   .stage iframe { display: block; width: 100%; height: 100%; border: 0; background: #ffffff; }
+  .stage .stopping { display: grid; place-items: center; height: 100%; margin: 0; font-size: .9rem; color: #545c68; }
   #console { flex: 1; min-height: 8.5rem; max-height: 8.5rem; margin: 0; padding: .35rem 0; list-style: none; overflow: auto; font: 12px/1.5 var(--mono); background: var(--sunken); }
   #console li { padding: .15rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
   #console li + li { border-top: 1px solid var(--line); }
@@ -306,29 +307,43 @@
     }
   });
 
-  // A preview stuck in an endless loop stops answering. Chrome runs the sandboxed frame in a process of its own, so this page keeps working, but a new
-  // frame of this page lands in the same busy process: Run and Reset then reload the page with the code (restart). A browser that runs the frame in
-  // this page's process freezes both, and offers to stop the script itself.
-  // Timers of a hidden page are throttled, so silence is measured from the ping sent, never from the last answer.
+  // A preview stuck in an endless loop stops answering. Chrome runs the sandboxed frame in a process of its own, so this page keeps working; Firefox and
+  // Safari run it in this page's process, so both freeze until the browser offers to stop the script.
+  // Timers of a hidden page are throttled, so silence is measured from the ping sent, never from the last answer; and a tick that comes late means
+  // this page itself was frozen (the frame shares its process), so the pings start over.
+  let lastTick = 0;
   setInterval(() => {
-    if (!preview.contentWindow || state.state === 'idle') return;
     const now = performance.now();
+    const late = now - lastTick > SILENT_MS;
+    lastTick = now;
+    if (!preview.contentWindow || state.state === 'idle' || state.state === 'stopping') return;
+    if (late) { runStartedAt = Math.max(runStartedAt, now - 1000); if (unanswered) unanswered = now; }
     const silent = heard ? unanswered && now - unanswered > SILENT_MS : now - runStartedAt > SILENT_MS;
     if (silent && status.dataset.state !== 'unresponsive') setStatus('unresponsive', 'the preview is not responding (an endless loop?): edit the code and press Run, or press Reset');
     if (heard && !unanswered) unanswered = now;
     preview.contentWindow.postMessage('ping', '*');                       // the frame's origin is opaque: no narrower target exists; the message is a bare word
   }, 1000);
 
-  const PENDING = 'hic-playground-restart';
-  /** Reload this page and run `text` in it: the only way out of a preview process that never yields. The code crosses the reload in this page's session storage. */
-  function restart(text) {
-    try { sessionStorage.setItem(PENDING, text); } catch (_) { say('The preview is stuck and this browser keeps no session storage: reload the page.', true); return; }
-    location.reload();
+  // A new frame of this page would land in the stuck frame's busy process. Chrome ends that process about 10.5 s after its last frame is gone
+  // (measured on Chrome 156), so the stuck frame is removed and the code runs once that has happened.
+  const STOP_MS = 11500;
+  const FRAME = preview.cloneNode(false);  // the frame as written above, without a document
+  let stopTimer = 0;
+  function stopStuckPreview() {
+    const note = document.createElement('p');
+    note.className = 'stopping';
+    note.textContent = 'Stopping the stuck preview…';
+    preview.replaceWith(note);
+    preview = note;
+    state.focus = null;
+    setStatus('stopping', 'stopping the stuck preview: the code runs in about 10 seconds');
+    stopTimer = setTimeout(() => { stopTimer = 0; run(); }, STOP_MS);
   }
 
   /** A fresh frame for every run: the previous frame, its document and its listeners go away with it. */
   function run() {
-    if (status.dataset.state === 'unresponsive') { restart(code.value); return; }
+    if (stopTimer) return;                                               // the editor's code runs when the stuck preview is gone
+    if (status.dataset.state === 'unresponsive') { stopStuckPreview(); return; }
     token = Math.random().toString(36).slice(2) + Date.now().toString(36);
     loadFailed = false; runStartedAt = performance.now(); heard = false; unanswered = 0;
     state.run += 1; state.mode = null; state.focus = null;
@@ -336,8 +351,7 @@
     installed = { state: 'running', text: 'running' };
     setStatus('running', 'running');
     const old = preview;
-    const next = old.cloneNode(false);
-    next.removeAttribute('srcdoc');
+    const next = FRAME.cloneNode(false);
     next.srcdoc = previewDocument(code.value, token);
     old.before(next);
     old.remove();
@@ -406,10 +420,6 @@
 
   const shared = codeFromHash();
   if (shared !== null) code.value = shared;
-  try {
-    const pending = sessionStorage.getItem(PENDING);
-    if (pending !== null) { sessionStorage.removeItem(PENDING); code.value = pending; say('The previous preview stopped responding, so the page was reloaded to run your code again.'); }
-  } catch (_) { /* no session storage: nothing was kept */ }
   run();
 })();
 </script>

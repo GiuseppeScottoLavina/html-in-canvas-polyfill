@@ -6,7 +6,7 @@
 
 A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in-canvas): put real, interactive HTML inside `<canvas content="drawable">` and draw it with `ctx.drawElementImage()`, in today's desktop Chrome, Firefox and Safari, and on Chrome for Android and Safari for iOS (verified on simulators and emulators).
 
-**Live demo:** [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · **Field test:** [check it on your device](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/field-test/) (about six minutes, one report file to send back; [what it measures](docs/guides/FIELD-TEST.md))
+**Live demo:** [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · Try it in the browser: [playground](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/playground/) · **Field test:** [check it on your device](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/field-test/) (about six minutes, one report file to send back; [what it measures](docs/guides/FIELD-TEST.md))
 
 [![A live HTML form drawn into a canvas under the WebGPU water plugin of the gallery; the name field is clicked and typed into through the ripples](docs/media/hero.webp)](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/plugins/?effect=water)
 
