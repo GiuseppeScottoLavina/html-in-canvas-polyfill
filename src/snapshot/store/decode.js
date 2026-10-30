@@ -50,11 +50,29 @@ export async function decodeDataUrl(url, opts = {}) {
     await Promise.race([img.decode(), timeout]);
   } catch (err) {
     releaseImage(img);
-    throw err;
+    throw xmlChecked(url, err);
   } finally {
     clearTimeout(timer);
   }
   return img;
+}
+
+/**
+ * A rejected decode, with whether the SVG text was well-formed XML. WebKit rejects an SVG image that is not with the same `EncodingError: Loading error.` as a
+ * failed load (measured on iPadOS 27.2: an unclosed or mismatched tag, an undefined entity, a root that is not <svg>; a 20 MB SVG and 300 concurrent decodes loaded,
+ * a source change says 'Aborted by source change.'), so the error names the parser's first error and the generated markup around it: what a field report needs.
+ * @param {string} url @param {any} err @returns {any}
+ */
+export function xmlChecked(url, err) {
+  if (!err || typeof err.message !== 'string' || typeof DOMParser !== 'function') return err;
+  const svg = decodeURIComponent(url.slice(url.indexOf(',') + 1));
+  const text = new DOMParser().parseFromString(svg, 'image/svg+xml').querySelector('parsererror')?.textContent ?? '';
+  if (!text) return err;
+  const m = /line (\d+) at column (\d+): ([^\n]*?)(?:Below is a rendering|\n|$)/.exec(text);
+  const at = m ? svg.split('\n').slice(0, +m[1] - 1).reduce((n, l) => n + l.length + 1, 0) + +m[2] - 1 : -1;
+  const out = new Error(`${err.message} The SVG is not well-formed XML (${svg.length} chars): ${m ? `${m[3].trim()} at ${at}: ${JSON.stringify(svg.slice(Math.max(0, at - 80), at + 40))}` : text.trim().split('\n')[0]}`, { cause: err });
+  out.name = err.name;
+  return out;
 }
 
 /**

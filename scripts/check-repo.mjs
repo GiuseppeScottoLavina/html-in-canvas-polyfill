@@ -126,7 +126,9 @@ if (!docsOnly) {
   // the wrapped setters and methods of the value, checkedness and selectedness; a slider set by script kept its old thumb beside the new one)
   // 16450 -> 16470 (2026-10-30, measured 16,465; 16,448 before this step): scales read from fractional sizes (+17: util/box-scale.js boxScale, with layoutSize moved there
   // from live/measure.js, imported by the eight places that divided a rect by the rounded offsetWidth / offsetHeight; the listbox reveal's fractional scrollport)
-  if (total > 16470) problems.push(`G-size: core is ${total} code lines (> 16470)`);
+  // 16470 -> 16480 (2026-10-30, measured 16,476; 16,465 before this step): a rejected tile decode says whether its SVG was well-formed XML, with the parser's first
+  // error and the markup around it (snapshot/store/decode.js xmlChecked): WebKit reports a malformed SVG and a failed load alike ('Loading error.', a field report on an iPad)
+  if (total > 16480) problems.push(`G-size: core is ${total} code lines (> 16480)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

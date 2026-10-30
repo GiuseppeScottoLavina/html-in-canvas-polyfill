@@ -4,7 +4,7 @@
 (() => {
   'use strict';
 
-  const TOOL_VERSION = 'field-test/2'; // 2: the scroll smoothness step and the report key scrollSmoothness (additive: the schema stays 1)
+  const TOOL_VERSION = 'field-test/3'; // 2: the scroll smoothness step and the report key scrollSmoothness; 3: per-key typing timings, keys that change no pixel left out, the iPadOS platform label (additive: the schema stays 1)
   const SCHEMA = 'hic-field-test/1';
   const CROP_BUDGET = 2000000; // characters of PNG data URLs in one report
   const ISSUE_URL = 'https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues/new?template=field_test.yml';
@@ -25,6 +25,16 @@
   const summarize = (a) => (a.length ? { n: a.length, min: round(Math.min(...a)), p50: round(quantile(a, 0.5)), p95: round(quantile(a, 0.95)), max: round(Math.max(...a)), mean: round(a.reduce((x, y) => x + y, 0) / a.length) } : { n: 0 });
   const errInfo = (e) => ({ name: e && e.name || 'Error', message: String(e && e.message || e).slice(0, 500), stack: e && e.stack ? String(e.stack).split('\n').slice(0, 4).join('\n').slice(0, 600) : undefined });
   const coarse = () => matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+  /**
+   * A key that changes no pixel of a left-aligned field whose caret is hidden (the typing step hides it): white space typed at the end of the text, or a Backspace
+   * that removes white space at the end. Read at keydown, before the field changes. Anywhere else white space moves the text after it, so it is timed.
+   * @param {{value: string, selectionStart: number|null, selectionEnd: number|null}} field @param {string} key
+   */
+  const invisibleKey = (field, key) => {
+    const end = field.value.length;
+    if (field.selectionStart !== end || field.selectionEnd !== end) return false;
+    return key === 'Backspace' ? /\s$/.test(field.value) : /^\s$/.test(key);
+  };
 
   // ------------------------------------------------------------------------------------------------------------------------------
   // The report
@@ -1044,7 +1054,14 @@
         input.value = ''; twinInput.value = '';
         p.source.classList.add('ft-nocaret'); p.twin.classList.add('ft-nocaret');
         const keys = [], pending = [];
-        const onKey = (e) => { if (e.target !== input || !(e.key.length === 1 || e.key === 'Backspace')) return; const k = { key: e.key.length === 1 ? 'char' : e.key, t: e.timeStamp || performance.now(), frames: 0 }; keys.push(k); pending.push(k); };
+        const onKey = (e) => {
+          if (e.target !== input || !(e.key.length === 1 || e.key === 'Backspace')) return;
+          const k = { key: e.key === ' ' ? 'space' : e.key.length === 1 ? 'char' : e.key, t: e.timeStamp || performance.now(), frames: 0, invisible: invisibleKey(input, e.key) };
+          keys.push(k);
+          // a key that changes no pixel has no canvas update to wait for: kept pending, it was timed by the NEXT key's update (a space typed at the end of the text
+          // measured as the tester's pause before the next letter: 534 and 651 ms for the two spaces of 'hello field test' on an iPad)
+          if (!k.invisible) pending.push(k);
+        };
         const onInput = () => { twinInput.value = input.value; };
         document.addEventListener('keydown', onKey, true);
         input.addEventListener('input', onInput);
@@ -1067,7 +1084,9 @@
             ui.status(`${measured} key presses measured${measured < 10 ? ' (at least 10 are needed)' : ''}. Typed: "${input.value}"`);
             ui.meter(measured / 10);
             const done = ui.button('done'); if (done) done.disabled = measured < 10;
-            if (input.value.trim() === target && measured >= 10) { await sleep(400); ctx.next(); }
+            // only once the last key is drawn: frames are not read during the pause, so a key still pending was timed by the first frame after it (400 ms and more;
+            // 409 ms for the last key on an iPad, 2026-10-30)
+            if (input.value.trim() === target && measured >= 10 && !pending.length) { await sleep(400); ctx.next(); }
           }
         };
         const looping = loop();
@@ -1077,14 +1096,16 @@
         input.removeEventListener('input', onInput);
         p.source.classList.remove('ft-nocaret'); p.twin.classList.remove('ft-nocaret');
         if (ctx.signal.aborted) { watch?.stop(); return 'skipped'; }
-        const lat = keys.map((k) => k.canvasMs).filter((v) => v != null);
-        rec.results = { typed: input.value, keys: keys.length, rafs, keyToCanvasMs: summarize(lat), unchanged: keys.filter((k) => k.canvasMs === null).length,
-          refreshHz: report.environment?.display?.refresh?.hz ?? null, method: 'key event time to the first animation frame whose canvas pixels under the field changed (readback)' };
+        const visible = keys.filter((k) => !k.invisible);
+        const lat = visible.map((k) => k.canvasMs).filter((v) => v != null);
+        rec.results = { typed: input.value, keys: keys.length, rafs, keyToCanvasMs: summarize(lat), unchanged: visible.filter((k) => k.canvasMs === null).length, invisible: keys.length - visible.length,
+          perKey: keys.map((k) => ({ key: k.key, atMs: round(k.t - keys[0].t, 1), canvasMs: k.invisible ? null : k.canvasMs ?? null, ...(k.invisible ? { invisible: true } : {}) })),
+          refreshHz: report.environment?.display?.refresh?.hz ?? null, method: 'key event time to the first animation frame whose canvas pixels under the field changed (readback); keys that change no pixel (a space typed at the end of the text, a Backspace that removes a trailing space: the caret is hidden) are listed in perKey but not timed' };
         if (watch) {
           const { log, clock, layoutMoved } = watch.stop();
           const ca = changeTimes(log, 0), tw = changeTimes(log, 1);
           const firstAfter = (arr, t) => arr.find((x) => x >= t);
-          const perKey = keys.map((k) => { const a = firstAfter(ca, k.t), b = firstAfter(tw, k.t); return a != null && b != null ? { canvas: a - k.t, plain: b - k.t } : null; }).filter(Boolean);
+          const perKey = visible.map((k) => { const a = firstAfter(ca, k.t), b = firstAfter(tw, k.t); return a != null && b != null ? { canvas: a - k.t, plain: b - k.t } : null; }).filter(Boolean);
           const frameMs = log.length > 1 ? (log[log.length - 1].t - log[0].t) / (log.length - 1) : null;
           rec.results.onScreen = { clock, capturedFrames: log.length, captureFrameMs: round(frameMs, 1), keyToCanvasMs: summarize(perKey.map((x) => x.canvas)), keyToPlainMs: summarize(perKey.map((x) => x.plain)),
             canvasBehindPlainMs: summarize(perKey.map((x) => x.canvas - x.plain)), changes: { canvas: ca.length, plain: tw.length }, layoutMoved,
@@ -1499,9 +1520,15 @@
     if (crops) report.crops = encodeCrops();
     return report;
   }
-  function platformLabel() {
-    const u = navigator.userAgentData, ua = navigator.userAgent;
-    const p = (u && u.platform) || (/Windows/.test(ua) ? 'Windows' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /Linux/.test(ua) ? 'Linux' : 'unknown');
+  /**
+   * iPadOS Safari sends the user agent of a Mac (Macintosh, Intel Mac OS X); a Mac has no touch screen, an iPad has more than one touch point (the polyfill's
+   * src/util/engine.js classifies it the same way). Chrome and Firefox for macOS are not iPads whatever touch points they report.
+   * @param {{userAgent: string, userAgentData?: any, maxTouchPoints?: number}} [nav]
+   */
+  function platformLabel(nav = navigator) {
+    const u = nav.userAgentData, ua = nav.userAgent;
+    const ipad = /Macintosh/.test(ua) && Number(nav.maxTouchPoints) > 1 && !/Chrome\/|Firefox\//.test(ua);
+    const p = (u && u.platform) || (/Windows/.test(ua) ? 'Windows' : /iPhone|iPad/.test(ua) || ipad ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /Linux/.test(ua) ? 'Linux' : 'unknown');
     return p.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   }
   function browserLabel() {
@@ -1616,6 +1643,6 @@
   snapToDevicePixels();
   addEventListener('resize', () => snapToDevicePixels());
   $('ft-selfcheck-button').addEventListener('click', () => { selfCheck(); });
-  window.__fieldTest = { version: TOOL_VERSION, report, state, pairs, validate: validateReport, buildReport, selfCheck, fileName, captureState: () => report.capture.state };
+  window.__fieldTest = { version: TOOL_VERSION, report, state, pairs, validate: validateReport, buildReport, selfCheck, fileName, captureState: () => report.capture.state, platformLabel, invisibleKey };
   runAll().catch((e) => { recordError('runAll', e); ui.show({ title: 'Something went wrong', html: `<p>${escapeHtml(errInfo(e).message)}</p>`, buttons: [{ id: 'download', label: 'Download report', primary: true, onClick: () => download() }] }); });
 })();

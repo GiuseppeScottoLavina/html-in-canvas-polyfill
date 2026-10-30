@@ -127,12 +127,36 @@ function assertShape(run, r) {
   run.check('the summary counts the verdicts', r.summary && Object.values(r.summary.verdicts).reduce((a, b) => a + b, 0) === r.checks.length, r.summary);
 }
 
+/**
+ * The page's pure helpers on navigator / field doubles: iPadOS Safari's Mac user agent with touch points is 'ios' (summary.device, the file name), a Mac without touch
+ * and Chrome on a touch-screen Mac stay 'macos' (the controls); a space typed at the end of the text changes no pixel, a space or letter anywhere else does.
+ * @param {Run} run @param {any} page
+ */
+async function checkLabels(run, page) {
+  const got = await page.evaluate(`(() => {
+    const ft = window.__fieldTest, mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15';
+    const field = (value, at = value.length) => ({ value, selectionStart: at, selectionEnd: at });
+    return {
+      ipad: ft.platformLabel({ userAgent: mac, maxTouchPoints: 5 }), mac: ft.platformLabel({ userAgent: mac, maxTouchPoints: 0 }),
+      chromeTouchMac: ft.platformLabel({ userAgent: mac.replace('Version/27.2 Safari', 'Chrome/150.0.0.0 Safari'), maxTouchPoints: 10 }),
+      iphone: ft.platformLabel({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 27_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Mobile/15E148 Safari/604.1', maxTouchPoints: 5 }),
+      spaceAtEnd: ft.invisibleKey(field('hello'), ' '), letterAtEnd: ft.invisibleKey(field('hello'), 'f'), spaceInside: ft.invisibleKey(field('hello', 2), ' '),
+      backspaceSpace: ft.invisibleKey(field('hello '), 'Backspace'), backspaceLetter: ft.invisibleKey(field('hello'), 'Backspace'),
+    };
+  })()`);
+  run.check('labels: iPadOS Safari (Mac user agent, touch points) is ios; a Mac and Chrome on a touch Mac are macos; an iPhone is ios',
+    got.ipad === 'ios' && got.mac === 'macos' && got.chromeTouchMac === 'macos' && got.iphone === 'ios', got);
+  run.check('typing: only white space added or removed at the end of the text is a key that changes no pixel',
+    got.spaceAtEnd === true && got.backspaceSpace === true && got.letterAtEnd === false && got.spaceInside === false && got.backspaceLetter === false, got);
+}
+
 async function runClean(browser, site, { name = 'clean', zoom = true } = {}) {
   const run = new Run(name);
   const page = await browser.newPage({ reuseFirst: false });
   await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await page.navigate(site.url + '/examples/field-test/');
   await need(() => page.evaluate('!!window.__fieldTest'), 15000, 'the page script');
+  if (name === 'clean') await checkLabels(run, page);
   await press(page, 'start');
   await waitStep(page, 'capture', 30000);
   await press(page, 'allow');
@@ -183,6 +207,14 @@ async function runClean(browser, site, { name = 'clean', zoom = true } = {}) {
   run.check('select-input: the selection colours of the canvas are measured', !!sel?.canvas?.selectionColours?.background, sel?.canvas?.selectionColours);
   const typing = r.steps.typing.results;
   run.check('typing: at least 10 keys measured in the canvas and on screen', typing.keyToCanvasMs?.n >= 10 && typing.onScreen?.keyToCanvasMs?.n >= 10, { canvas: typing.keyToCanvasMs, onScreen: typing.onScreen });
+  // the two spaces of 'hello field test' change no pixel (typed at the end of the text, caret hidden): listed per key, not timed. Timed, each read as the 140 ms pause
+  // before the next letter plus that letter's update (the 534 and 651 ms of an iPad report, 2026-10-30)
+  const spaces = (typing.perKey ?? []).filter((k) => k.invisible);
+  run.check('typing: the 16 keys are listed per key; the 2 spaces at the end of the text are not timed', typing.perKey?.length === 16 && typing.invisible === 2 && spaces.every((k) => k.key === 'space' && k.canvasMs === null)
+    && typing.keyToCanvasMs.n === 16 - 2 - typing.unchanged, { invisible: typing.invisible, keyToCanvasMs: typing.keyToCanvasMs, perKey: typing.perKey });
+  // the step ends 400 ms after the text is complete, without reading frames in that pause: the last key must be drawn before it (it read 409 ms on an iPad, 2026-10-30)
+  const last = typing.perKey?.at(-1);
+  run.check('typing: the last key is timed by its own canvas update, not after the closing pause', typeof last?.canvasMs === 'number' && last.canvasMs < 400, last);
   const scrolling = r.steps.scrolling.results;
   run.check('scrolling: canvas and plain-page update rates measured on screen', scrolling.onScreen?.canvasChangesPerSec > 0 && scrolling.onScreen?.plainChangesPerSec > 0, scrolling.onScreen);
   run.check('scroll-end: box A equals box B where the scrolling stopped', checkById(r, 'scrolling.scroll-end')?.verdict === 'pass', checkById(r, 'scrolling.scroll-end'));
