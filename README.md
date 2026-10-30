@@ -18,7 +18,7 @@ HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, access
 
 ## Quick start
 
-From npm, for a bundler:
+From npm, for a bundler (TypeScript declarations included):
 
 ```sh
 npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next
@@ -70,7 +70,7 @@ Then use the standard API. This is the explainer's own example, unchanged:
 - The `paint` event fires when the drawables have a current picture. Draw them there with `ctx.drawElementImage(element, x, y)` (`x`, `y` in canvas bitmap pixels). A draw before the first picture exists throws `InvalidStateError`, as natively.
 - The `ResizeObserver` keeps the canvas bitmap at device-pixel size, so the drawing is sharp.
 
-Save the two blocks as one HTML file and open it. Click the drawn field and type: the text goes into the real input, and the canvas shows it. Clicks reach an element where it is drawn (here 100 bitmap pixels to the right of its layout box). Step by step, with the examples: [docs/guides/GETTING-STARTED.md](docs/guides/GETTING-STARTED.md). All bundles and their load order: [docs/BUNDLES.md](docs/BUNDLES.md).
+Put the script tags and the example in one HTML file and open it (from disk works too). Click the drawn field and type: the text goes into the real input, and the canvas shows it. Clicks reach an element where it is drawn (here 100 bitmap pixels to the right of its layout box). Step by step, with the examples: [docs/guides/GETTING-STARTED.md](docs/guides/GETTING-STARTED.md). All bundles and their load order: [docs/BUNDLES.md](docs/BUNDLES.md).
 
 ## Browser support
 
