@@ -24,7 +24,7 @@ Recorded in headless Chrome from the plugin gallery (`node plugins/disintegrate/
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
 <script src="dist/hic-live-effects.iife.min.js"></script>
 <script src="dist/plugins/disintegrate.iife.min.js"></script>   <!-- window.HicLivePlugins.disintegrate -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const dust = await host.addPlugin(HicLivePlugins.disintegrate.plugin);
   form.addEventListener('submit', async (event) => {

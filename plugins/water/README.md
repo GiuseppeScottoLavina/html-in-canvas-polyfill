@@ -18,7 +18,7 @@ A gentle refraction moves over the whole surface all the time; ripples start whe
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
 <script src="dist/hic-live-effects.iife.min.js"></script>
 <script src="dist/plugins/water.iife.min.js"></script>   <!-- window.HicLivePlugins.water -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.28 });
   water.mountUI(document.getElementById('controls'));                    // the plugin's intensity slider
