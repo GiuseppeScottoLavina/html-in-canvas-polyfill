@@ -17,6 +17,11 @@
 //      effect-plugin's submit runs the disintegrate actions (handle.trigger 'out', then 'in') and the form re-forms with the page's answer,
 //      the gallery (plugins) lists every plugin of dist/plugins/manifest.json, applies each one (its controls mount, the pixels change) and "Effect off" removes it;
 //      a trusted double click on a word of its static text shows the selection on the canvas and a click elsewhere removes it (with an effect, with "Effect off", and on the 2D path)
+//   playground: the code runs in a sandboxed preview frame (opaque origin), so install and mode come from the page's status line, the pixels from an element
+//      screenshot of the frame cropped to its canvas; the default code is examples/basic's explainer block; the frame is sandboxed with allow-scripts only and
+//      cannot reach the page; trusted click + typing in the drawn field; a forged message from another window is ignored; user errors, rejections and
+//      console.error reach the console panel as text; Tab / Esc+Tab in the editor; too-long and damaged links; Share + reload restores Unicode code; Reset;
+//      five runs leave one frame; an endless loop is reported and Reset recovers
 //   effect-plugin and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects),
 //   and a third time with navigator.gpu present but requestAdapter() resolving null (simulators, blocklisted GPUs): the same 2D fallback must draw
 //   (the canvas must not have been claimed by a 'webgpu' context before the adapter was known)
@@ -31,6 +36,8 @@
 //   C2  a click that misses the field: the "typing reaches the field" and "pixels changed" checks of `basic` must fail
 //   C3  a blank canvas must be classified blank by the pixel check
 //   C4  the ESM entry is missing: the ESM smoke page must fail
+//   C5  four variants of the playground page (allow-same-origin, console text set as HTML, messages heard from any window, the old frame kept): each must turn
+//       its playground check red
 // Results: .scratch/results/examples-<timestamp>.json and a PNG per example next to it.
 // Headless Chrome only (it never takes the screen, so it can run next to other work). The viewport is an Emulation override and says so in the result.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -49,7 +56,7 @@ const NATIVE = process.argv.includes('--native');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outDir = resolve(ROOT, '.scratch/results', `examples-${stamp}`);
 const VIEW = { width: 1100, height: 800 };
-const NAMES = ['basic', 'form', 'plugins', 'effect-plugin', 'scroll-and-resize', 'webgl-texture'];
+const NAMES = ['basic', 'form', 'plugins', 'effect-plugin', 'scroll-and-resize', 'webgl-texture', 'playground'];
 const DIST_FILES = [...['hic-live-polyfill', 'hic-live-engines', 'hic-live-gpu', 'hic-live-effects'].map((n) => `dist/${n}.iife.min.js`), 'dist/plugins/manifest.json', 'dist/plugins/water.iife.min.js', 'dist/plugins/disintegrate.iife.min.js'];
 
 // ------------------------------------------------------------------------------------------------------------------------------------
@@ -173,6 +180,58 @@ async function staticSelectionShows(page, selector, kind, word, { effect = false
   const sourceOk = !effect || (v1 !== null && v1 !== v0 && v2 !== null && v2 !== v1);
   return { ok: selected === word && shown.ms !== null && cleared && gone.ms !== null && sourceOk, selected, shownAfterMs: shown.ms, shownPixels: shown.n, goneAfterMs: gone.ms, residualPixels: gone.n, wordPixels: area,
     ...(effect ? { sourceVersions: [v0, v1, v2] } : {}) };
+}
+
+// ---- the playground: the canvas lives in a sandboxed preview frame (opaque origin) -----------------------------------------------------------
+/**
+ * Evaluate in the playground's preview frame. Chrome runs a sandboxed frame without allow-same-origin out of process: attach to its target, the
+ * child of this page. A frame in the page's process (a build that does not isolate sandboxed frames, or allow-same-origin) is reached through an
+ * isolated world, which sees the same DOM.
+ */
+async function inPreview(page, expression, started = Date.now()) {
+  const value = (r) => { if (r.exceptionDetails) throw new Error('evaluate in the preview failed: ' + (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)); return r.result.value; };
+  const { targetInfos } = await page.conn.send('Target.getTargets');
+  const children = targetInfos.filter((t) => t.type === 'iframe' && t.parentFrameId === page.targetId);
+  if (children.length > 1) {                                       // the frame of the previous run is still going away
+    if (Date.now() - started > 3000) throw new Error(`${children.length} preview frames under the page`);
+    await sleep(100); return inPreview(page, expression, started);
+  }
+  if (children.length === 1) {
+    const { sessionId } = await page.conn.send('Target.attachToTarget', { targetId: children[0].targetId, flatten: true });
+    try { return value(await page.conn.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId)); }
+    finally { await page.conn.send('Target.detachFromTarget', { sessionId }).catch(() => {}); }
+  }
+  const frames = (await page.send('Page.getFrameTree')).frameTree.childFrames ?? [];
+  if (frames.length !== 1) throw new Error(`${frames.length} preview frames in the page`);
+  const { executionContextId } = await page.send('Page.createIsolatedWorld', { frameId: frames[0].frame.id, worldName: 'playground-check' });
+  return value(await page.send('Runtime.evaluate', { expression, contextId: executionContextId, returnByValue: true, awaitPromise: true }));
+}
+
+/** The explainer example as examples/basic prints it, between its two marker comments: the playground's default code must be exactly this. */
+function basicExplainerBlock() {
+  const html = readFileSync(resolve(ROOT, 'examples/basic/index.html'), 'utf8');
+  const start = html.indexOf('\n', html.indexOf('<!-- ===== the WICG HTML-in-Canvas explainer')) + 1;
+  return html.slice(start, html.indexOf('<!-- ===== end of the explainer example ===== -->', start));
+}
+
+/**
+ * Page variants of the playground that its scenario must catch (control C5): each is one string edit of examples/playground/index.html, served in its
+ * place, and the check whose name starts with `check` must turn red. The anchor must occur exactly once (else the page changed: fix the anchor).
+ */
+const PLAYGROUND_VARIANTS = [
+  { name: 'same-origin-sandbox', edit: ['sandbox="allow-scripts"', 'sandbox="allow-scripts allow-same-origin"'], check: 'the preview is sandboxed' },
+  { name: 'console-as-html', edit: ["li.textContent = (kind === 'log'", "li.innerHTML = (kind === 'log'"], check: 'an error in the user code' },
+  { name: 'any-sender', edit: ['if (e.source !== preview.contentWindow) return;', ''], check: 'a message from another window' },
+  { name: 'iframe-kept', edit: ['old.remove();', ''], check: 'running again replaces the preview frame' },
+];
+
+/** examples/playground/index.html with one variant's edit, or an Error when its anchor is not there exactly once. */
+function playgroundVariant(variant) {
+  const text = readFileSync(resolve(ROOT, 'examples/playground/index.html'), 'utf8');
+  const [anchor, replacement] = variant.edit;
+  const count = text.split(anchor).length - 1;
+  if (count !== 1) return new Error(`ANCHOR DRIFT: the anchor of ${variant.name} occurs ${count} times in examples/playground/index.html`);
+  return text.replace(anchor, replacement);
 }
 
 // ---- per example scenarios ------------------------------------------------------------------------------------------------------------
@@ -442,6 +501,176 @@ const SCENARIOS = {
       return { ok: state.value === 'cubezzz' && state.big === 'cubezzz' && after > before && cmp.countOver16 > 60, ...state, uploadsBefore: before, uploadsAfter: after, hudChangedPixels: cmp.countOver16 };
     });
   },
+
+  /**
+   * The playground: the code runs in a sandboxed preview frame with an opaque origin, so install and mode come from the page's status line (the reporter in the
+   * frame posts them), the pixels from an element screenshot of the frame cropped to the canvas, and the frame's DOM through inPreview.
+   */
+  async playground(run, opts) {
+    const { page } = run;
+    run.expectedErrors = /playground check|pg-injected|endless loop check/;   // thrown on purpose by the user-code steps below (seen only when the frame shares the page's process)
+    const status = () => page.evaluate(`({ state: document.getElementById('status').dataset.state, text: document.getElementById('status').textContent.trim(), run: window.__playground.run, mode: window.__playground.mode,
+      messages: window.__playground.messages, console: document.getElementById('console').textContent })`);
+    /** the status after run `minRun` finished installing (or failed to); null on timeout */
+    const settled = (minRun) => H.until(async () => { const s = await status(); return s.run >= minRun && !['idle', 'running'].includes(s.state) ? s : null; }, run.fast ? 4000 : 15000, 100);
+    /** the preview's canvas, cropped from an element screenshot of the frame (DPR 1: css px are device px) */
+    const canvasShot = async () => {
+      const box = await inPreview(page, `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+      if (!box) throw new Error('no canvas in the preview');
+      const { img } = await H.screenshotElement(page, '#preview');
+      const x = Math.max(0, Math.round(box.x)), y = Math.max(0, Math.round(box.y));
+      return H.cropImage(img, x, y, Math.min(Math.round(box.w), img.width - x), Math.min(Math.round(box.h), img.height - y));
+    };
+    const untilChanged = async (before, minPixels) => {
+      let last = 0;
+      const img = await H.until(async () => { const now = await canvasShot(); last = H.compareImages(now, before).countOver16; return last >= minPixels ? now : null; }, 6000, 200);
+      return { img, changedPixels: last };
+    };
+    const runs = () => page.evaluate('window.__playground.run');
+    const setCode = (text) => page.evaluate(`document.getElementById('code').value = ${q(text)}`);
+    const clickOn = async (selector) => { const c = await centerOf(page, selector); await page.click(c.x, c.y); };
+    const reload = async () => { const loaded = page.conn.waitFor('Page.loadEventFired', { sessionId: page.sessionId, timeout: 20000 }); await page.send('Page.reload', {}); await loaded; };
+
+    let st = null;
+    await run.step('install', 'the status line reports the polyfill installed (mode polyfill), or the native API, in the preview', async () => {
+      st = await settled(1);
+      run.numbers.mode = st?.mode ?? null;
+      return { ok: !!st && (NATIVE ? st.state === 'native' : st.state === 'polyfill' || st.state === 'native'), ...(st ?? {}), console: st?.console.slice(0, 300) };
+    });
+    let first = null;
+    await run.step('surface', 'the preview canvas is not blank (element screenshot of the frame, cropped to the canvas)', async () => {
+      first = await H.until(async () => { const img = await canvasShot(); return H.pixelStats(img).nonBlank ? img : null; }, run.fast ? 2500 : 12000, 250);
+      if (!first) return { ok: false, ...H.pixelStats(await canvasShot()), dominantColor: undefined };
+      return { ok: true, ...(({ distinctColors, nonDominantFraction }) => ({ distinctColors, nonDominantFraction }))(H.pixelStats(first)) };
+    });
+    await run.step('leak', 'the live layer in the preview is invisible (computed opacity 0, or absent in native mode)', async () => {
+      const layers = await inPreview(page, `[...document.querySelectorAll('hic-layer')].map((l) => getComputedStyle(l).opacity)`);
+      return { ok: layers.every((o) => o === '0'), layers };
+    });
+    if (first) run.shots.first = first;
+    if (!first || !st || opts.generic) return;
+
+    await run.step('load', 'the default code is the explainer example of examples/basic, character for character, and runs with no console message', async () => {
+      const defaultCode = await page.evaluate(`document.getElementById('code').defaultValue`);
+      const same = defaultCode === basicExplainerBlock();
+      return { ok: same && st.messages === 0, same, messages: st.messages, console: st.console.slice(0, 300) };
+    });
+    await run.step('load', 'the preview is sandboxed with allow-scripts only, in an opaque origin, and cannot reach the page\'s document', async () => {
+      const sandbox = await page.evaluate(`document.getElementById('preview').getAttribute('sandbox')`);
+      const inside = await inPreview(page, `({ origin: location.origin, parentDocument: (() => { try { return typeof parent.document.body; } catch (e) { return e.name; } })() })`);
+      return { ok: sandbox === 'allow-scripts' && inside.origin === 'null' && inside.parentDocument === 'SecurityError', sandbox, ...inside };
+    });
+    await run.step('interact', 'a trusted click on the drawn field focuses the live input in the preview; typing changes input.value and the preview pixels', async () => {
+      const field = await inPreview(page, `(() => { const r = document.getElementById('name').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      const frame = await page.evaluate(`(() => { const e = document.getElementById('preview'); const r = e.getBoundingClientRect(); return { x: r.x + e.clientLeft, y: r.y + e.clientTop }; })()`);
+      await page.click(frame.x + (opts.misclick ? 4 : field.x), frame.y + (opts.misclick ? 4 : field.y));
+      await sleep(250);
+      // Page.typeText's guard, across the frame: keys are sent only when the focus is on an editable element of the preview
+      const focus = await page.evaluate(`({ page: document.activeElement && document.activeElement.id, preview: window.__playground.focus })`);
+      if (focus.page !== 'preview' || focus.preview !== 'input#name') return { ok: false, reason: 'the live input has no focus: no key sent', ...focus };
+      const before = await canvasShot();
+      for (const ch of 'hello world') { await page.key(ch); await sleep(25); }
+      const value = await inPreview(page, `document.getElementById('name').value`);
+      const diff = await untilChanged(before, 100);
+      if (diff.img) run.shots.typed = diff.img;
+      return { ok: value === 'hello world' && !!diff.img, value, changedPixels: diff.changedPixels, ...focus };
+    });
+    await run.step('interact', 'a message from another window that carries the run\'s token is not shown (only the preview frame is heard)', async () => {
+      const token = await page.evaluate(`(/\\)\\("([a-z0-9]+)", /.exec(document.getElementById('preview').srcdoc) || [])[1] || null`);
+      await page.evaluate(`window.postMessage({ token: ${q(token)}, kind: 'error', text: 'forged message' }, '*')`);
+      await sleep(400);
+      const s = await status();
+      return { ok: !!token && !s.console.includes('forged message'), token: !!token, console: s.console.slice(0, 200) };
+    });
+    await run.step('interact', 'an error in the user code, an unhandled rejection and console.error reach the console panel as text (Ctrl+Enter runs)', async () => {
+      await setCode(`<p>error check</p>\n<script>\n  console.error('<img id="pg-injected" src="data:,">');\n  Promise.reject(new Error('rejected, playground check'));\n  throw new TypeError('playground check');\n</script>\n`);
+      const n = await runs();
+      await page.evaluate(`document.getElementById('code').focus()`);
+      await page.key('Enter', { modifiers: 2 });                    // Ctrl
+      const s = await settled(n + 1);
+      const shown = await H.until(async () => { const c = (await status()).console; return /TypeError: playground check/.test(c) && /unhandled rejection: Error: rejected, playground check/.test(c) ? c : null; }, 5000);
+      const injected = await page.evaluate(`!!document.getElementById('pg-injected')`);
+      const asText = !!shown && shown.includes('<img id="pg-injected" src="data:,">');
+      return { ok: !!s && s.state === st.state && !!shown && asText && !injected, state: s?.state, injected, asText, console: (shown ?? (await status()).console).slice(0, 400) };
+    });
+    await run.step('interact', 'Tab in the editor inserts two spaces; Esc then Tab moves the focus on', async () => {
+      await setCode('x');
+      await page.evaluate(`(() => { const c = document.getElementById('code'); c.focus(); c.setSelectionRange(0, 0); })()`);
+      await page.key('Tab');
+      const indented = await page.evaluate(`({ value: document.getElementById('code').value, active: document.activeElement.id })`);
+      await page.key('Escape'); await page.key('Tab');
+      const left = await page.evaluate('document.activeElement.id');
+      return { ok: indented.value === '  x' && indented.active === 'code' && left !== 'code', ...indented, after: left };
+    });
+    await run.step('interact', 'a code too long for a link is refused with a message, and the link is not changed', async () => {
+      await setCode('x'.repeat(13000));
+      await clickOn('#share');
+      const said = await H.until(() => page.evaluate(`/too long/.test(document.getElementById('share-status').textContent) ? document.getElementById('share-status').textContent : null`), 3000);
+      const hash = await page.evaluate('location.hash');
+      return { ok: !!said && hash === '', said, hash };
+    });
+    await run.step('interact', 'a damaged link (bad base64, too long) says so, keeps the original example, and the page has no error', async () => {
+      const results = [];
+      for (const hash of ['#code=@@@', '#code=' + 'A'.repeat(16004), '#code=_w']) {                       // not the alphabet, over the cap, not UTF-8
+        await page.evaluate(`history.replaceState(null, '', ${q(hash)})`);
+        await reload();
+        const s = await settled(1);
+        const st2 = await page.evaluate(`({ said: document.getElementById('share-status').textContent, isDefault: document.getElementById('code').value === document.getElementById('code').defaultValue })`);
+        results.push({ hash: hash.slice(0, 12), state: s?.state, ...st2 });
+      }
+      await page.evaluate(`history.replaceState(null, '', location.pathname)`);
+      return { ok: results.every((r) => r.isDefault && r.said.length > 0 && r.state === st.state), results };
+    });
+    await run.step('interact', 'Share puts the edited code (non-ASCII included) in the link; reloading that link restores it and runs it', async () => {
+      await page.send('Browser.grantPermissions', { permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'], origin: run.baseUrl }).catch(() => {});
+      const edited = (await page.evaluate(`document.getElementById('code').defaultValue`)).replace('name:', 'name (имя, 名前, ✓):');
+      await setCode(edited);
+      await page.evaluate(`document.getElementById('share-status').textContent = ''`);
+      await clickOn('#share');
+      const said = await H.until(() => page.evaluate(`document.getElementById('share-status').textContent || null`), 3000);
+      const hash = await page.evaluate('location.hash');
+      const decoded = hash.startsWith('#code=') ? Buffer.from(hash.slice(6), 'base64url').toString('utf8') : null;
+      await reload();
+      const s = await settled(1);
+      const restored = await page.evaluate(`document.getElementById('code').value`);
+      const label = s ? await inPreview(page, `document.querySelector('label').textContent`) : null;
+      return { ok: decoded === edited && restored === edited && label === 'name (имя, 名前, ✓):' && !!s && s.state === st.state && /Link copied|address bar/.test(said ?? ''), said, hashLength: hash.length, label, state: s?.state };
+    });
+    await run.step('interact', 'Reset restores the original example, clears the link and runs it', async () => {
+      const n = await runs();
+      await clickOn('#reset');
+      const s = await settled(n + 1);
+      const after = await page.evaluate(`({ isDefault: document.getElementById('code').value === document.getElementById('code').defaultValue, hash: location.hash })`);
+      const img = s ? await H.until(async () => { const i = await canvasShot(); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250) : null;
+      return { ok: after.isDefault && after.hash === '' && !!s && s.state === st.state && !!img, ...after, state: s?.state };
+    });
+    await run.step('interact', 'running again replaces the preview frame: after five runs there is one frame and one frame target, and it works', async () => {
+      const n = await runs();
+      for (let i = 0; i < 5; i++) { await clickOn('#run'); await sleep(150); }
+      const s = await settled(n + 5);
+      await sleep(500);
+      const frames = await page.evaluate(`document.querySelectorAll('iframe').length`);
+      const { targetInfos } = await page.conn.send('Target.getTargets');
+      const targets = targetInfos.filter((t) => t.type === 'iframe' && t.parentFrameId === page.targetId).length;
+      return { ok: frames === 1 && targets <= 1 && !!s && s.state === st.state && s.messages === 0, frames, frameTargets: targets, state: s?.state };
+    });
+    // a page variant may run the frame in the page's process (allow-same-origin), where an endless loop would freeze the page and the run
+    if (opts.variant) return;
+    await run.step('interact', 'an endless loop in the user code: the page stays responsive, the status says the preview is not responding, and Reset brings the example back', async () => {
+      const n = await runs();
+      await setCode('<p>endless loop check</p>\n<script>\n  setTimeout(() => { for (;;) {} }, 200);\n</script>\n');
+      await clickOn('#run');
+      await settled(n + 1);
+      const t0 = Date.now();
+      const stuck = await H.until(async () => (await status()).state === 'unresponsive' || null, 8000, 200);
+      const pageAnswersMs = Date.now() - t0;                             // the page's own script answered every poll meanwhile
+      await clickOn('#reset');
+      const back = await H.until(async () => { const s = await status(); return s.state === st.state ? s : null; }, 20000, 250);
+      const img = back ? await H.until(async () => { const i = await canvasShot(); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250) : null;
+      const isDefault = await page.evaluate(`document.getElementById('code').value === document.getElementById('code').defaultValue`);
+      return { ok: !!stuck && !!back && !!img && isDefault, stuck: !!stuck, notRespondingAfterMs: pageAnswersMs, recovered: !!back, notBlank: !!img, isDefault };
+    });
+  },
 };
 
 
@@ -576,6 +805,7 @@ async function runExample(browser, server, name, opts = {}) {
     // without an adapter the polyfill's loud report of the refused effect host is the documented behaviour (one console.error), not a defect
     const expected = opts.noAdapter ? all.filter((e) => /unsupported effect-plugins: .*no adapter was returned/.test(e.text ?? '')) : [];
     if (opts.noAdapter) run.check('load', 'the refused effect host is reported once (unsupported effect-plugins, no adapter)', expected.length === 1, expected.length);
+    if (run.expectedErrors) expected.push(...all.filter((e) => run.expectedErrors.test(e.text ?? '')));
     const errors = all.filter((e) => !expected.includes(e) && !KNOWN_RED.some((k) => k.examples.includes(name) && k.pattern.test(e.text ?? '')));
     for (const e of all.filter((x) => !errors.includes(x) && !expected.includes(x))) run.known.push(KNOWN_RED.find((k) => k.examples.includes(name) && k.pattern.test(e.text ?? '')).id);
     run.check('load', 'no console error, page exception or failed request', errors.length === 0, errors.slice(0, 5));
@@ -678,6 +908,25 @@ async function main() {
         result.controls.push(control);
         console.log(`${control.turnedRed ? 'ok  ' : 'FAIL'} control C2 (click misses the field) -> basic: ${red.length} interaction check(s) red`);
         if (!control.turnedRed) problems.push('control C2 did not fail');
+      }
+      // C5: page variants of the playground (a sandbox with allow-same-origin, console text parsed as HTML, messages heard from any window, the old frame kept):
+      // the playground scenario must turn the named check red on each
+      if (names.includes('playground')) {
+        for (const variant of PLAYGROUND_VARIANTS) {
+          const text = playgroundVariant(variant);
+          let red = [];
+          if (text instanceof Error) red = null;
+          else {
+            const file = resolve(outDir, `playground-${variant.name}.html`); writeFileSync(file, text);
+            const variantServer = await startServer({ files: { '/examples/playground/': file } });
+            try { red = (await runExample(browser, variantServer, 'playground', { tag: `control-${variant.name}`, noShots: true, variant: true })).failed().map((c) => c.name); }
+            finally { await variantServer.close().catch(() => {}); }
+          }
+          const turnedRed = !!red && red.some((n) => n.startsWith(variant.check));
+          result.controls.push({ control: `C5 playground variant ${variant.name}`, example: 'playground', turnedRed, failedChecks: red ?? [String(text.message)] });
+          console.log(`${turnedRed ? 'ok  ' : 'FAIL'} control C5 (playground: ${variant.name}) -> "${variant.check}..." ${turnedRed ? 'red' : red ? 'stayed green' : text.message}`);
+          if (!turnedRed) problems.push(`control C5 ${variant.name} did not fail`);
+        }
       }
       // C4: the ESM entry is missing: the ESM smoke page must fail
       if (smokeWanted('esm-quickstart')) {

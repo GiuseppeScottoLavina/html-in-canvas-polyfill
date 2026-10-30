@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Playground: html-in-canvas-polyfill</title>
+<meta name="description" content="Edit the WICG HTML-in-Canvas example and run it in your browser, with the polyfill or the browser's own implementation.">
+<!-- This page loads no polyfill itself: the sandboxed preview frame does (see previewDocument below). -->
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --sunken: #eef0f3; --ink: #14171c; --muted: #545c68; --line: #d3d8df; --line-strong: #b3bac5;
+    --accent: #2445c8; --accent-ink: #ffffff; --accent-soft: #e6ebfb;
+    --ok: #146c3c; --warn: #7a4d00; --error: #b01a26; --idle: #6a7280;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --surface: #171a20; --sunken: #12151a; --ink: #e7e9ed; --muted: #a3aab5; --line: #2b3039; --line-strong: #444b57;
+      --accent: #8ea6ff; --accent-ink: #0b0e14; --accent-soft: #1d2540;
+      --ok: #7fd3a0; --warn: #f0c46c; --error: #ff8f8a; --idle: #9aa1ac;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); text-underline-offset: .15em; }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  kbd { padding: .05em .35em; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); white-space: nowrap; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 1.5rem clamp(1rem, 3vw, 2rem) 2.5rem; }
+
+  /* ---- header */
+  .top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1.5rem; }
+  .eyebrow { margin: 0; font: 600 .78rem/1.4 var(--mono); color: var(--muted); }
+  .top nav { display: flex; gap: 1.1rem; font-size: .9rem; }
+  h1 { margin: .35rem 0 .25rem; font-size: clamp(1.45rem, 1.1rem + 1.2vw, 1.9rem); line-height: 1.15; font-weight: 650; letter-spacing: -.015em; }
+  .lede { margin: 0 0 1.25rem; max-width: 70ch; color: var(--muted); }
+  .lede code { color: var(--ink); }
+
+  /* ---- the two panes */
+  .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  .card { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-height: 3rem; padding: .45rem .6rem .45rem .9rem; border-bottom: 1px solid var(--line); }
+  .bar h2 { margin: 0 auto 0 0; font-size: .8rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .bar h2 label { cursor: inherit; }
+  button { display: inline-flex; align-items: center; gap: .45rem; min-height: 2.1rem; padding: .3rem .8rem; font: 550 .88rem/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 7px; cursor: pointer; }
+  button:hover { background: var(--sunken); }
+  button.primary { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.08); background: var(--accent); }
+  button .keys { font: 500 .72rem/1 var(--mono); opacity: .85; }
+  #code { flex: 1; display: block; width: 100%; min-height: 30rem; margin: 0; padding: .9rem 1rem; border: 0; border-radius: 0; resize: none; outline-offset: -2px; tab-size: 2;
+    font: 13px/1.6 var(--mono); color: var(--ink); background: var(--surface); white-space: pre; overflow: auto; }
+  .hint { margin: 0; padding: .5rem .9rem; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); background: var(--sunken); }
+
+  /* status: a dot and one line of text; its height never changes, so running does not move the page */
+  #status { display: flex; align-items: center; gap: .5rem; min-width: 0; max-width: 100%; margin: 0; font: 500 .8rem/1.3 var(--mono); color: var(--muted); }
+  #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status::before { content: ""; flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: var(--idle); }
+  #status[data-state="polyfill"], #status[data-state="native"] { color: var(--ok); }
+  #status[data-state="polyfill"]::before, #status[data-state="native"]::before { background: var(--ok); }
+  #status[data-state="refused"], #status[data-state="failed"] { color: var(--error); }
+  #status[data-state="refused"]::before, #status[data-state="failed"]::before { background: var(--error); }
+  #status[data-state="unresponsive"] { color: var(--warn); }
+  #status[data-state="unresponsive"]::before { background: var(--warn); }
+  /* the preview is a plain light page, as the example is on its own */
+  .stage { position: relative; height: 22rem; background: #ffffff; border-bottom: 1px solid var(--line); }
+  .stage iframe { display: block; width: 100%; height: 100%; border: 0; background: #ffffff; }
+  #console { flex: 1; min-height: 8.5rem; max-height: 8.5rem; margin: 0; padding: .35rem 0; list-style: none; overflow: auto; font: 12px/1.5 var(--mono); background: var(--sunken); }
+  #console li { padding: .15rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #console li + li { border-top: 1px solid var(--line); }
+  #console .error { color: var(--error); }
+  #console .warn { color: var(--warn); }
+  #console .empty { color: var(--muted); }
+  .bar.sub { min-height: 2.6rem; border-bottom: 1px solid var(--line); }
+  .bar.sub button { min-height: 1.8rem; padding: .2rem .6rem; font-size: .8rem; }
+
+  #share-status { min-height: 1.55em; margin: .6rem 0 0; font-size: .9rem; color: var(--muted); }
+  #share-status.error { color: var(--error); }
+
+  /* ---- the note */
+  .note { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem 2rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); font-size: .88rem; color: var(--muted); }
+  .note h2 { margin: 0 0 .3rem; font-size: .9rem; color: var(--ink); }
+  .note p { margin: 0; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  @media (max-width: 960px) {
+    .panes { grid-template-columns: minmax(0, 1fr); }
+    #code { min-height: 20rem; }
+    .note { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 520px) {
+    .wrap { padding-top: 1rem; }
+    #code { min-height: 17rem; font-size: 12.5px; }
+    .stage { height: 17rem; }
+    button .keys { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="top">
+      <p class="eyebrow">html-in-canvas-polyfill</p>
+      <nav aria-label="Project"><a href="../">All examples</a><a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">Source and documentation</a></nav>
+    </div>
+    <h1>Playground</h1>
+    <p class="lede">Edit the HTML-in-Canvas example and run it. The preview draws live HTML into a canvas with the proposed API:
+      <code>&lt;canvas content="drawable"&gt;</code>, <code>drawElementImage</code> and the <code>paint</code> event. Click the drawn field and type.</p>
+  </header>
+
+  <main class="panes">
+    <section class="card" aria-labelledby="code-title">
+      <div class="bar">
+        <h2 id="code-title"><label for="code">Code</label></h2>
+        <button type="button" id="reset" aria-describedby="reset-desc">Reset</button>
+        <button type="button" id="share" aria-describedby="share-desc">Share</button>
+        <button type="button" id="run" class="primary" aria-keyshortcuts="Control+Enter Meta+Enter">Run <span class="keys" aria-hidden="true">Ctrl ↵</span></button>
+        <span class="visually-hidden" id="reset-desc">Restores the original example and runs it.</span>
+        <span class="visually-hidden" id="share-desc">Copies a link that contains this code.</span>
+      </div>
+<textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" wrap="off" aria-describedby="code-hint">
+<canvas style="width: 400px; height: 200px;" content="drawable">
+  <form drawable>
+    <label for="name">name:</label>
+    <input id="name">
+  </form>
+</canvas>
+
+<script>
+  const canvas = document.querySelector('canvas');
+  const form = document.querySelector('canvas form');
+  const ctx = canvas.getContext('2d');
+
+  canvas.onpaint = () => {
+    ctx.reset();
+    ctx.drawElementImage(form, 100, 0);
+  };
+
+  // Size the canvas grid to match the device scale factor.
+  new ResizeObserver((entries) => {
+    canvas.width = entries[0].devicePixelContentBoxSize[0].inlineSize;
+    canvas.height = entries[0].devicePixelContentBoxSize[0].blockSize;
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+</script>
+</textarea>
+      <p class="hint" id="code-hint">The body of the preview page. <kbd>Tab</kbd> indents; <kbd>Esc</kbd> then <kbd>Tab</kbd> leaves the editor.
+        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> or <kbd>⌘</kbd>+<kbd>Enter</kbd> runs.</p>
+    </section>
+
+    <section class="card" aria-labelledby="preview-title">
+      <div class="bar">
+        <h2 id="preview-title">Preview</h2>
+        <p id="status" role="status" data-state="idle"><span id="status-text">starting</span></p>
+      </div>
+      <div class="stage" id="stage">
+        <iframe id="preview" title="Preview of the code" sandbox="allow-scripts"></iframe>
+      </div>
+      <div class="bar sub">
+        <h2 id="console-title">Console</h2>
+        <button type="button" id="clear">Clear console</button>
+      </div>
+      <ol id="console" aria-labelledby="console-title" aria-live="polite" aria-relevant="additions"><li class="empty">No messages.</li></ol>
+    </section>
+  </main>
+  <p id="share-status" role="status" aria-live="polite"></p>
+
+  <section class="note" aria-label="About this page">
+    <div>
+      <h2>What runs</h2>
+      <p>The preview loads the polyfill's core and engines bundles from this site, then your code. Where the browser has a complete native implementation, the polyfill steps aside and your code runs on the browser's own; the line above the preview says which.
+        The effects and the plugins are not loaded: try them in the <a href="../plugins/">plugin gallery</a>.</p>
+    </div>
+    <div>
+      <h2>The sandbox</h2>
+      <p>The preview is a sandboxed frame with an opaque origin: it cannot read this site's cookies or storage, open windows or dialogs, or submit forms.
+        Images and fonts from another server are drawn only if that server allows cross-origin (CORS) reads. If your code stops responding, edit it and press Run, or press Reset.</p>
+    </div>
+    <div>
+      <h2>Your code</h2>
+      <p>It stays in your browser. Share puts it in the link's <code>#</code> fragment, which browsers do not send to the server.
+        Tested in desktop Chrome, Firefox 155+ and Safari 27+.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const MAX_HASH = 16000;                 // characters of encoded code in a shared link
+  const MAX_CONSOLE = 200;                // console entries kept per run
+  const MAX_TEXT = 2000;                  // characters per console entry
+  const SILENT_MS = 3000;                 // a preview that leaves a ping unanswered this long (or never speaks) is reported as not responding
+  const SCRIPTS = ['../../dist/hic-live-polyfill.iife.min.js', '../../dist/hic-live-engines.iife.min.js'].map((p) => new URL(p, location.href).href);
+
+  const code = document.getElementById('code');
+  const status = document.getElementById('status');
+  const statusText = document.getElementById('status-text');
+  const shareStatus = document.getElementById('share-status');
+  const log = document.getElementById('console');
+  const DEFAULT = code.defaultValue;
+  if (/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelector('#run .keys').textContent = '⌘ ↵';
+  let preview = document.getElementById('preview');
+
+  // Read by scripts/check-examples.mjs: the last state the preview reported (plain values only).
+  const state = window.__playground = { run: 0, state: 'idle', mode: null, focus: null, messages: 0 };
+
+  // ---- the reporter: runs in the preview before the polyfill. Every message carries the run's token and plain strings only.
+  function reporter(token, targetOrigin) {
+    const post = (kind, text, extra) => { try { parent.postMessage(Object.assign({ token, kind, text: String(text) }, extra), targetOrigin); } catch (_) { /* the page is gone */ } };
+    const show = (v) => {
+      if (v instanceof Error) return v.name + ': ' + v.message;
+      if (typeof v === 'string') return v;
+      if (v === null || typeof v !== 'object') return String(v);
+      try { return JSON.stringify(v); } catch (_) { return Object.prototype.toString.call(v); }
+    };
+    for (const level of ['error', 'warn', 'log', 'info']) {
+      const original = console[level];
+      console[level] = function (...args) { post(level === 'info' ? 'log' : level, args.map(show).join(' ')); return original.apply(this, args); };
+    }
+    for (const name of ['alert', 'confirm', 'prompt', 'print']) window[name] = () => { post('warn', name + '() is not available in the sandboxed preview'); };
+    addEventListener('error', (e) => {
+      const t = e.target;
+      if (t && t !== window && t.localName) { post('error', 'could not load ' + (t.src || t.href || '<' + t.localName + '>'), { load: t.localName === 'script' }); return; }
+      post('error', (e.error ? show(e.error) : e.message || 'error') + (e.lineno ? ' (line ' + e.lineno + ')' : ''));
+    }, true);
+    addEventListener('unhandledrejection', (e) => { post('error', 'unhandled rejection: ' + show(e.reason)); });
+    addEventListener('focusin', (e) => { post('focus', e.target.localName + (e.target.id ? '#' + e.target.id : '')); });
+    addEventListener('focusout', () => { post('focus', ''); });
+    addEventListener('message', (e) => { if (e.source === parent && e.data === 'ping') post('pong', ''); });
+    post('hello', '');                    // before the polyfill downloads: the page knows the frame runs
+    window.__playgroundReport = () => {
+      const hic = window.__HIC__;
+      const version = window.HicLivePolyfill ? String(window.HicLivePolyfill.version) : '';
+      if (hic && hic.installed) post('install', hic.installed.mode, { version });
+      else if (hic && hic.error) post('install', 'refused', { version, reason: String(hic.error.message || hic.error).replace(/^\[hic-live-polyfill\] /, '') });
+      else post('install', 'missing');
+    };
+  }
+
+  /** The preview document: the reporter, the two polyfill bundles (absolute URLs), the install report, then the user's code as the body. */
+  function previewDocument(userCode, token) {
+    const targetOrigin = location.origin === 'null' ? '*' : location.origin;   // a page opened from disk has an opaque origin of its own
+    const json = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+    return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+      + '<script>(' + reporter.toString() + ')(' + json(token) + ', ' + json(targetOrigin) + ');<\/script>\n'
+      + SCRIPTS.map((src) => '<script src="' + src.replace(/"/g, '&quot;') + '"><\/script>\n').join('')
+      + '<script>window.__playgroundReport();<\/script>\n</head>\n<body>\n' + userCode + '\n</body>\n</html>\n';
+  }
+
+  // ---- console panel and status line: every string from the preview is set as text, never parsed as HTML
+  let entries = 0;
+  function clearConsole() {
+    const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'No messages.';
+    log.replaceChildren(li);
+    entries = 0; state.messages = 0;
+  }
+  function addEntry(kind, text) {
+    if (entries === 0) log.replaceChildren();
+    entries += 1; state.messages = entries;
+    if (entries > MAX_CONSOLE) {
+      if (entries === MAX_CONSOLE + 1) { const li = document.createElement('li'); li.className = 'warn'; li.textContent = 'More messages arrived; they are not shown.'; log.append(li); }
+      return;
+    }
+    const li = document.createElement('li');
+    li.className = kind;
+    li.textContent = (kind === 'log' ? '' : kind + ': ') + (text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + '…' : text);
+    log.append(li);
+    log.scrollTop = log.scrollHeight;
+  }
+  let installed = { state: 'idle', text: 'starting' };
+  function setStatus(s, text) { status.dataset.state = s; statusText.textContent = text; status.title = text; state.state = s; }
+
+  let token = '';
+  let loadFailed = false;
+  let runStartedAt = 0;                   // performance.now() of the last run
+  let heard = false;                      // the frame of this run has spoken
+  let unanswered = 0;                     // performance.now() of the oldest ping not answered yet, 0 when none
+  addEventListener('message', (e) => {
+    if (e.source !== preview.contentWindow) return;                      // only the current preview frame
+    const d = e.data;
+    if (!d || typeof d !== 'object' || d.token !== token || typeof d.kind !== 'string' || typeof d.text !== 'string') return;   // an earlier run, or not the reporter
+    heard = true; unanswered = 0;
+    if (status.dataset.state === 'unresponsive') setStatus(installed.state, installed.text);
+    const text = d.text;
+    switch (d.kind) {
+      case 'install': {
+        const version = typeof d.version === 'string' && d.version ? ' ' + d.version : '';
+        state.mode = text === 'missing' || text === 'refused' ? null : text;
+        if (text === 'polyfill') installed = { state: 'polyfill', text: 'polyfill' + version + ' installed (mode polyfill)' };
+        else if (text === 'native' || text === 'native-bridged') installed = { state: 'native', text: 'native API, the polyfill stepped aside (mode ' + text + ')' };
+        else if (text === 'refused') installed = { state: 'refused', text: 'the polyfill refused to install: ' + (typeof d.reason === 'string' ? d.reason : 'this browser is not supported') };
+        else installed = { state: 'failed', text: loadFailed ? 'the polyfill did not load (see the console)' : 'the polyfill did not run' };
+        setStatus(installed.state, installed.text);
+        break;
+      }
+      case 'focus': state.focus = text || null; break;
+      case 'error': case 'warn': case 'log':
+        if (d.load === true) loadFailed = true;
+        addEntry(d.kind, text);
+        break;
+      default: break;
+    }
+  });
+
+  // A preview stuck in an endless loop stops answering. Chrome runs the sandboxed frame in a process of its own, so this page keeps working, but a new
+  // frame of this page lands in the same busy process: Run and Reset then reload the page with the code (restart). A browser that runs the frame in
+  // this page's process freezes both, and offers to stop the script itself.
+  // Timers of a hidden page are throttled, so silence is measured from the ping sent, never from the last answer.
+  setInterval(() => {
+    if (!preview.contentWindow || state.state === 'idle') return;
+    const now = performance.now();
+    const silent = heard ? unanswered && now - unanswered > SILENT_MS : now - runStartedAt > SILENT_MS;
+    if (silent && status.dataset.state !== 'unresponsive') setStatus('unresponsive', 'the preview is not responding (an endless loop?): edit the code and press Run, or press Reset');
+    if (heard && !unanswered) unanswered = now;
+    preview.contentWindow.postMessage('ping', '*');                       // the frame's origin is opaque: no narrower target exists; the message is a bare word
+  }, 1000);
+
+  const PENDING = 'hic-playground-restart';
+  /** Reload this page and run `text` in it: the only way out of a preview process that never yields. The code crosses the reload in this page's session storage. */
+  function restart(text) {
+    try { sessionStorage.setItem(PENDING, text); } catch (_) { say('The preview is stuck and this browser keeps no session storage: reload the page.', true); return; }
+    location.reload();
+  }
+
+  /** A fresh frame for every run: the previous frame, its document and its listeners go away with it. */
+  function run() {
+    if (status.dataset.state === 'unresponsive') { restart(code.value); return; }
+    token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    loadFailed = false; runStartedAt = performance.now(); heard = false; unanswered = 0;
+    state.run += 1; state.mode = null; state.focus = null;
+    clearConsole();
+    installed = { state: 'running', text: 'running' };
+    setStatus('running', 'running');
+    const old = preview;
+    const next = old.cloneNode(false);
+    next.removeAttribute('srcdoc');
+    next.srcdoc = previewDocument(code.value, token);
+    old.before(next);
+    old.remove();
+    preview = next;
+  }
+
+  // ---- share links: #code=<base64url of the UTF-8 code>
+  function encode(text) {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function decode(b64url) {
+    const bin = atob(b64url.replace(/-/g, '+').replace(/_/g, '/'));
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+  }
+  function say(text, isError) { shareStatus.textContent = text; shareStatus.classList.toggle('error', !!isError); }
+
+  async function share() {
+    const encoded = encode(code.value);
+    if (encoded.length > MAX_HASH) { say('This code is too long for a link (' + encoded.length.toLocaleString('en') + ' characters encoded; the limit is ' + MAX_HASH.toLocaleString('en') + '). Shorten it to share it.', true); return; }
+    history.replaceState(null, '', '#code=' + encoded);
+    try {
+      await navigator.clipboard.writeText(location.href);
+      say('Link copied. It contains the code, so whoever opens it sees and runs this version.');
+    } catch (_) {
+      say('The link is in the address bar: copy it from there (this browser did not allow copying).');
+    }
+  }
+
+  /** The code in the link's fragment, or null. A fragment that is too long or does not decode leaves the editor as it is and says why. */
+  function codeFromHash() {
+    if (!location.hash || location.hash === '#') return null;
+    const m = /^#code=([A-Za-z0-9_-]*)$/.exec(location.hash);
+    if (!m) { say('This link does not contain code for the playground, so the original example is shown.', true); return null; }
+    if (m[1].length > MAX_HASH) { say('The code in this link is too long (over ' + MAX_HASH.toLocaleString('en') + ' characters encoded), so the original example is shown.', true); return null; }
+    try { return decode(m[1]); } catch (_) { say('The code in this link is damaged (it does not decode), so the original example is shown.', true); return null; }
+  }
+
+  // ---- the editor: a plain textarea
+  let escaped = false;
+  code.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); return; }
+    if (e.key === 'Escape') { escaped = true; return; }
+    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !escaped) {
+      e.preventDefault();
+      // insertText keeps the browser's undo history; setRangeText is the fallback
+      if (!document.execCommand('insertText', false, '  ')) code.setRangeText('  ', code.selectionStart, code.selectionEnd, 'end');
+      return;
+    }
+    escaped = false;
+  });
+  addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target !== code) { e.preventDefault(); run(); } });
+
+  document.getElementById('run').addEventListener('click', run);
+  document.getElementById('reset').addEventListener('click', () => {
+    code.value = DEFAULT;
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    say('');
+    run();
+  });
+  document.getElementById('share').addEventListener('click', share);
+  document.getElementById('clear').addEventListener('click', clearConsole);
+  addEventListener('hashchange', () => { const shared = codeFromHash(); if (shared !== null) { code.value = shared; say(''); run(); } });
+
+  const shared = codeFromHash();
+  if (shared !== null) code.value = shared;
+  try {
+    const pending = sessionStorage.getItem(PENDING);
+    if (pending !== null) { sessionStorage.removeItem(PENDING); code.value = pending; say('The previous preview stopped responding, so the page was reloaded to run your code again.'); }
+  } catch (_) { /* no session storage: nothing was kept */ }
+  run();
+})();
+</script>
+</body>
+</html>
