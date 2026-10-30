@@ -19,7 +19,7 @@
 //      a trusted double click on a word of its static text shows the selection on the canvas and a click elsewhere removes it (with an effect, with "Effect off", and on the 2D path)
 //   playground: the code runs in a sandboxed preview frame (opaque origin), so install and mode come from the page's status line, the pixels from an element
 //      screenshot of the frame cropped to its canvas; the default code is examples/basic's explainer block; the frame is sandboxed with allow-scripts only and
-//      cannot reach the page; trusted click + typing in the drawn field; a forged message from another window is ignored; user errors, rejections and
+//      cannot reach the page; Show canvas bounds (on by default, the outline around the canvas, off removes it, canvas pixels unchanged); trusted click + typing in the drawn field; a forged message from another window is ignored; user errors, rejections and
 //      console.error reach the console panel as text; Tab / Esc+Tab in the editor; too-long and damaged links; Share + reload restores Unicode code; Reset;
 //      five runs leave one frame; an endless loop is reported and Reset recovers
 //   effect-plugin and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects),
@@ -36,7 +36,8 @@
 //   C2  a click that misses the field: the "typing reaches the field" and "pixels changed" checks of `basic` must fail
 //   C3  a blank canvas must be classified blank by the pixel check
 //   C4  the ESM entry is missing: the ESM smoke page must fail
-//   C5  four variants of the playground page (allow-same-origin, console text set as HTML, messages heard from any window, the old frame kept): each must turn
+//   C5  five variants of the playground page (allow-same-origin, console text set as HTML, messages heard from any window, the old frame kept, the canvas bounds
+//       never switched off): each must turn
 //       its playground check red
 // Results: .scratch/results/examples-<timestamp>.json and a PNG per example next to it.
 // Headless Chrome only (it never takes the screen, so it can run next to other work). The viewport is an Emulation override and says so in the result.
@@ -223,6 +224,7 @@ const PLAYGROUND_VARIANTS = [
   { name: 'console-as-html', edit: ["li.textContent = (kind === 'log'", "li.innerHTML = (kind === 'log'"], check: 'an error in the user code' },
   { name: 'any-sender', edit: ['if (e.source !== preview.contentWindow) return;', ''], check: 'a message from another window' },
   { name: 'iframe-kept', edit: ['old.remove();', ''], check: 'running again replaces the preview frame' },
+  { name: 'bounds-not-switched', edit: ["if (s) s.media = e.data === 'bounds:on' ? 'all' : 'not all';", ''], check: 'Show canvas bounds' },
 ];
 
 /** examples/playground/index.html with one variant's edit, or an Error when its anchor is not there exactly once. */
@@ -549,6 +551,33 @@ const SCENARIOS = {
     });
     if (first) run.shots.first = first;
     if (!first || !st || opts.generic) return;
+
+    await run.step('surface', 'Show canvas bounds: on by default, a dashed outline just outside the canvas; unticked, no outline; the canvas pixels are the same both ways; the choice is remembered, not shared', async () => {
+      /** pixels of the 1 px ring just outside the canvas box that are not near white (the preview page is white) */
+      const ring = async () => {
+        const box = await inPreview(page, `(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; })()`);
+        const { img } = await H.screenshotElement(page, '#preview');
+        const dark = (x, y) => { const i = (y * img.width + x) * 4; return 765 - img.data[i] - img.data[i + 1] - img.data[i + 2] > 60 ? 1 : 0; };
+        let n = 0;
+        for (let x = box.x - 1; x <= box.x + box.w; x++) n += dark(x, box.y - 1) + dark(x, box.y + box.h);
+        for (let y = box.y; y < box.y + box.h; y++) n += dark(box.x - 1, y) + dark(box.x + box.w, y);
+        return n;
+      };
+      const checked = () => page.evaluate(`document.getElementById('bounds').checked`);
+      const stored = () => page.evaluate(`(() => { try { return localStorage.getItem('hic-playground-bounds'); } catch (e) { return 'unavailable'; } })()`);
+      const byDefault = await checked();
+      const onRing = await ring();
+      const onImg = await canvasShot();
+      await clickOn('#bounds'); await sleep(500);
+      const offState = { checked: await checked(), ring: await ring(), stored: await stored() };
+      const offImg = await canvasShot();
+      const same = H.compareImages(offImg, onImg).countOver16;
+      await clickOn('#bounds'); await sleep(500);
+      const back = { checked: await checked(), ring: await ring(), stored: await stored(), hash: await page.evaluate('location.hash') };
+      run.shots.boundsOff = offImg;
+      return { ok: byDefault === true && onRing > 200 && !offState.checked && offState.ring === 0 && offState.stored === 'off' && same === 0 && back.checked && back.ring > 200 && back.stored === 'on' && back.hash === '',
+        byDefault, onRing, off: offState, canvasPixelsChangedByTheOutline: same, back };
+    });
 
     await run.step('load', 'the default code is the explainer example of examples/basic, character for character, and runs with no console message', async () => {
       const defaultCode = await page.evaluate(`document.getElementById('code').defaultValue`);
@@ -910,7 +939,8 @@ async function main() {
         console.log(`${control.turnedRed ? 'ok  ' : 'FAIL'} control C2 (click misses the field) -> basic: ${red.length} interaction check(s) red`);
         if (!control.turnedRed) problems.push('control C2 did not fail');
       }
-      // C5: page variants of the playground (a sandbox with allow-same-origin, console text parsed as HTML, messages heard from any window, the old frame kept):
+      // C5: page variants of the playground (a sandbox with allow-same-origin, console text parsed as HTML, messages heard from any window, the old frame kept,
+      // the canvas bounds never switched off):
       // the playground scenario must turn the named check red on each
       if (names.includes('playground')) {
         for (const variant of PLAYGROUND_VARIANTS) {

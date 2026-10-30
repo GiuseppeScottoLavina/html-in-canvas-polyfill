@@ -57,6 +57,11 @@
   .hint { margin: 0; padding: .5rem .9rem; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); background: var(--sunken); }
 
   /* status: a dot and one line of text; its height never changes, so running does not move the page */
+  .toggle { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--ink); cursor: pointer; }
+  .toggle input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); }
+  .bar.preview-bar { row-gap: .3rem; padding-top: .55rem; padding-bottom: .55rem; }
+  /* the status has a line of its own under the title: its length never moves the checkbox */
+  .preview-bar #status { flex-basis: 100%; }
   #status { display: flex; align-items: center; gap: .5rem; min-width: 0; max-width: 100%; margin: 0; font: 500 .8rem/1.3 var(--mono); color: var(--muted); }
   #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #status::before { content: ""; flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: var(--idle); }
@@ -159,8 +164,10 @@
     </section>
 
     <section class="card" aria-labelledby="preview-title">
-      <div class="bar">
+      <div class="bar preview-bar">
         <h2 id="preview-title">Preview</h2>
+        <label class="toggle"><input type="checkbox" id="bounds" checked aria-describedby="bounds-desc"> Show canvas bounds</label>
+        <span class="visually-hidden" id="bounds-desc">Draws a dashed outline around every canvas of the preview. Your code can override it.</span>
         <p id="status" role="status" data-state="idle"><span id="status-text">starting</span></p>
       </div>
       <div class="stage" id="stage">
@@ -179,6 +186,7 @@
     <div>
       <h2>What runs</h2>
       <p>The preview loads the polyfill's core and engines bundles from this site, then your code. Where the browser has a complete native implementation, the polyfill steps aside and your code runs on the browser's own; the line above the preview says which.
+        A dashed outline marks the canvas (Show canvas bounds); it is not part of your code.
         The effects and the plugins are not loaded: try them in the <a href="../plugins/">plugin gallery</a>.</p>
     </div>
     <div>
@@ -211,6 +219,9 @@
   const DEFAULT = code.defaultValue;
   if (/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelector('#run .keys').textContent = '⌘ ↵';
   let preview = document.getElementById('preview');
+  const bounds = document.getElementById('bounds');
+  const BOUNDS_KEY = 'hic-playground-bounds';                            // this viewer's choice; never part of a shared link
+  try { if (localStorage.getItem(BOUNDS_KEY) === 'off') bounds.checked = false; } catch (_) { /* no storage: on by default */ }
 
   // Read by scripts/check-examples.mjs: the last state the preview reported (plain values only).
   const state = window.__playground = { run: 0, state: 'idle', mode: null, focus: null, messages: 0 };
@@ -239,7 +250,11 @@
     addEventListener('unhandledrejection', (e) => { post('error', 'unhandled rejection: ' + show(e.reason)); });
     addEventListener('focusin', (e) => { post('focus', e.target.localName + (e.target.id ? '#' + e.target.id : '')); });
     addEventListener('focusout', () => { post('focus', ''); });
-    addEventListener('message', (e) => { if (e.source === parent && e.data === 'ping') post('pong', ''); });
+    addEventListener('message', (e) => {
+      if (e.source !== parent) return;
+      if (e.data === 'ping') post('pong', '');
+      else if (e.data === 'bounds:on' || e.data === 'bounds:off') { const s = document.getElementById('hic-playground-bounds'); if (s) s.media = e.data === 'bounds:on' ? 'all' : 'not all'; }
+    });
     post('hello', '');                    // before the polyfill downloads: the page knows the frame runs
     window.__playgroundReport = () => {
       const hic = window.__HIC__;
@@ -261,6 +276,8 @@
     const attr = (v) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     const head = (firstLine) => '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
       + '<base href="' + attr(new URL('.', location.href).href) + '">\n'
+      // the canvas bounds: a base style before the code, so author CSS overrides it; the checkbox switches it on and off without a new run
+      + '<style id="hic-playground-bounds" media="' + (bounds.checked ? 'all' : 'not all') + '">canvas { outline: 1px dashed #8a9099; outline-offset: 0; }</style>\n'
       + '<script>(' + reporter.toString() + ')(' + json(token) + ', ' + json(targetOrigin) + ', ' + firstLine + ');<\/script>\n'
       + SCRIPTS.map((src) => '<script src="' + attr(src) + '"><\/script>\n').join('')
       + '<script>window.__playgroundReport();<\/script>\n</head>\n<body>\n';
@@ -432,6 +449,10 @@
   });
   document.getElementById('share').addEventListener('click', share);
   document.getElementById('clear').addEventListener('click', clearConsole);
+  bounds.addEventListener('change', () => {
+    try { localStorage.setItem(BOUNDS_KEY, bounds.checked ? 'on' : 'off'); } catch (_) { /* not remembered */ }
+    if (preview.contentWindow) preview.contentWindow.postMessage(bounds.checked ? 'bounds:on' : 'bounds:off', '*');
+  });
   addEventListener('hashchange', () => { const shared = codeFromHash(); if (shared !== null) { code.value = shared; say(''); run(); } });
 
   const shared = codeFromHash();
