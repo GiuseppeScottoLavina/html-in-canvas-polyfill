@@ -2,7 +2,7 @@
 
 Measured 2026-10-13 by the authors of this polyfill, so read it as one party's measurements: every number below is reproducible with the method described, and where the other package is ahead it says so (section 6).
 
-This is a snapshot of that date; the columns of this polyfill describe it as it was then. Changed since, for this polyfill (the other package was not measured again): the WPT tests are now pinned at a newer revision (2026-10-28, 248 files, 381 subtests), of which the polyfill passes 214 files and 333 subtests and the native oracle Canary 159.0.8128.2 236 and 369 (in each of its full runs) ([CONFORMANCE.md](CONFORMANCE.md)); at the revision used below the polyfill had reached 182 of 230 files and 307 of 375 subtests (was 139 and 238). The minified core is 338,893 bytes (114,496 gzip; [BUNDLES.md](BUNDLES.md)), Chrome for Android 130+ and Safari on iOS / iPadOS 26+ are admitted (verified on simulators and emulators only), and an `ElementImage` can be drawn in a dedicated worker that loads the worker bundle.
+This is a snapshot of that date; the columns of this polyfill describe it as it was then. Changed since, for this polyfill (the other package was not measured again): the WPT tests are now pinned at a newer revision (2026-10-28, 248 files, 381 subtests), of which the polyfill passes 214 files and 333 subtests and the native oracle Canary 159.0.8128.2 236 and 369 (in each of its full runs) ([CONFORMANCE.md](CONFORMANCE.md)); at the revision used below the polyfill had reached 182 of 230 files and 307 of 375 subtests (was 139 and 238). The minified core is 340,734 bytes (115,063 gzip; [BUNDLES.md](BUNDLES.md)), Chrome for Android 130+ and Safari on iOS / iPadOS 26+ are admitted (verified on simulators and emulators only), and an `ElementImage` can be drawn in a dedicated worker that loads the worker bundle.
 
 Scope: facts and our own measurements only. Chrome 154.0.8037.98 (no native feature), Apple M1 Max, macOS, DPR 2 for the gates and DPR 1 for WPT. Nothing was run in Firefox or Safari for this comparison. Load average stayed under 4.
 
@@ -80,7 +80,7 @@ These runs had machine load above threshold (another process above 15 % CPU; loa
 
 ## 6. Where the competitor is ahead (measured or factual)
 
-- About 8.9x smaller minified (29.7 KB vs 264 KB) and 9.5x smaller gzipped (9.7 KB vs 91.8 KB) on 2026-10-13; against the current core (339 KB / 114.5 KB) about 11x and 12x; published on npm and in use.
+- About 8.9x smaller minified (29.7 KB vs 264 KB) and 9.5x smaller gzipped (9.7 KB vs 91.8 KB) on 2026-10-13; against the current core (341 KB / 115 KB) about 11x and 12x; published on npm and in use.
 - Lower keystroke-to-canvas latency on the explainer while the text fits (p50 10.6 vs 17.3 ms).
 - 7 WPT files pass that ours fails (listed above).
 - Three.js integration, WebXR examples, a browser extension; claims mobile and WebView support (not verified here; this polyfill refused mobile browsers at the time and admits Chrome for Android and Safari on iOS since, WebViews still refused).
