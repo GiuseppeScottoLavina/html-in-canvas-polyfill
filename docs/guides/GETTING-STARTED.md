@@ -10,7 +10,7 @@ Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser s
 
 ```sh
 git clone https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill.git && cd html-in-canvas-polyfill
-npm ci                          # build tooling only (esbuild, typescript); the polyfill has no runtime dependencies
+npm ci                          # build tooling only (esbuild, terser, typescript); the polyfill has no runtime dependencies
 npm run build                   # writes dist/ (classic IIFE bundles and dist/esm/)
 npm run demo                    # http://127.0.0.1:8765/examples/
 ```
@@ -26,6 +26,7 @@ If an example says the polyfill is missing, `dist/` was not built. If the `form`
 ```html
 <!doctype html>
 <script src="dist/hic-live-polyfill.iife.min.js"></script>   <!-- FIRST: it installs while this tag runs -->
+<script src="dist/hic-live-engines.iife.min.js"></script>    <!-- Firefox / Safari: form controls in their look (Chrome does not need it) -->
 
 <canvas id="c" style="width: 400px; height: 200px" content="drawable">
   <form id="f" drawable>
@@ -101,13 +102,13 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | browser | what the polyfill does | source |
 |---|---|---|
 | desktop Chrome without the native feature (154 and 155 measured; 156 in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14 and 158.0.8112.1 on 2026-10-22, with or without `--enable-blink-features=CanvasDrawElement`) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
+| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14 and 158.0.8112.1 on 2026-10-22, with or without `--enable-blink-features=CanvasDrawElement`; 159.0.8128.2 on 2026-10-29 with the flag) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
 | Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Verified on iOS Simulator / Android Emulator only | MOBILE |
 | older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
-Measured on macOS: Chrome 154 and 155, Chrome Canary 157 and 158 (native), Firefox 155.0.1 and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (11 of the 16 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.
+Measured on macOS: Chrome 154 and 155, Chrome Canary 157, 158 and 159 (native), Firefox 155.0.1 and 157.0.1, and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (11 of the 16 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.
 
 ## 6. When something looks wrong
 

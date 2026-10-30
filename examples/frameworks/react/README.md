@@ -9,7 +9,7 @@ Files: `App.jsx` (the app), `main.jsx` (createRoot, or hydrateRoot when the cont
 - The canvas is wired by a **React 19 callback ref with a cleanup function** (`useCanvasPainter`), so a canvas that a conditional render re-creates is wired again and the old one is released.
 - `paint` is listened to with `addEventListener`, which survives `uninstall()` / `install()`.
 - Drawables are read from refs inside the paint handler (`badgeRef.current` is `null` while the badge is unmounted).
-- `suppressHydrationWarning` on the `<canvas>`: the polyfill adds `data-hic-canvas` and `aria-owns` to the canvas before `hydrateRoot` runs (docs/guides/FRAMEWORKS.md, section 4). Every top-level drawable has an explicit `id`, otherwise the polyfill generates one and React reports that too.
+- `suppressHydrationWarning` on the `<canvas>`: the polyfill adds `data-hic-canvas` to the canvas before `hydrateRoot` runs (`aria-owns` and generated ids are written after the document's `load`; docs/guides/FRAMEWORKS.md, section 4). Every top-level drawable has an explicit `id`, as that guide recommends for server-rendered pages.
 
 ## Run it
 
