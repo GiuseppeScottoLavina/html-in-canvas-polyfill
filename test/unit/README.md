@@ -1,7 +1,7 @@
 # Unit tests
 
-Pure logic: `test/unit/<module>/*.test.mjs` with `node:test`. Run: `node --test test/unit/<module>`.
-DOM logic: `test/unit/<module>/*.browser.test.mjs`, run in Chrome by `test/unit/run.mjs` (headless=new by default).
+Pure logic: `test/unit/<module>/*.test.mjs` with `node:test` (`test/unit/lib/run-node-tests.mjs` runs them all, with the plugins' `plugins/*/test/*.test.mjs`). One module: `node --test test/unit/<module>`.
+DOM logic: `test/unit/<module>/*.browser.test.mjs` (and `plugins/**/*.browser.test.mjs`), run in Chrome by `test/unit/run.mjs` (headless=new by default).
 
 ## Commands
 | command | what |
@@ -12,7 +12,7 @@ DOM logic: `test/unit/<module>/*.browser.test.mjs`, run in Chrome by `test/unit/
 | `node test/unit/run.mjs --filter <text or /regex/>` | tests whose `"<file> > <test name>"` matches (case-insensitive) |
 | `node test/unit/run.mjs path/to/x.browser.test.mjs` | explicit files |
 | `--headed` | visible window instead of headless (only for debugging; never for perf claims) |
-| `--timeout <ms>` | default per-test timeout (5000); per test: `test(name, fn, { timeout })` |
+| `--timeout <ms>` | default per-test timeout (5000); per test: `test(name, fn, { timeout })`. A page that does not answer the runner for that long is reported as hung; a shorter stall recovers and is printed as a note |
 | `--file-timeout <ms>` | whole-file limit (60000), catches a main thread stuck in a sync loop |
 | `--chrome stable\|canary\|<path>`, `--list`, `--quiet` | |
 | `npm run test:unit:selftest` | the runner's own tests plus the expect-fail proof |
@@ -37,6 +37,6 @@ substring or error class), `fixture(html, style?)`, `frames(n)`, `microtasks()`,
 
 ## Expect-fail selftest
 `--expect-fail` runs `*.expect-fail.mjs` files instead and exits 0 only if the runner reports each as a problem. The file-name prefix
-states the expected detection: `fail-`, `timeout-`, `pageerror-`, `loaderror-`. These files are never picked up by the normal run.
+states the expected detection: `fail-`, `timeout-`, `pageerror-`, `loaderror-`, `hung-`. These files are never picked up by the normal run.
 
 Chrome: found per platform (`--chrome` or `HIC_CHROME_PATH` for another executable), own PID only, throwaway profile under `.profiles/` (the OS temp directory on Windows), removed on exit, unique debugging port, server on 127.0.0.1 with an ephemeral port.

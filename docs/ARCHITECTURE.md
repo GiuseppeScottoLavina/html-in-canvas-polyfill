@@ -159,7 +159,7 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
   (only when a managed canvas exists and the selector has a combinator or names `canvas`): the native result is unioned (document order, deduped) with the
   result of the selector rewritten for each managed canvas (the compound that `canvas.matches()` is replaced by `[data-hic-layer="N"]`);
   `css` = a polyfill `<style data-hic-node>` mirrors every stylesheet rule whose selector has a canvas-matching compound with the layer attribute substituted
-  (cached per stylesheet epoch, re-evaluated when the canvas's class/id/data-*/lang/dir change). The replacement PRESERVES SPECIFICITY (`:not(.hic-pad)` padding, `layerReplacement`): a per-canvas rewrite, not a `:is(canvas, [data-hic-layer])` form, because that form would make every class-only author rule restyle the layer.
+  (cached per stylesheet epoch, re-evaluated when the canvas's class/id/data-*/lang/dir change). The replacement PRESERVES SPECIFICITY (`:not(.hic-pad)` padding, `padReplacement` in `util/selector-rewrite.js`): a per-canvas rewrite, not a `:is(canvas, [data-hic-layer])` form, because that form would make every class-only author rule restyle the layer.
   The SAME pure rewriter produces the clone's CSS (replacement `[data-hic-root]`). Not bridged: `canvas + x`, `canvas ~ x` (siblings after the canvas),
   `:has()` crossing the boundary, author MutationObserver records on the canvas (the polyfill does not synthesize them; rows `tree-identity`, `selector-bridge`).
 - focus/scroll/IME: native, because the elements are real. Tab order follows layer position (after the canvas in DOM order = where the canvas
@@ -577,12 +577,12 @@ Seven modules on disjoint file sets that talk only through the typed interfaces 
 
 | module | dir | depends on (interfaces only) |
 |---|---|---|
-| api-core | `src/api/{install,options,compose,native-detect,native-bridge,canvas-registry,report,env,patch}.js`, `src/index.js`, `src/iife.js`, `src/native-bridge.js` | all factories (composition root) |
-| api-surface | `src/api/{canvas-patch,context2d-patch,texture-patch,texture-math,offscreen-patch,element-image,paint-event,geometry,draw-math,validate,fullscreen-guard,worker-guard,worker-transfer,worker-wire,worker-scope}.js` | `env.store`, `env.scheduler`, `record.layer`, `patch.js` |
-| live | `src/live/*` (adds `root-scope`, `ancestor-clip`, `geometry-sheet`, `a11y-link`, `stacking-audit`) | contracts, util |
-| snapshot-capture | `src/snapshot/capture/*` (adds `css-shake`, `shells`; `caret-overlay` now measures) | contracts, util |
-| snapshot-store | `src/snapshot/store/*` (adds `caret-patch`; `decode` has the atomic commit, `surfaces` the loss watcher, `damage` the reclaim) | contracts, util, `CaptureFn` |
-| schedule | `src/schedule/**` (adds `paint-gate`, `frame-phase`) | contracts, util, `SnapshotStore`, `LiveLayer` (via `record.layer`) |
+| api-core | `src/api/{install,options,compose,native-detect,native-bridge,native-geometry,native-paint,canvas-registry,report,env,patch,selection-patch}.js`, `src/index.js`, `src/iife.js`, `src/native-bridge.js`, `src/version.js` | all factories (composition root) |
+| api-surface | `src/api/{canvas-patch,context2d-patch,texture-patch,texture-math,gpu-seam,offscreen-patch,element-image,paint-event,geometry,draw-math,validate,ro-dpcb,fullscreen-guard,worker-guard,worker-transfer,worker-wire,worker-scope}.js`; the entries of the GPU and worker bundles, `src/gpu.js`, `src/gpu-iife.js`, `src/worker.js` | `env.store`, `env.scheduler`, `record.layer`, `patch.js` |
+| live | `src/live/*` (among them `root-scope`, `ancestor-clip`, `geometry-sheet`, `a11y-link`, `stacking-audit`) | contracts, util |
+| snapshot-capture | `src/snapshot/capture/*` (among them `css-shake`, `shells`; `caret-overlay` measures the caret, it does not draw it); the Gecko / WebKit painters of the engines bundle (`native-controls`, `webkit-*`, `gecko-skins`) and its entries `src/engines.js`, `src/engines-iife.js` | contracts, util |
+| snapshot-store | `src/snapshot/store/*` (among them `caret-patch`; `decode` has the atomic commit, `surfaces` the loss watcher, `damage` the reclaim) | contracts, util, `CaptureFn` |
+| schedule | `src/schedule/**` (among them `paint-gate`, `frame-phase`) | contracts, util, `SnapshotStore`, `LiveLayer` (via `record.layer`) |
 | gpu-effects | `src/effects/**`, `src/effects.js`, `src/effects-iife.js` (the example plugins are in `plugins/`, outside the module graph) | contracts, util, `SourceProvider`, `GeometryApi`, `InteractionTracker`, `Scheduler.addFrameHook`, `LiveLayer.elementAtPoint` |
 
 Shared leaves: `src/contracts/*` and `src/util/*`. A contract change (a new field, topic or option) edits `contracts/` and this document together.

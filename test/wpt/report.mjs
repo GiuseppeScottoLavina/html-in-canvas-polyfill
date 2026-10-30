@@ -100,7 +100,8 @@ ${driftSection(result)}
 ${categoryTable(result)}
 
 Gate (\`G-wpt-subset\`) fails when (i) a subtest that passes natively and fails in the subject has no entry with a written reason in \`test/wpt/expectations.json\`, (ii) a control test passes without being a documented vacuous pass,
-(iii) a test listed as expected-pass (or a partial-pass floor) regresses. Last run: ${failures.length ? `FAILED (${failures.length}): ${failures.slice(0, 5).join('; ').replace(/\|/g, '\\|')}` : 'OK'}.
+(iii) a test listed as expected-pass, a partial-pass floor or a stable test regresses, (iv) the oracle is neither the pinned revision's build nor covered by a baseline of it,
+(v) a vendored test references a same-server resource that is not vendored. Last run: ${failures.length ? `FAILED (${failures.length}): ${failures.slice(0, 5).join('; ').replace(/\|/g, '\\|')}` : 'OK'}.
 
 ### Control tests that pass without the polyfill (vacuous by construction)
 
