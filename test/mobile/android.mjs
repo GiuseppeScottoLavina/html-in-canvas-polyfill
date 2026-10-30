@@ -80,10 +80,20 @@ class AndroidSession {
     });
   }
 
+  /**
+   * Navigate and wait for the load event. A first navigation through a fresh `adb reverse` once landed on Chrome's network error page (chrome-error://, measured on a
+   * physical device; a later attempt loaded): such a load is retried twice, then reported.
+   */
   async navigate(url) {
-    this.events = this.events.filter((e) => e !== 'load');
-    await this.send('Page.navigate', { url });
-    for (let i = 0; i < 300 && !this.events.includes('load'); i++) await sleep(50);
+    for (let attempt = 0; ; attempt++) {
+      this.events = this.events.filter((e) => e !== 'load');
+      const r = await this.send('Page.navigate', { url });
+      for (let i = 0; i < 300 && !this.events.includes('load'); i++) await sleep(50);
+      const at = await this.evaluate('location.href', { timeoutMs: 10000 }).catch(() => '');
+      if (!r?.errorText && !at.startsWith('chrome-error:')) return;
+      if (attempt >= 2) throw new Error(`navigation to ${url} failed: ${r?.errorText ?? at}`);
+      await sleep(1500);
+    }
   }
 
   async evaluate(expr, { timeoutMs = 30000 } = {}) {
@@ -127,24 +137,67 @@ class AndroidSession {
     await this.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   }
 
-  /** Where the viewport sits on the screen, from an OS tap at a known screen point in the page's left margin (the toolbar hides on scroll: measured before each OS gesture). */
-  async calibrate() {
+  /** One OS tap at input coordinates, and the viewport css point its touchstart reported. @param {number} sx @param {number} sy */
+  async calTap(sx, sy) {
     await this.evaluate(`(window.__xbCal = null, addEventListener('touchstart', (e) => { window.__xbCal = [e.touches[0].clientX, e.touches[0].clientY]; }, { capture: true, once: true }), true)`);
-    const dpr = await this.evaluate('devicePixelRatio');
-    const sx = 3, sy = 1200;
     adb(this.serial, 'shell', 'input', 'tap', String(sx), String(sy));
     const c = await this.waitFor('window.__xbCal', { timeoutMs: 5000 });
-    return { left: sx - c[0] * dpr, top: sy - c[1] * dpr, dpr };
+    return { sx, sy, cx: c[0], cy: c[1] };
+  }
+
+  /**
+   * Where the viewport sits on the screen, in the coordinates of `adb shell input` (the toolbar hides on scroll: measured before each OS gesture). Without a display-size
+   * override: one OS tap at a fixed screen point in the page's left margin, css px scaled by devicePixelRatio. With one (`wm size` reports an override size): two taps
+   * placed inside the viewport from the display's size, and the scale measured between them (the input space then need not be css px x devicePixelRatio).
+   */
+  async calibrate() {
+    await this.assertForeground('before an OS gesture');
+    const dpr = await this.evaluate('devicePixelRatio');
+    if (this.display === undefined) this.display = parseWmSize(adb(this.serial, 'shell', 'wm', 'size'));
+    if (!this.display?.override) {
+      const c = await this.calTap(3, 1200);
+      return { left: c.sx - c.cx * dpr, top: c.sy - c.cy * dpr, k: dpr, dpr };
+    }
+    const page = await this.evaluate('({ sw: screen.width, sh: screen.height, ih: innerHeight, vh: visualViewport.height, vt: visualViewport.offsetTop })');
+    const [a, b] = calibrationPoints(this.display, page);
+    const m = solveMapping(await this.calTap(a.x, a.y), await this.calTap(b.x, b.y));
+    return { ...m, dpr };
+  }
+
+  /** Input coordinates of a viewport css point, refused when it is not inside the visual viewport (an OS tap there lands on the browser's or the system's UI). */
+  async osPoint(x, y) {
+    const c = await this.calibrate();
+    const vv = await this.evaluate('({ x: visualViewport.offsetLeft, y: visualViewport.offsetTop, w: visualViewport.width, h: visualViewport.height })');
+    if (!insideViewport(vv, x, y)) throw new Error(`OS gesture refused: css point (${x}, ${y}) is outside the visual viewport ${JSON.stringify(vv)}`);
+    return toInput(c, x, y);
   }
 
   /** An OS-level touch (adb input tap) at viewport css coordinates. */
-  async osTap(x, y) { const c = await this.calibrate(); await sleep(400); adb(this.serial, 'shell', 'input', 'tap', String(Math.round(c.left + x * c.dpr)), String(Math.round(c.top + y * c.dpr))); }
+  async osTap(x, y) {
+    const p = await this.osPoint(x, y); await sleep(400);
+    adb(this.serial, 'shell', 'input', 'tap', String(p.x), String(p.y));
+    await sleep(600); await this.assertForeground(`after an OS tap at (${p.x}, ${p.y})`);
+  }
 
   /** An OS-level long press (selection gesture) at viewport css coordinates. */
   async longPress(x, y, ms = 900) {
-    const c = await this.calibrate(); await sleep(400);
-    const px = String(Math.round(c.left + x * c.dpr)), py = String(Math.round(c.top + y * c.dpr));
-    adb(this.serial, 'shell', 'input', 'swipe', px, py, px, py, String(ms));
+    const p = await this.osPoint(x, y); await sleep(400);
+    adb(this.serial, 'shell', 'input', 'swipe', String(p.x), String(p.y), String(p.x), String(p.y), String(ms));
+    await sleep(300); await this.assertForeground(`after an OS long press at (${p.x}, ${p.y})`);
+  }
+
+  /**
+   * The test tab must be the visible page of the resumed browser: an OS gesture that leaves it (the system's Home key, another app) hides the tab, where
+   * requestAnimationFrame and CDP touch input wait for good. Throws, after bringing the browser's task back to the front, so one bad gesture fails one scenario.
+   * @param {string} when
+   */
+  async assertForeground(when) {
+    const vis = await this.evaluate('document.visibilityState', { timeoutMs: 5000 }).catch((e) => `unknown (${e.message})`);
+    if (vis === 'visible') return;
+    const top = topActivity(this.serial);
+    adb(this.serial, 'shell', 'am', 'start', '-n', `${this.pkg}/com.google.android.apps.chrome.Main`);
+    await sleep(1500);
+    throw new Error(`the test tab is not visible ${when} (visibilityState ${vis}, top activity ${top || 'unknown'}); the browser was brought back to the front`);
   }
 
   /** Type through the IME into the focused field (adb input text: real key events from the input method). */
@@ -199,8 +252,50 @@ function dismissFirstRun(serial) {
   return false;
 }
 
-/** The emulator's top resumed activity. @param {string} serial */
-const topActivity = (serial) => /topResumedActivity=\S+ \S+ (\S+)/.exec(adb(serial, 'shell', 'dumpsys', 'activity', 'activities'))?.[1] ?? '';
+/** The top resumed activity (`topResumedActivity=` since Android 11, `mResumedActivity:` before). @param {string} serial */
+const topActivity = (serial) => /(?:topResumedActivity=|mResumedActivity: )\S+ \S+ (\S+)/.exec(adb(serial, 'shell', 'dumpsys', 'activity', 'activities'))?.[1] ?? '';
+
+/**
+ * `adb shell wm size` -> the display size in the coordinates `adb shell input` uses: the override (Settings > Display size, `wm size WxH`) when one is set, else the
+ * physical size; both are reported in the display's natural orientation. Measured on a Huawei Mate 10 Pro (Android 10) with an override 720x1440 of a 1080x2160
+ * panel: `input tap` and `screencap` both use the override's 720x1440. @param {string} text @returns {{w: number, h: number, override: boolean} | null}
+ */
+export function parseWmSize(text) {
+  const o = /Override size: (\d+)x(\d+)/.exec(text), p = /Physical size: (\d+)x(\d+)/.exec(text);
+  const m = o ?? p;
+  return m ? { w: +m[1], h: +m[2], override: !!o } : null;
+}
+
+/**
+ * Two calibration points (input coordinates) that are inside the visual viewport wherever the browser's toolbar and the system bars put it: the display in the page's
+ * orientation, k0 = display width / screen.width (input px per css px, a guess the two taps then measure), and the band of screen rows that the visual viewport
+ * covers for every placement of the layout viewport on the display. x = 3 is the page's left margin, as before.
+ * @param {{w: number, h: number}} display @param {{sw: number, sh: number, ih: number, vh: number, vt?: number}} page
+ */
+export function calibrationPoints(display, page) {
+  const land = page.sw > page.sh;
+  const w = land ? Math.max(display.w, display.h) : Math.min(display.w, display.h), h = land ? Math.min(display.w, display.h) : Math.max(display.w, display.h);
+  const k0 = w / page.sw;
+  const vt = page.vt ?? 0, lo = h - (page.ih - vt) * k0, hi = (vt + page.vh) * k0;
+  if (!(hi - lo >= 60)) throw new Error(`no calibration band inside the viewport: display ${w}x${h}, viewport ${page.ih} css (visual ${page.vh}) at ${k0.toFixed(3)} input px per css px`);
+  return [{ x: 3, y: Math.round(lo + 0.2 * (hi - lo)) }, { x: 3, y: Math.round(lo + 0.8 * (hi - lo)) }];
+}
+
+/**
+ * The input <-> css mapping from two calibration taps at the same x: the scale is measured between them (input px per css px), the origin from the first.
+ * @param {{sx: number, sy: number, cx: number, cy: number}} a @param {{sx: number, sy: number, cx: number, cy: number}} b
+ */
+export function solveMapping(a, b) {
+  const k = (b.sy - a.sy) / (b.cy - a.cy);
+  if (!Number.isFinite(k) || k <= 0) throw new Error(`calibration taps disagree: ${JSON.stringify([a, b])}`);
+  return { left: a.sx - a.cx * k, top: a.sy - a.cy * k, k };
+}
+
+/** Input coordinates of a viewport css point. @param {{left: number, top: number, k: number}} c @param {number} x @param {number} y */
+export const toInput = (c, x, y) => ({ x: Math.round(c.left + x * c.k), y: Math.round(c.top + y * c.k) });
+
+/** A viewport css point inside the visual viewport, 1 css px in from its edges. @param {{x: number, y: number, w: number, h: number}} vv @param {number} x @param {number} y */
+export const insideViewport = (vv, x, y) => x >= vv.x + 1 && x <= vv.x + vv.w - 1 && y >= vv.y + 1 && y <= vv.y + vv.h - 1;
 
 /**
  * Open a tab of our own in `pkg` on a booted emulator and attach CDP (any other known browser is stopped first: they share the DevTools socket name).

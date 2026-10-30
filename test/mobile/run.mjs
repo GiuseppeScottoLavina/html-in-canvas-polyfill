@@ -7,7 +7,7 @@
 // Physical Android device (--android-serial=<serial from `adb devices`, e.g. --platform=android --android-serial=2B051FDH300HBN): USB debugging on and authorised, the screen
 // unlocked (the driver wakes it and never unlocks it). The run uses a new tab of the device's own Chrome (>= 130) and closes it; nothing is installed, no browser is stopped,
 // no debug app or Chrome command-line file is touched; the rotation settings that the rotation scenario changes are recorded and restored. Verified 2026-10-30 on a
-// Pixel 7 Pro (Android 17, Chrome 156): docs/guides/MOBILE.md.
+// Pixel 7 Pro (Android 17, Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156, a display-size override): docs/guides/MOBILE.md.
 // Devices, one at a time (each is shut down before the next boots): iPhone 17 on the newest iOS 26.x (required) and on the newest iOS >= 27 runtime (optional: SKIPPED
 // when safaridriver cannot pair with it: no driver offers the iOS 27.0 runtime, measured 2026-10-16, docs/guides/MOBILE.md) (all scenarios), an iPad on iOS 26.x
 // (classification: iPadOS sends a desktop UA), an iPhone on iOS 18.x (refusal: Safari 18 is below the minimum 26), then the AVD (ANDROID_AVD_HOME or --avd-home) with

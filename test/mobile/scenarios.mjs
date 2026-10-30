@@ -152,6 +152,14 @@ export async function explainer(ctx, want = 'polyfill') {
   await tapAndType(ctx, rest);
 }
 
+/**
+ * The text typed into the explainer's field, compared exactly. Sentence case, as the form's "Ada": a device keyboard that capitalises the start of a sentence types it
+ * unchanged. Measured on a Mate 10 Pro (Android 10, Chrome 156, SwiftKey): `adb input text hello` into the empty field gave "Hello", also with autocapitalize="off" or
+ * "none", autocorrect="off" and spellcheck="false" (Chrome asks for no capitalisation either way, EditorInfo inputType 0xa1 / 0x800a1: the keyboard capitalises the key
+ * events it is sent by itself); "Hello" and "Ada" came out as sent.
+ */
+const TYPED = 'Hello';
+
 /** The explainer's tap, typing and repaint checks (after the pixels at rest). */
 async function tapAndType(ctx, rest) {
   const { s } = ctx;
@@ -159,15 +167,15 @@ async function tapAndType(ctx, rest) {
   await s.tap(center(input).x, center(input).y); await sleep(500);
   const focus = await s.evaluate('document.activeElement && document.activeElement.id');
   ctx.check('explainer: a trusted touch tap on the drawn input focuses the live input', focus === 'name', { focus }, 'hit');
-  const typed = await s.typeText('hello');
+  const typed = await s.typeText(TYPED);
   if (!typed) {
     // iOS Simulator: safaridriver delivers trusted keydown/keypress but inserts no text (the plain-DOM twin behaves the same): the text goes in through the editing command
-    await s.evaluate(`(document.getElementById('name').focus(), document.execCommand('insertText', false, 'hello'), true)`);
+    await s.evaluate(`(document.getElementById('name').focus(), document.execCommand('insertText', false, ${JSON.stringify(TYPED)}), true)`);
   }
   await sleep(900);
   const value = await s.evaluate('document.getElementById("name").value');
   ctx.numbers.explainerTyping = { value, via: typed ? 'IME (adb input text)' : 'execCommand insertText after a trusted tap (iOS keys not drivable)' };
-  ctx.check('explainer: typed text reaches the live input exactly once', value === 'hello', ctx.numbers.explainerTyping, 'typing');
+  ctx.check('explainer: typed text reaches the live input exactly once', value === TYPED, ctx.numbers.explainerTyping, 'typing');
   const after = await readCanvas(s, 'canvas');
   const changed = regionChanged(rest, after, devRect(input, canvasR, after.width / canvasR.width, 2));
   ctx.check('explainer: typing changes the canvas pixels of the input', changed > 8, { countOver16: changed }, 'typing');
@@ -289,9 +297,13 @@ export async function keyboard(ctx) {
   if (ctx.platform !== 'android') { ctx.check('keyboard: not drivable on the iOS Simulator (its hardware keyboard keeps the virtual one hidden): skipped, documented', true, null, 'n/a'); return; }
   await openPoly(ctx);
   await mode(ctx, 'keyboard');
+  // the field low in the viewport, where the keyboard will cover it, and wholly inside it: its bottom 16 css px above the viewport's (a fixed scroll of late.y - 600
+  // put it at the bottom edge of a 600 css px viewport, Mate 10 Pro, and the OS tap at its centre landed on the system's navigation bar)
   const late = await pageRectOf(s, '#late');
-  await scrollTo(s, Math.max(0, late.y - 600));
+  const ih = await s.evaluate('innerHeight');
+  await scrollTo(s, Math.max(0, late.y + late.height + 16 - ih));
   const r = await rectOf(s, '#late');
+  if (!(r.y >= 0 && r.y + r.height <= ih && r.y + r.height > ih / 2)) throw new Error(`keyboard: the late field ${JSON.stringify(r)} is not inside the lower half of the ${ih} css px viewport`);
   const vv0 = await s.evaluate('visualViewport.height');
   await s.osTap(center(r).x, center(r).y); await sleep(2000);
   const st = await s.evaluate(`(() => { const r = document.getElementById('late').getBoundingClientRect(); const v = visualViewport; return { active: document.activeElement.id, vvH: v.height, vvTop: v.offsetTop, top: r.top, bottom: r.bottom, visible: r.top >= v.offsetTop - 1 && r.bottom <= v.offsetTop + v.height + 1 }; })()`);
