@@ -299,6 +299,10 @@ Tick RUN(now), for each canvas record in reverse tree order:
    whole surface pixels, and converts > 55 % to a full tile. An element whose box changed size is bounded by the nearest ancestor (the drawable included) whose box did not change: when every
    child of that ancestor was measured before (no bare text, no generated content, at most 32 children), the rect is the old and new reach of the children that moved; otherwise the ancestor's
    own reach, or the whole drawable when that ancestor is the drawable (`schedule/observers/damage-rect.js`).
+   A form control's state written by script (`value`, `valueAsNumber`, `valueAsDate`, `checked`, `indeterminate`, `selectedIndex`, `option.selected`, `stepUp/stepDown/setRangeText`,
+   `form.reset()`) reflects no attribute and fires no event: the wrapped setters and methods (`schedule/observers/control-state.js`, through the ledger) queue the control when its
+   state changed, and one microtask later damage it with the rect memory's reach (an option repaints its select, a checked radio its group, a reset its form). Before them a slider set
+   by script was repainted only where other damage happened to cover it, so it could show its old thumb beside the new one.
 7. **Node budget** (`budget.js`): count nodes while cloning. `> soft` (350 by default per commit): the clone is damage-PRUNED (only subtrees intersecting the crop + ancestor skeleton + spacers) and the cadence adapts so
    main-thread time stays <= 50 % of the frame period; `> hard` (3000): the drawable is degraded to <= 4 fps (its scrollers' own scrolling excepted, ADR-E), flagged, reported (`node-budget` limited); `> absolute` (20000): refused with a placeholder + entry.
    A 1125-node DOM measured ~25.7 ms RunTask per full commit (90 % busy) on the prototype [E5]: pruning and per-drawable surfaces are the lever, not a faster serializer.
