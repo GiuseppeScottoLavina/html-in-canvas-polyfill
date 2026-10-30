@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.15] - 2026-10-30
+
+Verified on physical devices. The mobile gate ran on a Pixel 7 Pro (Android 17, Chrome 156), a Huawei Mate 10 Pro (Android 10, Chrome 156) and an iPad Pro 11-inch (iPadOS 27.2), and the refusal on an iPhone XR (iOS 18.7); the owner's field test on the iPad passed (touch scroll painted in 96 % of frames, 0 stutters). The Pixel found a real bug: at a fractional device pixel ratio (2.625 on that phone; 1.25 and 1.5 on Windows laptops) a scale computed from rounded sizes scrolled a listbox select 2 device px off, and the same idiom was fixed in eight more places. A rejected tile decode now names the XML fault of the markup it was given, and the field test times keys correctly.
+
 ### Added
 
 - The mobile gate runs on a physical Android device over USB: `node test/mobile/run.mjs --platform=android --android-serial=<serial>` (the serial from `adb devices`, USB debugging authorised, the screen unlocked). It opens one tab in the device's own Chrome and closes it. It installs nothing, stops no browser, and touches neither the debug app nor Chrome's command-line file. It restores the rotation settings that the rotation scenario changes, and the report names the device. On a Pixel 7 Pro (Android 17, Chrome 156, which has no native API, so the polyfill ran as users get it, DPR 2.625) on 2026-10-30, all 11 scenarios PASS with their controls red, `controls` with 62 of 62 regions within 1.5 %. On a Huawei Mate 10 Pro (Android 10, EMUI, Chrome 156, with a display-size override that gives DPR 2 and a 360 x 600 css px viewport) on the same day, the same 11 scenarios PASS with their controls red, twice in a row, `controls` again 62 of 62. iOS is still verified on the simulator only.
@@ -11,9 +15,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
-- The core bundle grows to 341,671 bytes minified, 115,516 gzipped (+635 / +323 bytes), and to 16,476 code lines, for the decode diagnosis below.
-- The core bundle grows to 341,036 bytes minified, 115,193 gzipped (+302 / +130 bytes), and to 16,465 code lines, for the fractional box scale. The effects bundle grows to 39,319 bytes (+598) and the engines bundle to 45,515 (+615; 17,295 gzipped), which share it.
 - The mobile gate runs on a physical iPhone or iPad over USB: `node test/mobile/run.mjs --platform=ios --ios-device=<udid>` (paired and unlocked, Safari's Web Inspector, Remote Automation and Developer Mode on; the test server then listens on the Mac's local network address, `--lan-host`). A physical iPhone XR (iOS 18.7.11) ran the refusal: refused with the version named, the page keeps running. Measured on an iPad Pro 11-inch (M1), iPadOS 27.2, Safari 27.2: the scenarios WebDriver can drive on iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose`, a canvas resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` on iOS. Test tooling: the PNG decoder reads 16-bit images (the iPad's wide-colour screenshots), a WebDriver evaluation longer than 30 s raises the session's script timeout first (the driver answered 408 otherwise), and a transient "device is not paired" answer of `safaridriver` is retried.
+
+- The core bundle grows to 341,671 bytes minified, 115,516 gzipped (+937 / +453 bytes; 97,953 with brotli) and to 16,476 code lines, for the fractional box scale and the decode diagnosis; the engines bundle to 45,515 bytes minified, 17,295 gzipped (+615 / +153 bytes), and the effects bundle to 39,319 bytes minified (+598).
 
 ### Fixed
 
@@ -332,7 +336,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.14...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.15...HEAD
+[0.1.0-preview.15]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.14...v0.1.0-preview.15
 [0.1.0-preview.14]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.13...v0.1.0-preview.14
 [0.1.0-preview.13]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.12...v0.1.0-preview.13
 [0.1.0-preview.12]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.11...v0.1.0-preview.12
