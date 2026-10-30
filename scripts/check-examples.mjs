@@ -595,9 +595,18 @@ const SCENARIOS = {
       const at = { x: opts.misclick ? 4 : field.x, y: opts.misclick ? 4 : field.y };
       // what the frame sees of the click (pointer, mouse, focus events in capture order) and what is under the point before it: the evidence when focus does not follow
       const hit = await inPreview(page, `(() => { window.__clickTrace = []; const rec = (e) => window.__clickTrace.push(e.type + ':' + (e.target && e.target.localName ? e.target.localName + (e.target.id ? '#' + e.target.id : '') : 'window') + '@' + Math.round(performance.now()));
-        for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'focusin', 'focusout']) addEventListener(t, rec, true);
+        for (const t of ['pointermove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'focusin', 'focusout']) addEventListener(t, rec, true);
         const e = document.elementFromPoint(${at.x}, ${at.y}); return e ? e.localName + (e.id ? '#' + e.id : '') : null; })()`);
-      await page.click(frame.x + at.x, frame.y + at.y);
+      // The pointer hovers the point until the preview frame itself reports a pointermove, and only then presses: as a hand does, which always moves first.
+      // A move and a press sent back to back (Page.click) lost the press: the first moves into a new out-of-process frame are routed to the page (the iframe
+      // element gets them), and a press that follows at once went there too. Measured in headless Chrome 156, clicking a just-created preview: 23 of 65
+      // presses lost back to back; with two frames of the preview rendered between the move and the press, 0 of 70, but 19 of 40 with the CPU throttled
+      // 4x; with this wait, 0 of 50 (25 of them throttled 4x; the frame saw a move after 50-180 ms). The press is still sent once, and the focus check below is unchanged; C2 still clicks off the field and must turn red.
+      const px = frame.x + at.x, py = frame.y + at.y;
+      let moves = 0;
+      const hovered = await H.until(async () => { moves += 1; await page.mouseMove(px + (moves % 2), py); await sleep(40); return (await inPreview(page, `window.__clickTrace.some((e) => e.startsWith('pointermove'))`)) || null; }, 3000, 0);
+      if (!hovered) return { ok: false, reason: 'the preview frame never received the pointer: no press sent', moves, hitBeforeClick: hit, frameEvents: await inPreview(page, 'window.__clickTrace') };
+      await page.mouseDown(px + (moves % 2), py); await page.mouseUp(px + (moves % 2), py);
       // Page.typeText's guard, across the frame: keys are sent only when the input of the preview has focus, and the page heard it from the frame (a message
       // between two processes: its delivery time is not fixed, so it is awaited rather than assumed after a fixed pause)
       const focusOf = async () => ({ page: await page.evaluate(`document.activeElement && document.activeElement.id`), inFrame: await inPreview(page, `document.activeElement && document.activeElement.id`), preview: await page.evaluate('window.__playground.focus') });
