@@ -1,6 +1,6 @@
 # Test harness
 
-Zero-dependency (Node >= 20, system Chrome) harness for measuring the polyfill in a REAL, headed, foreground Chrome over raw CDP.
+Zero-dependency (Node >= 22, system Chrome) harness for measuring the polyfill in a REAL, headed, foreground Chrome over raw CDP.
 Everything is imported from `test/harness/index.mjs`. The harness needs no polyfill build: `node test/harness/selftest.mjs`
 exercises every helper against tiny built-in fixtures and proves the positive controls fire.
 
@@ -30,7 +30,7 @@ await srv.close();
 ## Modules (`lib/`)
 | file | what |
 |---|---|
-| `chrome.mjs` | `launchChrome({chrome:'stable'\|'canary'\|path, dpr:1\|2, windowSize, nativeDrawElement, scrollbars:'default'\|'hidden'\|'overlay'\|'classic', extraArgs})`, `Browser` (newPage, `traceStart/traceStop(file)`, `info`, `close`), `resolveChrome`, `chromeCandidates`. `nativeDrawElement` adds `--enable-blink-features=CanvasDrawElement` (native baseline). |
+| `chrome.mjs` | `launchChrome({chrome:'stable'\|'canary'\|path, dpr:1\|2, windowSize, nativeDrawElement, scrollbars:'default'\|'hidden'\|'overlay'\|'classic', colorProfile, parkPointer, extraArgs})`, `Browser` (newPage: each of its CDP steps throws a named error after 20 s instead of waiting; `traceStart/traceStop(file)`, `info`, `close`, `kill`), `resolveChrome`, `chromeCandidates`. `nativeDrawElement` adds `--enable-blink-features=CanvasDrawElement` (native baseline). |
 | `page.mjs` | `Page`: `evaluate`, `navigate`, foreground (`focusState`, `assertForeground`, `ensureForeground`, `requireForeground`), `setInnerSize`, `screenshot`, `measureRaf`, `sampleHeap`/`perfMetrics`/`domCounters` (heap, DOM nodes, listeners), `cpuProfileStart/Stop`, primitive input, `errors()` (console+exceptions+log), `installPointerGuard` / `flushPointerGuard` / `foreignPointer` (trusted pointer input at a position the harness never sent; every gate page has it and such a run is NOT USABLE). |
 | `input.mjs` | Paced input that REPORTS the achieved cadence: `typeKeys`, `pressKeys`, `wheelStream`, `mouseStream`, `mouseDrag`. Each returns `{requestedMs, actual:{p50,p95..}, cadenceOk, effectiveHz, ackMs, pageSaw?}`; `probe:true` also records what the page received. |
 | `window.mjs` | `dragResize` (REAL window drag: `Browser.setWindowBounds` in steps at a cadence, reports page-seen sizes), resize recorder. |
@@ -56,7 +56,7 @@ await srv.close();
 - F1 water form (the frozen demo page of an earlier prototype), F2 scroll (page scroll, sticky header, nested scrollers), F3 resize (flex-wrap, media queries at 800/520), F4 large app (`nodes=200|500|1000|2000`, exact element count of `#root` subtree), F5 classic scrollbars (`::-webkit-scrollbar`, 15 px gutters regardless of the OS setting), F6 form controls, F7 system scrollbars (unstyled scrollers: the platform's own bars; every box edge on whole device pixels at DPR 1, 1.25, 1.5 and 2). F6 and F7 are opened by path (`openFixture(page, srv, '/test/fixtures/f7-system-scrollbars/index.html', ...)`).
 
 ## Self-test
-`node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures,pointer] [--chrome=canary] [--waitquiet=ms]`
+`node test/harness/selftest.mjs [--only=env,input,trace,window,pixel,blank,latency,fixtures,pointer] [--skip=...] [--chrome=canary] [--waitquiet=ms] [--keep-profile]`
 It opens a REAL, headed Chrome window (and a second tab for the foreground control) for the duration of the run, takes over the screen focus, and needs an unlocked screen; the `LOAD highLoad=true` line it may print means another process was busy at the start (the checks assert correctness, not timing). The server traversal check sends raw requests with `http.request`, because `fetch()` normalises `/../x`.
 Writes `.scratch/selftest/<ts>/selftest.json` (environment, load before/after, checks, info, diff PNGs, trace), exits 1 on any failed check.
 Positive controls proven: profile guard refuses directories outside .profiles/; `assertForeground` throws on a hidden tab; cadence reporter flags a deliberately
