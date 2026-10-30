@@ -91,12 +91,12 @@ test('Gecko disabled border by release: ButtonBorder #8f8f9d (Firefox 155-157) k
   assert.notEqual(skin(old), skin(newLight));
 });
 
-test('WebKit classic bars (measured Safari 27): 11 px lane 3 px into a 17 px gutter, inset 3 px at both ends, knob >= 18 px; light black 52 % / dark white 57 % knob', () => {
+test('WebKit classic bars (measured Safari 27): 11 px lane 3 px into a 17 px gutter, inset 3 px at both ends, knob on whole css px >= 20 px (webkitSystemKnob); light black 52 % / dark white 57 % knob', () => {
   const g = webkitBarGeometry(17, 592, 592, 10500, 300);
   assert.deepEqual([g.laneStart, g.laneLength, g.across, g.thickness], [3, 586, 3, 11]);
-  assert.ok(Math.abs(g.knobLength - 586 * (592 / 10500)) < 0.01);
-  assert.ok(Math.abs(g.knobStart - (3 + (300 / (10500 - 592)) * (586 - g.knobLength))) < 0.01);
-  assert.equal(webkitBarGeometry(17, 100, 100, 100000, 0).knobLength, 18);
+  // floor(586 x 592 / 10500 = 33.04); 3 + ceil(300 / 9908 x (586 - 33.04) = 16.74)
+  assert.deepEqual([g.knobStart, g.knobLength], [20, 33]);
+  assert.equal(webkitBarGeometry(17, 100, 100, 100000, 0).knobLength, 20);
   assert.equal(webkitBarColors(false).knob, 'rgba(0,0,0,0.522)');
   assert.equal(webkitBarColors(true).knob, 'rgba(255,255,255,0.573)');
 });

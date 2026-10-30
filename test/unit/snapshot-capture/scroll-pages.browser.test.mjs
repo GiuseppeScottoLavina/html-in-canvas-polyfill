@@ -3,6 +3,7 @@
 import { test, assert, frames } from '/test/unit/lib/t.js';
 import { mount, rasterize, diffFraction, inkFraction } from './_support.mjs';
 import { planScrollPages, planSteps, composeGrid } from '/src/snapshot/capture/scroll-pages.js';
+import { webkitSystemKnob } from '/src/snapshot/capture/webkit-bar-geometry.js';
 import { cornerSquares, covers, snapPx, rowOf, wholeRow } from '/src/snapshot/store/scroll-compose.js';
 
 const S = 2;
@@ -433,9 +434,46 @@ test('WebKit: an author-styled classic bar is planned with WebKit\'s thumb (whol
   assert.equal((await planWith('.list::-webkit-scrollbar-thumb{min-height:10%}', 'webkit')).plan, null, 'a minimum the polyfill does not resolve: refused');
   assert.equal((await planWith('.list::-webkit-scrollbar-button{display:block;height:14px}', 'webkit')).plan, null, 'bar buttons (the clone paints none): refused');
   assert.equal((await planWith('.list::-webkit-scrollbar-track-piece{margin-top:6px}', 'webkit')).plan, null, 'a track margin: refused');
-  assert.equal((await planWith('.list::-webkit-scrollbar{width:auto}', 'webkit')).plan, null, 'unstyled (the system bar, its geometry not measured): refused');
+  assert.equal((await planWith('.list::-webkit-scrollbar{width:auto}', 'webkit')).plan, null, 'unstyled with a 12 px gutter (no measured system bar; no engines bundle): refused');
   Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true });
   try { assert.equal((await planWith('', 'gecko')).plan, null, 'Gecko at 1x: refused'); } finally { delete (/** @type {any} */ (window)).devicePixelRatio; }
+});
+
+test('WebKit: the system classic bar is planned with AppKit\'s knob (webkitSystemKnob, 3 px into the gutter, the lane\'s thickness) where the engines bundle paints it; other gutters, scrollbar-color and a page without the engines bundle are refused (stubbed gutter)', async () => {
+  const sys = css.replace('scrollbar-width:none', 'scrollbar-width:auto');
+  const KEY = Symbol.for('hic.engine-skins');
+  const prior = /** @type {any} */ (globalThis)[KEY];
+  /** @param {number} gutter @param {string} [extra] @param {boolean} [skins] @param {string} [engine] */
+  const planWith = async (gutter, extra = '', skins = true, engine = 'webkit') => {
+    const m = mount(html, { css: sys + extra, width: 440, height: 320 });
+    await frames(1);
+    const list = m.layerEl.querySelector('.list');
+    const w = list.clientWidth + (list.offsetWidth - list.clientWidth);
+    // headless Chrome lays out no system bar: the gutter is stubbed
+    Object.defineProperty(list, 'clientWidth', { configurable: true, get: () => w - gutter });
+    Object.defineProperty(list, 'scrollWidth', { configurable: true, get: () => w - gutter });
+    /** @type {any} */ (globalThis)[KEY] = skins ? { paintWebkitBars() {}, webkitDarkBars: () => false } : undefined;
+    try {
+      const plan = run(planSteps(document, m.layer, list, m.layerEl.firstElementChild, engine));
+      return { plan, client: list.clientHeight, total: list.scrollHeight };
+    } finally { /** @type {any} */ (globalThis)[KEY] = prior; m.host.remove(); }
+  };
+  for (const [gutter, min] of [[17, 20], [13, 16]]) {
+    const { plan, client, total } = await planWith(gutter);
+    assert.ok(plan?.bar, `WebKit: planned with its ${gutter} px system bar`);
+    assert.deepEqual([plan.bar.thumbX, plan.bar.thumbW, plan.bar.gutter.width], [3, gutter - 6, gutter], 'the knob 3 px into the gutter, as thick as the lane');
+    const knob = (/** @type {number} */ t) => /** @type {{start: number, length: number}} */ (webkitSystemKnob(client - 6, client, total, t, min));
+    assert.equal(plan.bar.thumbH, knob(0).length, `the knob's length: client ${client}, scroll ${total}`);
+    for (const t of [0, 1, 7, 50, 333, 1000, plan.maxTop]) assert.equal(plan.bar.thumbY(t), 3 + knob(t).start, `the knob AppKit places at ${t}`);
+    assert.equal(plan.bar.thumbY(plan.maxTop) + plan.bar.thumbH, client - 3, 'the knob ends the lane');
+  }
+  // positive control: the same scroller with an author-styled bar of the same width is planned with WebKit's styled thumb, which differs
+  const styled = (await planWith(17, '.list::-webkit-scrollbar{width:17px}.list::-webkit-scrollbar-thumb{background:#7d889e}')).plan;
+  const system = /** @type {any} */ ((await planWith(17)).plan);
+  assert.ok(styled?.bar && [0, 7, 50, 333, 1000].some((t) => styled.bar.thumbY(t) !== system.bar.thumbY(t)) && styled.bar.thumbX !== system.bar.thumbX, 'the styled plan of the same gutter places its thumb elsewhere');
+  assert.equal((await planWith(15)).plan, null, 'a 15 px system gutter (not measured): refused');
+  assert.equal((await planWith(17, '.list{scrollbar-color:#c33 #eef}')).plan, null, 'scrollbar-color (the clone draws another bar): refused');
+  assert.equal((await planWith(17, '', false)).plan, null, 'no engines bundle (the clone draws the generic bar): refused');
 });
 
 test('a vertical classic gutter is planned WITH its bar (track column, thumb geometry of the clone); headless has no gutter, so its layout is stubbed', async () => {
