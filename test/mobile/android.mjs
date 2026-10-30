@@ -166,6 +166,8 @@ class AndroidSession {
     adb(this.serial, 'forward', '--remove', `tcp:${this.cdpPort}`);
     adb(this.serial, 'reverse', '--remove-all');
     if (this.standIn) { adb(this.serial, 'shell', 'rm', '-f', FLAGS_FILE); adb(this.serial, 'shell', 'am', 'clear-debug-app'); }
+    // a physical device: the rotation settings the run may have changed go back to what they were
+    if (this.restoreSettings) for (const [key, value] of Object.entries(this.restoreSettings)) adb(this.serial, 'shell', 'settings', 'put', 'system', key, value);
     if (!this.ownEmulator) return;
     adb(this.serial, 'shell', 'settings', 'put', 'system', 'user_rotation', '0');
     adb(this.serial, 'emu', 'kill');
@@ -269,6 +271,24 @@ export async function launchAndroid({ avd = 'hicmobile', avdHome = process.env.A
     Object.assign(s, { emulator, ownEmulator: true, browsers });
     return s;
   } catch (e) { adb(serial, 'emu', 'kill'); await sleep(1500); kill(); throw e; }
+}
+
+/**
+ * A physical device connected over USB with USB debugging on: the same session as on the emulator, in the device's own browser (no stand-in, nothing installed). The
+ * rotation settings are read first and restored by `close()`; the screen must be unlocked (it is woken, never unlocked by this driver).
+ * @param {{serial: string, serverPorts: number[], pkg?: string}} o
+ */
+export async function attachDevice({ serial, serverPorts, pkg }) {
+  if (!existsSync(ADB)) throw new AndroidUnavailable(`adb not found at ${ADB}`);
+  if (!new RegExp(`^${serial}\\s+device\\b`, 'm').test(spawnSync(ADB, ['devices'], { encoding: 'utf8' }).stdout)) throw new AndroidUnavailable(`device ${serial} is not connected with USB debugging authorised (adb devices)`);
+  const restoreSettings = Object.fromEntries(['accelerometer_rotation', 'user_rotation'].map((k) => [k, adb(serial, 'shell', 'settings', 'get', 'system', k) || '0']));
+  adb(serial, 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP');
+  const browsers = installedBrowsers(serial);
+  const chosen = pkg ?? (browsers.find((b) => b.pkg === STOCK_CHROME) ?? browsers[0])?.pkg;
+  if (!chosen) throw new AndroidUnavailable(`no supported browser installed on ${serial} (${BROWSERS.join(', ')})`);
+  const s = await openBrowser({ serial, pkg: chosen, serverPorts, standIn: false });
+  Object.assign(s, { ownEmulator: false, browsers, restoreSettings, model: adb(serial, 'shell', 'getprop', 'ro.product.model'), android: adb(serial, 'shell', 'getprop', 'ro.build.version.release') });
+  return s;
 }
 
 /** A plain session WITHOUT the stand-in override on an already-launched emulator (the refusal scenario): a second tab, real user agent. */

@@ -18,7 +18,7 @@ import { encodePng } from '../harness/lib/png.mjs';
 import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RECORDER } from '../xbrowser/lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, unsupported, gate, explainer } from './scenarios.mjs';
-import { launchAndroid, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
+import { launchAndroid, attachDevice, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
 
 const platforms = (arg('platform') ?? 'ios,android').split(',');
 const only = arg('only')?.split(',');
@@ -127,9 +127,12 @@ try {
     if (old) { const label = `iOS ${old.ios} ${old.name} (refusal)`; await device(label, () => launchIosSimulator({ udid: old.udid }), (s, D) => full(s, D, label, 'ios', { unsupported })); }
   }
   if (platforms.includes('android')) {
-    const label = 'Android Emulator';
-    await device(label, () => launchAndroid({ avd: arg('avd') ?? 'hicmobile', avdHome: arg('avd-home') ?? process.env.ANDROID_AVD_HOME, serverPorts: [port], standIn: !process.argv.includes('--no-stand-in'), pkg: arg('android-package') }), async (s, D) => {
+    // --android-serial=<serial>: a physical device over USB (adb devices) instead of the emulator
+    const physical = arg('android-serial');
+    const label = physical ? `Android device ${physical}` : 'Android Emulator';
+    await device(label, () => (physical ? attachDevice({ serial: physical, serverPorts: [port], pkg: arg('android-package') }) : launchAndroid({ avd: arg('avd') ?? 'hicmobile', avdHome: arg('avd-home') ?? process.env.ANDROID_AVD_HOME, serverPorts: [port], standIn: !process.argv.includes('--no-stand-in'), pkg: arg('android-package') })), async (s, D) => {
       D.browsers = s.browsers;
+      if (physical) Object.assign(D, { physical: true, model: s.model, android: s.android });
       if (s.standIn) D.standInNote = `Chrome ${s.chromeVersion} with the anchor-positioning flag and a Chromium ${130} user agent: a stand-in for Chrome for Android >= 130, NOT a verification of it`;
       if (s.chromeMajor >= 130 || s.standIn) {
         // a usable native implementation (Chromium 158 ships it without a flag): the polyfill scenarios force the polyfill's path, nativeFirst checks the step-aside
