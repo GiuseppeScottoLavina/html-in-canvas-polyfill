@@ -18,7 +18,7 @@ The card tilts towards the pointer in perspective, on a spring (it sways gently 
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
 <script src="dist/hic-live-effects.iife.min.js"></script>
 <script src="dist/plugins/holo-card.iife.min.js"></script>   <!-- window.HicLivePlugins['holo-card'] -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const card = await host.addPlugin(HicLivePlugins['holo-card'].plugin, { tilt: 14, foil: 0.6 });
   card.mountUI(document.getElementById('controls'));   // tilt, foil and glare sliders and an "Idle sway" checkbox

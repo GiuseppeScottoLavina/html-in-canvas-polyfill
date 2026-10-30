@@ -24,7 +24,7 @@ The impact point, when an action gives no `point`: the last pointer press on the
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
 <script src="dist/hic-live-effects.iife.min.js"></script>
 <script src="dist/plugins/shatter.iife.min.js"></script>   <!-- window.HicLivePlugins.shatter -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const glass = await host.addPlugin(HicLivePlugins.shatter.plugin, { onSubmit: 'invalid' });   // invalid submits crack, then break it
   await glass.trigger('impact', { point: { x: 120, y: 80 } });   // 'cracked' (the point in canvas CSS px)

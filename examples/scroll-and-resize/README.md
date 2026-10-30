@@ -2,7 +2,7 @@
 
 One canvas holding a scrolling inbox (60 rows, sticky header, `:hover` colours, checkboxes) next to a responsive panel (flex-wrap cards, a text field). A media query at 760 px switches the panel to one column.
 
-Run: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/examples/scroll-and-resize/` in desktop Chrome.
+Run: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/examples/scroll-and-resize/` in desktop Chrome, Firefox 155+ or Safari 27+.
 
 What to look at:
 - Scroll the list with the mouse wheel, a trackpad or the keyboard: the scrolling is the browser's own on the live list, the canvas shows the result. In Chrome and Safari (also on iOS) each scroll step is drawn from cached pages of the list and the exact picture follows when the scroll stops; Firefox rebuilds this list at every step (it composes only at a device pixel ratio of 1, only a scroller with square corners and only content without rounded corners or form controls; this list is rounded and its rows hold checkboxes).

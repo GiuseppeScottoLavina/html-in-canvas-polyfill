@@ -18,7 +18,7 @@ The lens magnifies what is under its flat centre, bends the picture from just ou
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
 <script src="dist/hic-live-effects.iife.min.js"></script>
 <script src="dist/plugins/liquid-glass.iife.min.js"></script>   <!-- window.HicLivePlugins['liquid-glass'] -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const lens = await host.addPlugin(HicLivePlugins['liquid-glass'].plugin, { size: 150, refraction: 0.7 });
   lens.mountUI(document.getElementById('controls'));   // size, refraction, dispersion sliders and a "Pin lens" checkbox

@@ -29,12 +29,14 @@ Not built: [`_template`](_template/) (start a new plugin from a copy of it: a sp
 <script src="dist/hic-live-polyfill.iife.min.js"></script>     <!-- the core -->
 <script src="dist/hic-live-effects.iife.min.js"></script>      <!-- the effects host: window.HTMLInCanvasEffects -->
 <script src="dist/plugins/water.iife.min.js"></script>          <!-- registers window.HicLivePlugins.water = {meta, plugin, ...} -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const handle = await host.addPlugin(HicLivePlugins.water.plugin, HicLivePlugins.water.meta.defaults);
   await handle.trigger('drop', { point: { x: 120, y: 80 } });   // an action: resolves 'calm' once the ripple has died out
 </script>
 ```
+
+The page script is a module script so that it can `await` at the top level; `canvas` is your `<canvas content="drawable">` and `form` the drawable element it presents, sized like the canvas ([why](../docs/guides/EFFECTS-PLUGINS.md#21-size-the-source-like-the-canvas)). The usage blocks of the plugin READMEs follow the same pattern.
 
 ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'`. A plugin bundle has no dependency and can load in any order; `host.addPlugin` validates the definition. The actions of a plugin are its definition's `actions` (`HicLivePlugins.<name>.plugin.actions`, `handle.actions`, the manifest); a plugin bundle exports no other way to start them.
 

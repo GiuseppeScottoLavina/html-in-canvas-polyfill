@@ -2,7 +2,7 @@
 
 A realistic contact form (two text fields, a textarea, a checkbox, a submit button with validation) that lives inside `<canvas content="drawable">` and is drawn with `ctx.drawElementImage(form, 0, 0)` from the `paint` event.
 
-Run: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/examples/form/` in desktop Chrome.
+Run: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/examples/form/` in desktop Chrome, Firefox 155+ or Safari 27+.
 
 What to look at:
 - The form is real DOM: Tab moves focus, typing goes into the real inputs, the caret and selection are drawn into the canvas, the submit handler is an ordinary `submit` listener.

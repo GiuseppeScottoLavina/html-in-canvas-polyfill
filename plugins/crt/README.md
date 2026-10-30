@@ -18,7 +18,7 @@ The default preset (`arcade`): barrel curvature inside a bezel, thick dark scanl
 <script src="dist/hic-live-polyfill.iife.min.js"></script>
 <script src="dist/hic-live-effects.iife.min.js"></script>
 <script src="dist/plugins/crt.iife.min.js"></script>   <!-- window.HicLivePlugins.crt -->
-<script>
+<script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
   const crt = await host.addPlugin(HicLivePlugins.crt.plugin);            // the arcade preset
   crt.mountUI(document.getElementById('controls'));   // preset picker; curvature, scanlines, mask, glow, warmth and flicker sliders

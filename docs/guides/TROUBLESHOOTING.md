@@ -27,7 +27,7 @@ Classic script: one `console.warn` (`[hic-live-polyfill] not installed (<feature
 
 A usable native implementation is never a refusal. When it lacks or renames a secondary member, or is the earlier `layoutsubtree` draft, `install()` steps aside (mode `native`) and `installed.report().deviations` has an entry `native-step-aside` that says why, for example `the native implementation lacks ...` or `this browser implements the earlier layoutsubtree draft of HTML-in-Canvas ... To bridge them, load hic-live-native-bridge.iife.min.js before the core` (the readable twin is `dist/hic-live-native-bridge.iife.js`; ESM: import the `/native-bridge` subpath before `install()`). The earlier draft and an explicit `mode: 'polyfill'` over a native implementation also print one `console.warn`.
 
-Option errors are plain `TypeError`s that name the option: `option "<name>" (got <value>) must be one of ... / a boolean / a finite number / an integer / >= <min>`; `defaultFrameCap` must be 0 or between the cap limits (0..240); `nodeBudget` must be `{soft, hard, absolute}` with `soft <= hard <= absolute`.
+Option errors are plain `TypeError`s that name the option: `option "<name>" (got <value>) must be one of ... / a boolean / a finite number / an integer / >= <min>`; `defaultFrameCap` must be 0 (uncapped) or an integer from 1 to 240; `nodeBudget` must be `{soft, hard, absolute}` with `soft <= hard <= absolute`.
 
 ## 2. API calls that throw
 
