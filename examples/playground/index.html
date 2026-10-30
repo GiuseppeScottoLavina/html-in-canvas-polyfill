@@ -42,7 +42,10 @@
 
   /* ---- the two panes */
   .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
-  .card { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  /* no overflow clip on the card: under a rounded clip Chrome hit-tests pointer events into the out-of-process preview frame asynchronously (an
+     irregular clip); without it the frame is a plain rectangle. The parts that touch the rounded corners round themselves instead. */
+  .card { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .card > :last-child { border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px); }
   .bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-height: 3rem; padding: .45rem .6rem .45rem .9rem; border-bottom: 1px solid var(--line); }
   .bar h2 { margin: 0 auto 0 0; font-size: .8rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .bar h2 label { cursor: inherit; }
