@@ -45,7 +45,7 @@ const trimStack = (/** @type {string} */ s) => s.replace(/http:\/\/127\.0\.0\.1:
 async function runFile(browser, srv, file) {
   const rel = relPath(file);
   const page = await browser.newPage({ reuseFirst: false });
-  const res = { rel, tests: [], loadError: null, pageErrors: [], hung: false };
+  const res = { rel, tests: [], loadError: null, pageErrors: [], hung: false, /** @type {number[]} */ stalls: [] };
   try {
     const q = new URLSearchParams({ file: '/' + rel, timeout: opt.timeout, filter: opt.filter ?? '' });
     const at = srv.requests.length;
@@ -55,10 +55,16 @@ async function runFile(browser, srv, file) {
       res.loadError = `${e.message} (server: ${served}; browser stderr: ${browser.getStderr().trim().split('\n').slice(-6).join(' | ') || 'empty'})`;
     });
     const deadline = Date.now() + Number(opt['file-timeout']);
+    // a page counts as hung once it has not answered for as long as one test may run (--timeout): a test blocking the main thread that long is broken, while a
+    // shorter stall recovers. A single 2 s probe used to decide, and on the Windows runner one stall of a few seconds failed a whole file (twice in a test that
+    // passes in milliseconds, 2026-10-29/30); a stall that recovered is reported
+    let stalledSince = 0;
     while (!res.loadError) {
       const st = await Promise.race([page.evaluate('window.__unit?.state ?? "loading"'), sleep(2000).then(() => 'hung')]).catch(() => 'hung');
       if (st === 'done') break;
-      if (st === 'hung' || Date.now() > deadline) { res.hung = true; break; }
+      if (st === 'hung') stalledSince ||= Date.now() - 2000;
+      else if (stalledSince) { res.stalls.push(Date.now() - stalledSince); stalledSince = 0; }
+      if ((stalledSince && Date.now() - stalledSince >= Number(opt.timeout)) || Date.now() > deadline) { res.hung = true; break; }
       await sleep(50);
     }
     const snap = await Promise.race([page.evaluate('JSON.stringify(window.__unit ?? null)'), sleep(3000).then(() => null)]).catch(() => null);
@@ -81,6 +87,7 @@ function report(r) {
     for (const c of t.console) console.log(indent(`console.${c.type}: ${trimStack(c.text).split('\n')[0]}`, '      '));
   }
   if (r.hung) console.log(`  HUNG: page unresponsive or file timeout${r.current ? ` while running "${r.current}"` : ''}`);
+  for (const ms of r.stalls) console.log(`  note: the page did not answer for ${(ms / 1000).toFixed(1)} s and recovered`);
   if (r.loadError) console.log(indent(`LOAD ERROR: ${trimStack(r.loadError)}`, '  '));
   for (const e of r.pageErrors) console.log(indent(`PAGE ERROR: ${e}`, '  '));
 }
@@ -88,14 +95,14 @@ function report(r) {
 const count = (/** @type {any[]} */ rs, /** @type {string} */ s) => rs.reduce((n, r) => n + r.tests.filter((/** @type {any} */ t) => t.status === s).length, 0);
 const problem = (/** @type {any} */ r) => r.tests.some((/** @type {any} */ t) => t.status === 'fail' || t.status === 'timeout') || r.loadError || r.hung || r.pageErrors.length > 0;
 
-/** --expect-fail: file name prefix says what the runner must detect: fail-*, timeout-*, pageerror-*, loaderror-*. */
+/** --expect-fail: file name prefix says what the runner must detect: fail-*, timeout-*, pageerror-*, loaderror-*, hung-*. */
 function expectationMet(/** @type {any} */ r) {
   const kind = r.rel.split('/').pop().split('-')[0];
   const hit = {
     fail: r.tests.some((/** @type {any} */ t) => t.status === 'fail'), timeout: r.tests.some((/** @type {any} */ t) => t.status === 'timeout'),
-    pageerror: r.pageErrors.length > 0, loaderror: !!r.loadError,
+    pageerror: r.pageErrors.length > 0, loaderror: !!r.loadError, hung: !!r.hung,
   }[kind];
-  if (hit === undefined) throw new Error(`expect-fail file needs a fail-/timeout-/pageerror-/loaderror- prefix: ${r.rel}`);
+  if (hit === undefined) throw new Error(`expect-fail file needs a fail-/timeout-/pageerror-/loaderror-/hung- prefix: ${r.rel}`);
   return hit;
 }
 

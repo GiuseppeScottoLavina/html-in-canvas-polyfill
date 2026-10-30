@@ -34,3 +34,8 @@ test('assert helpers reject wrong values', () => {
   assert.throws(() => assert.deepEqual({ a: 1 }, { a: 2 }));
   assert.throws(() => assert.throws(() => {}), /expected function to throw/);
 });
+
+test('a 3 s stall of the main thread, shorter than a test may run, is not a hung page', () => {
+  const end = performance.now() + 3000;
+  while (performance.now() < end) { /* busy: the runner's 2 s probe goes unanswered once */ }
+});
