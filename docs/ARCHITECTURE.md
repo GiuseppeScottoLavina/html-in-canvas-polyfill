@@ -159,7 +159,7 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
   (only when a managed canvas exists and the selector has a combinator or names `canvas`): the native result is unioned (document order, deduped) with the
   result of the selector rewritten for each managed canvas (the compound that `canvas.matches()` is replaced by `[data-hic-layer="N"]`);
   `css` = a polyfill `<style data-hic-node>` mirrors every stylesheet rule whose selector has a canvas-matching compound with the layer attribute substituted
-  (cached per stylesheet epoch, re-evaluated when the canvas's class/id/data-*/lang/dir change). The replacement PRESERVES SPECIFICITY (`:not(.hic-pad)` padding, `layerReplacement`): a per-canvas rewrite, not a `:is(canvas, [data-hic-layer])` form, because that form would make every class-only author rule restyle the layer.
+  (cached per stylesheet epoch, re-evaluated when the canvas's class/id/data-*/lang/dir change). The replacement PRESERVES SPECIFICITY (`:not(.hic-pad)` padding, `padReplacement` in `util/selector-rewrite.js`): a per-canvas rewrite, not a `:is(canvas, [data-hic-layer])` form, because that form would make every class-only author rule restyle the layer.
   The SAME pure rewriter produces the clone's CSS (replacement `[data-hic-root]`). Not bridged: `canvas + x`, `canvas ~ x` (siblings after the canvas),
   `:has()` crossing the boundary, author MutationObserver records on the canvas (the polyfill does not synthesize them; rows `tree-identity`, `selector-bridge`).
 - focus/scroll/IME: native, because the elements are real. Tab order follows layer position (after the canvas in DOM order = where the canvas
