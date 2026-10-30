@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><title>regress: sliders set by script are repainted (M7)</title>
+<script>var q = new URLSearchParams(location.search); window.__q = q;
+  if (q.get("bundle")) document.write("<scr" + "ipt src=\"" + q.get("bundle") + "\"></scr" + "ipt>");</script>
+<style>body{margin:8px;background:#fff} #c{display:block;width:420px;height:420px}
+  #f{box-sizing:border-box;width:400px;height:400px;padding:6px;background:#14161c;color:#e0f7ff;font:700 10px sans-serif}
+  #g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 12px} p{margin:12px 0 0;height:300px;border:1px solid #5a4a30}
+  label{display:grid;grid-template-columns:1fr auto;gap:2px 6px;min-width:0} output{color:#ffcf7a;font-variant-numeric:tabular-nums}
+  input[type=range]{grid-column:1/-1;width:100%;height:22px;margin:0;accent-color:#ffb347}</style></head><body>
+<canvas id="c" content="drawable"><form id="f" drawable autocomplete="off"><div id="g"></div><p>The rest of the form: the sliders are a small part of the drawable, as in the gallery.</p></form></canvas>
+<script>
+  // The CRT plugin's preset picker in small (plugins/crt mountUI): a preset writes every slider's value by script and the percentage beside it. The value of a range
+  // input reflects no attribute, so only the text change of each <output> announced itself: its damage (the output's box and the ink margin) covered the right end of
+  // each slider, and the rest kept its old picture: a thumb left beside the new one, or a thumb lost. The sliders are a small part of the drawable (a damage over
+  // 55 % of it is built whole), and every percentage keeps two digits (an <output> whose box changes size damages more around it): both hid the bug in a first
+  // version of this page.
+  const PRESETS = { arcade: [50, 80, 70, 70, 60, 30], monitor: [30, 35, 25, 30, 10, 15] };
+  const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const form = document.getElementById('f');
+  const rows = ['Curvature', 'Scanlines', 'Mask', 'Glow', 'Warmth', 'Flicker'].map((name) => {
+    const label = document.createElement('label');
+    label.innerHTML = `<span>${name}</span><output></output><input type="range" min="0" max="100" step="1">`;
+    document.getElementById('g').append(label);
+    return { range: label.querySelector('input'), out: label.querySelector('output') };
+  });
+  window.__preset = (name) => PRESETS[name].forEach((v, i) => {
+    const value = String(v);
+    if (rows[i].range.value !== value) rows[i].range.value = value;
+    if (rows[i].out.textContent !== `${value}%`) rows[i].out.textContent = `${value}%`;
+  });
+  window.__preset(q.get('init') || 'arcade');
+  canvas.width = 420 * devicePixelRatio; canvas.height = 420 * devicePixelRatio;
+  window.__paints = 0; window.__errors = [];
+  canvas.onpaint = () => { window.__paints++; try { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawElementImage(form, 0, 0); } catch (e) { window.__errors.push(String(e)); } };
+  // the canvas bitmap after the last change has painted, as base64 RGBA
+  window.__pixels = async () => {
+    await new Promise((r) => setTimeout(r, 700));
+    const a = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let bin = ''; for (let k = 0; k < a.length; k += 8192) bin += String.fromCharCode.apply(null, a.subarray(k, k + 8192));
+    return { px: btoa(bin), values: rows.map((r) => r.range.value), errors: window.__errors };
+  };
+</script></body></html>
