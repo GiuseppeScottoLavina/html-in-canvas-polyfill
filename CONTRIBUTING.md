@@ -52,7 +52,7 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 | --- | --- | --- |
 | 11 of the 16 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS, every push | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
 | mutation suite, the 32 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 32 nightly and on release tags (4 machines) | |
-| `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
+| `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture, playground and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
 | `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS, every push | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
 | the scroll scenario of `test:xbrowser` on Firefox | local | at the runner's DPR 1 the scrolled list differs from its twin on 6.6-6.8 % of the pixels (bound 5 %), the text antialiasing of a 1x macOS display; Firefox cannot be given a real DPR 2 there |
 | G-scroll-cadence and its 8 mutants | local | thresholds from a 120 Hz display; at 60 Hz the live list moved in 61-74 % of the frames (70 % / 82 % required) |

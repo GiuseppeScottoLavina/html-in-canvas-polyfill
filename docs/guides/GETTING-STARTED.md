@@ -4,6 +4,8 @@ Goal: the explainer demo, a form and the water demo running in five minutes, and
 
 Status: `0.1.0-preview.13`, a preview on npm under the dist-tag `next` (on 2026-10-30 `latest` is the same version, so a plain `npm install` gets it too), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on simulators and emulators only). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
+Live demo: [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · Try it in the browser: [playground](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/playground/)
+
 ## 1. Run the examples (about 3 minutes)
 
 Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`.
@@ -15,7 +17,7 @@ npm run build                   # writes dist/ (classic IIFE bundles and dist/es
 npm run demo                    # http://127.0.0.1:8765/examples/
 ```
 
-Open `http://127.0.0.1:8765/examples/` in a supported browser and try, in this order: `basic` (the WICG explainer example), `form`, `plugins` (the effect gallery) and `effect-plugin` (the smallest page with effects; both need WebGPU for the effects and say which path they took), `scroll-and-resize`, `webgl-texture`. Each example folder has a README. `npm run test:examples` runs all of them in headless Chrome as a smoke test.
+Open `http://127.0.0.1:8765/examples/` in a supported browser and try, in this order: `basic` (the WICG explainer example), `form`, `plugins` (the effect gallery) and `effect-plugin` (the smallest page with effects; both need WebGPU for the effects and say which path they took), `scroll-and-resize`, `webgl-texture`, and `playground` (edit the explainer example and run it). Each example folder has a README. `npm run test:examples` runs all of them in headless Chrome as a smoke test.
 
 `npm run demo` serves only `/examples` and `/dist` (everything else is 403). To try your own page, put it in a new folder such as `examples/mine/index.html` and load `../../dist/hic-live-polyfill.iife.min.js`, or open the file directly from disk (`file://` works; the built files make no network request). The snippets in this guide say `dist/...`, which is right only for a page next to `dist/`.
 
