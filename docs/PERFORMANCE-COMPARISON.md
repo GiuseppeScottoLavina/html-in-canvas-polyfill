@@ -132,6 +132,8 @@ application above the 15 % CPU threshold during the run; the interleaved A/B fig
 
 ## Caveats
 
+- The table was measured from 2026-10-13 to 2026-10-19 (ours: the core of 2026-10-15; the inner-scroll rows: 0.1.0-preview.2) and has not been rerun since. The core has grown from 264,229 to 338,893 bytes minified (91,829 to 114,496 gzip) with the later releases (conformance, Firefox and Safari support, the scroll compositor; `CHANGELOG.md`, `docs/BUNDLES.md`), so rows 7 and 10 (first paint, startup) and the sizes quoted below describe that earlier core.
+
 - Native runs on Canary 157 and the polyfills on stable 155: a different browser build. Native latency includes Chrome's own smooth-scroll animation for wheel ticks (the same for all subjects, since all scroll the live element).
 - The competitor runs through an attribute adapter (it only knows `layoutsubtree`); its hit testing on the explainer uses the live element at x = 0 while drawing at x = 100 grid px (the click still lands, see [COMPARISON.md](COMPARISON.md)).
 - The probe reads back one region per frame (0.9-1.9 ms p50 for ours); it runs identically on every subject and is excluded from every RunTask number.
