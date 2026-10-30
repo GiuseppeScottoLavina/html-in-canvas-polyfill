@@ -292,7 +292,8 @@ const GECKO_COMPOSE_MUTANTS = {
  */
 export async function scrollCompose(ctx) {
   const { s } = ctx;
-  if (s.engine !== 'firefox') { ctx.check('scrollCompose: Gecko only (WebKit: G-mobile scrollCompose; Chromium: G-scroll-cadence)', true, null, 'n/a'); return; }
+  if (s.engine === 'safari' || s.engine === 'stp') { await scrollComposeWebkitBars(ctx); return; }
+  if (s.engine !== 'firefox') { ctx.check('scrollCompose: Gecko and WebKit only (Chromium: G-scroll-cadence)', true, null, 'n/a'); return; }
   const offsets = [100, 131, 400, 437, 800, 851, 20, 61, 1203, 1170];
   /** @param {string} bundle @param {string|null} badges @param {string[]} sels @param {string} tag */
   const run = async (bundle, badges, sels, tag) => {
@@ -357,6 +358,102 @@ export async function scrollCompose(ctx) {
       judgeExact(r, '(mutant grid: rounded badges composed)');
       judgeRefused(r, '(mutant grid)');
     } else judgeRefused(await run(bundle, 'square', ['#square'], 'MutantRefusal'), '(mutant refusal: composed at another ratio)');
+  }
+}
+
+/**
+ * Mutants of the readable core for the Safari control of scrollCompose (an anchor that drifted fails loudly). thumb: the plan moves the thumb by the generic (Chromium)
+ * geometry instead of WebKit's, which the clone paints: a composed frame shows the thumb elsewhere than the settled one. refusal: WebKit's author-styled bars are refused
+ * again (what this case added): nothing composes.
+ */
+const WEBKIT_BAR_MUTANTS = {
+  thumb: [['const v = webkitStyledBar(f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight, min);', 'const v = verticalBar(f.gv, s.clientHeight, s.scrollHeight, true, false, min);']],
+  refusal: [['if (!f.styled || currentEngine().os !== "desktop") return null;', 'return null;']],
+};
+
+/**
+ * In the page: a momentum-like scroll of one scroller driven from requestAnimationFrame (scrollTop += v, v decaying, down, up, down), after one step and a rest that
+ * let the compositor plan it: its scroll steps and how many of them a composition painted.
+ * @param {string} sel
+ */
+const SCRIPTED_SHARE = (sel) => `(async () => {
+  const s = document.querySelector(${JSON.stringify(sel)});
+  const stats = () => window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll ?? {};
+  const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  s.scrollTop = 1; await wait(1500);
+  const c0 = stats().composed ?? 0;
+  let steps = 0;
+  for (const dir of [1, -1, 1]) {
+    await new Promise((ok) => { let v = 30; const f = () => { const t = s.scrollTop; s.scrollTop += v * dir; if (s.scrollTop !== t) steps++; v *= 0.97; if (v < 0.5) return ok(); requestAnimationFrame(f); }; requestAnimationFrame(f); });
+  }
+  await wait(300);
+  return { steps, composed: (stats().composed ?? 0) - c0, refusals: stats().refusals ?? 0 };
+})()`;
+
+/**
+ * The scroll compositor on desktop WebKit (Safari) with CLASSIC bars: the composed-scrolling fixture with author-styled bars (`bars=styled`: an 11 px
+ * `::-webkit-scrollbar`, a track colour, a rounded thumb), whose thumb WebKit places on whole css px (webkitStyledBar). Both lists (one rounded and opaque, one square
+ * and transparent) composed in at least 3 of 10 jumps, and every composed frame equal to the tile the snapshot settles on at that offset (outside the rounded corners no
+ * pixel over 16; on their antialiased arc at most 2 % of the arc pixels, as G-mobile); a scripted scroll of each composes at least half of its steps. The system's
+ * classic bars are not composed (their geometry was not measured) and are not covered here. The control serves mutant cores (WEBKIT_BAR_MUTANTS).
+ */
+async function scrollComposeWebkitBars(ctx) {
+  const { s } = ctx;
+  const sels = ['#square', '#round'];
+  const offsets = [100, 131, 400, 437, 800, 851, 20, 61, 1203, 1170];
+  /** @param {string} bundle @param {string} tag */
+  const run = async (bundle, tag) => {
+    const u = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
+    u.searchParams.set('iso', '0'); u.searchParams.set('mode', 'poly'); u.searchParams.set('bundle', bundle); u.searchParams.set('bars', 'styled');
+    await s.navigate(u.href);
+    await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
+    await sleep(1500);
+    const gutters = await s.evaluate(`${JSON.stringify(sels)}.map((q) => { const e = document.querySelector(q); const cs = getComputedStyle(e); return e.offsetWidth - e.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth); })`);
+    const parts = [];
+    for (const sel of sels) parts.push(await s.evaluate(COMPOSE_ORACLE([sel], offsets), { timeoutMs: 60000 }));
+    const r = { ...parts[parts.length - 1], jumps: parts.flatMap((p) => p.jumps), gutters };
+    // a fresh page: the oracle's jumps leave each list planned at its last offset
+    await s.navigate(u.href);
+    await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
+    await sleep(1000);
+    r.share = [];
+    for (const sel of sels) r.share.push({ sel, ...(await s.evaluate(SCRIPTED_SHARE(sel), { timeoutMs: 60000 })) });
+    ctx.numbers[`scrollComposeStyledBars${tag}`] = { dpr: r.dpr, gutters, share: r.share, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc, arcPixels: j.arcPixels, max: j.max })) };
+    return r;
+  };
+  /** @param {any} r @param {string} label */
+  const judge = (r, label) => {
+    ctx.check(`scrollCompose${label}: both lists show the author-styled classic bar (an 11 px gutter: ${r.gutters.join(' / ')})`, r.gutters.every((g) => g === 11), r.gutters, 'environment-bars');
+    const composed = r.jumps.filter((j) => j.composed);
+    const per = sels.map((sel) => composed.filter((j) => j.sel === sel).length);
+    ctx.check(`scrollCompose${label} styled bars: each list composed at least 3 of its ${offsets.length} jumps (composed: ${per.join(' / ')}), every jump painted, the canvas non-blank`,
+      per.every((n) => n >= 3) && r.jumps.every((j) => j.painted !== false && j.ink > 0.5), { per, scroll: r.scroll }, 'surface');
+    const bad = composed.filter((j) => j.grid > 0);
+    ctx.check(`scrollCompose${label} styled bars: every composed frame equals the settled tile at its offset at DPR ${r.dpr}, the bar included (outside the rounded corners: no pixel over 16)`,
+      composed.length > 0 && bad.length === 0, bad.slice(0, 4), 'grid');
+    const arc = composed.filter((j) => j.offArc > 0 || j.onArc > 0.02 * j.arcPixels);
+    ctx.check(`scrollCompose${label} styled bars: in the rounded corners no pixel over 16 off the antialiased arc, at most 2 % of the arc`, composed.length > 0 && arc.length === 0, arc.slice(0, 4), 'corner');
+    ctx.check(`scrollCompose${label} styled bars: a scripted scroll of each list composed at least half of its steps (${r.share.map((x) => `${x.sel} ${x.composed} of ${x.steps}`).join(', ')})`,
+      r.share.every((x) => x.steps > 50 && x.composed >= x.steps / 2), r.share, 'share');
+  };
+  if (!ctx.control) {
+    judge(await run(ctx.bundle, ''), '');
+    await noErrors(ctx, 'scrollCompose');
+    return;
+  }
+  const core = '/dist/hic-live-polyfill.iife.js';
+  if (!ctx.bundle.split(',').includes(core) || !ctx.files) throw new Error(`scrollCompose control: the bundle list has no ${core} to replace, or the server serves no mutants`);
+  const text = readFileSync(ctx.coreFile ?? resolve(PROJECT_ROOT, 'dist/hic-live-polyfill.iife.js'), 'utf8');
+  const dir = resolve(PROJECT_ROOT, '.scratch/xbrowser-mutants');
+  mkdirSync(dir, { recursive: true });
+  for (const [cls, edits] of Object.entries(WEBKIT_BAR_MUTANTS)) {
+    const m = buildMutant(text, { edits });
+    if ('drift' in m) throw new Error(`scrollCompose control: mutant ${cls}: ${m.drift}`);
+    const file = resolve(dir, `core-webkit-${cls}.js`);
+    writeFileSync(file, m.text);
+    const path = `/__mutant/core-webkit-${cls}.js`;
+    ctx.files[path] = file;
+    judge(await run(ctx.bundle.split(',').map((b) => (b === core ? path : b)).join(','), `Mutant_${cls}`), ` (mutant ${cls})`);
   }
 }
 
@@ -779,6 +876,6 @@ export async function nativeExamples(ctx) {
 export const NATIVE_SCENARIOS = { nativeSurface, nativeExplainer, nativeForm, nativeUninstall, nativeExamples };
 
 export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, scrollCompose, unsupported, uninstall, decodeTiming };
-/** classes each scenario's control must turn red; scrollCompose: the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
-export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
+/** classes each scenario's control must turn red; scrollCompose: on Safari (styled bars, a `share` check) the composed frames and the composed share, on Firefox the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
+export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share'] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
 export { KEYS };

@@ -120,7 +120,9 @@ if (!docsOnly) {
   // colour and caret-color declarations that apply to the caret's element and its ancestors, because Safari exposes neither `auto` nor the origin of a colour)
   // 16225 -> 16325 (2026-10-29, measured 16,302; 16,211 before this step): the WPT re-pin at 5ccef26d (snapshot/capture/svg-refs.js resource scope and pinned
   // painting properties, util/canvas-scope.js, util/top-layer.js, the resource and top-layer damage of the mutation observer)
-  if (total > 16325) problems.push(`G-size: core is ${total} code lines (> 16325)`);
+  // 16325 -> 16375 (2026-10-30, measured 16,347; 16,302 before this step): the scroll compositor composes WebKit's author-styled classic bars (+45: webkit-bar-geometry.js,
+  // the thumb in whole css px as Safari computes it; scroll-emulation.js webkitStyledMinThumb / webkitStyledBar used by the clone's bar; scroll-pages.js webkitBar)
+  if (total > 16375) problems.push(`G-size: core is ${total} code lines (> 16375)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

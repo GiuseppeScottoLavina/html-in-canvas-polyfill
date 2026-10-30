@@ -705,6 +705,8 @@ export function createScrollCompositor(deps) {
         // the classic bar: its track as captured, then the thumb at the offset (the clone's own geometry, verticalBar)
         const t = c.bar.track;
         ctx.save(); shape(); ctx.beginPath(); ctx.rect(t.px.x, t.px.y, t.px.width, t.px.height); ctx.clip();
+        // the track meets the rounded corners on the bar's side: drawn as the pages are (source-over the backdrop under the curve on a grid; see `over`)
+        ctx.globalCompositeOperation = over;
         ctx.drawImage(/** @type {Surface} */ (t.pad), t.px.x, t.px.y);
         ctx.restore();
         const h = c.bar.thumb;
