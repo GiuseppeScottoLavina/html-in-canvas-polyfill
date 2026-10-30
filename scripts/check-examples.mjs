@@ -33,7 +33,7 @@
 //                   (control inside the check: the identity mapper must be visibly wrong on the same pixels)
 // Positive controls (the script fails if any of them does not turn red):
 //   C1  the dist path is broken (the polyfill script URL answers 404): every example must report failed checks
-//   C2  a click that misses the field: the "typing reaches the field" and "pixels changed" checks of `basic` must fail
+//   C2  a click that misses the field: the "typing reaches the field" and "pixels changed" checks of `basic` and of the playground must fail
 //   C3  a blank canvas must be classified blank by the pixel check
 //   C4  the ESM entry is missing: the ESM smoke page must fail
 //   C5  five variants of the playground page (allow-same-origin, console text set as HTML, messages heard from any window, the old frame kept, the canvas bounds
@@ -592,11 +592,18 @@ const SCENARIOS = {
     await run.step('interact', 'a trusted click on the drawn field focuses the live input in the preview; typing changes input.value and the preview pixels', async () => {
       const field = await inPreview(page, `(() => { const r = document.getElementById('name').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
       const frame = await page.evaluate(`(() => { const e = document.getElementById('preview'); const r = e.getBoundingClientRect(); return { x: r.x + e.clientLeft, y: r.y + e.clientTop }; })()`);
-      await page.click(frame.x + (opts.misclick ? 4 : field.x), frame.y + (opts.misclick ? 4 : field.y));
-      await sleep(250);
-      // Page.typeText's guard, across the frame: keys are sent only when the focus is on an editable element of the preview
-      const focus = await page.evaluate(`({ page: document.activeElement && document.activeElement.id, preview: window.__playground.focus })`);
-      if (focus.page !== 'preview' || focus.preview !== 'input#name') return { ok: false, reason: 'the live input has no focus: no key sent', ...focus };
+      const at = { x: opts.misclick ? 4 : field.x, y: opts.misclick ? 4 : field.y };
+      // what the frame sees of the click (pointer, mouse, focus events in capture order) and what is under the point before it: the evidence when focus does not follow
+      const hit = await inPreview(page, `(() => { window.__clickTrace = []; const rec = (e) => window.__clickTrace.push(e.type + ':' + (e.target && e.target.localName ? e.target.localName + (e.target.id ? '#' + e.target.id : '') : 'window') + '@' + Math.round(performance.now()));
+        for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'focusin', 'focusout']) addEventListener(t, rec, true);
+        const e = document.elementFromPoint(${at.x}, ${at.y}); return e ? e.localName + (e.id ? '#' + e.id : '') : null; })()`);
+      await page.click(frame.x + at.x, frame.y + at.y);
+      // Page.typeText's guard, across the frame: keys are sent only when the input of the preview has focus, and the page heard it from the frame (a message
+      // between two processes: its delivery time is not fixed, so it is awaited rather than assumed after a fixed pause)
+      const focusOf = async () => ({ page: await page.evaluate(`document.activeElement && document.activeElement.id`), inFrame: await inPreview(page, `document.activeElement && document.activeElement.id`), preview: await page.evaluate('window.__playground.focus') });
+      const focused = await H.until(async () => { const f = await focusOf(); return f.page === 'preview' && f.inFrame === 'name' && f.preview === 'input#name' ? f : null; }, 3000, 50);
+      if (!focused) return { ok: false, reason: 'the live input has no focus: no key sent', ...(await focusOf()), hitBeforeClick: hit, frameEvents: await inPreview(page, 'window.__clickTrace') };
+      const focus = focused;
       const before = await canvasShot();
       for (const ch of 'hello world') { await page.key(ch); await sleep(25); }
       const value = await inPreview(page, `document.getElementById('name').value`);
@@ -930,14 +937,14 @@ async function main() {
         console.log(`${control.turnedRed ? 'ok  ' : 'FAIL'} control C1 (broken dist path) -> ${name}: ${red.length} check(s) red`);
         if (!control.turnedRed) problems.push(`control C1 did not fail for ${name}`);
       }
-      // C2: the click misses the field: the interaction checks of `basic` must turn red
-      if (names.includes('basic')) {
-        const run = await runExample(browser, server, 'basic', { misclick: true, tag: 'control-misclick', noShots: true });
+      // C2: the click misses the field: the typing check of `basic`, and of the playground (its click lands in the preview frame, off the field), must turn red
+      for (const name of ['basic', 'playground'].filter((n) => names.includes(n))) {
+        const run = await runExample(browser, server, name, { misclick: true, variant: name === 'playground', tag: 'control-misclick', noShots: true });
         const red = run.failed().filter((c) => c.cls === 'interact');
-        const control = { control: 'C2 click misses the field', example: 'basic', turnedRed: red.length > 0, failedChecks: red.map((c) => c.name) };
+        const control = { control: 'C2 click misses the field', example: name, turnedRed: red.length > 0, failedChecks: red.map((c) => c.name) };
         result.controls.push(control);
-        console.log(`${control.turnedRed ? 'ok  ' : 'FAIL'} control C2 (click misses the field) -> basic: ${red.length} interaction check(s) red`);
-        if (!control.turnedRed) problems.push('control C2 did not fail');
+        console.log(`${control.turnedRed ? 'ok  ' : 'FAIL'} control C2 (click misses the field) -> ${name}: ${red.length} interaction check(s) red`);
+        if (!control.turnedRed) problems.push(`control C2 did not fail for ${name}`);
       }
       // C5: page variants of the playground (a sandbox with allow-same-origin, console text parsed as HTML, messages heard from any window, the old frame kept,
       // the canvas bounds never switched off):
