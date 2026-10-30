@@ -225,8 +225,8 @@ Overloads (spec IDL): `(el, dx, dy [, o])`, `(el, dx, dy, dw, dh [, o])`, `(el, 
 Algorithm (spec "draw an element"), in order:
 1. any numeric argument infinite or NaN -> return silently.
 2. `canvas` = the canvas of the context (for an `OffscreenCanvasRenderingContext2D`: its placeholder HTMLCanvasElement; none ->
-   `TypeError`).
-3. resolve the snapshot (section 6). The snapshot's originating canvas must be `canvas`, else `TypeError`.
+   `InvalidStateError`, section 6.1).
+3. resolve the snapshot (section 6). The snapshot's originating canvas must be `canvas`, else `InvalidStateError` (section 6.1).
 4. `scaleX = ctx.canvas.width / snapshot.canvasWidth`, `scaleY` likewise (output bitmap pixels per css px of the canvas content box).
    Defaults: `sx=sy=0`, `sw,sh = snapshot.width,height` (css px of the border box); `dw = sw*scaleX`, `dh = sh*scaleY`
    (when `dw,dh` are omitted the element is drawn at EXACTLY its outside-canvas size).
@@ -475,7 +475,7 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
   exact snapshot replaces it when the scroll settles; on Gecko the same, but only at a device pixel ratio of 1, at whole-pixel offsets, for a scroller with square corners and content whose painting no clip edge changes (no rounded corners, dotted lines, transforms, images, SVG or form controls); every other Gecko step is a snapshot. Where the raster scale is below the device pixel ratio (a desktop DPR above `maxDpr`,
   2.5 there; a surface over its pixel budget), composed frames can differ from the settled picture by a few device pixels until then (`docs/ARCHITECTURE.md`, "Pruned pages and tiles").
 - "No blank frame" is claimed only AFTER the first non-blank paint, across resize, scroll, typing and DPR change. It cannot hold before the first commit (draws throw by spec; the paint gate), after a 2D context loss or GPU device loss until recovery (<= 3 frames), or on a hidden-to-visible transition (measured separately).
-  During a resize drag the canvas shows pixels from 2-3 frames earlier stretched into the new box (no blank, but not current) while the live layer is already at the new size, so a click can land on the new layout while the pixels show the old one.
+  During a resize drag the canvas shows pixels from 1 to 3 frames earlier stretched into the new box (no blank, but not current) while the live layer is already at the new size, so a click can land on the new layout while the pixels show the old one.
 
 ## 9. Out of scope and how it fails (loudly)
 
