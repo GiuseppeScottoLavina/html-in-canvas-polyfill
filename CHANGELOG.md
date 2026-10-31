@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- The performance comparison (`docs/PERFORMANCE-COMPARISON.md`) is remeasured: every row, all three subjects twice, on 2026-10-30/31 with this release (Chrome 156.0.8078.76; native on Canary 159.0.8131.0, previously 157.0.8101.0; the other package again, unchanged at 1.0.1). Better than the 2026-10-15/19 table: wheel to canvas pixel in an inner list (p50 27.7 to 23.0 ms) and the update to pixel of an author change in a large drawable (p50 2.2-3.3 ms at 200 to 2,000 elements, was 1.8-10.0). Worse: the main-thread time of that update at 1,000 and 2,000 elements (19.2 to 24.9 ms and 22.1 to 34.2 ms, now mostly in tasks over 8.33 ms) and startup with the larger core (parse, compile and install 8.1 to 10.5 ms). Typing, click, resize, memory and idle are unchanged within noise. The README, `docs/guides/PERFORMANCE.md`, `docs/DESIGN-DECISIONS.md` and `docs/API-CONTRACT.md` quote the new figures.
+
 ## [0.1.0-preview.15] - 2026-10-30
 
 Verified on physical devices. The mobile gate ran on a Pixel 7 Pro (Android 17, Chrome 156), a Huawei Mate 10 Pro (Android 10, Chrome 156) and an iPad Pro 11-inch (iPadOS 27.2), and the refusal on an iPhone XR (iOS 18.7); the owner's field test on the iPad passed (touch scroll painted in 96 % of frames, 0 stutters). The Pixel found a real bug: at a fractional device pixel ratio (2.625 on that phone; 1.25 and 1.5 on Windows laptops) a scale computed from rounded sizes scrolled a listbox select 2 device px off, and the same idiom was fixed in eight more places. A rejected tile decode now names the XML fault of the markup it was given, and the field test times keys correctly.

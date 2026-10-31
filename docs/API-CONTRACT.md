@@ -464,7 +464,7 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
 ## 8. Timing model (summary; full detail in ARCHITECTURE ADR-C)
 - DOM change -> mutation/input/focus/hover observers publish `Damage` -> (next tick, under the cap) clone + serialise + data: URL (main
   thread, bounded by `PumpBudget.mainThreadMs`) -> `Image.decode()` (off main thread) -> landed -> next tick `commitLanded()` ->
-  `paint` event. On Chromium a snapshot that needs no font or image to load is painted where it lands, usually one frame after the change; otherwise about two frames (row `paint-timing`). Keydown to canvas pixel in a single-line field, which is drawn at once: p50 5.3 ms at 120 Hz (`docs/PERFORMANCE-COMPARISON.md`).
+  `paint` event. On Chromium a snapshot that needs no font or image to load is painted where it lands, usually one frame after the change; otherwise about two frames (row `paint-timing`). Keydown to canvas pixel in a single-line field, which is drawn at once: p50 4.6-5.6 ms at 120 Hz in two runs (`docs/PERFORMANCE-COMPARISON.md`).
 - Native fires `paint` at the end of update-the-rendering (after IntersectionObserver steps) and applies canvas draws to the same frame; the
   polyfill fires at the end of its own frame, in the ResizeObserver slot (after app rAF callbacks, layout and earlier observers) and applies draws to that frame: same ordering against app rAF and observers, snapshots lag the DOM by one frame, two or more when an image or font must load first (deviations `paint-timing`, `paint-dom-write-timing`).
 - Resize: on a canvas content-box size change every drawable gets a metadata-only new version at once (new `canvasWidth/Height`, same

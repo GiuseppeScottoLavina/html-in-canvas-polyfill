@@ -7,25 +7,26 @@ Read this before quoting a number from this project. The figures come from [docs
 - The polyfill draws the page twice per update: the browser lays out and paints the live DOM, and the polyfill photographs it (clone, serialise into an SVG `foreignObject` `data:` URL, decode, draw into a retained 2D canvas). That second pass costs main-thread time that grows with the size of the DOM that is re-photographed, and the picture usually arrives one frame after the DOM change, about two when an image or font must load first (`docs/API-CONTRACT.md` sections 4.2 and 8).
 - Two shortcuts hide most of that delay where it matters: typed text in a single-line field is drawn into the retained surface at once (the text overlay), and inner scrolling is composed from cached pages of the scroller (the scroll compositor; in Chrome and Safari, and in Firefox only at a device pixel ratio of 1, for a scroller with square corners and content without rounded corners, dotted lines, transforms, images, SVG or form controls, where a clip edge would change how Firefox paints it; elsewhere Firefox rebuilds the scroller at every step). See [docs/DESIGN-DECISIONS.md](../DESIGN-DECISIONS.md). In Chrome a scroller under the pointer is also kept in step with the frame, so its scrolling reaches the canvas in every frame, not every second one.
 - The design goal is a 120 Hz effect over a source updated at 30 to 60 Hz. A stable 120 Hz source is not promised.
-- Everything was measured on one machine: Apple M1 Max, macOS, 120 Hz display, DPR 2, Chrome 155 for the polyfill and Chrome Canary 157 for native (the scroll update rates: Canary 158), between 2026-10-13 and 2026-10-19, with earlier builds of this polyfill. Nothing was timed on Windows or Linux, and these runs did not cover DPR 1 or the effect.
+- Everything was measured on one machine: Apple M1 Max, macOS, 120 Hz display, DPR 2. The comparison rows: Chrome 156 for the polyfill (0.1.0-preview.15) and Chrome Canary 159 for native, on 2026-10-30/31. The scroll update rates (300 / 2000 rows) and the 60 Hz counter come from earlier measurements: Chrome 155 and Canary 158, between 2026-10-15 and 2026-10-19, with earlier builds of this polyfill. Nothing was timed on Windows or Linux, and these runs did not cover DPR 1 or the effect.
 
 ## 2. Selected numbers (p50 / p95 in ms unless stated)
 
 | scenario | this polyfill | native |
 |---|---|---|
-| keydown to canvas pixel, explainer example, text fits | 5.3 / 9.9 | 5.2 / 10.3 |
-| keydown to canvas pixel, F1 form | 6.3 / 12.1 | 6.9 / 10.5 |
-| click to focus pixel | 13.9 / 15.6 | 5.7 / 8.1 |
-| wheel to pixel, inner list | 27.7 / 35.7 | 36.5 / 42.2 |
+| keydown to canvas pixel, explainer example, text fits | 4.6 / 9.0 | 5.5 / 9.9 |
+| keydown to canvas pixel, F1 form | 5.4 / 10.2 | 5.0 / 9.6 |
+| click to focus pixel | 13.2 / 15.9 | 6.8 / 7.7 |
+| wheel to pixel, inner list | 23.0 / 33.0 | 37.8 / 43.0 |
 | canvas updates per second while an inner list scrolls (wheel stream, 120 Hz; 300 / 2000 rows; native: Canary 158) | 113 / 95 | 116 / 111 |
-| real window resize: blank frames | 0 of 3127 | 0 of 3129 |
-| resize: convergence after the last resize event | 8.2 / 8.9 | 8.1 / 9.9 |
-| author update in a large drawable (F4, 1000 elements): update to pixel | 1.8 / 11.3 | 2.6 / 5.5 |
+| real window resize: blank frames | 0 of 3129 | 0 of 3127 |
+| resize: convergence after the last resize event | 8.1 / 9.1 | 8.2 / 10.2 |
+| author update in a large drawable (F4, 1000 elements): update to pixel | 3.3 / 6.9 | 3.6 / 6.3 |
+| the same: main-thread ms per update (mean of 30) | 24.9 | 6.0 |
 | a 60 Hz counter beside 2,000 elements: paints per second | 59 | not measured |
-| first paint of the F1 form, new renderer (p50) | 97 | 71 |
-| minified core: parse, compile and install (p50) | 8.1 | 0 |
+| first paint of the F1 form, new renderer (p50) | 92 | 66 |
+| minified core: parse, compile and install (p50) | 10.5 | 0 |
 
-Where the polyfill is clearly slower: the main-thread cost of updates in large drawables, first paint, and memory (about 60 MB more renderer RSS on F1). The full table, the method and the analysis of each loss are in [docs/PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md).
+Where the polyfill is clearly slower: the main-thread cost of updates in large drawables, first paint, and memory (about 67 MB more renderer RSS on F1). The full table, the method and the analysis of each loss are in [docs/PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md).
 
 ## 3. Node budget guidance
 
@@ -37,7 +38,7 @@ Defaults (`src/api/options.js`, `docs/API-CONTRACT.md` section 9.2), counted per
 | `nodeBudget.hard` | 3000 | above it the drawable is updated at most 4 times per second (its inner scrolling excepted) and a `node-budget` entry is reported |
 | `nodeBudget.absolute` | 20000 | above it the capture is refused: a hatched placeholder and a `node-budget` entry |
 
-A drawable that updates often (typing, animation, a slider) should stay well under about 1000 elements, and under a few hundred if you want headroom for the rest of your page: one update of a 2000-element drawable costs about 20 ms of main thread (F4 rows of the comparison), most of it the browser's own style and layout of the page and of the snapshot. The snapshot build itself (clone, CSS, serialisation) of that drawable is about 5.4 ms (p50, measured 2026-10-19 after the clone walk stopped re-measuring the drawable per element; 8.5 ms before). A change that keeps its parent's size is repainted from a tile around the children that moved, and the content of a large block below that tile is left out of the snapshot, so a small part that changes often (a counter, a clock) next to a large static part stays cheap. A large static list is better split into several drawables or windowed (render only the visible rows). Counting: `element.getElementsByTagName('*').length + 1`. The F4 fixture (`test/fixtures/f4-large-app`, `nodes=200|500|1000|2000`) is there to measure your own sizes.
+A drawable that updates often (typing, animation, a slider) should stay well under about 1000 elements, and under a few hundred if you want headroom for the rest of your page: one update of a 2000-element drawable costs about 34 ms of main thread (F4 rows of the comparison, 2026-10-30; about 22 ms on 2026-10-15; now mostly in tasks longer than a 120 Hz frame), most of it the browser's own style and layout of the page and of the snapshot. The snapshot build itself (clone, CSS, serialisation) of that drawable is about 5.4 ms (p50, measured 2026-10-19 after the clone walk stopped re-measuring the drawable per element; 8.5 ms before). A change that keeps its parent's size is repainted from a tile around the children that moved, and the content of a large block below that tile is left out of the snapshot, so a small part that changes often (a counter, a clock) next to a large static part stays cheap. A large static list is better split into several drawables or windowed (render only the visible rows). Counting: `element.getElementsByTagName('*').length + 1`. The F4 fixture (`test/fixtures/f4-large-app`, `nodes=200|500|1000|2000`) is there to measure your own sizes.
 
 ## 4. Frame cap semantics (`docs/API-CONTRACT.md` 7.1)
 
