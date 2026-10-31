@@ -14,7 +14,9 @@
 //      runner hides scrollbars, so no corpus case has one: it is pinned by G-platform (test/platform/run.mjs, the `always` and `stable` scrollers of F7, the F6
 //      listboxes), run with classic bars.
 //   5. a stand-in reaches the clone at the live length to the LayoutUnit: lengths on the live grid, rounded up (layoutPx, onLiveGrid of the current walk), and a spacer or a
-//      merged run stays below 1000 px; the truncation pin is written the same way (prune-parity.browser.test.mjs, "to the LayoutUnit").
+//      merged run of 1000 px or more is written as whole thousands of px plus the rest as padding (spacerHeight of the current walk; from 0.1.0-preview.9 to
+//      0.1.0-preview.16 such a box was not a stand-in and a run stopped below 1000 px); the truncation pin is written the same way (prune-parity.browser.test.mjs,
+//      "to the LayoutUnit", "taller than 1000 px").
 /**
  * State-synced clone of one drawable (docs/ARCHITECTURE.md ADR-D.1).
  * Module: snapshot-capture (src/snapshot/capture/*).
@@ -38,7 +40,7 @@ import { cleanAttributes } from './clean-attributes-0.1.0.js';
 import { compositeOver, createSelectionPainter, solidBackdrop } from '/src/snapshot/capture/selection-paint.js';
 import { currentEngine } from '/src/util/engine.js';
 // CHANGED after 0.1.0 (5): the length helpers of the current walk
-import { layoutPx, onLiveGrid } from '/src/snapshot/capture/clone.js';
+import { layoutPx, onLiveGrid, spacerHeight } from '/src/snapshot/capture/clone.js';
 
 /** @typedef {import('../../contracts/types.js').CaptureRequest} CaptureRequest */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
@@ -164,15 +166,16 @@ function placeholderFor(ctx, src, feature, message) {
   return placeholderElement(ctx.doc, { feature, message, path }, size);
 }
 
-/** @param {Ctx} ctx @param {Element} src @param {Rect} r @returns {Element} invisible same-size stand-in; keeps tag, class and inline style so selectors and margins still apply */
-function spacerFor(ctx, src, r) {
+/** @param {Ctx} ctx @param {Element} src @param {Rect} r @param {string} [display] @returns {Element} invisible same-size stand-in; keeps tag, class and inline style so selectors and margins still apply */
+function spacerFor(ctx, src, r, display) {
   const sp = ctx.doc.importNode(src, false);
   cleanAttributes(sp);
   // CHANGED after 0.1.0 (1): the stand-in keeps its id (was: sp.removeAttribute('id'))
   sp.setAttribute('data-hic-sp', '');
-  // CHANGED after 0.1.0 (5): lengths to the LayoutUnit (was: n3)
+  // CHANGED after 0.1.0 (5): lengths to the LayoutUnit, a height of 1000 px or more in two exact parts (was: n3)
   const dpr = ctx.env.window.devicePixelRatio;
-  appendInlineStyle(sp, `width:${layoutPx(onLiveGrid(r.width, dpr))}px!important;height:${layoutPx(onLiveGrid(r.height, dpr))}px!important`);
+  const height = spacerHeight(onLiveGrid(r.height, dpr), display).map(([p, v]) => `${p}:${v}!important`).join(';');
+  appendInlineStyle(sp, `width:${layoutPx(onLiveGrid(r.width, dpr))}px!important;${height}`);
   ctx.tokens.add(sp);
   return sp;
 }
@@ -185,8 +188,7 @@ function spacerInfo(ctx, k, window) {
   if (NO_PRUNE_DISPLAY.test(cs.display) || cs.position === 'absolute' || cs.position === 'fixed' || cs.position === 'sticky' || cs.transform !== 'none') return null;
   const live = ctx.layer.frameRect(k);
   const r = live && ctx.shift ? { x: live.x, y: live.y + ctx.shift, width: live.width, height: live.height } : live;
-  // CHANGED after 0.1.0 (5): a box of 1000 px or more is not a stand-in
-  if (!r || r.width <= 0 || r.height <= 0 || r.height >= 1000) return null;
+  if (!r || r.width <= 0 || r.height <= 0) return null;
   if ((!ctx.keep || intersectRect(r, ctx.keep)) && (!window || intersectRect(r, window))) return null;
   if (ctx.ix.focusWithin.has(k) || k.contains(ctx.drawable)) return null;
   return { r, cs };
@@ -207,10 +209,8 @@ const countsNothing = (cs) => cs.counterIncrement === 'none' || cs.counterIncrem
 function extendRun(run, k, info, dpr) {
   if (!run || run.tag !== k.localName || !MERGEABLE.test(info.cs.display) || !countsNothing(info.cs)) return false;
   if (Math.abs(info.r.x - run.x) > 0.5 || Math.abs(info.r.width - run.width) > 0.5 || info.r.y < run.y) return false;
-  // CHANGED after 0.1.0 (5): a run stays below 1000 px, its length to the LayoutUnit (was: n3, unbounded)
-  const height = onLiveGrid(info.r.y + info.r.height - run.y, dpr);
-  if (height >= 1000) return false;
-  run.el.style.setProperty('height', `${layoutPx(height)}px`, 'important');
+  // CHANGED after 0.1.0 (5): the run's length to the LayoutUnit, in two exact parts from 1000 px on (was: n3)
+  for (const [p, v] of spacerHeight(onLiveGrid(info.r.y + info.r.height - run.y, dpr))) run.el.style.setProperty(p, v, 'important');
   run.el.style.setProperty('margin-bottom', info.cs.marginBottom, 'important');
   return true;
 }
@@ -328,7 +328,7 @@ function cloneChildList(ctx, src, clone, window) {
     if (info) {
       ctx.nodes += 1 + el.getElementsByTagName('*').length;
       if (blockParent && extendRun(run, el, info, ctx.env.window.devicePixelRatio)) continue;
-      const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r));
+      const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r, info.cs.display));
       clone.appendChild(sp);
       run = blockParent && MERGEABLE.test(info.cs.display) && countsNothing(info.cs) ? { el: sp, tag: el.localName, x: info.r.x, y: info.r.y, width: info.r.width } : null;
       continue;

@@ -438,8 +438,12 @@ Tick RUN(now), for each canvas record in reverse tree order:
     expects it only if a spacer lays out at exactly the height of what it stands for. The engine truncates a length to LayoutUnits (1/64 device px in Chromium: `height:20.078px`
     lays out as 20.0625 px at DPR 1) and the CSSOM keeps 6 significant digits of a length (`1024.771px` reads back `1024.77px`), so a live height rounded to the nearest 0.001 px
     was often one LayoutUnit short and moved every row after it: up to a device pixel between a composed frame and the settled tile (headless Chrome, 36.6 px rows: 3,153 pixels
-    in one of 12 composed frames at DPR 2; 5,665 in 3 of 13 at DPR 3). Spacer lengths are put on the live grid, rounded up (to 0.001 px), and a spacer or a merged run stays
-    below 1000 px (`clone.js` `layoutPx`, `onLiveGrid`, `EXACT_MAX`); after it 0 pixels differ in every composed frame. This holds where the clone lays out at the live scale
+    in one of 12 composed frames at DPR 2; 5,665 in 3 of 13 at DPR 3). Spacer lengths are put on the live grid and rounded up (to 0.001 px); a spacer or a merged run of 1000 px
+    or more is written as whole thousands of px of height plus the rest as top padding of a content box without border, each part exact (`clone.js` `layoutPx`, `onLiveGrid`,
+    `spacerHeight`; a spacer of `display: table` is laid out as a block, since a table drops its padding when its borders collapse); after it 0 pixels differ in every composed
+    frame. From 0.1.0-preview.9 to 0.1.0-preview.16 a box of 1000 px or more was not replaced by a spacer at all but cloned with its children: a long table or section out of view
+    (table rows are never spacers) stayed in every tile of a large drawable, and an author update at 2,000 elements built and decoded 3.3 times the markup (F4: 67 KB instead of
+    21 KB, 195 spacers instead of 83), in tasks over the 8.33 ms frame budget. This holds where the clone lays out at the live scale
     (raster scale = device pixel ratio). At a REDUCED raster scale (above `maxDpr`, which is 2.5 on desktops, so headless Chrome at DPR 3; a surface over its pixel budget; a
     canvas grid other than the device pixels) the clone snaps border widths to other whole pixels than the page (a 1 px border is 2 surface px at 2.5, 3 device px live): a row
     of the clone is not the height of its live-measured spacer, and composed frames still differ from the settled tile by several device pixels (the mobile fixture at DPR 3 on

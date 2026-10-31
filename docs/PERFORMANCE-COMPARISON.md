@@ -110,7 +110,35 @@ all tasks (209 vs 227 ms), but 127 ms of it in 13 tasks over 8.33 ms instead of 
 (`DecodedDataDocumentParser::AppendBytes`, 12.7 ms) and laid out (`LocalFrameView::performLayout`, 18.1 ms against 2.6 ms) inside the same long tasks as the
 polyfill's script (34.6 ms). The picture lands sooner (update to pixel p50 2-3 ms at every size, against 2-10 ms), but the work that used to be spread over
 several tasks now blocks the frame it runs in. The bench's per-update figure (idle subtracted) and the breakdown's total disagree on the size of the increase;
-both show the move into long tasks. Which release introduced it was not bisected.
+both show the move into long tasks.
+
+**Bisected (2026-10-31)**, with the bench's large-DOM scenario run on core bundles built at each release and commit (headless for the bisection, three interleaved runs per
+point), and a probe that records every build (its synchronous ms, whether its decode was split into the next task, the markup length and the number of spacers):
+
+- **The main cause, from 0.1.0-preview.9** (`clone.js`: spacers reach the clone at the live height to the LayoutUnit). To keep the rows of composed scroll frames and of
+  settled tiles on the same device pixel, a spacer had to stay below 1000 px, so a box of 1000 px or more outside the area being rebuilt was cloned with all its children instead
+  of being replaced. Table rows are never spacers, so F4's table (and its form) stayed in every tile: the markup of a one-line update went from 14 to 32 KB at 1,000 elements
+  and from 21 to 67 KB at 2,000, the spacers from 83 to 195, the synchronous build at 2,000 from 2.2 to 5.9 ms (p50), and the decode task (SVG parse, layout and raster of
+  the larger document) grew with it. Headless, the commit before it against it: 2,000 elements 0 / 1 / 2 against 25 / 56 / 57 tasks over 8.33 ms per 30 updates. Any page
+  with a tall box outside the rebuilt area is affected, not only F4. Fixed in [Unreleased] (`spacerHeight`: a tall spacer in two exact parts). Headed, 120 Hz, three runs:
+  2,000 elements 56 / 56 / 24 against 4 / 7 / 0 tasks over 8.33 ms, 34.3 / 30.3 / 16.4 against 19.9 / 15.4 / 14.7 ms per update; 1,000 elements 17.7 / 23.0 / 12.8 against
+  14.4 / 15.2 / 14.3 ms per update; the core of 2026-10-15 in the same session: 0 / 0 / 0 and 0 / 1 / 0 tasks over 8.33 ms, 20-22 and 17-19 ms per update. Update to pixel
+  p50 stays at 3.0-3.5 ms.
+- **A second cause, from 0.1.0-preview.2** (`Snapshot: cheaper clone walk with identical output`). A build whose synchronous part takes 3.5 ms or more starts its decode in
+  the next task (`pump.js` `SPLIT_DECODE_MS`); otherwise the SVG is parsed, the tile lands at once, is drawn and the paint fires in the same task as the build. The cheaper
+  walk brought F4's builds below that threshold (at 200 elements, split decodes 8-10 of 30 builds before it, 0-2 after; synchronous build p50 3.0 to 2.3 ms), so the
+  whole update runs in one task of about 10-12 ms. This is what remains after the fix at 200 elements (headed: 21 / 20 / 22 tasks over 8.33 ms, against 10 / 4 / 2 with the
+  core of 2026-10-15, at about the same total cost) and the 10-11 tasks at 1,000. Headless, the release before it against it at 200 elements: 5 / 1 / 3 against
+  25 / 26 tasks over 8.33 ms (its third run was in the fast state described below). Not fixed yet. Measured as an experiment (headless, three runs, the fixed core with
+  and without the threshold set to 0, so that every build that is not urgent decodes in the next task): at 200 elements 22 / 22 / 19 against 8 / 7 / 1 tasks over
+  8.33 ms, at 1,000 elements 19 / 17 / 15 against 0 / 0 / 0, update to pixel p50 not later (8.7-10.1 against 6.3-7.2 ms at 200, 3.6-9.2 against 6.0-8.1 ms at 1,000, 60 Hz
+  headless). The threshold also keeps the keystroke-to-pixel latency of small builds (typing builds that run after the frame are not urgent), so the proposal is to keep it
+  as a floor and also split a build whose predicted task would exceed the frame budget: the synchronous build plus the measured cost of what lands at once after it (the
+  decode and draw of the drawable's previous tiles that landed at once). Before it is adopted it needs the typing and latency checks of G-explainer and G-f1-form, the
+  bench's typing scenario, and headed F4 runs.
+- Headless runs of the same bundle at 1,000 elements switch between two states whose main-thread time differs by up to 2x for the same work (same number of builds and
+  decodes, same markup, every category of trace event scaled alike): the renderer's CPU speed, not a code path of the polyfill. Only headed runs are used for task counts
+  above.
 
 Native (Canary 159 against 157): cold first paint of the explainer 39.2 to 31.6 ms, click to focus pixel p50 5.7 to 6.8 ms; the other rows are within noise.
 The competitor (same package, Chrome 156): cold first paint 46.0 to 38.1 ms (explainer) and 68.6 to 59.9 ms (F1), 48.7 to 76.1 RunTasks/s with a focused input,
