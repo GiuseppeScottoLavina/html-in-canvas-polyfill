@@ -135,6 +135,20 @@ What is tested:
 
 CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, part of the mutation suite, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
+## How was it developed?
+
+With an AI coding assistant. The code, tests and documentation were written with Claude (Anthropic's model, through Claude Code), directed by the maintainer, who set the goals, made the design decisions, reviewed the changes and ran the device tests. Every commit written this way says so in its history (`Co-Authored-By: Claude`).
+
+We say this up front because it should change what you trust, not because it settles anything: generated code is not evidence of correctness. What we ask you to look at instead is the verification, which does not depend on who or what wrote a line:
+
+- every change goes through review, the unit tests and the browser gates, and CI on Linux, Windows and macOS before it is merged;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and the mutation suite seeds known bugs that the gates must catch, so a check that passes vacuously is itself caught;
+- fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
+- the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed rather than hidden;
+- the behaviour was checked on physical devices, not only in simulators.
+
+Several defects were found exactly this way, by tests and by people using it on real devices, and fixed with a regression test each; the CHANGELOG lists them. If you find one, the issue tracker is the place: a report with a page that reproduces it is the most useful contribution.
+
 ## How can I help or report a bug?
 
 - **Run the field test** on a machine or phone we do not have. It is one page of the demo, takes about six minutes, sends nothing anywhere, and ends with one report file to attach to an issue ([FIELD-TEST.md](FIELD-TEST.md)). Windows PCs and physical iPhones on iOS 26 or later are the most useful.
