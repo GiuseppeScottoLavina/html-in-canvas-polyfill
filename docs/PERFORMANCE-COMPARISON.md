@@ -129,13 +129,29 @@ point), and a probe that records every build (its synchronous ms, whether its de
   walk brought F4's builds below that threshold (at 200 elements, split decodes 8-10 of 30 builds before it, 0-2 after; synchronous build p50 3.0 to 2.3 ms), so the
   whole update runs in one task of about 10-12 ms. This is what remains after the fix at 200 elements (headed: 21 / 20 / 22 tasks over 8.33 ms, against 10 / 4 / 2 with the
   core of 2026-10-15, at about the same total cost) and the 10-11 tasks at 1,000. Headless, the release before it against it at 200 elements: 5 / 1 / 3 against
-  25 / 26 tasks over 8.33 ms (its third run was in the fast state described below). Not fixed yet. Measured as an experiment (headless, three runs, the fixed core with
+  25 / 26 tasks over 8.33 ms (its third run was in the fast state described below). Measured as an experiment (headless, three runs, the fixed core with
   and without the threshold set to 0, so that every build that is not urgent decodes in the next task): at 200 elements 22 / 22 / 19 against 8 / 7 / 1 tasks over
-  8.33 ms, at 1,000 elements 19 / 17 / 15 against 0 / 0 / 0, update to pixel p50 not later (8.7-10.1 against 6.3-7.2 ms at 200, 3.6-9.2 against 6.0-8.1 ms at 1,000, 60 Hz
-  headless). The threshold also keeps the keystroke-to-pixel latency of small builds (typing builds that run after the frame are not urgent), so the proposal is to keep it
-  as a floor and also split a build whose predicted task would exceed the frame budget: the synchronous build plus the measured cost of what lands at once after it (the
-  decode and draw of the drawable's previous tiles that landed at once). Before it is adopted it needs the typing and latency checks of G-explainer and G-f1-form, the
-  bench's typing scenario, and headed F4 runs.
+  8.33 ms, at 1,000 elements 19 / 17 / 15 against 0 / 0 / 0, update to pixel not later. Fixed in [Unreleased], keeping the threshold as a floor: a build also decodes
+  in the next task when its task is predicted to reach one 120 Hz frame, the time since the pump started plus what lands at once after it (per drawable, the measured
+  cost per markup character of its tiles that landed at once, from the end of the pump to the end of the early commit and paint, mean plus two mean deviations, times
+  the new tile's markup length; `ARCHITECTURE.md`, frame loop). Measuring only the decode and the commit draw was not enough: it predicted 6-7 ms for tasks that took
+  8-9 ms (the raster of the SVG is deferred to the paint that follows, and the paint handler runs in the same task), and left the long tasks in place. Headed, 120 Hz,
+  three interleaved runs, the bench's large-DOM scenario, before / after (the first run before was in the fast state described below):
+
+  | elements | tasks over 8.33 ms per 30 updates | ms per update | update to pixel p50 | update to pixel p95 |
+  | --- | --- | --- | --- | --- |
+  | 200 | 0 / 19 / 22 against 6 / 10 / 9 | 7.7 / 18.3 / 17.6 against 15.2 / 18.2 / 18.6 | 3.2 / 3.9 / 2.8 against 2.0 / 2.4 / 1.8 | 7.2 / 6.8 / 6.6 against 6.6 / 6.8 / 6.9 |
+  | 500 | 0 / 2 / 7 against 2 / 0 / 2 | 5.6 / 14.5 / 15.1 against 14.7 / 13.5 / 15.0 | 4.2 / 2.7 / 3.6 against 4.2 / 1.6 / 2.8 | 7.2 / 6.3 / 6.4 against 7.1 / 6.8 / 6.5 |
+  | 1,000 | 0 / 16 / 13 against 1 / 1 / 0 | 6.6 / 16.3 / 16.1 against 15.7 / 16.4 / 16.1 | 4.1 / 2.2 / 2.6 against 2.6 / 2.2 / 2.9 | 7.1 / 6.1 / 6.1 against 6.2 / 6.6 / 6.6 |
+  | 2,000 | 1 / 1 / 2 against 0 / 0 / 0 | 13.5 / 16.8 / 17.7 against 17.0 / 17.1 / 19.2 | 3.1 / 3.1 / 2.5 against 2.8 / 2.9 / 2.6 | 6.8 / 6.8 / 6.5 against 6.7 / 7.1 / 6.6 |
+
+  The final pixels equal the plain DOM in every run. What remains at 200 elements is the landing itself: a whole tile of the 200-element page costs about 8.4 ms to load,
+  draw and paint in the task where it lands, which no split of the build can shorten. Small updates are unchanged: a key, caret or click tile predicts far below the
+  frame (in F1, of 48 keys only the 4 snapshots taken when the typing paused were split; the keys themselves are drawn by the text overlay, and focus clicks are urgent
+  builds, which never wait). Headed, three interleaved runs of the bench's typing and click scenarios, before / after, key to pixel p50: explainer 5.3 / 4.9 / 6.2 against
+  4.8 / 5.4 / 6.4 ms (120 ms between keys) and 5.0 / 4.9 / 4.9 against 4.8 / 4.2 / 5.6 ms (30 ms), F1 7.3 / 5.1 / 7.0 against 6.2 / 6.0 / 5.2 ms (120 ms) and
+  5.8 / 5.5 / 5.4 against 6.4 / 5.9 / 6.2 ms (30 ms); every key drawn, the final field equal to the plain DOM; click to focus pixel p50 12.7 / 13.5 / 13.4 against
+  13.6 / 13.3 / 14.4 ms, click to blur pixel p50 14.7 / 12.4 / 13.2 against 13.3 / 13.4 / 13.1 ms.
 - Headless runs of the same bundle at 1,000 elements switch between two states whose main-thread time differs by up to 2x for the same work (same number of builds and
   decodes, same markup, every category of trace event scaled alike): the renderer's CPU speed, not a code path of the polyfill. Only headed runs are used for task counts
   above.

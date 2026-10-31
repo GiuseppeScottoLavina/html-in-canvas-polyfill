@@ -1,5 +1,5 @@
 import { test, assert, sleep } from '/test/unit/lib/t.js';
-import { pixel, RGBA, until, makeRig } from './helpers.mjs';
+import { pixel, RGBA, until, makeRig, svgUrl } from './helpers.mjs';
 
 const A = { x: 10, y: 10, width: 20, height: 20 };
 const B = { x: 60, y: 10, width: 20, height: 20 };
@@ -466,6 +466,77 @@ test('a build whose synchronous part is long starts its decode in the next task 
   rig.store.pump(performance.now(), { ...rig.budget, urgent: true });
   assert.equal(rig.decodes, 3, 'an urgent build decodes at once even when long');
   assert.equal(tasks.length, 0);
+});
+
+test('a short build whose task is predicted to reach a frame (what lands with it: cost per markup char x its markup) decodes in the next task; a small tile of the same drawable at once', async (t) => {
+  const tasks = [];
+  const rig = await makeRig(t, { nextTask: (fn) => tasks.push(fn), virtualBusy: true });
+  const a = rig.add('a', 100, 60);
+  const big = svgUrl(108, 68, `<rect width="108" height="68" fill="red"/><!--${'x'.repeat(20000)}-->`);
+  rig.decodeBusyMs = 12;
+  const cycle = async () => { if (tasks.length) tasks.shift()(); await until(() => rig.store.hasLanded(), 3000, 'landed'); rig.store.commitLanded(); };
+  // nothing measured yet: the 3.5 ms rule alone, so this 1 ms build decodes at once and teaches the drawable what its tiles cost where they land
+  rig.script.push({ busyMs: 1, url: big });
+  rig.store.markDamage(a, null, 'mutation');
+  rig.pump();
+  assert.equal(rig.decodes, 1, 'unmeasured: decoded at once');
+  await cycle();
+  // the same tile again: 1 ms + ~12 ms predicted is over one 120 Hz frame
+  rig.script.push({ busyMs: 1, url: big });
+  rig.store.markDamage(a, null, 'mutation');
+  rig.pump();
+  assert.equal(rig.decodes, 1, 'a 1 ms build of a tile predicted to land in ~12 ms waits for the next task');
+  assert.equal(tasks.length, 1);
+  assert.equal(rig.store.isSettled(a), false, 'and counts as in flight');
+  await cycle();
+  assert.equal(rig.decodes, 2);
+  // a small tile of the same drawable (a key, a caret): ~200 chars predict ~0.1 ms
+  rig.script.push({ busyMs: 1 });
+  rig.store.markDamage(a, null, 'input');
+  rig.pump();
+  assert.equal(rig.decodes, 3, 'a small tile decodes at once');
+  assert.equal(tasks.length, 0);
+  await cycle();
+  // the 3.5 ms floor still holds for a small tile, and an urgent build never waits
+  rig.script.push({ busyMs: 5 });
+  rig.store.markDamage(a, null, 'input');
+  rig.pump();
+  assert.equal(tasks.length, 1, 'a 5 ms build waits whatever it predicts');
+  await cycle();
+  rig.script.push({ busyMs: 1, url: big });
+  rig.store.markDamage(a, null, 'focus');
+  rig.store.pump(performance.now(), { ...rig.budget, urgent: true });
+  assert.equal(rig.decodes, 5, 'an urgent build decodes at once even when its tile is predicted long');
+  assert.equal(tasks.length, 0);
+});
+
+test('the prediction counts the tiles the same pump already decodes at once: the second of two drawables predicted at 5 ms each waits for the next task', async (t) => {
+  const tasks = [];
+  const rig = await makeRig(t, { nextTask: (fn) => tasks.push(fn), virtualBusy: true });
+  const big = svgUrl(108, 68, `<rect width="108" height="68" fill="red"/><!--${'x'.repeat(20000)}-->`);
+  rig.decodeBusyMs = 5;
+  // each drawable's first tile alone (no prediction yet: it decodes at once) teaches it ~5 ms
+  const els = [];
+  for (const id of ['a', 'b']) {
+    els.push(rig.add(id, 100, 60));
+    rig.script.push({ busyMs: 1, url: big });
+    await rig.build(els[els.length - 1], null, 'mutation');
+  }
+  const [a, b] = els;
+  assert.equal(rig.decodes, 2);
+  assert.equal(tasks.length, 0);
+  // each alone: ~1 ms + ~5 ms; together in one task: ~2 ms + 5 + 5
+  rig.script.push({ busyMs: 1, url: big }, { busyMs: 1, url: big });
+  rig.store.markDamage(a, null, 'mutation');
+  rig.store.markDamage(b, null, 'mutation');
+  rig.pump();
+  assert.equal(rig.decodes, 3, 'the first decodes at once');
+  assert.equal(tasks.length, 1, 'the second waits: the first one lands in this task too');
+  tasks.shift()();
+  assert.equal(rig.decodes, 4);
+  await sleep(50);
+  rig.store.commitLanded();
+  assert.ok(rig.store.isSettled(a) && rig.store.isSettled(b), 'both landed and committed');
 });
 
 test('the deferred decode start runs before the tasks the page queued earlier (a user-blocking task), so whether a build took 3.5 ms does not reorder its paint', async (t) => {

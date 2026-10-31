@@ -130,7 +130,10 @@ if (!docsOnly) {
   // error and the markup around it (snapshot/store/decode.js xmlChecked): WebKit reports a malformed SVG and a failed load alike ('Loading error.', a field report on an iPad)
   // 16480 -> 16490 (2026-10-31, measured 16,482; 16,476 before this step): a spacer of 1000 px or more is written in two exact parts (+6: snapshot/capture/clone.js
   // spacerHeight) instead of the box being cloned with all its children, which kept a long table out of view in every tile of a large drawable
-  if (total > 16490) problems.push(`G-size: core is ${total} code lines (> 16490)`);
+  // 16490 -> 16500 (2026-10-31, measured 16,496; 16,482 before this step): a build that is cheap but whose tile would land in the same task over one 120 Hz frame starts
+  // its decode in the next task (+14: snapshot/store/pump.js LONG_TASK_MS and the per-pump task estimate, store.js the per-drawable landing cost measured where a tile
+  // lands at once); F4 headed, 1,000 elements: 16 / 13 tasks over 8.33 ms per 30 updates before, 1 / 1 / 0 after
+  if (total > 16500) problems.push(`G-size: core is ${total} code lines (> 16500)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

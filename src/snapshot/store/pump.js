@@ -44,6 +44,15 @@ const DEGRADED_INTERVAL_MS = 250;
  * Not for urgent builds (focus / active in the input task, resize inside the frame): a task posted from either runs only after the next frame.
  */
 const SPLIT_DECODE_MS = 3.5;
+/**
+ * A shorter build also starts its decode in the next task when the task it runs in is predicted to reach one frame at 120 Hz: the time since the pump started, plus
+ * what lands at once after it, for the decodes this pump already started at once and for this one (Entry.landRate + 2 x Entry.landDev, per markup char, x its markup
+ * length: the SVG document, the commit draw, which lays out and rasters it, and the paint that follows at once). A cheap build of a large drawable otherwise carried the
+ * whole tile in one task over the frame (measured: 20 of 30 updates of a 200-element drawable, 10-11 of 1,000). A small tile (a key, a caret, a click) predicts far below it.
+ */
+const LONG_TASK_MS = 1000 / 120;
+/** Mean deviations added to the mean landing cost per char: tasks vary around the mean, and a prediction at the mean would leave half the long ones in place. */
+const LAND_DEVS = 2;
 
 /**
  * @typedef {Object} Geometry  what one surface covers: border box + ink at a raster scale
@@ -67,6 +76,8 @@ const SPLIT_DECODE_MS = 3.5;
  * @property {SnapshotVersion|null} version
  * @property {number} decoding     builds started and not yet landed / failed
  * @property {number|null} costEma ms per tile (sync build + decode wall + commit draw)
+ * @property {number|null} landRate  ms per markup char that the tiles which landed at once cost the task they landed in (load, early commit and paint; EMA); null = none yet (the split rule is SPLIT_DECODE_MS alone)
+ * @property {number} landDev  mean deviation of those samples from landRate (EMA)
  * @property {number} lastNodes
  * @property {number} lastTakeAt
  * @property {number|null} firstTakeAt
@@ -366,6 +377,7 @@ export function runPump(env, deps, now, budget) {
   /** @type {PumpResult} */
   const out = { started: 0, spentMs: 0, moreWork: false, nextDueAt: null };
   budgetUrgent = !!budget.urgent;
+  pumpStart = env.now(); pumpLand = 0;
   deps.state.bucket.refill(now, budget.mainThreadShare);
   /** @type {Map<CanvasRecord, Entry[]>} */
   const byRecord = new Map();
@@ -478,16 +490,17 @@ function startBuild(env, deps, entry, now, batch) {
   job.syncMs = env.now() - t0;
   // scroll damage decodes at once: while the browser animates a wheel scroll it runs rendering updates back to back and a posted task waits for the animation to end
   // (measured: the first wheel tick of a stream drawn 150-180 ms late)
-  if (deps.nextTask && !budgetUrgent && job.syncMs >= SPLIT_DECODE_MS && !job.causes.includes('scroll')) {
+  const landMs = entry.landRate === null ? 0 : (entry.landRate + LAND_DEVS * entry.landDev) * (result.url?.length ?? 0);
+  if (deps.nextTask && !budgetUrgent && (job.syncMs >= SPLIT_DECODE_MS || env.now() - pumpStart + pumpLand + landMs >= LONG_TASK_MS) && !job.causes.includes('scroll')) {
     const later = () => { if (job.incarnation === entry.incarnation) startDecode(env, deps, job, result); else deps.host.fail(job, new Error('drawable dropped before its decode started'), 'decode'); };
     entry.decoding++;
     deps.nextTask(() => { entry.decoding--; later(); });
-  } else startDecode(env, deps, job, result);
+  } else { pumpLand += landMs; startDecode(env, deps, job, result); }
   return job.syncMs;
 }
 
-/** the current pump is an urgent one (set by runPump from PumpBudget.urgent) */
-let budgetUrgent = false;
+/** the current pump: an urgent one (PumpBudget.urgent), when it started, the predicted landing of the decodes it started at once (set by runPump) */
+let budgetUrgent = false, pumpStart = 0, pumpLand = 0;
 
 /** @param {HicEnv} env @param {PumpDeps} deps @param {Job} job @param {CaptureResult} result */
 function startDecode(env, deps, job, result) {
