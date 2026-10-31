@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `docs/guides/FAQ.md`: short answers to the questions people ask first (what the polyfill is, why the core is 342 KB, why the picture lags the DOM, accessibility, native support, verified browsers and devices, WPT results, performance, privacy, frameworks, maturity, how to help), each linked to the evidence, with what was not verified. It includes a breakdown of the minified core by function, regrouped from `node scripts/build.mjs --analyze`. Linked from the README.
+
 ### Changed
 
 - The performance comparison (`docs/PERFORMANCE-COMPARISON.md`) is remeasured: every row, all three subjects twice, on 2026-10-30/31 with this release (Chrome 156.0.8078.76; native on Canary 159.0.8131.0, previously 157.0.8101.0; the other package again, unchanged at 1.0.1). Better than the 2026-10-15/19 table: wheel to canvas pixel in an inner list (p50 27.7 to 23.0 ms) and the update to pixel of an author change in a large drawable (p50 2.2-3.3 ms at 200 to 2,000 elements, was 1.8-10.0). Worse: the main-thread time of that update at 1,000 and 2,000 elements (19.2 to 24.9 ms and 22.1 to 34.2 ms, now mostly in tasks over 8.33 ms) and startup with the larger core (parse, compile and install 8.1 to 10.5 ms). Typing, click, resize, memory and idle are unchanged within noise. The README, `docs/guides/PERFORMANCE.md`, `docs/DESIGN-DECISIONS.md` and `docs/API-CONTRACT.md` quote the new figures.

@@ -82,13 +82,15 @@ Put the script tags and the example in one HTML file and open it (from disk work
 | Edge, Opera, Brave and other desktop Chromium 130+ | expected to work, not verified |
 | Firefox 155+ desktop | polyfill runs; measured on 155 and 157 (macOS) |
 | Safari 27+ desktop | polyfill runs; measured on 27.0.1 (macOS) |
-| Safari on iOS / iPadOS 26+, other iOS browsers (WebKit) | polyfill runs with phone budgets and the iOS control look; verified on the iOS Simulator (iOS 26.4, iPhone and iPad), not on a device |
+| Safari on iOS / iPadOS 26+, other iOS browsers (WebKit) | polyfill runs with phone budgets and the iOS control look; verified on a physical iPad Pro 11-inch (iPadOS 27.2, 2026-10-30) and on the iOS Simulator (iOS 26.4, iPhone and iPad); not on a physical iPhone on iOS 26 or later |
 | Chrome for Android 130+ | polyfill runs with phone budgets; verified on two physical phones, a Pixel 7 Pro (Android 17) and a Huawei Mate 10 Pro (Android 10), both Chrome 156, 2026-10-30, and on the Android Emulator with Chromium 158 (which ships HTML-in-Canvas natively: the polyfill steps aside there; its own path was forced for the test) |
 | older Firefox and Safari, Chrome for Android < 130, iOS < 26, Android WebView, in-app iOS web views, Firefox for Android | refused with one console warning |
 
-The headed browser gates run on macOS, at a device pixel ratio of 2 (some also at 1 or 1.25), and at 1, 1.25 and 1.5 against Chrome's native implementation. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check, and the platform probe: fonts, form controls, scrollbars, DPR 1.25 / 1.5 and the text selection against native pixels). Nothing was measured on a physical Windows machine or on a physical phone ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
+The headed browser gates run on macOS, at a device pixel ratio of 2 (some also at 1 or 1.25), and at 1, 1.25 and 1.5 against Chrome's native implementation. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check, and the platform probe: fonts, form controls, scrollbars, DPR 1.25 / 1.5 and the text selection against native pixels). Nothing was measured on a physical Windows machine; physical phones and an iPad ran the mobile gate ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)). Row-by-row evidence: [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md).
 
 ## Known limitations
+
+Short answers to the common questions (size, lag behind the DOM, accessibility, native support, privacy, what is verified): [docs/guides/FAQ.md](docs/guides/FAQ.md).
 
 - **The picture lags the DOM by one to two frames.** Each update is cloned, serialised into an SVG image and decoded by the browser before it can be drawn. On Chromium a change that needs no font or image to load is painted one frame later, others about two. Typing in single-line fields and inner scrolling have shortcuts that bring them close to native; other updates do not. Firefox uses the scrolling shortcut only at a device pixel ratio of 1, for square scrollers without rounded corners, form controls or images inside; elsewhere it rebuilds the scroller at every step. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections see the layer.
@@ -174,7 +176,7 @@ The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.
 
 ## Documentation
 
-- Guides: [getting started](docs/guides/GETTING-STARTED.md), [frameworks](docs/guides/FRAMEWORKS.md), [effect plugins](docs/guides/EFFECTS-PLUGINS.md), [performance](docs/guides/PERFORMANCE.md), [phones and tablets](docs/guides/MOBILE.md), [troubleshooting](docs/guides/TROUBLESHOOTING.md), [field test](docs/guides/FIELD-TEST.md)
+- Guides: [FAQ](docs/guides/FAQ.md), [getting started](docs/guides/GETTING-STARTED.md), [frameworks](docs/guides/FRAMEWORKS.md), [effect plugins](docs/guides/EFFECTS-PLUGINS.md), [performance](docs/guides/PERFORMANCE.md), [phones and tablets](docs/guides/MOBILE.md), [troubleshooting](docs/guides/TROUBLESHOOTING.md), [field test](docs/guides/FIELD-TEST.md)
 - Reference: [API contract](docs/API-CONTRACT.md), [support matrix](docs/SUPPORT-MATRIX.md), [bundles](docs/BUNDLES.md), [conformance](docs/CONFORMANCE.md)
 - Design: [design decisions](docs/DESIGN-DECISIONS.md), [architecture](docs/ARCHITECTURE.md), [test plan](docs/TEST-PLAN.md)
 - Comparisons: [with html-in-canvas-polyfill](docs/COMPARISON.md), [performance](docs/PERFORMANCE-COMPARISON.md)
