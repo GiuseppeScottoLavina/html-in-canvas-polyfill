@@ -128,7 +128,9 @@ if (!docsOnly) {
   // from live/measure.js, imported by the eight places that divided a rect by the rounded offsetWidth / offsetHeight; the listbox reveal's fractional scrollport)
   // 16470 -> 16480 (2026-10-30, measured 16,476; 16,465 before this step): a rejected tile decode says whether its SVG was well-formed XML, with the parser's first
   // error and the markup around it (snapshot/store/decode.js xmlChecked): WebKit reports a malformed SVG and a failed load alike ('Loading error.', a field report on an iPad)
-  if (total > 16480) problems.push(`G-size: core is ${total} code lines (> 16480)`);
+  // 16480 -> 16490 (2026-10-31, measured 16,482; 16,476 before this step): a spacer of 1000 px or more is written in two exact parts (+6: snapshot/capture/clone.js
+  // spacerHeight) instead of the box being cloned with all its children, which kept a long table out of view in every tile of a large drawable
+  if (total > 16490) problems.push(`G-size: core is ${total} code lines (> 16490)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

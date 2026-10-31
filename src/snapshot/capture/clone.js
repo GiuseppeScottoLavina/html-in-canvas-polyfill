@@ -67,8 +67,8 @@ const ROOT_NEUTRAL = 'display:block!important;position:relative!important;box-si
 const n3 = (v) => String(+v.toFixed(3));
 
 /**
- * A spacer (or a merged run of them) stays below this many css px, so that its height reaches the clone to 0.001 px: the CSSOM serialises a length with 6 significant
- * digits (Chromium 155: `height:1024.771px` reads back `1024.77px`), and 0.01 px is more than a LayoutUnit at DPR 2 (1/128 px) and 3 (1/192 px).
+ * A length below this many css px reaches the clone to 0.001 px: the CSSOM serialises a length with 6 significant digits (Chromium 155: `height:1024.771px` reads back
+ * `1024.77px`), and 0.01 px is more than a LayoutUnit at DPR 2 (1/128 px) and 3 (1/192 px). A taller spacer is written in two parts that are each exact (spacerHeight).
  */
 const EXACT_MAX = 1000;
 
@@ -97,6 +97,25 @@ export function layoutPx(v) {
   const d = v > 0 ? Math.max(0, Math.min(3, 5 - Math.floor(Math.log10(v)))) : 3;
   const k = 10 ** d;
   return String(Math.ceil(v * k - 1e-6) / k);
+}
+
+/**
+ * PURE. The declarations that give a spacer the border-box height `h` (css px, on the live grid) to the LayoutUnit, as [property, value] pairs (each `!important`).
+ * Below EXACT_MAX: `height`. From EXACT_MAX on, a single length would lose its last digits in the CSSOM, so the height is split into whole thousands of px (exact at any
+ * magnitude) and the rest below EXACT_MAX, written as padding of a content box without border (a spacer paints nothing). A spacer of `display: table` is laid out as a
+ * block: a table sizes its height as a border box and drops its padding when its borders collapse. A spacer is a size-, layout- and paint-contained, hidden box with a
+ * fixed width and height, so a block box takes the place of the table's box. From 0.1.0-preview.9 to 0.1.0-preview.16 a taller box was not replaced by a spacer: it was cloned
+ * with all its children, so a long table or section out of view stayed in every tile of a large drawable (F4 at 2,000 elements: every row of its table and form).
+ * @param {number} h css px @param {string} [display]  computed display of the element the spacer stands for
+ * @returns {Array<[string, string]>}
+ */
+export function spacerHeight(h, display = 'block') {
+  if (!(h >= EXACT_MAX)) return [['height', `${layoutPx(h)}px`]];
+  const whole = Math.floor(h / EXACT_MAX) * EXACT_MAX;
+  /** @type {Array<[string, string]>} */
+  const out = display === 'table' ? [['display', 'block']] : [];
+  out.push(['box-sizing', 'content-box'], ['border', '0'], ['padding', `${layoutPx(h - whole)}px 0px 0px`], ['height', `${whole}px`]);
+  return out;
 }
 
 /**
@@ -182,15 +201,17 @@ function placeholderFor(ctx, src, feature, message) {
 }
 
 /**
- * @param {Ctx} ctx @param {Element} src @param {Rect} r @returns {Element} invisible same-size stand-in; keeps tag, id, class and inline style so selectors, margins and
+ * @param {Ctx} ctx @param {Element} src @param {Rect} r @param {string} [display]  computed display of `src` (spacerHeight)
+ * @returns {Element} invisible same-size stand-in; keeps tag, id, class and inline style so selectors, margins and
  * grid placement still apply (without its id, a `#bar{grid-column:1/-1}` spacer took one cell and every later grid item moved: a list's column showed the side panel)
  */
-function spacerFor(ctx, src, r) {
+function spacerFor(ctx, src, r, display) {
   const sp = ctx.doc.importNode(src, false);
   cleanAttributes(sp);
   sp.setAttribute('data-hic-sp', '');
   const dpr = ctx.env.window.devicePixelRatio;
-  appendInlineStyle(sp, `width:${layoutPx(onLiveGrid(r.width, dpr))}px!important;height:${layoutPx(onLiveGrid(r.height, dpr))}px!important`);
+  const height = spacerHeight(onLiveGrid(r.height, dpr), display).map(([p, v]) => `${p}:${v}!important`).join(';');
+  appendInlineStyle(sp, `width:${layoutPx(onLiveGrid(r.width, dpr))}px!important;${height}`);
   ctx.tokens.add(sp);
   return sp;
 }
@@ -206,8 +227,7 @@ function spacerInfo(ctx, k, window, cs) {
   // a rect without area is never a spacer: the laid-out test is left to its size
   const live = ctx.frame(k, true);
   const r = live && ctx.shift ? { x: live.x, y: live.y + ctx.shift, width: live.width, height: live.height } : live;
-  // a box of EXACT_MAX px or more is cloned (its children may still be spacers): its spacer's height would not reach the clone to the LayoutUnit
-  if (!r || r.width <= 0 || r.height <= 0 || r.height >= EXACT_MAX) return null;
+  if (!r || r.width <= 0 || r.height <= 0) return null;
   if ((!ctx.keep || intersectRect(r, ctx.keep)) && (!window || intersectRect(r, window))) return null;
   if (ctx.ix.focusWithin.has(k) || k.contains(ctx.drawable)) return null;
   return { r, cs };
@@ -226,14 +246,12 @@ const countsNothing = (cs) => cs.counterIncrement === 'none' || cs.counterIncrem
 
 /**
  * @param {SpacerRun|null} run @param {Element} k @param {{r: Rect, cs: CSSStyleDeclaration}} info @param {number} dpr
- * @returns {boolean} true when `k` was folded into the run (a run stays below EXACT_MAX px: a longer list is a few runs)
+ * @returns {boolean} true when `k` was folded into the run
  */
 function extendRun(run, k, info, dpr) {
   if (!run || run.tag !== k.localName || !MERGEABLE.test(info.cs.display) || !countsNothing(info.cs)) return false;
   if (Math.abs(info.r.x - run.x) > 0.5 || Math.abs(info.r.width - run.width) > 0.5 || info.r.y < run.y) return false;
-  const height = onLiveGrid(info.r.y + info.r.height - run.y, dpr);
-  if (height >= EXACT_MAX) return false;
-  run.el.style.setProperty('height', `${layoutPx(height)}px`, 'important');
+  for (const [p, v] of spacerHeight(onLiveGrid(info.r.y + info.r.height - run.y, dpr))) run.el.style.setProperty(p, v, 'important');
   run.el.style.setProperty('margin-bottom', info.cs.marginBottom, 'important');
   return true;
 }
@@ -362,7 +380,7 @@ function cloneChildList(ctx, src, clone, window, srcStyle) {
     if (info) {
       ctx.nodes += 1 + el.getElementsByTagName('*').length;
       if (blockParent && extendRun(run, el, info, ctx.env.window.devicePixelRatio)) continue;
-      const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r));
+      const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r, info.cs.display));
       clone.appendChild(sp);
       run = blockParent && MERGEABLE.test(info.cs.display) && countsNothing(info.cs) ? { el: sp, tag: el.localName, x: info.r.x, y: info.r.y, width: info.r.width } : null;
       continue;

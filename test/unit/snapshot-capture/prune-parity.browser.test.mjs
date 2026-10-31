@@ -66,8 +66,16 @@ test('spacers keep the live height to the LayoutUnit: rows after 100 pruned rows
   assert.ok(d <= 0.002, `the pruned tile shows the rows where the full tile does (${(d * 100).toFixed(2)} % differ)`);
 });
 
-test('a merged spacer run reaches the clone to the LayoutUnit: runs stay below 1000 px (the CSSOM keeps 6 significant digits of a length)', async () => {
-  // no sibling selector: the rows above the crop merge. One 2108 px run was written 2107.81px (2107.8125 rounded by the CSSOM), a LayoutUnit short
+/** LayoutUnits (1/64 px at scale 1) of a spacer's border box as the clone writes it: its height, plus the top padding of a tall spacer (clone.js spacerHeight) */
+const spacerUnits = (c) => {
+  const st = c.getAttribute('style') ?? '';
+  const h = Number(/(?:^|;)\s*height:\s*([\d.e+]+)px/.exec(st)?.[1] ?? NaN);
+  const pad = Number(/(?:^|;)\s*padding(?:-top)?:\s*([\d.]+)px/.exec(st)?.[1] ?? 0);
+  return Math.trunc(h * 64) + Math.trunc(pad * 64);
+};
+
+test('a merged spacer run reaches the clone to the LayoutUnit, also when it is longer than 1000 px (the CSSOM keeps 6 significant digits of a length)', async () => {
+  // no sibling selector: the rows above the crop merge. One 2108 px run written as a single height was 2107.81px (2107.8125 rounded by the CSSOM), a LayoutUnit short
   const m = mount(`<div class="l" drawable>${rows(140)}</div>`, { css: fracRows, height: 3100 });
   const el = m.layerEl.firstElementChild;
   const rect = { x: 0, y: 2200, width: 200, height: 160 };
@@ -75,13 +83,56 @@ test('a merged spacer run reaches the clone to the LayoutUnit: runs stay below 1
   const svg = new DOMParser().parseFromString(decodeURIComponent(url.slice(url.indexOf(',') + 1)), 'image/svg+xml');
   const list = svg.querySelector('.l');
   const lead = [];
-  for (const c of list.children) { if (!c.hasAttribute('data-hic-sp')) break; lead.push(Number(/(?:^|;)\s*height:\s*([\d.]+)px/.exec(c.getAttribute('style') ?? '')?.[1])); }
+  for (const c of list.children) { if (!c.hasAttribute('data-hic-sp')) break; lead.push(c); }
   const first = list.children[lead.length];
-  const live = el.children[[...list.children].slice(0, lead.length).length && Number(first.textContent.replace(/\D+/g, ''))];
+  const live = el.children[Number(first.textContent.replace(/\D+/g, ''))];
   const want = Math.round((live.getBoundingClientRect().top - el.getBoundingClientRect().top) * 64);
-  const units = lead.reduce((a, h) => a + Math.trunc(h * 64), 0);
-  assert.ok(lead.length >= 3 && lead.every((h) => h > 0 && h < 1000), `runs below 1000 px: ${lead.join(', ')}`);
+  const units = lead.reduce((a, c) => a + spacerUnits(c), 0);
+  assert.ok(lead.length >= 1 && lead.some((c) => spacerUnits(c) >= 1000 * 64), `one run longer than 1000 px: ${lead.map((c) => spacerUnits(c) / 64).join(', ')}`);
   assert.equal(units, want, 'the spacers before the first kept row lay out at its live offset, in LayoutUnits');
+});
+
+test('a box taller than 1000 px out of the crop is one spacer at the live height to the LayoutUnit: a collapsed-border table, a section, a list item', async () => {
+  // From 0.1.0-preview.9 to 0.1.0-preview.16 such a box was cloned with every child (table rows are never spacers): a long table out of view was in every tile of its drawable
+  const trs = Array.from({ length: 52 }, (_, i) => `<tr><td>r${i}</td><td>v${i}</td></tr>`).join('');
+  const css = `${fracRows}table{border-collapse:collapse;width:180px}td{line-height:20.08px;border:1px solid #345;padding:0 4px}`
+    + '.s{padding:3px 0;line-height:20.08px}.s p{margin:0}ol{margin:0}li.t{line-height:20.08px;background:#eef;border-bottom:1px solid #345}';
+  const sect = `<section class="s">${Array.from({ length: 52 }, (_, i) => `<p>p${i}</p>`).join('')}</section>`;
+  const items = `<ol><li class="t">${Array.from({ length: 52 }, (_, i) => `x${i}`).join('<br>')}</li>${Array.from({ length: 10 }, (_, i) => `<li class="t">after ${i}</li>`).join('')}</ol>`;
+  const m = mount(`<div class="l" drawable><table>${trs}</table>${sect}${items}</div>`, { css, height: 4000 });
+  const el = m.layerEl.firstElementChild;
+  const tall = [el.querySelector('table'), el.querySelector('section'), el.querySelector('li.t')];
+  for (const t of tall) assert.ok(t.getBoundingClientRect().height > 1000, `${t.localName} is taller than 1000 px`);
+  const top = tall[2].getBoundingClientRect().bottom - el.getBoundingClientRect().top;
+  const rect = { x: 0, y: Math.ceil(top) + 60, width: 200, height: 120 };
+  const full = await rasterize(m.capture(m.request(el, { rect })));
+  const result = m.capture(m.request(el, { rect, prune: true }));
+  const svg = new DOMParser().parseFromString(decodeURIComponent(result.url.slice(result.url.indexOf(',') + 1)), 'image/svg+xml');
+  assert.equal(svg.querySelectorAll('tr').length, 0, 'no table row is cloned');
+  for (const sel of ['table', 'section', 'li.t']) {
+    const sp = svg.querySelector(`${sel}[data-hic-sp]`);
+    assert.ok(sp, `the ${sel} is a spacer`);
+    const live = el.querySelector(sel).getBoundingClientRect().height;
+    assert.equal(spacerUnits(sp), Math.round(live * 64), `the ${sel} spacer has the live height in LayoutUnits`);
+  }
+  assert.ok(inkFraction(full) > 0.3);
+  const d = diffFraction(await rasterize(result), full);
+  assert.ok(d <= 0.002, `the rows after the tall spacers are where the full tile has them (${(d * 100).toFixed(2)} % differ)`);
+});
+
+test('spacerHeight: one height below 1000 px; above, whole thousands plus the rest as padding, and the sum truncates back to the live LayoutUnit', async () => {
+  const { spacerHeight } = await import('/src/snapshot/capture/clone.js');
+  assert.deepEqual(spacerHeight(21.078125), [['height', '21.079px']]);
+  assert.deepEqual(spacerHeight(2107.8125), [['box-sizing', 'content-box'], ['border', '0'], ['padding', '107.813px 0px 0px'], ['height', '2000px']]);
+  assert.equal(spacerHeight(1500, 'table')[0].join(':'), 'display:block', 'a tall table spacer is laid out as a block');
+  assert.equal(spacerHeight(500, 'table').length, 1);
+  for (const scale of [1, 1.25, 1.5, 2, 3]) {
+    for (let m = 64 * 1000 * scale; m < 64 * 40000 * scale; m += 7919) {
+      const decl = Object.fromEntries(spacerHeight(m / (64 * scale)));
+      const units = Math.trunc(Number.parseFloat(decl.height) * scale * 64 + 1e-9) + Math.trunc(Number.parseFloat(decl.padding) * scale * 64 + 1e-9);
+      assert.equal(units, m, `${m} LayoutUnits at scale ${scale}`);
+    }
+  }
 });
 
 test('layoutPx rounds a live length up so the engine truncates it back to the same LayoutUnit (below 1000 px, scales up to 15); onLiveGrid removes client-rect noise', async () => {

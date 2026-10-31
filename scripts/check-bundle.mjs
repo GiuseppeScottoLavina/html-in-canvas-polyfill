@@ -140,7 +140,10 @@ const LIMITS = {
   //   listbox reveal's fractional scrollport (a listbox at DPR 2.625 was scrolled 2 device px too far)
   // 341.25 -> 341.75 KB, gzip 115.25 -> 115.75 KB (+635 / +323 bytes, 2026-10-30, measured 341,671 / 115,516): a rejected tile decode says whether its SVG was well-formed
   //   XML, with the parser's first error and the markup around it (snapshot/store/decode.js xmlChecked; WebKit reports a malformed SVG as 'Loading error.', like a failed load)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 341.75 * KB, gzip: 115.75 * KB },
+  // 341.75 -> 342 KB (+274 / +135 bytes, 2026-10-31, measured 341,945 / 115,651): a spacer of 1000 px or more is written in two exact parts (snapshot/capture/clone.js
+  //   spacerHeight) instead of the box being cloned with all its children (a long table out of view was in every tile of a large drawable: F4 at 2,000 elements 54-57 tasks
+  //   over 8.33 ms per 30 author updates, 3-8 after)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 342 * KB, gzip: 115.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
