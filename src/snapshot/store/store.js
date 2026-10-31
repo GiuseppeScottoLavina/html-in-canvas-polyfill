@@ -174,6 +174,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
   const interaction = extras.interaction;
   const runaway = createRunawayGuard({ onTrip: (info) => env.bus.emit(BUS.RUNAWAY, info) });
 
+  /** when the last pump's synchronous part ended: the tiles it started at once land after it, in the same task */
+  let pumpEndAt = -Infinity;
   const isLive = (/** @type {Entry} */ entry, /** @type {number} */ incarnation) => entry.incarnation === incarnation && entries.get(entry.el) === entry;
   const pinned = (/** @type {Surface} */ surface) => (pins.get(surface) ?? 0) > 0;
 
@@ -186,7 +188,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (known) dropEntry(known, false);
     /** @type {Entry} */
     const entry = {
-      el, record, incarnation: 0, topLayer: false, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
+      el, record, incarnation: 0, topLayer: false, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, landRate: null, landDev: 0, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
       notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
       unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
       scrollers: new Set(),
@@ -379,7 +381,17 @@ export function createSnapshotStore(env, capture, extras = {}) {
       }
       landed.push(l);
       // landed inside the task that built it: the scheduler can paint it now rather than at the next frame
-      if (decodedAtOnce(l.image)) env.bus.emit(BUS.LANDED, { record: l.entry.record });
+      if (!decodedAtOnce(l.image)) return;
+      env.bus.emit(BUS.LANDED, { record: l.entry.record });
+      // what it costs the task it lands in, per markup char (pump.js LONG_TASK_MS): from its load (or the end of the pump that started it) to the end of the early
+      // commit and paint the emit queued (SVG document, layout and raster on draw, the paint handler); a tile that waited for decode() measured a wall, not work
+      const { entry, incarnation } = l, from = Math.max(l.landedAt - l.decodeMs, pumpEndAt), len = Math.max(1, l.result.url.length);
+      queueMicrotask(() => {
+        if (!isLive(entry, incarnation)) return;
+        const rate = (env.now() - from) / len, w = entry.landRate === null ? 1 : COST_EMA_WEIGHT;
+        entry.landDev = entry.landDev * (1 - w) + Math.abs(rate - (entry.landRate ?? rate)) * w;
+        entry.landRate = (entry.landRate ?? rate) * (1 - w) + rate * w;
+      });
     },
     fail(job, err, stage) {
       const entry = job.entry;
@@ -928,6 +940,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       const out = runPump(env, pumpDeps, now, budget);
       // side builds (scroll pages, plans, overlay backdrops) never run in a pump inside the rendering update: they would delay that frame
       if (!budget.urgent) runSide(out, budget); else if (side.length) { out.moreWork = true; out.nextDueAt = out.nextDueAt ?? env.now(); }
+      pumpEndAt = env.now();
       return out;
     },
     scrollSettled(drawable, scroller) {

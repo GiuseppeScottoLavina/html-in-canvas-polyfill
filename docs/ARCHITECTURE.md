@@ -237,6 +237,12 @@ Tick RUN(now), for each canvas record in reverse tree order:
    That gate (`min(F, maxSnapshotFps)`) is a credit of builds that grows by one per interval and is capped at one and a half: the long-run rate is the cap, and after a pause two
    builds may start one 120 Hz frame apart, never three (it replaced a phase accumulator whose catch-up allowed that second build or not depending on the phase left by earlier builds).
    A long build defers its decode start to the next task, a `scheduler.postTask` user-blocking task like the post-frame pump, so the tile still lands before the app's queued tasks.
+   Long means a synchronous part of 3.5 ms or more (`SPLIT_DECODE_MS`), or a task predicted to reach one 120 Hz frame (`LONG_TASK_MS`, 8.33 ms). A tile that loads at once
+   is parsed, drawn into the surface (SVG layout and raster) and painted in the task that started its load, so each drawable keeps the cost of its tiles that landed at once
+   per markup character, measured from the end of the pump (or the load, in a later task) to the end of the early commit and paint (`Entry.landRate`, an average, and
+   `Entry.landDev`, the mean deviation). The prediction is the time since the pump started, plus what the decodes it already started at once will land, plus the new tile's
+   markup length x (`landRate` + 2 x `landDev`). A key, caret or click tile is a small fraction of the markup of a whole large drawable, so it predicts far below the frame;
+   a drawable with no tile measured yet keeps the 3.5 ms rule alone; urgent builds (focus, `:active`, resize) and scroll steps never wait.
    Ordering 3-before-4 means DOM writes made in the paint handler are captured by the build started in the same frame, and the capture reads freshly laid-out DOM (no forced layout).
    The pump runs in a task after the rendering update, except while the window is being resized, for the first scroll step of a stream and for the first snapshot of a canvas
    that has a drawable, for at most `paintGateMaxWaitMs` after it got one: those build inside the tick. Side builds (scroll plans and pages) run only in the post-frame pump.

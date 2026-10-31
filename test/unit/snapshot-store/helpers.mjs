@@ -115,7 +115,7 @@ export async function makeRig(t, cfg = {}) {
   /** Per-call overrides, consumed in order: {color, complete, caret, unsupported, url, layoutOffset, scrollers}. */
   const script = /** @type {any[]} */ ([]);
   const rig = {
-    env, record, reports, calls, script, bus, BUS, options, INK, scale, color: 'red', decodes: 0, deferDecode: false,
+    env, record, reports, calls, script, bus, BUS, options, INK, scale, color: 'red', decodes: 0, deferDecode: false, decodeBusyMs: 0,
     /** @type {Array<{url: string, release: () => void, fail: (e?: any) => void}>} */ pending: [],
   };
 
@@ -144,6 +144,9 @@ export async function makeRig(t, cfg = {}) {
   };
   const decode = (/** @type {string} */ url) => {
     rig.decodes++;
+    // main-thread work of an image that loads at once (the SVG document): in a microtask of the task that set its src, as in the engine
+    const busy = rig.decodeBusyMs;
+    if (busy) return Promise.resolve().then(() => { for (const t0 = performance.now(); performance.now() - t0 < busy;); return decodeDataUrl(url); });
     if (!rig.deferDecode) return decodeDataUrl(url);
     return new Promise((resolve, reject) => {
       rig.pending.push({ url, release: () => decodeDataUrl(url).then(resolve, reject), fail: (e) => reject(e ?? new Error('decode failed')) });
