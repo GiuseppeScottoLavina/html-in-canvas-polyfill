@@ -128,6 +128,7 @@ export function resolveElement(env, canvas, target, need) {
   const version = env.store.version(element);
   if (need === 'snapshot' && !version) throw invalidState(`The element has no snapshot yet (no first paint, display:none, or its state was reset). Draw from the canvas's paint event or after installed.whenPainted(canvas); `
     + `the paint event waits for the first snapshot up to options.paintGateMaxWaitMs (${env.options.paintGateMaxWaitMs} ms). A very large drawable can need longer: raise paintGateMaxWaitMs, keep the drawable below options.nodeBudget.soft (${env.options.nodeBudget.soft} nodes), or split it into several smaller drawables.`);
+  if (need === 'snapshot' && version && !(version.width && version.height)) warnZeroSize(env, element, version);
   return { record, element, version };
 }
 
@@ -309,6 +310,21 @@ export function warnRemovedOnce(env, key, message) {
   let log = legacyLogs.get(env);
   if (!log) legacyLogs.set(env, log = createOnceLog(globalsOf(env).console));
   log.once(key, 'warn', `[hic-live-polyfill] ${message}`);
+}
+
+/** @type {WeakSet<Element>} */
+const zeroWarned = new WeakSet();
+
+/**
+ * One console warning per element drawn or captured with a zero-width or zero-height border box: it draws nothing, as natively, and nothing else says why.
+ * @param {HicEnv} env @param {Element} element @param {SnapshotVersion} version
+ */
+function warnZeroSize(env, element, version) {
+  if (zeroWarned.has(element)) return;
+  zeroWarned.add(element);
+  const hint = version.width ? 'its height comes from its in-flow content (absolutely positioned children add none), as natively; give it a height (for example height: 100px).'
+    : 'children of a content="drawable" canvas are shrink-to-fit (as natively); give it a width (for example width: 100%).';
+  try { globalsOf(env).console.warn(`[hic-live-polyfill] <${element.localName} drawable> has a zero ${version.width ? 'height' : 'width'}, so nothing is drawn: ${hint}`); } catch { /* console may be absent */ }
 }
 
 // ---------------------------------------------------------------------------------------------- definition helper
