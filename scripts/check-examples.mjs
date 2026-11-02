@@ -21,7 +21,8 @@
 //      screenshot of the frame cropped to its canvas; the default code is examples/basic's explainer block; the frame is sandboxed with allow-scripts only and
 //      cannot reach the page; Show canvas bounds (on by default, the outline around the canvas, off removes it, canvas pixels unchanged); trusted click + typing in the drawn field; a forged message from another window is ignored; user errors, rejections and
 //      console.error reach the console panel as text; Tab / Esc+Tab in the editor; too-long and damaged links; Share + reload restores Unicode code; Reset;
-//      five runs leave one frame; an endless loop is reported and Reset recovers
+//      five runs leave one frame; an endless loop is reported and Reset recovers; the editor's Prism highlighting (transparent text over a copy with HTML, CSS
+//      and JS tokens and the same metrics, following a value set by script, trusted typing and the scroll) and, with its cdnjs scripts blocked, a plain editor
 //   effect-plugin and plugins run a second time with navigator.gpu hidden: the 2D fallback (and, for the gallery, the message and the disabled effects),
 //   and a third time with navigator.gpu present but requestAdapter() resolving null (simulators, blocklisted GPUs): the same 2D fallback must draw
 //   (the canvas must not have been claimed by a 'webgpu' context before the adapter was known)
@@ -36,9 +37,8 @@
 //   C2  a click that misses the field: the "typing reaches the field" and "pixels changed" checks of `basic` and of the playground must fail
 //   C3  a blank canvas must be classified blank by the pixel check
 //   C4  the ESM entry is missing: the ESM smoke page must fail
-//   C5  five variants of the playground page (allow-same-origin, console text set as HTML, messages heard from any window, the old frame kept, the canvas bounds
-//       never switched off): each must turn
-//       its playground check red
+//   C5  seven variants of the playground page (allow-same-origin, console text set as HTML, messages heard from any window, the old frame kept, the canvas bounds
+//       never switched off, the highlighted copy not updated on typing, the editor text transparent without Prism): each must turn its playground check red
 // Results: .scratch/results/examples-<timestamp>.json and a PNG per example next to it.
 // Headless Chrome only (it never takes the screen, so it can run next to other work). The viewport is an Emulation override and says so in the result.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -225,7 +225,11 @@ const PLAYGROUND_VARIANTS = [
   { name: 'any-sender', edit: ['if (e.source !== preview.contentWindow) return;', ''], check: 'a message from another window' },
   { name: 'iframe-kept', edit: ['old.remove();', ''], check: 'running again replaces the preview frame' },
   { name: 'bounds-not-switched', edit: ["if (s) s.media = e.data === 'bounds:on' ? 'all' : 'not all';", ''], check: 'Show canvas bounds' },
+  { name: 'highlight-stale', edit: ["code.addEventListener('input', refresh);", ''], check: 'the editor highlights the code' },
+  { name: 'highlight-ungated', edit: [':root[data-highlight="on"] #code { color: transparent;', '#code { color: transparent;'], check: 'without Prism' },
 ];
+/** The Prism scripts of the playground's editor (cdnjs, pinned), which its fallback check blocks. */
+const PRISM_URLS = /^https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/prism\/1\.29\.0\/components\/prism-[a-z]+\.min\.js$/;
 
 /** examples/playground/index.html with one variant's edit, or an Error when its anchor is not there exactly once. */
 function playgroundVariant(variant) {
@@ -646,6 +650,62 @@ const SCENARIOS = {
       await page.key('Escape'); await page.key('Tab');
       const left = await page.evaluate('document.activeElement.id');
       return { ok: indented.value === '  x' && indented.active === 'code' && left !== 'code', ...indented, after: left };
+    });
+    await run.step('surface', 'the editor highlights the code (Prism): its text is transparent over a copy with HTML, CSS and JS tokens, of the same metrics, that follows a value set by script, trusted typing and the scroll', async () => {
+      // Escape (the step above) leaves a headless page hidden (as with the page before Prism, measured in Chrome 156), and a hidden page runs no animation frame
+      const hiddenBefore = await page.evaluate(`document.visibilityState !== 'visible'`);
+      if (hiddenBefore) await page.bringToFront();
+      if (!(await H.until(() => page.evaluate(`document.visibilityState === 'visible' || null`), 3000, 50))) return { ok: false, reason: 'the page stayed hidden' };
+      const on = await H.until(() => page.evaluate(`document.documentElement.dataset.highlight === 'on' || null`), 8000, 100);
+      if (!on) return { ok: false, reason: 'highlighting never switched on: did Prism load from cdnjs?' };
+      const mirrored = () => page.evaluate(`document.getElementById('code-highlight').textContent === document.getElementById('code').value + '\\n'`);
+      await setCode('<style>\n  p { color: teal; }\n</style>\n<p class="a">text</p>\n<script>\n  const n = 1; // note\n</script>\n' + Array.from({ length: 80 }, (_, i) => `<p>${'w'.repeat(i * 3)} ${i}</p>`).join('\n'));
+      const bySetter = !!(await H.until(async () => (await mirrored()) || null, 2000, 50));
+      const tokens = await page.evaluate(`({ tag: !!document.querySelector('#code-highlight .token.tag'), css: !!document.querySelector('#code-highlight .token.language-css .token.property'),
+        js: !!document.querySelector('#code-highlight .token.language-javascript .token.keyword') })`);
+      await page.evaluate(`(() => { const c = document.getElementById('code'); c.focus(); c.setSelectionRange(c.value.length, c.value.length); })()`);
+      await typeText(page, ' typed');
+      const typed = await page.evaluate(`document.getElementById('code').value.endsWith(' typed')`);
+      const byTyping = !!(await H.until(async () => (await mirrored()) || null, 2000, 50));
+      const metrics = await page.evaluate(`(() => { const c = document.getElementById('code'), m = document.querySelector('.highlight'), a = getComputedStyle(c), b = getComputedStyle(m);
+        const differ = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'tabSize', 'whiteSpace', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].filter((k) => a[k] !== b[k]);
+        if (c.clientWidth !== m.clientWidth || c.clientHeight !== m.clientHeight) differ.push('client box ' + c.clientWidth + 'x' + c.clientHeight + ' vs ' + m.clientWidth + 'x' + m.clientHeight);
+        return { differ, color: a.color, fill: a.webkitTextFillColor }; })()`);
+      const scrolls = [];
+      for (const [top, left] of [[300, 80], [1e6, 1e6]]) {
+        await page.evaluate(`(() => { const c = document.getElementById('code'); c.scrollTop = ${top}; c.scrollLeft = ${left}; })()`);
+        scrolls.push(await H.until(() => page.evaluate(`(() => { const c = document.getElementById('code'), m = document.querySelector('.highlight');
+          return c.scrollTop > 0 && c.scrollLeft > 0 && m.scrollTop === c.scrollTop && m.scrollLeft === c.scrollLeft ? [c.scrollTop, c.scrollLeft] : null; })()`), 2000, 50));
+      }
+      const transparent = metrics.color === 'rgba(0, 0, 0, 0)' && metrics.fill === 'rgba(0, 0, 0, 0)';
+      return { ok: bySetter && tokens.tag && tokens.css && tokens.js && typed && byTyping && metrics.differ.length === 0 && transparent && scrolls.every(Boolean),
+        bySetter, tokens, typed, byTyping, metricsThatDiffer: metrics.differ, transparent, scrolls, hiddenBefore };
+    });
+    await run.step('load', 'without Prism (its cdnjs scripts blocked), the editor is a plain textarea with visible text, and the page runs the example', async () => {
+      // the requests the browser blocked, by URL: the five Prism scripts, and nothing else
+      const urls = new Map(), blockedUrls = [];
+      const offSent = page.on('Network.requestWillBeSent', (p) => urls.set(p.requestId, p.request.url));
+      const offFailed = page.on('Network.loadingFailed', (p) => { if (p.blockedReason) blockedUrls.push(urls.get(p.requestId) ?? '?'); });
+      await page.send('Network.enable');
+      await page.send('Network.setBlockedURLs', { urls: ['https://cdnjs.cloudflare.com/ajax/libs/prism/*'] });
+      let s, plain, blocked;
+      try {
+        await reload();
+        s = await settled(1);
+        blocked = blockedUrls.length === 5 && blockedUrls.every((u) => PRISM_URLS.test(u)) ? 5 : blockedUrls;
+        plain = await page.evaluate(`(() => { const c = document.getElementById('code'), a = getComputedStyle(c);
+          return { highlight: document.documentElement.dataset.highlight ?? null, color: a.color, fill: a.webkitTextFillColor, copy: getComputedStyle(document.querySelector('.highlight')).display, isDefault: c.value === c.defaultValue }; })()`);
+      } finally {
+        await page.send('Network.setBlockedURLs', { urls: [] });
+        offSent(); offFailed();
+        await page.send('Network.disable');
+      }
+      await reload();
+      const back = await settled(1);
+      const again = await H.until(() => page.evaluate(`document.documentElement.dataset.highlight === 'on' || null`), 8000, 100);
+      const visible = (c) => c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent';
+      return { ok: blocked === 5 && !!s && s.state === st.state && plain.highlight === null && visible(plain.color) && visible(plain.fill) && plain.copy === 'none' && plain.isDefault && !!back && !!again,
+        blockedRequests: blocked, state: s?.state, ...plain, highlightAfterUnblocking: !!again };
     });
     await run.step('interact', 'a code too long for a link is refused with a message, and the link is not changed', async () => {
       await setCode('x'.repeat(13000));
