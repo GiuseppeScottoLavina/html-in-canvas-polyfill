@@ -277,6 +277,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     return total;
   }
 
+  /** Bytes of options.maxTotalSurfaceBytes left beside every retained surface, scroll cache and overlay backdrop (those still building included). @returns {number} */
+  const freeBytes = () => options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false) - backdrops.bytes(false);
+
   /**
    * options.maxTotalSurfaceBytes at commit: does a new surface of `bytes` fit, `freed` bytes being released with it? Every build of a batch was planned before any of
    * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. Overlay backdrops and then the scroll compositor's caches give way
@@ -287,7 +290,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const max = options.maxTotalSurfaceBytes;
     const total = retainedBytes() - freed + bytes;
     if (total > max) return false;
-    let over = total + backdrops.bytes(false) + scrollBytes(false) - max;
+    let over = bytes - freed - freeBytes();
     if (over > 0) over -= backdrops.shed(over);
     if (over > 0) for (const [e, r] of compositor.shed(entries.values(), over)) markDamage(e.el, r, 'scroll');
     return true;
@@ -514,7 +517,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     decode: (url) => pumpDeps.decode(url),
     canvas: makeCanvas,
     schedule: (entry, run) => { side.push({ entry, run }); },
-    room: () => options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false) - backdrops.bytes(false),
+    room: () => freeBytes(),
     over: (entry) => overBudget(entry, 'scroll'),
   });
 
@@ -573,11 +576,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       for (const e of entries.values()) if (e.ovControl && e.ovSeq > e.ovTileSeq) e.ovQueued = true;
     },
     schedule: (entry, run) => { side.push({ entry, run }); },
-    room(entry, bytes) {
-      if (bytes <= options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false) - backdrops.bytes(false)) return true;
-      overBudget(entry, 'overlay');
-      return false;
-    },
+    room: (entry, bytes) => bytes <= freeBytes() || (overBudget(entry, 'overlay'), false),
   });
 
   // ---------------------------------------------------------------------------------------------- commit
