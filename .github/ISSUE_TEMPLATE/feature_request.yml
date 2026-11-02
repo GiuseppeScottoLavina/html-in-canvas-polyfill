@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The polyfill follows the proposed HTML-in-Canvas standard. Requests to diverge from it belong in the WICG explainer repository; requests to cover more of it, or to support more content, belong here. Check docs/SUPPORT-MATRIX.md first: some content is refused on purpose.
+        The polyfill follows the proposed HTML-in-Canvas standard. Requests to change the API itself belong in the WICG proposal repository (https://github.com/WICG/html-in-canvas); requests to cover more of it, or to support more content, belong here. Check docs/SUPPORT-MATRIX.md first: some content is refused on purpose.
   - type: textarea
     id: problem
     attributes:
