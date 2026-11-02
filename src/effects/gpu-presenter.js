@@ -104,15 +104,14 @@ export async function createPresenter(canvas, options, hooks = {}) {
     return { texture, view: texture.createView() };
   }
 
-  function dropMid() {
-    for (const m of mid) m.texture.destroy();
-    mid.length = 0;
-  }
-
-  /** Two same-format targets for chains of more than one stage, or a last stage that cannot render into the canvas. */
-  function ensureMid() {
-    if (mid.length === 2) return;
-    for (let i = 0; i < 2; i += 1) {
+  /**
+   * Same-format targets, one per stage that writes before the canvas, at most two (stages alternate between them): 0 for a single stage that renders into the canvas,
+   * 1 for one stage that cannot or for two whose last one can, 2 otherwise. Kept while the chain needs as many; 0 drops them all (resize, dispose).
+   * @param {number} n
+   */
+  function fitMid(n) {
+    while (mid.length > n) mid.pop()?.texture.destroy();
+    for (let i = mid.length; i < n; i += 1) {
       const texture = device.createTexture({ label: `hic-mid-${i}`, size: [vp.width, vp.height], format, usage: USAGE.RENDER_ATTACHMENT | USAGE.TEXTURE_BINDING | USAGE.COPY_SRC });
       mid.push({ texture, view: texture.createView() });
     }
@@ -157,7 +156,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
       const w = Math.max(1, Math.round(css.width * scale));
       const h = Math.max(1, Math.round(css.height * scale));
       const changed = canvas.width !== w || canvas.height !== h;
-      if (changed) { canvas.width = w; canvas.height = h; dropMid(); }
+      if (changed) { canvas.width = w; canvas.height = h; fitMid(0); }
       vp = { width: w, height: h, cssWidth: css.width, cssHeight: css.height, dpr: css.width > 0 ? w / css.width : scale };
       return changed;
     },
@@ -176,7 +175,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
       const stages = plugins.length > 0 ? plugins : [passthroughStage()];
       const last = stages[stages.length - 1];
       const lastDirect = last.def.outputCapabilities?.directCanvasRenderAttachment === true;
-      if (stages.length > 1 || !lastDirect) ensureMid();
+      fitMid(Math.min(2, stages.length - (lastDirect ? 1 : 0)));
       const encoder = device.createCommandEncoder();
       let input = src;
       let inputReady = ready;
@@ -210,7 +209,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
     dispose(keepContext = false) {
       if (disposed) return;
       disposed = true;
-      dropMid();
+      fitMid(0);
       src.texture.destroy();
       if (!keepContext) { try { context.unconfigure(); } catch { /* context already gone */ } }
       device.destroy();
