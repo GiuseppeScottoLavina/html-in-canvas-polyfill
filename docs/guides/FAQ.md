@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.18`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.19`) unless dated.
 
 ## What is this?
 
@@ -124,11 +124,11 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a preview of a proposed standard (`0.1.0-preview.18`, on npm under the `next` tag). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a preview of a proposed standard (`0.1.0-preview.19` on npm; a new preview goes to the `next` tag first and to `latest` once checked). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
-- 594 unit tests in Node and 933 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 612 unit tests in Node and 944 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 16 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence), each with a positive control;
 - a mutation suite of 61 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
