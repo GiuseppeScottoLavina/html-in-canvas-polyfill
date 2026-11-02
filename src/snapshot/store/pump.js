@@ -36,6 +36,8 @@ const MAX_INK = 2048;
 const DEFAULT_TILE_COST_MS = 3;
 /** Damage that may ride along with scroll damage inside the scrolled box without losing its exception (pumpRecord): hover follows the rows that pass under a still pointer. */
 const SCROLL_RIDERS = new Set(['hover']);
+/** Damage causes whose canvas an urgent pump (one inside an input task) serves before the others. */
+const INPUT_FIRST = ['input', 'focus', 'active'];
 /** Drawables above nodeBudget.hard build at most this often, ms (4 fps). */
 const DEGRADED_INTERVAL_MS = 250;
 /**
@@ -388,10 +390,19 @@ export function runPump(env, deps, now, budget) {
     const list = byRecord.get(entry.record);
     if (list) list.push(entry); else byRecord.set(entry.record, [entry]);
   }
-  for (const [record, list] of byRecord) {
-    list.sort((a, b) => (deps.damage.pendingSince(a.el) ?? 0) - (deps.damage.pendingSince(b.el) ?? 0));
-    pumpRecord(env, deps, record, list, now, budget, out);
+  const since = (/** @type {Entry} */ e) => deps.damage.pendingSince(e.el) ?? 0;
+  for (const list of byRecord.values()) list.sort((a, b) => since(a) - since(b));
+  if (byRecord.size < 2) {
+    for (const [record, list] of byRecord) pumpRecord(env, deps, record, list, now, budget, out);
+    return out;
   }
+  // the canvas with the oldest damage goes first (its builds still start together, one batch): in insertion order a canvas whose build used up the round
+  // deferred every canvas after it for as long as it stayed dirty (two animated canvases at 4.1 ms per build: 120 builds against 0 in 120 rounds). A pump in an
+  // input task serves the canvas that has input damage first, whatever the age of the others' damage.
+  const input = (/** @type {Entry[]} */ list) => budget.urgent && list.some((e) => INPUT_FIRST.some((c) => deps.damage.hasPendingCause(e.el, c)));
+  const order = [...byRecord].map(([record, list]) => ({ record, list, input: input(list), since: since(list[0]) }));
+  order.sort((x, y) => (x.input === y.input ? x.since - y.since : x.input ? -1 : 1));
+  for (const { record, list } of order) pumpRecord(env, deps, record, list, now, budget, out);
   return out;
 }
 
