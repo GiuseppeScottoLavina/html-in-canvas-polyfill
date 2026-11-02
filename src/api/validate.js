@@ -322,7 +322,7 @@ const zeroWarned = new WeakSet();
 function warnZeroSize(env, element, version) {
   zeroWarned.add(element);
   const side = version.width ? 'height' : 'width';
-  globalsOf(env).console.warn(`[hic-live-polyfill] <${element.localName} drawable> has a zero ${side}, so nothing is drawn: ${version.width ? 'absolutely positioned children give it none' : 'children of a content="drawable" canvas are shrink-to-fit'} (as natively); give it a ${side} (for example ${side}: 100%).`);
+  globalsOf(env).console.warn(`[hic-live-polyfill] <${element.localName} drawable> has a zero ${side}, so nothing is drawn: ${version.width ? 'it is empty or its children are all out of flow' : 'children of a content="drawable" canvas are shrink-to-fit'} (as natively); give it a ${side} (for example ${side}: 100%).`);
 }
 
 // ---------------------------------------------------------------------------------------------- definition helper
