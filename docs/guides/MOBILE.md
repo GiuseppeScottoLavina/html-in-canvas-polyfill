@@ -1,8 +1,8 @@
 # Phones and tablets
 
 The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+. **Android was verified on two physical phones, a Pixel 7 Pro (Android 17,
-Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156), 2026-10-30: every scenario PASS with its control red, and on the Android Emulator. iPadOS was verified on a physical iPad Pro (iPadOS 27.2, the scenarios WebDriver can
-drive), iOS 26 on the iOS Simulator only; a physical iPhone XR (iOS 18.7) ran the refusal.** The numbers
+Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156), on 2026-10-30, where every applicable scenario passed with its control red, and on the Android Emulator.
+iPadOS was verified on a physical iPad Pro (iPadOS 27.2, the scenarios WebDriver can drive), iOS 26 on the iOS Simulator only; a physical iPhone XR (iOS 18.7) ran the refusal.** The numbers
 are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them is `npm run test:mobile` (`docs/TEST-PLAN.md`).
 
 ## Which browsers install it
@@ -63,11 +63,11 @@ reached the drawable is rastered at a lower scale and reported (`surface-size`),
 
 Pinch-zoom magnifies the page, and with it the canvas bitmap: the canvas is not rastered again for `visualViewport.scale`, so drawn text gets soft when zoomed in. A native
 canvas, and the native HTML-in-Canvas API, behave the same way (the bitmap follows `devicePixelRatio`, which pinch-zoom does not change). Taps after zooming still land on the
-right element (measured on the Android Emulator with a 2.2x pinch).
+right element (checked once by hand on the Android Emulator with a 2.2x pinch; no gate scenario covers pinch-zoom).
 
 ## What is not verified
 
-- No physical iPhone on iOS 26 or later. A physical iPhone XR (iOS 18.7.11, the newest it can run) ran the refusal: refused with the version named, the page keeps running, the control (a supported agent) admitted. Three physical devices ran the full gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
+- No physical iPhone on iOS 26 or later. A physical iPhone XR (iOS 18.7.11, the newest it can run) ran the refusal: refused with the version named, the page keeps running, the control (a supported agent) admitted. Three physical devices ran the gate. An iPad Pro 11-inch (3rd generation, M1; iPadOS 27.2, Safari 27.2, DPR 2, 2026-10-30): the scenarios WebDriver can drive on
   iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose` with every composed frame equal to the settled tile, a canvas
   resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` and were skipped, as on the simulator.
   And two Android phones, 2026-10-30: a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625) and a Huawei Mate 10 Pro (Android 10, EMUI, Chrome 156.0.8078.79,
