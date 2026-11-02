@@ -123,7 +123,7 @@ ${perTest(result)}
 
 - Everything outside \`draw-element-image\`: the 2D canvas tests of \`html/canvas/element\` and \`offscreen\` do not exercise this API.
 - Tests that Chromium has added after the oracle build and not yet exported to WPT (named in \`test/vendor/wpt/VERSION.json\`): they are not part of the pinned revision.
-- Chrome 154 native (legacy names), Firefox, Safari: not run. Display P3 canvases, a high-DPR display, video frames of an \`ElementImage\` in a worker and the real top layer are outside what a userland polyfill can observe.
+- Not run: Chrome 154 native (legacy names), Firefox, Safari, Display P3 canvases and a high-DPR display (the runner uses sRGB at DPR 1). Video frames of an \`ElementImage\` in a worker and the real top layer are outside what a userland polyfill can observe.
 `;
   // hand-written progress notes survive regeneration
   const old = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
