@@ -38,6 +38,8 @@ const DEFAULT_TILE_COST_MS = 3;
 const SCROLL_RIDERS = new Set(['hover']);
 /** Damage causes whose canvas an urgent pump (one inside an input task) serves before the others. */
 const INPUT_FIRST = ['input', 'focus', 'active'];
+/** ms: PumpResult.quietUntil is given for a wait at least this long (the scheduler's own minimum, schedule/scheduler.js QUIET_MIN_MS). */
+const QUIET_MIN_MS = 50;
 /** Drawables above nodeBudget.hard build at most this often, ms (4 fps). */
 const DEGRADED_INTERVAL_MS = 250;
 /**
@@ -401,17 +403,18 @@ export function runPump(env, deps, now, budget) {
   const key = (/** @type {Entry[]} */ list) => (budget.urgent && list.some((e) => INPUT_FIRST.some((c) => deps.damage.hasPendingCause(e.el, c))) ? -Infinity : since(list[0]));
   const order = byRecord.size < 2 ? byRecord : [...byRecord].map(([record, list]) => /** @type {[CanvasRecord, Entry[], number]} */ ([record, list, key(list)])).sort((x, y) => x[2] - y[2] || 0);
   for (const [record, list] of order) pumpRecord(env, deps, record, list, now, budget, out);
-  return quiet(deps, out);
+  return quiet(deps, out, now);
 }
 
 /**
  * PumpResult.quietUntil: the pump started nothing, every drawable with damage waits for a known time (frame cap, cost bucket, node budget, failure backoff), and
  * nothing is building, decoding or landed, so nothing can change before nextDueAt unless something outside wakes the scheduler. Any other skip (refused, lost,
  * not laid out, in the top layer, a canvas not active) keeps it null: those wait for an event the scheduler may not get, and are polled as before.
- * @param {PumpDeps} deps @param {PumpResult} out @returns {PumpResult}
+ * Only for a wait of QUIET_MIN_MS or more (the scheduler does not stop for less), so host.busy() is not asked in every frame of a capped stream.
+ * @param {PumpDeps} deps @param {PumpResult} out @param {number} now @returns {PumpResult}
  */
-function quiet(deps, out) {
-  if (!out.started && out.moreWork && out.nextDueAt !== null && !pumpHeld && !deps.jobs.size && !deps.landed.length && deps.host.busy?.() === false) out.quietUntil = out.nextDueAt;
+function quiet(deps, out, now) {
+  if (!out.started && out.moreWork && out.nextDueAt !== null && out.nextDueAt - now >= QUIET_MIN_MS && !pumpHeld && !deps.jobs.size && !deps.landed.length && deps.host.busy?.() === false) out.quietUntil = out.nextDueAt;
   return out;
 }
 

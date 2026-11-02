@@ -10,7 +10,8 @@ import { MARK } from '../contracts/events.js';
 /**
  * @typedef {Object} FramePhase
  * @property {() => void} arm  request one frame: the rAF ARM callback puts the fixed 1 px sentinel in the page and creates a FRESH ResizeObserver on it (created after every app observer, so its callback is delivered after theirs and after the microtasks they queued)
- * @property {() => void} cancel
+ * @property {(keepSentinel?: boolean) => void} cancel  keepSentinel: the frames stop for a while only (the scheduler's quiet wait); the sentinel stays in the page instead of being
+ *   removed and added again around each wait (a page's MutationObserver would see both)
  * @property {() => {armed: number, ran: number, fallbacks: number}} stats
  */
 
@@ -108,10 +109,10 @@ export function createFramePhase(env, run) {
       wanted = true;
       rafId = win.requestAnimationFrame(onFrame);
     },
-    cancel() {
+    cancel(keepSentinel = false) {
       wanted = false;
       dropObserver();
-      removeSentinel();
+      if (!keepSentinel) removeSentinel();
     },
     stats: () => ({ ...counts }),
   };

@@ -722,6 +722,8 @@ test('quiet wait: a build deferred by 5 s costs no frame loop until it is due (o
   assert.ok(c1.rafs - c0.rafs <= 4, `rAF requests in the first second: ${c1.rafs - c0.rafs} (main: 241)`);
   assert.equal(t.fw.rafCount(), 0, 'no frame armed while waiting');
   assert.equal(t.fw.timerCount(), 1, 'one timer');
+  const sentinels = t.document.added.length;
+  assert.equal(t.document.added.at(-1).isConnected, true, 'the sentinel stays in the page while waiting (not removed and added again)');
   // the deferred build becomes due: the store starts it and settles
   t.run(t.due - t.clock.t - 40);
   assert.equal(t.counts().pumps, c1.pumps, 'still asleep 40 ms before it is due');
@@ -740,6 +742,8 @@ test('quiet wait: a build deferred by 5 s costs no frame loop until it is due (o
   t.run(500);
   assert.equal(t.counts().rafs, after.rafs, 'quiet once settled');
   assert.equal(t.fw.timerCount(), 0);
+  assert.equal(t.document.added.length, sentinels, 'one sentinel for the whole wait');
+  assert.equal(t.document.added.at(-1).isConnected, false, 'removed once settled');
 });
 
 test('quiet wait (control): without quietUntil the scheduler polls every frame as before', () => {

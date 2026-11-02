@@ -390,7 +390,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
     entries: () => entries.values(),
     scrollers: (entry) => compositor.scrollers(entry),
     scrollSeq: () => compositor.seq(),
-    busy: () => side.length > 0 || backdrops.busy() || [...entries.values()].some((e) => compositor.busy(e)),
+    busy() {
+      if (side.length || backdrops.busy()) return true;
+      for (const entry of entries.values()) if (compositor.busy(entry)) return true;
+      return false;
+    },
     usedBytes: (entry) => retainedBytes(entry),
     notLaidOut(entry) {
       if (entry.version) pendingRemoved.set(entry.el, entry.record);

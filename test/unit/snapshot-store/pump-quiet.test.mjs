@@ -58,6 +58,13 @@ test('quietUntil (control): null while the host is busy or does not say, a build
   }
 });
 
+test('quietUntil (control): null for a wait under 50 ms', () => {
+  const t = setup();
+  const out = t.pump(1210);
+  assert.equal(out.nextDueAt, 1250);
+  assert.equal(out.quietUntil, null);
+});
+
 test('quietUntil (control): null when a build started, and when nothing is pending', () => {
   const t = setup();
   const out = t.pump(1300);
