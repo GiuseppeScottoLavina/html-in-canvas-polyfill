@@ -10,7 +10,7 @@ Built from `src/contracts/errors.js`, `src/contracts/features.js` and the code t
 | `console.error`, ONCE per (feature, path) | `[hic-live-polyfill] unsupported <feature> at <path>: <message> Hint: <hint>` | content or a setup the polyfill cannot reproduce (it keeps running) |
 | `hicunsupported` event on the canvas | `CustomEvent`, `detail` = the entry (`feature`, `message`, `hint`, `path`, `count`, `t`) | the first hit per feature, path and canvas |
 | `installed.report()` / `window.__HIC__.installed.report()` | JSON: `mode`, `native`, `browser`, `canvases[]` (state, drawables, frame cap, entries), `unsupported[]` (with `count`), `deviations[]`, `errors[]` | any time; attach it to bug reports. `count` is how often the reporter was told about the entry (typically once per snapshot attempt that meets the content), not the number of elements: one iframe can show `count: 3` |
-| `console.warn` once | install refused (classic script), or the legacy `layoutsubtree` name used | see sections 1 and 6 |
+| `console.warn` once | install refused (classic script), the legacy `layoutsubtree` name used, or a drawable drawn with a zero width or height (once per element) | see sections 1, 4 and 6 |
 
 Default policy for content it cannot capture (`onUnsupportedContent: 'placeholder'`): the offending subtree is drawn as a hatched box, the report entry is added, the rest of the drawable keeps painting. Content that the browser itself leaves out of a canvas (a cross-origin frame document, a cross-origin image or video without CORS) is drawn as the browser draws it instead (the element's box without that content; a cross-origin video's box paints nothing, and an element whose mask image cannot be read is masked away), with the same report entry. With `'abort'` the commit is dropped and no `paint` fires, but the event still fires.
 
@@ -100,6 +100,7 @@ Not captured at all, by design (no entry, listed in `docs/SUPPORT-MATRIX.md`): s
 
 | symptom | cause | remedy |
 |---|---|---|
+| a drawable draws nothing; `console.warn` `<div drawable> has a zero width, so nothing is drawn: ...` (or `zero height`), once per element | its border box is 0 px wide or tall. Children of a `content="drawable"` canvas are shrink-to-fit, as natively, so a drawable whose in-flow content has no intrinsic width (only absolutely positioned children, or a `width: 100%` stage that holds them) is 0 px wide; absolutely positioned children give it no height either | give the drawable a size, for example `width: 100%` or `height: 100%` (of the canvas) |
 | the canvas is empty right after load | the first snapshot is decoded asynchronously; drawing before it throws by spec | draw from `paint`; "no blank frame" is only claimed after the first non-blank paint (`docs/API-CONTRACT.md` section 8) |
 | the canvas is blank after a context or GPU loss | a retained 2D canvas can come back blank | recovers within 3 frames (`context-loss`) |
 | during a window drag the picture lags the layout; a click lands on the "wrong" element | the drawn pixels are 1 to 3 frames old and stretched into the new box while the live layer is already at the new size | documented deviation `resize-stale-first`; the pixels converge a few frames after the last resize event |

@@ -128,6 +128,7 @@ export function resolveElement(env, canvas, target, need) {
   const version = env.store.version(element);
   if (need === 'snapshot' && !version) throw invalidState(`The element has no snapshot yet (no first paint, display:none, or its state was reset). Draw from the canvas's paint event or after installed.whenPainted(canvas); `
     + `the paint event waits for the first snapshot up to options.paintGateMaxWaitMs (${env.options.paintGateMaxWaitMs} ms). A very large drawable can need longer: raise paintGateMaxWaitMs, keep the drawable below options.nodeBudget.soft (${env.options.nodeBudget.soft} nodes), or split it into several smaller drawables.`);
+  if (need === 'snapshot' && version && !(version.width && version.height) && !zeroWarned.has(element)) warnZeroSize(env, element, version);
   return { record, element, version };
 }
 
@@ -309,6 +310,19 @@ export function warnRemovedOnce(env, key, message) {
   let log = legacyLogs.get(env);
   if (!log) legacyLogs.set(env, log = createOnceLog(globalsOf(env).console));
   log.once(key, 'warn', `[hic-live-polyfill] ${message}`);
+}
+
+/** @type {WeakSet<Element>} */
+const zeroWarned = new WeakSet();
+
+/**
+ * One console warning per element drawn or captured with a zero-width or zero-height border box (resolveElement asks once per element): it draws nothing, as natively, and nothing else says why.
+ * @param {HicEnv} env @param {Element} element @param {SnapshotVersion} version
+ */
+function warnZeroSize(env, element, version) {
+  zeroWarned.add(element);
+  const side = version.width ? 'height' : 'width';
+  globalsOf(env).console.warn(`[hic-live-polyfill] <${element.localName} drawable> has a zero ${side}, so nothing is drawn: ${version.width ? 'it is empty or its children are all out of flow' : 'children of a content="drawable" canvas are shrink-to-fit'} (as natively); give it a ${side} (for example ${side}: 100%).`);
 }
 
 // ---------------------------------------------------------------------------------------------- definition helper

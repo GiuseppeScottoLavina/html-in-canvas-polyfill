@@ -288,6 +288,7 @@ All DOMExceptions are the platform class. Loud polyfill refusals are `HicUnsuppo
 | Offscreen context without placeholder canvas | `InvalidStateError` (a WebGL context of such a canvas keeps `TypeError`) | drawElementImage |
 | invalid `DOMMatrixInit` / `DOMRectInit` | `TypeError` | updateElementGeometry |
 | any numeric argument NaN / infinite | none (silent return) | drawElementImage |
+| the drawable's border box has zero width or zero height (for example a child of the canvas with only absolutely positioned content: canvas children are shrink-to-fit) | none: nothing is drawn, as natively; the polyfill adds one `console.warn` per element that names the zero side and the fix | drawElementImage, captureElementImage, getElementImageDefaultSize and the texture methods |
 | `drawable` SVG element inside an `<svg>` (not the outermost `<svg>`) | `HicUnsupportedError('svg-drawable')` (polyfill limit) | captureElementImage, drawElementImage and the texture methods (getElementTransform, updateElementGeometry and clearElementGeometry keep its canvas transform, as natively) |
 | `postMessage` of an `ElementImage` through a MessagePort / BroadcastChannel / to a ServiceWorker; an `ElementImage` in a Worker's transfer list but not in the message | `HicUnsupportedError('worker-element-image')` / `DataCloneError` | postMessage |
 | in a worker: an `ElementImage` of another canvas, a standalone OffscreenCanvas, a closed image | `InvalidStateError` | drawElementImage, the OffscreenCanvas geometry methods |
