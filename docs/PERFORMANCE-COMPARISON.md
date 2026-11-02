@@ -109,7 +109,11 @@ Three rows were checked against the code before they were written down:
   5.8 / 6.4 / 5.7, 5.7 / 5.6 / 6.2 and 5.6 / 6.0 / 5.8 ms. The core before the fixes gives the same 14.6 ms on this day, so the later median of the table is the
   session, not the code. Every key was drawn and the final field equals the plain DOM in every run.
 - **Idle with nothing focused.** Neither fix adds a timer or a task while nothing changes (the decode rule runs only when a build starts); the extra tasks are
-  short message-handling tasks with no paint, and the busy share stays at 0.01-0.02 %. The cause was not identified further.
+  short message-handling tasks with no paint, and the busy share stays at 0.01-0.02 %. An interleaved A/B on 2026-11-02 (preview.15, preview.16, after #53, after #54;
+  3 runs each, headless and headed, every task of each 10 s window classified) found no script task (timer, rAF, event, function call) for any bundle at rest:
+  the windows hold Chrome housekeeping (0.1-0.7 tasks/s for every bundle) and, in some windows, one V8 memory-reducer garbage collection that alone gives
+  about 34 tasks/s. The difference is session noise. The idle row counts browser tasks, so a 10 s window cannot tell 0.3/s from 1.0/s; the busy share is the
+  meaningful at-rest figure.
 
 ### 0.1.0-preview.15 (2026-10-30/31) against the previous table
 

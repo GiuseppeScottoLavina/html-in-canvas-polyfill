@@ -242,3 +242,27 @@ test('a canvas that is itself in the top layer (inside a modal dialog, or fullsc
   for (let k = 0; k < 10 && thrown(() => ctx.drawElementImage(c.querySelector('#m'), 0, 0)); k++) { c.requestPaint(); await i.whenPainted(c); await frames(1); }
   assert.equal(thrown(() => ctx.drawElementImage(c.querySelector('#m'), 0, 0)), null);
 });
+
+test('a refused draw names why and the fix: a wrapper without the drawable attribute, an element outside the canvas, a grandchild under layoutsubtree', async t => {
+  const i = inst(t);
+  // the playground report: the drawable attribute is on the <form>, and the code draws the <div> that wraps it
+  const c = await mk(t, i, { inner: '<div id="wrap"><form id="f" drawable style="width:100px;height:40px"><input></form></div>' });
+  const ctx = /** @type {any} */ (c.getContext('2d'));
+  const wrap = thrown(() => ctx.drawElementImage(c.querySelector('#wrap'), 0, 0));
+  assert.equal(wrap?.name, 'InvalidStateError');
+  assert.ok(/The <div> has no drawable attribute/.test(wrap.message), wrap.message);
+  assert.ok(/draw the <form> inside it/.test(wrap.message), wrap.message);
+  assert.equal(thrown(() => ctx.drawElementImage(c.querySelector('#f'), 0, 0)), null, 'control: the <form> with the attribute is drawn');
+  const outside = document.createElement('p');
+  document.body.append(outside);
+  t.cleanup(() => outside.remove());
+  assert.ok(/The <p> is not inside this canvas/.test(thrown(() => ctx.drawElementImage(outside, 0, 0))?.message ?? ''), thrown(() => ctx.drawElementImage(outside, 0, 0))?.message ?? '');
+  const host = document.createElement('div');
+  host.innerHTML = '<canvas layoutsubtree width="200" height="100"><div style="width:100px;height:40px"><p id="deep">x</p></div></canvas>';
+  document.body.append(host);
+  t.cleanup(() => host.remove());
+  const legacy = /** @type {HTMLCanvasElement} */ (host.firstElementChild);
+  legacy.requestPaint(); await i.whenPainted(legacy);
+  const deep = thrown(() => /** @type {any} */ (legacy.getContext('2d')).drawElementImage(legacy.querySelector('#deep'), 0, 0));
+  assert.ok(/The <p> is not a direct child of the canvas/.test(deep?.message ?? ''), deep?.message ?? '');
+});

@@ -80,6 +80,18 @@ export function assertTargetType(env, target) {
 }
 
 /**
+ * Why `element` cannot be drawn on the canvas of `record`, as a message that names the fix (the playground and the console show only this text).
+ * @param {HicEnv} env @param {CanvasRecord} record @param {Element} element @returns {string}
+ */
+function notDrawable(env, record, element) {
+  const tag = `<${element.localName}>`, inner = element.querySelector('[drawable]');
+  if (env.registry.logicalCanvasAncestor(element) !== record.canvas) return `The ${tag} is not inside this canvas.`;
+  if (record.legacy) return `The ${tag} is not a direct child of the canvas: layoutsubtree draws only those (content="drawable" draws any descendant with the drawable attribute).`;
+  if (element.hasAttribute('drawable')) return `The ${tag} is not a drawable descendant of this canvas.`;
+  return `The ${tag} has no drawable attribute: only elements with it can be drawn. Add drawable to it${inner ? `, or draw the <${inner.localName}> inside it.` : '.'}`;
+}
+
+/**
  * Spec "get element image snapshot" / "get the element reference" (docs/API-CONTRACT.md section 6.1). Exact exception table there.
  * need==="snapshot": InvalidStateError when no snapshot; need==="eligible": only eligibility is required (geometry methods).
  * An ElementImage resolves to ITS version (not the newest one) and to its originating element.
@@ -107,7 +119,7 @@ export function resolveElement(env, canvas, target, need) {
     if (owner && owner !== record) throw invalidState('The element belongs to another canvas.');
   }
   if (!record.layer || record.layer.nearestDrawable(element) !== element) {
-    throw invalidState('The element is not a drawable descendant of this canvas.');
+    throw invalidState(notDrawable(env, record, element));
   }
   // No box, no snapshot: a canvas that is detached or display:none renders nothing, and the retained surface of its earlier life must not be served.
   if (need === 'snapshot' && (record.state !== 'active' || record.canvas.getClientRects().length === 0)) {
