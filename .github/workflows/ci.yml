@@ -95,7 +95,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Mutant anchors (every mutant's edit still matches the built bundle once; the suite itself runs locally)
+      - name: Mutant anchors (every mutant's edit still matches the built bundle once; the suite itself runs on macOS CI and locally)
         run: node test/gates/mutants/run.mjs --check-anchors
 
       - name: Bundle check (sizes, every bundle and plugin bundle loaded in headless Chrome)
