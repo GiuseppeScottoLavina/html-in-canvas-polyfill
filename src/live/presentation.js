@@ -19,7 +19,7 @@ const MIRRORED_ATTRS = ['lang', 'dir', 'inert'];
 const EPS = 1e-6;
 /**
  * Inline copies of the load-bearing sheet declarations: an inline !important beats every author rule, whatever its specificity (`#app > * {margin}`).
- * `display` is NOT pinned: the sheet already says `flow-root !important`, and an inline one would also beat the `@media print` rule that hides the layer.
+ * `display` is NOT pinned: the sheet already says `display:grid !important`, and an inline one would also beat the `@media print` rule that hides the layer.
  */
 const PINNED = Object.freeze({ margin: '0', opacity: layerOpacity(), 'pointer-events': 'none', 'box-sizing': 'border-box', overflow: 'clip', contain: 'layout', isolation: 'isolate' });
 /** The canvas's computed pointer-events, for the live children (the layer itself is always none): an ancestor with `pointer-events:none` must disable them too. */

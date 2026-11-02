@@ -78,9 +78,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `esm/effects.js` | 67,625 | 18,064 |
 | `esm/native-bridge.js` | 21,963 | 5,811 |
 | `esm/worker.js` | 6,977 | 2,402 |
-| `plugins/crt.iife.js` | 19,920 | 7,291 |
-| `plugins/crt.iife.min.js` | 13,796 | 6,028 |
-| `plugins/crt.esm.js` | 18,624 | 7,045 |
+| `plugins/crt.iife.js` | 19,932 | 7,290 |
+| `plugins/crt.iife.min.js` | 13,808 | 6,025 |
+| `plugins/crt.esm.js` | 18,636 | 7,045 |
 | `plugins/disintegrate.iife.js` | 39,558 | 12,506 |
 | `plugins/disintegrate.iife.min.js` | 26,080 | 10,103 |
 | `plugins/disintegrate.esm.js` | 37,323 | 12,160 |
@@ -96,9 +96,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/page-curl.iife.js` | 51,960 | 15,562 |
 | `plugins/page-curl.iife.min.js` | 32,986 | 12,610 |
 | `plugins/page-curl.esm.js` | 49,178 | 15,198 |
-| `plugins/shatter.iife.js` | 49,418 | 15,254 |
-| `plugins/shatter.iife.min.js` | 28,902 | 11,857 |
-| `plugins/shatter.esm.js` | 46,715 | 14,879 |
+| `plugins/shatter.iife.js` | 49,413 | 15,252 |
+| `plugins/shatter.iife.min.js` | 28,897 | 11,855 |
+| `plugins/shatter.esm.js` | 46,710 | 14,878 |
 | `plugins/water.iife.js` | 18,862 | 6,486 |
 | `plugins/water.iife.min.js` | 11,629 | 5,198 |
 | `plugins/water.esm.js` | 17,507 | 6,231 |
