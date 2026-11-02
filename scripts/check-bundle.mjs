@@ -188,7 +188,9 @@ const LIMITS = {
   // gzip 4 -> 3.75 KB (-117 / -144 bytes, 2026-10-27, measured 9,098 / 3,646): the Terser pass over esbuild's minified output
   'hic-live-worker.iife.min.js': { target: 9.25 * KB, ceiling: 9.25 * KB, gzip: 3.75 * KB },
   // 10.75 -> 10.5 KB, gzip 4.25 -> 4 KB (-82 / -66 bytes, 2026-10-27, measured 10,403 / 3,947): the Terser pass over esbuild's minified output
-  'hic-live-gpu.iife.min.js': { target: 10.5 * KB, ceiling: 10.5 * KB, gzip: 4 * KB },
+  // 10.5 -> 11 KB, gzip 4 -> 4.25 KB (+501 / +183 bytes, 2026-11-02, measured 10,904 / 4,130): the GPU bundle shares api/validate.js with the core, so a refused
+  // texture upload names its cause and fix like a refused draw (notDrawable)
+  'hic-live-gpu.iife.min.js': { target: 11 * KB, ceiling: 11 * KB, gzip: 4.25 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
