@@ -1,11 +1,11 @@
-# Performance comparison: hic-live-polyfill vs html-in-canvas-polyfill 1.0.1 vs native
+# Performance comparison: this polyfill, the npm package `html-in-canvas-polyfill` 1.0.1, and native
 
-Three renderers on the same pages, in the same harness, with the same input: **ours** (`dist/hic-live-polyfill.iife.min.js`, Chrome stable,
-no native feature), the **competitor** (the npm package `html-in-canvas-polyfill@1.0.1` = `three-html-render` 0.1.2, built by
+Three renderers on the same pages, in the same harness, with the same input: **ours** (this repository, `@giuseppe-scotto-lavina/html-in-canvas-polyfill`; `dist/hic-live-polyfill.iife.min.js`, Chrome stable,
+no native feature), the **competitor** (the unscoped npm package `html-in-canvas-polyfill@1.0.1`, a separate project = `three-html-render` 0.1.2, built by
 `test/bench/compare/competitor/build.mjs` with an attribute adapter: it only knows `layoutsubtree`) and **native** (Chrome Canary + `--enable-blink-features=CanvasDrawElement`, no bundle).
 Pages: the explainer example, F1 water form (effect off), F2 scroll, F3 resize, F4 large app (200-2000 nodes). Which subject was measured when, all on one machine:
-- **ours**: remeasured on 2026-10-31 (14:01-14:33 CET), every row, twice, with the code of [Unreleased] (0.1.0-preview.16 plus the two large-drawable fixes listed
-  there), on Chrome 156.0.8078.76. The table shows the second run.
+- **ours**: remeasured on 2026-10-31 (14:01-14:33 CET), every row, twice, with the code of 0.1.0-preview.16 plus the two large-drawable fixes released in
+  0.1.0-preview.17 (that release's error-message changes came later), on Chrome 156.0.8078.76. The table shows the second run.
 - **competitor** and **native**: measured on 2026-10-30/31, every row, twice (the competitor on Chrome 156.0.8078.76, native on Canary 159.0.8131.0); their code has not changed
   since, so they were not run again. The table shows their second run of that session.
 
@@ -78,7 +78,7 @@ Machine: Apple M1 Max, ProductName: macOS | ProductVersion: 27.0.1 | BuildVersio
 
 ## What changed since the last measurement
 
-The table above measures ours with the two large-drawable fixes of [Unreleased] (`CHANGELOG.md`). The first part below compares it with ours as measured on
+The table above measures ours with the two large-drawable fixes released in 0.1.0-preview.17 (`CHANGELOG.md`). The first part below compares it with ours as measured on
 2026-10-30/31 with 0.1.0-preview.15; the second compares that run with the previous table (2026-10-13 to 2026-10-19) and explains what got worse and why.
 
 ### Ours after the two large-drawable fixes (2026-10-31)
@@ -147,7 +147,7 @@ Headline rows of ours, the previous table against 0.1.0-preview.15 on 2026-10-30
 | idle, input focused: RunTask/s · renderer CPU p50 | 46.6 · 2.08 % | 47.5 · 2.20 % (46.0 · 2.03 %) | unchanged |
 
 What got worse in this run, plainly: the main-thread cost of an author update in a large drawable at 1,000 and 2,000 elements, mostly in tasks longer than the
-8.33 ms frame budget, and startup (parse, compile and install about 2.5 ms slower, the first `paint` event 2.5-3.5 ms later), which follows the 29 % larger core.
+8.33 ms frame budget, and startup (parse, compile and install about 2.5 ms slower, the first `paint` event 2.5-3.7 ms later), which follows the 29 % larger core.
 
 What the two fixes recovered, and what remains (the first part of this section has both runs of each):
 - **Recovered:** at 1,000 and 2,000 elements, 15.3 and 17.5 ms of main thread per update (24.9 and 34.2 ms with 0.1.0-preview.15, 19.2 and 22.1 ms on 2026-10-15),
@@ -174,7 +174,7 @@ point), and a probe that records every build (its synchronous ms, whether its de
   of being replaced. Table rows are never spacers, so F4's table (and its form) stayed in every tile: the markup of a one-line update went from 14 to 32 KB at 1,000 elements
   and from 21 to 67 KB at 2,000, the spacers from 83 to 195, the synchronous build at 2,000 from 2.2 to 5.9 ms (p50), and the decode task (SVG parse, layout and raster of
   the larger document) grew with it. Headless, the commit before it against it: 2,000 elements 0 / 1 / 2 against 25 / 56 / 57 tasks over 8.33 ms per 30 updates. Any page
-  with a tall box outside the rebuilt area is affected, not only F4. Fixed in [Unreleased] (`spacerHeight`: a tall spacer in two exact parts). Headed, 120 Hz, three runs:
+  with a tall box outside the rebuilt area is affected, not only F4. Fixed in 0.1.0-preview.17 (`spacerHeight`: a tall spacer in two exact parts). Headed, 120 Hz, three runs:
   2,000 elements 56 / 56 / 24 against 4 / 7 / 0 tasks over 8.33 ms, 34.3 / 30.3 / 16.4 against 19.9 / 15.4 / 14.7 ms per update; 1,000 elements 17.7 / 23.0 / 12.8 against
   14.4 / 15.2 / 14.3 ms per update; the core of 2026-10-15 in the same session: 0 / 0 / 0 and 0 / 1 / 0 tasks over 8.33 ms, 20-22 and 17-19 ms per update. Update to pixel
   p50 stays at 3.0-3.5 ms.
@@ -185,7 +185,7 @@ point), and a probe that records every build (its synchronous ms, whether its de
   core of 2026-10-15, at about the same total cost) and the 10-11 tasks at 1,000. Headless, the release before it against it at 200 elements: 5 / 1 / 3 against
   25 / 26 tasks over 8.33 ms (its third run was in the fast state described below). Measured as an experiment (headless, three runs, the fixed core with
   and without the threshold set to 0, so that every build that is not urgent decodes in the next task): at 200 elements 22 / 22 / 19 against 8 / 7 / 1 tasks over
-  8.33 ms, at 1,000 elements 19 / 17 / 15 against 0 / 0 / 0, update to pixel not later. Fixed in [Unreleased], keeping the threshold as a floor: a build also decodes
+  8.33 ms, at 1,000 elements 19 / 17 / 15 against 0 / 0 / 0, update to pixel not later. Fixed in 0.1.0-preview.17, keeping the threshold as a floor: a build also decodes
   in the next task when its task is predicted to reach one 120 Hz frame, the time since the pump started plus what lands at once after it (per drawable, the measured
   cost per markup character of its tiles that landed at once, from the end of the pump to the end of the early commit and paint, mean plus two mean deviations, times
   the new tile's markup length; `ARCHITECTURE.md`, frame loop). Measuring only the decode and the commit draw was not enough: it predicted 6-7 ms for tasks that took
@@ -225,13 +225,13 @@ resize final pixels 7.25 to 13.72 % (still WRONG); its typing and click latency 
   - click/focus, wheel tick, F4 author mutation: per-event baseline (last sampled frame) → first frame whose region differs by > 24 levels on ≥ 1 % / 2 % / 0.3 %.
   - every probe pass ends with a **pixel check against the plain-DOM twin** (same value / scroll offset / text / window size); "WRONG" marks a failure (> 3 % of pixels Δ > 16, or for text any Δ > 48).
 - **Positive controls**: a frozen renderer (every `paint` swallowed and the 2D draw calls no-ops) must make every typing / slider / click / wheel sample "never drawn". All fire for all three subjects.
-- **RunTask**: a separate traced pass of the same input without the probe (`RunTask` on `CrRendererMain` vs 8.33 ms; never the Long Tasks API). The probe itself was shown not to change cost (`probe-effect.mjs`: F1 typing RunTask p95/max/busy fresh vs after 4 s of readback: ours 0.82/6.7/10.0 % vs 0.22/7.2/10.3 %, competitor 1.21/7.9/10.0 % vs 1.14/7.4/9.8 %, native 1.82/3.5/4.2 % vs 1.83/4.1/4.2 %).
+- **RunTask**: a separate traced pass of the same input without the probe (`RunTask` on `CrRendererMain` vs 8.33 ms; never the Long Tasks API). The probe was measured not to change the busy share or the longest task (`probe-effect.mjs`, measured once for the first edition of this document, 2026-10-14, with the core and browsers of that day: F1 typing RunTask p95/max/busy fresh vs after 4 s of readback: ours 0.82/6.7/10.0 % vs 0.22/7.2/10.3 %, competitor 1.21/7.9/10.0 % vs 1.14/7.4/9.8 %, native 1.82/3.5/4.2 % vs 1.83/4.1/4.2 %).
 - **Resize**: 30 real window drags (`Browser.setWindowBounds`, 12 steps, 16 ms, every third at 8 ms) between 1400 and 900 px; blank = canvas transparent/flat/zero-size in a sampled frame; convergence = last resize event → first frame from which the canvas never changes again before the next drag.
 - **Idle**: renderer and GPU process CPU (`SystemInfo.getProcessInfo`) every second for 30 s, then a 10 s trace; caret blink verified on the canvas. **First paint**: rAF time (from navigation start) of the first frame with ≥ 90 % of the final canvas coverage; cold = new tab (new renderer process, HTTP cache cleared; the server sends `no-store` anyway), warm = same tab. **Memory**: 30 samples of `Runtime.getHeapUsage`, renderer RSS (largest renderer of our profile) and GPU-process RSS; heap after a forced GC. **Bundle**: `<script>` block time minus resource fetch time over 30 loads + one trace (V8 compile / evaluate).
 
 ## Where the polyfill loses, and why
 
-Against **native**, latency is within about one frame where the polyfill has a shortcut (typing in a single-line field, inner scrolling) and 1-2 frames behind elsewhere; main-thread cost is 1.8-4.7x native.
+Against **native**, input-to-pixel latency at p50 is within about one frame in every row of the table: equal for typing, the slider, resize convergence and F4 updates, ahead on the inner-list wheel (native's figure includes Chrome's smooth-scroll animation), about one frame behind on click to focus. First paint is 25-27 ms later in a new tab (38-39 ms in the same tab). Main-thread cost is 1.8-4.7x native per F4 update, and the busy share 1.1-4.3x native in the other traced scenarios (scroll stream 1.1x, typing 2.1x, slider 3.2x, resize 4.3x).
 That is the floor of a userland approach: a snapshot has to be cloned, serialised, parsed, laid out and decoded by the browser before it can be drawn.
 
 1. **Large drawables that change often** (F4): the picture of a one-line author update lands within one frame at every size (update to pixel p50 2.1-3.1 ms,
@@ -239,8 +239,8 @@ That is the floor of a userland approach: a snapshot has to be cloned, serialise
    plus the clone, the serialisation and the isolated SVG document the browser has to parse, style and lay out. At 500, 1,000 and 2,000 elements that work is
    spread over tasks shorter than 8.33 ms (0, 1 and 0 of 30 updates ran a longer one; native 0, 0 and 18); at 200 elements 16 of 30 updates still run one task
    over it (longest 9.5 ms; native 0): the landing of the whole tile, about 8.4 ms by itself (see "What changed"). The damage is
-   bounded to the children that moved and the tile leaves out what lies below it (a 60 Hz counter beside 2,000 elements paints 59 times a second, see the
-   optimization log). Keep frequently updated drawables small (`docs/guides/PERFORMANCE.md`).
+   bounded to the children that moved and the tile leaves out what lies below it (a 60 Hz counter beside 2,000 elements painted 59 times a second when measured
+   on 2026-10-15, see the optimization log). Keep frequently updated drawables small (`docs/guides/PERFORMANCE.md`).
 2. **Click to focus pixel** (p50 14.6 vs 6.8 ms, p95 15.4 vs 7.7 ms): the caret appears at once, but an author `:focus` style needs a new snapshot, built inside
    the input task.
 3. **First paint** (new tab: explainer 58.3 vs 31.6 ms, F1 91.1 vs 66.1 ms) and **startup** (342 KB minified core, 10.6 ms parse + compile + install, the first
@@ -250,7 +250,8 @@ That is the floor of a userland approach: a snapshot has to be cloned, serialise
 5. **Idle with a focused input** (47 RunTask/s, renderer CPU p50 2.1 % vs 1.1 %): the caret blink is painted into the retained surface.
 
 Against the **competitor**, this polyfill is slower on first paint (new tab: explainer 58.3 vs 38.1 ms, F1 91.1 vs 59.9 ms), startup (10.6 vs 1.9 ms), size
-(342 KB vs 33 KB minified, 116 KB vs 10 KB gzip) and memory (F1 JS heap 3.1 vs 1.2 MB, renderer RSS 203 vs 199 MB). It is correct in every pixel check of the
+(342 KB vs 33 KB minified, about 116 KB vs 11 KB gzip; the competitor's figure is the adapted bundle the bench loads), memory (F1 JS heap 3.1 vs 1.2 MB, renderer RSS 203 vs 199 MB),
+main-thread busy share while typing (11.3 vs 8.6 %) and during resize drags (18.0 vs 7.5 %), and click to focus pixel at p50 (14.6 vs 7.7 ms in run B; 14.3 ms in run A). It is correct in every pixel check of the
 table (in-field text scrolling, wheel scrolling, resize: 0 vs 542 blank frames), cheaper on large drawables at every size (F4 main thread 14.5-17.7 vs 23-70 ms
 per update, update to pixel 2-3 vs 13-52 ms), and faster at p95 on typing, slider and click (typing every 30 ms 9.1 vs 43.8 ms, slider 8.3 vs 41.6 ms, click to
 focus 15.4 vs 23.8-37.2 ms).
