@@ -125,7 +125,7 @@ function declaresAnimation(dataUrl) {
  * @property {number} id
  * @property {string} abs  its URL
  * @property {string} mime
- * @property {string} source  the data: URL of the image
+ * @property {string} source  the data: URL of the image while an <img> shows it and it can be played ('' once released or dead: the sniff result stays, the bytes go)
  * @property {Set<Element>} imgs  the <img> elements the capture saw showing it
  * @property {any} decoder  ImageDecoder, null until opened
  * @property {Promise<boolean>|null} opening
@@ -170,26 +170,28 @@ export function createAnimatedImages(env) {
     const decoding = typeof win.ImageDecoder === 'function';
     if (!decoding) env.reporter.deviation('animated-images', 'this browser has no ImageDecoder (or the document is not a secure context): an animated image shows its first frame');
     return {
-      id: ++ids, abs, mime: `image/${m[1].toLowerCase()}`, source: dataUrl, imgs: new Set(), decoder: null, opening: null, dead: !decoding, count: 0, reps: 0, loops: 0,
+      id: ++ids, abs, mime: `image/${m[1].toLowerCase()}`, source: decoding ? dataUrl : '', imgs: new Set(), decoder: null, opening: null, dead: !decoding, count: 0, reps: 0, loops: 0,
       durations: [], frames: new Map(), encoding: new Map(), index: 0, since: 0, shownAt: 0, pausedAt: null, timer: null, busy: false,
     };
   }
 
-  /** @param {Anim} anim @returns {Promise<boolean>} */
+  /** @param {Anim} anim @returns {Promise<boolean>} false: refused, and the decoder it made is closed */
   function open(anim) {
+    /** @type {any} */
+    let decoder = null;
     anim.opening ??= (async () => {
       const ID = win.ImageDecoder;
       if (!(await ID.isTypeSupported(anim.mime))) return false;
-      const decoder = new ID({ data: dataBytes(anim.source), type: anim.mime });
+      decoder = new ID({ data: dataBytes(anim.source), type: anim.mime });
       await decoder.tracks.ready;
       await decoder.completed;
       const track = decoder.tracks.selectedTrack;
-      if (!track?.animated || track.frameCount < 2 || disposed) { decoder.close(); return false; }
+      if (!track?.animated || track.frameCount < 2 || disposed) throw new Error('not an animation');
       anim.decoder = decoder;
       anim.count = track.frameCount;
       anim.reps = track.repetitionCount;
       return true;
-    })().catch(() => false);
+    })().catch(() => { decoder?.close(); return false; });
     return anim.opening;
   }
 
@@ -256,11 +258,14 @@ export function createAnimatedImages(env) {
     return p;
   }
 
-  /** @param {Anim} anim @param {unknown} err */
+  /** @param {Anim} anim @param {unknown} err  for good: the decoder is closed and the source let go (the frame shown stays) */
   function kill(anim, err) {
     if (anim.dead) return;
     anim.dead = true;
     stop(anim);
+    anim.decoder?.close();
+    anim.decoder = null;
+    anim.source = '';
     env.reporter.deviation('animated-images', `the first frame of an animated image is shown: ${String(/** @type {any} */ (err)?.message ?? err)}`);
   }
 
@@ -341,7 +346,7 @@ export function createAnimatedImages(env) {
     }
   }
 
-  /** @param {Anim} anim  no image shows it any more: the decoder and the clock go, encoded frames stay evictable */
+  /** @param {Anim} anim  no image shows it any more: the decoder, the clock and the source go (the next sighting brings it back), encoded frames stay evictable */
   function release(anim) {
     stop(anim);
     anim.decoder?.close();
@@ -350,6 +355,7 @@ export function createAnimatedImages(env) {
     anim.index = 0;
     anim.loops = 0;
     anim.pausedAt = null;
+    anim.source = '';
   }
 
   return {
@@ -360,7 +366,7 @@ export function createAnimatedImages(env) {
         seen.delete(img); // it showed an animated image before: that clock lets it go
         return dataUrl;
       }
-      anim.source = dataUrl;
+      if (!anim.dead) anim.source = dataUrl;
       if (seen.get(img) !== abs || !anim.imgs.has(img)) {
         seen.set(img, abs);
         anim.imgs.add(img);

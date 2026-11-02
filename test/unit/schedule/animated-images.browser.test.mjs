@@ -151,3 +151,86 @@ test('an image whose source changes from an animated to a still image stops bein
   await sleep(600);
   assert.equal(rig.sink.damage.length, 0, 'the still image is not damaged by the clock of the animated one');
 });
+
+/**
+ * Stands in for ImageDecoder during one test: each decoder wraps a real one, `behave` replaces parts of it, every close() is counted.
+ * @param {any} t @param {{tracks?: (real: any) => any, completed?: (real: any) => Promise<void>, decode?: (real: any, o: any) => Promise<any>}} [behave]
+ */
+function countingDecoder(t, behave = {}) {
+  const Real = /** @type {any} */ (window).ImageDecoder;
+  const log = { made: 0, closed: 0 };
+  class Counting {
+    /** @param {string} type */
+    static isTypeSupported(type) { return Real.isTypeSupported(type); }
+    /** @param {any} init */
+    constructor(init) {
+      log.made++;
+      const real = new Real(init);
+      real.tracks.ready.catch(() => {});
+      real.completed.catch(() => {});
+      this.tracks = behave.tracks?.(real) ?? real.tracks;
+      this.completed = behave.completed?.(real) ?? real.completed;
+      this.decode = (/** @type {any} */ o) => (behave.decode ? behave.decode(real, o) : real.decode(o));
+      this.close = () => { log.closed++; real.close(); };
+    }
+  }
+  /** @type {any} */ (window).ImageDecoder = Counting;
+  t.cleanup(() => { /** @type {any} */ (window).ImageDecoder = Real; });
+  return log;
+}
+
+test('a decode that fails closes the decoder at once (not at uninstall); the first frame stays and nothing is damaged', async (t) => {
+  const log = countingDecoder(t, { decode: () => Promise.reject(new Error('corrupt frame')) });
+  const { rig, player, img } = setup();
+  t.cleanup(() => player.dispose());
+  t.cleanup(observeAnimatedImages(rig.env, rig.record));
+  const source = await inline(GIF);
+  assert.equal(player.frameUrl(img, 'https://x.test/bad.gif', source), source);
+  await sleep(400);
+  assert.equal(log.made, 1, 'one decoder was opened');
+  assert.equal(log.closed, 1, 'the dead image closed its decoder');
+  assert.ok(rig.reporter.deviations.some(([id, d]) => id === 'animated-images' && /corrupt frame/.test(d)), 'reported');
+  assert.equal(player.frameUrl(img, 'https://x.test/bad.gif', source), source, 'the first frame is shown');
+  assert.equal(rig.sink.damage.length, 0);
+});
+
+test('a decoder whose tracks or completion reject is closed; the first frame stays', async (t) => {
+  // marked handled, as the platform marks ImageDecoder.completed (the player awaits tracks.ready first)
+  const fail = () => { const p = Promise.reject(new Error('unreadable')); p.catch(() => {}); return p; };
+  for (const [name, behave] of /** @type {const} */ ([['tracks', { tracks: () => ({ ready: fail(), selectedTrack: null }) }], ['completed', { completed: fail }]])) {
+    const log = countingDecoder(t, behave);
+    const { rig, player, img } = setup();
+    const source = await inline(GIF);
+    const stopViewer = observeAnimatedImages(rig.env, rig.record);
+    assert.equal(player.frameUrl(img, `https://x.test/${name}.gif`, source), source);
+    await sleep(300);
+    assert.equal(log.made, 1, `${name}: one decoder was made`);
+    assert.equal(log.closed, 1, `${name}: the refused decoder was closed`);
+    assert.equal(player.frameUrl(img, `https://x.test/${name}.gif`, source), source, `${name}: the first frame is shown`);
+    assert.equal(rig.sink.damage.length, 0, name);
+    stopViewer();
+    player.dispose();
+  }
+});
+
+test('positive control: a decoder that works plays, stays open while an image shows it, is closed when none does, and a new sighting opens and plays it again', async (t) => {
+  const log = countingDecoder(t);
+  const { rig, player, img } = setup();
+  t.cleanup(() => player.dispose());
+  t.cleanup(observeAnimatedImages(rig.env, rig.record));
+  const source = await inline(GIF);
+  const parent = /** @type {Element} */ (img.parentElement);
+  player.frameUrl(img, 'https://x.test/rgb100.gif', source);
+  await sleep(700);
+  assert.ok(rig.sink.damage.length >= 2, `played (${rig.sink.damage.length})`);
+  assert.deepEqual(log, { made: 1, closed: 0 }, 'open while shown');
+  img.remove();
+  await sleep(400);
+  assert.deepEqual(log, { made: 1, closed: 1 }, 'released: closed');
+  parent.append(img);
+  rig.sink.clear();
+  player.frameUrl(img, 'https://x.test/rgb100.gif', source);
+  await sleep(700);
+  assert.ok(rig.sink.damage.length >= 2, `played again from the source the new sighting brought (${rig.sink.damage.length})`);
+  assert.deepEqual(log, { made: 2, closed: 1 });
+});
