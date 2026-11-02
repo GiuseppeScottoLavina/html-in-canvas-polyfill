@@ -1,7 +1,7 @@
 // G-bundle (docs/TEST-PLAN.md): the built bundles are what they claim to be.
 //   node scripts/check-bundle.mjs [--no-build] [--allow-size] [--skip-browser] [--chrome=stable|canary|<path>]
 //   1. size: core min <= 150 KB (the target), and never above the recorded RATCHET (a regression fails even with --allow-size); every other bundle below its own ceiling;
-//      the five classic bundles also below their gzip budget (level 9). The ceilings and budgets are the measured sizes plus a small margin.
+//      the six classic bundles also below their gzip budget (level 9). The ceilings and budgets are the measured sizes plus a small margin.
 //   2. static: each IIFE parses as a CLASSIC script (a static import/export or import.meta is a SyntaxError there) and has no dynamic import()
 //   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + each plugin of dist/plugins/, native bridge + core:
 //      the globals exist and work, the page made NO request beyond its own scripts (server log + Resource Timing), and the minified FEATURES agree with src/contracts/features.js
