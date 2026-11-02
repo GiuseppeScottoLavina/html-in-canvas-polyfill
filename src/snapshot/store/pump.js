@@ -395,17 +395,12 @@ export function runPump(env, deps, now, budget) {
   }
   const since = (/** @type {Entry} */ e) => deps.damage.pendingSince(e.el) ?? 0;
   for (const list of byRecord.values()) list.sort((a, b) => since(a) - since(b));
-  if (byRecord.size < 2) {
-    for (const [record, list] of byRecord) pumpRecord(env, deps, record, list, now, budget, out);
-    return quiet(deps, out);
-  }
   // the canvas with the oldest damage goes first (its builds still start together, one batch): in insertion order a canvas whose build used up the round
   // deferred every canvas after it for as long as it stayed dirty (two animated canvases at 4.1 ms per build: 120 builds against 0 in 120 rounds). A pump in an
-  // input task serves the canvas that has input damage first, whatever the age of the others' damage.
-  const input = (/** @type {Entry[]} */ list) => budget.urgent && list.some((e) => INPUT_FIRST.some((c) => deps.damage.hasPendingCause(e.el, c)));
-  const order = [...byRecord].map(([record, list]) => ({ record, list, input: input(list), since: since(list[0]) }));
-  order.sort((x, y) => (x.input === y.input ? x.since - y.since : x.input ? -1 : 1));
-  for (const { record, list } of order) pumpRecord(env, deps, record, list, now, budget, out);
+  // input task serves the canvas that has input damage first, whatever the age of the others' damage. One canvas: no sort, no allocation.
+  const key = (/** @type {Entry[]} */ list) => (budget.urgent && list.some((e) => INPUT_FIRST.some((c) => deps.damage.hasPendingCause(e.el, c))) ? -Infinity : since(list[0]));
+  const order = byRecord.size < 2 ? byRecord : [...byRecord].map(([record, list]) => /** @type {[CanvasRecord, Entry[], number]} */ ([record, list, key(list)])).sort((x, y) => x[2] - y[2] || 0);
+  for (const [record, list] of order) pumpRecord(env, deps, record, list, now, budget, out);
   return quiet(deps, out);
 }
 

@@ -557,15 +557,12 @@ export function createScheduler(env, store, hooks) {
   /** Stop the frame loop until shortly before `until` (one timer; armTick ends it earlier). @param {number} until */
   function rest(until) {
     phase.cancel();
-    armed = false;
-    chained = false;
-    const frame = Math.min(framePeriod, 1000 / 60);
-    quietTimer = env.window.setTimeout(() => { quietTimer = 0; armTick(); }, Math.max(0, until - env.now() - QUIET_WAKE_FRAMES * frame));
+    armed = chained = false;
+    quietTimer = env.window.setTimeout(() => { quietTimer = 0; armTick(); }, Math.max(0, until - env.now() - QUIET_WAKE_FRAMES * Math.min(framePeriod, 1000 / 60)));
   }
 
   function endQuiet() {
-    if (!quietTimer) return;
-    env.window.clearTimeout(quietTimer);
+    if (quietTimer) env.window.clearTimeout(quietTimer);
     quietTimer = 0;
   }
 
