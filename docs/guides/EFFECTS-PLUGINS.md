@@ -11,7 +11,7 @@ The example plugins of this repository live in [`plugins/`](../../plugins/), out
 
 ## Extensions, not the standard
 
-The effects host (`HTMLInCanvasEffects`, this plugin interface, the input remapping) and the frame cap (`framecap`, `canvas.frameCap`) are **extensions of this library**. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not and will not provide them: they are this library's own API. Code that uses them depends on this library, not on the standard.
+The effects host (`HTMLInCanvasEffects`, this plugin interface, the input remapping) and the frame cap (`framecap`, `canvas.frameCap`) are **extensions of this library**. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them: they are this library's own API. Code that uses them depends on this library, not on the standard.
 
 They run over the polyfill's drawing (mode `polyfill`) and over a browser's own HTML-in-Canvas implementation that the installed polyfill stepped aside for (mode `native`): the page loads the same bundles and calls the same API, and `createHost` picks the path. Over a native implementation the host needs the standard members `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` and `getElementImageDefaultSize`; where one is missing (an earlier draft such as the `layoutsubtree` builds) `createHost` rejects with a `NotSupportedError` and the page keeps its 2D path. The extensions still need the core bundle installed: it decides the mode and defines `canvas.frameCap`, also in the native modes (a property of this library, not of the standard; `uninstall()` removes it).
 
@@ -64,7 +64,7 @@ const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5,
 
 | error | when |
 |---|---|
-| `HicUnsupportedError` (`feature: 'effect-plugins'`) | no WebGPU, no adapter, or the device request failed; or a native implementation without `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` or `getElementImageDefaultSize` (the message names it). The canvas is still free for a 2D context: the adapter and the device are acquired before the canvas is claimed |
+| `HicUnsupportedError`, a `DOMException` named `NotSupportedError` (`feature: 'effect-plugins'`) | no WebGPU, no adapter, or the device request failed; or a native implementation without `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` or `getElementImageDefaultSize` (the message names it). The canvas is still free for a 2D context: the adapter and the device are acquired before the canvas is claimed |
 | `InvalidStateError` | `source` is not an eligible drawable of `canvas`; the canvas already has another context type; the core is not installed (or was uninstalled) |
 | `TypeError` | `canvas` is not an `HTMLCanvasElement`, `source` not an `Element`, `options` not an object |
 
@@ -83,7 +83,7 @@ try {
 
 `host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, paused, pauses, offscreenFrames, sourceVersion, remapped, passedThrough}`) and `destroy()`.
 
-The host does no work for a canvas nobody can see. While the canvas is more than half a viewport (or half its scroll container) out of view, or the document is hidden, it renders nothing, `continuous` plugins included, and uploads nothing; `stats().paused` is then `true`. It starts again before the canvas scrolls back in, so the first frame you see is current; a jump straight into view (`scrollTo`, an anchor) is rendered in the frame that shows it. The frame clock does not stop: on resume an effect shows what it shows at that time, nothing is replayed. An action you trigger, or a `settled()` you await, while the canvas is out of view still completes: the host renders about 10 frames per second until it settles (`stats().offscreenFrames`), and in a hidden document, where the browser runs no frames, on the first frame after the document is shown again. There is no option: the pause cannot be seen.
+The host does no work for a canvas nobody can see. While the canvas is more than half a viewport (or half its scroll container) out of view, or the document is hidden, it renders nothing, `continuous` plugins included, and uploads nothing; `stats().paused` is then `true`. It starts again before the canvas scrolls back in, so the first frame you see is current; a jump straight into view (`scrollTo`, an anchor) is rendered in the frame that shows it. The frame clock does not stop: on resume an effect shows what it shows at that time, nothing is replayed. An action you trigger, or a `settled()` you await, while the canvas is out of view still completes: the host renders about 10 frames per second until it settles (`stats().offscreenFrames`), and in a hidden document, where the browser runs no frames, on the first frame after the document is shown again. There is no option to turn the pause off: a paused canvas is out of sight.
 
 #### 2.1 Size the source like the canvas
 
@@ -123,7 +123,7 @@ The frame cap bounds how often the effect renders: at most `F` effect frames per
 canvas.frameCap = 30;                       // or <canvas content="drawable" framecap="30">
 ```
 
-`canvas.frameCap` reflects the `framecap` attribute (0 to 240; larger values clamp). Plugins do not pace themselves: the host calls them at most at the cap, and a plugin whose animation is a function of the frame clock (all of the example plugins) shows the same picture at the same instant whatever the cap. Rules and measurements: [API-CONTRACT 7.1](../API-CONTRACT.md#71-frame-cap).
+`canvas.frameCap` reflects the `framecap` attribute (0 to 240; larger values clamp). Plugins do not pace themselves: the host calls them at most at the cap, and a plugin whose animation is a function of the frame clock shows the same picture at the same instant whatever the cap. The example plugins are written that way; the pointer springs of `holo-card` and `liquid-glass` integrate `frame.delta` in substeps of 1/240 s, so at different caps they agree closely, not bit for bit. Rules and measurements: [API-CONTRACT 7.1](../API-CONTRACT.md#71-frame-cap).
 
 ### 5. Actions: `trigger` and `settled`
 
@@ -309,7 +309,7 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 
 | member | |
 |---|---|
-| `render(frame)` | required. Encode your pass into `frame.encoder`. `frame` has `now` (ms), `delta`, `frameIndex`, `frameCap`, `sourceVersion`, `sourceReady`, `encoder`, `sourceView`/`sourceTexture`, `destinationView`/`destinationTexture`, and `width`, `height` (backing pixels), `cssWidth`, `cssHeight`, `dpr`. When `sourceReady` is false no snapshot has been uploaded yet: write something harmless. `now` is the time of the frame and keeps running while the host is idle or paused off-screen, so `delta` (the time since the previous presented frame) can be seconds long: clamp it before you integrate anything with it (the example plugins clamp it to 0.1 s). |
+| `render(frame)` | required. Encode your pass into `frame.encoder`. `frame` has `now` (ms), `delta`, `frameIndex`, `frameCap`, `sourceVersion`, `sourceReady`, `encoder`, `sourceView`/`sourceTexture`, `destinationView`/`destinationTexture`, and `width`, `height` (backing pixels), `cssWidth`, `cssHeight`, `dpr`. When `sourceReady` is false no snapshot has been uploaded yet: write something harmless. `now` is the time of the frame and keeps running while the host is idle or paused off-screen, so `delta` (the time since the previous presented frame) can be seconds long: clamp it before you integrate anything with it (`holo-card` and `liquid-glass`, the example plugins that integrate it, clamp it to 0.1 s). |
 | `spatial` | `true` when your output moves pixels. Then `captureInputMapper` is REQUIRED: `addPlugin` rejects with a `TypeError` when the created instance is `spatial` without it. |
 | `continuous` | `true` to be rendered on every capped frame even when the source did not change (animations). Otherwise the host renders when the source changed or you call `context.requestRender()`. It may change at runtime (a getter, or a property you assign): the host reads it after every frame, so a plugin that animates only now and then is `continuous` only while it animates. A host with nothing to render is idle and reads it again only at its next frame: after switching it to `true`, call `context.requestRender()`. |
 | `captureInputMapper(frame)` | see section 14 |
@@ -497,7 +497,7 @@ The shared test kit of `plugins/_shared/` (test tooling, not shipped) covers the
 **Browser** (`plugins/<name>/test/*.browser.test.mjs`, headless Chrome, `npm run test:unit:browser`), from `/plugins/_shared/gpu-check.mjs`, through the real host on a real WebGPU canvas:
 - `checkMapperAgainstGpu(t, plugin, options)`: presents one frame over a grid of white markers and counts the pixels where the mapper's prediction disagrees with the GPU. It passes only when the mapper is right (at most 5 pixels) AND the identity mapper is wrong (at least 200), so the check could have failed.
 - `runActionOnGpu(t, plugin, options, action, actionOptions)`: triggers an action through the handle and presents frames on the frame clock until it resolves; returns the state, the largest change against the first frame and the worst agreement of a frame's mapper with its pixels during the action (input must follow the pixels while an action plays too).
-- `presentOnce`, `agreement`, `markerScene`, `spyMappers`, `lossSpy`, `until`, and `gpuTest` (skipped, never passed, where Chrome has no WebGPU adapter).
+- `presentOnce`, `agreement`, `changedPixels`, `markerScene`, `spyMappers`, `lossSpy`, `until`, and `gpuTest` (skipped, never passed, where Chrome has no WebGPU adapter).
 
 **Gallery end to end** (`plugins/<name>/test/gallery.e2e.mjs`, `npm run test:plugins`): the plugin in `examples/plugins/` with trusted input. `_shared/gallery-e2e.mjs` opens the gallery, takes shots, drags, records; `actionChecks(page, check, steps, supersede)` clicks the gallery's button of each action and checks the state, that the frame changed and that the host goes idle, then from page script an unknown action, superseding and `settled()`.
 
