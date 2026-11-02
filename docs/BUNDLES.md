@@ -51,7 +51,7 @@ All scripts are classic `<script src>` tags (no `type=module`, no `import`), mak
 | `hic-live-gpu.iife(.min).js` | registers on `Symbol.for('hic.gpu-patches')` | nothing; before the core (install uses it) or after it (it replaces the stubs of the installed core) |
 | `hic-live-worker.iife(.min).js` | in a dedicated worker: `ElementImage`, `drawElementImage` on OffscreenCanvas 2D, the OffscreenCanvas geometry methods (nothing in a window) | loaded before the worker's own message listeners; the page runs the core |
 | `esm/worker.js` | the same for a module worker; exports `installWorkerScope` | as above |
-| `esm/index.js` (+ chunks) | exports `install`, `getInstalled`, `HicUnsupportedError`, `FEATURES`, `featureById`, `EVENTS`, `EXT`, `VERSION`; not minified (the consumer's bundler does it); carries the engines and GPU code (bundler users get every engine and the texture methods) | nothing |
+| `esm/index.js` (+ chunks) | exports `install`, `getInstalled`, `HicUnsupportedError`, `FEATURES`, `featureById`, `EVENTS`, `EXT`, `VERSION`; not minified (the consumer's bundler does it); carries the engines and GPU code (bundler users get every engine and the texture methods); the full `FEATURES` table is tree-shaken from an app that imports neither `FEATURES` nor `featureById` (below) | nothing |
 | `esm/effects.js` | exports `installEffects(win)`, `createLateEffects`, `installEffectsGlobal`, `definePlugin`, `NO_TARGET`, `isNoTarget`; no side effect | the core, installed |
 | `plugins/<name>.esm.js` | the exports of `plugins/<name>/index.js` (`meta`, `plugin`, ...), WGSL inlined; no import | `effects.js` to use it |
 | `plugins/manifest.json` | name, title, description, `reducedMotion`, version, defaults, actions and file names of every plugin (read by `examples/plugins/`) | |
@@ -117,6 +117,8 @@ What could be loaded on demand without changing any pixel is a fast path that ha
 ### What the minified core is allowed to differ in
 
 `HicLivePolyfill.FEATURES` in the classic core carries `{id, status}` per feature only (the `summary` / `reason` prose is about 32 KB of text, 12 KB gzipped, and nothing at runtime reads it; the store reads `status`). `docs/SUPPORT-MATRIX.md` has the prose and the ESM build keeps the full table. The build fails if a row of `src/contracts/features.js` does not have the expected one-line shape, and G-bundle compares the ids and statuses of the minified table with the source table.
+
+The runtime reads a feature's status from `src/contracts/feature-status.js`, an id-to-status lookup that `npm run docs:sync` generates from `src/contracts/features.js` (G-doc-sync fails when it is stale), never from the public table. So in the ESM build `FEATURES` and `featureById` are used only by the entry's exports, and the table is marked pure: a bundler drops it, with all its prose, from an app that imports neither. Measured on 2026-11-02 with an app that imports only `install` from `dist/esm/index.js`, bundled and minified by esbuild: 435,465 bytes, 154,531 gzipped (level 9) before; 399,846 / 142,037 after (-35,619 / -12,494 bytes, -8.1 % gzip). The same app that also imports `FEATURES` is unchanged. G-bundle bundles both apps and fails if the first carries any `summary` or `reason` of the table or the second does not. The classic core answers the same lookup from its lean `FEATURES` (`lean-features` in `scripts/build.mjs`), so it holds each id and status once (+4 bytes minified).
 
 ## Load order and the seam between core and effects
 

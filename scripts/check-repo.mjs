@@ -1,6 +1,6 @@
 // Repo gates that need no browser: G-size, G-deps, G-no-blob, G-plugins, G-doc-sync (--docs only checks docs).
 //   node scripts/check-repo.mjs          size + deps + no-blob + plugin folder contract + doc sync
-//   node scripts/check-repo.mjs --docs   doc sync only
+//   node scripts/check-repo.mjs --docs   doc sync only (the matrix and the generated src/contracts/feature-status.js)
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, relative, sep } from 'node:path';

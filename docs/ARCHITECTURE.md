@@ -619,7 +619,7 @@ Seven modules on disjoint file sets that talk only through the typed interfaces 
 | schedule | `src/schedule/**` (among them `paint-gate`, `frame-phase`) | contracts, util, `SnapshotStore`, `LiveLayer` (via `record.layer`) |
 | gpu-effects | `src/effects/**`, `src/effects.js`, `src/effects-iife.js` (the example plugins are in `plugins/`, outside the module graph) | contracts, util, `SourceProvider`, `GeometryApi`, `InteractionTracker`, `Scheduler.addFrameHook`, `LiveLayer.elementAtPoint` |
 
-Shared leaves: `src/contracts/*` and `src/util/*`. A contract change (a new field, topic or option) edits `contracts/` and this document together.
+Shared leaves: `src/contracts/*` and `src/util/*`. `contracts/features.js` is the public feature table (data only; the entries export it); the runtime reads a feature's status from `contracts/feature-status.js`, generated from it by `npm run docs:sync`, so an ES-module app that does not import the table does not carry it (docs/BUNDLES.md). A contract change (a new field, topic or option) edits `contracts/` and this document together.
 Size budget: at most 1000 code lines per file, and a total ceiling for the core (gate G-size, `scripts/check-repo.mjs`).
 
 ## 7. Budgets and non-goals
