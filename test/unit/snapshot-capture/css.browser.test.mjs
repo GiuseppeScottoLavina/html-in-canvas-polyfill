@@ -1,6 +1,7 @@
 // CSS collection: media flattening, viewport units, own sheets skipped, shadow roots, per-tile shaking, caching.
 import { test, assert } from '/test/unit/lib/t.js';
 import { createCssCollector } from '/src/snapshot/capture/css-collector.js';
+import { BUS } from '/src/contracts/events.js';
 import { mount, rasterize, reference, diffFraction } from './_support.mjs';
 
 const svgOf = (r) => decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
@@ -51,6 +52,38 @@ test('bundles are cached per key; invalidate() rebuilds; a resource arriving reb
   const ready = c.bundle(m.record, m.resources);
   assert.deepEqual(ready.pendingUrls, []);
   assert.ok(ready.css.includes('data:image/svg+xml;base64,'));
+});
+
+test('a canvas record that is disposed or detached lets its bundle go: 40 canvases created and removed leave the cache bounded; a live canvas keeps its bundle', () => {
+  const N = 40;
+  // per-canvas rules (rewritten for each canvas's identity) and an inlined image, as a bundle of a real page holds
+  const rules = Array.from({ length: N }, (_, i) => `#churn-${i} .d{color:rgb(${i},0,0);background:url("data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" id="s${i}"/>`)}")}`).join('');
+  const m = mount('<div class="d" drawable>x</div>', { css: rules });
+  const c = createCssCollector(m.env);
+  const live = c.bundle(m.record, m.resources);
+  const suspended = { ...m.record, id: 2, canvas: document.createElement('canvas'), state: 'active' };
+  c.bundle(suspended, m.resources);
+  m.env.bus.emit(BUS.CANVAS_STATE, { record: suspended, state: 'suspended', previous: 'active' });
+  let peak = 0;
+  for (let i = 0; i < N; i++) {
+    const canvas = document.createElement('canvas');
+    canvas.id = `churn-${i}`;
+    m.host.append(canvas);
+    const record = { ...m.record, id: 100 + i, canvas, state: 'active' };
+    assert.ok(c.bundle(record, m.resources).css.includes(`rgb(${i}, 0, 0)`), 'the bundle of this canvas');
+    peak = Math.max(peak, c.size());
+    canvas.remove();
+    const state = i % 2 ? 'disposed' : 'detached';
+    record.state = state;
+    m.env.bus.emit(BUS.CANVAS_STATE, { record, state, previous: 'active' });
+    // a late caller (the tracker asking for pseudo-classes) does not bring a disposed record back
+    if (state === 'disposed') c.bundle(record, m.resources);
+  }
+  assert.equal(peak, 3, 'the live, the suspended and the one being built');
+  assert.equal(c.size(), 2, `only the live and the suspended canvas keep a bundle (${c.size()})`);
+  // positive control: the live canvas's bundle was not rebuilt (same object on its next snapshot), nor the suspended one's
+  assert.equal(c.bundle(m.record, m.resources), live);
+  assert.equal(c.size(), 2);
 });
 
 test('a canvas inside a shadow root: :host rules style the canvas shell, root sheets are included', () => {

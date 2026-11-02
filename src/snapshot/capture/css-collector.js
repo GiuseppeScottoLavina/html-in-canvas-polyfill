@@ -1,8 +1,9 @@
 /**
- * Collects and flattens the page CSS for a clone (cached by CssBundle.key).
+ * Collects and flattens the page CSS for a clone (cached by CssBundle.key, one bundle per canvas record, dropped when the record is detached or disposed).
  * Module: snapshot-capture (src/snapshot/capture/*).
  */
 
+import { BUS } from '../../contracts/events.js';
 import { inlineCssUrls, resolveResource } from './inline-resources.js';
 import { engineSkins } from './engine-skins.js';
 import {
@@ -19,6 +20,7 @@ import {
  * @typedef {Object} CssCollector
  * @property {(record: CanvasRecord, resources: ResourceCache) => CssBundle} bundle
  * @property {() => void} invalidate  stylesheet epoch changed
+ * @property {() => number} size  bundles held (at most one per canvas record not detached or disposed; tests)
  */
 
 /**
@@ -83,8 +85,9 @@ export function createCssCollector(env) {
   /** What the canvas-naming selectors were rewritten for: they match `canvas.matches(compound)`, so a class/id/attribute change of the canvas outdates the bundle. @param {HTMLCanvasElement} canvas */
   const canvasIdentity = (canvas) => `${canvas.id}.${canvas.getAttribute('class') ?? ''}.${canvas.getAttribute('lang') ?? ''}.${canvas.getAttribute('dir') ?? ''}`;
   const doc = env.document;
-  /** @type {Map<number, {key: string, bundle: CssBundle}>} */
+  /** @type {Map<number, {key: string, bundle: CssBundle}>} one per record, dropped when it is detached or disposed (a bundle holds its inlined fonts and images) */
   const cache = new Map();
+  env.bus.on(BUS.CANVAS_STATE, (/** @type {{record: CanvasRecord, state: string}} */ e) => { if (e.state === 'detached' || e.state === 'disposed') cache.delete(e.record.id); });
   /** @type {WeakSet<ResourceCache>} */
   const watched = new WeakSet();
   let epoch = 0;
@@ -183,9 +186,10 @@ export function createCssCollector(env) {
       if (record.root !== doc) css = rewriteHostSelectors(css);
       /** @type {CssBundle} */
       const bundle = { css: BASE_CSS + engineCss() + '\n' + css, key, pseudo: detectPseudos(joined), pendingUrls: [...new Set(pending)] };
-      cache.set(record.id, { key, bundle });
+      if (record.state !== 'disposed') cache.set(record.id, { key, bundle });
       return bundle;
     },
     invalidate() { epoch++; },
+    size: () => cache.size,
   };
 }
