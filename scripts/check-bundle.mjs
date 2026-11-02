@@ -156,7 +156,7 @@ const LIMITS = {
   // 343.75 -> 346.5 KB, gzip 116.5 -> 117.5 KB (+2,623 / +976 bytes alone, 2026-11-02, measured 346,215 / 117,274 with the step above): options.maxTotalSurfaceBytes bounds every retained surface
   //   (snapshot/store/store.js fits / overBudget / memoryFreed: surfaces pinned by ElementImages, the commit-time check of new surfaces and copies, caret and overlay
   //   copies skipped; scroll-compose.js bytes / shed and the page budget): 2x the budget with pinned surfaces and 11x with caret blinks, 0 reports, before
-  // 346.5 -> 347.5 KB, gzip 117.5 -> 117.75 KB (+1,073 / +382 bytes, 2026-11-02, measured 347,288 / 117,656; 346,215 / 117,274 before): the frame loop sleeps until
+  // 346.5 -> 347.5 KB, gzip 117.5 -> 117.75 KB (+1,137 / +398 bytes, 2026-11-02, measured 347,352 / 117,672; 346,215 / 117,274 before): the frame loop sleeps until
   //   a deferred build is due (schedule/scheduler.js mayRest / rest, snapshot/store/pump.js PumpResult.quietUntil, store.js host.busy) and the canvas with the oldest
   //   damage builds first (pump.js runPump: two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 347.5 * KB, gzip: 117.75 * KB },
