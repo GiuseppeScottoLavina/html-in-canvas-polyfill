@@ -21,10 +21,10 @@ HTML-in-Canvas lets a canvas, a WebGL scene or a WebGPU effect show live, access
 From npm, for a bundler (TypeScript declarations included):
 
 ```sh
-npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next
+npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill
 ```
 
-The `next` tag is the newest preview (`0.1.0-preview.17`); a plain install gets the `latest` tag, which can be one preview behind.
+A new preview is published under the `next` tag first and moved to `latest` once it has been checked, so `next` (`npm install …@next`) can be one preview ahead.
 
 ```js
 import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill';
