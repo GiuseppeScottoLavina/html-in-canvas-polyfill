@@ -58,6 +58,12 @@ const PUMP_MAIN_THREAD_MS = 4;
 const PUMP_MAIN_THREAD_SHARE = 0.35;
 const PUMP_MAX_IN_FLIGHT = 2;
 /**
+ * The loop sleeps (no rAF, one timer) only when the pump has nothing to start for at least this long (PumpResult.quietUntil), and the timer arms the tick
+ * QUIET_WAKE_FRAMES frame periods before that time, so the build starts in the same frame as when the loop polled.
+ */
+const QUIET_MIN_MS = 50;
+const QUIET_WAKE_FRAMES = 2;
+/**
  * Window property (symbol) through which the scheduler of a parent document runs the tick of a same-origin child document that has its own install, so the canvases
  * of an iframe inside a drawable paint before the canvases that contain the iframe (reverse shadow-including tree order across frames, WPT onpaint-iframe-post-tree-order).
  */
@@ -74,7 +80,8 @@ function createEntry(record) {
 /**
  * Implements Scheduler (docs/ARCHITECTURE.md ADR-C). TWO phases per frame through frame-phase.js: the rAF ARM callback (arms the sentinel observer) and the frame-end RUN in a fresh ResizeObserver callback
  * (after app rAF callbacks, style/layout and earlier ResizeObservers). RUN, per canvas in reverse tree order: cap gate, paint gate (paint-gate.js), commitLanded, paint dispatch; then the frame hooks. ONE store pump for all canvases runs in a task posted after the rendering update (queuePump).
- * paintNow(record) is the same dispatch from a microtask (canvas width/height setters), at most one per frame. Zero rAF and zero ResizeObserver when idle; the only timer is the caret blink while a text control is focused (observers/; no idle poll).
+ * paintNow(record) is the same dispatch from a microtask (canvas width/height setters), at most one per frame. Zero rAF and zero ResizeObserver when idle; the only timers are the caret blink while a text control is focused (observers/; no idle poll)
+ * and the end of a quiet wait (afterPump: the only work left is a build deferred to a known time).
  *
  * Cap semantics: the cap bounds paint events AND frame hooks (one cap gate per canvas, advanced only on ticks that have work). requestPaint() honours the cap too; paintNow() does not (the app just cleared the bitmap: skipping a frame would show it blank).
  * `interactionFloorFps` (default 0 = strict) raises a finite cap for user-driven damage only; it never lifts options.maxSnapshotFps, which the store applies to build starts.
@@ -112,6 +119,8 @@ export function createScheduler(env, store, hooks) {
   let earlyQueued = false;
   /** @type {MessageChannel|null} created on first use (an install without canvases never opens a port) */
   let pumpChannel = null;
+  /** the timer that ends a quiet wait (afterPump), 0 = none */
+  let quietTimer = 0;
 
   const offCommit = env.bus.on(BUS.COMMIT, onCommit);
   const offLanded = env.bus.on(BUS.LANDED, (/** @type {{record: CanvasRecord}} */ e) => {
@@ -127,12 +136,15 @@ export function createScheduler(env, store, hooks) {
     if (entry?.registered && e.state === 'active') resume(entry);
   });
   // A drawable added to / removed from a mounted canvas: the store tracks it (forced damage) but only the scheduler can arm a tick to build, commit and paint it.
-  const offDrawables = env.bus.on(BUS.DRAWABLES_CHANGED, (/** @type {{record: CanvasRecord}} */ e) => {
+  // ... and so is a drawable that the surface budget held back once memory is freed (an ElementImage closed): it does not tick while it waits for that.
+  const onStoreWork = (/** @type {{record: CanvasRecord}} */ e) => {
     const entry = entries.get(e.record);
     if (!entry?.registered) return;
     entry.dirty = true;
     armTick();
-  });
+  };
+  const offDrawables = env.bus.on(BUS.DRAWABLES_CHANGED, onStoreWork);
+  const offFreed = env.bus.on(BUS.MEMORY_FREED, onStoreWork);
   /**
    * Called by the scheduler of the parent document, inside its own tick (the parent's rendering update runs before this document's): run this document's tick now when one
    * is armed. Returns true while a paint of this document is still owed (held), so the parent holds the canvas that contains the iframe too.
@@ -170,6 +182,7 @@ export function createScheduler(env, store, hooks) {
 
   function armTick() {
     if (disposed || registeredCount === 0) return;
+    endQuiet();
     armed = true;
     phase.arm();
   }
@@ -522,7 +535,40 @@ export function createScheduler(env, store, hooks) {
         again = true;
       }
     }
-    if (again) armTick();
+    if (!again) return;
+    if (pumped?.quietUntil != null && mayRest(pumped.quietUntil)) rest(pumped.quietUntil);
+    else armTick();
+  }
+
+  /**
+   * May the loop stop until `until`? Only when the store's sole work is damage the pump deferred to then (PumpResult.quietUntil: nothing building, decoding or
+   * landed) and the scheduler owes nothing itself: no paint owed, held or waiting for the frame cap, no hook that asked for frames, no pump or early paint queued,
+   * no resize or first snapshot in progress. Anything that arrives later (damage, input, a landed tile, requestPaint, a wake) arms the tick and ends the wait.
+   * @param {number} until
+   */
+  function mayRest(until) {
+    const now = env.now();
+    if (until - now < QUIET_MIN_MS || pumpQueued || urgentQueued || earlyQueued || now < resizingUntil || store.hasLanded()) return false;
+    for (const entry of entries.values()) {
+      if (!entry.registered || !isServable(entry) || !hasWork(entry)) continue;
+      const paint = entry.record.paint;
+      if (paint.force || paint.waitingSince !== null || entry.hookKeep || entry.wake || entry.resized || !entry.due || entry.changed.size || entry.removed.size) return false;
+      if (!paint.everFired && (entry.record.layer?.drawableElements().length ?? 0) > 0) return false;
+    }
+    return true;
+  }
+
+  /** Stop the frame loop until shortly before `until` (one timer; armTick ends it earlier). @param {number} until */
+  function rest(until) {
+    endQuiet();
+    phase.cancel(true);
+    armed = chained = false;
+    quietTimer = env.window.setTimeout(() => { quietTimer = 0; armTick(); }, Math.max(0, until - env.now() - QUIET_WAKE_FRAMES * Math.min(framePeriod, 1000 / 60)));
+  }
+
+  function endQuiet() {
+    if (quietTimer) env.window.clearTimeout(quietTimer);
+    quietTimer = 0;
   }
 
   /** @param {Entry} entry @param {number} now */
@@ -719,6 +765,7 @@ export function createScheduler(env, store, hooks) {
       capGate.reset(record.id);
       if (registeredCount === 0) {
         phase.cancel();
+        endQuiet();
         armed = false;
       }
     },
@@ -799,12 +846,14 @@ export function createScheduler(env, store, hooks) {
       offLanded();
       offState();
       offDrawables();
+      offFreed();
       env.document.removeEventListener('visibilitychange', onVisibility);
       env.window.removeEventListener?.('resize', onWindowResize);
       try {
         if (/** @type {any} */ (env.window)[FRAME_TICK] === tickForParent) delete (/** @type {any} */ (env.window))[FRAME_TICK];
       } catch { /* see install */ }
       phase.cancel();
+      endQuiet();
       if (pumpChannel) {
         pumpChannel.port1.onmessage = null;
         pumpChannel.port1.close();

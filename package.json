@@ -125,7 +125,7 @@
     "build": "node scripts/build.mjs",
     "build:pages": "node scripts/build-pages.mjs",
     "docs:sync": "node scripts/gen-support-matrix.mjs && node scripts/check-repo.mjs --docs",
-    "test": "node scripts/check-repo.mjs --allow-size && npm run check && npm run test:unit && node scripts/check-bundle.mjs --allow-size",
+    "test": "node scripts/check-repo.mjs --allow-size && npm run check && npm run test:unit && node scripts/check-bundle.mjs --allow-size && node test/gates/mutants/run.mjs --check-anchors",
     "test:gates": "node test/gates/run-all.mjs",
     "test:unit:browser": "node test/unit/run.mjs",
     "test:unit": "node test/unit/lib/run-node-tests.mjs && node test/unit/run.mjs",

@@ -80,7 +80,7 @@ These runs had machine load above threshold (another process above 15 % CPU; loa
 
 ## 6. Where the other package is ahead (measured or factual)
 
-- About 8.6x smaller minified (29.7 KB vs 256 KB) and 9.3x smaller gzipped (9.7 KB vs 90.2 KB) on 2026-10-13; against the current core (346 KB / 117 KB) about 11.7x and 12x; published on npm and in use.
+- About 8.6x smaller minified (29.7 KB vs 256 KB) and 9.3x smaller gzipped (9.7 KB vs 90.2 KB) on 2026-10-13; against the current core (348 KB / 118 KB) about 11.7x and 12.2x; published on npm and in use.
 - Lower keystroke-to-canvas latency on the explainer while the text fits (p50 10.6 vs 17.3 ms) on 2026-10-13. In the remeasurement of 2026-10-30/31 this polyfill is ahead there (5.1 vs 11.5 ms), and the other package is ahead on first paint (form page in a new tab, p50 59.9 vs 91.1 ms) and on click to focus (p50 7.7 vs 14.6 ms) ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)).
 - 7 WPT files pass that ours fails (listed above).
 - Three.js integration, WebXR examples, a browser extension; claims mobile and WebView support (not verified here; this polyfill refused mobile browsers at the time and admits Chrome for Android and Safari on iOS since, WebViews still refused).

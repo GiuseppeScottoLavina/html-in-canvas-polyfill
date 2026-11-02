@@ -211,3 +211,158 @@ test('C: a drawable surface that needs the room takes it from the scroll pages (
   within(rig);
   rig.store.unpin(pinned);
 });
+
+// ---------------------------------------------------------------------------------------------- D: recovery from a refusal once memory is freed
+
+/** one drawable whose surface takes the whole budget, pinned: its next build is refused @param {number} budget */
+async function refusedWhilePinned(t, budget) {
+  const rig = await makeRig(t, { options: { maxTotalSurfaceBytes: budget } });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  const pinned = rig.store.pin(a);
+  rig.color = 'lime';
+  rig.store.markDamage(a, A, 'input');
+  const unsettled = rig.store.isSettled(a);
+  const r = rig.pump();
+  return { rig, a, pinned, unsettled, started: r.started };
+}
+
+test('D: a build refused beside the pinned current surface is retried when the image is closed; a refused drawable does not keep the loop busy; the limit holds', async (t) => {
+  const { rig, a, pinned, unsettled, started } = await refusedWhilePinned(t, ONE);
+  assert.equal(unsettled, false, 'damage waiting for a build is not settled (control)');
+  assert.equal(started, 0, 'refused: no room beside the pinned surface');
+  assert.ok(sizeReports(rig).length >= 1, 'surface-size reported');
+  assert.deepEqual(rig.css(a, 50, 30), RGBA.red, 'the drawable keeps its last picture (never blank)');
+  // checked last, so a store that never retries fails on the retry first
+  const settled = rig.store.isSettled(a), owed = rig.store.needsPump();
+  rig.store.unpin(pinned);
+  assert.equal(rig.store.needsPump(), true, 'closing the image re-opens the refused build');
+  rig.pump();
+  await until(() => rig.store.hasLanded(), 3000, 'the build once the image is closed');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 15, 15), RGBA.lime, 'the change made while it was refused is shown');
+  within(rig);
+  rig.color = 'blue';
+  await rig.build(a, A, 'mutation');
+  assert.deepEqual(rig.css(a, 15, 15), RGBA.blue, 'and later changes are built as usual');
+  assert.equal(rig.store.version(a).scale, 1);
+  within(rig);
+  assert.equal(settled, true, 'a refusal that nothing but freed memory can lift is settled: the scheduler stops ticking');
+  assert.equal(owed, false, 'no pump is owed while it is refused');
+});
+
+test('D control: with an ample budget the same build is not refused, and pending damage keeps a drawable unsettled', async (t) => {
+  const { rig, a, pinned, unsettled, started } = await refusedWhilePinned(t, 4 * ONE);
+  assert.equal(unsettled, false, 'damage waiting for a build is not settled');
+  assert.equal(started, 1);
+  await until(() => rig.store.hasLanded(), 3000, 'the build');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(a, 15, 15), RGBA.lime);
+  assert.equal(sizeReports(rig).length, 0);
+  rig.store.unpin(pinned);
+  within(rig);
+});
+
+test('D: removing the drawable that holds the budget lets a refused one be built', async (t) => {
+  const rig = await makeRig(t, { options: { maxTotalSurfaceBytes: ONE } });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  rig.color = 'lime';
+  const b = rig.add('b', 100, 60);
+  assert.equal(rig.pump().started, 0, 'b does not fit beside a');
+  const settled = rig.store.isSettled(b);
+  rig.remove(a);
+  rig.store.commitLanded(); // the removal of a
+  assert.equal(rig.store.needsPump(), true, 'the freed surface re-opens the refused build');
+  rig.pump();
+  await until(() => rig.store.hasLanded(), 3000, 'the build of b');
+  rig.store.commitLanded();
+  assert.deepEqual(rig.css(b, 50, 30), RGBA.lime);
+  within(rig);
+  assert.equal(settled, true, 'the refused drawable was settled');
+});
+
+// ---------------------------------------------------------------------------------------------- E: backdrops of the text overlay
+
+const FIELD = { x: 10, y: 10, width: 40, height: 20 };
+/** the field's content box in surface pixels at scale 1, ink 4 */
+const PAD = 40 * 20 * 4;
+const gradientPlan = { box: FIELD, fill: null, text: 'x', color: 'black', x: 12, baseline: 25, font: '10px sans-serif', letterSpacing: '0px', wordSpacing: '0px', kerning: 'auto', caret: null };
+
+/** a field over a non-uniform background: its overlay needs a backdrop tile @param {number} budget */
+async function overlaid(t, budget) {
+  const control = document.createElement('input');
+  const rig = await makeRig(t, { options: { maxTotalSurfaceBytes: budget }, textOverlay: () => gradientPlan, frameRect: () => ({ x: 8, y: 8, width: 44, height: 24 }) });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  rig.store.overlayText(a, control);
+  rig.store.commitLanded();
+  rig.color = 'blue';
+  rig.pump();
+  await until(() => rig.store.isSettled(a) || rig.store.hasLanded(), 3000, 'the backdrop');
+  await new Promise((ok) => setTimeout(ok, 30));
+  rig.store.commitLanded();
+  const backdrops = rig.calls.filter((c) => c.hideText === control).length;
+  return { rig, a, control, backdrops };
+}
+
+test('E: an overlay backdrop is counted in the budget and the stats, and is released when the drawable changes or goes', async (t) => {
+  const { rig, a, backdrops } = await overlaid(t, 4 * ONE);
+  assert.equal(backdrops, 1, 'one backdrop tile was built');
+  assert.deepEqual(rig.css(a, 20, 15), RGBA.blue, 'the overlay painted the backdrop');
+  const s = within(rig);
+  assert.equal(s.surfaceBytes, ONE + PAD, 'surfaceBytes counts the backdrop');
+  rig.store.markDamage(a, null, 'focus');
+  assert.equal(within(rig).surfaceBytes, ONE, 'a change that is not typing (the key of the backdrop) releases it');
+  rig.store.overlayText(a, document.createElement('input'));
+  rig.store.commitLanded();
+  rig.pump();
+  await until(() => rig.store.isSettled(a) || rig.store.hasLanded(), 3000, 'the second backdrop');
+  await new Promise((ok) => setTimeout(ok, 30));
+  assert.equal(rig.store.stats().surfaceBytes, ONE + PAD);
+  rig.remove(a);
+  assert.equal(rig.store.stats().surfaceBytes, 0, 'removing the drawable releases its backdrop');
+});
+
+test('E: a backdrop that does not fit the budget is not built: the field takes the normal snapshot path, the limit holds', async (t) => {
+  const { rig, a, backdrops } = await overlaid(t, ONE + PAD - 4);
+  assert.equal(backdrops, 0, 'no backdrop tile');
+  within(rig);
+  assert.ok(sizeReports(rig).length >= 1, 'surface-size reported');
+  assert.deepEqual(rig.css(a, 5, 5), RGBA.red, 'the drawable keeps its picture');
+});
+
+// ---------------------------------------------------------------------------------------------- F: scroll caches give way progressively
+
+test('F: a surface that needs room sheds the scroll caches served least recently first, and only as many as it needs', async (t) => {
+  const plan = () => ({ frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040 });
+  const rig = await makeRig(t, { options: { maxTotalSurfaceBytes: 3 * ONE + 5 * PAGE }, scrollPlan: plan });
+  const sa = { scrollTop: 0, nodeType: 1, localName: 'div' };
+  const sb = { scrollTop: 0, nodeType: 1, localName: 'div' };
+  const a = rig.add('a', 100, 60);
+  const b = rig.add('b', 100, 60);
+  await rig.build(a);
+  await rig.build(b);
+  for (const [el, sc] of [[b, sb], [a, sa]]) {
+    rig.store.scrollCompose(el, sc);
+    rig.store.scrollSettled(el, sc);
+    rig.pump();
+    await until(() => rig.store.isSettled(el), 3000, 'pages decoded');
+  }
+  const held = rig.store.stats().scrollSurfaceBytes;
+  assert.ok(held >= 4 * PAGE, `both scrollers hold pages (${held} bytes)`);
+  sa.scrollTop = 10;
+  assert.equal(rig.store.scrollCompose(a, sa), true, 'a composed step: the cache of a is the one served last');
+  rig.store.commitLanded();
+  const pinned = rig.store.pin(b);
+  rig.color = 'lime';
+  await rig.build(b, { x: 80, y: 0, width: 10, height: 10 });
+  assert.deepEqual(rig.css(b, 85, 5), RGBA.lime, 'the copy of the pinned surface fits once a cache gave way');
+  const s = within(rig);
+  assert.ok(s.scrollSurfaceBytes > 0, 'the cache served last is kept');
+  sa.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(a, sa), true, 'a still composes from its pages');
+  sb.scrollTop = 20;
+  assert.equal(rig.store.scrollCompose(b, sb), false, 'the least recently served cache gave way');
+  rig.store.unpin(pinned);
+});

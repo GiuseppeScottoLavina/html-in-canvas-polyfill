@@ -40,7 +40,7 @@ export {};
  * @property {number}  [paintGateMaxWaitMs] upper bound of the first-paint gate: paint fires only when every eligible drawable with a CSS box has a committed version (or a placeholder); after this wait it fires anyway and a report entry is made (default 400)
  * @property {boolean} [parentFacade]    own-property facade on the PARENT of a managed canvas that hides the layer from children/childNodes/childElementCount/firstElementChild/lastElementChild/lastChild/nextElementSibling of the canvas (default true)
  * @property {'report'|'off'} [stackingAudit] detect page content that natively paints above the canvas but is covered by the layer's drawn drawables (default 'report')
- * @property {number}  [maxTotalSurfaceBytes] total bytes of the retained surfaces of an install: drawable surfaces, surfaces that ElementImages not yet closed keep alive, and the scroll compositor's pages and tiles. What does not fit is degraded and reported (`surface-size`): a new surface is rasterised at a reduced scale or refused (the drawable keeps its last picture), a caret blink or text overlay that would copy a pinned surface is skipped, fewer scroll pages are kept. Polyfill only: native has no such limit (default 536870912)
+ * @property {number}  [maxTotalSurfaceBytes] total bytes of the retained surfaces of an install: drawable surfaces, surfaces that ElementImages not yet closed keep alive, the scroll compositor's pages and tiles, and the backdrops of the text overlay. What does not fit is degraded and reported (`surface-size`): a new surface is rasterised at a reduced scale or refused (the drawable keeps its last picture), a caret blink or text overlay that would copy a pinned surface is skipped, fewer scroll pages are kept. Polyfill only: native has no such limit (default 536870912)
  * @property {Partial<NodeBudget>} [nodeBudget]
  * @property {'off'|'queries'|'css'|'both'} [selectorBridge] canvas-ancestor selector emulation (default 'both')
  * @property {boolean} [forcePolyfill]   test only: run the polyfill over any native implementation (usable or broken) instead of stepping aside or refusing
@@ -410,8 +410,9 @@ export {};
  * @property {number} nodesLast
  * @property {number} degraded  drawables currently on the degrade ladder
  * @property {number} surfaces
- * @property {number} surfaceBytes  every retained surface of the install: drawable surfaces, surfaces ElementImages keep alive, and the scroll compositor's pages and tiles
+ * @property {number} surfaceBytes  every retained surface of the install: drawable surfaces, surfaces ElementImages keep alive, the scroll compositor's pages and tiles, and the text overlay's backdrops
  * @property {number} scrollSurfaceBytes  the scroll compositor's share of surfaceBytes
+ * @property {number} backdropSurfaceBytes  the text overlay backdrops' share of surfaceBytes
  * @property {number} rasterScale  the largest raster scale of a committed snapshot (surface px per css px, <= options.maxDpr; 0 before the first commit)
  * @property {number} pinnedSurfaces
  * @property {number} dropped  results discarded as stale
@@ -462,6 +463,8 @@ export {};
  * @property {number} spentMs
  * @property {boolean} moreWork  damage remains that the budget/cap did not allow
  * @property {number|null} nextDueAt  performance.now() when the cap allows the next build (null = now / nothing pending)
+ * @property {number|null} [quietUntil]  nextDueAt when nothing else is in progress: the pump started nothing, every pending damage waits for a known time, nothing is
+ *   building, decoding or landed. The scheduler may stop its frame loop until shortly before it (null = keep polling)
  */
 
 // ---------------------------------------------------------------------------------------------- capture (module: snapshot-capture)

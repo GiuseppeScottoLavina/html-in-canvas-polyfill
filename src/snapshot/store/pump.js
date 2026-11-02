@@ -36,6 +36,10 @@ const MAX_INK = 2048;
 const DEFAULT_TILE_COST_MS = 3;
 /** Damage that may ride along with scroll damage inside the scrolled box without losing its exception (pumpRecord): hover follows the rows that pass under a still pointer. */
 const SCROLL_RIDERS = new Set(['hover']);
+/** Damage causes whose canvas an urgent pump (one inside an input task) serves before the others. */
+const INPUT_FIRST = ['input', 'focus', 'active'];
+/** ms: PumpResult.quietUntil is given for a wait at least this long (the scheduler's own minimum, schedule/scheduler.js QUIET_MIN_MS). */
+const QUIET_MIN_MS = 50;
 /** Drawables above nodeBudget.hard build at most this often, ms (4 fps). */
 const DEGRADED_INTERVAL_MS = 250;
 /**
@@ -148,6 +152,8 @@ const LAND_DEVS = 2;
  * @property {(job: Job, err: unknown, stage: 'capture'|'decode') => void} fail
  * @property {(entry: Entry) => Element[]} [scrollers]  composed scrollers of the drawable (their offsets are recorded per build)
  * @property {() => number} [scrollSeq]  the scroll compositor's damage sequence number (recorded per build)
+ * @property {() => boolean} [busy]  the store has work outside the builds of this pump that lands without an event (a side build queued, a scroll page or overlay
+ *   backdrop decoding): PumpResult.quietUntil stays null (absent: busy)
  */
 
 /**
@@ -377,21 +383,38 @@ function later(out, at) {
  */
 export function runPump(env, deps, now, budget) {
   /** @type {PumpResult} */
-  const out = { started: 0, spentMs: 0, moreWork: false, nextDueAt: null };
+  const out = { started: 0, spentMs: 0, moreWork: false, nextDueAt: null, quietUntil: null };
   budgetUrgent = !!budget.urgent;
-  pumpStart = env.now(); pumpLand = 0;
+  pumpStart = env.now(); pumpLand = 0; pumpHeld = false;
   deps.state.bucket.refill(now, budget.mainThreadShare);
   /** @type {Map<CanvasRecord, Entry[]>} */
   const byRecord = new Map();
   for (const entry of deps.host.entries()) {
+    if (entry.decoding) pumpHeld = true;
     if (!deps.damage.hasPending(entry.el)) continue;
     const list = byRecord.get(entry.record);
     if (list) list.push(entry); else byRecord.set(entry.record, [entry]);
   }
-  for (const [record, list] of byRecord) {
-    list.sort((a, b) => (deps.damage.pendingSince(a.el) ?? 0) - (deps.damage.pendingSince(b.el) ?? 0));
-    pumpRecord(env, deps, record, list, now, budget, out);
-  }
+  const since = (/** @type {Entry} */ e) => deps.damage.pendingSince(e.el) ?? 0;
+  for (const list of byRecord.values()) list.sort((a, b) => since(a) - since(b));
+  // the canvas with the oldest damage goes first (its builds still start together, one batch): in insertion order a canvas whose build used up the round
+  // deferred every canvas after it for as long as it stayed dirty (two animated canvases at 4.1 ms per build: 120 builds against 0 in 120 rounds). A pump in an
+  // input task serves the canvas that has input damage first, whatever the age of the others' damage. One canvas: no sort, no allocation.
+  const key = (/** @type {Entry[]} */ list) => (budget.urgent && list.some((e) => INPUT_FIRST.some((c) => deps.damage.hasPendingCause(e.el, c))) ? -Infinity : since(list[0]));
+  const order = byRecord.size < 2 ? byRecord : [...byRecord].map(([record, list]) => /** @type {[CanvasRecord, Entry[], number]} */ ([record, list, key(list)])).sort((x, y) => x[2] - y[2] || 0);
+  for (const [record, list] of order) pumpRecord(env, deps, record, list, now, budget, out);
+  return quiet(deps, out, now);
+}
+
+/**
+ * PumpResult.quietUntil: the pump started nothing, every drawable with damage waits for a known time (frame cap, cost bucket, node budget, failure backoff), and
+ * nothing is building, decoding or landed, so nothing can change before nextDueAt unless something outside wakes the scheduler. Any other skip (refused, lost,
+ * not laid out, in the top layer, a canvas not active) keeps it null: those wait for an event the scheduler may not get, and are polled as before.
+ * Only for a wait of QUIET_MIN_MS or more (the scheduler does not stop for less), so host.busy() is not asked in every frame of a capped stream.
+ * @param {PumpDeps} deps @param {PumpResult} out @param {number} now @returns {PumpResult}
+ */
+function quiet(deps, out, now) {
+  if (!out.started && out.moreWork && out.nextDueAt !== null && out.nextDueAt - now >= QUIET_MIN_MS && !pumpHeld && !deps.jobs.size && !deps.landed.length && deps.host.busy?.() === false) out.quietUntil = out.nextDueAt;
   return out;
 }
 
@@ -400,7 +423,7 @@ export function runPump(env, deps, now, budget) {
  * @param {number} now @param {PumpBudget} budget @param {PumpResult} out
  */
 function pumpRecord(env, deps, record, list, now, budget, out) {
-  if (!record.layer || record.state !== 'active') return;
+  if (!record.layer || record.state !== 'active') { pumpHeld = true; return; }
   const { state } = deps;
   const rate = buildRate(env.options, record, budget);
   const interval = Number.isFinite(rate) ? 1000 / rate : 0;
@@ -420,10 +443,10 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
   let batch = 0;
   let paced = false;
   for (const entry of list) {
-    if (entry.refused || entry.lost) continue;
+    if (entry.refused || entry.lost) { pumpHeld = true; continue; }
     // a drawable in the top layer below the canvas (a modal dialog, an open popover) has no snapshot, like one without a box (util/top-layer.js)
     entry.topLayer = inTopLayerBelow(entry.el, record.layer.element);
-    if (entry.topLayer || !record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); continue; }
+    if (entry.topLayer || !record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); pumpHeld = true; continue; }
     if (entry.decoding >= deps.maxPerDrawable) continue;
     const scrollOnly = scrollDue && deps.damage.pendingScroll(entry.el, SCROLL_RIDERS, env.options.inkMargin + 1);
     const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard && !scrollOnly ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);
@@ -439,7 +462,7 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     if (!state.bucket.canStart()) { later(out, now + state.bucket.waitMs(budget.mainThreadShare)); continue; }
     batch ||= ++state.batchSeq;
     const spent = startBuild(env, deps, entry, now, batch);
-    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first && (due || !scrollOnly); }
+    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first && (due || !scrollOnly); } else pumpHeld = true;
   }
   // first builds use no credit of the rate gate either: the build after the first paint was otherwise held a frame, or not when the first frame was long (a cold
   // page), and a page that changes the DOM every frame then stayed in either rhythm (WPT onpaint-remove-non-drawable-element passed or failed every subtest by turns)
@@ -501,8 +524,8 @@ function startBuild(env, deps, entry, now, batch) {
   return job.syncMs;
 }
 
-/** the current pump: an urgent one (PumpBudget.urgent), when it started, the predicted landing of the decodes it started at once (set by runPump) */
-let budgetUrgent = false, pumpStart = 0, pumpLand = 0;
+/** the current pump: an urgent one (PumpBudget.urgent), when it started, the predicted landing of the decodes it started at once, a drawable it skipped without a due time (set by runPump) */
+let budgetUrgent = false, pumpStart = 0, pumpLand = 0, pumpHeld = false;
 
 /** @param {HicEnv} env @param {PumpDeps} deps @param {Job} job @param {CaptureResult} result */
 function startDecode(env, deps, job, result) {

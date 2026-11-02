@@ -139,7 +139,13 @@ if (!docsOnly) {
   // 16520 -> 16615 (2026-11-02, measured 16,605 with the step above; 16,518 before this step): options.maxTotalSurfaceBytes bounds every retained surface (+87: snapshot/store/store.js
   // the commit-time check, pinned surfaces counted, caret and overlay copies skipped, once-per-cause reports, retry when an ElementImage frees a surface;
   // scroll-compose.js the bytes of pages and tiles, shed, the page budget)
-  if (total > 16615) problems.push(`G-size: core is ${total} code lines (> 16615)`);
+  // 16615 -> 16661 (2026-11-02, measured 16,651; 16,605 before this step): recovery from a budget refusal and the overlay backdrops in the budget (+46: store.js
+  // retries what the budget held back whenever memory is freed and wakes the scheduler (BUS.MEMORY_FREED), a refused drawable is settled; text-paint.js backdrops
+  // per drawable, counted, refused when they do not fit, shed and released; scroll-compose.js sheds the least recently used caches only until the surface fits)
+  // 16661 -> 16700 (2026-11-02, measured 16,691 with the step above; 16,647 with this step alone): the frame loop sleeps until a deferred build is due (+42: schedule/scheduler.js mayRest /
+  // rest, snapshot/store/pump.js PumpResult.quietUntil, store.js host.busy; a build deferred 5 s cost 120 pumps and 241 rAF requests per second before it was due)
+  // and the canvas with the oldest damage builds first (pump.js runPump; two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
+  if (total > 16700) problems.push(`G-size: core is ${total} code lines (> 16700)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
