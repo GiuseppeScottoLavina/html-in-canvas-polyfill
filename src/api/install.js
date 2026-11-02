@@ -59,7 +59,7 @@ export function getInstalled(win = typeof window === 'undefined' ? undefined : w
  * EXT.NATIVE_BRIDGE_KEY); without it install still steps aside in mode native and records why (report().deviations, id native-step-aside).
  * @param {HicOptions} [options]
  * @returns {HicInstalled}
- * @throws HicUnsupportedError('browser'|'partial-native')
+ * @throws HicUnsupportedError('browser'|'partial-native'); TypeError for an invalid option
  */
 export function install(options) {
   return installWith(options, defaultServices());
