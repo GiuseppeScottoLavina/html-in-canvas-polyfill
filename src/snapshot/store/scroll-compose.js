@@ -72,6 +72,8 @@ const AHEAD_PAGES = 2;
  * @property {(w: number, h: number) => Surface} canvas
  * @property {(entry: Entry, run: () => void) => void} schedule  queue a side build for the post-frame pump
  * @property {() => number} [now]
+ * @property {() => number} [room]  bytes of options.maxTotalSurfaceBytes still free (every retained surface and every planned page or tile counted)
+ * @property {(entry: Entry) => void} [over]  a page or a scroller's tiles did not fit `room` (reported once)
  */
 
 /**
@@ -131,6 +133,9 @@ const toCss = (px, geo) => ({ x: px.x / geo.scale - geo.ink.left, y: px.y / geo.
 
 /** @param {Rect} a @param {Rect} b */
 const sameRect = (a, b) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
+
+/** @param {Rect} r @returns {number} */
+const area = (r) => r.width * r.height;
 
 /** @param {Rect} a @param {Rect} b */
 const meets = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
@@ -203,7 +208,16 @@ export function createScrollCompositor(deps) {
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
   let seq = 0;
   /** diagnostics (SnapshotStats.scroll) */
-  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0 };
+  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0 };
+  const room = deps.room ?? (() => Infinity);
+
+  /** Does `bytes` more fit the surface budget? Counted and reported when not. @param {Entry} entry @param {number} bytes @returns {boolean} */
+  const fits = (entry, bytes) => {
+    if (bytes <= room()) return true;
+    counters.budget++;
+    deps.over?.(entry);
+    return false;
+  };
 
   /** @param {Entry} entry @returns {Map<Element, Cache>} */
   const mapOf = (entry) => {
@@ -297,6 +311,11 @@ export function createScrollCompositor(deps) {
     if (round && plan.whole) return refuse();
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
+    // what the scroller needs before its first composition: one page, its pinned elements, its bar and backdrop tiles
+    let need = area(portPx) + (round ? area(padPx) : 0);
+    if (plan.bar) need += 2 * area(snapPx(plan.bar.gutter, geo, grid));
+    for (const p of plan.pinned) { const r = entry.record.layer?.frameRect(p); if (r) need += area(snapPx(r, geo, grid)); }
+    if (!fits(entry, need * 4)) return refuse();
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
@@ -354,7 +373,7 @@ export function createScrollCompositor(deps) {
         for (let i = 1; i < cache.pages.length; i++) if (Math.abs(cache.pages[i].top - top) > Math.abs(cache.pages[far].top - top)) far = i;
         if (Math.abs(cache.pages[far].top - top) <= Math.abs(t - top)) continue;
         cache.pages.splice(far, 1);
-      }
+      } else if (!fits(entry, area(cache.portPx) * 4)) break;
       /** @type {Page} */
       const page = { top: t, pad: null, seq: null, dirty: [], dirtySeq: [], misses: 0 };
       cache.pages.push(page);
@@ -444,6 +463,9 @@ export function createScrollCompositor(deps) {
       let set = planning.get(entry);
       if (!set) planning.set(entry, (set = new Set()));
       if (set.has(scroller) || stillRefused(entry, scroller)) return false;
+      // no plan (a scan of the scroller) when not even one page of its client box fits the budget
+      const h = /** @type {HTMLElement} */ (scroller);
+      if (h.clientWidth > 0 && !fits(entry, Math.ceil(h.clientWidth * entry.geo.scale) * Math.ceil(h.clientHeight * entry.geo.scale) * 4)) return false;
       set.add(scroller);
       if (early) ahead.add(scroller);
       const at = epoch;
@@ -485,6 +507,36 @@ export function createScrollCompositor(deps) {
 
     /** @returns {number} the damage sequence number (a build records it: its tile shows every change up to it) */
     seq: () => seq,
+
+    /**
+     * Bytes of the drawable's pages and tiles: those decoded (`held`), or every one planned, still building or not (what the budget counts).
+     * @param {Entry} entry @param {boolean} held @returns {number}
+     */
+    bytes(entry, held) {
+      let n = 0;
+      const add = (/** @type {Surface|null} */ pad, /** @type {number} */ px) => { n += held ? (pad ? pad.width * pad.height : 0) : px; };
+      for (const c of caches.get(entry)?.values() ?? []) {
+        for (const p of c.pages) add(p.pad, area(c.portPx));
+        for (const p of c.pins.values()) add(p.pad, p.w * p.h);
+        if (c.bar) { add(c.bar.track.pad, area(c.bar.track.px)); add(c.bar.thumb.pad, area(c.bar.thumb.px)); }
+        if (c.backdrop) add(c.backdrop.pad, area(c.backdrop.px));
+      }
+      return n * 4;
+    },
+
+    /**
+     * A drawable surface needs the room: every cache of the drawable is dropped. Returns the frames of the scrollers whose port does not show their live offset (a
+     * composition was promised, or a tile drew another offset): the caller damages them, so the plain path serves them.
+     * @param {Entry} entry @returns {Rect[]}
+     */
+    shed(entry) {
+      const m = caches.get(entry);
+      if (!m?.size) return [];
+      const owed = [...m.values()].filter((c) => c.queued || (c.shown !== null && c.shown !== topOf(c.el))).map((c) => c.plan.frame);
+      counters.budget += m.size;
+      m.clear();
+      return owed;
+    },
 
     /**
      * Damage of the drawable (any cause but a caret blink): what it means for each composed scroller. See the file comment.

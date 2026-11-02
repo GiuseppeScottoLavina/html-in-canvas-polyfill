@@ -40,7 +40,7 @@ export {};
  * @property {number}  [paintGateMaxWaitMs] upper bound of the first-paint gate: paint fires only when every eligible drawable with a CSS box has a committed version (or a placeholder); after this wait it fires anyway and a report entry is made (default 400)
  * @property {boolean} [parentFacade]    own-property facade on the PARENT of a managed canvas that hides the layer from children/childNodes/childElementCount/firstElementChild/lastElementChild/lastChild/nextElementSibling of the canvas (default true)
  * @property {'report'|'off'} [stackingAudit] detect page content that natively paints above the canvas but is covered by the layer's drawn drawables (default 'report')
- * @property {number}  [maxTotalSurfaceBytes] total bytes of all retained surfaces of an install; above it new surfaces are rasterised at a reduced scale and reported (default 536870912)
+ * @property {number}  [maxTotalSurfaceBytes] total bytes of the retained surfaces of an install: drawable surfaces, surfaces that ElementImages not yet closed keep alive, and the scroll compositor's pages and tiles. What does not fit is degraded and reported (`surface-size`): a new surface is rasterised at a reduced scale or refused (the drawable keeps its last picture), a caret blink or text overlay that would copy a pinned surface is skipped, fewer scroll pages are kept. Polyfill only: native has no such limit (default 536870912)
  * @property {Partial<NodeBudget>} [nodeBudget]
  * @property {'off'|'queries'|'css'|'both'} [selectorBridge] canvas-ancestor selector emulation (default 'both')
  * @property {boolean} [forcePolyfill]   test only: run the polyfill over any native implementation (usable or broken) instead of stepping aside or refusing
@@ -410,13 +410,14 @@ export {};
  * @property {number} nodesLast
  * @property {number} degraded  drawables currently on the degrade ladder
  * @property {number} surfaces
- * @property {number} surfaceBytes
+ * @property {number} surfaceBytes  every retained surface of the install: drawable surfaces, surfaces ElementImages keep alive, and the scroll compositor's pages and tiles
+ * @property {number} scrollSurfaceBytes  the scroll compositor's share of surfaceBytes
  * @property {number} rasterScale  the largest raster scale of a committed snapshot (surface px per css px, <= options.maxDpr; 0 before the first commit)
  * @property {number} pinnedSurfaces
  * @property {number} dropped  results discarded as stale
  * @property {number} redamaged  dropped results whose uncovered rect was re-marked as damage (ADR-B)
  * @property {number} surfaceRestores  retained surfaces re-rastered after a 2D context loss (ADR-B)
- * @property {{plans: number, refusals: number, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number}} [scroll]  scroll compositor counters (scroll-compose.js): `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile
+ * @property {{plans: number, refusals: number, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number, budget: number}} [scroll]  scroll compositor counters (scroll-compose.js): `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile, `budget` pages, plans and caches refused or dropped for options.maxTotalSurfaceBytes
  */
 
 /**

@@ -190,7 +190,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const entry = {
       el, record, incarnation: 0, topLayer: false, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, landRate: null, landDev: 0, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
       notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
-      unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
+      unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, budgetNoted: 0, sizeRefused: false, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
       scrollers: new Set(),
     };
     entries.set(el, entry);
@@ -250,24 +250,83 @@ export function createSnapshotStore(env, capture, extras = {}) {
     env.bus.emit(BUS.SURFACE_RESTORED, { record: entry.record, element: entry.el });
   }
 
-  /** Bytes of every retained surface (pinned leftovers included) except `except`'s own. @param {Entry} [except] @returns {number} */
-  function retainedBytes(except) {
+  /**
+   * Bytes of every retained surface (pinned leftovers included). `except`: without that drawable's own surface, which a new one replaces, unless an ElementImage
+   * pins it (it then stays alive beside the new one) and `evenPinned` is false.
+   * @param {Entry} [except] @param {boolean} [evenPinned] @returns {number}
+   */
+  function retainedBytes(except, evenPinned = false) {
     const all = new Set();
     for (const e of entries.values()) if (e.surface) all.add(e.surface);
     for (const s of pins.keys()) all.add(s);
-    if (except?.surface) all.delete(except.surface);
+    if (except?.surface && (evenPinned || !pinned(except.surface))) all.delete(except.surface);
     let total = 0;
     for (const s of all) total += surfaceBytes(s);
     return total;
   }
 
-  /** A surface that may be written: forks a pinned one (copy-on-write, ElementImage immutability). @param {Entry} entry @returns {Surface} */
-  function writable(entry) {
+  /** Bytes the scroll compositor holds (`held`) or has planned (pages and tiles still building included). @param {boolean} held @returns {number} */
+  function scrollBytes(held) {
+    let total = 0;
+    for (const e of entries.values()) total += compositor.bytes(e, held);
+    return total;
+  }
+
+  /**
+   * options.maxTotalSurfaceBytes at commit: does a new surface of `bytes` fit, `freed` bytes being released with it? Every build of a batch was planned before any of
+   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. The scroll compositor's pages give way first (the plain path
+   * serves the scrollers until there is room again).
+   * @param {number} bytes @param {number} freed @returns {boolean}
+   */
+  function fits(bytes, freed) {
+    const max = options.maxTotalSurfaceBytes;
+    const total = retainedBytes() - freed + bytes;
+    if (total > max) return false;
+    if (total + scrollBytes(false) > max) for (const e of entries.values()) for (const r of compositor.shed(e)) markDamage(e.el, r, 'scroll');
+    return true;
+  }
+
+  /**
+   * A surface that may be written: forks a pinned one (copy-on-write, ElementImage immutability). null: the copy does not fit options.maxTotalSurfaceBytes (reported;
+   * the caller leaves the drawable as it is).
+   * @param {Entry} entry @param {'tile'|'copy'|'scroll'} cause @returns {Surface|null}
+   */
+  function writable(entry, cause) {
     const surface = /** @type {Surface} */ (entry.surface);
     if (!pinned(surface)) return surface;
+    if (!fits(surfaceBytes(surface), 0)) { overBudget(entry, cause); return null; }
     const copy = forkSurface(surface);
     bind(entry, copy, /** @type {Geometry} */ (entry.geo));
     return copy;
+  }
+
+  const BUDGET_CAUSES = {
+    tile: 'a new tile needs a surface beyond options.maxTotalSurfaceBytes (surfaces kept alive by ElementImages count); the drawable keeps its last picture and is planned again at a reduced scale, or refused',
+    copy: 'a caret blink, a text overlay or a composed scroll step needs a copy of a surface an ElementImage keeps alive, beyond options.maxTotalSurfaceBytes; it is not drawn (a scroll step is built instead) and the drawable keeps its last picture',
+    scroll: 'scroll pages do not fit options.maxTotalSurfaceBytes; scroll steps are built instead of composed',
+  };
+
+  /** Reported once per drawable and cause. @param {Entry} entry @param {'tile'|'copy'|'scroll'} cause */
+  function overBudget(entry, cause) {
+    const bit = cause === 'tile' ? 1 : cause === 'copy' ? 2 : 4;
+    starved = true;
+    if (entry.budgetNoted & bit) return;
+    entry.budgetNoted |= bit;
+    env.reporter.unsupported({ feature: 'surface-size', message: `${describe(entry)}: ${BUDGET_CAUSES[cause]}`, hint: 'close() the ElementImages that are no longer needed, or raise options.maxTotalSurfaceBytes', path: `${describe(entry)} (${cause})` }, entry.record.canvas);
+  }
+
+  /** a budget refused, reduced or skipped something since memory was last freed */
+  let starved = false;
+
+  /** The last ElementImage of `surface` was closed: when no drawable shows it any more, what the budget held back is tried again. @param {Surface} surface */
+  function memoryFreed(surface) {
+    if (!starved) return;
+    for (const e of entries.values()) if (e.surface === surface) return;
+    starved = false;
+    for (const e of entries.values()) {
+      if (e.sizeRefused) { e.sizeRefused = false; e.refused = false; }
+      if (e.geo?.reduced) e.verifyGeometry = true;
+    }
   }
 
   // ---------------------------------------------------------------------------------------------- damage
@@ -355,10 +414,13 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     refuse(entry, err) {
       entry.refused = true;
+      entry.sizeRefused = err instanceof HicUnsupportedError && err.feature === 'surface-size';
+      starved ||= entry.sizeRefused;
       if (err instanceof HicUnsupportedError) env.reporter.unsupported({ feature: err.feature, message: err.message, hint: err.hint, path: describe(entry) }, entry.record.canvas);
       else env.reporter.caught(err, 'snapshot-store:geometry');
     },
     reduced(entry, geo) {
+      starved = true;
       if (entry.reducedReported) return;
       entry.reducedReported = true;
       env.reporter.unsupported({ feature: 'surface-size', message: `${describe(entry)} is rasterised at scale ${geo.scale.toFixed(2)} to fit options.maxSurfacePixels / maxTotalSurfaceBytes`, hint: 'raise the budgets or split the drawable', path: describe(entry) }, entry.record.canvas);
@@ -436,6 +498,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
     decode: (url) => pumpDeps.decode(url),
     canvas: makeCanvas,
     schedule: (entry, run) => { side.push({ entry, run }); },
+    room: () => options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false),
+    over: (entry) => overBudget(entry, 'scroll'),
   });
 
   /** Side builds while the pump's budget allows (at least one when no regular build started). @param {import('../../contracts/types.js').PumpResult} out @param {import('../../contracts/types.js').PumpBudget} budget */
@@ -460,8 +524,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (!extras.scrollPlan || !entry.surface || entry.lost) return;
     const out = compositor.step(entry, () => {
       try {
-        const surface = writable(entry);
-        if (entry.patch.visible()) entry.patch.hide(surface);
+        const surface = writable(entry, 'copy');
+        if (surface && entry.patch.visible()) entry.patch.hide(surface);
         return surface;
       } catch (err) {
         noteFailure(entry, err, 'scroll-compose');
@@ -552,14 +616,19 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /**
    * Where the tile is drawn: in place, a fork of a pinned surface, or a new allocation (full tile with another geometry, a pinned or lost surface). null = a partial tile whose surface is gone or re-laid-out.
-   * An in-place target has its caret lifted first, so no saved pixels are stale after the tile.
-   * @param {Entry} entry @param {Landed} l @returns {{surface: Surface, fresh: boolean}|null}
+   * An in-place target has its caret lifted first, so no saved pixels are stale after the tile. 'over' = the new surface or the copy does not fit options.maxTotalSurfaceBytes.
+   * @param {Entry} entry @param {Landed} l @returns {{surface: Surface, fresh: boolean}|null|'over'}
    */
   function targetFor(entry, l) {
-    const same = !!entry.surface && sameGeometry(entry.geo, l.geo);
+    const old = entry.surface;
+    const same = !!old && sameGeometry(entry.geo, l.geo);
     if (l.rect !== null && !same) return null;
-    if (l.rect === null && (!same || entry.lost || pinned(/** @type {Surface} */ (entry.surface)))) return { surface: allocateSurface(l.geo.widthPx, l.geo.heightPx), fresh: true };
-    const surface = writable(entry);
+    if (l.rect === null && (!old || !same || entry.lost || pinned(old))) {
+      if (!fits(l.geo.widthPx * l.geo.heightPx * 4, old && !pinned(old) ? surfaceBytes(old) : 0)) { overBudget(entry, 'tile'); return 'over'; }
+      return { surface: allocateSurface(l.geo.widthPx, l.geo.heightPx), fresh: true };
+    }
+    const surface = writable(entry, 'tile');
+    if (!surface) return 'over';
     if (entry.patch.visible()) entry.patch.hide(surface);
     return { surface, fresh: false };
   }
@@ -593,7 +662,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const crop = cropPxOf(l);
     if (reportUnsupported(entry, l.result) || !crop) { discardResult(entry, l); return; }
     const t0 = env.now();
-    /** @type {{surface: Surface, fresh: boolean}|null} */
+    /** @type {{surface: Surface, fresh: boolean}|null|'over'} */
     let target;
     try {
       target = targetFor(entry, l);
@@ -602,6 +671,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
       dropResult(entry, l, false);
       return;
     }
+    // over the budget: re-damaged, so the next build is planned against what is retained now (a smaller raster, or a refusal that keeps the last picture)
+    if (target === 'over') { dropResult(entry, l, false); return; }
     if (!target) { dropResult(entry, l, true); return; }
     if (!drawTileAtomic(target.surface, l.image, crop)) {
       noteFailure(entry, new Error('the decoded tile could not be drawn into the retained surface'), 'commit');
@@ -638,7 +709,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const want = !!caret && entry.phase;
     if (want === entry.patch.visible()) return;
     try {
-      const surface = writable(entry);
+      const surface = writable(entry, 'copy');
+      if (!surface) return;
       if (want && caret) entry.patch.show(surface, caret.rectPx, caret.color); else entry.patch.hide(surface);
     } catch (err) {
       noteFailure(entry, err, 'caret');
@@ -673,9 +745,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     let painted = false;
     if (plan && (plan.fill !== null || backdrop)) {
       try {
-        const surface = writable(entry);
-        if (entry.patch.visible()) entry.patch.hide(surface);
-        painted = paintTextOverlay(surface, geo, plan, backdrop);
+        const surface = writable(entry, 'copy');
+        if (surface && entry.patch.visible()) entry.patch.hide(surface);
+        painted = !!surface && paintTextOverlay(surface, geo, plan, backdrop);
       } catch (err) {
         noteFailure(entry, err, 'overlay');
       }
@@ -714,7 +786,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const old = entry.caret;
     if (entry.patch.visible() && entry.surface && !entry.lost) {
       try {
-        entry.patch.hide(writable(entry));
+        const surface = writable(entry, 'copy');
+        if (!surface) return;
+        entry.patch.hide(surface);
         round.wrote = true;
         if (old) round.dirty = round.dirty === null ? null : unionRect(round.dirty ?? null, inflateRect(old.rectCss, 1));
       } catch (err) {
@@ -773,7 +847,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
       const size = record.layer?.borderBoxSize(el);
       if (!size || !(size.width > 0 && size.height > 0)) continue;
       let plan;
-      try { plan = planGeometry(env, record, size, retainedBytes(entry), el); } catch { continue; }
+      // the surface it would replace counts as freed even when an ElementImage pins it: this compares the layout, not the memory of the moment
+      try { plan = planGeometry(env, record, size, retainedBytes(entry, true), el); } catch { continue; }
       if (sameGeometry(plan, entry.geo)) { entry.geometryRetries = 0; continue; }
       if (entry.geometryRetries >= 3) continue;
       entry.geometryRetries++;
@@ -911,7 +986,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
       v.refs--;
       v.pinned = v.refs > 0;
       const n = (pins.get(v.surface) ?? 1) - 1;
-      if (n > 0) pins.set(v.surface, n); else pins.delete(v.surface);
+      if (n > 0) { pins.set(v.surface, n); return; }
+      pins.delete(v.surface);
+      memoryFreed(v.surface);
     },
     rasterSource: rasterSourceFor,
     markDamage,
@@ -1019,6 +1096,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     stats() {
       const surfaces = new Set();
+      const scrollHeld = scrollBytes(true);
       let degraded = 0, rasterScale = 0;
       for (const e of entries.values()) {
         if (e.surface) surfaces.add(e.surface);
@@ -1027,7 +1105,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
       }
       return {
         ...counters, cloneMsP50: cloneMs.percentile(0.5), cloneMsP95: cloneMs.percentile(0.95), decodeMsP50: decodeMs.percentile(0.5), decodeMsP95: decodeMs.percentile(0.95),
-        decodeMainMsP95: decodeMainMs.percentile(0.95), degraded, surfaces: surfaces.size, surfaceBytes: retainedBytes(), rasterScale, pinnedSurfaces: pins.size, scroll: compositor.stats(),
+        decodeMainMsP95: decodeMainMs.percentile(0.95), degraded, surfaces: surfaces.size, surfaceBytes: retainedBytes() + scrollHeld, scrollSurfaceBytes: scrollHeld, rasterScale,
+        pinnedSurfaces: pins.size, scroll: compositor.stats(),
       };
     },
     dispose() {
