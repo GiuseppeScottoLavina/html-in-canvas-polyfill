@@ -21,7 +21,7 @@ import { createDamageBatch, getRectMemory } from './damage-rect.js';
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
 
-/** Encoded frames of every image together, in UTF-16 units of their data: URLs (the least recently used go first; a shown frame stays). */
+/** Encoded frames of every image together, in UTF-16 units of their data: URLs (the least recently used go first; the frame an image shows, or is about to show, stays). */
 const FRAME_BUDGET_CHARS = 24 * 1024 * 1024;
 /** Larger images show their first frame (reported): a frame is decoded and encoded on the main thread's budget. */
 const MAX_FRAME_PIXELS = 2048 * 2048;
@@ -137,6 +137,7 @@ function declaresAnimation(dataUrl) {
  * @property {Map<number, string>} frames  encoded frames
  * @property {Map<number, Promise<string|null>>} encoding
  * @property {number} index  the frame shown
+ * @property {number} coming  the frame a step is about to show (-1: none)
  * @property {number} since  env.now() at which it started showing on the image's clock (moved forward by the time paused)
  * @property {number} shownAt  env.now() at which it was shown (the frame cap counts from there)
  * @property {number|null} pausedAt
@@ -171,7 +172,7 @@ export function createAnimatedImages(env) {
     if (!decoding) env.reporter.deviation('animated-images', 'this browser has no ImageDecoder (or the document is not a secure context): an animated image shows its first frame');
     return {
       id: ++ids, abs, mime: `image/${m[1].toLowerCase()}`, source: decoding ? dataUrl : '', imgs: new Set(), decoder: null, opening: null, dead: !decoding, count: 0, reps: 0, loops: 0,
-      durations: [], frames: new Map(), encoding: new Map(), index: 0, since: 0, shownAt: 0, pausedAt: null, timer: null, busy: false,
+      durations: [], frames: new Map(), encoding: new Map(), index: 0, coming: -1, since: 0, shownAt: 0, pausedAt: null, timer: null, busy: false,
     };
   }
 
@@ -232,7 +233,8 @@ export function createAnimatedImages(env) {
     chars += url.length;
     for (const [k, e] of lru) {
       if (chars <= FRAME_BUDGET_CHARS) break;
-      if (e.anim.index === e.index && e.anim.frames.get(e.index)) continue; // shown
+      // kept: the frame an image shows or is about to show in a canvas; the frames of an image no canvas shows (released, or dead and removed) go like any other
+      if ((e.anim.index === e.index || e.anim.coming === e.index) && watchers(e.anim).length) continue;
       lru.delete(k);
       e.anim.frames.delete(e.index);
       chars -= e.chars;
@@ -330,6 +332,7 @@ export function createAnimatedImages(env) {
         start = end;
       }
       if (i === anim.index) { image?.close(); return; }
+      anim.coming = i; // its encoding must not be evicted on arrival, before it becomes the frame shown
       const url = await frame(anim, i, image);
       if (!url || anim.dead || disposed) return;
       anim.index = i;
@@ -341,6 +344,7 @@ export function createAnimatedImages(env) {
     } catch (err) {
       kill(anim, err);
     } finally {
+      anim.coming = -1;
       anim.busy = false;
       if (!anim.dead) arm(anim);
     }
