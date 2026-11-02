@@ -371,7 +371,7 @@
     preview.replaceWith(note);
     preview = note;
     state.focus = null;
-    setStatus('stopping', 'stopping the stuck preview: the code runs in about 10 seconds');
+    setStatus('stopping', 'stopping the stuck preview: the code runs in about 12 seconds');
     stopTimer = setTimeout(() => { stopTimer = 0; run(); }, STOP_MS);
   }
 

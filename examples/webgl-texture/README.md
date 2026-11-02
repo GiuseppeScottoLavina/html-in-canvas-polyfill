@@ -6,7 +6,7 @@ Run: `npm run build && npm run demo`, then open `http://127.0.0.1:8765/examples/
 
 What to look at:
 - Click the flat copy, type in "Your name" and drag the slider: the real inputs receive the input, and the text on the cube changes with the next upload (the status line counts `uploads`).
-- On one face the form can look upside down: each cube face maps the texture 0..1 along its own axes (`buildCube()` in `index.html`). This is believed to be the example's cube geometry, not a polyfill defect; it was not investigated further.
+- A face can look upside down or sideways while the cube turns: each face maps the top of the form toward +y, and the top and bottom faces toward -z and +z (`buildCube()` in `index.html`), so the orientation you see depends on the rotation, as with any textured cube.
 
 What the page demonstrates about the API:
 - `texElementSubImage2D` needs storage that already exists, like `texSubImage2D`: the example reads the size with `canvas.getElementImageDefaultSize(card)` (`ceil(width)` x `ceil(height)` in canvas bitmap pixels), allocates with `texImage2D(..., null)` when the size changed, then uploads. Before the first snapshot exists `getElementImageDefaultSize` throws `InvalidStateError`, so the upload runs from the `paint` event.

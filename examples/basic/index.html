@@ -51,7 +51,7 @@
   // window.__HIC__ exists only when the polyfill's script ran; on Chrome with a complete native implementation the polyfill steps aside.
   const status = document.getElementById('status');
   const hic = window.__HIC__;
-  if (hic && hic.installed) status.textContent = 'hic-live-polyfill mode: ' + hic.installed.mode + ' (drawElementImage is the polyfill\'s)';
+  if (hic && hic.installed) status.textContent = 'hic-live-polyfill mode: ' + hic.installed.mode + (hic.installed.mode === 'polyfill' ? ' (drawElementImage is the polyfill\'s)' : ' (the browser\'s own drawElementImage)');
   else if (hic && hic.error) status.textContent = 'hic-live-polyfill refused to install: ' + hic.error.message.replace(/^\[hic-live-polyfill\] /, '');
   else status.textContent = 'hic-live-polyfill did not run (is dist/ built? run: npm run build)';
 </script>
