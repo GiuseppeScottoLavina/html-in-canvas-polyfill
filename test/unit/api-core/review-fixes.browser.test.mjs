@@ -250,13 +250,13 @@ test('a refused draw names why and the fix: a wrapper without the drawable attri
   const ctx = /** @type {any} */ (c.getContext('2d'));
   const wrap = thrown(() => ctx.drawElementImage(c.querySelector('#wrap'), 0, 0));
   assert.equal(wrap?.name, 'InvalidStateError');
-  assert.match(wrap.message, /The <div> has no drawable attribute/);
-  assert.match(wrap.message, /draw the <form> inside it/);
+  assert.ok(/The <div> has no drawable attribute/.test(wrap.message), wrap.message);
+  assert.ok(/draw the <form> inside it/.test(wrap.message), wrap.message);
   assert.equal(thrown(() => ctx.drawElementImage(c.querySelector('#f'), 0, 0)), null, 'control: the <form> with the attribute is drawn');
   const outside = document.createElement('p');
   document.body.append(outside);
   t.cleanup(() => outside.remove());
-  assert.match(thrown(() => ctx.drawElementImage(outside, 0, 0))?.message ?? '', /The <p> is not inside this canvas/);
+  assert.ok(/The <p> is not inside this canvas/.test(thrown(() => ctx.drawElementImage(outside, 0, 0))?.message ?? ''), thrown(() => ctx.drawElementImage(outside, 0, 0))?.message ?? '');
   const host = document.createElement('div');
   host.innerHTML = '<canvas layoutsubtree width="200" height="100"><div style="width:100px;height:40px"><p id="deep">x</p></div></canvas>';
   document.body.append(host);
@@ -264,5 +264,5 @@ test('a refused draw names why and the fix: a wrapper without the drawable attri
   const legacy = /** @type {HTMLCanvasElement} */ (host.firstElementChild);
   legacy.requestPaint(); await i.whenPainted(legacy);
   const deep = thrown(() => /** @type {any} */ (legacy.getContext('2d')).drawElementImage(legacy.querySelector('#deep'), 0, 0));
-  assert.match(deep?.message ?? '', /The <p> is not a direct child of the canvas/);
+  assert.ok(/The <p> is not a direct child of the canvas/.test(deep?.message ?? ''), deep?.message ?? '');
 });
