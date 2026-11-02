@@ -1,5 +1,5 @@
 // Quiet wait on the REAL install (scheduler.js afterPump, PumpResult.quietUntil): a change that the pump defers to a known time (here the node-budget interval,
-// one build per 250 ms) does not keep the frame loop running until it is due; it is still painted when due. Positive control: a change that is due at once runs the loop.
+// one build per 250 ms) does not keep the frame loop running until it is due; it is still painted when due. Positive control: changes that are due at once run the loop.
 import { test, assert } from '/test/unit/lib/t.js';
 import { inst, mk, sleep, frames } from '../api-core/_real.mjs';
 
@@ -39,7 +39,7 @@ test('quiet wait: a change held by the node budget for ~250 ms does not poll the
   assert.ok(paints > p0, 'painted once due');
 });
 
-test('quiet wait (control): a drawable within the node budget is built and painted at once, with the frame loop running', async t => {
+test('quiet wait (control): changes within the node budget are built at once and run the frame loop; the counter sees it', async t => {
   const raf = rafCounter(t);
   const i = inst(t);
   const c = await mk(t, i, { inner: `<div id="a" drawable style="width:100px;height:50px;background:rgb(255,0,0)">${CELLS}</div>` });
@@ -47,9 +47,12 @@ test('quiet wait (control): a drawable within the node budget is built and paint
   let paints = 0;
   c.addEventListener('paint', () => { paints++; });
   raf.start();
-  a.firstElementChild.textContent = 'z';
+  // a change every 16 ms from timers (not rAF: the counter counts the page's calls)
+  let n = 0;
+  const id = setInterval(() => { a.firstElementChild.textContent = String(++n); }, 16);
   await sleep(150);
+  clearInterval(id);
   const during = raf.stop();
-  assert.ok(paints >= 1, 'painted');
-  assert.ok(during >= 2, `the frame loop ran: ${during} rAF requests`);
+  assert.ok(paints >= 3, `painted at once: ${paints} paints`);
+  assert.ok(during >= 5, `the frame loop ran: ${during} rAF requests`);
 });
