@@ -1,6 +1,6 @@
 # Unit tests
 
-Pure logic: `test/unit/<module>/*.test.mjs` with `node:test` (`test/unit/lib/run-node-tests.mjs` runs them all, with the plugins' `plugins/*/test/*.test.mjs`). One module: `node --test test/unit/<module>`.
+Pure logic: `test/unit/<module>/*.test.mjs` with `node:test` (`test/unit/lib/run-node-tests.mjs` runs them all, with the plugins' `plugins/*/test/*.test.mjs`). One module: `node --test 'test/unit/<module>/!(*.browser).test.mjs'` (the quotes let Node expand the pattern, which leaves out the browser tests).
 DOM logic: `test/unit/<module>/*.browser.test.mjs` (and `plugins/**/*.browser.test.mjs`), run in Chrome by `test/unit/run.mjs` (headless=new by default).
 
 ## Commands
@@ -8,7 +8,7 @@ DOM logic: `test/unit/<module>/*.browser.test.mjs` (and `plugins/**/*.browser.te
 |---|---|
 | `npm run test:unit` | all pure tests, then all browser tests |
 | `npm run test:unit:browser` | all browser tests |
-| `node test/unit/run.mjs --module <name> [--module <name2>]` | only `test/unit/<name>/` |
+| `node test/unit/run.mjs --module <name> [--module <name2>]` | only `test/unit/<name>/` (`--module plugins`: only `plugins/`) |
 | `node test/unit/run.mjs --filter <text or /regex/>` | tests whose `"<file> > <test name>"` matches (case-insensitive) |
 | `node test/unit/run.mjs path/to/x.browser.test.mjs` | explicit files |
 | `--headed` | visible window instead of headless (only for debugging; never for perf claims) |
