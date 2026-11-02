@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.17] - 2026-11-02
+
+Large drawables are fast again. Two causes of the slowdown reported with 0.1.0-preview.16 were found by bisecting and fixed for any page, not for the benchmark. A tall box out of view was cloned whole into every snapshot, from 0.1.0-preview.9 on. A cheap build loaded its snapshot in the same task, from 0.1.0-preview.2 on. At 1,000 and 2,000 elements an author update now costs 15.3 and 17.5 ms of main-thread time (24.9 and 34.2 with 0.1.0-preview.15, 19.2 and 22.1 before the regression), and almost no update runs a task over the 8.33 ms frame budget (25 and 57 of 30 before); at 200 elements 16-18 of 30 still do. A draw that is refused now says why and how to fix it.
+
+- The core bundle grows to 342,917 bytes minified, 116,012 gzipped (+1,246 / +496 bytes) and to 16,503 code lines, for the two fixes and the error messages; the GPU bundle, which shares the error messages, to 10,904 bytes minified, 4,130 gzipped (+501 / +183 bytes).
+
 ### Fixed
 
 - Large drawables: a box 1000 px tall or more outside the area being rebuilt (a long table, a tall section or list item below the visible part of a scroller) was cloned with all its children into every tile, instead of being replaced by one invisible spacer of its size. Since 0.1.0-preview.9 a spacer of that height was refused because its length would lose its last digits in the CSSOM (6 significant digits, more than a LayoutUnit), and table rows are never spacers, so a long table out of view stayed in every snapshot. A one-line author update in the F4 page built and decoded 2.3 times the markup at 1,000 elements and 3.3 times at 2,000 (67 KB instead of 21 KB, 195 spacers instead of 83), and its build and decode tasks went over the 8.33 ms frame budget. A spacer of 1000 px or more is now written in two exact parts: whole thousands of px of height plus the rest as top padding of a content box without border (a spacer of `display: table` is laid out as a block, since a table drops its padding when its borders collapse). Its layout height is the live one to the LayoutUnit, as for shorter spacers, and a merged run of spacers is no longer cut at 1000 px. Measured with the comparison bench's large-DOM scenario, headed Chrome 156 at 120 Hz, 30 updates, three interleaved runs each, before / after: at 2,000 elements 56 / 56 / 24 tasks over 8.33 ms against 4 / 7 / 0, main thread 34.3 / 30.3 / 16.4 against 19.9 / 15.4 / 14.7 ms per update; at 1,000 elements 17.7 / 23.0 / 12.8 against 14.4 / 15.2 / 14.3 ms per update (10-11 tasks over 8.33 ms remain, from another cause: see `docs/PERFORMANCE-COMPARISON.md`); update to pixel p50 unchanged (3.0-3.5 ms); the final pixels equal the plain DOM in every run. Tests: browser unit tests for a collapsed-border table, a section and a list item taller than 1000 px and a merged run longer than 1000 px (each lands at the live offset in LayoutUnits; they fail without the fix), and the pure split checked at scales 1 to 3; the `spacer-length-nearest` mutant of G-scroll-cadence now also writes a tall spacer as one length.
@@ -359,7 +365,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.16...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.17...HEAD
+[0.1.0-preview.17]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.16...v0.1.0-preview.17
 [0.1.0-preview.16]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.15...v0.1.0-preview.16
 [0.1.0-preview.15]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.14...v0.1.0-preview.15
 [0.1.0-preview.14]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.13...v0.1.0-preview.14
