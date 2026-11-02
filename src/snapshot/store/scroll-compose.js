@@ -311,8 +311,8 @@ export function createScrollCompositor(deps) {
     if (round && plan.whole) return refuse();
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
-    // what the scroller needs before its first composition: one page, its pinned elements, its bar and backdrop tiles
-    let need = area(portPx) + (round ? area(padPx) : 0);
+    // what the scroller needs to compose a step: two pages (one covers the port at its own offset only), its pinned elements, its bar and backdrop tiles
+    let need = AHEAD_PAGES * area(portPx) + (round ? area(padPx) : 0);
     if (plan.bar) need += 2 * area(snapPx(plan.bar.gutter, geo, grid));
     for (const p of plan.pinned) { const r = entry.record.layer?.frameRect(p); if (r) need += area(snapPx(r, geo, grid)); }
     if (!fits(entry, need * 4)) return refuse();
@@ -368,12 +368,15 @@ export function createScrollCompositor(deps) {
     for (const t of [...new Set(want)]) {
       if (cache.pages.some((p) => p.top === t)) continue;
       if (most-- <= 0) break;
-      if (cache.pages.length >= MAX_PAGES) {
+      // at MAX_PAGES, or when one more page does not fit the surface budget, a page farther from `top` makes room
+      let full = cache.pages.length >= MAX_PAGES;
+      if (!full && !fits(entry, area(cache.portPx) * 4)) { if (!cache.pages.length) break; full = true; }
+      if (full) {
         let far = 0;
         for (let i = 1; i < cache.pages.length; i++) if (Math.abs(cache.pages[i].top - top) > Math.abs(cache.pages[far].top - top)) far = i;
         if (Math.abs(cache.pages[far].top - top) <= Math.abs(t - top)) continue;
         cache.pages.splice(far, 1);
-      } else if (!fits(entry, area(cache.portPx) * 4)) break;
+      }
       /** @type {Page} */
       const page = { top: t, pad: null, seq: null, dirty: [], dirtySeq: [], misses: 0 };
       cache.pages.push(page);
@@ -463,9 +466,9 @@ export function createScrollCompositor(deps) {
       let set = planning.get(entry);
       if (!set) planning.set(entry, (set = new Set()));
       if (set.has(scroller) || stillRefused(entry, scroller)) return false;
-      // no plan (a scan of the scroller) when not even one page of its client box fits the budget
+      // no plan (a scan of the scroller) when two pages of its client box do not fit the surface budget
       const h = /** @type {HTMLElement} */ (scroller);
-      if (h.clientWidth > 0 && !fits(entry, Math.ceil(h.clientWidth * entry.geo.scale) * Math.ceil(h.clientHeight * entry.geo.scale) * 4)) return false;
+      if (h.clientWidth > 0 && !fits(entry, AHEAD_PAGES * Math.ceil(h.clientWidth * entry.geo.scale) * Math.ceil(h.clientHeight * entry.geo.scale) * 4)) return false;
       set.add(scroller);
       if (early) ahead.add(scroller);
       const at = epoch;

@@ -153,13 +153,24 @@ async function scrolled(t, budget) {
   return { rig, a, scroller, composed };
 }
 
-test('C: scroll pages count toward the budget: fewer pages when they do not fit, the step is built instead, reported', async (t) => {
-  const { rig, a, composed } = await scrolled(t, ONE + Math.floor(1.5 * PAGE));
+test('C: scroll pages count toward the budget: fewer pages are kept, reported, and they still compose', async (t) => {
+  const { rig, a, composed } = await scrolled(t, ONE + Math.floor(2.5 * PAGE));
   const s = rig.store.stats();
   assert.ok(ONE + s.scroll.pages * PAGE <= rig.options.maxTotalSurfaceBytes, `${s.scroll.pages} pages built: more than the budget holds`);
   within(rig);
+  assert.equal(s.scroll.pages, 2, 'two pages of the three it plans at an ample budget');
   assert.equal(s.surfaceBytes, ONE + s.scrollSurfaceBytes, 'surfaceBytes counts the pages it holds');
-  assert.equal(composed, false, 'one page cannot cover the port at 20: the plain path serves the step');
+  assert.equal(composed, true, 'the two pages cover the port at 20');
+  assert.deepEqual(rig.css(a, 20, 15), RGBA.lime);
+  assert.deepEqual(rig.css(a, 20, 45), RGBA.blue);
+  assert.ok(sizeReports(rig).length >= 1, 'surface-size reported');
+});
+
+test('C: a scroller without room for two pages is not planned: the step is built instead, reported', async (t) => {
+  const { rig, a, composed } = await scrolled(t, ONE + Math.floor(1.5 * PAGE));
+  const s = within(rig);
+  assert.equal(s.scroll.pages, 0);
+  assert.equal(composed, false, 'the plain path serves the step');
   assert.ok(sizeReports(rig).length >= 1, 'surface-size reported');
   // the scheduler damages a step that is not composed (the page colours left unused are dropped)
   rig.script.length = 0;

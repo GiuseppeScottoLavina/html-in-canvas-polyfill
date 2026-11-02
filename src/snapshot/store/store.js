@@ -300,19 +300,21 @@ export function createSnapshotStore(env, capture, extras = {}) {
     return copy;
   }
 
-  const BUDGET_CAUSES = {
-    tile: 'a new tile needs a surface beyond options.maxTotalSurfaceBytes (surfaces kept alive by ElementImages count); the drawable keeps its last picture and is planned again at a reduced scale, or refused',
-    copy: 'a caret blink, a text overlay or a composed scroll step needs a copy of a surface an ElementImage keeps alive, beyond options.maxTotalSurfaceBytes; it is not drawn (a scroll step is built instead) and the drawable keeps its last picture',
-    scroll: 'scroll pages do not fit options.maxTotalSurfaceBytes; scroll steps are built instead of composed',
-  };
-
-  /** Reported once per drawable and cause. @param {Entry} entry @param {'tile'|'copy'|'scroll'} cause */
+  /**
+   * Reported once per drawable and cause: 'tile' a new surface or copy for a tile, 'copy' a copy of a pinned surface for a caret blink, a text overlay or a composed
+   * scroll step, 'scroll' the scroll compositor's pages and tiles.
+   * @param {Entry} entry @param {'tile'|'copy'|'scroll'} cause
+   */
   function overBudget(entry, cause) {
     const bit = cause === 'tile' ? 1 : cause === 'copy' ? 2 : 4;
     starved = true;
     if (entry.budgetNoted & bit) return;
     entry.budgetNoted |= bit;
-    env.reporter.unsupported({ feature: 'surface-size', message: `${describe(entry)}: ${BUDGET_CAUSES[cause]}`, hint: 'close() the ElementImages that are no longer needed, or raise options.maxTotalSurfaceBytes', path: `${describe(entry)} (${cause})` }, entry.record.canvas);
+    const what = cause === 'tile' ? 'its next tile is rasterised at a reduced scale, or refused' : cause === 'copy' ? 'a caret blink, text overlay or composed scroll step that would copy a surface an ElementImage keeps alive is skipped' : 'fewer scroll pages are kept, and scroll steps are built instead of composed';
+    env.reporter.unsupported({
+      feature: 'surface-size', path: `${describe(entry)} (${cause})`, hint: 'close() the ElementImages that are no longer needed, or raise options.maxTotalSurfaceBytes',
+      message: `${describe(entry)}: the retained surfaces (those ElementImages keep alive and scroll pages included) reach options.maxTotalSurfaceBytes: ${what}; the drawable keeps its last picture until then`,
+    }, entry.record.canvas);
   }
 
   /** a budget refused, reduced or skipped something since memory was last freed */
