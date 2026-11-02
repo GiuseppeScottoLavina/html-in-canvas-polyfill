@@ -42,6 +42,8 @@ test('a drawable of zero width (the playground report: a stage of absolutely pos
   assert.ok(/shrink-to-fit/.test(hits[0]) && /width: 100%/.test(hits[0]), hits[0]);
   const pixels = ctx.getImageData(0, 0, c.width, c.height).data;
   assert.ok(pixels.every((/** @type {number} */ v) => v === 0), 'nothing is drawn, as natively');
+  z.style.width = '100%';
+  assert.equal(z.getBoundingClientRect().width, c.getBoundingClientRect().width, 'the suggested fix gives it the canvas width');
 });
 
 test('a drawable of zero height warns once with a height hint; capturing it warns too', async t => {
@@ -55,7 +57,9 @@ test('a drawable of zero height warns once with a height hint; capturing it warn
   const hits = zeroSize(seen);
   assert.equal(hits.length, 1, `one warning: ${seen.join(' | ')}`);
   assert.ok(hits[0].startsWith('[hic-live-polyfill] <div drawable> has a zero height, so nothing is drawn:'), hits[0]);
-  assert.ok(/give it a height/.test(hits[0]), hits[0]);
+  assert.ok(/give it a height \(for example height: 100%\)/.test(hits[0]), hits[0]);
+  h.style.height = '100%';
+  assert.equal(h.getBoundingClientRect().height, c.getBoundingClientRect().height, 'the suggested fix gives it the canvas height');
 });
 
 test('positive control: a drawable with a size draws its pixels and logs no zero-size warning', async t => {
@@ -65,7 +69,6 @@ test('positive control: a drawable with a size draws its pixels and logs no zero
   const ctx = ctx2d(c);
   const a = /** @type {Element} */ (c.querySelector('#a'));
   const red = () => { ctx.clearRect(0, 0, c.width, c.height); ctx.drawElementImage(a, 0, 0); return Array.from(ctx.getImageData(90, 40, 1, 1).data).join(); };
-  // the first paint can precede the decoded raster of the drawable: wait for later paints, as other pixel tests do
   for (let k = 0; k < 20 && red() !== '255,0,0,255'; k++) { c.requestPaint(); await i.whenPainted(c); await frames(2); }
   { const px = red(); assert.equal(px, '255,0,0,255', `the red drawable is drawn: ${px}`); }
   c.captureElementImage(a).close();

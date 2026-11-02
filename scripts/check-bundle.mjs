@@ -148,7 +148,9 @@ const LIMITS = {
   //   1,000 elements, 16 / 13 tasks over 8.33 ms per 30 author updates before, 1 / 1 / 0 after
   // 342.5 -> 343 KB, gzip 116 -> 116.25 KB (+501 / +159 bytes, 2026-11-02, measured 342,917 / 116,012): a refused draw names its cause and fix (api/validate.js notDrawable;
   // a wrapper without the drawable attribute was reported only as 'not a drawable descendant')
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 343 * KB, gzip: 116.25 * KB },
+  // 343 -> 343.5 KB (+416 / +170 bytes, 2026-11-02, measured 343,333 / 116,182): a drawable drawn or captured with a zero-width or zero-height border box logs one
+  //   console warning that names the cause and fix (api/validate.js warnZeroSize; a playground stage of absolutely positioned children drew nothing, silently)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 343.5 * KB, gzip: 116.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -190,7 +192,9 @@ const LIMITS = {
   // 10.75 -> 10.5 KB, gzip 4.25 -> 4 KB (-82 / -66 bytes, 2026-10-27, measured 10,403 / 3,947): the Terser pass over esbuild's minified output
   // 10.5 -> 11 KB, gzip 4 -> 4.25 KB (+501 / +183 bytes, 2026-11-02, measured 10,904 / 4,130): the GPU bundle shares api/validate.js with the core, so a refused
   // texture upload names its cause and fix like a refused draw (notDrawable)
-  'hic-live-gpu.iife.min.js': { target: 11 * KB, ceiling: 11 * KB, gzip: 4.25 * KB },
+  // 11 -> 11.5 KB, gzip 4.25 -> 4.5 KB (+412 / +195 bytes, 2026-11-02, measured 11,316 / 4,325): api/validate.js again, so a texture upload of a zero-width or
+  //   zero-height drawable logs the same one-time warning as a draw (warnZeroSize)
+  'hic-live-gpu.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB, gzip: 4.5 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
