@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.19] - 2026-11-02
+
+A second external review, of 0.1.0-preview.18, found five problems; each was reproduced by a test that failed on 0.1.0-preview.18 and is fixed. A drawable refused for the memory budget now recovers once memory is freed, instead of staying on its old picture while the scheduler ticked. Several canvases now share the pump fairly: with two busy canvases the second one built 0 times in 120 rounds. The frame loop sleeps until a deferred build is due instead of running every frame. The text-overlay backdrops are counted in the memory budget, scroll caches give way least recently used first, the animated-frame cache no longer keeps the frames of removed images, and the effects presenter allocates one intermediate texture when one is enough. The common case is unchanged: a headed A/B against 0.1.0-preview.18 (scroll, typing, large drawables) was equal within the run-to-run spread. The playground highlights its code with Prism.
+
+- The core bundle grows to 348,384 bytes minified, 118,085 gzipped (+2,169 / +811 bytes) and to 16,691 code lines (+86); the effects bundle to 39,340 / 14,012 bytes (+21 / +16). The GPU bundle is unchanged.
+
 ### Changed
 
 - Playground: the editor highlights HTML, and the CSS and JavaScript inside `<style>` and `<script>`, with Prism 1.29.0 loaded from cdnjs (pinned, with Subresource Integrity; on the playground page only, never in the preview). The editor is still the `<textarea>`: its text is transparent over a highlighted copy that follows typing and scrolling, so the caret, selection, input methods, undo and the keys work as before. If Prism does not load, the editor shows its text as a plain textarea. The page has a lighter visual pass: matching title bars over the editor and the preview, a wider editor, consistent buttons, and syntax colours that meet WCAG AA in the light and dark themes. Tests: `npm run test:examples` checks the highlighting (tokens of the three languages, the same metrics, a value set by script, trusted typing, the scroll) and, with the cdnjs scripts blocked, a plain editor; control C5 has two more page variants (the copy not updated on typing, the text transparent without Prism), each red.
@@ -18,7 +24,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - Several canvases: the post-frame pump served canvases in registration order, so a canvas whose build used up the pump's 4 ms (`mainThreadMs`) deferred every canvas after it for as long as it stayed dirty. Two animated canvases at 4.1 ms per build: 120 builds against 0 in 120 rounds at 60 Hz, in either order. Canvases are now served oldest damage first; each canvas's builds of a round still start together and keep its own frame cap, and a pump inside an input task (focus, `:active`, an urgent value change) serves the canvas with that input first. After: 60 / 60 builds, no canvas waits more than one round (three canvases: at most two). Tests: Node unit tests on the real pump and damage tracker (they fail without the fix), with controls for cheap builds (both canvases build every round, one batch per canvas), a frame cap and the input order.
 - Frame loop: while a build waited for a known time (snapshot-rate or frame-cap gate, cost budget, node-budget interval, failure backoff) and nothing else was in progress, the scheduler still ran a frame and a pump every frame until it was due: a build deferred by 5 s cost 120 pumps and 241 `requestAnimationFrame` calls per second. The loop now stops and one timer arms it two frames before the build is due, when that is at least 50 ms away. Damage, input, the caret blink, a tile that landed, `requestPaint()` and frame hooks end the wait at once, and the loop keeps running as before while a paint is owed, held or deferred by the frame cap, a hook asks for frames, a resize or first snapshot is in progress, or a drawable is refused, lost or not laid out. After: 1 pump and 3 `requestAnimationFrame` calls in that second; in the browser, a change held 250 ms by the node budget made 19 `requestAnimationFrame` calls in 150 ms before, and at most 6 after (headless Chrome), and is still painted when due. Tests: scheduler and pump unit tests (they fail without the fix) with controls (no wait without the pump's `quietUntil`, for a short deferral, with a hook, a held paint or a landed result; every wake source clears the timer), and a browser unit test on the real install with a control.
 - Tests: `npm test` now also checks that every mutant's edit still matches the built bundle once (`--check-anchors`, as CI does); a source change that moved an anchor showed up only in CI.
-- With these fixes the core grows to 348,384 bytes minified, 118,085 gzipped (+2,169 / +811 bytes), and to 16,691 code lines (+86); the effects bundle to 39,340 / 14,012.
 
 ## [0.1.0-preview.18] - 2026-11-02
 
@@ -403,7 +408,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.18...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.19...HEAD
+[0.1.0-preview.19]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.18...v0.1.0-preview.19
 [0.1.0-preview.18]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.17...v0.1.0-preview.18
 [0.1.0-preview.17]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.16...v0.1.0-preview.17
 [0.1.0-preview.16]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.15...v0.1.0-preview.16
