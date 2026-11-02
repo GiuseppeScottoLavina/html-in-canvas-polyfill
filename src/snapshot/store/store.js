@@ -206,7 +206,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     }
     entry.surface = surface;
     entry.geo = geo;
-    if (old && !pinned(old) && surfaceBytes(old) > surfaceBytes(surface)) memoryFreed();
+    if (starved && old && !pinned(old) && surfaceBytes(old) > surfaceBytes(surface)) memoryFreed();
   }
 
   /** The drawable has no snapshot any more (its surface stays alive only for ElementImages that pinned it). @param {Entry} entry */
