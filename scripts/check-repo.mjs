@@ -136,7 +136,10 @@ if (!docsOnly) {
   // 16500 -> 16510 (2026-11-02, measured 16,503; 16,496 before this step): a refused draw names its cause and fix (api/validate.js notDrawable), a playground report
   // 16510 -> 16520 (2026-11-02, measured 16,518; 16,510 before this step): resources released with their owner (+8: animated-images.js closes the decoder of a
   // dead image and of a refused open and drops the source of a released one; css-collector.js drops a canvas's bundle when its record is detached or disposed)
-  if (total > 16520) problems.push(`G-size: core is ${total} code lines (> 16520)`);
+  // 16520 -> 16615 (2026-11-02, measured 16,605 with the step above; 16,518 before this step): options.maxTotalSurfaceBytes bounds every retained surface (+87: snapshot/store/store.js
+  // the commit-time check, pinned surfaces counted, caret and overlay copies skipped, once-per-cause reports, retry when an ElementImage frees a surface;
+  // scroll-compose.js the bytes of pages and tiles, shed, the page budget)
+  if (total > 16615) problems.push(`G-size: core is ${total} code lines (> 16615)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

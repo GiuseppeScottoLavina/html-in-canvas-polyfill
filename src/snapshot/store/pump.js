@@ -86,6 +86,8 @@ const LAND_DEVS = 2;
  * @property {boolean} refused     surface does not fit the budget: no builds until the next structural damage
  * @property {boolean} lost        2D context of the surface is lost
  * @property {boolean} reducedReported
+ * @property {boolean} sizeRefused  `refused` by the surface budget: tried again when an ElementImage frees a surface
+ * @property {number} budgetNoted  causes of options.maxTotalSurfaceBytes already reported for it (store.overBudget, bit mask)
  * @property {CaretPatch} patch
  * @property {{rectPx: Rect, rectCss: Rect, color: string}|null} caret   measured by the last tile that knew (surface px and border-box css px); null = none
  * @property {boolean} phase       blink phase wanted (true = visible)
@@ -136,7 +138,7 @@ const LAND_DEVS = 2;
 /**
  * @typedef {Object} PumpHost  what the pump needs from the store
  * @property {() => Iterable<Entry>} entries
- * @property {(entry: Entry) => number} usedBytes  bytes of every OTHER retained surface
+ * @property {(entry: Entry) => number} usedBytes  bytes of every retained surface but the drawable's own (counted too while an ElementImage pins it: it outlives a new one)
  * @property {(entry: Entry) => void} notLaidOut
  * @property {(entry: Entry, size: Size, now: number) => void} empty  a laid-out drawable whose border box has no area: publish an EMPTY snapshot
  * @property {(entry: Entry, err: unknown) => void} refuse

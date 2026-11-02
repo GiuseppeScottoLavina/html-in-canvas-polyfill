@@ -39,7 +39,10 @@ On a phone or tablet the defaults below replace the desktop ones, unless the pag
 | `maxTotalSurfaceBytes` | 512 MiB | 256 MiB; 128 MiB when `navigator.deviceMemory <= 2` | WebKit caps the canvas memory of an iOS page at a quarter of the RAM (iOS 26 runs on iPhones with 4 GB or more: at least 1 GiB); Chrome for Android runs on 2 GB devices |
 
 These limits come from WebKit's source and device classes, not from a measurement: a simulator allocates from the Mac's memory and never hits them. When a budget is
-reached the drawable is rastered at a lower scale and reported (`surface-size`), never dropped. A phone-sized drawable at DPR 3 (390 x 840 css px) costs about 12 MB.
+reached the drawable is rastered at a lower scale, or keeps its last picture, and is reported (`surface-size`); it is never blank. The total counts the surfaces that
+`ElementImage`s keep alive until they are closed, and the scroll compositor's pages and tiles: a scrollport-sized page at DPR 3 costs as much as a drawable of that
+size, a few per list. Pages are kept only in the room the drawables leave; without room the scroll steps are built instead of composed. A phone-sized drawable at
+DPR 3 (390 x 840 css px) costs about 12 MB.
 
 ## Touch
 
@@ -54,7 +57,8 @@ reached the drawable is rastered at a lower scale and reported (`surface-size`),
   the Mac's CPU, so a phone is slower. A phone has no pointer that rests over a list before its gesture, so the visible lists are planned and get their first pages
   while the page is quiet: the first step of a gesture is composed, the first gesture included (iOS Simulator, the touch events of a pan emulated: the first canvas
   update 1-8 ms after the first scroll event, 0 plain builds, instead of 2-9 plain builds and the first composed update 33-268 ms later). This holds memory: two pages
-  of each visible list (at DPR 3, 5.3 MB for the example's list, 16 MB for the two lists of the mobile fixture), held from the first rest instead of the first touch.
+  of each visible list (at DPR 3, 5.3 MB for the example's list, 16 MB for the two lists of the mobile fixture), held from the first rest instead of the first touch,
+  and counted toward `maxTotalSurfaceBytes`.
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
 - **Effects.** The effect plugins re-target touch input like mouse input (unit-tested with touch pointer events), but neither simulator has a WebGPU adapter, so effects
   with touch were not run.
