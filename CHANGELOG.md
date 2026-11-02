@@ -4,9 +4,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.18] - 2026-11-02
+
+The memory budget now holds. An external review of 0.1.0-preview.17 found that `options.maxTotalSurfaceBytes` did not bound what it documented: surfaces kept alive by `ElementImage`s (up to 2x the budget during updates, 11x through caret blinks) and the scroll compositor's pages were not counted, and nothing was reported. They are now counted and checked at commit; what does not fit is rastered smaller, refused while the drawable keeps its last picture, or skipped, and reported once. The same review found an animated-image decoder left open after a failure, a CSS cache that kept the bundle of every removed canvas, and a gate runner that trusted a PASS line over the exit status; all are fixed. A drawable with a zero-width or zero-height box now says why nothing is drawn, and the documentation was reviewed claim by claim against the code.
+
+- The core bundle grows to 346,215 bytes minified, 117,274 gzipped (+3,298 / +1,262 bytes) and to 16,605 code lines (+102); the GPU bundle, which shares the draw validation, to 11,320 bytes minified, 4,328 gzipped (+416 / +198 bytes).
+
 ### Added
 
 - A drawable whose border box has zero width or zero height now explains why nothing is drawn: its first `drawElementImage`, `captureElementImage`, `getElementImageDefaultSize` or texture upload logs one console warning per element, for example `[hic-live-polyfill] <div drawable> has a zero width, so nothing is drawn: children of a content="drawable" canvas are shrink-to-fit (as natively); give it a width (for example width: 100%).` A zero height gets its own cause: `it is empty or its children are all out of flow`. Nothing else changes: the box is laid out and drawn as natively (0 px, nothing drawn), no exception is thrown, and a drawable without a snapshot (`display:none`) keeps its exception. Reported from the playground: a drawable that held only a `width: 100%` stage of absolutely positioned children was 0 px wide (0 x 813 with the polyfill, 0 x 757 natively in Chrome Canary) and drew nothing, without any message. The core grows to 343,337 bytes minified, 116,189 gzipped (+420 / +177 bytes), and the GPU bundle, which shares the draw validation, to 11,320 / 4,328 (+416 / +198 bytes); the core grows to 16,510 code lines (+7), its current ceiling. Tests: browser unit tests for the zero-width case of the report (one warning over three paints, draws and captures; nothing drawn; `width: 100%` gives it the canvas width), a zero-height case (`height: 100%` gives it the canvas height) and a drawable with a size, which draws its pixels and logs no warning.
+
+### Changed
+
+- Documentation: every document was checked against the source, the tests and the measurements before the public launch. Corrected, among others: `canvas.querySelector()` does find the canvas's children; `requestPaint()` on an unmanaged canvas fires an empty `paint`; canvas children are shrink-to-fit; gates that are planned are no longer described as existing; sample code that did not run; stale numbers and release labels; claims stronger than their measurement. The other npm package is named neutrally in the comparisons.
 
 ### Fixed
 
@@ -15,7 +25,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - Test runners: the gate runner (`npm run test:gates`, the mutant suite) read a gate's PASS result line even when the process then exited non-zero or was killed by a signal. Such a run is now a FAIL whose first failure names the exit status or the signal; a FAIL line with exit 1 is unchanged. Test: the runner's Node unit test for both cases and the two positive controls.
 - `options.maxTotalSurfaceBytes` now bounds all the retained surface memory of an install, as documented; before, three kinds of surface were not counted. (1) A surface kept alive by an `ElementImage` that was not closed yet was left out when its own drawable was planned, and every build of a batch was checked before any of them committed: one drawable reached 2x the budget, and four pinned drawables in one batch 2x, with no report. (2) A caret blink, a caret lift or a text overlay on a surface an `ElementImage` keeps alive copied it without a check: a page that captures at every paint and keeps the images reached 11x the budget in ten blinks, until the images were closed or collected. (3) The scroll compositor's pages and tiles (up to four scrollport-sized pages plus pinned, bar and backdrop tiles per scroller, two scrollers per drawable; about 60-70 MB per scroller on a phone at DPR 3, an estimate) were not counted at all. Now a build is planned with its drawable's pinned surface counted and every new surface or copy is checked again at commit. What does not fit is planned again at a reduced raster scale, or refused while the drawable keeps its last picture. A caret blink or text overlay that would copy a pinned surface is skipped. A scroller is planned only when two pages fit, keeps fewer pages when the budget is short, and gives the room back to drawable surfaces (its steps are then built instead of composed). A pinned surface is never written, and a drawable is never blank. Each cause is reported once per drawable (`surface-size`, with a path ending in `(tile)`, `(copy)` or `(scroll)`), and drawables refused or reduced for the budget are planned again once an `ElementImage` frees a surface. The `surfaceBytes` stat now counts the scroll pages too; the new `scrollSurfaceBytes` stat is their share. Native has no such budget; this limit is the polyfill's. When nothing is pinned and the budget is not reached, nothing changes: the check runs only where a new surface or a copy is made. Tests: browser unit tests for each kind (a pinned partial and a pinned batch, caret blinks on pinned surfaces, scroll pages short of room, pages giving way to a drawable surface), each with a control at an ample budget; they fail without the fix.
 - Documentation: the 35 % main-thread share (`mainThreadShare`) bounds the regular builds only. The side builds of the post-frame pump (scroll pages and tiles, overlay backdrops) are bounded by the 4 ms `mainThreadMs` of their pump and are not charged to the share; `docs/ARCHITECTURE.md` said the share bounded the whole sum.
-- With these fixes the core grows to 346,215 bytes minified, 117,274 gzipped (+2,878 / +1,085 bytes), and to 16,605 code lines (+95).
 
 ## [0.1.0-preview.17] - 2026-11-02
 
@@ -378,7 +387,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.17...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.18...HEAD
+[0.1.0-preview.18]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.17...v0.1.0-preview.18
 [0.1.0-preview.17]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.16...v0.1.0-preview.17
 [0.1.0-preview.16]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.15...v0.1.0-preview.16
 [0.1.0-preview.15]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.14...v0.1.0-preview.15
