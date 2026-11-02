@@ -277,6 +277,38 @@ let moduleParses = true;
 try { new Script('export const a = 1;'); } catch { moduleParses = false; }
 if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImport('/* import(x) */ const a = 1;') || sizeProblem(2, 1, 3) !== 'target' || sizeProblem(4, 1, 3) !== 'ceiling' || sizeProblem(1, 1, 3) !== null) problems.push('G-bundle: the static checks failed their own positive controls');
 
+// ---- 2b. ESM tree-shaking of the public feature table (docs/BUNDLES.md): the runtime reads a feature's status from the generated src/contracts/feature-status.js,
+// so an app that imports only install() from dist/esm/index.js carries none of the summary / reason prose of src/contracts/features.js (-35.6 KB minified,
+// -12.5 KB gzip, measured 2026-11-02). Controls: the same app that also imports FEATURES carries it, and an app built from src whose status lookup reads the
+// table again (the import this check guards against) carries it too.
+{
+  const { build: esbuild } = await import('esbuild');
+  const { FEATURES } = await import(pathToFileURL(join(root, 'src/contracts/features.js')).href);
+  const { FEATURE_STATUS } = await import(pathToFileURL(join(root, 'src/contracts/feature-status.js')).href);
+  const ids = FEATURES.map((/** @type {any} */ f) => f.id);
+  /** @param {Record<string, string>} map @returns {string[]} the ids whose status differs from FEATURES, and the ids FEATURES does not have */
+  const statusDiff = (map) => [...ids.filter((/** @type {string} */ id) => map[id] !== FEATURES.find((/** @type {any} */ f) => f.id === id).status), ...Object.keys(map).filter((id) => !ids.includes(id))];
+  const diff = statusDiff(FEATURE_STATUS);
+  if (diff.length) problems.push(`G-bundle: src/contracts/feature-status.js disagrees with the statuses of FEATURES for ${diff.join(', ')} (run npm run docs:sync)`);
+  if (statusDiff({ ...FEATURE_STATUS, [ids[0]]: 'x' }).length !== 1 || statusDiff({ ...FEATURE_STATUS, extra: 'limited' }).length !== 1) problems.push('G-bundle: the feature-status comparison failed its own controls');
+  // prose strings that a minifier prints verbatim (no quote, backslash or non-ASCII character), so `includes` finds them in the output
+  const prose = FEATURES.flatMap((/** @type {any} */ f) => [f.summary, f.reason]).filter((/** @type {string} */ s) => s.length > 60 && /^[\w .,;:()=+/<>%-]+$/.test(s));
+  /** @param {string} contents @param {any[]} [plugins] @returns {Promise<number>} how many of the prose strings the minified app carries */
+  const proseIn = async (contents, plugins = []) => {
+    const r = await esbuild({ stdin: { contents, resolveDir: root, loader: 'js' }, bundle: true, minify: true, format: 'esm', target: 'chrome130', write: false, logLevel: 'silent', plugins });
+    const text = r.outputFiles[0].text;
+    return prose.filter((/** @type {string} */ s) => text.includes(s)).length;
+  };
+  const tableLookup = { name: 'status-from-table', setup(/** @type {any} */ b) { b.onLoad({ filter: /contracts[\\/]feature-status\.js$/ }, () => ({ contents: "import { featureById } from './features.js';\nexport const featureStatus = (id) => featureById(id)?.status;\n", loader: 'js' })); } };
+  const lean = await proseIn("import { install } from './dist/esm/index.js'; install();");
+  const full = await proseIn("import { install, FEATURES } from './dist/esm/index.js'; install(); console.log(FEATURES);");
+  const regressed = await proseIn("import { install } from './src/index.js'; install();", [tableLookup]);
+  if (prose.length < 20) problems.push(`G-bundle: only ${prose.length} prose strings of features.js are usable probes of the tree-shaking check`);
+  if (lean) problems.push(`G-bundle: an app that imports only install() from dist/esm/index.js carries ${lean} of ${prose.length} summary / reason strings of src/contracts/features.js (the public FEATURES table is no longer tree-shaken)`);
+  if (full !== prose.length || regressed !== prose.length) problems.push(`G-bundle: the tree-shaking check failed its controls (FEATURES imported: ${full}, status read from the table: ${regressed}, of ${prose.length} prose strings)`);
+  console.log(`ESM tree-shaking: install() alone carries ${lean} of ${prose.length} feature prose strings (controls: ${full}, ${regressed})`);
+}
+
 // ---- 3. browser
 if (!process.argv.includes('--skip-browser')) {
   const H = await import(pathToFileURL(join(root, 'test/harness/index.mjs')).href);

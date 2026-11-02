@@ -9,7 +9,7 @@
 
 import { BUS } from '../../contracts/events.js';
 import { HicUnsupportedError, invalidState } from '../../contracts/errors.js';
-import { featureById } from '../../contracts/features.js';
+import { featureStatus } from '../../contracts/feature-status.js';
 import { inflateRect, intersectRect, roundOutRect, unionRect } from '../../util/rect.js';
 import { scopedFilterList } from '../../util/canvas-scope.js';
 import { createCaretPatch } from './caret-patch.js';
@@ -513,7 +513,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
         const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });
         const result = capture({ ...req, scroll });
         // a 'limited' entry (node-budget: a large scroller) describes a page that renders like the tiles do
-        return (result.unsupported ?? []).some((u) => featureById(u.feature)?.status !== 'limited') || !result.complete ? null : result.url;
+        return (result.unsupported ?? []).some((u) => featureStatus(u.feature) !== 'limited') || !result.complete ? null : result.url;
       } catch (err) {
         env.reporter.caught(err, 'snapshot-store:scroll-page');
         return null;
@@ -657,7 +657,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
   function reportUnsupported(entry, result) {
     for (const u of result.unsupported ?? []) env.reporter.unsupported(u, entry.record.canvas);
     // a 'limited' feature (video-controls, node-budget) is a documented deviation of a tile that still renders: it is reported, never a reason to abort
-    return options.onUnsupportedContent === 'abort' && (result.unsupported ?? []).some((u) => featureById(u.feature)?.status !== 'limited');
+    return options.onUnsupportedContent === 'abort' && (result.unsupported ?? []).some((u) => featureStatus(u.feature) !== 'limited');
   }
 
   /** The tile is caret-free: remember where the capture measured the caret, or forget it when the tile shows the control without one. @param {Entry} entry @param {Landed} l @param {Rect} crop */

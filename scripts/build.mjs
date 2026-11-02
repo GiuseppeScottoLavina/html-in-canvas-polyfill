@@ -56,6 +56,8 @@ const inlineWgsl = (p) => ({
 /**
  * The classic core carries each feature row as {id, status} only: the summary/reason prose of src/contracts/features.js is ~32 KB minified and nothing at runtime reads it (the store reads
  * `status`; docs/SUPPORT-MATRIX.md is generated from the full table). ESM builds keep the full table. A row that does not match the expected one-line shape fails the build.
+ * The core's status lookup (src/contracts/feature-status.js, generated for the ESM builds, where it lets a bundler drop the public table) is answered here from the lean
+ * FEATURES that the classic API exposes anyway, so the core holds each id and status once (carrying the generated map as well measured +1,439 B minified, +548 B gzip).
  */
 const leanFeatures = {
   name: 'lean-features',
@@ -68,6 +70,9 @@ const leanFeatures = {
       if (!rows || lean !== rows) throw new Error(`lean-features: ${lean} of ${rows} rows of features.js have the expected one-line shape`);
       return { contents, loader: 'js' };
     });
+    b.onLoad({ filter: /contracts[\\/]feature-status\.js$/ }, () => ({
+      contents: "import { featureById } from './features.js';\nexport const featureStatus = (id) => featureById(id)?.status;\n", loader: 'js',
+    }));
   },
 };
 
