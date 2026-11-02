@@ -80,7 +80,8 @@ function createEntry(record) {
 /**
  * Implements Scheduler (docs/ARCHITECTURE.md ADR-C). TWO phases per frame through frame-phase.js: the rAF ARM callback (arms the sentinel observer) and the frame-end RUN in a fresh ResizeObserver callback
  * (after app rAF callbacks, style/layout and earlier ResizeObservers). RUN, per canvas in reverse tree order: cap gate, paint gate (paint-gate.js), commitLanded, paint dispatch; then the frame hooks. ONE store pump for all canvases runs in a task posted after the rendering update (queuePump).
- * paintNow(record) is the same dispatch from a microtask (canvas width/height setters), at most one per frame. Zero rAF and zero ResizeObserver when idle; the only timer is the caret blink while a text control is focused (observers/; no idle poll).
+ * paintNow(record) is the same dispatch from a microtask (canvas width/height setters), at most one per frame. Zero rAF and zero ResizeObserver when idle; the only timers are the caret blink while a text control is focused (observers/; no idle poll)
+ * and the end of a quiet wait (afterPump: the only work left is a build deferred to a known time).
  *
  * Cap semantics: the cap bounds paint events AND frame hooks (one cap gate per canvas, advanced only on ticks that have work). requestPaint() honours the cap too; paintNow() does not (the app just cleared the bitmap: skipping a frame would show it blank).
  * `interactionFloorFps` (default 0 = strict) raises a finite cap for user-driven damage only; it never lifts options.maxSnapshotFps, which the store applies to build starts.

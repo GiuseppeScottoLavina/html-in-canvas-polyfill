@@ -139,7 +139,10 @@ if (!docsOnly) {
   // 16520 -> 16615 (2026-11-02, measured 16,605 with the step above; 16,518 before this step): options.maxTotalSurfaceBytes bounds every retained surface (+87: snapshot/store/store.js
   // the commit-time check, pinned surfaces counted, caret and overlay copies skipped, once-per-cause reports, retry when an ElementImage frees a surface;
   // scroll-compose.js the bytes of pages and tiles, shed, the page budget)
-  if (total > 16615) problems.push(`G-size: core is ${total} code lines (> 16615)`);
+  // 16615 -> 16650 (2026-11-02, measured 16,641; 16,605 before this step): the frame loop sleeps until a deferred build is due (+36: schedule/scheduler.js mayRest /
+  // rest, snapshot/store/pump.js PumpResult.quietUntil, store.js host.busy; a build deferred 5 s cost 120 pumps and 241 rAF requests per second before it was due)
+  // and the canvas with the oldest damage builds first (pump.js runPump; two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
+  if (total > 16650) problems.push(`G-size: core is ${total} code lines (> 16650)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

@@ -156,7 +156,10 @@ const LIMITS = {
   // 343.75 -> 346.5 KB, gzip 116.5 -> 117.5 KB (+2,623 / +976 bytes alone, 2026-11-02, measured 346,215 / 117,274 with the step above): options.maxTotalSurfaceBytes bounds every retained surface
   //   (snapshot/store/store.js fits / overBudget / memoryFreed: surfaces pinned by ElementImages, the commit-time check of new surfaces and copies, caret and overlay
   //   copies skipped; scroll-compose.js bytes / shed and the page budget): 2x the budget with pinned surfaces and 11x with caret blinks, 0 reports, before
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 346.5 * KB, gzip: 117.5 * KB },
+  // 346.5 -> 347.5 KB, gzip 117.5 -> 117.75 KB (+1,073 / +382 bytes, 2026-11-02, measured 347,288 / 117,656; 346,215 / 117,274 before): the frame loop sleeps until
+  //   a deferred build is due (schedule/scheduler.js mayRest / rest, snapshot/store/pump.js PumpResult.quietUntil, store.js host.busy) and the canvas with the oldest
+  //   damage builds first (pump.js runPump: two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 347.5 * KB, gzip: 117.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
