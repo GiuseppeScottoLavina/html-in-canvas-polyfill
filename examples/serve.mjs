@@ -34,7 +34,7 @@ export async function startServer({ port = 0, host = '127.0.0.1', root = PACKAGE
     let status = 200;
     const send = (code, type, body) => {
       status = code;
-      res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' }); // as GitHub Pages: the playground's opaque-origin preview loads the bundles with CORS
       res.end(req.method === 'HEAD' ? undefined : body);
     };
     try {
