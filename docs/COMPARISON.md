@@ -28,7 +28,7 @@ Scope: facts and our own measurements only. Chrome 154.0.8037.98 (no native feat
 
 ## 3. API surface
 
-| item | competitor | ours |
+| item | other package | ours |
 |---|---|---|
 | opt-in attribute | `layoutsubtree` only (+ `layoutSubtree` property). `content="drawable"`/`drawable` (current explainer, the pinned WPT, Chrome 157) are not recognised. | `content="drawable"` / `drawable` |
 | `paint` event, `onpaint`, `requestPaint()`, `changedElements` | yes (async, after raster) | yes |
@@ -49,19 +49,19 @@ The repository's WPT runner (`test/wpt/`, configuration B) with the other packag
 |---|---|---|
 | A native (Chrome 157.0.8099.0 + CanvasDrawElement) | 202 / 230 | 317 / 375 |
 | B ours | 139 / 230 | 238 / 375 |
-| competitor, verbatim (1 repetition) | 13 / 230 | 22 / 375 |
-| competitor + attribute adapter (3 repetitions, 9 files unstable) | 66 / 230 | 83 / 375 |
+| other package, verbatim (1 repetition) | 13 / 230 | 22 / 375 |
+| other package + attribute adapter (3 repetitions, 9 files unstable) | 66 / 230 | 83 / 375 |
 | C no polyfill | 10 / 230 | 19 / 375 |
 
-- Verbatim is almost the no-polyfill control because the tests use `content=drawable`. To measure the rendering engine anyway we wrote an adapter: it mirrors `content=drawable` to `layoutsubtree` when page script first touches the canvas, at DOMContentLoaded and on later mutations; plus a wrapper that defers the competitor's install until `<html>` exists, because the runner injects at document start and its install throws there (`MutationObserver.observe(document.documentElement)`). A first adapter that set the attribute while the canvas was still being parsed gave 68 / 86; both are reported for transparency.
-- By directory (files, native / ours / competitor-adapted / none): top-level 105 / 73 / 37 / 9, privacy 84 / 42 / 27 / 0, hit-test 7 / 6 / 2 / 1, offscreen 6 / 1 / 0 / 0.
-- Competitor-adapted passes 7 files that ours fails and native passes: `fullscreen-canvas`, `hit-test/selection`, `onpaint-fires-post-intersection-observation-steps`, `privacy/svg/svg-pattern-href-outside-subtree-ignored`, `privacy/svg/svg-pattern-outside-subtree-ignored`, `privacy/visited-link/visited-link-slotted-color-ignored`, `top-layer-not-painted-in-canvas` (at the time of this comparison; this polyfill has since been fixed to pass all seven, `onpaint-fires-post-intersection-observation-steps` included: a snapshot that loads at once is now painted after the frame computed its IntersectionObserver entries and before they are delivered). Ours passes 145 subtests the adapted competitor fails.
+- Verbatim is almost the no-polyfill control because the tests use `content=drawable`. To measure the rendering engine anyway we wrote an adapter: it mirrors `content=drawable` to `layoutsubtree` when page script first touches the canvas, at DOMContentLoaded and on later mutations; plus a wrapper that defers the other package's install until `<html>` exists, because the runner injects at document start and its install throws there (`MutationObserver.observe(document.documentElement)`). A first adapter that set the attribute while the canvas was still being parsed gave 68 / 86; both are reported for transparency.
+- By directory (files, native / ours / other package adapted / none): top-level 105 / 73 / 37 / 9, privacy 84 / 42 / 27 / 0, hit-test 7 / 6 / 2 / 1, offscreen 6 / 1 / 0 / 0.
+- The adapted other package passes 7 files that ours fails and native passes: `fullscreen-canvas`, `hit-test/selection`, `onpaint-fires-post-intersection-observation-steps`, `privacy/svg/svg-pattern-href-outside-subtree-ignored`, `privacy/svg/svg-pattern-outside-subtree-ignored`, `privacy/visited-link/visited-link-slotted-color-ignored`, `top-layer-not-painted-in-canvas` (at the time of this comparison; this polyfill has since been fixed to pass all seven, `onpaint-fires-post-intersection-observation-steps` included: a snapshot that loads at once is now painted after the frame computed its IntersectionObserver entries and before they are delivered). Ours passes 145 subtests the adapted other package fails.
 
 ## 5. End-to-end gates (our gates run against the other bundle, without positive controls, one run each)
 
 Checks that look for our internal layer (`hic-layer`) and "the API supports content=drawable" are ours-specific and excluded below. Pixel bounds were written for our polyfill against a plain-DOM twin; read the numbers, not only pass/fail. Our numbers: last recorded passing runs (2026-10-12, same machine, same gates, with controls).
 
-| scenario | competitor (adapted unless said) | ours |
+| scenario | other package (adapted unless said) | ours |
 |---|---|---|
 | explainer example verbatim (script-tag load, no adapter) | `paint` never fires: canvas stays blank (`content="drawable"` not recognised) | PASS |
 | explainer, adapted: whole-surface diff vs plain DOM (delta > 16) | 0.89 % (passes the 3 % bound; fails the tight bound and the input region at 22 %) | PASS |
@@ -78,7 +78,7 @@ Checks that look for our internal layer (`hic-layer`) and "the API supports cont
 
 These runs had machine load above threshold (another process above 15 % CPU; load average below 4) and no positive control, so they are indicative, not gate-grade.
 
-## 6. Where the competitor is ahead (measured or factual)
+## 6. Where the other package is ahead (measured or factual)
 
 - About 8.6x smaller minified (29.7 KB vs 256 KB) and 9.3x smaller gzipped (9.7 KB vs 90.2 KB) on 2026-10-13; against the current core (343 KB / 116 KB) about 11.6x and 12x; published on npm and in use.
 - Lower keystroke-to-canvas latency on the explainer while the text fits (p50 10.6 vs 17.3 ms) on 2026-10-13. In the remeasurement of 2026-10-30/31 this polyfill is ahead there (5.1 vs 11.5 ms), and the other package is ahead on first paint (form page in a new tab, p50 59.9 vs 91.1 ms) and on click to focus (p50 7.7 vs 14.6 ms) ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)).
