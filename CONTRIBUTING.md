@@ -10,7 +10,7 @@ Node.js 22 or newer and desktop Chrome.
 npm ci
 npm run build            # dist/: classic bundles and the ES module build
 npm test                 # repo checks, type check, unit tests (Node and headless Chrome), bundle check
-npm run test:examples    # every example and the code printed in the docs, then every plugin's gallery e2e, in headless Chrome
+npm run test:examples    # every example and the main code samples of the docs, then every plugin's gallery e2e, in headless Chrome
 npm run test:plugins     # only the plugin gallery e2e tests (plugins/*/test/*.e2e.mjs), one headless Chrome at a time
 npm run test:native-effects  # the effects over Chrome Canary's own HTML-in-Canvas (headed gates, gallery, example); skipped loudly without Canary
 npm run test:pages       # the GitHub Pages site under /html-in-canvas-polyfill/: every page, the gallery with each plugin
@@ -39,7 +39,7 @@ npm run test:xbrowser    # Firefox and Safari through WebDriver (quit Safari fir
 npm run test:mobile      # the iOS Simulator and the Android Emulator (Xcode and the Android SDK), or --android-serial=<serial> for a phone over USB (docs/guides/MOBILE.md)
 npm run test:frameworks  # React, Vue, Svelte and Lit apps in headless Chrome (run `npm install` in test/frameworks once)
 npm run test:stress      # repeated loads of the basic example with typing, bounded against hangs (headless)
-npm run bench:compare    # the performance comparison (docs/PERFORMANCE-COMPARISON.md, about 45 minutes)
+npm run bench:compare    # the performance comparison (docs/PERFORMANCE-COMPARISON.md, 45 to 75 minutes)
 ```
 
 If you cannot run them, say so in the pull request. The harness launches its own browsers with throwaway profiles under `.profiles/` (under the OS temp directory on Windows) and writes results to `.scratch/` (both git-ignored); it never touches a browser it did not start.
@@ -51,17 +51,17 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 | suite | where | why |
 | --- | --- | --- |
 | 11 of the 16 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS, every push | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
-| mutation suite, the 34 mutants whose gates all run in CI | CI macOS: one mutant per gate on pull requests, all 34 nightly and on release tags (4 machines) | |
+| mutation suite, the 34 mutants whose gates all run in CI | CI macOS: 8 of them on pull requests (each CI gate is targeted by one), all 34 nightly and on release tags (4 machines) | |
 | `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture, playground and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS, every push | headless Chrome with macOS fonts, controls and a GPU |
 | `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS, every push | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
 | the scroll scenario of `test:xbrowser` on Firefox | local | at the runner's DPR 1 the scrolled list differs from its twin on 6.6-6.8 % of the pixels (bound 5 %), the text antialiasing of a 1x macOS display; Firefox cannot be given a real DPR 2 there |
 | G-scroll-cadence and its 8 mutants | local | thresholds from a 120 Hz display; at 60 Hz the live list moved in 61-74 % of the frames (70 % / 82 % required) |
 | G-scroll-inner and the mutants that target it | local | its page-scroll step ended with unequal page offsets on the runner (polyfill 200 px, plain DOM 300 px after a 3-tick wheel stream, both settled): not yet explained; every other step passed |
-| G-regress-paint-rate and its mutant (superseded-whole-tile-dropped) | local | the paint rate checks of M5 and M6 (>= 75 % of a tabular reference's paint rate) sit on the edge on the 3 vCPU runner: M6 measured 34.3-44.8 paints/s against a floor of 33.5-34.2 and failed 1 of 7 runs; as a gate of its own it failed 3 of 10 runs (35.9-41.8 paints/s against 40.7-43.3). The correctness checks of the same findings are G-regress-paint, which runs in CI with its 6 mutants |
-| G-f1-form-effect, G-interposer-strong (and 2 mutants), `test:plugins`, the WebGPU examples (effect-plugin, plugins, the wobble-plugin smoke page), `test:native-effects` | local | continuous WebGPU effects present no frames on the virtual GPU (a transition effect does, and plain WebGPU presents at 60 fps): not yet explained; and the virtual GPU lost its WebGPU device in 1 of 10 runs (Metal command buffer timeout) |
+| G-regress-paint-rate and its mutant (superseded-whole-tile-dropped) | local | the paint rate checks of M5 and M6 (>= 75 % of a tabular reference's paint rate) sit on the edge on the 3 vCPU runner: M6 measured 34.3-44.8 paints/s against a floor of 33.5-34.2 and failed 1 of 7 runs; as a gate of its own it failed 3 of 10 runs (35.9-41.8 paints/s against 40.7-43.3). The correctness checks of the same findings are G-regress-paint, which runs in CI with its 7 mutants |
+| G-f1-form-effect and its 2 mutants, G-interposer-strong, `test:plugins`, the WebGPU examples (effect-plugin, plugins, the wobble-plugin smoke page), `test:native-effects` | local | continuous WebGPU effects present no frames on the virtual GPU (a transition effect does, and plain WebGPU presents at 60 fps): not yet explained; and the virtual GPU lost its WebGPU device in 1 of 10 runs (Metal command buffer timeout) |
 | `test:field` | local | the tab capture is not reliable on the runner: 2 of 12 runs got no usable captured frame |
 | `test:wpt` | local | 3 of the then 237 files were unstable between repetitions on the runner (measured before 0.1.0-preview.7); a run takes about 18 minutes there, and its oracle, Canary, changes daily |
-| `test:xbrowser` on Safari and Safari Technology Preview, `test:mobile`, `bench:compare` | local | the runner images ship Safari 26, which the polyfill refuses (27 is the minimum), and no Technology Preview; simulators and emulators; performance numbers come from the 120 Hz machine |
+| `test:xbrowser` on Safari and Safari Technology Preview, the 7 mutants that target G-xbrowser scenarios, `test:mobile`, `bench:compare` | local | the runner images ship Safari 26, which the polyfill refuses (27 is the minimum), and no Technology Preview; the G-xbrowser mutants run on Safari and Firefox together; simulators and emulators; performance numbers come from the 120 Hz machine |
 
 The list lives in `test/ci/macos-plan.mjs`; anything not listed there runs in CI, and every CI run prints the list as warnings. To run the local-only rest unattended on a Mac with a 120 Hz display, a GPU and Chrome Canary:
 
@@ -80,7 +80,7 @@ To check on the runner that a gate or mutant is stable, start the workflow by ha
 - Assert a non-blank surface before looking at a number, and measure main-thread cost from traces (`RunTask` against 8.33 ms), not the Long Tasks API.
 - Label every number with machine, browser version, DPR, refresh rate and headed or headless. A number taken with machine load above threshold is reported, never used as a threshold.
 - Effect plugins are not part of the polyfill: each lives in its own `plugins/<name>/` folder, imports nothing outside it except `plugins/_lib/` (code that several plugins share) and `src/effects/no-target.js`, and follows the contract of [plugins/README.md](plugins/README.md) (start from `plugins/_template/`; the build and `npm run lint` check it). Nothing in `src/` imports a plugin.
-- `src/` modules import each other only through `src/contracts/`; at most 1000 code lines per file; no runtime dependency; no network request on load; never `blob:` URLs (`npm run lint` checks these).
+- `src/` modules import each other only through `src/contracts/` and the shared helpers of `src/util/` (`src/api/`, the composition root, wires the modules together); at most 1000 code lines per file; no runtime dependency; no network request on load; never `blob:` URLs (`npm run lint` checks these).
 - Unsupported content fails loudly: a placeholder, one console message and a `report()` entry. Content the browser itself leaves out of a canvas (cross-origin frames, images, mask images, `<use>` documents and videos) is drawn as the browser draws it instead of a placeholder.
 - The feature tables of `docs/SUPPORT-MATRIX.md` are generated from `src/contracts/features.js` (`npm run docs:sync`).
 - Every claim in the docs is backed by a test, a gate or a file, or marked unverified. No marketing superlatives.

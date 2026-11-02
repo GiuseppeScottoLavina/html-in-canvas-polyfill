@@ -41,7 +41,7 @@ ES modules: `import { plugin, presets } from '@giuseppe-scotto-lavina/html-in-ca
 | `misconvergence` | 0.4 / 0.15 | red and blue land up to 1.4 CSS px to each side of green (no slider) |
 | `preset` | `'arcade'` or `'monitor'` | applies that set; options given next to it win |
 
-`presets` (frozen) holds both sets; `meta.defaults` is `presets.arcade`. `mountUI` adds a preset picker (a slider moved by hand shows "Custom") and sliders for curvature, scanlines, mask, glow, warmth and flicker.
+Every numeric option is clamped to 0 to 1. `presets` (frozen) holds both sets; `meta.defaults` is `presets.arcade`. `mountUI` adds a preset picker (a slider moved by hand shows "Custom") and sliders for curvature, scanlines, mask, glow, warmth and flicker.
 
 ## Actions
 

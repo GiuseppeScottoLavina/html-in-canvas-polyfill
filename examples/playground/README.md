@@ -24,7 +24,7 @@ The frame reports to the page with `postMessage`. The page accepts a message onl
 
 The page sends the frame a ping every second; a frame that leaves one unanswered for 3 seconds is reported as not responding. What happens then depends on the browser:
 
-- Chrome runs the sandboxed frame in a process of its own: the editor keeps working and the status line says the preview is not responding. A new frame of the page would land in that busy process, which Chrome ends about 10.5 seconds after its last frame is gone (measured on Chrome 156). So Run and Reset remove the stuck frame, say so, and run the editor's code about 11 seconds later in a new process.
+- Chrome runs the sandboxed frame in a process of its own: the editor keeps working and the status line says the preview is not responding. A new frame of the page would land in that busy process, which Chrome ends about 10.5 seconds after its last frame is gone (measured on Chrome 156). So Run and Reset remove the stuck frame, say so, and run the editor's code 11.5 seconds later in a new process.
 - Firefox (157) and Safari (27) run the frame in the page's process: a loop of 4.5 s in the preview stopped the page's own timers for 4.6 s in both. An endless loop freezes the page too, until the browser offers to stop the script; then edit the code and run it again. The page does not report such a pause as a preview that stopped responding.
 
 ## Checked by `npm run test:examples`

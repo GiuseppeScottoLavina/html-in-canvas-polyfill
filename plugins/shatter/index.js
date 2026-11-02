@@ -13,7 +13,7 @@
  *
  * Actions (the effect handle: `handle.trigger('impact' | 'crack' | 'out' | 'in' | 'play', { point })`, `handle.settled()`; states
  * 'intact', 'cracked' and 'gone'), also run by the Strike button of mountUI and, with `onSubmit`, by the submit of the form inside the
- * source; `handle.setOptions({ state })` sets the end state declaratively. With prefers-reduced-motion nothing cracks or moves: a second
+ * source; `handle.setOptions({ state })` sets the end state declaratively. With prefers-reduced-motion nothing cracks or moves: every
  * impact crossfades to the backdrop and back.
  */
 
@@ -35,7 +35,7 @@ export const meta = Object.freeze({
   title: 'Shatter',
   description: 'An invalid submit cracks the glass over the form (still usable through it); a second one shatters it into falling 3D shards that fly back.',
   defaults: Object.freeze({ duration: 1600, onSubmit: 'invalid', intro: true }),
-  reducedMotion: 'With reduced motion nothing cracks or falls: the second impact crossfades the form to the backdrop and back.',
+  reducedMotion: 'With reduced motion nothing cracks or falls: every impact crossfades the form to the backdrop and back.',
 });
 
 /** floats of the per-frame part of the uniform block (shatter.wgsl `Uniforms` up to `shards`) */

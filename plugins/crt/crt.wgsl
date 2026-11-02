@@ -1,5 +1,5 @@
 // CRT arcade monitor. Lengths in CSS px of the presented frame. mapCrtPoint() in index.js is the JavaScript twin of the barrel and of
-// the screen mask below: same formula, same rounded screen corners. Everything after the barrel (beam, scanlines, shadow mask, glow,
+// the screen mask below: same formula, same rounded screen corners. Everything after the barrel (beam, scanlines, aperture grille, glow,
 // warmth, flicker, glass) changes colours only, never which source point a pixel shows.
 struct U {
   res : vec2<f32>,     // presented size, backing px
@@ -13,7 +13,7 @@ struct U {
   flicker : f32,       // 0..1 (0 with prefers-reduced-motion)
   mis : f32,           // red / blue misconvergence, CSS px
   time : f32,          // seconds
-  mask : f32,          // 0..1 shadow mask
+  mask : f32,          // 0..1 aperture grille
   warmth : f32,        // 0..1 warm phosphor
   pad : f32,
 }

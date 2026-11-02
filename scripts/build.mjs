@@ -54,7 +54,7 @@ const inlineWgsl = (p) => ({
 });
 
 /**
- * The classic core carries each feature row as {id, status} only: the summary/reason prose of src/contracts/features.js is ~15 KB minified and nothing at runtime reads it (the store reads
+ * The classic core carries each feature row as {id, status} only: the summary/reason prose of src/contracts/features.js is ~32 KB minified and nothing at runtime reads it (the store reads
  * `status`; docs/SUPPORT-MATRIX.md is generated from the full table). ESM builds keep the full table. A row that does not match the expected one-line shape fails the build.
  */
 const leanFeatures = {

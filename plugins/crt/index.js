@@ -3,7 +3,7 @@
  * Shader: ./crt.wgsl.
  *
  * The drawn HTML is shown on a curved CRT screen with the look of an old bar arcade monitor (the default `arcade` preset): barrel
- * curvature inside a bezel, thick dark scanlines whose beams widen on bright content, a visible RGB slot mask, strong phosphor glow and
+ * curvature inside a bezel, thick dark scanlines whose beams widen on bright content, a visible RGB aperture grille, strong phosphor glow and
  * bloom, a slightly warm phosphor, slight red/blue misconvergence, a vignette, a reflection on the glass, and (unless the user prefers
  * reduced motion) a gentle flicker, a rolling bar and faint static. The input mapper (`mapCrtPoint`) is the JavaScript twin of the barrel
  * formula and of the screen mask in crt.wgsl, so a click on the curved picture reaches the element the user sees there, and a click on the
@@ -33,7 +33,7 @@ export const presets = Object.freeze({
 export const meta = Object.freeze({
   name: 'crt',
   title: 'CRT monitor',
-  description: 'An old arcade monitor: curved glass, thick scanlines, an RGB shadow mask, phosphor glow and bloom; clicks are mapped through the curvature.',
+  description: 'An old arcade monitor: curved glass, thick scanlines, an RGB aperture grille, phosphor glow and bloom; clicks are mapped through the curvature.',
   defaults: presets.arcade,
   reducedMotion: 'With reduced motion the flicker, the rolling bar and the static stop; the curved screen, the scanlines, the mask and the glow stay.',
 });

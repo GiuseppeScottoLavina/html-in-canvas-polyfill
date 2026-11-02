@@ -97,7 +97,7 @@ export function writeReport() {
   }
   lines.push('', `Machine: ${R[have[0]]?.environment?.mac?.cpu ?? '?'}, ${String(R[have[0]]?.environment?.mac?.os ?? '').replace(/\s+/g, ' ')}. Headed, foreground, real focus; one browser at a time.`, '');
   lines.push('### Results (p50 / p95 / max unless stated; latency = trusted event `timeStamp` → rAF time of the first rendering update whose CANVAS pixels show the expected state; add one frame (8.3 ms) for presentation)', '');
-  lines.push('| metric | ours | competitor | native | note |', '|---|---|---|---|---|');
+  lines.push('| metric | ours | other package | native | note |', '|---|---|---|---|---|');
   for (const r of buildRows(R)) lines.push(`| ${r.join(' | ')} |`);
   lines.push('', '**Positive controls** (paint events swallowed = frozen renderer; the matcher must report every sample as never drawn): ' + controls(R).join('; ') + '.', '');
   const errs = have.flatMap((s) => Object.entries(R[s].errors ?? {}).map(([k, v]) => `${s}/${k}: ${String(v).split('\n')[0]}`));

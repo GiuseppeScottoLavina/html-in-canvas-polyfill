@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures are those of `0.1.0-preview.15` unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.17`) unless dated.
 
 ## What is this?
 
@@ -28,13 +28,13 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 ## Does it change my DOM?
 
-Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, but CSS `:last-child`, `:nth-child`, the `+` combinator, and live collections see the layer, and `canvas.querySelector()` cannot find the children. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
+Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
 ## Why is the core about 343 KB minified (116 KB gzipped)?
 
-Exactly 343,337 bytes minified, 116,189 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 343,337 bytes minified and 116,189 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
-Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The kilobytes apply each share to the final 343 KB, so they are approximate.
+Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 343 KB, so they are approximate.
 
 | part | share | about |
 |---|---|---|
@@ -71,7 +71,7 @@ The polyfill steps aside. `install()` detects the API by behaviour, not by brows
 Two caveats:
 
 - The proposal still changes (on 2026-10-08, `ElementImage.width/height` became `getElementImageDefaultSize()`). The polyfill follows the WPT tests and can lag behind a change.
-- Native implementations do not and will not provide the two extensions. This library runs them over a native implementation too, with differences: there the frame cap bounds only effect frames, not the browser's own `paint` events ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md#on-a-native-implementation), [API-CONTRACT.md, section 7.6](../API-CONTRACT.md#76-over-a-native-implementation)). Code that relies on them depends on this library, not on the standard.
+- Native implementations do not provide the two extensions. This library runs them over a native implementation too, with differences: there the frame cap bounds only effect frames, not the browser's own `paint` events ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md#on-a-native-implementation), [API-CONTRACT.md, section 7.6](../API-CONTRACT.md#76-over-a-native-implementation)). Code that relies on them depends on this library, not on the standard.
 
 ## Which browsers and devices are verified, and how?
 
@@ -90,8 +90,8 @@ On the official web-platform-tests for HTML-in-Canvas (248 files at the WPT comm
 
 What cannot be done in userland, by the tests' own categories:
 
-- **Paint timing** (11 subtests): native fires `paint` inside the rendering step. The polyfill fires it at the end of its own frame and draws a snapshot that lags the DOM.
-- **Backdrop filters and blend modes inside a drawable** (7): browsers paint no `backdrop-filter` inside an SVG image, the only way page script can rasterise HTML.
+- **Paint timing** (20 subtests in 11 files): native fires `paint` inside the rendering step. The polyfill fires it at the end of its own frame and draws a snapshot that lags the DOM.
+- **Backdrop filters and blend modes inside a drawable** (7 subtests): browsers paint no `backdrop-filter` inside an SVG image, the only way page script can rasterise HTML.
 - **Single cases:** wide-gamut colour (snapshots are sRGB), the layout of `display: contents` children of the canvas, the geometry of inline drawables, DOM writes inside a `paint` handler, and drawing a nested canvas from its current bitmap.
 
 Some deviations, such as the moved children, are not covered by WPT at all: see [SUPPORT-MATRIX.md](../SUPPORT-MATRIX.md).
@@ -112,7 +112,7 @@ The polyfill follows the read-back rules of the proposal, so the canvas stays or
 
 - Cross-origin images, fonts and CSS without CORS are not drawn, and neither are cross-origin or sandboxed iframes, `<object>` and `<embed>`: the element's box is drawn without its content, as natively, and one console message reports it. Same-origin iframes are drawn.
 - `:visited` styles are dropped, and system colours resolve to defaults.
-- Of the 104 WPT privacy tests, the polyfill passes 99 and native Chrome 103. By the triage, none of the other five fails by drawing excluded content: two fail because backdrop filters inside a drawable are not painted, two because a selection decoration ends at a slightly different pixel, and one fails natively too.
+- Of the 104 WPT privacy tests, the polyfill passes 99 and native Chrome 103. By the triage, none of the other five fails by drawing excluded content: two fail because a backdrop filter inside a drawable is not painted, two because a selection decoration ends at a slightly different pixel, and one fails natively too.
 - Snapshots are `data:` URLs, never `blob:`, so a strict CSP must allow `img-src data:`. The bundles make no network request when they load; snapshots fetch only same-origin or CORS resources the page could fetch itself, to inline them.
 - The online playground runs your code in a sandboxed iframe with an opaque origin (`sandbox="allow-scripts"`).
 
@@ -124,30 +124,30 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a preview of a proposed standard (`0.1.0-preview.15`, on npm under the `next` tag). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a preview of a proposed standard (`0.1.0-preview.17`, on npm under the `next` tag). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
-- 593 unit tests in Node and 915 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 593 unit tests in Node and 919 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 16 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence), each with a positive control;
 - a mutation suite of 61 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, part of the mutation suite, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 61 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 
-With an AI coding assistant. The code, tests and documentation were written with Claude (Anthropic's model, through Claude Code), directed by the maintainer, who set the goals, made the design decisions, reviewed the changes and ran the device tests. Every commit written this way says so in its history (`Co-Authored-By: Claude`).
+With an AI coding assistant. The code, tests and documentation were written with Claude (Anthropic's model, used through Claude Code), directed by the maintainer, who set the goals, made the design decisions, reviewed the changes and ran the tests on physical devices. Every commit written this way says so in its history (`Co-Authored-By: Claude`); at the time of writing, every commit except the pull-request merges and three automated dependency updates carries it.
 
-We say this up front because it should change what you trust, not because it settles anything: generated code is not evidence of correctness. What we ask you to look at instead is the verification, which does not depend on who or what wrote a line:
+Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
-- every change goes through review, the unit tests and the browser gates, and CI on Linux, Windows and macOS before it is merged;
-- every gate has a positive control (a deliberately broken renderer that must make it fail), and the mutation suite seeds known bugs that the gates must catch, so a check that passes vacuously is itself caught;
+- changes reach `main` through pull requests (every change since 2026-10-22), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 11 of the 16 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 61 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
-- the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed rather than hidden;
+- the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;
 - the behaviour was checked on physical devices, not only in simulators.
 
-Several defects were found exactly this way, by tests and by people using it on real devices, and fixed with a regression test each; the CHANGELOG lists them. If you find one, the issue tracker is the place: a report with a page that reproduces it is the most useful contribution.
+Defects found this way, by the tests and by people using the polyfill on their own devices, are listed in the CHANGELOG with their fixes. If you find one, please open an issue: a page that reproduces it is the most useful report.
 
 ## How can I help or report a bug?
 

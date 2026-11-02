@@ -34,7 +34,7 @@ body:
     id: report
     attributes:
       label: Install report
-      description: Run `JSON.stringify(__HIC__.installed.report(), null, 1)` in the page console (or `__HIC__.error` if the polyfill refused) and paste the output.
+      description: Run `JSON.stringify(__HIC__.installed.report(), null, 1)` in the page console (or `__HIC__.error` if the polyfill refused) and paste the output. With the ES module, log `JSON.stringify(getInstalled().report(), null, 1)` from your code, or the error `install()` threw.
       render: json
     validations:
       required: true

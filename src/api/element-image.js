@@ -67,7 +67,7 @@ export class ElementImage {
     finalizer?.unregister(this);
     release(state.pin);
   }
-  /** Extension: transferable copy of the pinned surface (full source rect). @returns {Promise<ImageBitmap>} @throws InvalidStateError when closed */
+  /** Extension: transferable copy of the pinned surface (full source rect). @returns {Promise<ImageBitmap>} rejects with InvalidStateError when closed */
   async toImageBitmap() {
     const state = stateOf(this);
     if (state.detached) throw invalidState('The ElementImage is closed.');

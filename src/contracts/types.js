@@ -18,7 +18,7 @@ export {};
  * @typedef {Object} NodeBudget
  * @property {number} soft  nodes cloned per commit above which damage-pruned clone + adaptive cadence engage (default 350)
  * @property {number} hard  nodes in ONE drawable above which the drawable is degraded to <= 4 fps (its inner scrolling excepted) and reported (default 3000)
- * @property {number} absolute nodes in ONE drawable above which capture is refused with HicUnsupportedError('node-budget') (default 20000)
+ * @property {number} absolute nodes in ONE drawable above which it is not captured: a hatched placeholder is drawn and reported as 'node-budget' (default 20000)
  */
 
 /**
@@ -126,7 +126,7 @@ export {};
  * @property {Readonly<ResolvedOptions>} options
  * @property {() => HicReport} report
  * @property {() => HTMLCanvasElement[]} canvases   managed canvases in tree order
- * @property {(canvas: HTMLCanvasElement, timeoutMs?: number) => Promise<void>} whenPainted  resolves after the first paint event of canvas; rejects with a TimeoutError DOMException after timeoutMs (default 5000)
+ * @property {(canvas: HTMLCanvasElement, timeoutMs?: number) => Promise<void>} whenPainted  resolves at once when canvas has already fired paint, else at its first paint event; rejects with a TimeoutError DOMException after timeoutMs (default 5000)
  * @property {(canvas: HTMLCanvasElement) => void} adopt  manage a canvas now (needed only with autoDiscover:false); no-op when content is not drawable/legacy
  * @property {(root: ShadowRoot) => void} adoptRoot  explicit hook for a shadow root the install could not observe (closed root created before install, or autoDiscover:false); idempotent
  * @property {() => void} uninstall  idempotent; restores DOM, prototypes, listeners
