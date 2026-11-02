@@ -1,5 +1,5 @@
 // Fakes for the pure scheduler tests: a window whose frames are stepped by hand (rAF callbacks, then ResizeObserver delivery in creation order,
-// like one rendering update), a minimal document, a store with scripted behaviour, canvas records and an env. No DOM, no timers.
+// like one rendering update), a minimal document, a store with scripted behaviour, canvas records and an env. No DOM; timers run on the fake clock (step()).
 import { createBus } from '../../../src/util/bus.js';
 import { DEFAULT_OPTIONS } from '../../../src/api/options.js';
 
@@ -9,7 +9,10 @@ export function createFakeWindow() {
   const rafs = new Map();
   /** @type {any[]} */
   const observers = [];
-  const counters = { rafRequests: 0, roCreated: 0, roCallbacks: 0 };
+  const counters = { rafRequests: 0, roCreated: 0, roCallbacks: 0, timers: 0 };
+  /** @type {Map<number, {at: number, cb: () => void}>} setTimeout callbacks, run by runTimers(now) (the env's step() runs them before each frame) */
+  const timers = new Map();
+  let timerNow = 0;
   const flags = { suppressRO: false };
   class ResizeObserver {
     constructor(cb) {
@@ -43,6 +46,8 @@ export function createFakeWindow() {
     MessageChannel,
     requestAnimationFrame(cb) { const id = nextId++; rafs.set(id, cb); counters.rafRequests++; return id; },
     cancelAnimationFrame(id) { rafs.delete(id); },
+    setTimeout(cb, ms = 0) { const id = nextId++; timers.set(id, { at: timerNow + Math.max(0, ms), cb }); counters.timers++; return id; },
+    clearTimeout(id) { timers.delete(id); },
     ResizeObserver,
   };
   return {
@@ -50,6 +55,20 @@ export function createFakeWindow() {
     counters,
     flags,
     rafCount: () => rafs.size,
+    timerCount: () => timers.size,
+    /** the clock moved to `now`: run the timers due by then (in due order), each as a task */
+    runTimers(now) {
+      for (let guard = 0; guard < 100; guard++) {
+        let next = null;
+        for (const [id, t] of timers) if (t.at <= now && (!next || t.at < next[1].at)) next = [id, t];
+        if (!next) break;
+        timers.delete(next[0]);
+        timerNow = next[1].at;
+        next[1].cb();
+        runTasks();
+      }
+      timerNow = now;
+    },
     liveObservers: () => observers.filter((o) => !o.disconnected && o.targets.size).length,
     /** One rendering update: rAF callbacks queued before it, then ResizeObserver delivery (creation order, repeated until quiet). */
     frame(ts) {
@@ -198,7 +217,7 @@ export function createFakeEnv(optionOverrides = {}) {
     clock,
     addRecord(drawables, init) { const r = fakeRecord(drawables, init); records.push(r); store.commitRecord = r; return r; },
     /** Advance the clock by `dt` ms and run one frame. */
-    step(dt = 1000 / 120) { clock.t += dt; fw.frame(clock.t); },
+    step(dt = 1000 / 120) { clock.t += dt; fw.runTimers(clock.t); fw.frame(clock.t); },
     /** Run frames of `dt` ms for `ms` ms. */
     run(ms, dt = 1000 / 120) { const end = clock.t + ms; while (clock.t + dt <= end + 1e-9) this.step(dt); },
   };

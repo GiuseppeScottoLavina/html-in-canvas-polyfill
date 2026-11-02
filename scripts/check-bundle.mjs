@@ -159,7 +159,10 @@ const LIMITS = {
   // 346.5 -> 347.5 KB, gzip 117.5 -> 118 KB (+981 / +390 bytes, 2026-11-02, measured 347,196 / 117,664): recovery from a budget refusal once memory is freed (store.js
   //   memoryFreed on every release, BUS.MEMORY_FREED wakes the scheduler, a refused drawable is settled), overlay backdrops counted, refused, shed and released
   //   (text-paint.js createBackdropCache), the least recently used scroll caches shed only until the surface fits (scroll-compose.js shed)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 347.5 * KB, gzip: 118 * KB },
+  // 347.5 -> 348.5 KB, gzip 118 -> 118.25 KB (+1,137 / +398 bytes alone, 2026-11-02, measured 348,384 / 118,085 with the step above): the frame loop sleeps until
+  //   a deferred build is due (schedule/scheduler.js mayRest / rest, snapshot/store/pump.js PumpResult.quietUntil, store.js host.busy) and the canvas with the oldest
+  //   damage builds first (pump.js runPump: two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 348.5 * KB, gzip: 118.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

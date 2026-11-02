@@ -696,3 +696,118 @@ test('a canvas without a drawable keeps no other canvas\'s builds inside the tic
   assert.equal(t.fw.counters.rafRequests, rafs, 'idle afterwards: no rAF');
   assert.equal(empty.paint.everFired, false, 'the empty canvas still fires no paint');
 });
+
+// ---------------------------------------------------------------------------------------------- quiet wait (PumpResult.quietUntil)
+// review of 0.1.0-preview.18: one build deferred to t=5100 cost 120 pumps and 241 rAF requests between t=100 and t=1100, all before it was due.
+
+/** a mounted canvas whose only work is one build the pump defers by `ms` (quietUntil: nothing else in progress) */
+function deferred(ms = 5000, quiet = true) {
+  const t = setup();
+  const el = fakeElement();
+  const record = mounted(t, [el]);
+  const due = t.clock.t + ms;
+  t.store.unsettled.add(el);
+  t.store.pumpResult = { started: 0, spentMs: 0, moreWork: true, nextDueAt: due, quietUntil: quiet ? due : null };
+  const counts = () => ({ pumps: t.store.pumps, rafs: t.fw.counters.rafRequests });
+  return { ...t, el, record, due, counts };
+}
+
+test('quiet wait: a build deferred by 5 s costs no frame loop until it is due (one timer), then the loop wakes before it and pumps at the due frame', () => {
+  const t = deferred(5000);
+  const c0 = t.counts();
+  t.scheduler.damage(t.record, 'mutation', t.el, null);
+  t.run(1000);
+  const c1 = t.counts();
+  assert.ok(c1.pumps - c0.pumps <= 2, `pumps in the first second: ${c1.pumps - c0.pumps} (main: 120)`);
+  assert.ok(c1.rafs - c0.rafs <= 4, `rAF requests in the first second: ${c1.rafs - c0.rafs} (main: 241)`);
+  assert.equal(t.fw.rafCount(), 0, 'no frame armed while waiting');
+  assert.equal(t.fw.timerCount(), 1, 'one timer');
+  const sentinels = t.document.added.length;
+  assert.equal(t.document.added.at(-1).isConnected, true, 'the sentinel stays in the page while waiting (not removed and added again)');
+  // the deferred build becomes due: the store starts it and settles
+  t.run(t.due - t.clock.t - 40);
+  assert.equal(t.counts().pumps, c1.pumps, 'still asleep 40 ms before it is due');
+  let firstPumpAt = null;
+  const pump = t.store.pump;
+  t.store.pump = (now, budget) => {
+    firstPumpAt ??= t.clock.t;
+    if (t.clock.t >= t.due) { t.store.unsettled.clear(); t.store.pumpResult = { started: 1, spentMs: 1, moreWork: false, nextDueAt: null }; }
+    else t.store.pumpResult = { started: 0, spentMs: 0, moreWork: true, nextDueAt: t.due, quietUntil: t.due };
+    return pump(now, budget);
+  };
+  t.run(80);
+  assert.ok(firstPumpAt !== null && firstPumpAt <= t.due, `the loop woke before the due time (${firstPumpAt} <= ${t.due})`);
+  assert.ok(t.store.unsettled.size === 0, 'the build started once due');
+  const after = t.counts();
+  t.run(500);
+  assert.equal(t.counts().rafs, after.rafs, 'quiet once settled');
+  assert.equal(t.fw.timerCount(), 0);
+  assert.equal(t.document.added.length, sentinels, 'one sentinel for the whole wait');
+  assert.equal(t.document.added.at(-1).isConnected, false, 'removed once settled');
+});
+
+test('quiet wait (control): without quietUntil the scheduler polls every frame as before', () => {
+  const t = deferred(5000, false);
+  const c0 = t.counts();
+  t.scheduler.damage(t.record, 'mutation', t.el, null);
+  t.run(1000);
+  assert.ok(t.counts().pumps - c0.pumps >= 100, `pumps: ${t.counts().pumps - c0.pumps}`);
+  assert.equal(t.fw.timerCount(), 0);
+});
+
+test('quiet wait (control): a deferral shorter than the minimum keeps polling', () => {
+  const t = deferred(40);
+  t.store.pumpResult.nextDueAt = t.store.pumpResult.quietUntil = t.clock.t + 40;
+  const c0 = t.counts();
+  t.scheduler.damage(t.record, 'mutation', t.el, null);
+  t.run(30);
+  assert.ok(t.counts().pumps - c0.pumps >= 3, `pumps: ${t.counts().pumps - c0.pumps}`);
+  assert.equal(t.fw.timerCount(), 0);
+});
+
+test('quiet wait: damage, requestPaint, wake and a tile that landed at once end the wait at the next frame', async () => {
+  for (const kind of ['damage', 'caret', 'requestPaint', 'wake', 'landed']) {
+    const t = deferred(5000);
+    t.scheduler.damage(t.record, 'mutation', t.el, null);
+    t.run(200);
+    assert.equal(t.fw.timerCount(), 1, `${kind}: asleep`);
+    const c0 = t.counts();
+    const fired = t.fired.length;
+    if (kind === 'damage') t.scheduler.damage(t.record, 'input', t.el, null);
+    else if (kind === 'caret') t.scheduler.damage(t.record, 'caret', t.el, null);
+    else if (kind === 'requestPaint') t.scheduler.requestPaint(t.record);
+    else if (kind === 'wake') t.scheduler.wake(t.record);
+    else { t.store.landed = true; t.store.nextChange = { changed: [t.el], removed: [] }; t.bus.emit(BUS.LANDED, { record: t.record }); await Promise.resolve(); }
+    assert.equal(t.fw.timerCount(), 0, `${kind}: the timer is cleared at once`);
+    t.step();
+    assert.ok(t.counts().pumps > c0.pumps || t.fired.length > fired, `${kind}: a tick ran in the next frame`);
+    if (kind === 'requestPaint' || kind === 'landed') assert.ok(t.fired.length > fired, `${kind}: painted`);
+  }
+});
+
+test('quiet wait (control): a hook that asks for frames, a paint held by the gate and a landed result keep the loop running', () => {
+  for (const kind of ['hook', 'gate', 'landed']) {
+    const t = deferred(5000);
+    if (kind === 'hook') t.scheduler.addFrameHook(t.record, () => true);
+    if (kind === 'gate') { t.store.ready = { ready: false, reason: 'first-commit' }; t.scheduler.requestPaint(t.record); }
+    if (kind === 'landed') t.store.hasLanded = () => true;
+    const c0 = t.counts();
+    t.scheduler.damage(t.record, 'mutation', t.el, null);
+    t.run(300);
+    assert.ok(t.counts().rafs - c0.rafs >= 30, `${kind}: rAF requests ${t.counts().rafs - c0.rafs}`);
+    assert.equal(t.fw.timerCount(), 0, `${kind}: no timer`);
+  }
+});
+
+test('quiet wait: dispose and unregister clear the timer', () => {
+  for (const end of ['dispose', 'unregister']) {
+    const t = deferred(5000);
+    t.scheduler.damage(t.record, 'mutation', t.el, null);
+    t.run(200);
+    assert.equal(t.fw.timerCount(), 1);
+    if (end === 'dispose') t.scheduler.dispose(); else t.scheduler.unregister(t.record);
+    assert.equal(t.fw.timerCount(), 0, end);
+    t.run(6000);
+    assert.equal(t.fw.rafCount(), 0, `${end}: nothing armed later`);
+  }
+});

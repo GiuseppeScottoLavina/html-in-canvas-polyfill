@@ -463,6 +463,8 @@ export {};
  * @property {number} spentMs
  * @property {boolean} moreWork  damage remains that the budget/cap did not allow
  * @property {number|null} nextDueAt  performance.now() when the cap allows the next build (null = now / nothing pending)
+ * @property {number|null} [quietUntil]  nextDueAt when nothing else is in progress: the pump started nothing, every pending damage waits for a known time, nothing is
+ *   building, decoding or landed. The scheduler may stop its frame loop until shortly before it (null = keep polling)
  */
 
 // ---------------------------------------------------------------------------------------------- capture (module: snapshot-capture)
