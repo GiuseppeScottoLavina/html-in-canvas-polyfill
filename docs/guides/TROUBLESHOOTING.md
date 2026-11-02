@@ -35,7 +35,9 @@ Option errors are plain `TypeError`s that name the option: `option "<name>" (got
 |---|---|---|---|
 | `InvalidStateError` | `The element has no snapshot yet (no first paint, display:none, or its state was reset). Draw from the canvas's paint event or after installed.whenPainted(canvas); ...` | `drawElementImage` / `captureElementImage` before the first snapshot exists (as native) | draw from `paint`, or `await installed.whenPainted(canvas)`. For a very large drawable raise `paintGateMaxWaitMs`, stay under `nodeBudget.soft`, or split it |
 | `InvalidStateError` | `The canvas does not have content="drawable".` | `content` is missing or `fallback`, or the canvas is not managed | set `content="drawable"` |
-| `InvalidStateError` | `The element is not a drawable descendant of this canvas.` | the element lacks the `drawable` attribute, or is not inside this canvas | add `drawable` to the element you draw |
+| `InvalidStateError` | `The <div> has no drawable attribute: ...` | the element you draw lacks the `drawable` attribute (for example a wrapper around a drawable); the message names a drawable inside it if there is one | add `drawable` to the element you draw, or draw the drawable inside it |
+| `InvalidStateError` | `The <p> is not inside this canvas: ...` | the element is not a descendant of this canvas (another canvas, or outside any) | draw it on its own canvas, or move it inside |
+| `InvalidStateError` | `The <p> is not a direct child of the canvas: ...` | legacy `layoutsubtree` draws only direct children | use `content="drawable"` with the `drawable` attribute, or make it a direct child |
 | `InvalidStateError` | `The canvas is not rendered (detached or display:none), so its drawables have no snapshot.` | canvas hidden or detached | show it first |
 | `InvalidStateError` | `The ElementImage is closed.` / `The element of this ElementImage no longer exists.` | `close()` was called, or the element was removed | capture again |
 | `InvalidStateError` | `The element belongs to another canvas.` / `The ElementImage was captured from another canvas.` | drawing a drawable of canvas A on canvas B | draw on the owning canvas |
