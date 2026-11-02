@@ -199,16 +199,19 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /** @param {Entry} entry @param {Surface} surface @param {Geometry} geo */
   function bind(entry, surface, geo) {
-    if (entry.surface !== surface) {
+    const old = entry.surface;
+    if (old !== surface) {
       entry.unwatch?.();
       entry.unwatch = watchSurfaceLoss(surface, () => onLost(entry), () => onRestored(entry));
     }
     entry.surface = surface;
     entry.geo = geo;
+    if (old && !pinned(old) && surfaceBytes(old) > surfaceBytes(surface)) memoryFreed();
   }
 
   /** The drawable has no snapshot any more (its surface stays alive only for ElementImages that pinned it). @param {Entry} entry */
   function release(entry) {
+    const old = entry.surface;
     entry.unwatch?.();
     entry.unwatch = null;
     entry.surface = null;
@@ -222,6 +225,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
     entry.ovShown = 0;
     entry.ovQueued = false;
     compositor.forget(entry);
+    backdrops.drop(entry);
+    if (old && !pinned(old)) memoryFreed();
   }
 
   /** @param {Entry} entry @param {boolean} announce  list the element in ChangeSet.removed when it had a snapshot */
@@ -274,15 +279,17 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /**
    * options.maxTotalSurfaceBytes at commit: does a new surface of `bytes` fit, `freed` bytes being released with it? Every build of a batch was planned before any of
-   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. The scroll compositor's pages give way first (the plain path
-   * serves the scrollers until there is room again).
+   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. Overlay backdrops and then the scroll compositor's caches give way
+   * first, the least recently used first and only as many as the surface needs (the normal snapshot path serves those fields and scrollers until there is room again).
    * @param {number} bytes @param {number} freed @returns {boolean}
    */
   function fits(bytes, freed) {
     const max = options.maxTotalSurfaceBytes;
     const total = retainedBytes() - freed + bytes;
     if (total > max) return false;
-    if (total + scrollBytes(false) > max) for (const e of entries.values()) for (const r of compositor.shed(e)) markDamage(e.el, r, 'scroll');
+    let over = total + backdrops.bytes(false) + scrollBytes(false) - max;
+    if (over > 0) over -= backdrops.shed(over);
+    if (over > 0) for (const [e, r] of compositor.shed(entries.values(), over)) markDamage(e.el, r, 'scroll');
     return true;
   }
 
@@ -302,15 +309,16 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /**
    * Reported once per drawable and cause: 'tile' a new surface or copy for a tile, 'copy' a copy of a pinned surface for a caret blink, a text overlay or a composed
-   * scroll step, 'scroll' the scroll compositor's pages and tiles.
-   * @param {Entry} entry @param {'tile'|'copy'|'scroll'} cause
+   * scroll step, 'scroll' the scroll compositor's pages and tiles, 'overlay' the backdrop of a text overlay.
+   * @param {Entry} entry @param {'tile'|'copy'|'scroll'|'overlay'} cause
    */
   function overBudget(entry, cause) {
-    const bit = cause === 'tile' ? 1 : cause === 'copy' ? 2 : 4;
+    const bit = cause === 'tile' ? 1 : cause === 'copy' ? 2 : cause === 'scroll' ? 4 : 8;
     starved = true;
     if (entry.budgetNoted & bit) return;
     entry.budgetNoted |= bit;
-    const what = cause === 'tile' ? 'its next tile is rasterised at a reduced scale, or refused' : cause === 'copy' ? 'a caret blink, text overlay or composed scroll step that would copy a surface an ElementImage keeps alive is skipped' : 'fewer scroll pages are kept, and scroll steps are built instead of composed';
+    const what = cause === 'tile' ? 'its next tile is rasterised at a reduced scale, or refused' : cause === 'copy' ? 'a caret blink, text overlay or composed scroll step that would copy a surface an ElementImage keeps alive is skipped'
+      : cause === 'scroll' ? 'fewer scroll pages are kept, and scroll steps are built instead of composed' : 'a field over a background that is not one colour is built instead of overlaid while it is typed in';
     env.reporter.unsupported({
       feature: 'surface-size', path: `${describe(entry)} (${cause})`, hint: 'close() the ElementImages that are no longer needed, or raise options.maxTotalSurfaceBytes',
       message: `${describe(entry)}: the retained surfaces (those ElementImages keep alive and scroll pages included) reach options.maxTotalSurfaceBytes: ${what}; the drawable keeps its last picture until then`,
@@ -320,15 +328,20 @@ export function createSnapshotStore(env, capture, extras = {}) {
   /** a budget refused, reduced or skipped something since memory was last freed */
   let starved = false;
 
-  /** The last ElementImage of `surface` was closed: when no drawable shows it any more, what the budget held back is tried again. @param {Surface} surface */
-  function memoryFreed(surface) {
+  /**
+   * Retained memory went down (the last ElementImage of a surface was closed, which also lifts the pin of a drawable's own surface; a drawable or its surface went, a surface
+   * was replaced by a smaller one): what the budget held back is planned again, and the scheduler of each canvas concerned is woken (a refusal does not keep it ticking).
+   */
+  function memoryFreed() {
     if (!starved) return;
-    for (const e of entries.values()) if (e.surface === surface) return;
     starved = false;
+    backdrops.retry();
+    const woken = new Set();
     for (const e of entries.values()) {
-      if (e.sizeRefused) { e.sizeRefused = false; e.refused = false; }
-      if (e.geo?.reduced) e.verifyGeometry = true;
+      if (e.sizeRefused) { e.sizeRefused = false; e.refused = false; woken.add(e.record); }
+      if (e.geo?.reduced) { e.verifyGeometry = true; woken.add(e.record); }
     }
+    for (const record of woken) env.bus.emit(BUS.MEMORY_FREED, { record });
   }
 
   // ---------------------------------------------------------------------------------------------- damage
@@ -345,7 +358,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
       if (entry.caret) entry.caretToggles++;
       return;
     }
-    if (!TYPING_CAUSES.has(cause)) entry.ovEpoch++;
+    // a change that is not typing moves the backdrop key (overlay epoch): the old backdrop is of no use any more
+    if (!TYPING_CAUSES.has(cause)) { entry.ovEpoch++; backdrops.drop(entry); }
     compositor.damaged(entry, rect, cause);
     if (entry.failures >= 3) entry.failures = 0;
     if (RETRY_CAUSES.has(cause)) entry.refused = false;
@@ -500,7 +514,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     decode: (url) => pumpDeps.decode(url),
     canvas: makeCanvas,
     schedule: (entry, run) => { side.push({ entry, run }); },
-    room: () => options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false),
+    room: () => options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false) - backdrops.bytes(false),
     over: (entry) => overBudget(entry, 'scroll'),
   });
 
@@ -543,9 +557,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   // A backdrop tile arrived: every field still waiting for its value to reach a tile gets its overlay at the next commit.
   const backdrops = createBackdropCache({
-    capture(control, rectCss, geo) {
-      const entry = [...entries.values()].find((e) => e.ovControl === control);
-      if (!entry) return null;
+    capture(entry, control, rectCss, geo) {
       try {
         const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });
         const result = capture({ ...req, hideText: control });
@@ -560,9 +572,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
     landed() {
       for (const e of entries.values()) if (e.ovControl && e.ovSeq > e.ovTileSeq) e.ovQueued = true;
     },
-    schedule(run) {
-      const entry = [...entries.values()].find((e) => e.ovControl);
-      if (entry) side.push({ entry, run }); else run();
+    schedule: (entry, run) => { side.push({ entry, run }); },
+    room(entry, bytes) {
+      if (bytes <= options.maxTotalSurfaceBytes - retainedBytes() - scrollBytes(false) - backdrops.bytes(false)) return true;
+      overBudget(entry, 'overlay');
+      return false;
     },
   });
 
@@ -743,7 +757,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     const frame = layer.frameRect(control);
     if (!size || !frame || Math.abs(size.width - geo.bw) > 0.01 || Math.abs(size.height - geo.bh) > 0.01) { overlayMissed(entry, control, frame); return; }
     const plan = extras.textOverlay(control, entry.el, frame, entry.ovEpoch);
-    const backdrop = plan && plan.fill === null ? backdrops.get(control, plan, geo, entry.ovEpoch) : null;
+    const backdrop = plan && plan.fill === null ? backdrops.get(entry, control, plan, geo, entry.ovEpoch) : null;
     let painted = false;
     if (plan && (plan.fill !== null || backdrop)) {
       try {
@@ -990,7 +1004,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       const n = (pins.get(v.surface) ?? 1) - 1;
       if (n > 0) { pins.set(v.surface, n); return; }
       pins.delete(v.surface);
-      memoryFreed(v.surface);
+      memoryFreed();
     },
     rasterSource: rasterSourceFor,
     markDamage,
@@ -1011,7 +1025,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     invalidateAll: (cause) => markAll(entries.values(), cause),
     needsPump() {
       if (side.length) return true;
-      for (const entry of entries.values()) if (entry.verifyGeometry || damage.hasPending(entry.el)) return true;
+      for (const entry of entries.values()) if (entry.verifyGeometry || (!entry.refused && damage.hasPending(entry.el))) return true;
       return false;
     },
     pump: (now, budget) => {
@@ -1073,7 +1087,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
     isSettled(el) {
       const entry = entries.get(el);
       if (!entry) return true;
-      return !damage.hasPending(el) && entry.decoding === 0 && entry.caretToggles === 0 && !entry.ovQueued && entry.caretAsk === undefined && !(entry.ovControl && backdrops.busy())
+      // a refused drawable's damage waits for freed memory or a retry cause (markDamage), which wake the scheduler: it does not keep the canvas ticking
+      return (entry.refused || !damage.hasPending(el)) && entry.decoding === 0 && entry.caretToggles === 0 && !entry.ovQueued && entry.caretAsk === undefined && !backdrops.busy(entry)
         && !compositor.queued(entry) && !compositor.busy(entry) && !side.some((j) => j.entry === entry) && !landed.some((l) => l.entry === entry);
     },
     isFresh(record) {
@@ -1098,7 +1113,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     stats() {
       const surfaces = new Set();
-      const scrollHeld = scrollBytes(true);
+      const scrollHeld = scrollBytes(true), backdropHeld = backdrops.bytes(true);
       let degraded = 0, rasterScale = 0;
       for (const e of entries.values()) {
         if (e.surface) surfaces.add(e.surface);
@@ -1107,11 +1122,13 @@ export function createSnapshotStore(env, capture, extras = {}) {
       }
       return {
         ...counters, cloneMsP50: cloneMs.percentile(0.5), cloneMsP95: cloneMs.percentile(0.95), decodeMsP50: decodeMs.percentile(0.5), decodeMsP95: decodeMs.percentile(0.95),
-        decodeMainMsP95: decodeMainMs.percentile(0.95), degraded, surfaces: surfaces.size, surfaceBytes: retainedBytes() + scrollHeld, scrollSurfaceBytes: scrollHeld, rasterScale,
+        decodeMainMsP95: decodeMainMs.percentile(0.95), degraded, surfaces: surfaces.size, surfaceBytes: retainedBytes() + scrollHeld + backdropHeld, scrollSurfaceBytes: scrollHeld,
+        backdropSurfaceBytes: backdropHeld, rasterScale,
         pinnedSurfaces: pins.size, scroll: compositor.stats(),
       };
     },
     dispose() {
+      starved = false;
       nextTask.dispose();
       for (const off of offs) off();
       for (const l of landed.splice(0, landed.length)) releaseImage(l.image);
