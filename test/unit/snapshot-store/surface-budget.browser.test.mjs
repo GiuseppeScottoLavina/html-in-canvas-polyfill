@@ -233,8 +233,8 @@ test('D: a build refused beside the pinned current surface is retried when the i
   assert.equal(started, 0, 'refused: no room beside the pinned surface');
   assert.ok(sizeReports(rig).length >= 1, 'surface-size reported');
   assert.deepEqual(rig.css(a, 50, 30), RGBA.red, 'the drawable keeps its last picture (never blank)');
-  assert.equal(rig.store.isSettled(a), true, 'a refusal that nothing but freed memory can lift is settled: the scheduler stops ticking');
-  assert.equal(rig.store.needsPump(), false, 'no pump is owed while it is refused');
+  // checked last, so a store that never retries fails on the retry first
+  const settled = rig.store.isSettled(a), owed = rig.store.needsPump();
   rig.store.unpin(pinned);
   assert.equal(rig.store.needsPump(), true, 'closing the image re-opens the refused build');
   rig.pump();
@@ -247,6 +247,8 @@ test('D: a build refused beside the pinned current surface is retried when the i
   assert.deepEqual(rig.css(a, 15, 15), RGBA.blue, 'and later changes are built as usual');
   assert.equal(rig.store.version(a).scale, 1);
   within(rig);
+  assert.equal(settled, true, 'a refusal that nothing but freed memory can lift is settled: the scheduler stops ticking');
+  assert.equal(owed, false, 'no pump is owed while it is refused');
 });
 
 test('D control: with an ample budget the same build is not refused, and pending damage keeps a drawable unsettled', async (t) => {
@@ -268,7 +270,7 @@ test('D: removing the drawable that holds the budget lets a refused one be built
   rig.color = 'lime';
   const b = rig.add('b', 100, 60);
   assert.equal(rig.pump().started, 0, 'b does not fit beside a');
-  assert.equal(rig.store.isSettled(b), true, 'the refused drawable is settled');
+  const settled = rig.store.isSettled(b);
   rig.remove(a);
   assert.equal(rig.store.needsPump(), true, 'the freed surface re-opens the refused build');
   rig.pump();
@@ -276,6 +278,7 @@ test('D: removing the drawable that holds the budget lets a refused one be built
   rig.store.commitLanded();
   assert.deepEqual(rig.css(b, 50, 30), RGBA.lime);
   within(rig);
+  assert.equal(settled, true, 'the refused drawable was settled');
 });
 
 // ---------------------------------------------------------------------------------------------- E: backdrops of the text overlay

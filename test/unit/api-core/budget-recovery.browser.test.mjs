@@ -56,13 +56,13 @@ test('a build refused beside an ElementImage is built when the image is closed; 
   const { i, d, at, image } = await pinnedChange(t, 40000);
   assert.deepEqual(at(), RED, 'refused: the drawable keeps its last picture');
   const idle = await framesOver(i, 300);
-  assert.ok(idle <= 2, `no frames while the refusal blocks every build (${idle} in 300 ms)`);
   image.close();
   assert.ok(await within(() => at()[1] === 255, 2000), `the change made while refused is shown once the image is closed (shows ${at()})`);
   d.style.backgroundColor = 'rgb(0,0,255)';
   assert.ok(await within(() => at()[2] === 255, 2000), 'a later change is built');
   assert.deepEqual(at(), BLUE);
   assert.ok(stats(i).snapshot.surfaceBytes <= 40000, `surfaceBytes ${stats(i).snapshot.surfaceBytes}`);
+  assert.ok(idle <= 2, `no frames while the refusal blocked every build (${idle} in 300 ms)`);
 });
 
 test('control: with an ample budget the change is shown at once, and the scheduler stops once it is settled', async (t) => {
@@ -81,12 +81,12 @@ test('removing the drawable that holds the budget lets the refused one be built'
   assert.equal(stats(i).snapshot.surfaces, 1, 'only one of the two drawables fits');
   const shown = at(50)[0] === 255 ? 0 : 1;
   assert.deepEqual(at(50 + 100 * shown), RED, 'one drawable is shown');
-  assert.notDeepEqual(at(150 - 100 * shown), RED, 'the other was refused');
+  assert.equal(at(150 - 100 * shown)[3], 0, 'the other was refused (nothing drawn)');
   const idle = await framesOver(i, 300);
-  assert.ok(idle <= 2, `no frames while the refusal blocks every build (${idle} in 300 ms)`);
   els[1 - shown].style.backgroundColor = 'rgb(0,0,255)';
   els[shown].remove();
   const y = 150 - 100 * shown;
   assert.ok(await within(() => at(y)[2] === 255, 2000), `the refused drawable is built once the other one is removed (shows ${at(y)})`);
   assert.ok(stats(i).snapshot.surfaceBytes <= 40000);
+  assert.ok(idle <= 2, `no frames while the refusal blocked every build (${idle} in 300 ms)`);
 });
