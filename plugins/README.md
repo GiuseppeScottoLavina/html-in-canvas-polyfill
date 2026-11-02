@@ -42,13 +42,13 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 
 ## The contract of a plugin folder
 
-`npm run build` finds plugins by convention: every folder `plugins/<name>/` that has an `index.js` and whose name does not start with `_` or `.`. There is no list to edit. Before building a folder it checks this contract (`_shared/contract.mjs`), and `npm run lint` checks it for every folder, the template included:
+`npm run build` finds plugins by convention: every folder `plugins/<name>/` that has an `index.js` and whose name does not start with `_` or `.`. There is no list to edit. Before building a folder it checks the rules of this contract that a script can check (`_shared/contract.mjs`: the name, `index.js` and `README.md` exist, `meta`, `plugin`, the imports, a `wgsl.js` next to `.wgsl` files, a `test/*.test.mjs`), and `npm run lint` runs the same check for every folder, the template included. The README sections and the browser tests are a convention that review keeps, not a check:
 
 | what | rule |
 |---|---|
 | folder name | `<name>` matches `^[a-z][a-z0-9-]{0,39}$`; it becomes the file name, the exports subpath and the registry key |
 | `index.js` | an ES module that exports `meta` and `plugin`, and may export more (helpers for tests, constants) |
-| `meta` | frozen `{name, title, description, defaults?, reducedMotion?}`: `name` equals the folder name, `title` at most 40 characters, `description` one line of at most 160, `defaults` the options the gallery passes to `addPlugin`, `reducedMotion` one line of at most 160 on what the plugin does under `prefers-reduced-motion: reduce` |
+| `meta` | frozen `{name, title, description, defaults?, reducedMotion?}`: `name` equals the folder name (the template's is `template`), `title` at most 40 characters, `description` one line of at most 160, `defaults` the options the gallery passes to `addPlugin`, `reducedMotion` one line of at most 160 on what the plugin does under `prefers-reduced-motion: reduce` |
 | `plugin` | the frozen ABI v2 definition, `type` equal to `meta.name`; `definePlugin` of the effects host must accept it. Its optional `actions` are the names `handle.trigger` accepts (the instance then implements `runAction` and `settled`) |
 | imports | only files of the plugin's own folder, of [`_lib/`](_lib/), and `src/effects/no-target.js` (the `NO_TARGET` value of the effects ABI, a module without dependencies); type-only JSDoc imports of `src/contracts/types.js` are fine; no `blob:` URLs. The build bundles all of it into the plugin |
 | shaders | `.wgsl` files in the folder, loaded with `await wgsl('<file>.wgsl')` from `./wgsl.js` (a copy of the template's, over `_lib/wgsl.js`); the build inlines them, so a built plugin makes no request |

@@ -43,13 +43,13 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | option | default (gallery) | |
 |---|---|---|
 | `duration` | 1800 | ms of the way out (the dust keeps drifting after the content is gone), 300 to 8000 |
-| `durationIn` | 1200 | ms of the way back |
+| `durationIn` | 1200 | ms of the way back, 300 to 8000 |
 | `particleSize` | 1.5 | dust cell, 1 to 4 CSS px; at most 420,000 cells (cells grow beyond) |
 | `wind` | 1 | 0 to 2: how far the dust travels (0.32 x the larger canvas side at 1) |
-| `direction` | -28 | wind direction in degrees (0 = right, negative = up) |
-| `sweep` | 24 | the direction the erosion sweeps across the page, degrees |
+| `direction` | -28 | wind direction in degrees, -180 to 180 (0 = right, negative = up) |
+| `sweep` | 24 | the direction the erosion sweeps across the page, degrees, -180 to 180 |
 | `turbulence` | 1 | 0 to 2: the swirl of the air |
-| `fragments` | 0.3 | share of the dust that leaves as fragments before it crumbles |
+| `fragments` | 0.3 | 0 to 1: share of the dust that leaves as fragments before it crumbles |
 | `sensitivity` | 0.5 | 0 to 1: how little a pixel must differ from its background to count as content |
 | `backdrop` | the host's clear colour | what a transparent pixel of the source shows (`#rrggbb` or `[r, g, b]` 0..1) |
 | `onSubmit` | `'off'` (`'valid'`) | `'off'`, `'valid'` (only when no field matches `invalidSelector`), `'always'`: a `submit` inside the source plays the transition. The page's own submit handler runs first when it was added before the plugin, so the form re-forms showing what the page set |
@@ -57,7 +57,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `intro` | false (true) | when created, re-form from dust once the first snapshot is there (not when re-created after a device loss) |
 | `state` | `'in'` | `'out'` / `'in'`: the end state, declaratively; only a change of `state` starts a transition |
 | `reducedMotion` | follows `prefers-reduced-motion` | `true` / `false` to force it |
-| `seed` | 1 | the pattern of the noise |
+| `seed` | 1 | 0 to 1000: the pattern of the noise |
 | `liveCounter` | false | the controls start with the "Live counter" on |
 
 `mountUI` adds the "Turn to dust" button (the action `play`), sliders for the dust size and the wind, and the "Live counter" checkbox (a stopwatch inside the form, 20 updates a second, to make the liveness visible).
