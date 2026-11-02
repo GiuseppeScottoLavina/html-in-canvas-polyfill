@@ -2,13 +2,13 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.17`, a preview on npm under the dist-tags `next` and `latest` (a plain `npm install` gets it), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on a physical Android phone and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.17`, a preview on npm under the dist-tag `next` (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next`; the `latest` tag can be one preview behind), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 Live demo: [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · Try it in the browser: [playground](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/playground/)
 
 ## 1. Run the examples (about 3 minutes)
 
-Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`.
+Needs Node >= 22 (`engines`) and a supported desktop browser (README, "Browser support"). To use the package without the examples: `npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill@next`.
 
 ```sh
 git clone https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill.git && cd html-in-canvas-polyfill
@@ -60,7 +60,7 @@ Rules that matter (API-CONTRACT sections 3 and 4):
 - The children of the canvas are real, live, focusable DOM. The polyfill moves them into a `<hic-layer>` element next to the canvas, at `opacity:0`. Do not hide, remove or restyle that element. See "children are relocated" in the README.
 - Nothing is drawn unless you draw it: the polyfill only provides the snapshots and the standard API.
 
-Uninstall and reinstall (rarely needed): `HicLivePolyfill.getInstalled().uninstall()` (or the `uninstall()` of what `install()` returned) hands the canvas children back and restores every patched method; a following `HicLivePolyfill.install()` manages the canvases again and gives each one its first `paint` by itself, like a first install (checked by `test/unit/api-core/reinstall.browser.test.mjs`; you do not need to call `requestPaint()`). What does NOT survive: handlers set through the `onpaint` property (and `onelementgeometryupdate`) before the uninstall are forgotten, so assign them again right after `install()`. Listeners added with `addEventListener('paint', ...)` stay on the canvas and fire for the new install. `window.__HIC__.installed` always points to the live install; a handle you kept from before the uninstall is dead.
+Uninstall and reinstall (rarely needed): `HicLivePolyfill.getInstalled().uninstall()` (or the `uninstall()` of what `install()` returned) hands the canvas children back and restores every patched method; a following `HicLivePolyfill.install()` manages the canvases again and gives each one its first `paint` by itself, like a first install (checked by `test/unit/api-core/reinstall.browser.test.mjs`; you do not need to call `requestPaint()`). What does NOT survive: handlers set through the `onpaint` property (and `onelementgeometryupdate`) before the uninstall are forgotten, so assign them again right after `install()`. Listeners added with `addEventListener('paint', ...)` stay on the canvas and fire for the new install. With the classic script, `window.__HIC__.installed` always points to the live install; a handle you kept from before the uninstall is dead.
 
 Load order: the core script must run before any script that reads the API (`docs/BUNDLES.md`). To delay installation, add `data-hic-manual` to the script tag and call `HicLivePolyfill.install(options)` yourself (it is synchronous and returns the same install on a second call).
 
@@ -103,7 +103,7 @@ The source element (`form` here) must have exactly the size of the canvas conten
 
 | browser | what the polyfill does | source |
 |---|---|---|
-| desktop Chrome without the native feature (154 and 155 measured; 156 in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
+| desktop Chrome 130+ without the native feature (154 and 155 measured; 130 to 153 not verified; 156 in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
 | Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14 and 158.0.8112.1 on 2026-10-22, with or without `--enable-blink-features=CanvasDrawElement`; 159.0.8128.2 on 2026-10-29 with the flag) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
@@ -114,6 +114,6 @@ Measured on macOS: Chrome 154 and 155, Chrome Canary 157, 158 and 159 (native), 
 
 ## 6. When something looks wrong
 
-1. Open the console: every refusal prints once as `[hic-live-polyfill] unsupported <feature> ...` with a hint.
-2. In the console: `__HIC__.installed.report()` returns a JSON report (mode, per canvas state, unsupported entries with counts, deviations exercised, internal errors). Attach it to bug reports. `count` of an `unsupported` entry is the number of times the reporter was told about it (typically once per snapshot attempt that meets that content), not the number of elements: one `<iframe>` can show `count: 3`. `HicLivePolyfill.getInstalled()` returns the same instance as `__HIC__.installed`.
+1. Open the console: content the polyfill cannot draw prints once as `[hic-live-polyfill] unsupported <feature> ...`, and a refused browser as `[hic-live-polyfill] not installed (<feature>): ...` (classic script), each with a hint.
+2. In the console: `__HIC__.installed.report()` (classic script; with the ES module, call `getInstalled().report()` from your code) returns a JSON report (mode, per canvas state, unsupported entries with counts, deviations exercised, internal errors). Attach it to bug reports. `count` of an `unsupported` entry is the number of times the reporter was told about it (typically once per snapshot attempt that meets that content), not the number of elements: one `<iframe>` can show `count: 3`. `HicLivePolyfill.getInstalled()` returns the same instance as `__HIC__.installed`.
 3. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) lists every error and report entry with cause and remedy.
