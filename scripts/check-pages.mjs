@@ -31,7 +31,8 @@ function serve(/** @type {string} */ dir, /** @type {Set<string>} */ missing = n
   /** @type {{url: string, status: number}[]} */ const log = [];
   const server = createServer((req, res) => {
     const path = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
-    const send = (/** @type {number} */ status, /** @type {string} */ type, /** @type {any} */ body, headers = {}) => { log.push({ url: path, status }); res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers }); res.end(body); };
+    // Access-Control-Allow-Origin: * as GitHub Pages sends it (the playground's opaque-origin preview loads the bundles with CORS)
+    const send = (/** @type {number} */ status, /** @type {string} */ type, /** @type {any} */ body, headers = {}) => { log.push({ url: path, status }); res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', ...headers }); res.end(body); };
     if (path === '/favicon.ico') return send(204, 'image/x-icon', '');
     if (!path.startsWith(BASE) || missing.has(path)) return send(404, 'text/plain', 'not found');
     let file = resolve(dir, '.' + path.slice(BASE.length - 1));

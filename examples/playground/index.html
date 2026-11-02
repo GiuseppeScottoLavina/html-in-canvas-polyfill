@@ -335,7 +335,9 @@
       // the canvas bounds: a base style before the code, so author CSS overrides it; the checkbox switches it on and off without a new run
       + '<style id="hic-playground-bounds" media="' + (bounds.checked ? 'all' : 'not all') + '">canvas { outline: 1px dashed #8a9099; outline-offset: 0; }</style>\n'
       + '<script>(' + reporter.toString() + ')(' + json(token) + ', ' + json(targetOrigin) + ', ' + firstLine + ');<\/script>\n'
-      + SCRIPTS.map((src) => '<script src="' + attr(src) + '"><\/script>\n').join('')
+      // crossorigin: the frame's origin is opaque, so the site's scripts are another origin; fetched with CORS (the site answers Access-Control-Allow-Origin: *,
+      // as GitHub Pages does) their exceptions keep their message instead of "Script error." (a refused drawElementImage says why)
+      + SCRIPTS.map((src) => '<script crossorigin="anonymous" src="' + attr(src) + '"><\/script>\n').join('')
       + '<script>window.__playgroundReport();<\/script>\n</head>\n<body>\n';
     const firstLine = head(0).split('\n').length;                       // the line of the document where the code starts
     return head(firstLine) + userCode + '\n</body>\n</html>\n';

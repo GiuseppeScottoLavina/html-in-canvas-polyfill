@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Playground: an exception the polyfill threw in the preview, such as a refused `drawElementImage` on a form without the `drawable` attribute, reached the console panel only as "Script error": the preview's origin is opaque, so the polyfill's bundles were scripts of another origin and the browser hid their errors. The preview now loads them with `crossorigin="anonymous"` (GitHub Pages and `npm run demo` answer `Access-Control-Allow-Origin: *`), and the console shows the message ("The <form> has no drawable attribute…"). Test: a playground check removes `drawable` from the example and expects that message, and a page variant without `crossorigin` turns it red.
+
 ## [0.1.0-preview.19] - 2026-11-02
 
 A second external review, of 0.1.0-preview.18, found five problems; each was reproduced by a test that failed on 0.1.0-preview.18 and is fixed. A drawable refused for the memory budget now recovers once memory is freed, instead of staying on its old picture while the scheduler ticked. Several canvases now share the pump fairly: with two busy canvases the second one built 0 times in 120 rounds. The frame loop sleeps until a deferred build is due instead of running every frame. The text-overlay backdrops are counted in the memory budget, scroll caches give way least recently used first, the animated-frame cache no longer keeps the frames of removed images, and the effects presenter allocates one intermediate texture when one is enough. The common case is unchanged: a headed A/B against 0.1.0-preview.18 (scroll, typing, large drawables) was equal within the run-to-run spread. The playground highlights its code with Prism.

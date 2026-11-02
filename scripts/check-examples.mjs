@@ -226,6 +226,7 @@ const PLAYGROUND_VARIANTS = [
   { name: 'iframe-kept', edit: ['old.remove();', ''], check: 'running again replaces the preview frame' },
   { name: 'bounds-not-switched', edit: ["if (s) s.media = e.data === 'bounds:on' ? 'all' : 'not all';", ''], check: 'Show canvas bounds' },
   { name: 'highlight-stale', edit: ["code.addEventListener('input', refresh);", ''], check: 'the editor highlights the code' },
+  { name: 'muted-errors', edit: ['<script crossorigin="anonymous" src="', '<script src="'], check: 'an exception the polyfill throws' },
   { name: 'highlight-ungated', edit: [':root[data-highlight="on"] #code { color: transparent;', '#code { color: transparent;'], check: 'without Prism' },
 ];
 /** The Prism scripts of the playground's editor (cdnjs, pinned), which its fallback check blocks. */
@@ -642,6 +643,16 @@ const SCENARIOS = {
       const asText = !!shown && shown.includes('<img id="pg-injected" src="data:,">');
       return { ok: !!s && s.state === st.state && !!shown && asText && !injected, state: s?.state, injected, asText, console: (shown ?? (await status()).console).slice(0, 400) };
     });
+    await run.step('interact', 'an exception the polyfill throws (a refused drawElementImage: the form has no drawable attribute) reaches the console panel with its message, not as a muted "Script error"', async () => {
+      await setCode(basicExplainerBlock().replace('<form drawable>', '<form>'));
+      const n = await runs();
+      await page.evaluate(`document.getElementById('run').click()`);
+      const s = await settled(n + 1);
+      const shown = await H.until(async () => { const c = (await status()).console; return /has no drawable attribute/.test(c) ? c : null; }, 5000);
+      const c = shown ?? (await status()).console;
+      return { ok: !!s && !!shown && !/Script error/.test(c), console: c.slice(0, 400) };
+    });
+
     await run.step('interact', 'Tab in the editor inserts two spaces; Esc then Tab moves the focus on', async () => {
       await setCode('x');
       await page.evaluate(`(() => { const c = document.getElementById('code'); c.focus(); c.setSelectionRange(0, 0); })()`);
