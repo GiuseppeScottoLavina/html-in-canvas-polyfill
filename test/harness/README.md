@@ -5,14 +5,14 @@ Everything is imported from `test/harness/index.mjs`. The harness needs no polyf
 exercises every helper against tiny built-in fixtures and proves the positive controls fire.
 
 ```js
-import * as H from '/abs/path/test/harness/index.mjs';
+import * as H from './test/harness/index.mjs';          // from a script at the repository root
 const srv = await H.startServer();                       // static server rooted at the repo (COOP/COEP, no-store, /__hic/hash)
 // startServer({ files: { '/dist/x.js': '/abs/anywhere/mutant.js' } }) serves an absolute file (even under .scratch/) at a URL path: used by the gates' --bundle-file, mutants and sabotaged control bundles.
 // screenshotElement(page, sel, { beyondViewport }) / page.screenshot({ beyondViewport }) pass captureBeyondViewport (it re-lays the page out: avoid it when comparing layouts).
 const browser = await H.launchChrome({ name: 'myrun' }); // headed, throwaway profile under .profiles/ (anything else is refused)
 const page = await browser.newPage();
 await page.requireForeground('start');                   // throws loudly unless hasFocus && visible
-const { surfacePage, refPage } = await H.openPair(browser, srv, 'f1', { mode: 'poly', bundle: '/dist/hic.iife.js' });
+const { surfacePage, refPage } = await H.openPair(browser, srv, 'f1', { mode: 'poly', bundle: '/dist/hic-live-polyfill.iife.js' });
 const d = H.compareImages(H.compositeOver(await H.readCanvas(surfacePage), [255, 255, 255]), (await H.screenshotElement(refPage)).img); // d.fraction, d.countOver16 ...
 await browser.close();                                   // terminates ONLY our PID (+ stragglers carrying our unique profile path)
 await srv.close();
