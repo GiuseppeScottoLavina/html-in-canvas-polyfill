@@ -429,7 +429,7 @@ export {};
  * @property {(v: SnapshotVersion, r: SourceRectCss) => RasterSource|null} rasterSource  null when the rect has no overlap with the surface
  * @property {(el: Element, rect: Rect|null, cause: DamageCause) => void} markDamage  (rect in border-box frame; null = whole)
  * @property {(cause: DamageCause) => void} invalidateAll
- * @property {(now: number, budget: PumpBudget) => PumpResult} pump  start builds/decodes that are due; synchronous part bounded by budget.mainThreadMs
+ * @property {(now: number, budget: PumpBudget) => PumpResult} pump  start builds/decodes that are due; no new build starts once budget.mainThreadMs of synchronous time was spent (one build can run longer)
  * @property {() => boolean} [needsPump]  a pump would have something to do: damage waiting for a build, a side build queued, a geometry check owed after a commit (absent: always true)
  * @property {(record?: CanvasRecord) => boolean} hasLanded  at least one decoded result (of `record` when given) is waiting to be committed
  * @property {(record?: CanvasRecord, opts?: {current?: boolean}) => ChangeSet} commitLanded  apply landed results to surfaces in ONE synchronous step, publish new versions. With `record` only that canvas is committed (the others keep their landed results queued: a closed paint gate stays closed). `current`: the paint that follows must show the DOM as it is now, so a whole tile superseded by a DOM mutation is reclaimed instead of committed
@@ -451,7 +451,7 @@ export {};
 
 /**
  * @typedef {Object} PumpBudget
- * @property {number} mainThreadMs  stop starting new builds once this much synchronous time was spent in this pump (default 4)
+ * @property {number} mainThreadMs  stop starting new builds once this much synchronous time was spent in this pump (default 4); an admission threshold checked between builds, not a bound on one build, which can run longer
  * @property {number} mainThreadShare  fraction of the frame period that the EMA of (sync build + decode wall + commit draw) of all drawables may use; builds are not started above it (default 0.35)
  * @property {number} maxInFlight   per canvas (default 2)
  * @property {boolean} interaction  an input-driven damage is pending: the scheduler may apply options.interactionFloorFps (0 = ignore, strict cap)

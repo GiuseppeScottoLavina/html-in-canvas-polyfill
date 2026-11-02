@@ -54,6 +54,7 @@ const SCROLL_STREAM_GAP_MS = 200;
 const RESIZE_IN_FRAME_MS = 100;
 /** A tick whose rAF timestamp is this many frame periods after the previous consecutive tick is late. */
 const LATE_FRAME_FACTOR = 1.5;
+/** PumpBudget.mainThreadMs: no new build starts after this many ms of synchronous time in one pump (checked between builds; one build can run longer) */
 const PUMP_MAIN_THREAD_MS = 4;
 const PUMP_MAIN_THREAD_SHARE = 0.35;
 const PUMP_MAX_IN_FLIGHT = 2;

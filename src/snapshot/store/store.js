@@ -282,8 +282,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /**
    * options.maxTotalSurfaceBytes at commit: does a new surface of `bytes` fit, `freed` bytes being released with it? Every build of a batch was planned before any of
-   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. Overlay backdrops and then the scroll compositor's caches give way
-   * first, the least recently used first and only as many as the surface needs (the normal snapshot path serves those fields and scrollers until there is room again).
+   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. Overlay backdrops (in the order they were built) and then the scroll
+   * compositor's caches (the least recently served first) give way first, only as many as the surface needs (the normal snapshot path serves those fields and scrollers until there is room again).
    * @param {number} bytes @param {number} freed @returns {boolean}
    */
   function fits(bytes, freed) {

@@ -129,7 +129,7 @@ export function createBackdropCache(deps) {
       return n;
     },
     drop,
-    /** Release backdrops, the oldest first, until `need` bytes are freed. @param {number} need @returns {number} the bytes freed */
+    /** Release backdrops in the order they were built (FIFO: a backdrop reused by a later keystroke keeps its place), until `need` bytes are freed. @param {number} need @returns {number} the bytes freed */
     shed(need) {
       let freed = 0;
       for (const [owner, slot] of cache) {
