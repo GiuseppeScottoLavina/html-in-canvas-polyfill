@@ -24,7 +24,7 @@ for (const [id, what, cmd] of stages) {
   if (skip.includes(id)) { rows.push({ stage: id, what, result: 'SKIPPED' }); continue; }
   const t0 = Date.now();
   const r = spawnSync(cmd[0], cmd.slice(1), { cwd: root, stdio: 'inherit', timeout: 3600000 });
-  rows.push({ stage: id, what, result: r.status === 0 ? 'PASS' : `FAIL (exit ${r.status})`, seconds: Math.round((Date.now() - t0) / 1000) });
+  rows.push({ stage: id, what, result: r.status === 0 ? 'PASS' : `FAIL (exit ${r.status ?? r.signal})`, seconds: Math.round((Date.now() - t0) / 1000) });
 }
 const summary = resolve(root, '.scratch/results/summary.json');
 const gates = existsSync(summary) ? JSON.parse(readFileSync(summary, 'utf8')) : null;
