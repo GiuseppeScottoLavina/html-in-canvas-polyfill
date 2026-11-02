@@ -62,6 +62,7 @@ const AHEAD_PAGES = 2;
  * @property {Rect[]} unverified  damage rects inside the visible port (frame css) not yet checked for an obstruction
  * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
  * @property {boolean} early  planned ahead and not scrolled yet: its builds queued before a finger landed stop (yieldToInput)
+ * @property {number} used  when it was planned or last served a step (shed: the least recently used give way first)
  */
 
 /**
@@ -188,6 +189,17 @@ export function cornerSquares(portPx, round, s) {
     { x, y, width: tl.w, height: tl.h }, { x: x + w - tr.w, y, width: tr.w, height: tr.h },
     { x: x + w - br.w, y: y + h - br.h, width: br.w, height: br.h }, { x, y: y + h - bl.h, width: bl.w, height: bl.h },
   ].filter((r) => r.width > 1 && r.height > 1);
+}
+
+/** Bytes of a cache's pages and tiles: those decoded (`held`), or every one planned. @param {Cache} c @param {boolean} held @returns {number} */
+function cacheBytes(c, held) {
+  let n = 0;
+  const add = (/** @type {Surface|null} */ pad, /** @type {number} */ px) => { n += held ? (pad ? pad.width * pad.height : 0) : px; };
+  for (const p of c.pages) add(p.pad, area(c.portPx));
+  for (const p of c.pins.values()) add(p.pad, p.w * p.h);
+  if (c.bar) { add(c.bar.track.pad, area(c.bar.track.px)); add(c.bar.thumb.pad, area(c.bar.thumb.px)); }
+  if (c.backdrop) add(c.backdrop.pad, area(c.backdrop.px));
+  return n * 4;
 }
 
 /** @param {ComposeDeps} deps */
@@ -319,7 +331,7 @@ export function createScrollCompositor(deps) {
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [], memo: new Map(), early,
+      shown: null, queued: false, last: live, unverified: [], memo: new Map(), early, used: now(),
     };
     if (plan.bar) {
       const b = plan.bar;
@@ -444,6 +456,7 @@ export function createScrollCompositor(deps) {
       const known = mapOf(entry).get(scroller);
       if (!known || !sameGeo(known.geo, entry.geo) || !sameLayout(known)) { this.prepare(entry, scroller); return false; }
       known.early = false;
+      known.used = now();
       const top = topOf(scroller);
       prefetch(entry, known, top);
       if (!usable(known, top, false)) return false;
@@ -517,27 +530,29 @@ export function createScrollCompositor(deps) {
      */
     bytes(entry, held) {
       let n = 0;
-      const add = (/** @type {Surface|null} */ pad, /** @type {number} */ px) => { n += held ? (pad ? pad.width * pad.height : 0) : px; };
-      for (const c of caches.get(entry)?.values() ?? []) {
-        for (const p of c.pages) add(p.pad, area(c.portPx));
-        for (const p of c.pins.values()) add(p.pad, p.w * p.h);
-        if (c.bar) { add(c.bar.track.pad, area(c.bar.track.px)); add(c.bar.thumb.pad, area(c.bar.thumb.px)); }
-        if (c.backdrop) add(c.backdrop.pad, area(c.backdrop.px));
-      }
-      return n * 4;
+      for (const c of caches.get(entry)?.values() ?? []) n += cacheBytes(c, held);
+      return n;
     },
 
     /**
-     * A drawable surface needs the room: every cache of the drawable is dropped. Returns the frames of the scrollers whose port does not show their live offset (a
-     * composition was promised, or a tile drew another offset): the caller damages them, so the plain path serves them.
-     * @param {Entry} entry @returns {Rect[]}
+     * A drawable surface needs `need` bytes: the caches of `list` are dropped, the least recently used first, until that many are freed. Returns the frames of the dropped
+     * scrollers whose port does not show their live offset (a composition was promised, or a tile drew another offset): the caller damages them, so the plain path serves them.
+     * @param {Iterable<Entry>} list @param {number} need @returns {Array<[Entry, Rect]>}
      */
-    shed(entry) {
-      const m = caches.get(entry);
-      if (!m?.size) return [];
-      const owed = [...m.values()].filter((c) => c.queued || (c.shown !== null && c.shown !== topOf(c.el))).map((c) => c.plan.frame);
-      counters.budget += m.size;
-      m.clear();
+    shed(list, need) {
+      /** @type {Array<[Entry, Cache]>} */
+      const all = [];
+      for (const entry of list) for (const c of caches.get(entry)?.values() ?? []) all.push([entry, c]);
+      all.sort((a, b) => a[1].used - b[1].used);
+      /** @type {Array<[Entry, Rect]>} */
+      const owed = [];
+      for (const [entry, c] of all) {
+        if (need <= 0) break;
+        need -= cacheBytes(c, false);
+        counters.budget++;
+        if (c.queued || (c.shown !== null && c.shown !== topOf(c.el))) owed.push([entry, c.plan.frame]);
+        drop(entry, c);
+      }
       return owed;
     },
 

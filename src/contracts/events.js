@@ -31,6 +31,8 @@ export const BUS = Object.freeze({
   ROOT_ADDED: 'root:added',
   /** {record, element: Element} a retained surface lost its 2D context and was re-rastered (whole-drawable damage 'forced' is queued). Emitted by the store only. */
   SURFACE_RESTORED: 'surface:restored',
+  /** {record} options.maxTotalSurfaceBytes has room again for a drawable of the canvas that it held back: the scheduler wakes. Emitted by the store only. */
+  MEMORY_FREED: 'surface:freed',
 });
 
 /** Public DOM events (the first two are the standard ones). */
