@@ -134,7 +134,9 @@ if (!docsOnly) {
   // its decode in the next task (+14: snapshot/store/pump.js LONG_TASK_MS and the per-pump task estimate, store.js the per-drawable landing cost measured where a tile
   // lands at once); F4 headed, 1,000 elements: 16 / 13 tasks over 8.33 ms per 30 updates before, 1 / 1 / 0 after
   // 16500 -> 16510 (2026-11-02, measured 16,503; 16,496 before this step): a refused draw names its cause and fix (api/validate.js notDrawable), a playground report
-  if (total > 16510) problems.push(`G-size: core is ${total} code lines (> 16510)`);
+  // 16510 -> 16520 (2026-11-02, measured 16,518; 16,510 before this step): resources released with their owner (+8: animated-images.js closes the decoder of a
+  // dead image and of a refused open and drops the source of a released one; css-collector.js drops a canvas's bundle when its record is detached or disposed)
+  if (total > 16520) problems.push(`G-size: core is ${total} code lines (> 16520)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
