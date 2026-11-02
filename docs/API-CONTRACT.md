@@ -179,7 +179,7 @@ a repaint keep the default width 100 after the DOM grew to 150). The capture pin
 - No constructor: `new ElementImage()` throws `TypeError`. The interface has `close()` only (WHATWG PR 11588 since 2026-10-08): there is no `width` / `height`, and
   `'width' in elementImage` is false, as natively. Its size is `canvas.getElementImageDefaultSize(elementImage)` (4.4.1).
 - `close()`: idempotent; detaches (`[[Detached]]`), unpins the version. Later use throws `InvalidStateError` (section 6).
-- A never-closed `ElementImage` is released by a `FinalizationRegistry`; the bytes stay pinned until then (stat `pinnedSurfaces`).
+- A never-closed `ElementImage` is released by a `FinalizationRegistry`; the bytes stay pinned until then (stat `pinnedSurfaces`) and count toward `options.maxTotalSurfaceBytes`. While pinned surfaces hold the budget, a new snapshot is rasterised at a reduced scale or refused (the drawable keeps its last picture), and a caret blink that would copy a pinned surface is skipped; each is reported (`surface-size`). Native has no such budget: `close()` the images you no longer need.
 - Extension `toImageBitmap(): Promise<ImageBitmap>`: a transferable copy of the pinned surface (full source rect), for workers.
 
 #### 4.4.1 `getElementImageDefaultSize(element | ElementImage)` -> `{width, height}`

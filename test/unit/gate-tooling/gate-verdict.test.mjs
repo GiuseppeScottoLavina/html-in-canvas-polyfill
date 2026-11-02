@@ -65,6 +65,20 @@ test('a gate process without a result line is NOT RUN with a reason that is neve
   assert.equal(res.gate, 'G-x'); assert.equal(res.notRun, undefined);
 });
 
+test('the exit status outranks the result line: a PASS line followed by a non-zero exit or a signal is a FAIL naming it; a FAIL line with exit 1 is kept as printed', () => {
+  const line = (verdict, pass, failed = []) => `{"gate":"G-x","verdict":"${verdict}","pass":${pass},"countsForThresholds":${pass},"assertions":[{"name":"a","ok":${pass}}],"failed":${JSON.stringify(failed)}}\n`;
+  const crashed = gateRunOutcome({ stdout: line('PASS', true), stderr: 'boom', status: 3, signal: null });
+  assert.equal(crashed.verdict, 'FAIL'); assert.equal(crashed.pass, false); assert.equal(crashed.countsForThresholds, false); assert.equal(crashed.notRun, undefined);
+  assert.match(crashed.failed[0], /exited with status 3 after printing a PASS result line/);
+  const killed = gateRunOutcome({ stdout: line('PASS', true), stderr: '', status: null, signal: 'SIGKILL' });
+  assert.equal(killed.verdict, 'FAIL'); assert.equal(killed.pass, false); assert.match(killed.failed[0], /killed by SIGKILL/);
+  // positive controls: a PASS with exit 0 and a FAIL with exit 1 are what the gate printed
+  const passed = gateRunOutcome({ stdout: line('PASS', true), stderr: '', status: 0, signal: null });
+  assert.equal(passed.verdict, 'PASS'); assert.equal(passed.pass, true); assert.deepEqual(passed.failed, []);
+  const failed = gateRunOutcome({ stdout: line('FAIL', false, ['a']), stderr: '', status: 1, signal: null });
+  assert.equal(failed.verdict, 'FAIL'); assert.deepEqual(failed.failed, ['a']);
+});
+
 test('a gate past its watchdog fails naming what it still waits for; behind a locked screen it is NOT USABLE instead', () => {
   const h = hangVerdict({ minutes: 10, pending: ['Runtime.evaluate'], screenLocked: false });
   assert.equal(h.verdict, 'FAIL'); assert.equal(h.pass, false); assert.equal(h.usable, true);

@@ -60,4 +60,4 @@ Refusals are loud by design: one console message and a `report()` entry, not a s
 
 ### 13. Small, dependency-free, no network on load
 
-No runtime dependencies; the bundles make no network request when they load (snapshots fetch same-origin or CORS resources only to inline them). Modules talk only through typed interfaces (`src/contracts/`), at most 1000 code lines per file, enforced by `npm run lint`. The cost is a large core: about 116 KB gzipped (343 KB minified), over the original 150 KB minified target ([BUNDLES.md](BUNDLES.md)).
+No runtime dependencies; the bundles make no network request when they load (snapshots fetch same-origin or CORS resources only to inline them). Modules talk only through typed interfaces (`src/contracts/`), at most 1000 code lines per file, enforced by `npm run lint`. The cost is a large core: about 117 KB gzipped (346 KB minified), over the original 150 KB minified target ([BUNDLES.md](BUNDLES.md)).

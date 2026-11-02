@@ -146,6 +146,8 @@ export function judge({ real, control, controlClasses = [], focus = {}, highLoad
  * The result of a gate PROCESS run by a runner (spawnSync result -> the gate's JSON line, pure, unit-tested). A process that printed no complete result line
  * (it hung and was killed at the runner's timeout, crashed, or could not be spawned) is `{ notRun: reason }` with a reason that is never empty: an empty
  * reason once read as "ran" and crashed the mutant suite at its first baseline (a g-explainer killed after 15 min under machine load printed nothing).
+ * The exit status outranks the line: a PASS line from a process that then exited non-zero or was killed by a signal is a FAIL naming the status (a gate exits 0
+ * exactly when it passes, so a FAIL or NOT USABLE line with exit 1 is the normal case and is kept as printed).
  * @param {{stdout?: string|null, stderr?: string|null, status?: number|null, signal?: string|null, error?: Error & {code?: string}}} r
  * @returns {any}
  */
@@ -153,7 +155,11 @@ export function gateRunOutcome(r) {
   const line = (r.stdout ?? '').split('\n').find((l) => l.startsWith('{"gate"'));
   try {
     const res = JSON.parse(line ?? '');
-    if (Array.isArray(res.assertions) && Array.isArray(res.failed)) return res;
+    if (Array.isArray(res.assertions) && Array.isArray(res.failed)) {
+      if (res.verdict !== 'PASS' || (r.status === 0 && !r.signal)) return res;
+      const how = r.signal ? `was killed by ${r.signal}` : `exited with status ${r.status ?? 'none'}`;
+      return { ...res, verdict: 'FAIL', pass: false, countsForThresholds: false, failed: [`gate process ${how} after printing a PASS result line`, ...res.failed] };
+    }
   } catch { /* no result line */ }
   const why = [r.error ? `could not run: ${r.error.code ?? r.error.message}` : '', r.signal ? `killed by ${r.signal}${r.error?.code === 'ETIMEDOUT' ? ' at the runner timeout' : ''}` : '', `exit ${r.status ?? 'none'}`,
     line ? 'malformed result line' : 'no result line', (r.stderr || r.stdout || '').trim().slice(-300)].filter(Boolean);
