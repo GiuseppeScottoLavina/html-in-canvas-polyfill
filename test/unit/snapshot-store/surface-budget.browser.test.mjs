@@ -272,6 +272,7 @@ test('D: removing the drawable that holds the budget lets a refused one be built
   assert.equal(rig.pump().started, 0, 'b does not fit beside a');
   const settled = rig.store.isSettled(b);
   rig.remove(a);
+  rig.store.commitLanded(); // the removal of a
   assert.equal(rig.store.needsPump(), true, 'the freed surface re-opens the refused build');
   rig.pump();
   await until(() => rig.store.hasLanded(), 3000, 'the build of b');
