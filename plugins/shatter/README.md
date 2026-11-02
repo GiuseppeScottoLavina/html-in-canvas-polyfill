@@ -42,7 +42,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `duration` | 1600 | ms of one way of the fall (out or in), 300 to 8000; one way plays 1.7 s of physics |
 | `gravity` | 1 | 0.2 to 3 (1 = 2400 CSS px/s²) |
 | `refraction` | 1.6 | 0 to 4: CSS px the picture bends at a crack |
-| `edgeColor`, `edgeAmount` | `#d9f5ff`, 0.85 | the fractures, the crushed glass, the edges of falling shards and the flash (0: geometry only) |
+| `edgeColor`, `edgeAmount` | `#d9f5ff`, 0.85 | the fractures, the crushed glass, the edges of falling shards and the flash; `edgeAmount` 0 to 1 (0: geometry only) |
 | `glint` | 0.8 | 0 to 1: the light the pieces and the falling shards catch |
 | `backdrop` | the host's clear colour | what is left behind (`#rrggbb` or `[r, g, b]` 0..1) |
 | `onSubmit` | `'off'` (`'invalid'`) | `'off'`, `'invalid'`, `'valid'`, `'always'`: a matching `submit` inside the source is an impact (the first cracks, the next breaks); a submit that does not match heals a cracked pane, also while its cracks run. A matching submit while the cracks run, and any submit while shards fall, does nothing. The page's own submit handler runs first when it was added before the plugin |
@@ -51,7 +51,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `state` | `'in'` | `'cracked'`, `'out'`, `'in'`: the end state, declaratively; only a change of `state` starts something |
 | `impact` | the canvas centre | `{x, y}` CSS px: the impact when there is no point, no pointer press and no field |
 | `reducedMotion` | follows `prefers-reduced-motion` | `true` / `false` to force it |
-| `seed` | 7 | the crack pattern (each crack adds one) |
+| `seed` | 7 | 0 to 1,000,000: the crack pattern (each crack adds one) |
 
 `mountUI` adds a Strike button (the action `impact`, from the button) and a slider for the number of radial cracks.
 

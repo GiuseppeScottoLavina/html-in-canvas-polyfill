@@ -45,7 +45,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `radius` | 48 | 4 to 200 CSS px (slider 12 to 120): the roll radius; a long pull bows it up to 1.9 times larger, a short pull uses a tighter one (at most pull / pi) |
 | `shadow` | 0.85 | 0 to 1: strength of the shadows |
 | `dogEar` | 36 | 0 to 120 CSS px: how far the dog-eared corner is folded at rest (per axis); 0: no dog-ear |
-| `autoPeek` | 5 | seconds between the dog-ear's peeks until the first drag; 0 or `false`: off |
+| `autoPeek` | 5 | 0 to 600 seconds between the dog-ear's peeks until the first drag; 0 or `false`: off |
 | `hotZone` | 64 | 16 to 200 CSS px: grab distance from a corner |
 | `under` | `#d1c9bb` | the page underneath (`'#rrggbb'`) |
 | `paper` | `#f6f2e9` | the back of the sheet (`'#rrggbb'`) |
