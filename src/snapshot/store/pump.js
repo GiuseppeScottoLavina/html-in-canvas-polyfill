@@ -150,6 +150,8 @@ const LAND_DEVS = 2;
  * @property {(job: Job, err: unknown, stage: 'capture'|'decode') => void} fail
  * @property {(entry: Entry) => Element[]} [scrollers]  composed scrollers of the drawable (their offsets are recorded per build)
  * @property {() => number} [scrollSeq]  the scroll compositor's damage sequence number (recorded per build)
+ * @property {() => boolean} [busy]  the store has work outside the builds of this pump that lands without an event (a side build queued, a scroll page or overlay
+ *   backdrop decoding): PumpResult.quietUntil stays null (absent: busy)
  */
 
 /**
@@ -379,13 +381,14 @@ function later(out, at) {
  */
 export function runPump(env, deps, now, budget) {
   /** @type {PumpResult} */
-  const out = { started: 0, spentMs: 0, moreWork: false, nextDueAt: null };
+  const out = { started: 0, spentMs: 0, moreWork: false, nextDueAt: null, quietUntil: null };
   budgetUrgent = !!budget.urgent;
-  pumpStart = env.now(); pumpLand = 0;
+  pumpStart = env.now(); pumpLand = 0; pumpHeld = false;
   deps.state.bucket.refill(now, budget.mainThreadShare);
   /** @type {Map<CanvasRecord, Entry[]>} */
   const byRecord = new Map();
   for (const entry of deps.host.entries()) {
+    if (entry.decoding) pumpHeld = true;
     if (!deps.damage.hasPending(entry.el)) continue;
     const list = byRecord.get(entry.record);
     if (list) list.push(entry); else byRecord.set(entry.record, [entry]);
@@ -394,7 +397,7 @@ export function runPump(env, deps, now, budget) {
   for (const list of byRecord.values()) list.sort((a, b) => since(a) - since(b));
   if (byRecord.size < 2) {
     for (const [record, list] of byRecord) pumpRecord(env, deps, record, list, now, budget, out);
-    return out;
+    return quiet(deps, out);
   }
   // the canvas with the oldest damage goes first (its builds still start together, one batch): in insertion order a canvas whose build used up the round
   // deferred every canvas after it for as long as it stayed dirty (two animated canvases at 4.1 ms per build: 120 builds against 0 in 120 rounds). A pump in an
@@ -403,6 +406,17 @@ export function runPump(env, deps, now, budget) {
   const order = [...byRecord].map(([record, list]) => ({ record, list, input: input(list), since: since(list[0]) }));
   order.sort((x, y) => (x.input === y.input ? x.since - y.since : x.input ? -1 : 1));
   for (const { record, list } of order) pumpRecord(env, deps, record, list, now, budget, out);
+  return quiet(deps, out);
+}
+
+/**
+ * PumpResult.quietUntil: the pump started nothing, every drawable with damage waits for a known time (frame cap, cost bucket, node budget, failure backoff), and
+ * nothing is building, decoding or landed, so nothing can change before nextDueAt unless something outside wakes the scheduler. Any other skip (refused, lost,
+ * not laid out, in the top layer, a canvas not active) keeps it null: those wait for an event the scheduler may not get, and are polled as before.
+ * @param {PumpDeps} deps @param {PumpResult} out @returns {PumpResult}
+ */
+function quiet(deps, out) {
+  if (!out.started && out.moreWork && out.nextDueAt !== null && !pumpHeld && !deps.jobs.size && !deps.landed.length && deps.host.busy?.() === false) out.quietUntil = out.nextDueAt;
   return out;
 }
 
@@ -411,7 +425,7 @@ export function runPump(env, deps, now, budget) {
  * @param {number} now @param {PumpBudget} budget @param {PumpResult} out
  */
 function pumpRecord(env, deps, record, list, now, budget, out) {
-  if (!record.layer || record.state !== 'active') return;
+  if (!record.layer || record.state !== 'active') { pumpHeld = true; return; }
   const { state } = deps;
   const rate = buildRate(env.options, record, budget);
   const interval = Number.isFinite(rate) ? 1000 / rate : 0;
@@ -431,10 +445,10 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
   let batch = 0;
   let paced = false;
   for (const entry of list) {
-    if (entry.refused || entry.lost) continue;
+    if (entry.refused || entry.lost) { pumpHeld = true; continue; }
     // a drawable in the top layer below the canvas (a modal dialog, an open popover) has no snapshot, like one without a box (util/top-layer.js)
     entry.topLayer = inTopLayerBelow(entry.el, record.layer.element);
-    if (entry.topLayer || !record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); continue; }
+    if (entry.topLayer || !record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); pumpHeld = true; continue; }
     if (entry.decoding >= deps.maxPerDrawable) continue;
     const scrollOnly = scrollDue && deps.damage.pendingScroll(entry.el, SCROLL_RIDERS, env.options.inkMargin + 1);
     const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard && !scrollOnly ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);
@@ -450,7 +464,7 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     if (!state.bucket.canStart()) { later(out, now + state.bucket.waitMs(budget.mainThreadShare)); continue; }
     batch ||= ++state.batchSeq;
     const spent = startBuild(env, deps, entry, now, batch);
-    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first && (due || !scrollOnly); }
+    if (spent !== null) { out.started++; out.spentMs += spent; paced ||= !first && (due || !scrollOnly); } else pumpHeld = true;
   }
   // first builds use no credit of the rate gate either: the build after the first paint was otherwise held a frame, or not when the first frame was long (a cold
   // page), and a page that changes the DOM every frame then stayed in either rhythm (WPT onpaint-remove-non-drawable-element passed or failed every subtest by turns)
@@ -512,8 +526,8 @@ function startBuild(env, deps, entry, now, batch) {
   return job.syncMs;
 }
 
-/** the current pump: an urgent one (PumpBudget.urgent), when it started, the predicted landing of the decodes it started at once (set by runPump) */
-let budgetUrgent = false, pumpStart = 0, pumpLand = 0;
+/** the current pump: an urgent one (PumpBudget.urgent), when it started, the predicted landing of the decodes it started at once, a drawable it skipped without a due time (set by runPump) */
+let budgetUrgent = false, pumpStart = 0, pumpLand = 0, pumpHeld = false;
 
 /** @param {HicEnv} env @param {PumpDeps} deps @param {Job} job @param {CaptureResult} result */
 function startDecode(env, deps, job, result) {
