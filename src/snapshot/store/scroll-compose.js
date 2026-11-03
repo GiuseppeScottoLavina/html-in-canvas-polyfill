@@ -208,9 +208,8 @@ function cacheBytes(c, held) {
  * @param {Element} el @returns {'focus'|'selection'|'plan'}
  */
 function noPlan(el) {
-  const doc = el.ownerDocument, active = doc?.activeElement, sel = doc?.getSelection?.();
-  if (active && active !== el && el.contains?.(active)) return 'focus';
-  return sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(el) ? 'selection' : 'plan';
+  const doc = el.ownerDocument, active = doc?.activeElement, sel = doc?.getSelection();
+  return active && active !== el && el.contains(active) ? 'focus' : sel?.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).intersectsNode(el) ? 'selection' : 'plan';
 }
 
 /** @param {ComposeDeps} deps */
