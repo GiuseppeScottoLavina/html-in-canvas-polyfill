@@ -1,6 +1,6 @@
 // Repo gates that need no browser: G-size, G-deps, G-no-blob, G-plugins, G-doc-sync (--docs only checks docs).
 //   node scripts/check-repo.mjs          size + deps + no-blob + plugin folder contract + doc sync
-//   node scripts/check-repo.mjs --docs   doc sync only
+//   node scripts/check-repo.mjs --docs   doc sync only (the matrix and the generated src/contracts/feature-status.js)
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, relative, sep } from 'node:path';
@@ -159,10 +159,14 @@ if (!docsOnly) {
   console.log(`checked ${folders.length} plugin folders`);
 }
 
-// G-doc-sync: the generated block of the matrix is exactly what scripts/gen-support-matrix.mjs renders from src/contracts/features.js
-const { MATRIX_PATH, renderMatrix } = await import(pathToFileURL(join(root, 'scripts/gen-support-matrix.mjs')).href);
+// G-doc-sync: the generated block of the matrix is exactly what scripts/gen-support-matrix.mjs renders from src/contracts/features.js,
+// and src/contracts/feature-status.js (the runtime's id -> status lookup) is exactly what the same generator renders
+const { MATRIX_PATH, STATUS_PATH, renderMatrix, renderStatusModule } = await import(pathToFileURL(join(root, 'scripts/gen-support-matrix.mjs')).href);
 const matrix = readFileSync(MATRIX_PATH, 'utf8');
 if (renderMatrix(matrix) !== matrix) problems.push('G-doc-sync: docs/SUPPORT-MATRIX.md differs from the table of src/contracts/features.js (run npm run docs:sync)');
+let statusModule = '';
+try { statusModule = readFileSync(STATUS_PATH, 'utf8'); } catch { /* missing: reported below */ }
+if (renderStatusModule() !== statusModule) problems.push('G-doc-sync: src/contracts/feature-status.js differs from the table of src/contracts/features.js (run npm run docs:sync)');
 
 const known = allowSize ? problems.filter((p) => p.startsWith('G-size')) : [];
 const blocking = problems.filter((p) => !known.includes(p));

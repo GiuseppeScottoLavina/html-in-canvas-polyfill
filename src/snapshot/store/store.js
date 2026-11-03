@@ -9,7 +9,7 @@
 
 import { BUS } from '../../contracts/events.js';
 import { HicUnsupportedError, invalidState } from '../../contracts/errors.js';
-import { featureById } from '../../contracts/features.js';
+import { featureStatus } from '../../contracts/feature-status.js';
 import { inflateRect, intersectRect, roundOutRect, unionRect } from '../../util/rect.js';
 import { scopedFilterList } from '../../util/canvas-scope.js';
 import { createCaretPatch } from './caret-patch.js';
@@ -282,8 +282,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
 
   /**
    * options.maxTotalSurfaceBytes at commit: does a new surface of `bytes` fit, `freed` bytes being released with it? Every build of a batch was planned before any of
-   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. Overlay backdrops and then the scroll compositor's caches give way
-   * first, the least recently used first and only as many as the surface needs (the normal snapshot path serves those fields and scrollers until there is room again).
+   * them committed, and an ElementImage may have pinned a surface since; this is the check that holds. Overlay backdrops (in the order they were built) and then the scroll
+   * compositor's caches (the least recently served first) give way first, only as many as the surface needs (the normal snapshot path serves those fields and scrollers until there is room again).
    * @param {number} bytes @param {number} freed @returns {boolean}
    */
   function fits(bytes, freed) {
@@ -513,7 +513,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
         const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });
         const result = capture({ ...req, scroll });
         // a 'limited' entry (node-budget: a large scroller) describes a page that renders like the tiles do
-        return (result.unsupported ?? []).some((u) => featureById(u.feature)?.status !== 'limited') || !result.complete ? null : result.url;
+        return (result.unsupported ?? []).some((u) => featureStatus(u.feature) !== 'limited') || !result.complete ? null : result.url;
       } catch (err) {
         env.reporter.caught(err, 'snapshot-store:scroll-page');
         return null;
@@ -657,7 +657,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
   function reportUnsupported(entry, result) {
     for (const u of result.unsupported ?? []) env.reporter.unsupported(u, entry.record.canvas);
     // a 'limited' feature (video-controls, node-budget) is a documented deviation of a tile that still renders: it is reported, never a reason to abort
-    return options.onUnsupportedContent === 'abort' && (result.unsupported ?? []).some((u) => featureById(u.feature)?.status !== 'limited');
+    return options.onUnsupportedContent === 'abort' && (result.unsupported ?? []).some((u) => featureStatus(u.feature) !== 'limited');
   }
 
   /** The tile is caret-free: remember where the capture measured the caret, or forget it when the tile shows the control without one. @param {Entry} entry @param {Landed} l @param {Rect} crop */

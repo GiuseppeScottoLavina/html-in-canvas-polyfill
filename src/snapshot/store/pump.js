@@ -1,5 +1,5 @@
 /**
- * Starts builds (sync part bounded by PumpBudget) and tracks in-flight decodes.
+ * Starts builds (admitted under PumpBudget: no new build starts after mainThreadMs of the pump, one build can run longer) and tracks in-flight decodes.
  * Module: snapshot-store (src/snapshot/store/*).
  *
  * Pacing, in one place: per canvas a build-credit gate (frameCap, maxSnapshotFps, interaction floor), per drawable ONE build in flight (measured: two in flight
@@ -373,7 +373,7 @@ function later(out, at) {
 /**
  * For each drawable with due damage (cap, per-drawable depth and per-canvas maxInFlight respected): take damage, build a CaptureRequest, call capture, start the decode, hand the decoded
  * result to the store (host.landed). Returns PumpResult.
- * Cost model: see the file comment. The first build of a pump is always allowed (progress); further builds stop at budget.mainThreadMs of synchronous time or an empty token bucket.
+ * Cost model: see the file comment. The first build of a pump is always allowed (progress); no further build starts after budget.mainThreadMs of synchronous time (checked before each build: the one that crosses it runs to its end) or with an empty token bucket.
  * Decode failures keep the previous version and are reported by the host (once).
  * @param {HicEnv} env
  * @param {PumpDeps} deps

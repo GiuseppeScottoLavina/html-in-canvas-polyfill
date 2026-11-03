@@ -467,7 +467,7 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
 
 ## 8. Timing model (summary; full detail in ARCHITECTURE ADR-C)
 - DOM change -> mutation/input/focus/hover observers publish `Damage` -> (next tick, under the cap) clone + serialise + data: URL (main
-  thread, bounded by `PumpBudget.mainThreadMs`) -> `Image.decode()` (off main thread) -> landed -> next tick `commitLanded()` ->
+  thread; no new build starts after 4 ms of the pump, `PumpBudget.mainThreadMs`, but one build can run longer) -> `Image.decode()` (off main thread) -> landed -> next tick `commitLanded()` ->
   `paint` event. On Chromium a snapshot that needs no font or image to load is painted where it lands, usually one frame after the change; otherwise about two frames (row `paint-timing`). Keydown to canvas pixel in a single-line field, which is drawn at once: p50 4.7-6.8 ms at 120 Hz across the six typing rows of the 2026-10-31 table, native 3.8-5.7 ms (`docs/PERFORMANCE-COMPARISON.md`).
 - Native fires `paint` at the end of update-the-rendering (after IntersectionObserver steps) and applies canvas draws to the same frame; the
   polyfill fires at the end of its own frame, in the ResizeObserver slot (after app rAF callbacks, layout and earlier observers) and applies draws to that frame: same ordering against app rAF and observers, snapshots lag the DOM by one frame, two or more when an image or font must load first (deviations `paint-timing`, `paint-dom-write-timing`).

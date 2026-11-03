@@ -21,7 +21,7 @@ import { createDamageBatch, getRectMemory } from './damage-rect.js';
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').HicEnv} HicEnv */
 
-/** Encoded frames of every image together, in UTF-16 units of their data: URLs (the least recently used go first; the frame an image shows, or is about to show, stays). */
+/** Encoded frames of every image together, in UTF-16 units of their data: URLs (the earliest encoded go first, FIFO: showing a frame again does not move it; the frame an image shows, or is about to show, stays). */
 const FRAME_BUDGET_CHARS = 24 * 1024 * 1024;
 /** Larger images show their first frame (reported): a frame is decoded and encoded on the main thread's budget. */
 const MAX_FRAME_PIXELS = 2048 * 2048;
@@ -157,8 +157,8 @@ export function createAnimatedImages(env) {
   const seen = new WeakMap();
   /** @type {Set<Viewer>} */
   const viewers = new Set();
-  /** @type {Map<string, {anim: Anim, index: number, chars: number}>} insertion order = recency */
-  const lru = new Map();
+  /** @type {Map<string, {anim: Anim, index: number, chars: number}>} insertion order = encode order (eviction is FIFO, not least recently used: a frame read again keeps its place) */
+  const fifo = new Map();
   let chars = 0;
   let ids = 0;
   let disposed = false;
@@ -229,13 +229,13 @@ export function createAnimatedImages(env) {
   /** @param {Anim} anim @param {number} index @param {string} url */
   function remember(anim, index, url) {
     anim.frames.set(index, url);
-    lru.set(`${anim.id}:${index}`, { anim, index, chars: url.length });
+    fifo.set(`${anim.id}:${index}`, { anim, index, chars: url.length });
     chars += url.length;
-    for (const [k, e] of lru) {
+    for (const [k, e] of fifo) {
       if (chars <= FRAME_BUDGET_CHARS) break;
       // kept: the frame an image shows or is about to show in a canvas; the frames of an image no canvas shows (released, or dead and removed) go like any other
       if ((e.anim.index === e.index || e.anim.coming === e.index) && watchers(e.anim).length) continue;
-      lru.delete(k);
+      fifo.delete(k);
       e.anim.frames.delete(e.index);
       chars -= e.chars;
     }
@@ -394,7 +394,7 @@ export function createAnimatedImages(env) {
       disposed = true;
       for (const anim of byUrl.values()) if (anim) release(anim);
       byUrl.clear();
-      lru.clear();
+      fifo.clear();
       viewers.clear();
     },
   };
