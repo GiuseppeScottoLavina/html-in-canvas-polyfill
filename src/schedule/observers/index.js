@@ -28,7 +28,7 @@ const PER_CANVAS = [observeFrameCap, observeCanvasResize, observeMutations, obse
 
 /**
  * Subscribes to BUS.CANVAS_MOUNTED/UNMOUNTING; returns the disposer. Every observer publishes damage ONLY through env.scheduler.damage. Canvases that are already active are started at once.
- * `ledger` (third argument, optional) lets the stylesheet observer wrap CSSStyleSheet/CSSStyleDeclaration methods (and adoptedStyleSheets), the animation hooks wrap element.animate / animation.play and the control-state observer wrap the
+ * `ledger` (third argument, optional) lets the stylesheet observer wrap CSSStyleSheet/CSSStyleDeclaration methods (and adoptedStyleSheets), the animation hooks wrap element.animate / animation.play and the timing members of Animation and its effect (a seek of a paused animation) and the control-state observer wrap the
  * form-control state setters (control-state.js); without it only <style>/<link> mutations, load events and fonts are watched, and a control's state written by script is not.
  * One observer failing to start is reported and does not stop the others.
  * @param {HicEnv} env

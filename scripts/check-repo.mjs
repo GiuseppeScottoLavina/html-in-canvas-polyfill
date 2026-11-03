@@ -145,7 +145,9 @@ if (!docsOnly) {
   // 16661 -> 16700 (2026-11-02, measured 16,691 with the step above; 16,647 with this step alone): the frame loop sleeps until a deferred build is due (+42: schedule/scheduler.js mayRest /
   // rest, snapshot/store/pump.js PumpResult.quietUntil, store.js host.busy; a build deferred 5 s cost 120 pumps and 241 rAF requests per second before it was due)
   // and the canvas with the oldest damage builds first (pump.js runPump; two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
-  if (total > 16700) problems.push(`G-size: core is ${total} code lines (> 16700)`);
+  // 16700 -> 16740 (2026-11-03, measured 16,737): a script seek or timing change of a paused, finished or idle animation repaints the drawable (+38:
+  // schedule/observers/animation-observer.js wraps the Animation timing members and the effect edits, and damages the retimed targets once per task)
+  if (total > 16740) problems.push(`G-size: core is ${total} code lines (> 16740)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

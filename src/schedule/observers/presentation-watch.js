@@ -10,7 +10,7 @@
  * - any attribute / child-list change in the document OUTSIDE the canvas layers (sibling combinators and `:has()` can restyle an ancestor from anywhere);
  * - pointer / focus boundary events that change `:hover`, `:active` or `:focus-within` of the canvas or one of its ancestors;
  * - transitions and animations (CSS events, and Web Animations through the script hook of animation-observer.js) running on the canvas or an ancestor: re-checked every frame
- *   while they run (a scheduler frame hook), then once more.
+ *   while they run (a scheduler frame hook), then once more; a script change of an animation's timing (a seek of a paused one) is reported by the same hook and re-checked the same way.
  */
 
 import { BUS } from '../../contracts/events.js';
