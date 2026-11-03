@@ -23,7 +23,7 @@ A picture has to be cloned, serialised, parsed, laid out and decoded by the brow
 What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTRACT.md#8-timing-model-summary-full-detail-in-architecture-adr-c)):
 
 - A change that needs no font or image to load is usually painted one frame later; one that does needs two frames or more.
-- Two shortcuts bring the common cases close to native: text typed in a single-line field is drawn into the surface at once, and inner scrolling is composed from cached pages of the scroller.
+- Two shortcuts bring the common cases close to native: text typed in a single-line field is drawn into the surface at once (in Chrome; in Firefox and Safari each keystroke waits for a snapshot), and inner scrolling is composed from cached pages of the scroller.
 - During a window resize drag, the canvas shows pixels from 1 to 3 frames earlier, stretched into the new box. No frame is blank, but the picture is not current, and a click can land on the new layout while the pixels still show the old one.
 
 ## Does it change my DOM?
