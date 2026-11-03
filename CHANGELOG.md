@@ -4,9 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.20] - 2026-11-03
+
+An app bundled from the ES module that imports only `install()` is 12.5 KB gzipped smaller (-8.1 %): it no longer carries the public feature table, which the runtime only read for each feature's status. The playground shows the polyfill's own error messages instead of "Script error". Behaviour is unchanged.
+
+- The core bundle grows to 348,388 bytes minified, 118,094 gzipped (+4 / +9 bytes) and to 16,699 code lines (+8). The effects, engines and GPU bundles are unchanged.
+
 ### Changed
 
-- ES-module builds: an app that imports only `install()` from the package entry no longer carries the public `FEATURES` table (every feature's `summary` and `reason`). The snapshot store read the status of a feature through `featureById`, which kept the whole table; it now reads `src/contracts/feature-status.js`, an id-to-status lookup that `npm run docs:sync` generates from `src/contracts/features.js` (still the single source; G-doc-sync fails when the lookup is stale), and the table is marked pure so a bundler drops it when the app imports neither `FEATURES` nor `featureById`. `FEATURES` and `featureById` are exported unchanged. Measured with esbuild on an app that imports only `install`, minified: 435,465 bytes, 154,531 gzipped (level 9) before; 399,846 / 142,037 after (-35,619 / -12,494 bytes, -8.1 % gzip). The classic core answers the lookup from the `{id, status}` rows it already carries: 348,384 / 118,085 -> 348,388 / 118,095 bytes. `dist/esm/index.js` itself, which exports both, grows by 1,759 bytes before the consumer's bundler runs. Test: G-bundle (`scripts/check-bundle.mjs`, run by `npm test`) bundles that app and fails if it carries any `summary` or `reason`, with two controls that must carry them all (the same app importing `FEATURES`; an app built from the sources whose lookup reads the table again), and checks that the lookup has the status of every id of `FEATURES` and no other id.
+- ES-module builds: an app that imports only `install()` from the package entry no longer carries the public `FEATURES` table (every feature's `summary` and `reason`). The snapshot store read the status of a feature through `featureById`, which kept the whole table; it now reads `src/contracts/feature-status.js`, an id-to-status lookup that `npm run docs:sync` generates from `src/contracts/features.js` (still the single source; G-doc-sync fails when the lookup is stale), and the table is marked pure so a bundler drops it when the app imports neither `FEATURES` nor `featureById`. `FEATURES` and `featureById` are exported unchanged. Measured with esbuild on an app that imports only `install`, minified: 435,465 bytes, 154,531 gzipped (level 9) before; 399,846 / 142,037 after (-35,619 / -12,494 bytes, -8.1 % gzip). The classic core answers the lookup from the `{id, status}` rows it already carries: 348,384 / 118,085 -> 348,388 / 118,095 bytes. `dist/esm/index.js` itself, which exports both, grows by 1,854 bytes (371 gzipped) before the consumer's bundler runs. Test: G-bundle (`scripts/check-bundle.mjs`, run by `npm test`) bundles that app and fails if it carries any `summary` or `reason`, with two controls that must carry them all (the same app importing `FEATURES`; an app built from the sources whose lookup reads the table again), and checks that the lookup has the status of every id of `FEATURES` and no other id.
+- CI: the macOS workflow no longer runs a second time on `main` after a merge. Every change already ran it in its pull request and the nightly run covers `main`; GitHub's hosted macOS arm64 runners are scarce, and the second run left jobs of the next pull request queued until GitHub cancelled them. It still runs on every pull request, nightly and on release tags.
 
 ### Fixed
 
@@ -416,7 +423,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.19...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.20...HEAD
+[0.1.0-preview.20]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.19...v0.1.0-preview.20
 [0.1.0-preview.19]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.18...v0.1.0-preview.19
 [0.1.0-preview.18]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.17...v0.1.0-preview.18
 [0.1.0-preview.17]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.16...v0.1.0-preview.17

@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.19`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.20`) unless dated.
 
 ## What is this?
 
@@ -32,7 +32,7 @@ Yes, and this is the main structural difference from native. The children of the
 
 ## Why is the core about 348 KB minified (118 KB gzipped)?
 
-In the current build, 348,384 bytes minified and 118,085 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 348,388 bytes minified and 118,094 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
 Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 343 KB, so they are approximate.
 
@@ -124,7 +124,7 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a preview of a proposed standard (`0.1.0-preview.19` on npm; a new preview goes to the `next` tag first and to `latest` once checked). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a preview of a proposed standard (`0.1.0-preview.20` on npm; a new preview goes to the `next` tag first and to `latest` once checked). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
