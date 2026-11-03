@@ -1,4 +1,4 @@
-import { test, assert, frames, sleep } from '/test/unit/lib/t.js';
+import { test, assert, frames, microtasks } from '/test/unit/lib/t.js';
 import { createRig } from './_dom.js';
 import { installAnimationHooks, observeAnimations } from '/src/schedule/observers/animation-observer.js';
 import { createPatchLedger } from '/src/api/patch.js';
@@ -71,6 +71,117 @@ test('a Web Animation started by script fires no event: the script hook reports 
   assert.equal(rig.sink.hooks.size, 1, 'animation.play: reported');
   ledger.restoreAll();
   assert.equal(Element.prototype.animate.toString().includes('[native code]'), true, 'the ledger restores the native method');
+});
+
+const TWO = '<div drawable id="d" style="width:200px"><div id="a" style="width:40px;height:20px;background:#0af">x</div></div>'
+  + '<div drawable id="e" style="width:200px"><div id="b" style="width:40px;height:20px;background:#fa0">y</div></div>';
+/**
+ * A rig with the script hooks and the observer; `paused(el)` is a Web Animation of `el` paused at 200 ms, once the loop its start began has ended;
+ * `dispose()` restores the hooks (one ledger at a time patches the prototypes).
+ */
+function hooked(t, html = TWO) {
+  const rig = createRig({ html });
+  const ledger = createPatchLedger(window);
+  const stopHooks = installAnimationHooks(rig.env, ledger);
+  const stop = observeAnimations(rig.env, rig.record);
+  const dispose = () => { stop(); stopHooks(); ledger.restoreAll(); };
+  t.cleanup(dispose);
+  /** @param {Element} el */
+  const paused = async (el) => {
+    const a = el.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(60px)' }], { duration: 1000 });
+    t.cleanup(() => a.cancel());
+    a.pause();
+    a.currentTime = 200;
+    await frames(2);
+    runHooks(rig);
+    assert.equal(rig.sink.hooks.size, 0, 'paused: the loop ended');
+    rig.sink.clear();
+    return a;
+  };
+  return { rig, stop, dispose, paused, a: rig.layerEl.querySelector('#a'), b: rig.layerEl.querySelector('#b') };
+}
+
+/** @type {Array<[string, (a: Animation, h: ReturnType<typeof hooked>) => void, string[]]>} change of a paused animation of #a, the drawables it damages */
+const RETIMES = [
+  ['currentTime setter', (a) => { a.currentTime = 700; }, ['d']],
+  ['startTime setter (it runs: the loop takes it)', (a) => { a.startTime = /** @type {number} */ (document.timeline.currentTime) - 300; }, ['d']],
+  ['playbackRate setter', (a) => { a.playbackRate = 2; }, ['d']],
+  ['updatePlaybackRate()', (a) => { a.updatePlaybackRate(0.5); }, ['d']],
+  ['pause() of an idle animation (it shows its first frame)', (a) => { a.cancel(); a.pause(); }, ['d']],
+  ['finish()', (a) => { a.finish(); }, ['d']],
+  ['cancel()', (a) => { a.cancel(); }, ['d']],
+  ['reverse() (it runs: the loop takes it)', (a) => { a.reverse(); }, ['d']],
+  ['effect.updateTiming()', (a) => { a.effect?.updateTiming({ delay: -100 }); }, ['d']],
+  ['effect.setKeyframes()', (a) => { /** @type {KeyframeEffect} */ (a.effect).setKeyframes([{ opacity: 1 }, { opacity: 0 }]); }, ['d']],
+  ['effect.target setter (the old and the new target)', (a, h) => { /** @type {KeyframeEffect} */ (a.effect).target = h.b; }, ['d', 'e']],
+  ['animation.effect setter (the old and the new target)', (a, h) => { a.effect = new KeyframeEffect(h.b, [{ opacity: 1 }, { opacity: 0 }], { duration: 1000 }); }, ['d', 'e']],
+];
+
+test('a script change of a paused animation\'s timing damages its target once, one microtask later; the frame-hook loop takes only an animation the change starts', async t => {
+  for (const [name, change, want] of RETIMES) {
+    const h = hooked(t);
+    const a = await h.paused(h.a);
+    change(a, h);
+    assert.equal(h.rig.sink.damage.length, 0, `${name}: nothing synchronously (the script may change more in this task)`);
+    await Promise.resolve();
+    assert.deepEqual(h.rig.sink.damage.map((d) => `${d.cause}:${d.drawable.id}`).sort(), want.map((id) => `animation:${id}`), name);
+    const runs = a.playState === 'running' || a.pending;
+    assert.equal(h.rig.sink.hooks.size, runs ? 1 : 0, `${name}: a frame hook only while it runs`);
+    a.cancel();
+    h.dispose();
+  }
+});
+
+test('a seek to the current time, a pause() of a paused animation and a change outside the layer damage nothing; several changes in one task damage once', async t => {
+  const h = hooked(t);
+  const a = await h.paused(h.a);
+  const outside = document.createElement('div');
+  document.body.append(outside);
+  t.cleanup(() => outside.remove());
+  const far = outside.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1000 });
+  t.cleanup(() => far.cancel());
+  far.pause();
+  await microtasks();
+  h.rig.sink.clear();
+  a.currentTime = a.currentTime;
+  a.playbackRate = a.playbackRate;
+  a.pause();
+  a.updatePlaybackRate(1);
+  far.currentTime = 500;
+  far.effect?.updateTiming({ delay: 10 });
+  await microtasks();
+  assert.equal(h.rig.sink.damage.length, 0, 'nothing changed inside the layer');
+  a.currentTime = 300;
+  a.currentTime = 400;
+  a.effect?.updateTiming({ delay: 20 });
+  a.playbackRate = 3;
+  await microtasks();
+  assert.deepEqual(h.rig.sink.causes(), ['animation'], 'positive control: the changes of one task are one damage of #d');
+  assert.equal(h.rig.sink.damage[0].drawable.id, 'd');
+  h.rig.sink.clear();
+  a.currentTime = 500;
+  h.stop();
+  await microtasks();
+  assert.equal(h.rig.sink.damage.length, 0, 'a change queued before the disposer damages nothing after it');
+});
+
+test('the timing hooks are restored by the ledger: every patched member of Animation, AnimationEffect and KeyframeEffect comes back by identity', async t => {
+  const members = [[Animation.prototype, ['play', 'pause', 'finish', 'cancel', 'reverse', 'updatePlaybackRate', 'currentTime', 'startTime', 'playbackRate', 'effect']],
+    [AnimationEffect.prototype, ['updateTiming']], [KeyframeEffect.prototype, ['setKeyframes', 'target']], [Element.prototype, ['animate']]];
+  const read = () => members.flatMap(([proto, keys]) => keys.map((key) => [`${proto.constructor.name}.${key}`, Object.getOwnPropertyDescriptor(proto, key)]));
+  const before = read();
+  const ledger = createPatchLedger(window);
+  const rig = createRig({ html: PAGE });
+  const stopHooks = installAnimationHooks(rig.env, ledger);
+  t.cleanup(() => { stopHooks(); ledger.restoreAll(); });
+  const same = (/** @type {any} */ x, /** @type {any} */ y) => x?.value === y?.value && x?.get === y?.get && x?.set === y?.set;
+  const during = read();
+  const unpatched = before.filter(([key, d], i) => same(d, during[i][1])).map(([key]) => key);
+  assert.deepEqual(unpatched, [], 'positive control: each member is patched while installed');
+  assert.deepEqual(ledger.restoreAll(), []);
+  stopHooks();
+  const left = before.filter(([key, d], i) => !same(d, read()[i][1])).map(([key]) => key);
+  assert.deepEqual(left, [], 'every member restored');
 });
 
 test('disposer removes the hook and the listeners', async t => {
