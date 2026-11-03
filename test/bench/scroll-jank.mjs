@@ -5,6 +5,9 @@
 //   moveGaps   intervals between consecutive offset changes of the live scroller during a gesture longer than 2 frame intervals (the native scroll stalled)
 //   paintGaps  frames in which the scroller moved and the canvas has not been repainted for more than 2 frame intervals (the drawn scroller stuttered)
 //   rafGaps    rAF intervals longer than 2 frame intervals during the gestures (a main-thread frame dropped)
+// These limits are relative to the median frame interval under the same load. The absolute frame budget is reported next to them: movingFrameHz (rAF frames per
+// second while the scroller moved), restHz and restShare (the rAF rate at rest before the throttling, and movingFrameHz over it), over8_33Share / over16_67Share
+// (share of those frame intervals longer than 1.5 x 8.33 / 1.5 x 16.67 ms: frames that missed a refresh at 120 / 60 Hz).
 // Chrome trace: RunTask > 8.33 / > 16.7 ms on the renderer main thread between marks; each long task attributed by trace slice names and, with --profile, by the
 // CPU profile samples inside it (self time per function). Snapshot stats: scroll compositor counters (composed vs fallback steps). Correctness: the settled
 // canvas is non-blank. CPU throttling (Emulation.setCPUThrottlingRate) approximates a slower device; it slows the renderer main thread only, not the GPU or raster.
@@ -51,14 +54,23 @@ const RECORDER = (sel) => `(() => {
 })()`;
 const STATS = `(() => { const c = window.__HIC__?.installed?.report?.().canvases ?? []; return c.map((x) => x.stats?.snapshot?.scroll ?? null); })()`;
 
-/** frame metrics of the recorded frames [t, scrollTop, paints] inside the gesture windows [t0, t1] (performance.now) */
-function frameMetrics(frames, windows) {
+const REST_HZ = `new Promise((ok) => { const ts = []; const f = (t) => { ts.push(t); if (ts.length < 61) requestAnimationFrame(f); else done(); }; const done = () => { const iv = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b); ok(iv.length ? +(1000 / iv[iv.length >> 1]).toFixed(1) : null); }; requestAnimationFrame(f); setTimeout(done, 2000); })`;
+/** the absolute frame budget of the animation frame intervals while the scroller moved: their rate, its share of the rest rate, the frames that missed a 120 / 60 Hz refresh */
+function frameBudget(intervals, restHz) {
+  const sum = intervals.reduce((a, b) => a + b, 0);
+  const hz = sum > 0 ? (1000 * intervals.length) / sum : null;
+  const over = (ms) => (intervals.length ? +(intervals.filter((d) => d > 1.5 * ms).length / intervals.length).toFixed(3) : null);
+  return { movingFrameHz: hz && +hz.toFixed(1), restHz: restHz ?? null, restShare: hz && restHz ? +(hz / restHz).toFixed(3) : null, over8_33Share: over(1000 / 120), over16_67Share: over(1000 / 60) };
+}
+/** frame metrics of the recorded frames [t, scrollTop, paints] inside the gesture windows [t0, t1] (performance.now); restHz: the rAF rate at rest */
+function frameMetrics(frames, windows, restHz = null) {
   const dts = []; for (let i = 1; i < frames.length; i++) dts.push(frames[i][0] - frames[i - 1][0]);
   const iv = H.stats(dts).p50 || 8.33;
   const lim = 2.5 * iv;
   let moves = 0, moveGaps = 0, paintGaps = 0, rafGaps = 0, maxMoveGap = 0, maxPaintGap = 0, maxRaf = 0, unpainted = 0;
   const startLag = [];
   let paintsIn = 0, spanIn = 0;
+  const moving = [];
   for (const [w0, w1] of windows) {
     const idx = []; for (let i = 1; i < frames.length; i++) if (frames[i][0] >= w0 && frames[i][0] <= w1) idx.push(i);
     const mv = idx.filter((i) => frames[i][1] !== frames[i - 1][1]);
@@ -66,7 +78,7 @@ function frameMetrics(frames, windows) {
     moves += mv.length;
     const first = mv[0], last = mv[mv.length - 1];
     for (let k = 1; k < mv.length; k++) { const d = frames[mv[k]][0] - frames[mv[k - 1]][0]; if (d > lim) { moveGaps++; maxMoveGap = Math.max(maxMoveGap, d); } }
-    for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; }
+    for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; moving.push(d); }
     // a move in frame m is painted in that frame and counted in the row m + 1
     const painted = (m) => m + 1 < frames.length && frames[m + 1][2] > frames[m][2];
     for (const m of mv) if (!painted(m)) unpainted++;
@@ -81,7 +93,7 @@ function frameMetrics(frames, windows) {
     paintsIn += pi.length; spanIn += frames[Math.min(frames.length - 1, last + 1)][0] - frames[first][0];
     startLag.push(+((pi.length ? frames[pi[0]][0] : frames[frames.length - 1][0]) - frames[first][0]).toFixed(1));
   }
-  return { frameMs: +iv.toFixed(2), moves, moveGaps, maxMoveGap: +maxMoveGap.toFixed(1), paintGaps, maxPaintGap: +maxPaintGap.toFixed(1), unpainted, paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: +maxRaf.toFixed(1), startLag };
+  return { frameMs: +iv.toFixed(2), moves, moveGaps, maxMoveGap: +maxMoveGap.toFixed(1), paintGaps, maxPaintGap: +maxPaintGap.toFixed(1), unpainted, paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: +maxRaf.toFixed(1), startLag, ...frameBudget(moving, restHz) };
 }
 
 /** self time per function of the CPU profile samples inside [t0, t1] (trace microseconds) */
@@ -159,6 +171,7 @@ try {
       const at = { x: r.x, y: r.y };
       if (input === 'touch' && TOUCH_COLD) await page.mouseMove(2, 2); else { await page.mouseMove(at.x - 30, at.y); await page.mouseMove(at.x, at.y); }
       await H.sleep(700);
+      const restHz = await page.evaluate(REST_HZ);
       await page.send('Emulation.setCPUThrottlingRate', { rate });
       const sc0 = await page.evaluate(STATS);
       const load = H.loadSnapshot({ ownPids: [browser.pid, process.pid] });
@@ -191,7 +204,7 @@ try {
       const m0 = evs?.find((e) => e.name === 'm0' && ['R', 'I', 'i', 'b', 'n'].includes(e.ph));
       const startTs = m0?.ts ?? 0;
       const sDelta = sc0.map((a, i) => (a && sc1[i] ? Object.fromEntries(Object.entries(sc1[i]).filter(([, v]) => typeof v === 'number').map(([k, v]) => [k, v - (a[k] ?? 0)])) : null));
-      const fm = frameMetrics(frames, windows);
+      const fm = frameMetrics(frames, windows, restHz);
       const inGesture = (l) => windows.some(([a, b]) => p0 + l.tsMs + l.durMs >= a && p0 + l.tsMs <= b);
       const long = (rep_.longFrames ?? []).map((l) => ({ at: +l.tsMs.toFixed(1), ms: +l.durMs.toFixed(1), gesture: inGesture(l), slices: l.topEvents.slice(0, 4).map(([n, d]) => `${n} ${d}`),
         ...(profile ? { js: profileSlice(profile, startTs + l.tsMs * 1000, startTs + (l.tsMs + l.durMs) * 1000), ours: profileStacks(profile, startTs + l.tsMs * 1000, startTs + (l.tsMs + l.durMs) * 1000).top } : {}) }));
@@ -200,7 +213,7 @@ try {
       out.runs.push(run);
       const rt = run.runTask ?? {};
       run.longInGesture = { over8_33: long.filter((l) => l.gesture).length, over16_7: long.filter((l) => l.gesture && l.ms > 16.7).length };
-      console.log(`${name.padEnd(20)} ${input.padEnd(5)} ${rate}x  moves ${String(fm.moves).padStart(3)} moveGaps ${fm.moveGaps} (max ${fm.maxMoveGap}) paintGaps ${fm.paintGaps} (max ${fm.maxPaintGap}) unpainted ${fm.unpainted} paintHz ${fm.paintHz} rafGaps ${fm.rafGaps} lag ${fm.startLag.join('/')} | RunTask>8.33 ${rt.over8_33ms} >16.7 ${rt.over16_7ms} (in gestures ${run.longInGesture.over8_33}/${run.longInGesture.over16_7}) max ${rt.max?.toFixed?.(1)} | ${sDelta[0] ? `composed ${sDelta[0].composed} fallbacks ${sDelta[0].fallbacks} plans ${sDelta[0].plans} refusals ${sDelta[0].refusals} pages ${sDelta[0].pages}` : 'no stats'} nonBlank ${nonBlank}${load.highLoad ? ' HIGHLOAD' : ''}`);
+      console.log(`${name.padEnd(20)} ${input.padEnd(5)} ${rate}x  moves ${String(fm.moves).padStart(3)} moveGaps ${fm.moveGaps} (max ${fm.maxMoveGap}) paintGaps ${fm.paintGaps} (max ${fm.maxPaintGap}) unpainted ${fm.unpainted} paintHz ${fm.paintHz} rafGaps ${fm.rafGaps} lag ${fm.startLag.join('/')} fps ${fm.movingFrameHz}/${fm.restHz} >8.33 ${fm.over8_33Share} >16.67 ${fm.over16_67Share} | RunTask>8.33 ${rt.over8_33ms} >16.7 ${rt.over16_7ms} (in gestures ${run.longInGesture.over8_33}/${run.longInGesture.over16_7}) max ${rt.max?.toFixed?.(1)} | ${sDelta[0] ? `composed ${sDelta[0].composed} fallbacks ${sDelta[0].fallbacks} plans ${sDelta[0].plans} refusals ${sDelta[0].refusals} pages ${sDelta[0].pages}` : 'no stats'} nonBlank ${nonBlank}${load.highLoad ? ' HIGHLOAD' : ''}`);
       for (const l of long.filter((x) => x.gesture).sort((x, y) => y.ms - x.ms).slice(0, 4)) console.log(`    ${l.ms}ms @${l.at}: ${l.slices.join(', ')}${l.ours ? ' | ' + l.ours.slice(0, 5).join(', ') : ''}`);
     }
   }
