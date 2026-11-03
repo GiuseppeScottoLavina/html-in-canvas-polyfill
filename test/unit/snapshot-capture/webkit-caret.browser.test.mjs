@@ -78,27 +78,27 @@ test('CSSOM edits that keep the rule count are seen after resetCaretRules (setPr
   }
 });
 
-test('a media condition that changes its result rebuilds the rule list without a reset (the iframe is made narrower than the query)', async () => {
-  const frame = document.createElement('iframe');
-  frame.style.cssText = 'width:400px;height:100px;border:0';
-  document.body.append(frame);
+test('a media condition that changes its result rebuilds the rule list without a reset (prefers-color-scheme, a viewport query: matchMedia answers)', () => {
+  // the page cannot change its own viewport or colour scheme here: matchMedia answers a query of its own (the module reads only matchMedia(q).matches)
+  const Q = '(min-width: 1.23456px)';
+  const mql = { matches: true };
+  const real = window.matchMedia;
+  window.matchMedia = /** @type {any} */ ((/** @type {string} */ q) => (q === Q ? mql : real.call(window, q)));
+  const style = document.createElement('style');
+  style.textContent = `@media ${Q} { .w1 { color: rgb(9, 9, 9) } }`;
+  document.head.append(style);
   try {
-    const doc = /** @type {Document} */ (frame.contentDocument);
-    doc.open();
-    doc.write('<style>@media (min-width: 300px) { .w { color: rgb(9, 9, 9) } }</style><div id="y" class="w" contenteditable>x</div>');
-    doc.close();
-    const y = /** @type {Element} */ (doc.getElementById('y'));
-    const ask = () => accentCaretOf(y, /** @type {Window} */ (frame.contentWindow).getComputedStyle(y));
-    assert.equal(ask(), false, 'wide: the rule applies (author colour)');
-    frame.style.width = '200px';
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    assert.equal(/** @type {Window} */ (frame.contentWindow).matchMedia('(min-width: 300px)').matches, false, 'precondition: the query fails now');
-    assert.equal(ask(), true, 'narrow: the rule no longer applies, the accent');
-    frame.style.width = '400px';
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    assert.equal(ask(), false, 'wide again');
+    const root = fixture('<div id="y" class="w1" contenteditable>x</div>');
+    const y = root.querySelector('#y');
+    const ask = () => accentCaretOf(y, getComputedStyle(y));
+    assert.equal(ask(), false, 'the query matches: the rule applies (author colour)');
+    mql.matches = false;
+    assert.equal(ask(), true, 'it no longer matches: the accent');
+    mql.matches = true;
+    assert.equal(ask(), false, 'matches again');
   } finally {
-    frame.remove();
+    window.matchMedia = real;
+    style.remove();
   }
 });
 
