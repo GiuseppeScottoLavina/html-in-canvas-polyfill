@@ -241,7 +241,9 @@ export async function touchScroll(ctx) {
   const { s } = ctx;
   if (ctx.platform === 'ios') {
     // measured: any touch (or mouse) pointer MOVE while down wedges the simulator's safaridriver session for good (every later command times out)
-    ctx.check('touchScroll: not drivable on the iOS Simulator (a WebDriver touch drag wedges the session): skipped, documented', true, null, 'n/a'); return;
+    ctx.check(ctx.physical
+      ? 'touchScroll: not driven on a physical iOS device (safaridriver cannot drag a finger; in the iOS Simulator a touch drag wedges the session): skipped, documented'
+      : 'touchScroll: not drivable on the iOS Simulator (a WebDriver touch drag wedges the session): skipped, documented', true, null, 'n/a'); return;
   }
   await openPoly(ctx);
   await mode(ctx, 'touchScroll');
@@ -294,7 +296,11 @@ export async function rotation(ctx) {
 /** Android: a tap on a field the virtual keyboard would cover reveals it (visual viewport shrinks or pans, the field stays visible, its drawn copy is still under it). */
 export async function keyboard(ctx) {
   const { s } = ctx;
-  if (ctx.platform !== 'android') { ctx.check('keyboard: not drivable on the iOS Simulator (its hardware keyboard keeps the virtual one hidden): skipped, documented', true, null, 'n/a'); return; }
+  if (ctx.platform !== 'android') {
+    ctx.check(ctx.physical
+      ? 'keyboard: not driven on a physical iOS device (the OS tap that opens the keyboard and its dismissal go through adb, Android only): skipped, documented'
+      : 'keyboard: not drivable on the iOS Simulator (its hardware keyboard keeps the virtual one hidden): skipped, documented', true, null, 'n/a'); return;
+  }
   await openPoly(ctx);
   await mode(ctx, 'keyboard');
   // the field low in the viewport, where the keyboard will cover it, and wholly inside it: its bottom 16 css px above the viewport's (a fixed scroll of late.y - 600
