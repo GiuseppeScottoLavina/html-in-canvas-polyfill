@@ -24,6 +24,7 @@ import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RECORDER } from '../xbrowser/lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, unsupported, gate, explainer } from './scenarios.mjs';
 import { launchAndroid, attachDevice, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
+import { verdicts as mergeVerdicts, verdictLabel } from './verdict.mjs';
 
 const platforms = (arg('platform') ?? 'ios,android').split(',');
 const only = arg('only')?.split(',');
@@ -69,24 +70,7 @@ async function runScenarios(s, srv, label, platform, control, scenarios, extra =
   return { rows, numbers };
 }
 
-/** Merge a real and a control run into per-scenario verdicts. */
-function verdicts(real, control) {
-  const out = {};
-  for (const row of real.rows) {
-    const ok = !row.threw && row.checks.length > 0 && row.checks.every((c) => c.ok);
-    // a scenario that only reported a documented skip (class n/a) has nothing to control
-    const want = row.checks.every((c) => c.cls === 'n/a') ? [] : (CONTROL_CLASSES[row.scenario] ?? []);
-    let ctl = noControl ? 'skipped' : 'n/a';
-    if (!noControl && want.length) {
-      const cr = control?.rows.find((r) => r.scenario === row.scenario);
-      const red = new Set((cr?.checks ?? []).filter((c) => !c.ok).map((c) => c.cls));
-      const missing = cr?.threw ? want : want.filter((c) => !red.has(c));
-      ctl = missing.length ? `DID NOT FAIL: ${missing.join(',')}${cr?.threw ? ' (control threw: ' + cr.threw.slice(0, 120) + ')' : ''}` : `red [${want.join(',')}]`;
-    }
-    out[row.scenario] = { pass: ok && (noControl || !want.length || ctl.startsWith('red')), control: ctl, failed: row.checks.filter((c) => !c.ok).map((c) => c.label), threw: row.threw, ms: row.ms };
-  }
-  return out;
-}
+const verdicts = (real, control) => mergeVerdicts(real, control, { noControl, controlClasses: CONTROL_CLASSES });
 
 const physicalSerial = arg('android-serial');
 const iosDevices = platforms.includes('ios') ? arg('ios-device')?.split(',').filter(Boolean) : undefined;
@@ -181,7 +165,7 @@ try {
 const table = [];
 for (const [label, D] of Object.entries(report.devices)) {
   if (!D.scenarios) { table.push({ device: label, scenario: '-', verdict: D.verdict ?? 'ERROR', control: '', first_failure: (D.reason ?? D.error ?? '').slice(0, 100) }); continue; }
-  for (const [sc, r] of Object.entries(D.scenarios)) table.push({ device: label + (D.standIn ? ' [stand-in]' : ''), scenario: sc, verdict: r.pass ? 'PASS' : 'FAIL', control: r.control.slice(0, 30), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 80) });
+  for (const [sc, r] of Object.entries(D.scenarios)) table.push({ device: label + (D.standIn ? ' [stand-in]' : ''), scenario: sc, verdict: verdictLabel(r), control: r.control.slice(0, 30), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 80) });
 }
 console.table(table);
 writeFileSync(join(outRoot, `mobile-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));
