@@ -163,7 +163,7 @@ function editableCaret(doc, focus, frame) {
 }
 
 /**
- * Measure the caret of the focused text control (canvas measureText with the control's font; caret-color; width 1 css px): the rect in the drawable's border-box frame and its color, or null when no caret applies.
+ * Measure the caret of the focused text control (canvas measureText with the control's font; caret-color; width 1 css px): the rect in the drawable's border-box frame and its color, or null when no caret applies. A fully transparent caret colour is no caret.
  * `frame` is the border box of `focus` expressed in that frame (LiveLayer.frameRect(focus)).
  * The caret is NOT drawn into the tile (ADR-D.2): CaptureResult.caret carries it and the store paints it on the retained surface (blink = O(caret rect), no tile build).
  * @param {Document} doc  the live document
@@ -190,7 +190,9 @@ export function measureCaret(doc, focus, frame) {
     if (focus.selectionStart !== focus.selectionEnd) return null;
     rect = textareaCaret(focus, cs, ctx, frame);
   } else if (/** @type {HTMLElement} */ (focus).isContentEditable) rect = editableCaret(doc, focus, frame);
-  return rect ? { rect, color: caretColor(doc, focus, cs) } : null;
+  const color = rect ? caretColor(doc, focus, cs) : '';
+  // a fully transparent caret (caret-color: transparent) paints nothing: no patch to draw at each blink
+  return rect && parseColor(color)?.[3] !== 0 ? { rect, color } : null;
 }
 
 /** @param {string} css a computed colour, rgb()/rgba() @returns {number[]|null} [r, g, b, a] */

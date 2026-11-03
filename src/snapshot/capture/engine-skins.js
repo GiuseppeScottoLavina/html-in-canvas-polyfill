@@ -21,6 +21,7 @@ import { currentEngine } from '../../util/engine.js';
  * @property {(win: Window, src: Element, clone: HTMLElement, f: any, dark: boolean, scrolled?: boolean) => void} paintWebkitBars  WebKit's system classic scrollbars (the vertical knob a `data-hic-bar="thumb"` box)
  * @property {(win: Window, src: Element) => boolean} webkitDarkBars
  * @property {(doc: Document, el: Element, cs: CSSStyleDeclaration) => string|null} [caretColor]  Safari's `caret-color: auto` colour on macOS (webkit-caret.js), null = the computed one
+ * @property {() => void} [stylesChanged]  the page's styles changed ('stylesheet' damage): the caret colour's cached rules are read again (webkit-caret.js)
  */
 
 const ENGINE_SKINS_KEY = Symbol.for('hic.engine-skins');

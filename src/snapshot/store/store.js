@@ -13,7 +13,7 @@ import { featureStatus } from '../../contracts/feature-status.js';
 import { inflateRect, intersectRect, roundOutRect, unionRect } from '../../util/rect.js';
 import { scopedFilterList } from '../../util/canvas-scope.js';
 import { createCaretPatch } from './caret-patch.js';
-import { DamageTracker } from './damage.js';
+import { DamageTracker, subtractRects } from './damage.js';
 import { decodeDataUrl, decodedAtOnce, drawTileAtomic, releaseImage } from './decode.js';
 import { createPumpState, defaultInteraction, NULL_RESOURCES, planGeometry, requestOf, runPump, sameGeometry } from './pump.js';
 import { rasterSourceFor } from './raster-source.js';
@@ -558,6 +558,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     });
     for (const r of out.fallback) markDamage(entry.el, r, 'scroll');
     if (!out.dirty.length) return;
+    followCaret(entry);
     round.wrote = true;
     round.composed = true;
     for (const r of out.dirty) round.dirty = round.dirty === null ? null : unionRect(round.dirty ?? null, r);
@@ -666,9 +667,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (l.startedAt < entry.caretLiveAt) return;
     const measured = l.result.caret;
     if (measured) {
-      const g = l.geo;
-      const rectPx = roundOutRect({ x: measured.rect.x + g.ink.left, y: measured.rect.y + g.ink.top, width: measured.rect.width, height: measured.rect.height }, g.scale);
-      entry.caret = { rectPx, rectCss: measured.rect, color: measured.color };
+      entry.caret = keptCaret(entry, focusOf(entry), measured, l.geo);
       entry.phase = interaction ? interaction.snapshot().caretVisible : true;
       entry.caretToggles = 0;
     } else if (l.rect === null || (entry.caret && covers(crop, entry.caret.rectPx))) {
@@ -716,6 +715,78 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (l.rect === null) counters.fullTiles++;
     settleCost(entry, l, env.now() - t0);
     releaseImage(l.image);
+  }
+
+  /** @param {Entry} entry @returns {Element|null} the focused element when it lies in this drawable (the tracker's focus) */
+  function focusOf(entry) {
+    const f = interaction?.snapshot().focus ?? null;
+    return f && entry.record.layer?.nearestDrawable(f) === entry.el ? f : null;
+  }
+
+  /**
+   * The part of the drawable where `control` can show (frame css): every inclusive ancestor up to the drawable that clips its overflow clips it to its client box (padding
+   * box less the bars) on the axes it clips; the field's own box only for a text area or an editable element (an input's caret lies in its box). An absolutely positioned
+   * box skips the ancestors that are not its containing block; a fixed one ends the walk. null: none of it shows.
+   * @param {Entry} entry @param {Element} control @param {import('../../contracts/types.js').LiveLayer} layer @returns {Rect|null}
+   */
+  function clipOf(entry, control, layer) {
+    const win = control.ownerDocument?.defaultView;
+    const BIG = 1e7;
+    /** @type {Rect|null} */
+    let clip = { x: -BIG, y: -BIG, width: 2 * BIG, height: 2 * BIG };
+    let pos = 'static';
+    for (let n = /** @type {Element|null} */ (control), i = 0; win && n && clip && pos !== 'fixed' && i < 64; i++) {
+      const cs = win.getComputedStyle(n);
+      const h = /** @type {HTMLElement} */ (n);
+      if (pos !== 'absolute' || cs.position !== 'static' || cs.transform !== 'none') {
+        const cx = cs.overflowX !== 'visible', cy = cs.overflowY !== 'visible';
+        const f = (cx || cy) && h.offsetWidth && (n !== control || n.localName === 'textarea' || h.isContentEditable) ? layer.frameRect(n) : null;
+        const k = f ? f.width / h.offsetWidth : 1;
+        if (f) clip = intersectRect(clip, { x: cx ? f.x + h.clientLeft * k : -BIG, y: cy ? f.y + h.clientTop * k : -BIG, width: cx ? h.clientWidth * k : 2 * BIG, height: cy ? h.clientHeight * k : 2 * BIG });
+        pos = cs.position;
+      }
+      if (n === entry.el) break;
+      n = h.assignedSlot ?? n.parentElement ?? /** @type {ShadowRoot} */ (n.getRootNode()).host ?? null;
+    }
+    return clip;
+  }
+
+  /** @param {Rect} r frame css @param {Geometry} g @returns {Rect} surface px, each edge on the nearest pixel (as the compositor snaps a port and a pinned tile) */
+  const nearPx = (r, g) => {
+    const s = g.scale, x = Math.round((r.x + g.ink.left) * s), y = Math.round((r.y + g.ink.top) * s);
+    return { x, y, width: Math.round((r.x + r.width + g.ink.left) * s) - x, height: Math.round((r.y + r.height + g.ink.top) * s) - y };
+  };
+
+  /**
+   * A measured caret as the store keeps it: rounded out to surface px, then clipped to where `control` shows (clipOf) and off the sticky elements the scroll compositor
+   * pins over its scrollers (opaque, above the content). null when none of it shows: no patch at all.
+   * @param {Entry} entry @param {Element|null} control @param {{rect: Rect, color: string}} c @param {Geometry} geo @returns {{rectPx: Rect, rectCss: Rect, color: string}|null}
+   */
+  function keptCaret(entry, control, c, geo) {
+    /** @type {Rect|null} */
+    let px = roundOutRect({ x: c.rect.x + geo.ink.left, y: c.rect.y + geo.ink.top, width: c.rect.width, height: c.rect.height }, geo.scale);
+    const layer = entry.record.layer;
+    if (control && layer) {
+      const clip = clipOf(entry, control, layer);
+      px = clip && intersectRect(px, nearPx(clip, geo));
+      for (const el of compositor.pinned(entry)) {
+        const f = px && !el.contains(control) ? layer.frameRect(el) : null;
+        if (f) px = subtractRects(/** @type {Rect} */ (px), [nearPx(f, geo)]).sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null;
+      }
+    }
+    return px ? { rectPx: px, rectCss: c.rect, color: c.color } : null;
+  }
+
+  /**
+   * A composed scroll step moved the content without a tile: the caret of the focused field is measured again from the live field, so it moves with its scroller and
+   * leaves the scrollport with it (it would otherwise blink where the field was until the next tile). Not measurable: no caret until a tile measures it.
+   * @param {Entry} entry
+   */
+  function followCaret(entry) {
+    const control = focusOf(entry);
+    const frame = control && extras.caretOf ? entry.record.layer?.frameRect(control) : null;
+    const c = control && frame && extras.caretOf ? extras.caretOf(control, frame) : null;
+    entry.caret = c && entry.geo ? keptCaret(entry, control, c, entry.geo) : null;
   }
 
   /** Paint or lift the caret so the surface shows what the blink phase wants. Costs O(caret rect), never a build. @param {Entry} entry @param {Round} round */
@@ -776,7 +847,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     entry.ovOk = control;
     entry.ovShown = entry.ovSeq;
     const c = plan.caret;
-    entry.caret = c ? { rectPx: roundOutRect({ x: c.rect.x + geo.ink.left, y: c.rect.y + geo.ink.top, width: c.rect.width, height: c.rect.height }, geo.scale), rectCss: c.rect, color: c.color } : null;
+    entry.caret = c ? keptCaret(entry, control, c, geo) : null;
     entry.phase = interaction ? interaction.snapshot().caretVisible : true;
     entry.caretToggles = 0;
     round.wrote = true;
@@ -798,9 +869,10 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (ask !== null) {
       if (!extras.caretOf || !geo || !layer || /** @type {Document|ShadowRoot} */ (ask.getRootNode()).activeElement !== ask) return;
       const frame = layer.frameRect(ask);
-      const c = frame ? extras.caretOf(ask, frame) : null;
-      if (!c) return;
-      next = { rectPx: roundOutRect({ x: c.rect.x + geo.ink.left, y: c.rect.y + geo.ink.top, width: c.rect.width, height: c.rect.height }, geo.scale), rectCss: c.rect, color: c.color };
+      if (!frame) return;
+      // no caret to show (a selection, a transparent caret-color): the one shown elsewhere goes all the same
+      const c = extras.caretOf(ask, frame);
+      next = c && keptCaret(entry, ask, c, geo);
     }
     // a caret shown elsewhere is lifted first (syncCaret only toggles visibility)
     const old = entry.caret;

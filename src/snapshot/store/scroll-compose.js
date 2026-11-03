@@ -649,6 +649,9 @@ export function createScrollCompositor(deps) {
     /** @param {Entry} entry @returns {Element[]} scrollers with a cache (the pump records their offsets per build) */
     scrollers: (entry) => [...(caches.get(entry)?.keys() ?? [])],
 
+    /** @param {Entry} entry @returns {Element[]} the sticky elements pinned over the cached scrollers (the store paints no caret under them) */
+    pinned: (entry) => [...(caches.get(entry)?.values() ?? [])].flatMap((c) => c.plan.pinned),
+
     stats: () => ({ ...counters }),
 
     /** @param {Entry} entry */

@@ -9,8 +9,8 @@ import { ENGINE_CSS, consumeSkinPending, onSkinReady, paintNativeControl } from 
 import { registerEngineSkins } from './snapshot/capture/engine-skins.js';
 import { paintWebkitBars, webkitDarkBars } from './snapshot/capture/webkit-bars.js';
 import { webkitShadowStyle } from './snapshot/capture/webkit-shadow.js';
-import { webkitCaretColor } from './snapshot/capture/webkit-caret.js';
+import { resetCaretRules, webkitCaretColor } from './snapshot/capture/webkit-caret.js';
 
-registerEngineSkins({ css: ENGINE_CSS, paintNativeControl, consumeSkinPending, onSkinReady, webkitShadowStyle, paintWebkitBars, webkitDarkBars, caretColor: webkitCaretColor });
+registerEngineSkins({ css: ENGINE_CSS, paintNativeControl, consumeSkinPending, onSkinReady, webkitShadowStyle, paintWebkitBars, webkitDarkBars, caretColor: webkitCaretColor, stylesChanged: resetCaretRules });
 
 export { paintNativeControl, consumeSkinPending, onSkinReady, webkitShadowStyle, paintWebkitBars, webkitDarkBars, webkitCaretColor };
