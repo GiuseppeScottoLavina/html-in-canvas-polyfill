@@ -17,8 +17,15 @@ import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts,
 
 /** at most this many elements in the scroller are inspected (larger: no composition; the node budget's absolute limit is 20000) */
 const MAX_SCAN = 20000;
-/** elements inspected per step of a large scroller's scan (planSteps) */
+/** elements inspected per step of a large scroller's scan at most (planSteps) */
 const SCAN_STEP = 2500;
+/**
+ * A step of the plan yields once it has run this long (ms; the clock is read every SCAN_CLOCK elements and at every hit test). The pump admits side jobs while it has
+ * spent under 4 ms, so one pump runs two steps at most. Measured (headless Chrome, a 1,058 px port over 10,000 rows): the 32 x 32 hit-test grid took 168 ms in one
+ * task, 1,100 ms at 6x CPU throttling.
+ */
+const STEP_MS = 3;
+const SCAN_CLOCK = 64;
 const UNSAFE_TAGS = new Set(['video', 'canvas', 'iframe', 'embed', 'object']);
 
 /** @param {string} v @returns {number} */
@@ -104,10 +111,13 @@ function pinnable(el, cs) {
 
 /**
  * Nothing but the scroller or its descendants is hit on a grid over its scrollport (32 css px), and every point lies in the viewport. Points outside a rounded
- * corner of the port are skipped (what is hit there is what lies behind the corner).
+ * corner of the port are skipped (what is hit there is what lies behind the corner). In steps: a hit test costs in proportion to the scroller's children (Chrome
+ * 156: 165 us per point over 10,000 rows), so the grid yields every STEP_MS and goes on only while `still()` says nothing it tests has changed.
  * @param {Document} doc @param {Element} scroller @param {DOMRect} port viewport rect of the scrollport @param {ScrollPlan['round']} round
+ * @param {() => number} now @param {number} t0  when the current step began @param {() => boolean} still
+ * @returns {Generator<void, boolean, void>}
  */
-function portUnobstructed(doc, scroller, port, round) {
+function* portUnobstructed(doc, scroller, port, round, now, t0, still) {
   const win = doc.defaultView;
   if (!win || port.left < 0 || port.top < 0 || port.right > win.innerWidth || port.bottom > win.innerHeight) return false;
   const root = /** @type {Document|ShadowRoot} */ (scroller.getRootNode());
@@ -119,6 +129,11 @@ function portUnobstructed(doc, scroller, port, round) {
     for (let r = 0; r < rows; r++) {
       const y = port.top + 1 + ((port.height - 2) * r) / Math.max(1, rows - 1);
       if (round && outsideCorner(x - port.left, y - port.top, port.width, port.height, round)) continue;
+      if (now() - t0 > STEP_MS) {
+        yield;
+        if (!still()) return false;
+        t0 = now();
+      }
       const top = hit.elementFromPoint(x, y);
       if (!top || (top !== scroller && !scroller.contains(top))) return false;
     }
@@ -163,8 +178,9 @@ export function planScrollPages(doc, layer, scroller, drawable) {
 }
 
 /**
- * planScrollPages in steps: the scan of a large scroller yields after every SCAN_STEP elements, so the store can spread it over several post-frame tasks
- * (Capture.scrollPlan). A step that finds the scroller changed in between answers null (the store plans it again later).
+ * planScrollPages in steps: the scan of a large scroller yields after every SCAN_STEP elements or STEP_MS, and the hit-test grid every STEP_MS, so the store can
+ * spread it over several post-frame tasks (Capture.scrollPlan). A step that finds the scroller changed in between (its subtree's size, its place in the viewport,
+ * the viewport's size) answers null (the store plans it again after newer damage or a move).
  * @param {Document} doc @param {LiveLayer} layer @param {Element} scroller @param {Element} drawable @param {string} [engine]  the engine (tests pass one)
  * @returns {Generator<void, ScrollPlan|null, void>}
  */
@@ -227,10 +243,23 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   const pinned = [];
   let otherZ = -Infinity;
   const count = all.length;
+  const clock = win.performance ?? Date;
+  const now = () => clock.now();
+  // between two steps: the subtree's size, the scroller's place in the viewport and the viewport's size are those the plan read (what else changes in the content
+  // meanwhile is the damage the compositor tracks once the plan is installed, as for a change after it: the pages are built from the DOM of their own time)
+  const vr = s.getBoundingClientRect();
+  const vw = win.innerWidth, vh = win.innerHeight;
+  const still = () => {
+    if (all.length !== count || !s.isConnected || win.innerWidth !== vw || win.innerHeight !== vh) return false;
+    const r = s.getBoundingClientRect();
+    return r.left === vr.left && r.top === vr.top && r.width === vr.width && r.height === vr.height;
+  };
+  let t0 = now();
   for (let i = 0; i < count; i++) {
-    if (i && i % SCAN_STEP === 0) {
+    if (i && (i % SCAN_STEP === 0 || (i % SCAN_CLOCK === 0 && now() - t0 > STEP_MS))) {
       yield;
-      if (all.length !== count || !s.isConnected) return null;
+      if (!still()) return null;
+      t0 = now();
     }
     const el = all[i];
     if (drawables.has(el) || UNSAFE_TAGS.has(el.localName) || animated.has(el) || el.shadowRoot) return null;
@@ -247,8 +276,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     otherZ = Math.max(otherZ, ecs.zIndex === 'auto' ? 0 : Number(ecs.zIndex));
   }
   if (pinned.some((p) => Number(win.getComputedStyle(p).zIndex) <= otherZ)) return null;
-  const vr = s.getBoundingClientRect();
-  if (!portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round)) return null;
+  if (!(yield* portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round, now, t0, still))) return null;
   let bar = null;
   if (gutterX > 0.5) {
     // a classic bar is composed where the thumb's geometry is the one the clone paints and moves by whole surface pixels: Chromium's bars (chromiumVerticalBar /
