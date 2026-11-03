@@ -558,7 +558,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     });
     for (const r of out.fallback) markDamage(entry.el, r, 'scroll');
     if (!out.dirty.length) return;
-    followCaret(entry);
+    entry.caret = liveCaret(entry, focusOf(entry));
     round.wrote = true;
     round.composed = true;
     for (const r of out.dirty) round.dirty = round.dirty === null ? null : unionRect(round.dirty ?? null, r);
@@ -717,12 +717,6 @@ export function createSnapshotStore(env, capture, extras = {}) {
     releaseImage(l.image);
   }
 
-  /** @param {Entry} entry @returns {Element|null} the focused element when it lies in this drawable (the tracker's focus) */
-  function focusOf(entry) {
-    const f = interaction?.snapshot().focus ?? null;
-    return f && entry.record.layer?.nearestDrawable(f) === entry.el ? f : null;
-  }
-
   /**
    * The part of the drawable where `control` can show (frame css): every inclusive ancestor up to the drawable that clips its overflow clips it to its client box (padding
    * box less the bars) on the axes it clips; the field's own box only for a text area or an editable element (an input's caret lies in its box). An absolutely positioned
@@ -730,23 +724,17 @@ export function createSnapshotStore(env, capture, extras = {}) {
    * @param {Entry} entry @param {Element} control @param {import('../../contracts/types.js').LiveLayer} layer @returns {Rect|null}
    */
   function clipOf(entry, control, layer) {
-    const win = control.ownerDocument?.defaultView;
-    const BIG = 1e7;
+    const win = control.ownerDocument?.defaultView, B = 1e7;
     /** @type {Rect|null} */
-    let clip = { x: -BIG, y: -BIG, width: 2 * BIG, height: 2 * BIG };
-    let pos = 'static';
+    let clip = { x: -B, y: -B, width: 2 * B, height: 2 * B }, pos = 'static';
     for (let n = /** @type {Element|null} */ (control), i = 0; win && n && clip && pos !== 'fixed' && i < 64; i++) {
-      const cs = win.getComputedStyle(n);
-      const h = /** @type {HTMLElement} */ (n);
+      const cs = win.getComputedStyle(n), h = /** @type {HTMLElement} */ (n), cx = cs.overflowX !== 'visible', cy = cs.overflowY !== 'visible';
       if (pos !== 'absolute' || cs.position !== 'static' || cs.transform !== 'none') {
-        const cx = cs.overflowX !== 'visible', cy = cs.overflowY !== 'visible';
-        const f = (cx || cy) && h.offsetWidth && (n !== control || n.localName === 'textarea' || h.isContentEditable) ? layer.frameRect(n) : null;
-        const k = f ? f.width / h.offsetWidth : 1;
-        if (f) clip = intersectRect(clip, { x: cx ? f.x + h.clientLeft * k : -BIG, y: cy ? f.y + h.clientTop * k : -BIG, width: cx ? h.clientWidth * k : 2 * BIG, height: cy ? h.clientHeight * k : 2 * BIG });
+        const f = (cx || cy) && h.offsetWidth && (n !== control || n.localName === 'textarea' || h.isContentEditable) ? layer.frameRect(n) : null, k = f ? f.width / h.offsetWidth : 1;
+        if (f) clip = intersectRect(clip, { x: cx ? f.x + h.clientLeft * k : -B, y: cy ? f.y + h.clientTop * k : -B, width: cx ? h.clientWidth * k : 2 * B, height: cy ? h.clientHeight * k : 2 * B });
         pos = cs.position;
       }
-      if (n === entry.el) break;
-      n = h.assignedSlot ?? n.parentElement ?? /** @type {ShadowRoot} */ (n.getRootNode()).host ?? null;
+      n = n === entry.el ? null : h.assignedSlot ?? n.parentElement ?? /** @type {ShadowRoot} */ (n.getRootNode()).host ?? null;
     }
     return clip;
   }
@@ -763,31 +751,30 @@ export function createSnapshotStore(env, capture, extras = {}) {
    * @param {Entry} entry @param {Element|null} control @param {{rect: Rect, color: string}} c @param {Geometry} geo @returns {{rectPx: Rect, rectCss: Rect, color: string}|null}
    */
   function keptCaret(entry, control, c, geo) {
+    const layer = entry.record.layer, clip = control && layer ? clipOf(entry, control, layer) : undefined;
     /** @type {Rect|null} */
     let px = roundOutRect({ x: c.rect.x + geo.ink.left, y: c.rect.y + geo.ink.top, width: c.rect.width, height: c.rect.height }, geo.scale);
-    const layer = entry.record.layer;
-    if (control && layer) {
-      const clip = clipOf(entry, control, layer);
-      px = clip && intersectRect(px, nearPx(clip, geo));
-      for (const el of compositor.pinned(entry)) {
-        const f = px && !el.contains(control) ? layer.frameRect(el) : null;
-        if (f) px = subtractRects(/** @type {Rect} */ (px), [nearPx(f, geo)]).sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null;
-      }
+    if (clip !== undefined) px = clip && intersectRect(px, nearPx(clip, geo));
+    for (const el of control && layer ? compositor.pinned(entry) : []) {
+      const f = px && !el.contains(/** @type {Element} */ (control)) ? layer?.frameRect(el) : null;
+      if (f) px = subtractRects(/** @type {Rect} */ (px), [nearPx(f, geo)]).sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null;
     }
     return px ? { rectPx: px, rectCss: c.rect, color: c.color } : null;
   }
 
   /**
-   * A composed scroll step moved the content without a tile: the caret of the focused field is measured again from the live field, so it moves with its scroller and
-   * leaves the scrollport with it (it would otherwise blink where the field was until the next tile). Not measurable: no caret until a tile measures it.
-   * @param {Entry} entry
+   * The caret of `control` measured from the live field now (store.caretNow, and every composed scroll step: the content moved without a tile, so the caret moves with
+   * its scroller and leaves the scrollport with it instead of blinking where the field was). null: no focused field of this drawable, or no caret shows.
+   * @param {Entry} entry @param {Element|null} control  a field of this drawable @returns {{rectPx: Rect, rectCss: Rect, color: string}|null}
    */
-  function followCaret(entry) {
-    const control = focusOf(entry);
-    const frame = control && extras.caretOf ? entry.record.layer?.frameRect(control) : null;
-    const c = control && frame && extras.caretOf ? extras.caretOf(control, frame) : null;
-    entry.caret = c && entry.geo ? keptCaret(entry, control, c, entry.geo) : null;
+  function liveCaret(entry, control) {
+    const frame = control && entry.geo && extras.caretOf ? entry.record.layer?.frameRect(control) : null;
+    const c = control && frame ? extras.caretOf?.(control, frame) : null;
+    return c && entry.geo ? keptCaret(entry, control, c, entry.geo) : null;
   }
+
+  /** @param {Entry} entry @returns {Element|null} the tracker's focus when it lies in this drawable */
+  const focusOf = (entry) => { const f = interaction?.snapshot().focus ?? null; return f && entry.record.layer?.nearestDrawable(f) === entry.el ? f : null; };
 
   /** Paint or lift the caret so the surface shows what the blink phase wants. Costs O(caret rect), never a build. @param {Entry} entry @param {Round} round */
   function syncCaret(entry, round) {
@@ -867,12 +854,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     /** @type {{rectPx: Rect, rectCss: Rect, color: string}|null} */
     let next = null;
     if (ask !== null) {
-      if (!extras.caretOf || !geo || !layer || /** @type {Document|ShadowRoot} */ (ask.getRootNode()).activeElement !== ask) return;
-      const frame = layer.frameRect(ask);
-      if (!frame) return;
+      if (!extras.caretOf || !geo || !layer || /** @type {Document|ShadowRoot} */ (ask.getRootNode()).activeElement !== ask || !layer.frameRect(ask)) return;
       // no caret to show (a selection, a transparent caret-color): the one shown elsewhere goes all the same
-      const c = extras.caretOf(ask, frame);
-      next = c && keptCaret(entry, ask, c, geo);
+      next = liveCaret(entry, ask);
     }
     // a caret shown elsewhere is lifted first (syncCaret only toggles visibility)
     const old = entry.caret;

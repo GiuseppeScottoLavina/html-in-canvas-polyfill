@@ -40,7 +40,7 @@ export function webkitAccentCaret(caretAt, colorAt, caretIsColor) {
 
 /** @typedef {{sel: string, value: string, important: boolean}} Decl */
 
-/** @typedef {{sig: string, color: Decl[], caret: Decl[], media: MediaQueryList[], matched: boolean[]}} Rules */
+/** @typedef {{sig: string, color: Decl[], caret: Decl[], media: Array<[MediaQueryList, boolean]>}} Rules  media: each condition evaluated and its result then */
 
 /** @type {WeakMap<Document|ShadowRoot, Rules>} */
 const ruleCache = new WeakMap();
@@ -52,9 +52,7 @@ let nextSheet = 0;
 /** bumped by resetCaretRules: a change the rule count does not show (a declaration edited, a rule replaced, replaceSync) */
 let epoch = 0;
 
-/**
- * The page's styles changed (the core's 'stylesheet' damage, EngineSkins.stylesChanged): every cached rule list and the system accent are read again at their next use.
- */
+/** The page's styles changed (the core's 'stylesheet' damage, EngineSkins.stylesChanged): every cached rule list and the system accent are read again at their next use. */
 export function resetCaretRules() {
   epoch++;
   accents = new WeakMap();
@@ -71,19 +69,14 @@ function rulesOf(root) {
   const count = (/** @type {CSSStyleSheet} */ s) => { try { return s.cssRules.length; } catch { return -1; } };
   const sig = `${epoch}|` + sheets.map((s) => { if (!sheetIds.has(s)) sheetIds.set(s, nextSheet++); return `${sheetIds.get(s)}:${count(s)}`; }).join(',');
   const hit = ruleCache.get(root);
-  if (hit && hit.sig === sig && hit.media.every((m, i) => m.matches === hit.matched[i])) return hit;
+  if (hit && hit.sig === sig && hit.media.every(([m, was]) => m.matches === was)) return hit;
   /** @type {Rules} */
-  const out = { sig, color: [], caret: [], media: [], matched: [] };
-  let known = win ? queries.get(win) : undefined;
-  if (win && !known) queries.set(win, (known = new Map()));
-  /** @param {string} q */
-  const media = (q) => {
-    if (!q || !win || !known) return true;
-    let m = known.get(q);
-    if (!m) known.set(q, (m = win.matchMedia(q)));
-    out.media.push(m);
-    out.matched.push(m.matches);
-    return m.matches;
+  const out = { sig, color: [], caret: [], media: [] };
+  const mqls = win ? queries.get(win) ?? /** @type {Map<string, MediaQueryList>} */ (queries.set(win, new Map()).get(win)) : null;
+  const media = (/** @type {string} */ q) => {
+    const m = q && win && mqls ? mqls.get(q) ?? /** @type {MediaQueryList} */ (mqls.set(q, win.matchMedia(q)).get(q)) : null;
+    if (m) out.media.push([m, m.matches]);
+    return !m || m.matches;
   };
   /** @param {CSSRuleList|undefined} list */
   const walk = (list) => {
