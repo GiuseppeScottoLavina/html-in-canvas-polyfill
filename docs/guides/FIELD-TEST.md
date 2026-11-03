@@ -65,7 +65,7 @@ A summary with one green, amber or red line per part ends the step (Continue, or
 | `paintGaps`, `stuttersPerSec`, `maxPaintGap` | stutters: canvas update gaps longer than 2.5 frame intervals over an unpainted move; per second of movement; the longest |
 | `moveGaps`, `maxMoveGap`, `rafGaps`, `maxRaf` | the list itself stalled (gaps between moves), animation frames dropped |
 | `startLag` | per stretch of movement, from the first move to the first canvas update (the first-step lag) |
-| `stats.scroll` | the scroll compositor's counters during the part (`composed`, `fallbacks`, `refusals`, `plans`, `pages`, ...), from `__HIC__.installed.report().canvases[i].stats.snapshot.scroll` |
+| `stats.scroll` | the scroll compositor's counters during the part (`composed`, `fallbacks`, `refusals` and their reasons `refusedBy`, `plans`, `pages`, ...), from `__HIC__.installed.report().canvases[i].stats.snapshot.scroll` |
 | `stats.cloneMsP50` ... `decodeMsP95` | the snapshot's clone and decode times (p50, p95) at the end of the part |
 | `pixels.<list>.jumps[]` | per jump: composed from cached pages or not, `settlePaints` (0: no paint after the first one, the frame is final), `diff` (share of the canvas pixels with a channel more than 16 levels apart), its bounding box |
 
