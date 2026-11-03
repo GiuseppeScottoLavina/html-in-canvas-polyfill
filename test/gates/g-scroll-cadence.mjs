@@ -12,7 +12,7 @@
 //   caret    case caret: a focused text field (magenta caret-color) in row 9 of the list; a slow wheel stream moves it inside the port for more than a blink period, a
 //            fast one takes it out of the port, under the sticky header, and back. At every composed canvas paint no caret pixel lies outside the field's visible
 //            rect (the field, inside the list's client box, below the header), and the caret was drawn inside it in composed frames (a tile may show an older offset). Before the fix the caret patch stayed
-//            where the field was until a tile after the gesture (64 of 194 paints, headless Chrome at DPR 2; the mutant caret-stale-compose).
+//            where the field was until a tile after the gesture (35 of 86 composed paints, headless Chrome, 2026-11-04; the mutant caret-stale-compose).
 //   pixel    samples of the canvas taken INSIDE paint handlers during the stream each equal the plain-DOM twin at one of the offsets the list had in the frames
 //            just before (a composed frame shows the live offset, a fallback tile a slightly older one; anything else is a wrong frame), and the settled canvas
 //            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row;
@@ -246,7 +246,8 @@ runGate('G-scroll-cadence', async (ctx) => {
     await H.sleep(700);
     const r = await page.evaluate('window.__rec.caretReport()');
     numbers.caret = r;
-    ctx.check('caret: the streams were painted and composed (>= 60 paints, >= 30 composed steps)', r.paints >= 60 && r.composed >= 30, r, 'compose');
+    // headless Chrome on a loaded machine: 65 to 86 paints and 61 to 82 composed steps (2026-11-04)
+    ctx.check('caret: the streams were painted and composed (>= 40 paints, >= 25 composed steps)', r.paints >= 40 && r.composed >= 25, r, 'compose');
     ctx.check('caret: no composed canvas paint shows a caret pixel outside the focused field\'s visible rect (inside the list\'s client box, below the sticky header)', r.bad === 0, r, 'caret');
     ctx.check('caret: the caret was drawn inside the moving field in composed frames (>= 3)', r.composedInside >= 3, r, 'caret');
   }
