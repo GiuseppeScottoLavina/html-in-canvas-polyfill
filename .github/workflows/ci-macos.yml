@@ -6,8 +6,10 @@ name: CI macOS
 
 on:
   pull_request:
+  # Not on pushes to main: every change reaches main through a pull request that ran this workflow, and the nightly run covers main. GitHub's hosted
+  # macOS arm64 capacity is short ("not acquired by Runner of type hosted even after multiple attempts"): a second run of the same commit after each
+  # merge left queued jobs of the next pull request cancelled.
   push:
-    branches: [main]
     tags: ['v*']
   schedule:
     # nightly: the whole mutation suite
