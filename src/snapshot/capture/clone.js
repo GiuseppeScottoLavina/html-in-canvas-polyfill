@@ -275,7 +275,9 @@ function cloneElement(ctx, src, known) {
   }
   let clone = ctx.doc.importNode(src, false);
   cleanAttributes(clone);
-  const ok = syncNodeState(ctx.env, src, clone, ctx.req, ctx.unsupported);
+  // one computed-style object per element, shared with the state sync (WebKit's shadow rewrite, the engines bundle's control skins)
+  const cs = known ?? ctx.env.window.getComputedStyle(src);
+  const ok = syncNodeState(ctx.env, src, clone, ctx.req, ctx.unsupported, cs);
   ctx.nodes++;
   if (ok === false) {
     const e = ctx.unsupported[ctx.unsupported.length - 1];
@@ -284,7 +286,6 @@ function cloneElement(ctx, src, known) {
   const replaced = ok !== true;
   if (replaced) clone = /** @type {Element} */ (ok);
   applyInteractionClasses(src, clone, ctx.ix);
-  const cs = known ?? ctx.env.window.getComputedStyle(src);
   if (!replaced && (!scoped || styledByShadow(src))) inlineComputed(src, clone, cs);
   if (src.namespaceURI === 'http://www.w3.org/2000/svg') svgContentMask(src, clone, cs, ctx.req.resources);
   // backdrop of the optimistic text overlay (text-overlay.js): the field without its text

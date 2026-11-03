@@ -378,8 +378,8 @@ function matchToggleZoom(src, clone, scale) {
   appendInlineStyle(clone, `zoom:${Math.floor(((own * dpr) / root) * 1e5) / 1e5}!important;`);
 }
 
-/** @param {HTMLInputElement} src @param {Element} clone @param {number} scale */
-function syncInput(src, clone, scale) {
+/** @param {HTMLInputElement} src @param {Element} clone @param {number} scale @param {CSSStyleDeclaration} [cs] */
+function syncInput(src, clone, scale, cs) {
   const type = (src.type || 'text').toLowerCase();
   if (type === 'checkbox' || type === 'radio') matchToggleZoom(src, clone, scale);
   if (type === 'checkbox' && src.indeterminate) paintIndeterminate(src, clone);
@@ -389,7 +389,7 @@ function syncInput(src, clone, scale) {
     clone.setAttribute('value', src.value);
   } else if (type !== 'file' && type !== 'image' && (src.hasAttribute('value') || !BUTTON_LABEL_TYPES.has(type))) {
     clone.setAttribute('value', src.value);
-    if (src.scrollLeft > 0 && TEXT_SCROLL_TYPES.has(type)) scrollInputText(src, clone);
+    if (src.scrollLeft > 0 && TEXT_SCROLL_TYPES.has(type)) scrollInputText(src, clone, cs);
   }
   // the intrinsic width of a date / time field is the sum of its fields' text, which the image sets a device pixel narrower or wider than the page at a fractional
   // device pixel ratio (Chrome 155, F6 at DPR 1.25 / 1.5: 1-2 device px, every control after it in its line moved): the clone keeps the live border box
@@ -407,10 +407,9 @@ const TEXT_SCROLL_TYPES = new Set(['text', 'search', 'url', 'tel', 'password', '
 /**
  * A text field whose text is scrolled (typing past the right edge) shows the END of the value in the live page. The clone input cannot be scrolled from markup, so the text is shifted
  * by a negative text-indent of the same distance (left-to-right fields; the inner editor clips it exactly like the live scroll does).
- * @param {HTMLInputElement} src @param {Element} clone
+ * @param {HTMLInputElement} src @param {Element} clone @param {CSSStyleDeclaration} [cs]
  */
-function scrollInputText(src, clone) {
-  const cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src);
+function scrollInputText(src, clone, cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src)) {
   if (cs.direction !== 'ltr') return;
   appendInlineStyle(clone, `text-indent:calc(${cs.textIndent} - ${src.scrollLeft}px)!important;`);
 }
@@ -468,16 +467,17 @@ function syncEmbedded(src, clone, req, unsupported) {
  * @param {Element} clone
  * @param {CaptureRequest} req
  * @param {UnsupportedEntry[]} unsupported
+ * @param {CSSStyleDeclaration} [cs]  computed style of `src`, when the caller has it (one read per element instead of one per step that needs it)
  * @returns {boolean|Element}
  */
-export function syncNodeState(env, src, clone, req, unsupported) {
+export function syncNodeState(env, src, clone, req, unsupported, cs) {
   const ln = src.localName;
   switch (ln) {
     case 'iframe': case 'frame': case 'object': case 'embed': return syncEmbedded(src, clone, req, unsupported);
-    case 'input': syncInput(/** @type {HTMLInputElement} */ (src), clone, req.scale); break;
+    case 'input': syncInput(/** @type {HTMLInputElement} */ (src), clone, req.scale, cs); break;
     case 'textarea': {
       const ta = /** @type {HTMLTextAreaElement} */ (src);
-      if (ta.scrollHeight > ta.clientHeight || ta.scrollWidth > ta.clientWidth || ta.offsetWidth > ta.clientWidth + 2 * ta.clientLeft) { const div = textareaAsDiv(ta, clone); const skins = skinsFor(env, req); if (skins) { skins.paintNativeControl(ta, div); if (skins.consumeSkinPending()) markPending(unsupported); } return div; }
+      if (ta.scrollHeight > ta.clientHeight || ta.scrollWidth > ta.clientWidth || ta.offsetWidth > ta.clientWidth + 2 * ta.clientLeft) { const div = textareaAsDiv(ta, clone); const skins = skinsFor(env, req); if (skins) { skins.paintNativeControl(ta, div, cs); if (skins.consumeSkinPending()) markPending(unsupported); } return div; }
       clone.textContent = ta.value;
       pinBarBox(ta, clone);
       break;
@@ -509,17 +509,19 @@ export function syncNodeState(env, src, clone, req, unsupported) {
     default:
   }
   inlineStyleUrls(env, clone, req, unsupported, src);
-  if (scaleMode() === 'transform') webkitShadows(src, clone);
+  if (scaleMode() === 'transform') webkitShadows(src, clone, cs);
   const skins = skinsFor(env, req);
-  const painted = skins ? skins.paintNativeControl(src, clone) : false;
+  const painted = skins ? skins.paintNativeControl(src, clone, cs) : false;
   if (skins?.consumeSkinPending()) markPending(unsupported);
   if (typeof painted === 'object') return painted;
   return true;
 }
 
-/** WebKit 'transform' mode: outer box-shadows are mispainted under the scale, the clone carries them as outline / drop-shadow (webkit-shadow.js). @param {Element} src @param {Element} clone */
-function webkitShadows(src, clone) {
-  const cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src);
+/**
+ * WebKit 'transform' mode: outer box-shadows are mispainted under the scale, the clone carries them as outline / drop-shadow (webkit-shadow.js).
+ * @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} [cs]
+ */
+function webkitShadows(src, clone, cs = (src.ownerDocument.defaultView ?? window).getComputedStyle(src)) {
   if (cs.boxShadow === 'none' || !cs.boxShadow) return;
   const decl = engineSkins()?.webkitShadowStyle(cs) ?? '';
   if (decl) appendInlineStyle(clone, decl);
