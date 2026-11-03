@@ -10,8 +10,8 @@
 //            device): the first touch gesture over a list with :hover rows, and the next, are composed from their first canvas update (no plain build
 //            before it: 0 in every run of the sound build, headed and headless; the mutants scroll-ahead-off and touch-hover left 1 on a fast machine, 2 headless).
 //   caret    case caret: a focused text field (magenta caret-color) in row 9 of the list; a slow wheel stream moves it inside the port for more than a blink period, a
-//            fast one takes it out of the port, under the sticky header, and back. At every canvas paint no caret pixel lies outside the field's visible rect (the
-//            field, inside the list's client box, below the header), and the caret was drawn inside it in composed frames. Before the fix the caret patch stayed
+//            fast one takes it out of the port, under the sticky header, and back. At every composed canvas paint no caret pixel lies outside the field's visible
+//            rect (the field, inside the list's client box, below the header), and the caret was drawn inside it in composed frames (a tile may show an older offset). Before the fix the caret patch stayed
 //            where the field was until a tile after the gesture (64 of 194 paints, headless Chrome at DPR 2; the mutant caret-stale-compose).
 //   pixel    samples of the canvas taken INSIDE paint handlers during the stream each equal the plain-DOM twin at one of the offsets the list had in the frames
 //            just before (a composed frame shows the live offset, a fallback tile a slightly older one; anything else is a wrong frame), and the settled canvas
@@ -247,7 +247,7 @@ runGate('G-scroll-cadence', async (ctx) => {
     const r = await page.evaluate('window.__rec.caretReport()');
     numbers.caret = r;
     ctx.check('caret: the streams were painted and composed (>= 60 paints, >= 30 composed steps)', r.paints >= 60 && r.composed >= 30, r, 'compose');
-    ctx.check('caret: no canvas paint shows a caret pixel outside the focused field\'s visible rect (inside the list\'s client box, below the sticky header)', r.bad === 0, r, 'caret');
+    ctx.check('caret: no composed canvas paint shows a caret pixel outside the focused field\'s visible rect (inside the list\'s client box, below the sticky header)', r.bad === 0, r, 'caret');
     ctx.check('caret: the caret was drawn inside the moving field in composed frames (>= 3)', r.composedInside >= 3, r, 'caret');
   }
   // a finger on a touch-first device (CDP touch emulation: primary pointer coarse, no hover). The list has :hover rows, nothing rests over it, and the measured gesture

@@ -107,7 +107,9 @@
     R.caretStart = () => { R.strips = []; };
     R.caretReport = () => {
       const S = R.strips; R.strips = null;
-      let inside = 0, bad = 0, composedInside = 0; const worst = [];
+      // bad: a composed paint (the compositor drew since the paint before) with a caret pixel outside the live field's visible rect; other: the same in a paint of a
+      // tile, which may show the list at a slightly older offset than the live one (the caret then sits in the field as that tile drew it)
+      let inside = 0, bad = 0, other = 0, composedInside = 0; const worst = [];
       S.forEach((s, i) => {
         const d = s.copy.getContext('2d').getImageData(0, 0, s.copy.width, s.copy.height).data;
         let n = 0, out = 0, box = null;
@@ -119,9 +121,9 @@
           if (x < Math.floor(s.x0) - 1 || x >= Math.ceil(s.x1) + 1 || y < Math.floor(s.y0) - 1 || y >= Math.ceil(s.y1) + 1) { out++; box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y]; }
         }
         const composed = i > 0 && s.composed > S[i - 1].composed;
-        if (out) { bad++; if (worst.length < 4) worst.push({ paint: i, scrollTop: s.scrollTop, composed, out, n, box, visible: [s.x0, s.y0, s.x1, s.y1].map((v) => +v.toFixed(1)) }); } else if (n) { inside++; if (composed) composedInside++; }
+        if (out && !composed) other++; else if (out) { bad++; if (worst.length < 4) worst.push({ paint: i, scrollTop: s.scrollTop, composed, out, n, box, visible: [s.x0, s.y0, s.x1, s.y1].map((v) => +v.toFixed(1)) }); } else if (n) { inside++; if (composed) composedInside++; }
       });
-      return { paints: S.length, composed: S.length ? S[S.length - 1].composed - S[0].composed : 0, inside, composedInside, bad, worst };
+      return { paints: S.length, composed: S.length ? S[S.length - 1].composed - S[0].composed : 0, inside, composedInside, bad, other, worst };
     };
     /** sample i as a PNG data URL (read after the run) */
     R.png = async (i) => { const b = await R.samples[i].copy.convertToBlob({ type: 'image/png' }); return await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); }); };
