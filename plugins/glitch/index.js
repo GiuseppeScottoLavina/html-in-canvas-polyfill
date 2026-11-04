@@ -38,6 +38,7 @@ export const meta = Object.freeze({
   description: 'RGB split, block shifts, tracking tears, pixel sorting and broken macroblocks; bursts on a validation error. Clicks follow the shifted blocks.',
   defaults: Object.freeze({ mode: 'ambient', intensity: 0.35 }),
   reducedMotion: 'With reduced motion no block moves and there is no ambient glitch; a burst or the demo is one steady colour-split frame.',
+  continuous: 'In ambient mode a short glitch event plays about every 1.4 s and renders only while it lasts; burst mode and reduced motion render nothing at rest.',
 });
 
 export const MAX_BLOCKS = 32;

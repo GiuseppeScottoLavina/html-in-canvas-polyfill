@@ -28,6 +28,7 @@ async function main() {
 
     await page.evaluate(`document.getElementById('stage').frameCap = 120`);
     await page.mouseMove(5, 5);
+    await page.evaluate('window.__gallery.handle.settled()');   // a gallery that plays the demo on selection: after it
     await sleep(300);
     const ambientFps = (await framesDuring(page, 4200)) / 4.2;
     check('ambient renders only while an event plays: a few effect frames per second at cap 120, never none (it rendered every frame before)', ambientFps >= 1 && ambientFps <= 15, { framesPerSecond: ambientFps });

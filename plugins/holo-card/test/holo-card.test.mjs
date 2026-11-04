@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { fakeGpu } from '../../_shared/fake-gpu.mjs';
-import { ACTIONS, DEMO_MS, MOTION_RANGE, NO_TARGET, UNIFORM_FLOATS, demoTarget, mapCardPoint, meta, motionTarget, plugin, writeCardPose } from '../index.js';
+import { ACTIONS, DEMO_MS, SWAY_HZ, MOTION_RANGE, NO_TARGET, UNIFORM_FLOATS, demoTarget, mapCardPoint, meta, motionTarget, plugin, writeCardPose } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 contractTest(import.meta.url);
@@ -341,4 +341,23 @@ test('option motion is ignored with reduced motion (the card stays flat)', async
   win.dispatchEvent(orientation(30, 40));
   instance.render(frame());
   assert.equal(ryOf(gpu.writes.at(-1).copy), 0);
+});
+
+test('the idle sway alone is redrawn SWAY_HZ times a second from a timer (not at the display rate); an interaction brings every frame back', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { instance, gpu, listeners, frame, requests } = await create({ tilt: 14, idle: true });
+  for (let k = 0; k < 120; k += 1) instance.render(frame());   // 1 s at 120 Hz: the spring settles onto the sway
+  assert.equal(instance.continuous, false, 'the sway alone is not continuous');
+  const n0 = requests();
+  let frames = 0;
+  const angles = new Set();
+  for (let ms = 0; ms < 1000; ms += 1000 / SWAY_HZ) {
+    t.mock.timers.tick(1000 / SWAY_HZ);
+    if (requests() > n0 + frames) { frames += 1; instance.render(frame(1000 / SWAY_HZ)); angles.add(ryOf(gpu.writes.at(-1).copy).toFixed(6)); }
+  }
+  assert.ok(frames >= SWAY_HZ - 2 && frames <= SWAY_HZ + 1, `${frames} frames in 1 s of sway`);
+  assert.ok(angles.size >= SWAY_HZ - 3, 'every one of them shows the card further along its sway');
+  listeners.pointermove({ pointerType: 'mouse', clientX: 900, clientY: 100 });
+  assert.equal(instance.continuous, true, 'the pointer: every frame again');
+  instance.destroy();
 });

@@ -33,6 +33,8 @@ export const meta = Object.freeze({
   description: 'The form becomes a holographic card that tilts towards the pointer, a finger or the device; clicks are mapped through the 3D perspective.',
   defaults: Object.freeze({ tilt: 14, foil: 0.6, glare: 0.6, idle: true }),
   reducedMotion: 'With reduced motion the card stays flat (no tilt, no sway, no shimmer, no demo); the glare still follows the pointer.',
+  continuous: 'With Idle sway on the card sways at rest, redrawn 30 times a second; with it off or with reduced motion nothing renders at rest.',
+  touch: 'Touch the card to tilt it towards your finger; the page still scrolls.',
 });
 
 /** floats in the uniform block (holo-card.wgsl, struct U) */
@@ -41,6 +43,10 @@ export const UNIFORM_FLOATS = 24;
 export { NO_TARGET };
 const MAPPER_SLOTS = 4;
 const MAX_TILT = 30;
+/** the idle sway alone is slow (at most ~5 degrees a second): it is redrawn this many times a second, not at the display rate */
+export const SWAY_HZ = 30;
+/** after an interaction the card renders every frame for this long (the spring settles onto the sway), then at SWAY_HZ */
+const SETTLE_S = 0.8;
 /** The actions of `handle.trigger`: demo sweeps the tilt over the card and resolves 'rest' once the card has come to rest. */
 export const ACTIONS = Object.freeze(/** @type {const} */ (['demo']));
 export const DEMO_MS = 3200;
@@ -190,6 +196,7 @@ export const plugin = Object.freeze({
       runAction,
       settled,
       destroy() {
+        clearTimeout(swayTimer);
         stopMotion();
         endDemo(null);
         for (const resolve of settleWaiters.splice(0)) resolve(null);
@@ -199,7 +206,11 @@ export const plugin = Object.freeze({
     const swaying = () => o.idle && !pose.hover && !motion.on && !reducedMotion;
     instance.continuous = swaying();
 
+    let swayTimer = /** @type {any} */ (0);
+    /** frame clock (s) until which the card renders every frame; NaN: from the next frame on */
+    let fastUntil = NaN;
     function wake() {
+      fastUntil = NaN;
       instance.continuous = true;
       context.requestRender?.();
     }
@@ -371,7 +382,13 @@ export const plugin = Object.freeze({
     function render(frame) {
       const time = (frame.now - start) / 1000;
       step(Math.min(0.1, Math.max(0, (frame.delta || 0) / 1000)), time);
-      instance.continuous = swaying() || demo.active || demo.pending || moving();
+      if (Number.isNaN(fastUntil)) fastUntil = time + SETTLE_S;
+      const busy = demo.active || demo.pending || demo.settling;
+      // the idle sway alone, once the spring has caught up with it: a frame every 1/SWAY_HZ s from a timer instead of every display frame
+      const slow = swaying() && !busy && time >= fastUntil;
+      instance.continuous = !slow && (swaying() || busy || moving());
+      clearTimeout(swayTimer);
+      swayTimer = slow ? setTimeout(() => { swayTimer = 0; context.requestRender?.(); }, 1000 / SWAY_HZ) : 0;
       // with reduced motion the card stays flat (no tilt); the glare still follows the pointer
       const tilt = reducedMotion ? 0 : (o.tilt * Math.PI) / 180;
       u[0] = frame.width; u[1] = frame.height; u[2] = frame.cssWidth; u[3] = frame.cssHeight;

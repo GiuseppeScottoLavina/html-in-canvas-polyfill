@@ -38,6 +38,7 @@ try {
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await page.evaluate(`window.__gallery.handle.setOptions({ idle: false })`);   // only the finger moves the card
   await page.mouseMove(5, 5);
+  await page.evaluate('window.__gallery.handle.settled()');   // a gallery that plays the demo on selection: after it
   c.check('idle sway off and nothing touched: the host goes idle', await idle(page, 600));
   const rest = await framesDuring(page, 2000);
   c.check('zero work at rest: no effect frame in 2 s', rest === 0, { frames: rest });

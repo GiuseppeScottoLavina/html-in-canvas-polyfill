@@ -1,8 +1,8 @@
 // Holographic card. Lengths in CSS px of the presented frame. mapCardPoint() in index.js is the JavaScript twin of the projection and
 // of the card mask below: same ray / plane intersection with the basis vectors written by the CPU, same rounded corners.
 //
-// Shading: the card is a glossy laminated slab lit by a small light that hangs in front of the glare point (the pointer), between the
-// eye and the card. The specular glare is Blinn-Phong of that light on the real card normal (a broad sheen and a sharp core), with
+// Shading: the card is a glossy laminated slab lit by a small lamp placed where the card mirrors it to the eye at the glare point (the
+// pointer). The specular glare is Blinn-Phong of that light on the real card normal (a broad sheen and a sharp core), with
 // Schlick's Fresnel; the foil is a thin film whose interference colour depends on the viewing angle of each pixel (plus the diagonal
 // diffraction bands); glitter flakes have their own tilted normals and glint only when they reflect the light to the eye; the bevelled
 // rim catches the light on the side that faces it. The print is supersampled (4 rotated-grid taps per pixel) so text does not shimmer
@@ -96,10 +96,15 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   var col = mix(CARD, texel.rgb, texel.a);
   let cuv = s / u.css;
 
-  // the light: a small lamp in front of the glare point; N faces the eye, V and L from the shaded point (the eye at z = -D)
+  // the light: a small lamp placed where the card mirrors it to the eye at the glare point (the pointer), so the highlight sits under the
+  // pointer and its shape, its Fresnel and the glints around it follow the real normal. N faces the eye (at z = -D); V and L from the point.
   let N = -u.nz.xyz;
-  let V = normalize(vec3<f32>(0.0, 0.0, -D) - local);
-  let lamp = vec3<f32>(u.fx.z * u.css.x - c.x, u.fx.w * u.css.y - c.y, -0.55 * D);
+  let eye = vec3<f32>(0.0, 0.0, -D);
+  let V = normalize(eye - local);
+  let gd = u.fx.zw * u.css - c;
+  let gt = D * u.nz.z / (gd.x * u.nz.x + gd.y * u.nz.y + D * u.nz.z);
+  let gp3 = vec3<f32>(gt * gd.x, gt * gd.y, -D + gt * D);
+  let lamp = gp3 + reflect(-normalize(eye - gp3), N) * (0.6 * D);
   let L = normalize(lamp - local);
   let H = normalize(L + V);
   let ndv = max(dot(N, V), 0.0);
@@ -119,15 +124,16 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let lum = dot(col, vec3<f32>(0.3, 0.59, 0.11));
   let mask = 1.0 - smoothstep(0.2, 0.75, lum);
 
-  // glitter: one flake in some cells of a 9 px grid, each with its own normal tilted up to ~17 degrees; it glints when it mirrors the lamp
+  // glitter: one flake in some cells of a 9 px grid, each with its own normal tilted up to ~9 degrees; it glints when it mirrors the lamp,
+  // so the glints gather around the glare and travel with the tilt (a flake far from the highlight would need a steeper normal)
   let gp = s / 9.0;
   let cell = floor(gp);
   let h = hash(cell);
   let at = cell + vec2<f32>(0.2) + 0.6 * vec2<f32>(fract(h * 13.7), fract(h * 71.3));
-  let flake_n = normalize(N + 0.3 * (vec3<f32>(fract(h * 31.1), fract(h * 57.7), fract(h * 91.3)) - vec3<f32>(0.5)));
-  let flake = (1.0 - smoothstep(0.05, 0.16, length(gp - at))) * step(0.82, h);
-  let glint = flake * pow(max(dot(flake_n, H), 0.0), 600.0) * 3.0;
-  let holo = irid * (0.07 + 0.2 * band * band) * mask * (0.85 + 2.0 * fresnel) + vec3<f32>(glint * mask);
+  let flake_n = normalize(N + 0.16 * (vec3<f32>(fract(h * 31.1), fract(h * 57.7), fract(h * 91.3)) - vec3<f32>(0.5)));
+  let flake = (1.0 - smoothstep(0.04, 0.13, length(gp - at))) * step(0.86, h);
+  let glint = flake * pow(max(dot(flake_n, H), 0.0), 900.0) * 2.4;
+  let holo = irid * (0.07 + 0.2 * band * band) * mask * (0.85 + 2.0 * fresnel) + mix(vec3<f32>(1.0), irid, 0.45) * glint * mask;
   col = vec3<f32>(1.0) - (vec3<f32>(1.0) - col) * (vec3<f32>(1.0) - clamp(holo * foil, vec3<f32>(0.0), vec3<f32>(1.0)));
 
   // specular glare of the lamp on the laminate: a broad sheen and a sharp core, warmer at the core, scaled by Fresnel
