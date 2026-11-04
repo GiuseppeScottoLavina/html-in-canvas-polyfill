@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // Gallery click-through of the page-curl plugin in headless Chrome with trusted input (CDP), on examples/plugins/?effect=page-curl:
-// the affordances (the hint label, the dog-ear at rest, the auto-peek until the first drag, the hover lift and the grab cursor), the flat
+// the affordances (the hint label, the dog-ear at rest, zero work at rest, the hover lift and the grab cursor), the flat
 // page takes clicks and typing, a drag of the dog-eared corner curls the page and NOTHING of the drag reaches the form (no pointer/mouse
 // event, no click, no focus change, no selection), typing DURING the drag reaches the focused field and changes the curled sheet (the page
-// stays live), the release springs back to the dog-ear and clicks map again, the action peek from the gallery's button (handle.trigger),
-// the frame cap, and prefers-reduced-motion. `--record` also
+// stays live), the release springs back to the dog-ear and clicks map again, the actions peek and demo from the gallery's buttons
+// (handle.trigger; a press takes over from the demo), the frame cap, prefers-reduced-motion, and touch (Chrome's touch emulation, trusted
+// touch events): a finger on a corner turns the page and the page does not scroll; a finger elsewhere scrolls the page. `--record` also
 // writes media/page-curl.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/page-curl/test/gallery.e2e.mjs [--record]
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, drag, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, drag, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record');
 /** @type {{name: string, ok: boolean, detail: unknown}[]} */
@@ -51,16 +52,17 @@ async function main() {
       st.mode === 'effect' && st.controls && /Drag the top-right corner/.test(st.hint), st);
     const c = await rectOf(page, '#stage');
 
-    // the auto-peek: without any input the dog-ear opens now and then (the first peek 1.5 s after the first frame)
-    const paper = [];
-    const f0 = await page.evaluate('window.__e2e.frames');
-    for (let i = 0; i < 28; i += 1) { paper.push(paperTopRight((await shot(page)).img)); await sleep(120); }
-    const idleFrames = (await page.evaluate('window.__e2e.frames')) - f0;
-    const restPaper = Math.min(...paper);
-    const peakPaper = Math.max(...paper);
+    // zero work at rest: with the defaults nothing moves and nothing is drawn once the page has settled (no auto-peek, no timer)
+    await idle(page);
+    const restPaper = paperTopRight((await shot(page)).img);
+    const idleFrames = await framesDuring(page, 3000);
     check('at rest the top-right corner is a dog-ear (paper visible there)', restPaper > 300, { restPaper });
-    check('auto-peek: without any input the dog-ear peeks open by itself (frames presented, the paper area grows several times)',
-      peakPaper > 4 * restPaper && idleFrames >= 20, { restPaper, peakPaper, idleFrames });
+    // control: the opt-in auto-peek (every second) is periodic work, and the same count sees it
+    await page.evaluate(`window.__gallery.handle.setOptions({ autoPeek: 1 })`);
+    const peekFrames = await framesDuring(page, 3000);
+    await page.evaluate(`window.__gallery.handle.setOptions({ autoPeek: 0 })`);
+    await sleep(1900);
+    check('zero work at rest: no effect frame in 3 s once settled (control: the opt-in autoPeek 1 presents frames in the same 3 s)', idleFrames === 0 && peekFrames >= 20, { idleFrames, peekFrames });
 
     const email = await rectOf(page, '#email');
     await page.click(email.cx, email.cy);
@@ -72,7 +74,7 @@ async function main() {
 
     await page.evaluate(`document.getElementById('stage').frameCap = 120`);
     await page.mouseMove(c.cx, c.cy);
-    await sleep(2500);   // the auto-peek in progress, if any, ends
+    await sleep(600);
     const corner = [c.x + c.w - 14, c.y + 14];
     const awayCursor = await cursorAt(page, c.cx, c.cy + 60);
     await page.mouseMove(corner[0], corner[1]);   // hovering is not part of the drag: the form may see this move
@@ -137,9 +139,22 @@ async function main() {
     check('release: the page springs back on its own (animation frames) to the dog-ear at rest', releaseFrames >= 10 && Math.abs(restAfter - restPaper) < 0.25 * restPaper,
       { releaseFrames, restPaper, restAfter });
     const quiet = await framesDuring(page, 5600);
-    check('after the first drag the auto-peek stops: no frame in 5.6 s at rest (one peek period is 5 s)', quiet <= 2, { frames: quiet });
-    // the action of the effect handle, as a page uses it (the gallery's button calls handle.trigger('peek')): the hint comes back on demand
-    await actionChecks(page, check, [{ action: 'peek', state: 'rest', midMs: 900, minChanged: 1000 }], { older: 'peek', newer: 'peek', state: 'rest' });
+    check('after the drag: no frame in 5.6 s at rest', quiet === 0, { frames: quiet });
+    // the actions of the effect handle, as a page uses them (the gallery's buttons call handle.trigger): the hint on demand, and the demo
+    // (the page turns most of the way over, mid-way at about 1.1 s)
+    await actionChecks(page, check, [{ action: 'peek', state: 'rest', midMs: 900, minChanged: 1000 }, { action: 'demo', state: 'rest', midMs: 1100, minChanged: 0.2 * c.w * c.h }],
+      { older: 'demo', newer: 'peek', state: 'rest' });
+    await idle(page);
+    check('after the demo: zero work at rest (no frame in 3 s)', (await framesDuring(page, 3000)) === 0, {});
+    // a press on the page takes over from the demo at once: the hand lets go and the page springs back long before the demo would end
+    await page.evaluate(`window.__demoRun = { t0: performance.now() }; window.__gallery.handle.trigger('demo').then((s) => { window.__demoRun.state = s; window.__demoRun.ms = performance.now() - window.__demoRun.t0; }); true`);   // true: do not wait for the trigger here
+    await sleep(700);
+    const nameNow = await rectOf(page, '#name');
+    await page.click(nameNow.cx, nameNow.cy);
+    await sleep(1500);
+    const cut = await page.evaluate('window.__demoRun');
+    s = await formState(page);
+    check('a press during the demo takes over at once: the demo resolves rest well before its 3 s, and the press reaches the field under it', cut.state === 'rest' && cut.ms < 2000 && s.active === 'name', { ...cut, active: s.active });
 
     await page.evaluate(`document.getElementById('stage').frameCap = 30`);
     await sleep(300);
@@ -175,8 +190,60 @@ async function main() {
     const state = await r.page.evaluate(`window.__gallery.handle.trigger('peek')`);
     const later = await framesDuring(r.page, 1000);
     check('prefers-reduced-motion: the action peek opens nothing and resolves rest at once', state === 'rest' && later <= 2, { state, frames: later });
+    const demoState = await r.page.evaluate(`window.__gallery.handle.trigger('demo')`);
+    const demoLater = await framesDuring(r.page, 1500);
+    check('prefers-reduced-motion: the action demo turns nothing and resolves rest at once', demoState === 'rest' && demoLater <= 2, { state: demoState, frames: demoLater });
   } finally {
     await r.close();
+  }
+
+  // ------------------------------------------------------------------------------------------------------------- touch
+  // Chrome's touch emulation: trusted touch events (Input.dispatchTouchEvent), the browser's own scroll and pointer pipeline
+  const tg = await openGallery('page-curl', { height: 700 });
+  try {
+    const { page } = tg;
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    await page.evaluate(`(() => { window.__touch = { cancel: 0, down: 0 }; addEventListener('pointercancel', () => { window.__touch.cancel += 1; }, true); addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') window.__touch.down += 1; }, true); })()`);
+    await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'center' })`);
+    await sleep(400);
+    await idle(page);
+    /** a finger along a path @param {number[][]} pts */
+    const finger = async (pts) => {
+      await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pts[0][0], y: pts[0][1] }] });
+      for (const [x, y] of pts.slice(1)) { await sleep(16); await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] }); }
+      return async () => { await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+    };
+    let c = await rectOf(page, '#stage');
+    const before = (await shot(page)).img;
+    const y0 = await page.evaluate('scrollY');
+    const lift = await finger(Array.from({ length: 30 }, (_, i) => [c.x + c.w - 12 - i * c.w * 0.016, c.y + 12 + i * c.h * 0.016]));
+    await sleep(500);
+    const held = (await shot(page)).img;
+    const yHeld = await page.evaluate('scrollY');
+    const t1 = await page.evaluate('window.__touch');
+    await lift();
+    const curledPx = changed(held, before).px;
+    check('touch: a finger on the top-right corner turns the page (the sheet follows it) and the page does not scroll; no pointercancel',
+      t1.down === 1 && t1.cancel === 0 && yHeld === y0 && curledPx > 0.05 * c.w * c.h && paperTopRight(held, 400) > 8000, { ...t1, scrolled: yHeld - y0, curledPx });
+    await sleep(1500);
+    await idle(page);
+    c = await rectOf(page, '#stage');
+    const y1 = await page.evaluate('scrollY');
+    const flat = (await shot(page)).img;
+    const away = await finger(Array.from({ length: 30 }, (_, i) => [c.cx, c.cy - 80 + i * 6]));
+    await away();
+    await sleep(800);
+    const y2 = await page.evaluate('scrollY');
+    const t2 = await page.evaluate('window.__touch');
+    c = await rectOf(page, '#stage');
+    check('touch: a finger anywhere else scrolls the page as usual (control: the same gesture from the middle of the stage)', y2 < y1 - 40 && t2.cancel >= 1, { scrolled: y2 - y1, cancel: t2.cancel });
+    await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'center' })`);
+    await sleep(600);
+    await idle(page);
+    const back = changed((await shot(page)).img, flat).px;
+    check('touch: the scroll did not curl the page', back < 0.002 * c.w * c.h, { differingPx: back });
+  } finally {
+    await tg.close();
   }
 
   // ------------------------------------------------------------------------------------------------------------- the recording
@@ -189,7 +256,9 @@ async function main() {
       const msg = await rectOf(page, '#message');
       await page.click(msg.x + msg.w - 20, msg.y + msg.h - 14);   // the caret at the end of the message
       const stop = await startRecording(page);
-      await sleep(3300);                                        // the dog-ear, then one auto-peek
+      await sleep(700);                                         // the dog-ear at rest
+      await page.evaluate(`window.__gallery.handle.trigger('demo'); true`);
+      await sleep(3200);                                        // the demo: the page turns most of the way and springs back
       const corner = [c.x + c.w - 14, c.y + 14];
       await page.mouseMove(corner[0] - 30, corner[1] + 40);
       await sleep(150);

@@ -1,10 +1,12 @@
 // Page curl (README.md): the page is a tessellated sheet folded over a cylinder (fold.js is the JavaScript twin of fold_point below), seen
-// by a camera straight above it, lit by one lamp, with a soft shadow that widens with the height of the paper above what it falls on.
+// by a camera straight above it, lit by one lamp at a finite distance (ambient, diffuse, a sheen that rises at grazing angles, light through
+// the thin paper), with a soft shadow that widens with the height of the paper above what it falls on; the paper has a lit relief, and
+// what the effect shades is dithered so that its gradients do not band.
 //
 // Passes of a curled frame (index.js):
 //   vs_occ / fs_occ     the lifted paper as the lamp sees it: coverage and height, half resolution (max blending)
 //   blur.wgsl (x6)      two soft copies of it (separable Gaussian): the penumbra of a low and of a high sheet
-//   vs_full / fs_under  the page underneath: paper, faintly ruled, receiving the shadow
+//   vs_full / fs_under  the page underneath: paper, faintly ruled, lit by the lamp, receiving the shadow
 //   vs_mesh / fs_leaf   the sheet: the live source on its front, paper with the source showing through on its back (4x MSAA, depth)
 //   vs_full / fs_pass   at rest without any curl: the source unchanged
 
@@ -94,7 +96,7 @@ fn inside_page(q : vec2<f32>) -> f32 {
   return min(min(q.x, u.css.x - q.x), min(q.y, u.css.y - q.y));
 }
 
-// ---- noise: the grain of the paper ---------------------------------------------------------------------------------------------------
+// ---- noise: the grain and the fibres of the paper ------------------------------------------------------------------------------------
 
 fn hash12(p : vec2<f32>) -> f32 {
   var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
@@ -107,13 +109,24 @@ fn vnoise(p : vec2<f32>) -> f32 {
   let w = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash12(i), hash12(i + vec2<f32>(1.0, 0.0)), w.x), mix(hash12(i + vec2<f32>(0.0, 1.0)), hash12(i + vec2<f32>(1.0, 1.0)), w.x), w.y);
 }
+/** the albedo of the paper: fibres, tooth and a faint cloudiness (a factor around 1) */
 fn grain(q : vec2<f32>) -> f32 {
   return (vnoise(q * vec2<f32>(1.7, 0.55)) - 0.5) * 0.024 + (vnoise(q * 1.3 + 17.0) - 0.5) * 0.02 + (vnoise(q * 0.045) - 0.5) * 0.035;
 }
+/** the relief of the paper (0..1): long fibres and a finer tooth */
+fn relief(q : vec2<f32>) -> f32 { return 0.55 * vnoise(q * vec2<f32>(0.9, 0.24)) + 0.45 * vnoise(q * 1.8 + 7.0); }
+/** the normal `n` tilted by the relief of the paper at the leaf point q: the lamp picks the texture out, most where it grazes the sheet */
+fn bumped(n : vec3<f32>, q : vec2<f32>) -> vec3<f32> {
+  let e = vec2<f32>(0.7, 0.0);
+  let g = vec2<f32>(relief(q + e) - relief(q - e), relief(q + e.yx) - relief(q - e.yx)) * 0.08;
+  return normalize(n - vec3<f32>(g.x * u.mirror, g.y, 0.0));
+}
+/** +-half a level of 8 bits (interleaved gradient noise): smooth gradients of light and shadow do not band */
+fn dither(pos : vec2<f32>) -> f32 { return (fract(52.9829189 * fract(dot(pos, vec2<f32>(0.06711056, 0.00583715)))) - 0.5) / 255.0; }
 
 // ---- light and shadow ----------------------------------------------------------------------------------------------------------------
 
-/** the soft shadow of the lifted paper at p (x: 1 = lit) and the ambient occlusion beneath it (y) */
+/** the lamp's light at p past the lifted paper (x: 1 = lit, its penumbra widening with the paper's height) and the ambient occlusion beneath it (y) */
 fn shadow_at(p : vec3<f32>) -> vec2<f32> {
   if (u.L <= 0.0) { return vec2<f32>(1.0, 1.0); }
   let uv = shadow_uv(p);
@@ -126,21 +139,50 @@ fn shadow_at(p : vec3<f32>) -> vec2<f32> {
   let pen = 3.0 + rel * 0.32;
   let s = mix(near.r, wide.r, smoothstep(4.0, 26.0, pen));
   let above = smoothstep(1.5, 8.0, rel);
-  let ao = 1.0 - 0.18 * wide.r * smoothstep(0.0, 60.0, rel);
-  return vec2<f32>(1.0 - 0.62 * u.shadow * s * above, ao);
+  let ao = 1.0 - 0.22 * wide.r * smoothstep(0.0, 60.0, rel);
+  return vec2<f32>(1.0 - 0.9 * u.shadow * s * above, ao);
 }
 
-/** lit straight from above a surface keeps its colours (factor 1); turned towards the lamp it brightens a little, away from it it darkens */
-fn shade(base : vec3<f32>, n : vec3<f32>, p : vec3<f32>, sh : vec2<f32>, sheen : f32) -> vec3<f32> {
-  let l = u.light.xyz;
-  let ndl = dot(n, l);
-  let diffuse = 0.58 + 0.42 * max(ndl, 0.0) / l.z;
-  let view = normalize(vec3<f32>(u.css * 0.5, u.distance) - p);
-  let hv = normalize(l + view);
-  let spec = pow(max(dot(n, hv), 0.0), 26.0) * sheen * (1.0 - n.z * n.z);
-  // thin paper lets warm light through where its other side faces the lamp
-  let through = max(-ndl, 0.0) * 0.16;
-  return (base * (diffuse * sh.x + through * vec3<f32>(1.0, 0.86, 0.66)) * sh.y) + spec * sh.x;
+const AMBIENT : f32 = 0.4;   // the room's share of the light on the flat page
+const LAMP : f32 = 5.0;      // the lamp's distance from the centre of the page, in page sizes
+/** from p to the lamp: high above the page, towards its top-right corner (index.js LIGHT) */
+fn to_lamp(p : vec3<f32>) -> vec3<f32> { return vec3<f32>(u.css * 0.5, 0.0) + u.light.xyz * (LAMP * max(u.css.x, u.css.y)) - p; }
+fn to_eye(p : vec3<f32>) -> vec3<f32> { return normalize(vec3<f32>(u.css * 0.5, u.distance) - p); }
+/**
+ * The light that reaches a surface of normal n at p, as (room, lamp), in units of the flat page at its centre (room + lamp = 1 there):
+ * the room's light comes from the dome above the page, so a surface turned edge-on sees half of it and one facing down none; the lamp's
+ * with its angle and its distance.
+ */
+fn light2(p : vec3<f32>, n : vec3<f32>) -> vec2<f32> {
+  let d = to_lamp(p);
+  let r2 = dot(d, d);
+  let D = LAMP * max(u.css.x, u.css.y);
+  let k = 1.0 / (AMBIENT + (1.0 - AMBIENT) * u.light.z);
+  return vec2<f32>(AMBIENT * (0.5 + 0.5 * n.z), (1.0 - AMBIENT) * max(dot(n, d), 0.0) * inverseSqrt(r2) * D * D / r2) * k;
+}
+/** the lamp's highlight on the sheet: a lobe around the half vector (weight k, exponent e), where the lamp reaches */
+fn gloss(p : vec3<f32>, n : vec3<f32>, k : f32, e : f32) -> f32 {
+  let l = normalize(to_lamp(p));
+  return k * pow(max(dot(n, normalize(l + to_eye(p))), 0.0), e) * smoothstep(0.0, 0.2, dot(n, l));
+}
+/** room light is cool, the lamp warm: what the lamp cannot reach turns a little blue */
+/** the paper of the sheet is exposed a little under the flat page, so that the highlight along the roll does not clip */
+const EXPOSURE : f32 = 0.85;
+const ROOM : vec3<f32> = vec3<f32>(0.95, 0.98, 1.04);
+const WARM : vec3<f32> = vec3<f32>(1.02, 1.0, 0.97);
+/**
+ * How much the roll occludes the page beneath at q (0..1). The roll is a cylinder of radius R lying along the fold line, its axis R above
+ * the page; from a point x px beyond the fold line it hides R^2 / (x^2 + R^2) of the dome's cosine-weighted light (exact for a long
+ * cylinder). Measured here from 0.6 R, where the paper comes down to the page under the roll's edge, so it is dark right at that edge and
+ * fades within about two radii: a larger (higher) roll occludes wider. Faded out where the roll ends at the page's edges.
+ */
+fn roll_ao(q : vec2<f32>) -> f32 {
+  if (u.L <= 0.0 || u.R <= 0.0) { return 0.0; }
+  let leaf = vec2<f32>(select(u.css.x - q.x, q.x, u.mirror > 0.0), q.y);
+  let x = max(dot(leaf - u.a, u.n) - 0.6 * u.R, 0.0);
+  let along = leaf - u.n * dot(leaf - u.a, u.n);   // the foot on the fold line; the roll at this place spans s = 0 .. PI R
+  let there = max(inside_page(along), inside_page(along + u.n * (PI * u.R)));
+  return u.R * u.R / (x * x + u.R * u.R) * smoothstep(-0.5 * u.R, 0.25 * u.R, there);
 }
 
 // ---- full-screen passes ----------------------------------------------------------------------------------------------------------------
@@ -169,15 +211,21 @@ fn fs_pass(v : FullOut) -> @location(0) vec4<f32> {
   return vec4<f32>(front_color(v.uv), 1.0);
 }
 
-/** the page underneath the sheet: paper, faintly ruled, in the shadow of the lifted sheet */
+/** the page underneath the sheet: paper, faintly ruled, lit by the room and the lamp; the roll hides the room's light near it, the lifted
+    paper the lamp's (a penumbra that widens with its height) */
 @fragment
 fn fs_under(v : FullOut) -> @location(0) vec4<f32> {
   let q = v.uv * u.css;
   var col = u.under.rgb * (1.0 + grain(q + 401.0));
   let rule = 1.0 - smoothstep(0.0, 0.9, abs(fract(q.y / 26.0 + 0.4) - 0.5) * 26.0 - 0.15);
   col = mix(col, col * vec3<f32>(0.78, 0.84, 0.95), rule * 0.35);
-  let sh = shadow_at(vec3<f32>(q, 0.0));
-  return vec4<f32>(col * sh.x * sh.y, 1.0);
+  let p = vec3<f32>(q, 0.0);
+  let lt = light2(p, bumped(vec3<f32>(0.0, 0.0, 1.0), q + 401.0));
+  let sh = shadow_at(p);
+  // the dome's light hidden by the roll; the lamp is not a point either, and loses part of its own close to the roll
+  let ao = roll_ao(q);
+  col = col * (lt.x * sh.y * (1.0 - pow(ao, 1.2)) * ROOM + lt.y * sh.x * (1.0 - 0.6 * ao * ao) * WARM);
+  return vec4<f32>(col + dither(v.position.xy), 1.0);
 }
 
 // ---- the lifted paper seen from the lamp ---------------------------------------------------------------------------------------------
@@ -249,27 +297,50 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
   // half resolution would draw its own texels on it)
   let sh = mix(shadow_at(v.page), vec2<f32>(1.0, 1.0), smoothstep(0.75, 4.0, v.page.z));
   let base = front_color(src_uv);
+  let s = dot(v.local - u.a, u.n);
+  let curled = u.L > 0.0;
   var col : vec3<f32>;
   if (front) {
-    // the live page itself: exactly its own colours where it lies flat; lit, shaded and shadowed where it lifts. Where the sheet leaves
-    // the page a little light is trapped in the wedge between the roll and the page.
-    let s = dot(v.local - u.a, u.n);
-    let wedge = 1.0 - 0.3 * exp(s / 6.0) * select(0.0, 1.0, s <= 0.0 && u.L > 0.0);
-    col = shade(base, nUp, v.page, sh, 0.05) * wedge;
+    // the live page itself: exactly its own colours where it lies flat (its light relative to the flat page at the same place); shaded
+    // by its real normal where it lifts. The crease is dark: the page and the roll close in on each other there, and inside the tube the
+    // room's light is mostly hidden (the inside of the roll, seen past a short flap or at the roll's open end). Softened towards 0.5 so the
+    // live content stays readable on the roll
+    // (and exactly 1 where nothing shades it).
+    var cav = 1.0;
+    if (curled) {
+      if (s <= 0.0) { cav = 1.0 - 0.9 * exp(s / (3.0 + 0.08 * u.R)); }
+      else { cav = 0.1 + 0.6 * smoothstep(0.0, 0.6 * PI, s / max(u.R, 1e-3)); }
+    }
+    let lt = light2(v.page, nUp);
+    let level = light2(vec3<f32>(v.page.xy, 0.0), vec3<f32>(0.0, 0.0, 1.0));
+    let lit = (lt.x * sh.y + lt.y * sh.x) * cav / (level.x + level.y);
+    col = base * (0.5 + 0.5 * lit) + gloss(v.page, nUp, 0.12, 16.0) * smoothstep(0.0, max(0.25 * PI * u.R, 1e-3), s) * cav;
   } else {
-    // the back of the sheet: paper, and the front's content showing through it, soft and mirrored as on real paper: whatever stands
-    // out from its surroundings on the front (text, borders, controls) darkens the paper a little
+    // the back of the sheet: paper with its own relief, lit by its real normal across the roll (bright where it faces the lamp, a highlight
+    // band where it mirrors it, darker towards the rolled edge, which sees only half the room), and the front's content showing through it,
+    // soft and mirrored as on real paper: whatever stands out from its surroundings on the front (text, borders, controls) darkens the paper
     // (only what stands out in the page's own polarity: light ink on a dark page, dark ink on a light one, so the shifted samples of the
-    // surroundings never print ghosts of their own)
+    // surroundings never print ghosts of their own). The show-through follows the light: plain in the light, it fades in the shade.
     let fine = 0.45 * luma(base) + 0.55 * ring(src_uv, 1.0);
     let wide = 0.5 * ring(src_uv, 6.0) + 0.5 * ring(src_uv, 11.0);
     let polarity = select(-1.0, 1.0, wide < 0.45);
-    let mark = smoothstep(0.05, 0.32, polarity * (fine - wide)) * smoothstep(0.08, 0.35, abs(dot(nUp, normalize(vec3<f32>(u.css * 0.5, u.distance) - v.page))));
-    let paper = u.paper.rgb * (1.0 + grain(v.local + 911.0)) * (1.0 - u.ink * mark);
-    col = shade(paper, -nUp, v.page, sh, 0.09);
+    let mark = smoothstep(0.05, 0.32, polarity * (fine - wide)) * smoothstep(0.08, 0.35, abs(dot(nUp, to_eye(v.page))));
+    let nb = bumped(-nUp, v.local + 911.0);
+    let lt = light2(v.page, nb);
+    let light = (lt.x * sh.y * ROOM + lt.y * sh.x * WARM) * EXPOSURE;
+    let paper = u.paper.rgb * (1.0 + grain(v.local + 911.0)) * (1.0 - u.ink * mark * (0.35 + 0.75 * (lt.x + lt.y)));
+    // thin paper lets the lamp through where its other side faces it: warm, with the ink of the front darker in it
+    let through = max(dot(nUp, normalize(to_lamp(v.page))), 0.0) * 0.3 * (1.0 - 1.6 * u.ink * mark);
+    // the highlight of paper is partly its own colour (light scattered in its fibres): weaker on a dark paper
+    let tone = 0.3 + 0.7 * luma(u.paper.rgb);
+    col = paper * light + paper * through * vec3<f32>(1.0, 0.84, 0.62) + gloss(v.page, nb, 0.2, 40.0) * sh.x * tone;
   }
-  // the cut edge of the sheet: a hairline that sets the lifted paper off from what lies beneath it
+  // the cut edge of the lifted sheet shows the paper's thickness: a darker outer line (the cut face, turned away) and a lit lip just inside
   let lifted = smoothstep(0.3, 2.5, v.page.z);
-  col = mix(col, col * 0.72, (1.0 - smoothstep(0.0, 1.0, inside)) * lifted);
-  return vec4<f32>(col, cover);
+  let rim = (1.0 - smoothstep(0.0, 0.9, inside)) * lifted;
+  let lip = smoothstep(0.6, 1.1, inside) * (1.0 - smoothstep(1.1, 2.0, inside)) * lifted;
+  col = mix(col, col * 0.6, rim) + col * lip * 0.08;
+  // dither what the effect lit or shaded; the flat, unshadowed front stays the page's own pixels
+  let d = select(1.0, max(lifted, 1.0 - sh.x), front);
+  return vec4<f32>(col + dither(v.position.xy) * d, cover);
 }

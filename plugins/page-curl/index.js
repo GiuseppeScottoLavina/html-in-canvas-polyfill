@@ -6,16 +6,20 @@
  * folds over and rolls up under your hand: a tessellated 3D sheet, seen by a camera straight above it, lit by one lamp, casting a soft
  * shadow that widens with its height, its back plain paper with the live page's ink showing through it, and the page underneath revealed.
  * The corner follows the pointer on a spring (it has weight) and springs back on release. The live page keeps updating on the curling sheet
- * (it is sampled every frame), and its flat part stays usable. At rest one corner is a small dog-ear that now and then peeks open.
+ * (it is sampled every frame), and its flat part stays usable. At rest one corner is a small dog-ear, and nothing is drawn until something
+ * changes (no frame, no timer; the opt-in `autoPeek` opens the dog-ear now and then).
  *
  * Input: the grab is the plugin's own gesture. Its pointer events are taken in the capture phase at the document, before the host's
  * interposer and the form see them (preventDefault: no focus change, no text selection, no click), and the pointer is captured to the
- * layer. Every other pointer goes through the host's interposer and this plugin's input mapper (`mapCurlPoint`): the identity on the flat
+ * layer. A finger that lands on a corner claims its touch (a non-passive touchstart, prevented), so the browser does not scroll the page
+ * and cancel the pointer; a touch anywhere else is left to the page (it scrolls). Every other pointer goes through the host's interposer and this plugin's input mapper (`mapCurlPoint`): the identity on the flat
  * page, the exact page point on the front of the roll that faces the reader, NO_TARGET on the back of the sheet (the roll, the folded
  * flap, the dog-ear) and on the page underneath.
  *
  * Action 'peek' (`handle.trigger('peek')`): the dog-ear opens and closes once now, as a hint that the page can be turned, also after the
- * auto-peek stopped (the first drag stops it). It resolves 'rest' once the sheet lies still again; `handle.settled()` does the same.
+ * auto-peek stopped (the first drag stops it). Action 'demo': a hand takes the dog-eared corner, turns the page most of the way over and lets
+ * go; the sheet springs back (DEMO_RELEASE_MS, then the release). A press on the page or a key takes over at once. Both resolve 'rest' once
+ * the sheet lies still again; `handle.settled()` does the same.
  */
 
 import { NO_TARGET, isNoTarget } from '../../src/effects/no-target.js';
@@ -33,9 +37,10 @@ import { injectStyle } from '../_lib/ui.js';
 export const meta = Object.freeze({
   name: 'page-curl',
   title: 'Page curl',
-  description: 'Grab a corner and the live page folds and rolls up under your hand in 3D, lit and shadowed, still updating; it springs back on release.',
-  defaults: Object.freeze({ corner: 'any', radius: 48, shadow: 0.85, dogEar: 36, autoPeek: 5 }),
-  reducedMotion: 'With reduced motion the drag still follows the hand (without lag); the dog-ear stays still; release and hover lift happen at once.',
+  description: 'Grab a corner, with a mouse or a finger, and the live page rolls up under your hand in 3D, lit and shadowed, still updating; it springs back on release.',
+  defaults: Object.freeze({ corner: 'any', radius: 48, shadow: 0.85, dogEar: 36, autoPeek: 0 }),
+  touch: 'Drag a corner with a finger to turn the page.',
+  reducedMotion: 'With reduced motion the drag follows the hand without lag; the dog-ear stays still; release and hover lift are instant; peek and demo resolve at once.',
 });
 
 /**
@@ -49,15 +54,19 @@ export { NO_TARGET, isNoTarget };
 export const CORNERS = Object.freeze(['any', 'tl', 'tr', 'bl', 'br']);
 /** the camera's distance, in page sizes */
 export const DISTANCE = 2.4;
-const LIGHT = (() => { const v = [-0.3, -0.42, 1]; const l = Math.hypot(...v); return v.map((x) => x / l); })();
+/** towards the lamp: 60 degrees up, towards the top-right corner (page-curl.wgsl to_lamp); a roll of the top-right corner shows its highlight band */
+const LIGHT = (() => { const v = [0.354, -0.354, 0.866]; const l = Math.hypot(...v); return v.map((x) => x / l); })();
 
 const MAPPER_SLOTS = 4;       // the host keeps the mappers of the last 3 presented frames, plus the one being written
 const INK = 0.3;             // the front's ink seen through the paper
 const HOVER_FRACTION = 0.6;   // hover lift (CSS px per axis), as a fraction of the hot zone, on top of the dog-ear
 const PEEK_DELAY_MS = 1500;   // first auto-peek after the first frame
 export const PEEK_MS = 1800;  // one auto-peek: the dog-ear opens and closes (sin^2)
-/** The actions of `handle.trigger`: peek opens and closes the dog-ear once now. */
-export const ACTIONS = Object.freeze(/** @type {const} */ (['peek']));
+/** The actions of `handle.trigger`: peek opens and closes the dog-ear once now; demo turns the page most of the way and lets it spring back. */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['peek', 'demo']));
+/** the demo's hand: it takes the corner (until LIFT ms), sweeps it over the page (PULL ms), holds it, and lets go at DEMO_RELEASE_MS */
+const DEMO_LIFT_MS = 240, DEMO_PULL_MS = 1500;
+export const DEMO_RELEASE_MS = 2000;
 /** the peek of the action at `t` ms after its first frame: 0 .. 1 .. 0 over PEEK_MS. PURE. @param {number} t */
 export const peekOnce = (t) => (t >= 0 && t < PEEK_MS ? Math.sin((Math.PI * t) / PEEK_MS) ** 2 : 0);
 // springs (omega rad/s, zeta): the hand pulls the corner; released, the paper springs back; the rest pose eases in
@@ -85,6 +94,22 @@ export function peekAt(t, every) {
   if (!(every > 0) || t < PEEK_DELAY_MS) return 0;
   const m = (t - PEEK_DELAY_MS) % Math.max(PEEK_MS, every * 1000);
   return m < PEEK_MS ? Math.sin((Math.PI * m) / PEEK_MS) ** 2 : 0;
+}
+
+/**
+ * Where the demo's hand holds corner `key` at `t` ms after its first frame (page CSS px), or null once it has let go: from the corner, along
+ * an arc (smootherstep in time), most of the way to the bound edge and half way down the page. PURE.
+ * @param {number} t @param {'tl'|'tr'|'bl'|'br'} key @param {number} W @param {number} H @param {number[]} [out]  written and returned
+ * @returns {number[]|null}
+ */
+export function demoHand(t, key, W, H, out = [0, 0]) {
+  if (!(t >= 0 && t < DEMO_RELEASE_MS)) return null;
+  const k = Math.min(1, Math.max(0, (t - DEMO_LIFT_MS) / DEMO_PULL_MS));
+  const e = k * k * k * (k * (6 * k - 15) + 10);
+  const across = 0.03 + 0.83 * e, down = 0.03 + 0.4 * e + 0.12 * Math.sin(Math.PI * e);
+  const [fx, fy] = CORNER_AT[key];
+  out[0] = W * (fx ? 1 - across : across); out[1] = H * (fy ? 1 - down : down);
+  return out;
 }
 
 /** '#rgb' / '#rrggbb' -> [r, g, b] in 0..1 (else `fallback`). @param {unknown} hex @param {number[]} [fallback] */
@@ -290,6 +315,7 @@ async function shaderModule(device, code, label) {
 const IDLE = 0;
 const DRAGGING = 1;
 const RELEASING = 2;
+const DEMO = 3;
 
 /** @type {EffectPluginDefinition} */
 export const plugin = Object.freeze({
@@ -415,13 +441,14 @@ export const plugin = Object.freeze({
     let peekTimer = 0;
     /** the peek of the action: -1 none, -2 asked for (it starts at the next frame), else its first frame's time */
     let peekFrom = -1;
+    let demoFrom = -1;                     // the demo's first frame (-1: at the next frame)
     /** @type {((state: string|null) => void)[]} */ const waiters = [];
     /** @type {Element|null} */ let surface = null;
     let cursor = '';
     /** @type {Element} */ let captureEl = canvas;
 
     const size = () => (pageWidth > 0 ? [pageWidth, pageHeight] : [canvas.clientWidth, canvas.clientHeight]);
-    /** @param {PointerEvent} e @returns {[number, number]} */
+    /** @param {{clientX: number, clientY: number}} e @returns {[number, number]} */
     function toPage(e) {
       const r = canvas.getBoundingClientRect();
       const [w, h] = size();
@@ -450,10 +477,14 @@ export const plugin = Object.freeze({
     const liftedTo = (key, a, w, h) => { const [fx, fy] = CORNER_AT[key]; return [fx * w + (fx ? -a : a), fy * h + (fy ? -a : a)]; };
     const cornerAt = (/** @type {'tl'|'tr'|'bl'|'br'} */ key, /** @type {number} */ w, /** @type {number} */ h) => /** @type {[number, number]} */ ([CORNER_AT[key][0] * w, CORNER_AT[key][1] * h]);
 
+    /** a press on the page or a key takes over from the demo at once: the hand lets go */
+    function endDemo() { if (phase === DEMO) { phase = RELEASING; demoFrom = -1; wake(); } }
     /** @param {PointerEvent} e */
     function onDown(e) {
       swallowClick = false;
-      if (phase === DRAGGING || !e.isPrimary || e.button !== 0 || !onPage(e)) return;
+      if (phase === DRAGGING || !e.isPrimary || !onPage(e)) return;
+      endDemo();
+      if (e.button !== 0) return;
       const [x, y] = toPage(e);
       const [w, h] = size();
       const key = hotCorner(x, y, w, h, corner, hotZone);
@@ -500,6 +531,19 @@ export const plugin = Object.freeze({
       swallowClick = false;
       swallow(e);
     }
+    const onKey = (/** @type {Event} */ e) => { if (onPage(e)) endDemo(); };
+    /**
+     * A finger that lands on a corner (or holds one: the pointerdown came first) claims its touch: prevented, the browser neither scrolls
+     * nor cancels the pointer. Any other touch stays the page's. @param {Event} event
+     */
+    function onTouchStart(event) {
+      const e = /** @type {TouchEvent} */ (event);
+      const t = e.touches?.[0];
+      if (!t) return;
+      const [x, y] = toPage(t);
+      const [w, h] = size();
+      if (phase === DRAGGING || (e.touches.length === 1 && hotCorner(x, y, w, h, corner, hotZone))) e.preventDefault();
+    }
     const onLeave = () => { if (phase === IDLE) hoverTo(null); };
     const onLayerMove = (/** @type {Event} */ e) => {
       const t = /** @type {Element|null} */ (e.currentTarget);
@@ -507,12 +551,17 @@ export const plugin = Object.freeze({
       else if (hover && !cursor) setCursor('grab');
     };
     /** @type {[string, (e: any) => void][]} */
-    const documentListeners = [['pointerdown', onDown], ['pointermove', onMove], ['pointerup', onUp], ['pointercancel', onUp], ['click', onClick]];
+    const documentListeners = [['pointerdown', onDown], ['pointermove', onMove], ['pointerup', onUp], ['pointercancel', onUp], ['click', onClick], ['keydown', onKey]];
     for (const [type, fn] of documentListeners) doc.addEventListener(type, fn, true);
+    context.listen('touchstart', onTouchStart, { passive: false });
     context.listen('pointerleave', onLeave);
     context.listen('pointermove', onLayerMove);
     context.listen('pointerover', onLayerMove);
 
+    const hand = [0, 0], aim = { x: 0, y: 0 };
+    /** the pointer shows where the corner should appear; the corner lies 2R above the page, so aim at the point under it (writes `aim`) */
+    const aimAt = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ w, /** @type {number} */ h) =>
+      unproject(Math.min(w, Math.max(0, x)), Math.min(h, Math.max(0, y)), 2 * globals[8], w, h, DISTANCE * Math.max(w, h), aim);
     /**
      * Advance the springs to frame time `now` (fixed steps: the pose depends on the time only, not on the frame rate) towards what is
      * wanted now: the pointer while dragging, the rest pose otherwise (the hovered corner lifted, else the dog-ear, peeking now and then).
@@ -524,10 +573,14 @@ export const plugin = Object.freeze({
       /** @type {readonly number[]} */ let spring = REST;
       let gx = sx.x, gy = sy.x;
       let moving = false;
-      if (phase === DRAGGING) {
-        // the pointer shows where the corner should appear; the corner lies 2R above the page, so aim at the point under it
-        const lifted = unproject(Math.min(w, Math.max(0, dragX)), Math.min(h, Math.max(0, dragY)), 2 * globals[8], w, h, DISTANCE * Math.max(w, h), { x: 0, y: 0 });
-        gx = lifted.x; gy = lifted.y; spring = DRAG;
+      if (phase === DEMO) {
+        if (demoFrom < 0) demoFrom = now;
+        if (demoHand(now - demoFrom, active, w, h, hand)) [dragX, dragY] = hand; else { phase = RELEASING; demoFrom = -1; }
+      }
+      const held = phase === DRAGGING || phase === DEMO;
+      if (held) {
+        aimAt(dragX, dragY, w, h);
+        gx = aim.x; gy = aim.y; spring = DRAG;
       } else {
         const hint = hintCorner(corner);
         const want = phase === RELEASING ? active : hover ?? hint;
@@ -557,17 +610,21 @@ export const plugin = Object.freeze({
       if (simT < 0) simT = now;
       let steps = Math.floor((now - simT) / (SPRING_STEP * 1000) + 1e-6);
       if (steps > 480) { simT = now - 480 * SPRING_STEP * 1000; steps = 480; }
-      for (let i = 0; i < steps; i += 1) { springStep(sx, gx, spring[0], spring[1]); springStep(sy, gy, spring[0], spring[1]); }
+      for (let i = 0; i < steps; i += 1) {
+        // the demo's hand moves between frames too: the pose at a time is the same at any frame rate
+        if (phase === DEMO && demoHand(simT + (i + 1) * SPRING_STEP * 1000 - demoFrom, active, w, h, hand)) { aimAt(hand[0], hand[1], w, h); gx = aim.x; gy = aim.y; }
+        springStep(sx, gx, spring[0], spring[1]); springStep(sy, gy, spring[0], spring[1]);
+      }
       simT += steps * SPRING_STEP * 1000;
       // the corner stays on the page (a spring overshooting past its own corner would fold the sheet the wrong way)
       sx.x = Math.min(w, Math.max(0, sx.x)); sy.x = Math.min(h, Math.max(0, sy.x));
       const settled = Math.abs(sx.x - gx) < 0.05 && Math.abs(sy.x - gy) < 0.05 && Math.abs(sx.v) < 0.5 && Math.abs(sy.v) < 0.5;
-      if (settled && phase !== DRAGGING) {
+      if (settled && !held) {
         sx.x = gx; sy.x = gy; sx.v = 0; sy.v = 0;
         if (phase === RELEASING) phase = IDLE;
       }
-      resting = settled && !moving;
-      return phase === DRAGGING ? !settled : !resting;
+      resting = settled && !moving && !held;
+      return phase === DRAGGING ? !settled : phase === DEMO || !resting;
     }
 
     /** At rest, wake for the next auto-peek (frames are requested only while something moves). @param {number} now */
@@ -585,11 +642,20 @@ export const plugin = Object.freeze({
     const wait = () => (still() ? 'rest' : new Promise((resolve) => { waiters.push(resolve); }));
 
     return {
-      spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift, auto-peek), none at rest
+      spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift, a peek, the demo), none at rest
       setOptions(next) { applyOptions(next); wake(); },
-      runAction(_action, _options, info) {
-        // the one action, 'peek'; nothing opens with reduced motion or while a corner is held or springs back: the state it rests in next
-        if (!reducedMotion && !info.reducedMotion && phase === IDLE) { peekFrom = -2; stopPeekTimer(); wake(); }
+      runAction(action, _options, info) {
+        // nothing moves with reduced motion or while a corner is held or springs back (or the demo plays): the state it rests in next
+        if (!reducedMotion && !info.reducedMotion && phase === IDLE) {
+          stopPeekTimer();
+          if (action === 'demo') {
+            // the hand takes the dog-eared corner where it lies now
+            const hint = hintCorner(corner);
+            if (active !== hint) { active = hint; [sx.x, sy.x] = liftedTo(hint, dogEar, pageWidth || canvas.clientWidth, pageHeight || canvas.clientHeight); sx.v = 0; sy.v = 0; }
+            peekFrom = -1; hover = null; demoFrom = -1; phase = DEMO;
+          } else peekFrom = -2;
+          wake();
+        }
         return wait();
       },
       settled: wait,
