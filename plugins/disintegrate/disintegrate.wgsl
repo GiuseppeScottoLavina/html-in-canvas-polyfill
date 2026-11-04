@@ -1,48 +1,48 @@
-// Disintegrate (README.md): the content of the page turns to dust and blows away, the page stays. What is content is decided per pixel
-// against an estimate of the local background (the colour most of the neighbourhood has: panels, cards, the page). A diagonal sweep erodes
-// the content (it goes porous, then gone), and every eroded pixel becomes a grain of dust of its own LIVE colour, carried by the wind along
-// swirling, streaking paths; some grains travel together as fragments for a moment before they crumble. Run backwards, the dust flies home
-// and settles into the letters and fields of the page as it is NOW. Everything is a function of the dissolve amount g (0 assembled, 1 gone).
-//
-// Passes (index.js):
-//   vs_full / fs_down   the source, averaged into cells of BG_CELL css px                      (when a transition starts or the page changes)
-//   vs_full / fs_bg     the background estimate: per cell, the dominant colour around it (mean shift over a window of ~230 css px)
-//   vs_full / fs_base   the page: the source where its content has not eroded yet, the background estimate where it has
-//   vs_dust / fs_dust   one grain per DUST cell of content, instanced, alpha-blended over it
-//   vs_full / fs_full   assembled: the host's passthrough formula (bit for bit); with `fade` < 1 the reduced-motion crossfade
+// Disintegrate (README.md): the content of the page (what differs from the dominant colour around it) erodes along an organic front and
+// becomes dust of its LIVE colours, carried through a 3D curl-noise wind and seen in perspective (size, parallax, defocus), then flies back.
+// Everything is a function of the dissolve amount g (0 assembled, 1 gone): nothing is simulated frame to frame, every frame cap agrees.
+// Passes (index.js): fs_down + fs_bg the background estimate (when a transition starts or the page changes); cs_grains one compute thread
+// per dust cell writes its grain's 24-byte record (or "none"); fs_base the page with its content eroded and heated at the front; vs_dust +
+// fs_dust one instanced, antialiased quad per record, premultiplied; fs_full the host's passthrough (bit for bit) at rest.
 
 struct Uniforms {
   resolution : vec2<f32>,  // backing px
   css : vec2<f32>,         // css px
   g : f32,                 // 0 assembled .. 1 gone
-  fade : f32,              // fs_full: 1 the source; reduced motion: the share of content still shown
+  fade : f32,              // fs_base: 1 the transition; reduced motion: the share of content still shown (the crossfade)
   cell : f32,              // dust cell, css px
   cols : f32,              // dust grid columns
   sweep : vec2<f32>,       // unit direction the erosion sweeps across the page
   sweep_min : f32,         // dot(corner, sweep) of the first corner reached
   sweep_span : f32,        // and the extent to the last one
   wind : vec2<f32>,        // unit, y down
-  travel : f32,            // css px a grain travels over its life
+  travel : f32,            // css px the wind carries a grain over its life
   turbulence : f32,
-  time : f32,              // s: drives nothing but the shimmer of the dust (a function of g, so frames do not depend on the frame cap)
+  time : f32,              // s: evolves the flow field and the glints (a function of g, so frames do not depend on the frame cap)
   seed : f32,
   sweep_end : f32,         // g at which every pixel of content has eroded
   life : f32,              // g by which every grain is gone (each lives from its birth until then)
-  fragments : f32,         // share of the grains that leave as fragments before they crumble
+  fragments : f32,         // share of the page that leaves as flakes before they crumble
   bg_cell : f32,           // css px per texel of the background estimate
   lo : f32,                // colour distance from the background where content starts
   hi : f32,                // ... and where it is fully content
   backdrop : vec4<f32>,    // fs_full: what a transparent source pixel shows (the host's clear colour)
   vanish : f32,            // 1: the dust fades out as it reaches g = 1 (the transition ends gone); 0: it turns back at full strength (play)
-  pad0 : f32,
+  depth : f32,             // 0..1: how far the grains travel in depth (parallax, focus)
+  glow : f32,              // 0..1: the heat of the eroding front and of new grains
+  focal : f32,             // css px from the camera to the page (perspective)
+  glow_colour : vec4<f32>, // rgb: the colour of the heat; a: the strength of the defocus
+  count : f32,             // dust cells
+  shutter : f32,           // the exposure of the motion blur, in units of g (SHUTTER_MS of the way out)
+  density : f32,           // share of the cells of content that leave as a visible grain (the rest is dust too fine to see)
   pad1 : f32,
-  pad2 : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
 @group(0) @binding(1) var samp : sampler;
 @group(0) @binding(2) var source : texture_2d<f32>;
 @group(0) @binding(3) var background : texture_2d<f32>;   // fs_bg output (rgb), or fs_down output while fs_bg reads it
+@group(1) @binding(0) var<storage, read_write> grains : array<u32>;   // cs_grains: 6 words per dust cell (the vertex buffer of vs_dust)
 
 struct FullOut {
   @builtin(position) position : vec4<f32>,
@@ -71,6 +71,11 @@ fn hash_cell(c : vec2<i32>, k : u32) -> f32 {
   return f32(h) * (1.0 / 4294967295.0);
 }
 
+fn hash3(c : vec3<i32>) -> f32 {
+  let h = pcg((bitcast<u32>(c.x) * 73856093u) ^ (bitcast<u32>(c.y) * 19349663u) ^ (bitcast<u32>(c.z) * 83492791u) ^ (u32(u.seed) * 2654435761u));
+  return f32(h) * (1.0 / 4294967295.0);
+}
+
 fn vnoise(p : vec2<f32>) -> f32 {
   let i = vec2<i32>(floor(p));
   let f = fract(p);
@@ -82,19 +87,49 @@ fn vnoise(p : vec2<f32>) -> f32 {
   return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
 }
 
-/** a divergence-free swirl: the curl of a noise field (unit-ish magnitude) */
-fn curl(p : vec2<f32>) -> vec2<f32> {
-  let e = 0.35;
-  let dx = vnoise(p + vec2<f32>(e, 0.0)) - vnoise(p - vec2<f32>(e, 0.0));
-  let dy = vnoise(p + vec2<f32>(0.0, e)) - vnoise(p - vec2<f32>(0.0, e));
-  return vec2<f32>(dy, -dx) / (2.0 * e) * 1.6;
+/** the analytic gradient of 3D value noise (d/dx, d/dy, d/dz) */
+fn noise_grad(p : vec3<f32>) -> vec3<f32> {
+  let i = vec3<i32>(floor(p));
+  let f = fract(p);
+  let w = f * f * (3.0 - 2.0 * f);
+  let dw = 6.0 * f * (1.0 - f);
+  let a = hash3(i);
+  let b = hash3(i + vec3<i32>(1, 0, 0));
+  let c = hash3(i + vec3<i32>(0, 1, 0));
+  let d = hash3(i + vec3<i32>(1, 1, 0));
+  let e = hash3(i + vec3<i32>(0, 0, 1));
+  let f1 = hash3(i + vec3<i32>(1, 0, 1));
+  let g1 = hash3(i + vec3<i32>(0, 1, 1));
+  let h = hash3(i + vec3<i32>(1, 1, 1));
+  let k1 = b - a;
+  let k2 = c - a;
+  let k3 = e - a;
+  let k4 = a - b - c + d;
+  let k5 = a - c - e + g1;
+  let k6 = a - b - e + f1;
+  let k7 = -a + b + c - d + e - f1 - g1 + h;
+  return dw * vec3<f32>(k1 + k4 * w.y + k6 * w.z + k7 * w.y * w.z, k2 + k5 * w.z + k4 * w.x + k7 * w.z * w.x, k3 + k6 * w.x + k5 * w.y + k7 * w.x * w.y);
+}
+
+/** the curl of a vector potential made of three offset noise fields: a divergence-free flow (incompressible air), about unit magnitude */
+fn curl3(p : vec3<f32>) -> vec3<f32> {
+  let a = noise_grad(p);
+  let b = noise_grad(p + vec3<f32>(31.4, 17.3, 7.9));
+  let c = noise_grad(p + vec3<f32>(-11.7, 43.1, 23.3));
+  return vec3<f32>(c.y - b.z, a.z - c.x, b.x - a.y) * 0.7;
 }
 
 fn luma(c : vec3<f32>) -> f32 {
   return dot(c, vec3<f32>(0.299, 0.587, 0.114));
 }
 
-// ---- assembled: the host's passthrough; reduced motion: the content fades into the page and back -----------------------------------
+/** triangular dither of +-1 level (8-bit): smooth gradients (the heat, the crossfade) do not band */
+fn dither(p : vec2<f32>) -> f32 {
+  let c = vec2<i32>(floor(p));
+  return (hash_cell(c, 91u) + hash_cell(c, 92u) - 1.0) / 255.0;
+}
+
+// ---- assembled: the host's passthrough -----------------------------------------------------------------------------------------------
 
 fn src_at(uv : vec2<f32>) -> vec3<f32> {
   let c = textureSampleLevel(source, samp, uv, 0.0);
@@ -179,12 +214,24 @@ fn content(src : vec3<f32>, bg : vec3<f32>) -> f32 {
   return smoothstep(u.lo, u.hi, length(src - bg));
 }
 
-/** g at which the content at p erodes: a ragged diagonal sweep, porous at the scale of a few pixels */
-fn erode_g(p : vec2<f32>) -> f32 {
+/** the flake a point belongs to (6 css px squares); a share `fragments` of them leave whole */
+fn flake_of(p : vec2<f32>) -> vec2<i32> {
+  return vec2<i32>(floor(p / 6.0));
+}
+
+fn is_flake(chunk : vec2<i32>) -> bool {
+  return hash_cell(chunk, 40u) < u.fragments;
+}
+
+/** g at which the content at p erodes: a sweep with an organic, domain-warped front, porous at the scale of a few pixels; a flake erodes whole */
+fn erode_g(p0 : vec2<f32>) -> f32 {
+  let chunk = flake_of(p0);
+  let p = select(p0, (vec2<f32>(chunk) + 0.5) * 6.0, is_flake(chunk));
   let s = clamp((dot(p, u.sweep) - u.sweep_min) / max(u.sweep_span, 1.0), 0.0, 1.0);
-  let ragged = vnoise(p / 90.0) * 0.6 + vnoise(p / 23.0) * 0.4;
-  let pores = vnoise(p / 2.2) * 0.55 + vnoise(p / 6.5) * 0.45;
-  return clamp(s * 0.72 + ragged * 0.16 + pores * 0.12, 0.0, 1.0) * u.sweep_end;
+  let warp = vec2<f32>(vnoise(p / 140.0 + 3.1), vnoise(p / 140.0 + 9.7)) * 90.0;
+  let ragged = vnoise((p + warp) / 70.0) * 0.6 + vnoise((p + warp) / 21.0) * 0.4;
+  let pores = vnoise(p / 2.3) * 0.55 + vnoise(p / 6.1) * 0.45;
+  return clamp(s * 0.72 + ragged * 0.17 + pores * 0.11, 0.0, 1.0) * u.sweep_end;
 }
 
 @fragment
@@ -193,96 +240,187 @@ fn fs_base(v : FullOut) -> @location(0) vec4<f32> {
   let src = src_at(v.uv);
   let bg = bg_at(home);
   let k = content(src, bg);
+  let dpx = v.position.xy;
   if (u.fade < 1.0) {
     // reduced motion: no grain moves; the content fades into the page and back
-    return vec4<f32>(mix(bg, src, mix(1.0, u.fade, k)), 1.0);
+    return vec4<f32>(mix(bg, src, mix(1.0, u.fade, k)) + dither(dpx), 1.0);
   }
   let t = erode_g(home);
-  // just before it goes, the content thins (its pores open): a short fade over the last 3 % of the sweep, then the background
-  let thinning = smoothstep(t - 0.03 * u.sweep_end, t, u.g);
+  let band = 0.09 * u.sweep_end;
+  // just before it goes, the content heats and thins (its pores open); once gone, a faint afterglow where it was, cooling at once
+  let ahead = t - u.g;                                    // > 0: not eroded yet
+  let heat = (1.0 - smoothstep(0.0, band, ahead)) * step(0.0, ahead);
+  let after = (1.0 - smoothstep(0.0, band * 0.8, -ahead)) * step(ahead, 0.0);
   let gone = select(0.0, 1.0, u.g >= t);
-  let shown = (1.0 - gone) * (1.0 - 0.45 * thinning);
-  return vec4<f32>(mix(bg, src, mix(1.0, shown, k)), 1.0);
+  let shown = (1.0 - gone) * (1.0 - 0.4 * heat);
+  let hot = mix(src, u.glow_colour.rgb, 0.55) * 1.35;
+  let heated = mix(src, hot, heat * u.glow * k);
+  var col = mix(bg, heated, mix(1.0, shown, k));
+  // the glowing edge: the content lights up as the front reaches it, the light stays a moment where it was
+  col += u.glow_colour.rgb * (after * 0.5 + heat * heat * 0.9) * u.glow * k;
+  return vec4<f32>(col + dither(dpx), 1.0);
 }
 
-// ---- dust ----------------------------------------------------------------------------------------------------------------------------
+// ---- the grains (compute) ----------------------------------------------------------------------------------------------------------
 
-struct DustOut {
-  @builtin(position) position : vec4<f32>,
-  @location(0) corner : vec2<f32>,   // -1..1 across the grain, x along its streak
-  @location(1) colour : vec3<f32>,
-  @location(2) alpha : f32,
+/** the velocity of the air at p (css px; z towards the viewer) for a grain of randoms r at age s, in css px per unit of age */
+fn flow(p : vec3<f32>, s : f32, r : vec4<f32>) -> vec3<f32> {
+  // a grain detaches gently and then rides the air: the speed ramps from rest (the displacement grows as s^1.6)
+  let ramp = 1.6 * pow(max(s, 1e-4), 0.6);
+  // little spread from grain to grain at first: the structure of the dust (wisps, filaments) is the structure of the air; the spread
+  // grows with the age (the cloud diffuses as it travels)
+  let spread = mix(0.4, 1.0, smoothstep(0.15, 0.9, s));
+  let gust = vec3<f32>(u.wind * (1.0 + (r.x - 0.5) * spread), 0.0) * u.travel;
+  let lift = vec3<f32>(0.0, -0.16 * (1.0 + (r.y - 0.5) * 1.6 * spread), (r.z * 2.0 - 1.0) * 0.45 * u.depth) * u.travel;
+  let q = vec3<f32>(p.xy, p.z * 1.5) * 0.0042 + vec3<f32>(u.seed * 0.37, 0.0, u.time * 0.3);
+  let swirl = (curl3(q) + 0.5 * curl3(q * 2.1 + 5.0) + 0.3 * curl3(q * 4.7 - 3.0)) * u.travel * 0.7 * u.turbulence;
+  return (gust + lift + vec3<f32>(swirl.xy, swirl.z * u.depth)) * ramp;
 }
 
-/** where a grain born at `home` is at age a (css px), and its gust: wind, a rising drift, the swirl of the air along the way */
-fn dust_path(home : vec2<f32>, a : f32, r : vec4<f32>, chunk : vec2<i32>, frag : bool) -> vec2<f32> {
-  // a fragment travels whole for its first moments, then crumbles: its grains share the chunk's motion until then
-  var lead = 0.0;
-  var p = home;
-  if (frag) {
-    let crumble = 0.12 + 0.2 * hash_cell(chunk, 41u);
-    lead = min(a, crumble);
-    let cr = vec2<f32>(hash_cell(chunk, 42u), hash_cell(chunk, 43u));
-    p += (u.wind * (0.55 + 0.5 * cr.x) + vec2<f32>(0.0, -0.25)) * u.travel * 0.28 * lead * (1.0 + cr.y);
-  }
-  let b = max(a - lead, 0.0);
-  let gust = u.wind * u.travel * pow(b, 1.6) * (0.45 + 0.9 * r.x) + vec2<f32>(0.0, -1.0) * u.travel * 0.22 * pow(b, 1.3) * r.y;
-  // the swirl is read where the grain is on its way, so its path curls instead of only bending
-  let q = (p + gust * 0.6) * 0.0065 + vec2<f32>(u.seed * 0.17, 0.0);
-  let swirl = curl(q) * u.travel * 0.3 * u.turbulence * pow(b, 1.15) * (0.6 + 0.8 * r.z);
-  return p + gust + swirl;
+/** the perspective of the camera: (screen point in css px, scale) of a point at depth z (css px towards the viewer) */
+fn project(p : vec3<f32>) -> vec3<f32> {
+  let z = min(p.z, 0.6 * u.focal);
+  let k = u.focal / (u.focal - z);
+  return vec3<f32>(u.css * 0.5 + (p.xy - u.css * 0.5) * k, k);
 }
 
-@vertex
-fn vs_dust(@builtin(vertex_index) vertex : u32, @builtin(instance_index) grain : u32) -> DustOut {
-  var out : DustOut;
-  out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
-  out.corner = vec2<f32>(0.0);
-  out.colour = vec3<f32>(0.0);
-  out.alpha = 0.0;
+fn no_grain(i : u32) {
+  grains[i * 6u + 4u] = 0u;                              // alpha 0: vs_dust skips the record
+}
+
+@compute @workgroup_size(256)
+fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
+  let i = id.x;
+  if (i >= u32(u.count)) { return; }
   let cols = max(u32(u.cols), 1u);
-  let c = vec2<i32>(i32(grain % cols), i32(grain / cols));
+  let c = vec2<i32>(i32(i % cols), i32(i / cols));
   let home = (vec2<f32>(c) + 0.5) * u.cell;
-  if (home.y > u.css.y) { return out; }
+  if (home.y > u.css.y) { no_grain(i); return; }
   let t = erode_g(home);
   let a = (u.g - t) / max(u.life - t, 1e-3);
-  if (a <= 0.0 || a >= 1.0) { return out; }               // still on the page, or gone
+  if (a <= 0.0 || a >= 1.0) { no_grain(i); return; }      // still on the page, or gone
   // the grain is the live pixel: its colour now, and whether it is content now
   let src = src_at(home / u.css);
   let k = content(src, bg_at(home));
-  if (k < 0.25) { return out; }
-  let r = vec4<f32>(hash_cell(c, 21u), hash_cell(c, 22u), hash_cell(c, 23u), hash_cell(c, 24u));
-  let chunk = vec2<i32>(floor(home / 7.0));
-  let frag = hash_cell(chunk, 40u) < u.fragments;
-  let p0 = dust_path(home, a, r, chunk, frag);
-  let p1 = dust_path(home, min(a + 0.02, 1.0), r, chunk, frag);
-  let vel = (p1 - p0) / 0.02;                                // css px per unit of age
-  let speed = length(vel);
-  let dir = select(vec2<f32>(1.0, 0.0), vel / max(speed, 1e-4), speed > 1e-3);
-  // a grain is its cell at first (it IS the pixel), then a finer speck that streaks with its speed
-  let size = u.cell * mix(1.05, 0.85 + 0.6 * r.w, smoothstep(0.0, 0.35, a));
-  // half the grains streak with their speed (motion blur), the others stay round specks
-  let streak = min(speed * 0.01 * step(0.45, r.w) * (r.w - 0.3), 6.0);
+  if (k < 0.2) { no_grain(i); return; }
+  // a share of the content crumbles into dust too fine to see: every cell lifts off whole, then only `density` of them stay visible (the
+  // others fade out at the start of their flight)
+  let fine = hash_cell(c, 25u) >= u.density;
+  if (fine && a >= 0.15) { no_grain(i); return; }
+  let rg = vec4<f32>(hash_cell(c, 21u), hash_cell(c, 22u), hash_cell(c, 23u), hash_cell(c, 24u));
+  // a flake: its grains share the randoms of the flake (so the coherent flow carries them together) until it crumbles
+  let chunk = flake_of(home);
+  let flake = is_flake(chunk);
+  let rc = vec4<f32>(hash_cell(chunk, 31u), hash_cell(chunk, 32u), hash_cell(chunk, 33u), rg.w);
+  let crumble = select(-1.0, 0.1 + 0.25 * hash_cell(chunk, 41u), flake);
+
+  // the path: the flow integrated from the cell (midpoint steps), read where the grain is, so it follows the streamlines of the air
+  var p = vec3<f32>(home, 0.0);
+  var vel = vec3<f32>(0.0);
+  let steps = 5;
+  let ds = a / f32(steps);
+  for (var n = 0; n < steps; n += 1) {
+    let s = (f32(n) + 0.5) * ds;
+    let r = mix(rc, rg, smoothstep(crumble, crumble + 0.18, s));
+    vel = flow(p, s, r);
+    p += vel * ds;
+  }
+  let pr = project(p);
+  let dpr = u.resolution.x / u.css.x;
+
+  // the size: the cell itself at birth (the content lifts off whole), then a speck of its own size; nearer is bigger
+  let birth = smoothstep(0.0, 0.16, a);
+  var radius = u.cell * 0.5 * mix(1.0, 0.9 + 0.5 * rg.w, birth) * pr.z;
+  // out of focus off the page plane: the circle of confusion grows with the depth; the light of the grain spreads over it
+  let coc = abs(p.z) / u.focal * 7.0 * u.glow_colour.a;
+  let focused = radius;
+  radius = sqrt(radius * radius + coc * coc);
+  // (an accent: half of the light the defocus would spread is kept, so depth never dims the cloud as a whole)
+  var alpha = k * mix(1.0, (focused * focused) / (radius * radius), 0.5);
+  let soft = clamp(0.35 + coc / max(radius, 1e-3), 0.35, 1.0);
+  // never smaller than half a device px: a smaller grain keeps its light (alpha) instead of flickering between pixels
+  let minR = 0.5 / dpr;
+  if (radius < minR) { alpha *= (radius / minR) * (radius / minR); radius = minR; }
+  // motion blur: the screen distance covered during a fixed exposure (the same at every frame cap); its light spreads along the streak
+  let screenVel = vel.xy * pr.z;
+  let speed = length(screenVel);
+  let dir = select(vec2<f32>(1.0, 0.0), screenVel / max(speed, 1e-4), speed > 1e-3);
+  // (short: a grain stays a point of light with a little blur, never a dash)
+  let streak = min(speed * u.shutter / max(u.life - t, 1e-3) * 0.5, 0.8 * radius);
+  alpha *= max(0.8, radius / (radius + streak));
+  // when the transition ends gone, the dust thins out over the second half of its flight (it disperses below sight); a play's dust turns
+  // back at full strength
+  alpha *= 1.0 - u.vanish * smoothstep(0.65, 1.0, a);
+  alpha *= select(1.0, 1.0 - smoothstep(0.03, 0.15, a), fine);
+  // the colour of its pixel, lit: a grain in the air catches more light than the flat page did; dimmer far behind the page plane
+  var colour = mix(src * 1.12 + 0.03, vec3<f32>(luma(src)) * 1.12 + 0.05, 0.08 * smoothstep(0.25, 1.0, a));
+  colour *= 1.0 - 0.15 * smoothstep(0.0, 0.35 * u.focal, -p.z);
+  // light: hot as it leaves the front, cooling fast; a few grains catch the light as they tumble (glints)
+  let heat = u.glow * (1.0 - smoothstep(0.0, 0.3, a)) * k;
+  let spin = 0.5 + 0.5 * sin(u.time * (9.0 + 16.0 * rg.y) + rg.z * 6.2832);
+  let glint = select(0.0, pow(spin, 14.0) * 0.9 * smoothstep(0.1, 0.3, a), rg.w > 0.9) * k;
+  let emit = mix(colour, u.glow_colour.rgb, 0.6) * heat * 1.5 + vec3<f32>(glint);
+  let shape = 1.0 - smoothstep(0.0, 0.05, a);            // square at birth (the cell), round as soon as it is in the air
+
+  let base = i * 6u;
+  grains[base] = bitcast<u32>(pr.x);
+  grains[base + 1u] = bitcast<u32>(pr.y);
+  grains[base + 2u] = pack4x8snorm(vec4<f32>(dir, soft * 2.0 - 1.0, shape * 2.0 - 1.0));
+  grains[base + 3u] = pack2x16float(vec2<f32>(radius, streak));
+  grains[base + 4u] = pack4x8unorm(vec4<f32>(clamp(colour, vec3<f32>(0.0), vec3<f32>(1.0)), max(clamp(alpha, 0.0, 1.0), 1.0 / 255.0)));
+  grains[base + 5u] = pack4x8unorm(vec4<f32>(clamp(emit * 0.5, vec3<f32>(0.0), vec3<f32>(1.0)), 0.0));
+}
+
+// ---- the grains (drawn) ------------------------------------------------------------------------------------------------------------
+
+struct DustOut {
+  @builtin(position) position : vec4<f32>,
+  @location(0) local : vec2<f32>,                       // css px from the grain's centre: x along its streak, y across
+  @location(1) @interpolate(flat) shape : vec4<f32>,    // radius, half streak, edge softness, squareness
+  @location(2) @interpolate(flat) colour : vec4<f32>,   // premultiplied: rgb * alpha, alpha
+  @location(3) @interpolate(flat) emit : vec3<f32>,
+}
+
+@vertex
+fn vs_dust(@builtin(vertex_index) vertex : u32, @location(0) ra : vec4<u32>, @location(1) rb : vec2<u32>) -> DustOut {
+  var out : DustOut;
+  out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
+  out.local = vec2<f32>(0.0);
+  out.shape = vec4<f32>(0.0);
+  out.colour = vec4<f32>(0.0);
+  out.emit = vec3<f32>(0.0);
+  let col = unpack4x8unorm(rb.x);
+  if (col.a <= 0.0) { return out; }                      // no grain in this cell
+  let centre = vec2<f32>(bitcast<f32>(ra.x), bitcast<f32>(ra.y));
+  let d4 = unpack4x8snorm(ra.z);
+  let rs = unpack2x16float(ra.w);
+  let dir = normalize(d4.xy + vec2<f32>(1e-4, 0.0));
+  let pad = u.css.x / u.resolution.x;                    // one device px around the shape: room for its antialiased edge
   var quad = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
   let q = quad[vertex];
-  let along = q.x * (size * 0.5 + streak);
-  let across = q.y * size * 0.5;
-  let p = p0 + dir * along + vec2<f32>(-dir.y, dir.x) * across - dir * streak * 0.5;
+  let local = vec2<f32>(q.x * (rs.x + rs.y + pad), q.y * (rs.x + pad));
+  let p = centre + dir * local.x + vec2<f32>(-dir.y, dir.x) * local.y;
   out.position = vec4<f32>(p.x / u.css.x * 2.0 - 1.0, 1.0 - p.y / u.css.y * 2.0, 0.0, 1.0);
-  out.corner = vec2<f32>(q.x, q.y);
-  // the exact colour of its pixel, a touch lighter and greyer as it thins to dust
-  out.colour = mix(src, vec3<f32>(luma(src)) * 1.08 + 0.03, 0.22 * smoothstep(0.3, 1.0, a));
-  // a streak spreads the same grain over a longer line: its alpha thins with it
-  let spread = (size * 0.5) / (size * 0.5 + streak);
-  out.alpha = k * (1.0 - u.vanish * smoothstep(0.78, 1.0, a)) * mix(1.0, 0.65 + 0.35 * spread, smoothstep(0.0, 0.3, a));
+  out.local = local;
+  out.shape = vec4<f32>(rs.x, rs.y, d4.z * 0.5 + 0.5, d4.w * 0.5 + 0.5);
+  out.colour = vec4<f32>(col.rgb * col.a, col.a);
+  out.emit = unpack4x8unorm(rb.y).rgb * 2.0;
   return out;
 }
 
 @fragment
 fn fs_dust(v : DustOut) -> @location(0) vec4<f32> {
-  // a square grain at birth (the pixel itself), a soft speck in flight
-  let edge = 1.0 - smoothstep(0.55, 1.0, max(abs(v.corner.x), abs(v.corner.y)));
-  let a = v.alpha * edge;
-  if (a <= 0.003) { discard; }
-  return vec4<f32>(v.colour, a);
+  let r = v.shape.x;
+  let l = v.shape.y;
+  // the distance to the shape: a capsule along the streak (round), or the square of the cell at birth
+  let along = max(abs(v.local.x) - l, 0.0);
+  let d_round = length(vec2<f32>(along, v.local.y));
+  let d_square = max(along, abs(v.local.y));
+  let d = mix(d_round, d_square, v.shape.w);
+  // analytic antialiasing: coverage over an edge 0.85 device px wide (a pixel's footprint across the edge); out of focus, a soft disc
+  let px = u.css.x / u.resolution.x;
+  let w = max(0.85 * px, r * v.shape.z);
+  let cover = clamp((r - d) / w + 0.5, 0.0, 1.0);
+  if (cover <= 0.0) { discard; }
+  return vec4<f32>(v.colour.rgb * cover + v.emit * cover * v.colour.a, v.colour.a * cover);
 }
