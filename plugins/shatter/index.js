@@ -18,7 +18,7 @@
  */
 
 import { wgsl } from './wgsl.js';
-import { buildShards, crackedLayout, crackedSource, HEAL, MAX_SHARDS, MAX_VERTICES, SHARD_FLOATS, SPAN, VERTEX_FLOATS } from './shards.js';
+import { buildShards, crackedLayout, crackedSource, fallTime, HEAL, MAX_SHARDS, MAX_VERTICES, MAX_WALL_VERTICES, SHARD_FLOATS, SPAN, THICKNESS, VERTEX_FLOATS } from './shards.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor, sourcePointOnCanvas } from '../_lib/transition.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
@@ -34,7 +34,7 @@ export const meta = Object.freeze({
   name: 'shatter',
   title: 'Shatter',
   description: 'An invalid submit cracks the glass over the form (still usable through it); a second one shatters it into falling 3D shards that fly back.',
-  defaults: Object.freeze({ duration: 1600, onSubmit: 'invalid', intro: true }),
+  defaults: Object.freeze({ duration: 1200, onSubmit: 'invalid', intro: true }),
   reducedMotion: 'With reduced motion nothing cracks or falls: every impact crossfades the form to the backdrop and back.',
 });
 
@@ -50,6 +50,8 @@ const POINTER_MS = 1500;
 /** chips of glass that burst out at the first impact, and when the pane breaks */
 export const CHIPS_CRACK = 40;
 export const CHIPS_FALL = 260;
+/** the depth buffer of the fall (2 bytes per sample: the shards span a few hundred css px of depth) */
+const DEPTH_FORMAT = 'depth16unorm';
 /** the clear colour of the host's passthrough: an assembled frame is then identical to the frame without the plugin */
 export const HOST_BACKDROP = Object.freeze([0.004, 0.018, 0.034]);
 const DEFAULT_EDGE = Object.freeze([0.85, 0.96, 1]);
@@ -62,8 +64,16 @@ const lostOn = new WeakSet();
  * break and stay gone; in: fly back and close the cracks (also heals a cracked pane); play: out, a short pause, in. Option `point`: the
  * impact point in canvas CSS px (default: the last pointer press, else the `impact` option, else the centre).
  */
-export const ACTIONS = Object.freeze(/** @type {const} */ (['impact', 'crack', 'out', 'in', 'play']));
-/** @typedef {'impact'|'crack'|'out'|'in'|'play'} Action */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['impact', 'crack', 'out', 'in', 'play', 'demo']));
+/** @typedef {'impact'|'crack'|'out'|'in'|'play'|'demo'} Action */
+/** the demo: ms one way of its fall takes, and the physics seconds it shows: the shards burst out at about real speed, stop in the air
+ *  for the hold of 'play' (still drawn, not faded) and are rewound into place */
+export const DEMO_FALL_MS = 700;
+export const DEMO_SPAN = 0.66;
+/** ms the demo lets the cracked pane rest before it breaks */
+export const DEMO_PAUSE_MS = 500;
+/** MSAA samples of the fall (the walls and faces of the shards are real geometry, their silhouettes need it) */
+export const FALL_SAMPLES = 4;
 
 
 /** @param {Readonly<Record<string, unknown>>} o */
@@ -73,7 +83,7 @@ export function readOptions(o) {
   return {
     cracks: Math.round(clampNumber(o.cracks, 6, 24, 13)),
     gravity: clampNumber(o.gravity, 0.2, 3, 1),
-    duration: clampNumber(o.duration, 300, 8000, 1600),
+    duration: clampNumber(o.duration, 300, 8000, 1200),
     edge: parseColor(o.edgeColor, DEFAULT_EDGE),
     edgeAmount: clampNumber(o.edgeAmount, 0, 1, 0.85),
     glint: clampNumber(o.glint, 0, 1, 0.8),
@@ -103,7 +113,7 @@ export function crackFront(c, far) {
  * @param {Float32Array} data
  * @param {{width: number, height: number, cssWidth: number, cssHeight: number}} frame
  * @param {ReturnType<typeof readOptions>} s
- * @param {{time: number, crack: number, far: number, fade: number, flash: number, debrisT: number, debrisN: number, ghosts: number, alpha: number}} f
+ * @param {{time: number, crack: number, far: number, fade: number, flash: number, debrisT: number, debrisN: number, alpha: number}} f
  * @param {{x: number, y: number}} impact
  */
 export function fillHeader(data, frame, s, f, impact) {
@@ -111,7 +121,7 @@ export function fillHeader(data, frame, s, f, impact) {
   data[4] = f.time; data[5] = GRAVITY * s.gravity; data[6] = f.alpha; data[7] = crackFront(f.crack, f.far);
   data[8] = impact.x; data[9] = impact.y; data[10] = s.edgeAmount; data[11] = f.fade;
   data[12] = f.flash; data[13] = f.crack; data[14] = s.glint; data[15] = 1.6 * Math.max(frame.cssWidth, frame.cssHeight);
-  data[16] = f.debrisT; data[17] = f.debrisN; data[18] = f.ghosts; data[19] = s.refraction;
+  data[16] = f.debrisT; data[17] = f.debrisN; data[18] = THICKNESS; data[19] = s.refraction;
   data[20] = s.backdrop[0]; data[21] = s.backdrop[1]; data[22] = s.backdrop[2]; data[23] = 1;
   data[24] = s.edge[0]; data[25] = s.edge[1]; data[26] = s.edge[2]; data[27] = 1;
 }
@@ -153,28 +163,59 @@ export const plugin = Object.freeze({
       vertex: { module, entryPoint: vs, buffers: extra.buffers ?? [] },
       fragment: { module, entryPoint: fs, targets: [{ format: target, ...(extra.blend ? { blend: extra.blend } : {}) }] },
       primitive: { topology: 'triangle-list' },
+      // the fall: 4x MSAA and a depth buffer (nearer is smaller); `depth` is [write, compare]
+      ...(extra.depth ? { multisample: { count: FALL_SAMPLES }, depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: extra.depth[0], depthCompare: extra.depth[1] } } : {}),
     });
+    const vertexLayout = [{ arrayStride: VERTEX_FLOATS * 4, attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x2' }, { shaderLocation: 1, offset: 8, format: 'float32x2' }, { shaderLocation: 2, offset: 16, format: 'float32x4' },
+    ] }];
     const full = pipeline('vs_full', 'fs_full', format);
-    const glass = pipeline('vs_shard', 'fs_shard', format, {
-      buffers: [{ arrayStride: VERTEX_FLOATS * 4, attributes: [
-        { shaderLocation: 0, offset: 0, format: 'float32x2' }, { shaderLocation: 1, offset: 8, format: 'float32x2' }, { shaderLocation: 2, offset: 16, format: 'float32x4' },
-      ] }],
-      blend,
-    });
+    // the pane (cracks running, cracked and still): one sample, no depth, exactly what the input mapper inverts
+    const glass = pipeline('vs_shard', 'fs_shard', format, { buffers: vertexLayout, blend });
     const chips = pipeline('vs_debris', 'fs_debris', format, { blend });
     const copy = pipeline('vs_full', 'fs_copy', 'rgba8unorm');
+    // the fall: the backdrop and the shadows on it first (no depth), then the faces and the walls of the slabs (depth), then the chips (tested, not written)
+    const backdrop3d = pipeline('vs_full', 'fs_backdrop', format, { depth: [false, 'always'] });
+    const shadow3d = pipeline('vs_shadow', 'fs_shadow', format, { buffers: vertexLayout, blend, depth: [false, 'always'] });
+    const glass3d = pipeline('vs_shard', 'fs_shard', format, { buffers: vertexLayout, blend, depth: [true, 'less-equal'] });
+    const walls3d = pipeline('vs_wall', 'fs_wall', format, { buffers: vertexLayout, blend, depth: [true, 'less-equal'] });
+    const chips3d = pipeline('vs_debris', 'fs_debris', format, { blend, depth: [false, 'less-equal'] });
     const B = g.GPUBufferUsage;
     const uniforms = device.createBuffer({ size: (HEADER_FLOATS + MAX_SHARDS * SHARD_FLOATS) * 4, usage: B.UNIFORM | B.COPY_DST });
     const vertexBuffer = device.createBuffer({ size: MAX_VERTICES * VERTEX_FLOATS * 4, usage: B.VERTEX | B.COPY_DST });
+    const wallBuffer = device.createBuffer({ size: MAX_WALL_VERTICES * VERTEX_FLOATS * 4, usage: B.VERTEX | B.COPY_DST });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const header = new Float32Array(HEADER_FLOATS);
     const vertices = new Float32Array(MAX_VERTICES * VERTEX_FLOATS);
+    const wallVertices = new Float32Array(MAX_WALL_VERTICES * VERTEX_FLOATS);
     const shardData = new Float32Array(MAX_SHARDS * SHARD_FLOATS);
     const attachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
     /** @type {{colorAttachments: any[], timestampWrites?: any}} */
     const passDescriptor = { colorAttachments: [attachment], timestampWrites: undefined };
+    // the fall: drawn into a multisampled target resolved into the destination, with a depth buffer; both made when a fall starts and
+    // released once it ends (they hold about 6 bytes per sample per backing pixel, only while shards fly)
+    const msaaAttachment = { view: /** @type {any} */ (null), resolveTarget: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'discard', clearValue: attachment.clearValue };
+    const depthAttachment = { view: /** @type {any} */ (null), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'discard' };
+    /** @type {{colorAttachments: any[], depthStencilAttachment: any, timestampWrites?: any}} */
+    const fallDescriptor = { colorAttachments: [msaaAttachment], depthStencilAttachment: depthAttachment, timestampWrites: undefined };
+    /** @type {{colour: any, depth: any, width: number, height: number}|null} */ let fallTargets = null;
+    /** @param {number} w @param {number} h */
+    const ensureFallTargets = (w, h) => {
+      if (fallTargets && fallTargets.width === w && fallTargets.height === h) return;
+      releaseFallTargets();
+      const usage = g.GPUTextureUsage.RENDER_ATTACHMENT;
+      const colour = device.createTexture({ size: [w, h], format, sampleCount: FALL_SAMPLES, usage });
+      const depth = device.createTexture({ size: [w, h], format: DEPTH_FORMAT, sampleCount: FALL_SAMPLES, usage });
+      fallTargets = { colour, depth, width: w, height: h };
+      msaaAttachment.view = colour.createView();
+      depthAttachment.view = depth.createView();
+    };
+    const releaseFallTargets = () => {
+      fallTargets?.colour.destroy?.(); fallTargets?.depth.destroy?.();
+      fallTargets = null; msaaAttachment.view = null; depthAttachment.view = null;
+    };
     /** the frame values of fillHeader, reused */
-    const look = { time: 0, crack: 0, far: 0, fade: 1, flash: 0, debrisT: -1, debrisN: 0, ghosts: 1, alpha: 1 };
+    const look = { time: 0, crack: 0, far: 0, fade: 1, flash: 0, debrisT: -1, debrisN: 0, alpha: 1 };
     const groups = new WeakMap();
     /** @param {any} view */
     const groupFor = (view) => {
@@ -205,6 +246,14 @@ export const plugin = Object.freeze({
     /** what the LAST rendered frame showed: 'intact' | 'cracked' | 'moving' (its mapper is fixed by it) */
     let shown = 'intact';
     let vertexCount = 0;
+    let wallCount = 0;
+    /** the physics clock of the fall (fallTime): the run in progress starts from the amount and the time of the frame before it */
+    const run = { dir: 0, g0: 0, t0: 0 };
+    let lastG = fall.g, lastTime = fall.g * SPAN;
+    /** physics s at the end of the way out: SPAN, or the shorter DEMO_SPAN of the demo (the part of the fall on screen) */
+    let spanEnd = SPAN;
+    /** the serial of the demo in progress (0: none), and of the last one */
+    let demoRun = 0, demoSerial = 0;
     let strikes = 0;
     const impact = { x: 0, y: 0 };
     let far = 1;
@@ -245,13 +294,25 @@ export const plugin = Object.freeze({
       layoutPending = true;
     };
 
+    /** the demo is over (done, superseded, or the user took over): the fall plays at its own speed again */
+    const endDemo = () => {
+      if (!demoRun) return;
+      demoRun = 0;
+      fall.setDuration(s.duration);
+    };
     /**
      * @param {Action} action @param {{x: number, y: number}|null} [point] @param {boolean} [hostReduced]
      * @returns {Promise<boolean>|null}  true when the end state is reached, false when superseded; null: nothing started (a crack with reduced motion or while shards fall)
      */
     function request(action, point = null, hostReduced = undefined) {
       if (destroyed) return Promise.resolve(false);
-      const calm = reduced(hostReduced);
+      if (action === 'demo') return demo(point, reduced(hostReduced));
+      endDemo();
+      if (action !== 'in') spanEnd = SPAN;   // a way back keeps the end of the way out it reverses (a stopped demo fall is not faded)
+      return start(action, point, reduced(hostReduced));
+    }
+    /** @param {Exclude<Action, 'demo'>} action @param {{x: number, y: number}|null} point @param {boolean} calm */
+    function start(action, point, calm) {
       let done;
       if (action === 'impact') action = calm || !fall.assembled || cracked() || cracks.animating ? 'play' : 'crack';
       if (action === 'crack') {
@@ -273,6 +334,47 @@ export const plugin = Object.freeze({
       context.requestRender();
       return done;
     }
+    /** where the demo strikes: the `impact` option, else the first submit control of the source, else a point right of and below the centre */
+    const demoPoint = () => {
+      if (s.impact) return s.impact;
+      const cw = canvas.clientWidth, ch = canvas.clientHeight;
+      try {
+        const el = source.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
+        const r = el?.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          const p = sourcePointOnCanvas(source.getBoundingClientRect(), r, { width: cw, height: ch });
+          if (p.x >= 0 && p.y >= 0 && p.x <= cw && p.y <= ch) return p;
+        }
+      } catch { /* no such control */ }
+      return { x: cw * 0.62, y: ch * 0.6 };
+    };
+    /**
+     * The showcase (handle.trigger('demo')): the pane lands if it is not in place, a strike cracks it, it rests a moment, a second strike
+     * breaks it, the shards fall (the part of the fall that is on screen, at real speed) and fly back; it ends intact. Any other action, a
+     * submit, or the user's pointer or keyboard on the canvas ends it at once. With reduced motion it does nothing (null).
+     * @param {{x: number, y: number}|null} point @param {boolean} calm @returns {Promise<boolean>|null}
+     */
+    function demo(point, calm) {
+      if (calm) return null;
+      endDemo();
+      const mine = ++demoSerial;
+      demoRun = mine;
+      fall.setDuration(DEMO_FALL_MS);
+      const live = () => demoRun === mine && !destroyed;
+      const at = point ?? demoPoint();
+      return (async () => {
+        if (!fall.assembled && !(await start('in', null, false))) return false;
+        if (live() && !cracked()) {
+          if (!(await start('crack', at, false))) return false;
+          await new Promise((resolve) => { setTimeout(resolve, DEMO_PAUSE_MS); });
+        }
+        if (!live()) return false;
+        spanEnd = DEMO_SPAN;
+        const done = (await start('play', null, false)) === true;
+        if (live()) endDemo();
+        return done;
+      })();
+    }
     /** @type {((state: 'intact'|'cracked'|'gone'|null) => void)[]} */ const waiters = [];
     const restingState = () => (!fall.assembled ? 'gone' : cracks.phase === 'gone' ? 'cracked' : 'intact');
     const moving = () => cracks.animating || fall.animating;
@@ -280,7 +382,11 @@ export const plugin = Object.freeze({
     const wait = () => (moving() ? new Promise((resolve) => { waiters.push(resolve); }) : Promise.resolve(restingState()));
     if (fall.phase === 'gone' && s.state === 'in') { crossfade = reduced(); request('in'); }   // the intro: the shards fly into place
 
+    // the user takes over from the demo: the pane comes back into place (the press itself is mapped as usual)
+    const takeOver = () => { if (demoRun) { endDemo(); context.trigger('in'); } };
+    context.listen('keydown', takeOver);
     context.listen('pointerdown', (event) => {
+      takeOver();
       const e = /** @type {PointerEvent} */ (event);
       const r = canvas.getBoundingClientRect();
       pointer.x = e.clientX - r.left - canvas.clientLeft;
@@ -306,6 +412,7 @@ export const plugin = Object.freeze({
       spatial: true,                      // the pieces move: identity intact, the inverse of the offsets cracked, blocking while anything moves
       get continuous() { return cracks.animating || fall.animating; },
       setOptions(next) {
+        takeOver();                       // a change of options during the demo is the user's: the demo ends, the pane comes back
         s = readOptions(next ?? {});
         fall.setDuration(s.duration);
         if (s.state !== stateOption) { stateOption = s.state; request(s.state === 'cracked' ? 'crack' : s.state); }
@@ -325,7 +432,8 @@ export const plugin = Object.freeze({
         if (wasFalling && !falling) { cracks.jump('in'); gCrack = 0; precracked = false; crossfade = false; }   // back in place, cracks closed
         wasFalling = falling;
         if (!falling && cracks.assembled) { pattern = null; crackedMapper = null; }
-        if (gFall >= 1 || !falling) useFrozen = false;
+        // the copy is left once the pane is fully gone (the way back is live); a demo fall stops in the air and comes back with its copy
+        if ((gFall >= 1 && spanEnd >= SPAN) || !falling) useFrozen = false;
         // how open the cracks are: their own clock, or, during a fall that did not start cracked, the first HEAL of the way out / last of the way back
         const c = falling ? (precracked && fall.phase !== 'in' ? 1 : Math.min(1, gFall / HEAL)) : gCrack;
         if (layoutPending && (falling || c > 0) && !crossfade) {
@@ -334,9 +442,11 @@ export const plugin = Object.freeze({
           impact.x = Math.min(frame.cssWidth, Math.max(0, at.x));
           impact.y = Math.min(frame.cssHeight, Math.max(0, at.y));
           far = Math.max(Math.hypot(impact.x, impact.y), Math.hypot(frame.cssWidth - impact.x, impact.y), Math.hypot(impact.x, frame.cssHeight - impact.y), Math.hypot(frame.cssWidth - impact.x, frame.cssHeight - impact.y));
-          const built = buildShards(impact, frame.cssWidth, frame.cssHeight, s.cracks, s.seed + strikes++, vertices, shardData);
+          const built = buildShards(impact, frame.cssWidth, frame.cssHeight, s.cracks, s.seed + strikes++, vertices, shardData, wallVertices);
           vertexCount = built.vertexCount;
+          wallCount = built.wallCount;
           device.queue.writeBuffer(vertexBuffer, 0, vertices, 0, vertexCount * VERTEX_FLOATS);
+          device.queue.writeBuffer(wallBuffer, 0, wallVertices, 0, wallCount * VERTEX_FLOATS);
           device.queue.writeBuffer(uniforms, HEADER_FLOATS * 4, shardData);
           pattern = crackedLayout(vertices, vertexCount, shardData, built.shardCount, s.refraction);
           const frozenPattern = pattern;
@@ -344,7 +454,12 @@ export const plugin = Object.freeze({
           layoutPending = false;
           pendingImpact = null;
         }
-        const time = falling ? gFall * SPAN : 0;
+        // the physics time of this frame: real time on the way out, eased into place on the way back (fallTime)
+        const dir = fall.phase === 'out' ? 1 : fall.phase === 'in' ? -1 : 0;
+        if (dir !== run.dir) { run.dir = dir; run.g0 = lastG; run.t0 = lastTime; }
+        const time = !falling ? 0 : dir !== 0 ? fallTime(dir, gFall, run.g0, run.t0, spanEnd) : gFall >= 1 ? spanEnd : lastTime;
+        lastG = falling ? gFall : 0;
+        lastTime = time;
         const breaking = falling && time >= HEAL * SPAN;
         const pane = !crossfade && c > 0 && vertexCount > 0 && pattern !== null;   // the cracked pane is drawn (still, or with its cracks running)
         shown = falling || cracks.animating ? 'moving' : pane ? 'cracked' : 'intact';
@@ -356,21 +471,41 @@ export const plugin = Object.freeze({
           : cracks.phase === 'out' ? 1.5 * (1 - smoothstep(0, 0.6, gCrack)) : 0;
         look.debrisT = breaking ? time - HEAL * SPAN : cracks.phase === 'out' ? gCrack : -1;
         look.debrisN = breaking ? CHIPS_FALL : CHIPS_CRACK;
-        look.ghosts = breaking ? 3 : 1;
-        look.alpha = 1 - smoothstep(0.82, 1, gFall);
+            // the shards fade out at the end of a full fall; a demo fall stops with them in the air
+        look.alpha = spanEnd < SPAN ? 1 : 1 - smoothstep(0.82, 1, gFall);
         fillHeader(header, frame, s, look, impact);
         device.queue.writeBuffer(uniforms, 0, header);
         attachment.view = frame.destinationView;
         attachment.clearValue.r = s.backdrop[0]; attachment.clearValue.g = s.backdrop[1]; attachment.clearValue.b = s.backdrop[2];
-        passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('shatter');
-        const pass = frame.encoder.beginRenderPass(passDescriptor);
-        if (frame.sourceReady) {
+        const timestamps = frame.profiling?.timestampWrites?.('shatter');
+        // shards in the air: slabs of glass with depth, drawn with MSAA into a target resolved into the destination
+        const flying = frame.sourceReady && falling && !crossfade && (gFall < 1 || look.alpha > 0) && vertexCount > 0;
+        if (flying) ensureFallTargets(frame.width, frame.height);
+        else if (fallTargets && !(falling && fall.animating)) releaseFallTargets();   // kept through the hold of 'play', released at rest
+        let pass;
+        if (flying) {
+          msaaAttachment.resolveTarget = frame.destinationView;
+          fallDescriptor.timestampWrites = timestamps;
+          pass = frame.encoder.beginRenderPass(fallDescriptor);
           pass.setBindGroup(0, groupFor(useFrozen && frozenView ? frozenView : frame.sourceView));
-          if (crossfade || (!falling && !pane)) { pass.setPipeline(full); pass.draw(3); }   // intact (the host's passthrough), or the crossfade
-          else {
-            if (!falling) { pass.setPipeline(full); pass.draw(3); }                        // the picture in place, dimmed: seen inside the open cracks
-            if (gFall < 1) { pass.setPipeline(glass); pass.setVertexBuffer(0, vertexBuffer); pass.draw(vertexCount, look.ghosts); }
-            if (look.debrisT >= 0 && gFall < 1) { pass.setPipeline(chips); pass.draw(3, look.debrisN); }
+          pass.setPipeline(backdrop3d); pass.draw(3);                                      // the lit backdrop behind the pane
+          pass.setVertexBuffer(0, vertexBuffer);
+          pass.setPipeline(shadow3d); pass.draw(vertexCount, 1);                          // the shadows on it
+          pass.setPipeline(glass3d); pass.draw(vertexCount, 2);                           // the front and back faces
+          pass.setVertexBuffer(0, wallBuffer);
+          pass.setPipeline(walls3d); pass.draw(wallCount, 1);                             // the edges of the slabs
+          if (look.debrisT >= 0) { pass.setPipeline(chips3d); pass.draw(3, look.debrisN); }
+        } else {
+          passDescriptor.timestampWrites = timestamps;
+          pass = frame.encoder.beginRenderPass(passDescriptor);
+          if (frame.sourceReady) {
+            pass.setBindGroup(0, groupFor(useFrozen && frozenView ? frozenView : frame.sourceView));
+            if (crossfade || (!falling && !pane)) { pass.setPipeline(full); pass.draw(3); }   // intact (the host's passthrough), or the crossfade
+            else if (!falling) {
+              pass.setPipeline(full); pass.draw(3);                                         // the picture in place, dimmed: seen inside the open cracks
+              pass.setPipeline(glass); pass.setVertexBuffer(0, vertexBuffer); pass.draw(vertexCount, 1);
+              if (look.debrisT >= 0) { pass.setPipeline(chips); pass.draw(3, look.debrisN); }
+            }
           }
         }
         pass.end();
@@ -402,6 +537,9 @@ export const plugin = Object.freeze({
         source.removeEventListener('submit', onSubmit);
         uniforms.destroy?.();
         vertexBuffer.destroy?.();
+        wallBuffer.destroy?.();
+        releaseFallTargets();
+        endDemo();
         frozen?.destroy?.();
       },
     };
