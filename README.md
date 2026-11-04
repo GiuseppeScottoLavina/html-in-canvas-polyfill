@@ -39,6 +39,8 @@ Or from a CDN, with plain script tags placed before your own scripts (no `defer`
 <script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.21/dist/hic-live-engines.iife.min.js"></script>
 ```
 
+To download nothing in a browser that implements the API (Chrome 157), load `dist/hic-live-loader.iife.min.js` instead (6 KB gzipped) and `await HicLiveLoader.load()` before your code uses the API; it fetches the core, and the engines bundle on Firefox and Safari, only where the polyfill runs ([GETTING-STARTED](docs/guides/GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs)).
+
 Then use the standard API. This is the explainer's own example, unchanged:
 
 ```html

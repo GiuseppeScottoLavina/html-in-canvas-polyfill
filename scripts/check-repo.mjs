@@ -156,7 +156,9 @@ if (!docsOnly) {
   // scroll-compose.js Pending, scroll-pages.js focus and selection between steps, damage-rect.js position and z-index)
   // 16825 -> 16830 (2026-11-04, measured 16,826): the caret patch is put back before a composed step only when it lies across the port's edge (+7: store.js
   // scrollStep, caret-patch.js meets, scroll-compose.js step's composed callback)
-  if (total > 16830) problems.push(`G-size: core is ${total} code lines (> 16830)`);
+  // 16830 -> 16955 (2026-11-04, measured 16,948): the loader, which downloads the core only where the polyfill runs (+122: src/api/loader.js 93, src/loader.js 14,
+  // src/loader-iife.js 11, native-detect.js decideInstall +7 shared with install.js -3). The loader is its own bundle; the core bundle gains only decideInstall
+  if (total > 16955) problems.push(`G-size: core is ${total} code lines (> 16955)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

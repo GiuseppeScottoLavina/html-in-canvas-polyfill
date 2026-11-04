@@ -14,7 +14,7 @@ import { VERSION } from '../version.js';
 import { resolveOptions, withDeviceBudgets } from './options.js';
 import { createEnv } from './env.js';
 import { createPatchLedger } from './patch.js';
-import { browserGate, decideMode, nativeUsable, probeNative } from './native-detect.js';
+import { decideInstall, nativeUsable } from './native-detect.js';
 import { buildReport, createReporter, watchCsp } from './report.js';
 import { compose, composeNative, defaultServices } from './compose.js';
 import { createSchedulerHooks, defineEventGlobals, disposeHandlers } from './paint-event.js';
@@ -84,10 +84,7 @@ export function installWith(options, services) {
   const doc = options?.document ?? win.document;
   if (doc.nodeType !== 9) throw new TypeError('option "document" must be a Document');
 
-  const given = resolveOptions(options);
-  const native = probeNative(win);
-  const gate = browserGate(win);
-  const decision = decideMode(native, gate, given);
+  const { given, native, gate, decision } = decideInstall(win, options);
   if (decision.refusal) return refuse(win, given, native, decision.refusal);
   const { mode, notes, warning } = stepAside(native, decision);
   if (warning) /** @type {Window & typeof globalThis} */ (win).console.warn(`[hic-live-polyfill] ${warning}`);

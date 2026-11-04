@@ -3,8 +3,10 @@
 //   1. size: core min <= 150 KB (the target), and never above the recorded RATCHET (a regression fails even with --allow-size); every other bundle below its own ceiling;
 //      the six classic bundles also below their gzip budget (level 9). The ceilings and budgets are the measured sizes plus a small margin.
 //   2. static: each IIFE parses as a CLASSIC script (a static import/export or import.meta is a SyntaxError there) and has no dynamic import()
-//   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + each plugin of dist/plugins/, native bridge + core:
-//      the globals exist and work, the page made NO request beyond its own scripts (server log + Resource Timing), and the minified FEATURES agree with src/contracts/features.js
+//   3. in headless Chrome, for the readable AND the minified files: core alone, core + effects, core + effects + each plugin of dist/plugins/, native bridge + core,
+//      the loader alone and the loader with the core it loads (ten concurrent calls, a core slower than the timeout that must never install, a 404, a CSP without and
+//      with the loader's nonce), the ESM loader: the globals exist and work, the page made NO request beyond its own scripts and each of them exactly once (server log +
+//      Resource Timing), and the minified FEATURES agree with src/contracts/features.js
 // --allow-size: the 150 KB target is a KNOWN RED (printed, does not fail); the ratchet still fails. Used by `npm test` and CI until the target is met (docs/BUNDLES.md).
 import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -196,12 +198,15 @@ const LIMITS = {
   // 38.75 -> 39.5 KB (+598 / +185 bytes, 2026-10-30, measured 39,319 / 13,996): the scale of a box read from its fractional layout size (util/box-scale.js boxScale / layoutSize) instead of the rounded offsetWidth / offsetHeight
   //   (native-geometry.js contentBoxOf: the canvas box of the effect host)
   // gzip 14 -> 14.25 KB (+29 / +16 bytes, 2026-11-02, measured 39,348 / 14,012): the shared BUS topics gain MEMORY_FREED (contracts/events.js)
-  'hic-live-effects.iife.min.js': { target: 39.5 * KB, ceiling: 39.5 * KB, gzip: 14.25 * KB },
+  // 39.5 -> 39 KB, gzip 14.25 -> 14 KB (-456 / -211 bytes, 2026-11-04, measured 38,884 / 13,801): contracts/events.js marks its frozen tables pure, so a bundle
+  //   carries only the tables it reads (the effects bundle no longer carries EVENTS)
+  'hic-live-effects.iife.min.js': { target: 39 * KB, ceiling: 39 * KB, gzip: 14 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
   // gzip 5.5 -> 5.25 KB (-60 / -206 bytes, 2026-10-27, measured 13,827 / 5,113): the Terser pass over esbuild's minified output
-  'hic-live-native-bridge.iife.min.js': { target: 14 * KB, ceiling: 14 * KB, gzip: 5.25 * KB },
+  // 14 -> 13.5 KB, gzip 5.25 -> 5 KB (-399 / -218 bytes, 2026-11-04, measured 13,457 / 4,909): contracts/events.js marks its frozen tables pure (unused tables dropped)
+  'hic-live-native-bridge.iife.min.js': { target: 13.5 * KB, ceiling: 13.5 * KB, gzip: 5 * KB },
   // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
   // 38.5 -> 42 KB, gzip 15 -> 16.25 KB (+3,509 / +1,244 bytes, 2026-10-16, measured 41,804 / 16,038): the iOS control look (system tint, pill buttons and pop-ups from the computed
   //   style, the colour-well hue ring, medium-style date pills, no spin button, popup labels pinned) and the iOS classification of the engine
@@ -228,6 +233,10 @@ const LIMITS = {
   // 11 -> 11.5 KB, gzip 4.25 -> 4.5 KB (+416 / +198 bytes, 2026-11-02, measured 11,320 / 4,328): api/validate.js again, so a texture upload of a zero-width or
   //   zero-height drawable logs the same one-time warning as a draw (warnZeroSize)
   'hic-live-gpu.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB, gzip: 4.5 * KB },
+  // the loader (src/loader-iife.js, 2026-11-04, measured 17,293 / 6,277): install()'s whole decision is about 4,340 bytes of the gzip (native-detect.js with util/engine.js:
+  //   the probe, the browser gate and the decision table with its refusal texts, about 3,310; options.js, the same option validation as install(), about 1,030), the script loading
+  //   and the result about 1,935. The goal of 5 KB gzipped is not met: meeting it needs a smaller detector or option check, which would decide differently from install()
+  'hic-live-loader.iife.min.js': { target: 17.5 * KB, ceiling: 17.5 * KB, gzip: 6.5 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */
 const PLUGIN_CEILING = 16 * KB;
@@ -348,21 +357,23 @@ if (!process.argv.includes('--skip-browser')) {
       const CORE = f('hic-live-polyfill'), EFFECTS = f('hic-live-effects'), BRIDGE = f('hic-live-native-bridge'), ENGINES = f('hic-live-engines'), GPU = f('hic-live-gpu');
       const tag = min ? 'min' : 'js';
       /** @param {string} name @param {string[]} scripts @param {string} expr page-side check, must return a string[] of problems */
-      const check = async (name, scripts, expr, declared = scripts, allowErrors = /$^/) => {
+      // `blocked`: URLs the page tries and the browser blocks before any request (a CSP): allowed in Resource Timing, which lists them, never in the server log
+      const check = async (name, scripts, expr, declared = scripts, allowErrors = /$^/, fixture = 'index.html', blocked = []) => {
         const page = await browser.newPage({ reuseFirst: false });
         srv.requests.length = 0;
         try {
           page.clearLogs();
-          await page.navigate(`${srv.url}/test/fixtures/bundle-load/index.html?scripts=${scripts.join(',')}`);
+          await page.navigate(`${srv.url}/test/fixtures/bundle-load/${fixture}?scripts=${scripts.join(',')}`);
           await H.sleep(300);
           const out = await page.evaluate(`(async () => { ${expr} })()`);
           const requested = srv.requests.map((r) => r.url.split('?')[0]).filter((u) => !/favicon/.test(u));
-          const expected = ['/test/fixtures/bundle-load/index.html', ...declared];
-          const extra = requested.filter((u) => !expected.includes(u));
+          const expected = [`/test/fixtures/bundle-load/${fixture}`, ...declared];
+          // each declared script exactly once: the loader shares one download between concurrent calls
+          const extra = [...requested.filter((u) => !expected.includes(u)), ...declared.filter((u) => requested.filter((x) => x === u).length > 1)];
           const resources = await page.evaluate('performance.getEntriesByType("resource").map((e) => new URL(e.name).pathname + ":" + e.initiatorType)');
-          const strayResources = resources.filter((r) => !/favicon/.test(r)).filter((r) => !declared.includes(r.split(':')[0]) || !/^(script)$/.test(r.split(':').pop()));
+          const strayResources = resources.filter((r) => !/favicon/.test(r)).filter((r) => ![...declared, ...blocked].includes(r.split(':')[0]) || !/^(script)$/.test(r.split(':').pop()));
           const errs = page.errors({ includeWarnings: false }).map((e) => e.text).filter((t) => !/favicon/.test(t) && !allowErrors.test(t));
-          const bad = [...out, ...extra.map((u) => `unexpected request ${u}`), ...strayResources.map((r) => `unexpected resource ${r}`), ...errs.map((e) => `page error: ${e}`)];
+          const bad = [...out, ...extra.map((u) => `unexpected request ${u}`), ...declared.filter((u) => !requested.includes(u)).map((u) => `no request for ${u}`), ...strayResources.map((r) => `unexpected resource ${r}`), ...errs.map((e) => `page error: ${e}`)];
           results.push({ name: `${name} [${tag}]`, bad });
         } finally { await page.close(); }
       };
@@ -450,6 +461,71 @@ if (!process.argv.includes('--skip-browser')) {
         await check('CONTROL undeclared script', [CORE, EFFECTS], 'return [];', [CORE]);
         await check('CONTROL missing global', [CORE], "return typeof HicLivePlugins === 'object' ? [] : ['HicLivePlugins missing (expected for this control)'];");
       }
+      // the loader: alone it requests nothing; load() requests the core beside it (data-hic-manual) once for ten concurrent calls and installs once (the harness
+      // disables the native API, so the decision is polyfill; Chromium: no engines bundle)
+      const LOADER = f('hic-live-loader');
+      await check('loader alone: HicLiveLoader, no other request, nothing installed', [LOADER], `
+        const bad = [];
+        if (typeof HicLiveLoader?.load !== 'function' || HicLiveLoader.version !== ${JSON.stringify(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version)}) bad.push('window.HicLiveLoader missing or wrong');
+        if ('HicLivePolyfill' in window || window[Symbol.for('hic.installed')]) bad.push('the loader alone loaded or installed the core');
+        return bad;`);
+      // what the polyfill patches once installed (the harness disables the native API): absent from a page where it never installed
+      const PATCHED = "typeof HTMLCanvasElement.prototype.requestPaint === 'function' || typeof CanvasRenderingContext2D.prototype.drawElementImage === 'function'";
+      await check('loader + core: ten concurrent load() calls, one request, one install (polyfill), whenPainted', [LOADER], `
+        const bad = [];
+        const ps = Array.from({ length: 10 }, () => HicLiveLoader.load());
+        const rs = await Promise.all(ps);
+        const r = rs[0];
+        if (!ps.every((p) => p === ps[0]) || !rs.every((x) => x === r)) bad.push('the calls do not share one promise and one result');
+        if (r.status !== 'polyfill' || r.mode !== 'polyfill') bad.push('status ' + r.status + ': ' + r.reason);
+        if (r.installed !== HicLivePolyfill.getInstalled()) bad.push('result.installed is not the live install');
+        if ('__HIC__' in window) bad.push('the core auto-installed (no data-hic-manual)');
+        if (document.querySelectorAll('script[data-hic-manual][src$="${CORE}"]').length !== 1) bad.push('the core script is not one data-hic-manual script');
+        if (!(${PATCHED})) bad.push('nothing patched after the install');
+        await r.installed.whenPainted(document.getElementById('c'), 4000).catch((e) => bad.push('no first paint: ' + e.message));
+        if ((await HicLiveLoader.load()) !== r) bad.push('a later call does not share the result');
+        return bad;`, [LOADER, CORE]);
+      await check('loader: a core slower than the timeout -> status error, and the late core never installs', [LOADER], `
+        const bad = [];
+        const r = await HicLiveLoader.load({ core: '${CORE}?delay=1500', timeout: 200 });
+        if (r.status !== 'error' || r.mode !== null || r.installed !== null || r.error?.name !== 'TimeoutError') bad.push('expected a TimeoutError result, got ' + r.status + ' ' + r.error);
+        for (let i = 0; i < 150 && !('HicLivePolyfill' in window); i++) await new Promise((ok) => setTimeout(ok, 20));
+        if (!('HicLivePolyfill' in window)) { bad.push('the late core never arrived'); return bad; }
+        await new Promise((ok) => setTimeout(ok, 100));
+        if (HicLivePolyfill.getInstalled() !== null) bad.push('the late core installed');
+        if (document.querySelector('hic-layer, [data-hic-layer]')) bad.push('a layer element exists');
+        if (${PATCHED}) bad.push('a prototype is patched');
+        if ('__HIC__' in window) bad.push('the late core auto-installed');
+        if ((await HicLiveLoader.load()) !== r) bad.push('a later call does not share the settled result');
+        // control: the checks above see an install of this very core
+        const i = HicLivePolyfill.install();
+        if (!(${PATCHED}) || HicLivePolyfill.getInstalled() !== i) bad.push('control: an explicit install is not seen by the checks');
+        i.uninstall();
+        return bad;`, [LOADER, CORE]);
+      await check('loader: a 404 -> status error (NetworkError), nothing installed', [LOADER], `
+        const bad = [];
+        const r = await HicLiveLoader.load({ core: '/dist/no-such-core.js' });
+        if (r.status !== 'error' || r.error?.name !== 'NetworkError') bad.push('expected a NetworkError result, got ' + r.status + ' ' + r.error);
+        if ('HicLivePolyfill' in window || ${PATCHED}) bad.push('something was loaded or patched');
+        return bad;`, [LOADER, '/dist/no-such-core.js'], /404|Failed to load resource/);
+      await check('loader under a CSP without its nonce: the core is blocked -> status error', [LOADER], `
+        const bad = [];
+        const violations = [];
+        document.addEventListener('securitypolicyviolation', (e) => violations.push(e.blockedURI));
+        const r = await HicLiveLoader.load();
+        if (r.status !== 'error' || r.error?.name !== 'NetworkError') bad.push('expected a NetworkError result, got ' + r.status + ' ' + r.error);
+        if ('HicLivePolyfill' in window) bad.push('the core ran');
+        await new Promise((ok) => setTimeout(ok, 50));
+        if (!violations.some((u) => u.endsWith('${CORE}'))) bad.push('no CSP violation for the core: ' + violations.join(', '));
+        return bad;`, [LOADER], /Content Security Policy|Refused to load/, 'csp.html', [CORE]);
+      await check('loader under a CSP with its nonce: the core loads and installs', [LOADER], `
+        const bad = [];
+        const r = await HicLiveLoader.load({ nonce: 'hic-bundle' });
+        if (r.status !== 'polyfill') bad.push('status ' + r.status + ': ' + r.reason);
+        else await r.installed.whenPainted(document.getElementById('c'), 4000).catch((e) => bad.push('no first paint: ' + e.message));
+        return bad;`, [LOADER, CORE], /$^/, 'csp.html');
+      // positive control: a script requested twice is reported (the one-request check of the loader)
+      if (!min) await check('CONTROL duplicate request', [LOADER, LOADER], 'return [];');
       await check('native bridge + core', [BRIDGE, CORE], `
         const bad = [];
         const slot = globalThis[Symbol.for('hic.native-bridge')];
@@ -469,6 +545,22 @@ if (!process.argv.includes('--skip-browser')) {
         const stray = srv.requests.map((r) => r.url.split('?')[0]).filter((u) => u !== '/test/fixtures/bundle-load/esm.html' && !u.startsWith('/dist/esm/') && u !== '/dist/plugins/water.esm.js' && !/favicon/.test(u));
         const errs = page.errors({ includeWarnings: false }).map((e) => e.text).filter((t) => !/favicon/.test(t));
         results.push({ name: 'ESM builds', bad: [...(out.bad ?? []), ...(out.done ? [] : ['the module did not finish']), ...stray.map((u) => `unexpected request ${u}`), ...errs.map((e) => `page error: ${e}`)] });
+      } finally { await page.close(); }
+    }
+    // the ESM loader: imports dist/esm/index.js once for ten concurrent calls and installs
+    {
+      const page = await browser.newPage({ reuseFirst: false });
+      srv.requests.length = 0;
+      try {
+        page.clearLogs();
+        await page.navigate(`${srv.url}/test/fixtures/bundle-load/esm-loader.html`);
+        await page.waitForFunction('window.__esm?.done === true', { timeout: 15000 }).catch(() => {});
+        const out = await page.evaluate('JSON.stringify(window.__esm ?? { bad: ["no result"] })').then(JSON.parse);
+        const urls = srv.requests.map((r) => r.url.split('?')[0]).filter((u) => !/favicon/.test(u));
+        const stray = urls.filter((u) => u !== '/test/fixtures/bundle-load/esm-loader.html' && !u.startsWith('/dist/esm/'));
+        const twice = [...new Set(urls.filter((u, i) => urls.indexOf(u) !== i))];
+        const errs = page.errors({ includeWarnings: false }).map((e) => e.text).filter((t) => !/favicon/.test(t));
+        results.push({ name: 'ESM loader', bad: [...(out.bad ?? []), ...(out.done ? [] : ['the module did not finish']), ...stray.map((u) => `unexpected request ${u}`), ...twice.map((u) => `requested twice: ${u}`), ...errs.map((e) => `page error: ${e}`)] });
       } finally { await page.close(); }
     }
   } finally { await browser.close().catch(() => {}); await srv.close().catch(() => {}); }

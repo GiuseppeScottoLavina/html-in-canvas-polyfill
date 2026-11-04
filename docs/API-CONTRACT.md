@@ -120,6 +120,50 @@ The conformance gate runs the WPT at `5ccef26d` (2026-10-28), the newest commit 
 | an SVG filter outside the canvas subtree is ignored, for `filter` and `backdrop-filter` (WPT `98fef2da`, which also moves the filters of ten earlier tests inside their canvas); a tainted filter is stripped when painting box contents (WPT `5d13573a`), with the related invalidation fixes (WPT `f3af6a89`, `ac7939c9`, `1b91f9cc`, `4d0cdba6`) | follows it: what decides is where the resource lies (measured on Canary 159: inside any canvas with `content=drawable` every resource applies, outside every one a clip path applies, a mask masks away, a filter, paint server or marker is ignored); a copied resource keeps its computed painting properties (never a `:visited` style); in a mask, pattern or marker copied from outside the drawable an element whose filter is tainted loses its descendants' filters too; the drawable's own `backdrop-filter` drops such `url()` filters and never taints the canvas. A backdrop-filter of a descendant is still not drawn (`backdrop-isolation`) |
 | object-fit on a nested canvas, content not culled, a nested drawable or canvas under a filter, a backdrop-filter with a blend mode over the content (WPT `55d46066`, `7bec1099`, `91c843b8`, `fe2bd410`, `5caead78`) | rendering fixes of the native implementation. The polyfill draws a nested drawable under a filter and unculled content; a canvas drawn into and then drawn from in the same task shows its bitmap of the last snapshot (`drawable-canvas-element`) |
 
+### 2.4 The loader: `load(options?)` -> `Promise<LoadResult>`
+
+An optional bootstrap that downloads the core only where it will run. `install()` itself stays synchronous; the loader is a separate entry that makes the same
+decision first and is asynchronous by nature, so a page that uses it reads the API only after `load()` settles. Classic: `dist/hic-live-loader.iife(.min).js`
+defines `window.HicLiveLoader = {load, version}`. Module: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'` (`dist/esm/loader.js`).
+
+**The decision is install()'s.** The loader calls the same function as `install()` (`decideInstall` in `api/native-detect.js`: `resolveOptions`, `probeNative`,
+`browserGate`, `decideMode`), with `options.install` as `install()` would receive it. So `mode`, `forcePolyfill` and `window` act as in `install()`, and an
+invalid install option is the same `TypeError` (status `'error'`), also on a browser with the native API.
+
+| decision | what the loader downloads | result |
+|---|---|---|
+| native (`complete`, `partial`, `legacy` without the bridge, or `mode: 'polyfill'` over a usable native) | nothing | `status: 'native'`, `installed: null` |
+| native-bridged (a `legacy` native, or a `partial` one with a gap the bridge can build) | the native bridge, then the core (`bridge: false`: nothing, `status: 'native'`) | `install()`'s mode, normally `'native-bridged'` |
+| polyfill | on Firefox and Safari the engines bundle (unless `engines: false`), then the core with `data-hic-manual`; then `HicLivePolyfill.install(options.install)` | `status: 'polyfill'`, `installed` = what `install()` returned |
+| refused (an unsupported browser, a `broken` native) | nothing; one `console.warn` with `install()`'s text | `status: 'refused'`, `reason` = `install()`'s message, `error` = the `HicUnsupportedError` `install()` would throw |
+
+A window that already has an install (the core loaded by its own tag, or `install()` called) gets that `HicInstalled` back and nothing is downloaded; a bundle
+already on the page (the core global, the bridge or engines registration) is not downloaded again.
+
+**Options (`LoadOptions`):** `install` (the `HicOptions` for `install()`); `core` (URL of the classic core); `engines` (URL, or `false`); `bridge` (URL, or `false`);
+`timeout` (ms, default 10000); `nonce` (set on the `<script>` elements the loader creates). The classic loader's default URLs are the files beside its own `src`
+(read from `document.currentScript` when it runs), the `.min.js` ones when it is the `.min.js`. The module loader imports the package entry (`./index.js`, which
+carries the engines and GPU code) and `./native-bridge.js`; a bundler splits them into their own chunks. There `core`, `engines`, `bridge` as a URL and `nonce`
+are a `TypeError`; `bridge: false` and `engines: false` are accepted.
+
+**Result (`LoadResult`, frozen):** `{status, mode, installed, native, reason?, error?}`. `status` is `'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'`;
+`mode` is the `HicMode`, `null` on error; `installed` is the `HicInstalled` that `install()` returned, or `null` when the core was not loaded (never a stand-in);
+`native` is the `NativeState` of the probe (`null` only without a window).
+
+**Settling.** Concurrent and repeated calls share one promise per window (one download, one install); the options of a later call are ignored. The promise never
+rejects: a timeout (`TimeoutError`), a load error (`NetworkError`: an HTTP error, a network error or a script blocked by a Content-Security-Policy), a core that
+loads without defining `HicLivePolyfill`, an invalid option or a throw of `install()` resolve `status: 'error'` with `error` and `reason`. A bundle that arrives
+after the loader settled never installs: the core runs under `data-hic-manual` (no auto-install) and the loader calls `install()` only while it has not settled.
+To retry after an error, reload the page.
+
+**Without the core (status `native`).** There is no `HicInstalled`: the app uses the browser's API directly. `whenPainted` is not available; wait for the
+canvas's first `paint` event instead (or call `requestPaint()` and draw from `onpaint`). The extensions of section 7 (the frame cap, the effects host) need the
+core, which the loader does not download there: a page that uses them over a native implementation loads the core itself (its script tag, or `install()`).
+
+**CSP.** The loader runs no inline script and no `eval`. `script-src` must allow the loader's URL and the bundle URLs it loads (the core; the engines bundle for
+Firefox and Safari; the native bridge where it is used), or carry a nonce that the page passes as `nonce`. Neither `'unsafe-inline'` nor `'unsafe-eval'` is needed
+by the loader. A blocked bundle settles `load()` with `status: 'error'` (G-bundle checks a nonce-only policy without and with `nonce`).
+
 ## 3. Markup
 
 - `content` (canvas): enumerated `fallback` (default, missing, invalid) | `drawable`. IDL attribute `canvas.content` reflects only

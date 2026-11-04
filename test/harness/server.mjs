@@ -8,7 +8,8 @@
 //  * Sends COOP/COEP/CORP headers (page is crossOriginIsolated, like a typical WebGPU demo host). Append `?iso=0` to any URL
 //    to drop them, `?corp=cross-origin` to send `Cross-Origin-Resource-Policy: cross-origin` instead (a resource another origin's isolated page may load
 //    without CORS, e.g. a cross-origin video that taints a canvas), `?cors=1` to allow a credentialed CORS read by the requesting origin
-//    (Access-Control-Allow-Origin echoes the Origin header, `null` after a cross-origin redirect), `?redirect=<url>` to answer 302 to that URL.
+//    (Access-Control-Allow-Origin echoes the Origin header, `null` after a cross-origin redirect), `?redirect=<url>` to answer 302 to that URL,
+//    `?delay=<ms>` to hold the answer that long (at most 30 s: a bundle that arrives after a loader's timeout).
 //  * GET /__hic/hash?path=/dist/polyfill.js -> {path, sha256, bytes}: assert the bundle identity under test in every experiment.
 //  * GET /test/fixtures/f4-large-app/index.html?nodes=N is generated on the fly (see fixtures/f4-large-app/generate.mjs).
 //  * Dot-directories (.git, .profiles, .scratch) and path traversal outside the root are refused (403).
@@ -67,6 +68,8 @@ export async function startServer({ root = PROJECT_ROOT, port = 0, host = '127.0
       iso = url.searchParams.get('iso') !== '0';
       if (url.searchParams.get('corp') === 'cross-origin') corp = 'cross-origin';
       if (url.searchParams.get('cors') === '1') cors = { 'Access-Control-Allow-Origin': String(req.headers.origin ?? '*'), 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' };
+      const delay = Math.min(Number(url.searchParams.get('delay')) || 0, 30000);
+      if (delay > 0) await new Promise((ok) => setTimeout(ok, delay));
       const redirect = url.searchParams.get('redirect');
       if (redirect) return send(302, 'text/plain', '', { Location: redirect });
       let pathname;
