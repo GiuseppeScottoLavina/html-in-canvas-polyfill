@@ -201,3 +201,24 @@ test('hover sync: inert for the page (no box, no hit test, no a11y, no shadow ro
   assert.ok(records.some((m) => m.type === 'attributes' && m.target === document.body), 'the observer sees attribute changes');
   assert.ok(records.some((m) => m.type === 'childList' && [...m.removedNodes].includes(el)), 'and the removal');
 });
+
+test('a finger that is re-targeted taps on lift: B focused and activated only when it lifts without travelling; a drag focuses and activates nothing', (t) => {
+  const s = setup(t, shiftRight);
+  const touch = { pointerType: 'touch' };
+  const d = s.fire('pointerdown', 20, 20, touch);
+  assert.equal(d.ev.defaultPrevented, true, 're-targeted');
+  assert.notEqual(document.activeElement, s.el('b'), 'not focused while the finger is down');
+  s.fire('pointerup', 20, 20, touch);
+  d.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: 50, clientY: 60, detail: 1 }));
+  assert.deepEqual(s.clicks, ['b'], 'the tap activated B, the native click swallowed');
+  assert.equal(document.activeElement, s.el('b'));
+  s.el('b').blur();
+  // the release aimed the geometry at B; back to the plain stretch, so this press is re-targeted too (the rig's browser would focus a native hit at pointerdown)
+  s.geometry.reset();
+  const d2 = s.fire('pointerdown', 20, 20, touch);
+  assert.equal(d2.ev.defaultPrevented, true, 're-targeted again');
+  s.fire('pointermove', 60, 20, touch);
+  s.fire('pointerup', 60, 20, touch);
+  assert.deepEqual(s.clicks, ['b'], 'a drag activates nothing');
+  assert.notEqual(document.activeElement, s.el('b'), 'a drag focuses nothing');
+});
