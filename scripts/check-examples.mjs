@@ -144,15 +144,16 @@ async function changedFrom(page, selector, kind, before, minPixels = 30, timeout
  * Selection of static text drawn in the canvas (a heading, not a field): a trusted double click on the word `word` must show the highlight on the canvas within
  * `timeoutMs`, and a trusted click outside the canvas must remove it again (the word's pixels return to the picture before the double click). With the effects host,
  * the source version that the host uploads must advance both times (the effect sees the new source). Measured in the word's box only, so an animated effect
- * elsewhere does not count. Returns the check detail.
+ * elsewhere does not count. The word is looked up in the live layer, or, in mode native (no layer: the canvas children are the live DOM), in the canvas.
+ * Returns the check detail.
  */
 async function staticSelectionShows(page, selector, kind, word, { effect = false, timeoutMs = 1500 } = {}) {
-  await page.evaluate(`(() => { const layer = document.querySelector('hic-layer'); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
+  await page.evaluate(`(() => { const layer = document.querySelector('hic-layer') ?? document.querySelector(${q(selector)}); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
     while ((t = tw.nextNode())) if (t.data.includes(${q(word)})) { t.parentElement.scrollIntoView({ block: 'center' }); break; }
     getSelection().removeAllRanges();
     window.__selSource = null; if (!window.__selSourceListener) { window.__selSourceListener = true; document.querySelector(${q(selector)}).addEventListener('effectframe', (e) => { window.__selSource = e.detail.sourceVersion; }); } })()`);
   await sleep(400);
-  const target = await page.evaluate(`(() => { const layer = document.querySelector('hic-layer'); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
+  const target = await page.evaluate(`(() => { const layer = document.querySelector('hic-layer') ?? document.querySelector(${q(selector)}); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
     while ((t = tw.nextNode())) { const i = t.data.indexOf(${q(word)}); if (i < 0) continue;
       const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + ${word.length}); const b = r.getBoundingClientRect(); const c = document.querySelector(${q(selector)}).getBoundingClientRect();
       return { x: b.left + b.width / 2, y: b.top + b.height / 2, box: { x: b.left - c.left, y: b.top - c.top, w: b.width, h: b.height }, canvas: { w: c.width, h: c.height } }; }
@@ -643,7 +644,9 @@ const SCENARIOS = {
       const asText = !!shown && shown.includes('<img id="pg-injected" src="data:,">');
       return { ok: !!s && s.state === st.state && !!shown && asText && !injected, state: s?.state, injected, asText, console: (shown ?? (await status()).console).slice(0, 400) };
     });
-    await run.step('interact', 'an exception the polyfill throws (a refused drawElementImage: the form has no drawable attribute) reaches the console panel with its message, not as a muted "Script error"', async () => {
+    // the refusal and its message are the polyfill's: in mode native the browser's own implementation draws (or not) and nothing of the polyfill runs
+    if (NATIVE) run.notes.push('SKIPPED in mode native: the polyfill\'s refused drawElementImage (the exception and its message are the polyfill\'s)');
+    else await run.step('interact', 'an exception the polyfill throws (a refused drawElementImage: the form has no drawable attribute) reaches the console panel with its message, not as a muted "Script error"', async () => {
       await setCode(basicExplainerBlock().replace('<form drawable>', '<form>'));
       const n = await runs();
       await page.evaluate(`document.getElementById('run').click()`);
@@ -758,7 +761,7 @@ const SCENARIOS = {
       const s = await settled(n + 1);
       const after = await page.evaluate(`({ isDefault: document.getElementById('code').value === document.getElementById('code').defaultValue, hash: location.hash })`);
       const img = s ? await H.until(async () => { const i = await canvasShot(); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250) : null;
-      return { ok: after.isDefault && after.hash === '' && !!s && s.state === st.state && !!img, ...after, state: s?.state };
+      return { ok: after.isDefault && after.hash === '' && !!s && s.state === st.state && !!img, ...after, state: s?.state, expected: st.state, drawn: !!img };
     });
     await run.step('interact', 'running again replaces the preview frame: after five runs there is one frame and one frame target, and it works', async () => {
       const n = await runs();
@@ -825,7 +828,7 @@ const SMOKE = {
     const { page } = run;
     await run.step('install', 'install() from dist/esm/index.js ran and the page is ready', async () => {
       const st = await H.until(() => page.evaluate('window.__state && (window.__state.ready || window.__state.error) ? window.__state : null'), 8000);
-      return { ok: !!st && st.ready === true && st.mode === 'polyfill', ...st };
+      return { ok: !!st && st.ready === true && st.mode === (NATIVE ? 'native' : 'polyfill'), ...st };
     });
     await run.step('surface', 'the canvas drawn through the ESM-installed polyfill is not blank', async () => {
       const img = await H.until(async () => { const i = await canvasImage(page, '#c', '2d'); return H.pixelStats(i).nonBlank ? i : null; }, 8000, 250);
@@ -845,11 +848,11 @@ const SMOKE = {
       const st = await H.until(() => page.evaluate('window.__state && (window.__state.ready || window.__state.error) ? window.__state : null'), 10000);
       return { ok: !!st && st.ready === true, ...st };
     });
-    await run.step('surface', 'the presented frame is not blank and the live layer is invisible', async () => {
+    await run.step('surface', 'the presented frame is not blank and the live layer is invisible (absent in mode native)', async () => {
       await sleep(600);
       const img = await canvasImage(page, '#stage', 'gpu'); run.shots.first = img;
       const layers = await page.evaluate(`[...document.querySelectorAll('hic-layer')].map((l) => getComputedStyle(l).opacity)`);
-      return { ok: H.pixelStats(img).nonBlank && layers.length > 0 && layers.every((o) => o === '0'), layers };
+      return { ok: H.pixelStats(img).nonBlank && (NATIVE ? layers.length === 0 : layers.length > 0) && layers.every((o) => o === '0'), layers };
     });
     await run.step('surface', 'the plugin displaces the pixels (amplitude 24 differs from amplitude 0)', async () => {
       await page.evaluate('window.__handle.setOptions({ amplitude: 0 })'); await sleep(500);
