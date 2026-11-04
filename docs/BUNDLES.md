@@ -99,9 +99,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/liquid-glass.iife.js` | 19,530 | 6,615 |
 | `plugins/liquid-glass.iife.min.js` | 11,905 | 5,178 |
 | `plugins/liquid-glass.esm.js` | 18,049 | 6,359 |
-| `plugins/page-curl.iife.js` | 51,960 | 15,562 |
-| `plugins/page-curl.iife.min.js` | 32,986 | 12,610 |
-| `plugins/page-curl.esm.js` | 49,178 | 15,198 |
+| `plugins/page-curl.iife.js` | 57,523 | 17,215 |
+| `plugins/page-curl.iife.min.js` | 36,998 | 14,075 |
+| `plugins/page-curl.esm.js` | 54,564 | 16,831 |
 | `plugins/shatter.iife.js` | 49,413 | 15,252 |
 | `plugins/shatter.iife.min.js` | 28,897 | 11,855 |
 | `plugins/shatter.esm.js` | 46,710 | 14,878 |
