@@ -48,9 +48,10 @@ export const SWEEP_END = 0.5;
 export const LIFE = 1;
 /** css px per texel of the background estimate */
 export const BG_CELL = 8;
-/** the pause between the way out and the way back of 'play': none, the last part of the way out is the pause (no content is left on the page
- *  and the dust still drifts), so no frame of the transition is a still one */
-export const HOLD_MS = 0;
+/** the empty beat of 'play' and 'demo': the dust has dissolved completely, the page shows without its content for this long, then it re-forms */
+export const HOLD_MS = 450;
+/** ms the way out of 'play' and 'demo' is longer than `duration`: the dust has time to drift away and fade out entirely before the beat */
+export const ROUND_EXIT_MS = 400;
 /** the clear colour of the host's passthrough: an assembled frame is then identical to the frame without the plugin */
 export const HOST_BACKDROP = Object.freeze([0.004, 0.018, 0.034]);
 /** the colour of the heat at the eroding front and of the grains that just left it (a warm ember) */
@@ -139,7 +140,7 @@ export function readOptions(o) {
  * @param {{cell: number, cols: number, count?: number}} grid  the dust grid
  * @param {number} fade  1: the source; < 1: the reduced-motion crossfade (share of content still shown)
  * @param {number} [time]  seconds (a function of g)
- * @param {boolean} [turning]  the dust turns back at g = 1 (play): it does not fade there
+ * @param {boolean} [turning]  the dust does not fade out towards g = 1 (the plugin always lets it fade: a play's dust leaves entirely before its return)
  */
 export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = false) {
   const sw = sweepOf(s.sweep, frame.cssWidth, frame.cssHeight);
@@ -269,10 +270,10 @@ export const plugin = Object.freeze({
     const gridOf = [1, 1, s.particleSize];
     let assembledFrame = true;           // what the LAST rendered frame showed: its mapper is fixed by it
     let optionsSerial = 0, estimated = -1, estimatedAt = -Infinity;
-    /** a 'play' runs out and back: the dust turns at g = 1 at full strength (it fades only when a transition ends gone, or starts from it) */
-    let turning = false;
-    /** the play in progress: its promise, whether its way back has started, and whether it is a demo (user input interrupts it) */
+    /** the play in progress: its promise, whether its way back has started, and whether it is a demo (user input interrupts it); a play
+     *  runs out (the dust drifts away and fades out entirely), shows the empty page for HOLD_MS, then re-forms */
     /** @type {{resolve: (done: boolean) => void, back: boolean, start: number, demo: boolean, leg: number}|null} */ let playing = null;
+    const roundOut = () => s.duration + ROUND_EXIT_MS;
 
     /** the end state: 'out' (dissolved, gone) or 'in' (assembled) */
     const resting = () => (timeline.phase === 'gone' ? 'out' : 'in');
@@ -287,11 +288,9 @@ export const plugin = Object.freeze({
       if (action === 'demo' && calm) return Promise.resolve(true);
       crossfade = calm;
       const round = action === 'play' || action === 'demo';
-      // a play turns at g = 1 at full strength; an 'out' fades the dust as it ends gone, an 'in' from gone fades it in
-      turning = round;
       // the way out and the way back have their own lengths (the timeline takes the length of a run when the run starts), so a play is
-      // run here as an 'out' followed at once by an 'in'
-      timeline.setDuration(action === 'in' ? s.durationIn : s.duration);
+      // run here as an 'out', the empty beat, then an 'in'
+      timeline.setDuration(action === 'in' ? s.durationIn : round ? roundOut() : s.duration);
       if (playing) { const p = playing; playing = null; p.resolve(false); }   // a new request supersedes a play
       const run = timeline.request(round ? 'out' : /** @type {'out'|'in'} */ (action));
       context.requestRender();
@@ -334,7 +333,8 @@ export const plugin = Object.freeze({
 
     return {
       spatial: true,                      // pixels move: the host requires a mapper (identity when assembled, blocking otherwise)
-      get continuous() { return timeline.animating; },
+      // (also during the empty beat of a play: nothing moves, but its clock runs)
+      get continuous() { return timeline.animating || (playing !== null && !playing.back); },
       setOptions(next) {
         s = readOptions(next ?? {});
         optionsSerial += 1;
@@ -349,12 +349,16 @@ export const plugin = Object.freeze({
         // the clock of a play's way out starts at its first ready frame (as the timeline's does)
         if (playing && !playing.back && Number.isNaN(playing.start) && frame.sourceReady) playing.start = frame.now;
         let amount = frame.sourceReady ? timeline.advance(frame.now) : timeline.g;
-        // a play: the way back starts the instant the way out ended (not at this later frame: the same at any frame cap), at its own length
+        // a play: the way back starts HOLD_MS after the way out ended (computed from the play's own clock, not from this frame: the same at
+        // any frame cap), at its own length
         if (playing && !playing.back && timeline.phase === 'gone') {
           const play = playing;
-          goBack(play, s.durationIn);
-          timeline.advance(Math.min(frame.now, play.start + s.duration));
-          amount = timeline.advance(frame.now);
+          const backAt = play.start + roundOut() + HOLD_MS;
+          if (frame.now >= backAt) {
+            goBack(play, s.durationIn);
+            timeline.advance(backAt);
+            amount = timeline.advance(frame.now);
+          }
         }
         if (playing && playing.back && timeline.assembled) playing = null;   // the play ended in this frame (its promise follows the timeline's)
         assembledFrame = timeline.assembled;
@@ -363,7 +367,7 @@ export const plugin = Object.freeze({
           grid = dustGrid(frame.cssWidth, frame.cssHeight, s.particleSize);
         }
         const fade = assembledFrame ? 1 : crossfade ? Math.min(0.999, 1 - amount) : 1;
-        fillUniforms(data, frame, s, amount, grid, fade, (amount * s.duration) / 1000, turning);
+        fillUniforms(data, frame, s, amount, grid, fade, (amount * s.duration) / 1000);
         device.queue.writeBuffer(uniforms, 0, data);
         attachment.clearValue.r = s.backdrop[0]; attachment.clearValue.g = s.backdrop[1]; attachment.clearValue.b = s.backdrop[2];
         const t = estimateFor(frame.cssWidth, frame.cssHeight);
@@ -384,7 +388,7 @@ export const plugin = Object.freeze({
           p2.setPipeline(estimate); p2.setBindGroup(0, gs.estimate); p2.draw(3); p2.end();
           bgAttachment.view = null;
         }
-        const withDust = moving && !crossfade && amount > 0;
+        const withDust = moving && !crossfade && amount > 0 && amount < 1;   // at g = 1 every grain has dissolved: the empty page
         // a measurement harness may ask for timestamps: from the start of the grains' compute pass to the end of the frame's render pass
         const stamps = frame.profiling?.timestampWrites?.('disintegrate');
         computeDescriptor.timestampWrites = stamps && withDust ? { querySet: stamps.querySet, beginningOfPassWriteIndex: stamps.beginningOfPassWriteIndex } : undefined;

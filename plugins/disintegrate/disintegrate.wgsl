@@ -27,7 +27,7 @@ struct Uniforms {
   lo : f32,                // colour distance from the background where content starts
   hi : f32,                // ... and where it is fully content
   backdrop : vec4<f32>,    // fs_full: what a transparent source pixel shows (the host's clear colour)
-  vanish : f32,            // 1: the dust fades out as it reaches g = 1 (the transition ends gone); 0: it turns back at full strength (play)
+  vanish : f32,            // 1: the dust fades out entirely as it reaches g = 1 (index.js always sets it; 0 keeps it at full strength)
   depth : f32,             // 0..1: how far the grains travel in depth (parallax, focus)
   glow : f32,              // 0..1: the heat of the eroding front and of new grains
   focal : f32,             // css px from the camera to the page (perspective)
@@ -348,8 +348,8 @@ fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
   // (short: a grain stays a point of light with a little blur, never a dash)
   let streak = min(speed * u.shutter / max(u.life - t, 1e-3) * 0.5, 0.8 * radius);
   alpha *= max(0.8, radius / (radius + streak));
-  // when the transition ends gone, the dust thins out over the second half of its flight (it disperses below sight); a play's dust turns
-  // back at full strength
+  // the dust thins out over the last third of its flight and is gone at g = 1 (it disperses below sight): a play's return starts from an
+  // empty page
   alpha *= 1.0 - u.vanish * smoothstep(0.65, 1.0, a);
   alpha *= select(1.0, 1.0 - smoothstep(0.03, 0.15, a), fine);
   // the colour of its pixel, lit: a grain in the air catches more light than the flat page did; dimmer far behind the page plane
