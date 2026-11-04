@@ -88,7 +88,7 @@ Cross-module events go through `BUS.*` (`contracts/events.js`); the comment of e
 ## 4. Lifecycle
 
 ### 4.1 install / uninstall
-`install(opts)` (sync): resolve options -> `probeNative()` -> decide mode (API-CONTRACT 2) -> browser gate -> create env (bus, reporter,
+`install(opts)` (sync): resolve options -> `probeNative()` -> browser gate -> decide mode (API-CONTRACT 2; these four steps are `decideInstall`, which the loader shares) -> create env (bus, reporter,
 registry) -> `compose` (root scope, store, capture, scheduler, observers, effects) -> patch prototypes through `api/patch.js` (every patch recorded in
 a ledger with the original descriptor: the standard surface, `attachShadow`, the fullscreen/popover guard, the worker `postMessage` guard, the synchronous mount hooks) -> `registry.scan(document)` and every open shadow root
 (existing canvases) -> start the per-scope MutationObservers (dynamic canvases) -> return `HicInstalled`. A native build with only ADDITIVE names missing is gap-filled when the native bridge is loaded (ADR-N). Patching happens BEFORE the scan so an app script that runs right after sees the final API.
@@ -605,6 +605,7 @@ Natively the children of `<canvas role=list>` are its AX children (the spec's pi
 - **Native probe.** The decision rests on the CORE (`content` or `layoutSubtree`, `onpaint`, 2D `drawElementImage`, the last also exercised on a detached drawable). `complete` = the core plus every other current name; `partial` = the core plus some missing current name; `legacy` = the core with `layoutSubtree` (Chrome 154 and 155 with the flag); `broken` = a core name missing, the only kind that is refused. A usable kind is never refused: mode `native`, or `native-bridged` when the optional bridge is loaded and can build a missing name (`gaps`: the event names, `getElementImageDefaultSize` over `ElementImage.width/height`, the texture/WebGPU aliases over their legacy twins). Unit tests cover the measured current, previous and legacy shapes and every secondary name removed in turn.
 - **Guards through the ledger:** fullscreen/popover canvases (ADR-L), `postMessage` of an `ElementImage` (ADR-H), synchronous mount hooks for `content`/`setAttribute` (ADR-C/§4.2). Content security policy: ADR-I.
 - **Legacy `layoutsubtree` draws return the DOMMatrix** of the stored canvas transform.
+- **Loader** (`api/loader.js`, API-CONTRACT 2.4): the same `decideInstall` as `install()` before any download; the bundles it needs (the native bridge, the engines bundle on Gecko and WebKit, the core) are fetched only for the modes that run them, the core with `data-hic-manual` so that it never auto-installs, and `install()` is called only while the load has not settled (a core that arrives after a timeout never installs). One promise per window.
 
 ## 6. Module boundaries
 
@@ -627,7 +628,7 @@ Size budget: at most 1000 code lines per file, and a total ceiling for the core 
 
 Budgets (to be verified by trace, `RunTask` on `CrRendererMain`, in the interaction gates of `docs/TEST-PLAN.md` 2.5, which are planned): no task > 16.7 ms in any interaction gate; > 8.33 ms tasks tolerated at <= 1 % of frames in typing/resize on F1. The cost of one tile is the SUM of its synchronous build, its decode (main-thread, not free: ADR-D.8) and its commit draw:
 the pump starts no new build after 4 ms of synchronous build time in that pump (`mainThreadMs`, an admission threshold checked between builds, not a bound on one build, which can run longer; a drawable's first build is exempt, ADR-C) AND the EMA of the whole sum of the regular builds over all drawables at `mainThreadShare` (35 %) of the frame period. The side builds of the post-frame pump (scroll pages and tiles, overlay backdrops) are admitted under the same 4 ms `mainThreadMs` threshold of their pump but are not charged to that 35 %, nor are their decodes. Measured ratios ([review-b]): RunTask per tile 4.2-9.4 ms against 0.1-0.9 ms for the build alone; the thresholds of G-throughput and G-typing are set only from a run without machine load above threshold (G-decode-main).
-Bundle <= 150 KB minified for the core (target, gate G-bundle; NOT met, see docs/BUNDLES.md for the split into core / effects / plugins / native bridge and where the bytes are). Non-goals: 120 Hz source updates (the promise is a 120 Hz effect over 30-60 Hz source), CSS-breadth work for its own sake, WPT percentage.
+Bundle <= 150 KB minified for the core (target, gate G-bundle; NOT met, see docs/BUNDLES.md for the split into core / effects / plugins / native bridge / loader and where the bytes are). Non-goals: 120 Hz source updates (the promise is a 120 Hz effect over 30-60 Hz source), CSS-breadth work for its own sake, WPT percentage.
 
 ## 8. Risks and open questions (not decided here)
 
