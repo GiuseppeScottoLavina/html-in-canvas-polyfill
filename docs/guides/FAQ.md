@@ -104,7 +104,11 @@ Inner scrolling is drawn from cached pages of the scroller in each step's frame,
 
 - rows whose `:hover` style changes as they pass under a still mouse pointer (each hovered row is a change);
 - horizontal scrolling (the compositor handles vertical scrollers only);
-- Firefox at a device pixel ratio other than 1, and in Firefox any scroller with rounded corners or with form controls, images, SVG or transforms inside ([PERFORMANCE.md](PERFORMANCE.md#1-summary)).
+- Firefox at a device pixel ratio other than 1, and in Firefox any scroller with rounded corners or with form controls, images, SVG or transforms inside ([PERFORMANCE.md](PERFORMANCE.md#1-summary));
+- Safari and Firefox at a raster scale that is not a whole number, such as a `maxDpr` of 1.5 or 2.5 ([PERFORMANCE.md](PERFORMANCE.md#5-tips));
+- a scroller that holds the focus or a selection, once the pages planned before are dropped (no new plan is made while either is inside it).
+
+The report counts each refusal by reason (`stats.snapshot.scroll.refusedBy`, [TROUBLESHOOTING.md](TROUBLESHOOTING.md#6-symptoms-without-an-error)).
 
 ## Is it safe? What about privacy?
 
