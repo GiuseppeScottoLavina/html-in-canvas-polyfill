@@ -36,6 +36,7 @@ export const meta = Object.freeze({
   description: 'An old arcade monitor: curved glass, thick scanlines, an RGB aperture grille, phosphor glow and bloom; clicks are mapped through the curvature.',
   defaults: presets.arcade,
   reducedMotion: 'With reduced motion the flicker, the rolling bar and the static stop; the curved screen, the scanlines, the mask and the glow stay.',
+  continuous: 'With Flicker above 0 the flicker, the rolling bar and the static redraw every frame at rest; with Flicker at 0 or with reduced motion nothing renders at rest.',
 });
 
 /** floats in the uniform block (crt.wgsl, struct U) */

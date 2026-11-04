@@ -37,6 +37,24 @@ if (!m || m[1] !== pkg.version) throw new Error(`VERSION in src/version.js (${m 
 const common = { bundle: true, target: 'chrome130', legalComments: 'none', logLevel: 'warning' };
 
 /**
+ * WGSL as a built plugin carries it: without comments (block comments nest in WGSL), indentation and blank lines. WGSL has no string literals, so
+ * `//` and `/*` always start a comment. The shaders were up to a third comments (shatter: about 6 KB of 42 KB).
+ * @param {string} src @returns {string}
+ */
+function stripWgsl(src) {
+  let out = '', depth = 0;
+  for (let i = 0; i < src.length; i++) {
+    const two = src.slice(i, i + 2);
+    if (two === '/*') { depth++; i++; continue; }
+    if (depth && two === '*/') { depth--; i++; continue; }
+    if (depth) { if (src[i] === '\n') out += '\n'; continue; }
+    if (two === '//') { while (i < src.length && src[i] !== '\n') i++; out += '\n'; continue; }
+    out += src[i];
+  }
+  return out.split('\n').map((l) => l.trim()).filter(Boolean).join('\n') + '\n';
+}
+
+/**
  * A built plugin never fetches its shaders: its wgsl.js (a fetch when the plugin runs from source) becomes a module that returns the .wgsl files of
  * the plugin folder as inlined strings.
  * @param {{name: string, dir: string, wgsl: string[]}} p
@@ -47,7 +65,7 @@ const inlineWgsl = (p) => ({
   setup(/** @type {any} */ b) {
     b.onResolve({ filter: /^\.\/wgsl\.js$/ }, (/** @type {any} */ a) => (a.importer.startsWith(p.dir + sep) ? { path: `plugins/${p.name}/wgsl.js`, namespace: 'plugin-wgsl' } : undefined));
     b.onLoad({ filter: /.*/, namespace: 'plugin-wgsl' }, () => ({
-      contents: `const files = { ${p.wgsl.map((f) => `${JSON.stringify(f)}: ${JSON.stringify(readFileSync(join(p.dir, f), 'utf8'))}`).join(', ')} };\n`
+      contents: `const files = { ${p.wgsl.map((f) => `${JSON.stringify(f)}: ${JSON.stringify(stripWgsl(readFileSync(join(p.dir, f), 'utf8')))}`).join(', ')} };\n`
         + `export async function wgsl(file) { if (!Object.hasOwn(files, file)) throw new Error('${p.name}: no ' + file + ' in the plugin folder'); return files[file]; }\n`,
       loader: 'js',
     }));
