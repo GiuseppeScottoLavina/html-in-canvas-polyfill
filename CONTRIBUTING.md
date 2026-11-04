@@ -12,6 +12,7 @@ npm run build            # dist/: classic bundles and the ES module build
 npm test                 # repo checks, type check, unit tests (Node and headless Chrome), bundle check
 npm run test:examples    # every example and the main code samples of the docs, then every plugin's gallery e2e, in headless Chrome
 npm run test:plugins     # only the plugin gallery e2e tests (plugins/*/test/*.e2e.mjs), one headless Chrome at a time
+npm run test:gallery     # G-gallery: every plugin in the gallery at a phone and an iPad size (stage in view, touch scroll, demo, zero work at rest)
 npm run test:native-effects  # the effects over Chrome Canary's own HTML-in-Canvas (headed gates, gallery, example) and the loader there (headless); skipped loudly without Canary; --chrome=<path> runs it on another Chrome with the native API, such as Chrome 157
 npm run test:pages       # the GitHub Pages site under /html-in-canvas-polyfill/: every page, the gallery with each plugin
 npm run test:field       # the field test page end to end with a tab capture, and its positive controls
