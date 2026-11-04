@@ -30,21 +30,21 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
-## Why is the core about 348 KB minified (118 KB gzipped)?
+## Why is the core about 351 KB minified (119 KB gzipped)?
 
-In the current build, 348,388 bytes minified and 118,094 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 351,254 bytes minified and 119,247 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
-Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 343 KB, so they are approximate.
+Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 351 KB, so they are approximate.
 
 | part | share | about |
 |---|---|---|
-| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 77 KB |
-| API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 57 KB |
-| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 46 KB |
-| scrolling: scroll offsets and classic scrollbars in snapshots, the scroll compositor and its planner | 12.7 % | 44 KB |
-| change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 39 KB |
-| snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 33 KB |
-| caret, text selection and typed text | 5.4 % | 18 KB |
+| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 79 KB |
+| API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 59 KB |
+| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 47 KB |
+| scrolling: scroll offsets and classic scrollbars in snapshots, the scroll compositor and its planner | 12.7 % | 45 KB |
+| change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 40 KB |
+| snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 34 KB |
+| caret, text selection and typed text | 5.4 % | 19 KB |
 | scheduler and frame cap | 3.5 % | 12 KB |
 | native detection | 2.4 % | 8 KB |
 | utilities | 2.1 % | 7 KB |
@@ -128,12 +128,12 @@ It is a preview of a proposed standard (`0.1.0-preview.20` on npm; a new preview
 
 What is tested:
 
-- 612 unit tests in Node and 944 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 616 unit tests in Node and 963 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 16 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence), each with a positive control;
-- a mutation suite of 61 seeded bugs, every one of which must be caught;
+- a mutation suite of 62 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 61 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 62 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 
@@ -142,7 +142,7 @@ With an AI coding assistant. The code, tests and documentation were written with
 Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
 - changes reach `main` through pull requests (every change since 2026-10-22), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 11 of the 16 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
-- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 61 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 62 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
 - the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;
 - the behaviour was checked on physical devices, not only in simulators.
