@@ -91,12 +91,12 @@ function run(win, options, fetcher) {
     try {
       checkOptions(/** @type {LoadOptions} */ (options));
       fetcher.check(options ?? {});
-      /** @type {HicInstalled|null} the core is already installed (its script tag, or a direct install()) */
-      const existing = win[EXT.INSTALLED_KEY] ?? null;
-      if (existing) return finish(existing.mode, existing);
       let d;
       try { d = decideInstall(win, options?.install); } catch (e) { native = probeNative(win); throw e; }
       native = d.native;
+      /** @type {HicInstalled|null} the core is already installed (its script tag, or a direct install()): returned as install() returns it, options checked first */
+      const existing = win[EXT.INSTALLED_KEY] ?? null;
+      if (existing) return finish(existing.mode, existing);
       const { mode, refusal, notice } = d.decision;
       if (refusal) {
         // install() would throw this (or warn and return a refused HicInstalled); the loader settles and warns once, as the classic core's auto-install does

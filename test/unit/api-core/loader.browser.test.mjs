@@ -161,6 +161,13 @@ test('options: an invalid install option is install()\'s TypeError (status error
   assert.equal(r.status, 'polyfill');
   assert.equal(r.installed, installed, 'the window\'s existing HicInstalled');
   assert.equal(asked, 0, 'nothing fetched');
+  const again = makeFrame(t);
+  const second = installWith({ window: again }, fakeServices());
+  t.cleanup(() => second.uninstall());
+  assert.throws(() => installWith({ window: again, maxDprr: 2 }, fakeServices()), TypeError);
+  const typoAgain = await createLoad({ check() {}, fetch: async () => { asked++; return { install: () => second }; } })({ install: { window: again, maxDprr: 2 } });
+  assert.equal(typoAgain.status, 'error', 'an invalid option over an existing install is install()\'s TypeError too');
+  assert.ok(typoAgain.error instanceof TypeError);
 });
 
 // ---------------------------------------------------------------------------------------------- the classic fetcher on stand-in bundles
