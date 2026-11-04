@@ -1,4 +1,4 @@
-// Node tests of the plugin folder contract (contract.mjs): what a plugin and plugins/_lib/ may import.
+// Node tests of the plugin folder contract (contract.mjs): what a plugin and plugins/_lib/ may import; the one-line meta fields.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -50,4 +50,18 @@ test('plugins/_lib/ is held to the same rules: it may not import a plugin or oth
   const problems = checkSharedLib(join(root, 'plugins/_lib'));
   assert.equal(problems.length, 3, problems.join('\n'));
   assert.ok(problems.some((p) => /blob: URLs/.test(p)));
+});
+
+test('meta.continuous and meta.touch are one line of at most 160 characters when present', async (t) => {
+  const plugin = (meta) => [
+    `export const meta = Object.freeze({ name: 'demo', title: 'Demo', description: 'A demo.', ${meta} });`,
+    "export const plugin = Object.freeze({ type: 'demo', apiVersion: 2, version: 1, create() { return { render() {} }; } });",
+  ].join('\n');
+  const files = (meta) => ({ 'plugins/demo/index.js': plugin(meta), 'plugins/demo/README.md': '# demo', 'plugins/demo/test/a.test.mjs': '', 'src/effects/plugin-abi.js': 'export const definePlugin = (d) => d;' });
+  const metaProblems = async (meta) => (await checkPluginFolder(join(layout(t, files(meta)), 'plugins/demo'))).filter((p) => /meta\./.test(p));
+  assert.deepEqual(await metaProblems("continuous: 'The flicker runs at rest.', touch: 'Drag the lens.'"), []);
+  assert.deepEqual(await metaProblems(''), []);
+  assert.equal((await metaProblems('continuous: true')).length, 1, 'a boolean is not a statement of what keeps running');
+  assert.equal((await metaProblems(`touch: '${'x'.repeat(161)}'`)).length, 1);
+  assert.equal((await metaProblems("continuous: 'a\\nb'")).length, 1);
 });
