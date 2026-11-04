@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-- Since 0.1.0-preview.20 the core bundle grows to 351,254 bytes minified, 119,247 gzipped (+2,866 / +1,153 bytes) and to 16,797 code lines (+98); the engines bundle to 45,781 / 17,409 bytes (+266 / +114).
+## [0.1.0-preview.21] - 2026-11-04
+
+A focused field's caret no longer stays behind while its list scrolls (Safari and Chrome), and costs nothing when it is hidden or transparent. Chrome 157 ships HTML-in-Canvas enabled: the polyfill steps aside there (measured), and its own path is fixed for Chrome 157's text-field metrics. Planning a large scroller no longer blocks the main thread, and the report says why a scroller is not composed.
+
+- The core bundle grows to 351,254 bytes minified, 119,247 gzipped (+2,866 / +1,153 bytes) and to 16,797 code lines (+98); the engines bundle to 45,781 / 17,409 bytes (+266 / +114).
 
 ### Added
 
@@ -13,6 +17,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Tests: Chrome 157 ships the native API enabled, and the CI runners moved to it on 2026-11-04. The test harness now launches Chrome with `CanvasDrawElement` in `--disable-features` unless a run asks for the native implementation, so the tests, gates and mutants run the polyfill's own path (`--disable-blink-features` is not used: its warning bar made the first tab 56 css px shorter than the others), and passes `--disable-infobars`.
 - Docs: Chrome 157 ships HTML-in-Canvas enabled by default, so the native implementation is no longer described as Canary only. Measured on 2026-11-04 on Chrome for Testing 157.0.8103.39 without any flag: the API is exposed (`drawElementImage`, `requestPaint`, `getElementTransform`, `onpaint`, `content`), `install()` decides kind `complete`, probe `ok`, no missing names and no gaps, and steps aside (mode `native`); the native bridge is not needed there. `npm run test:native-effects` passed on it as on Canary 159.0.8137.0 (G-native-effects 14 of 14, G-native-interposer 10 of 10 with their controls red, the water and disintegrate gallery e2e, `examples/effect-plugin`). The polyfill's own path is what Safari, Firefox and Chrome before 157 use. Updated: the README (introduction, support table, comparison table), SUPPORT-MATRIX (the Chrome 157 row is measured instead of expected), GETTING-STARTED, FAQ, BUNDLES, API-CONTRACT, DESIGN-DECISIONS, ARCHITECTURE, TEST-PLAN, EFFECTS-PLUGINS, CONTRIBUTING and the feature summaries.
 - Docs: native Chrome fires no `paint` event for a write of `canvas.width` or `canvas.height` made outside a `paint` handler, where the polyfill fires one (measured on Chrome 157.0.8103.39 and Canary 159.0.8137.0, from a timer and from a ResizeObserver callback after the first `paint`). The explainer's basic example is not affected, because its ResizeObserver callback runs before the first `paint`; API-CONTRACT and GETTING-STARTED say to call `canvas.requestPaint()` after a later size write.
 - `npm run test:native-effects -- --chrome=<path>` runs the suite on another Chrome with the native API, such as Chrome 157 (the gates, the gallery e2e and the example); without it the suite still uses Canary.
@@ -452,7 +457,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.20...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.21...HEAD
+[0.1.0-preview.21]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.20...v0.1.0-preview.21
 [0.1.0-preview.20]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.19...v0.1.0-preview.20
 [0.1.0-preview.19]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.18...v0.1.0-preview.19
 [0.1.0-preview.18]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.17...v0.1.0-preview.18
