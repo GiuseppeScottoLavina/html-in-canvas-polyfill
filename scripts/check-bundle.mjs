@@ -233,9 +233,9 @@ const LIMITS = {
   // 11 -> 11.5 KB, gzip 4.25 -> 4.5 KB (+416 / +198 bytes, 2026-11-02, measured 11,320 / 4,328): api/validate.js again, so a texture upload of a zero-width or
   //   zero-height drawable logs the same one-time warning as a draw (warnZeroSize)
   'hic-live-gpu.iife.min.js': { target: 11.5 * KB, ceiling: 11.5 * KB, gzip: 4.5 * KB },
-  // the loader (src/loader-iife.js, 2026-11-04, measured 17,289 / 6,276): install()'s whole decision is 4,338 bytes of the gzip (native-detect.js with util/engine.js:
-  //   the probe, the browser gate and the decision table with its refusal texts, 3,314; options.js, the same option validation as install(), 1,024), the script loading
-  //   and the result 1,934. The goal of 5 KB gzipped is not met: meeting it needs a smaller detector or option check, which would decide differently from install()
+  // the loader (src/loader-iife.js, 2026-11-04, measured 17,293 / 6,277): install()'s whole decision is about 4,340 bytes of the gzip (native-detect.js with util/engine.js:
+  //   the probe, the browser gate and the decision table with its refusal texts, about 3,310; options.js, the same option validation as install(), about 1,030), the script loading
+  //   and the result about 1,935. The goal of 5 KB gzipped is not met: meeting it needs a smaller detector or option check, which would decide differently from install()
   'hic-live-loader.iife.min.js': { target: 17.5 * KB, ceiling: 17.5 * KB, gzip: 6.5 * KB },
 };
 /** A new plugin bundle (dist/plugins/<name>.iife.min.js) has this ceiling until PLUGIN_LIMITS records its own: plugins are small add-ons. */

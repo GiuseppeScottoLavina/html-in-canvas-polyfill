@@ -16,7 +16,7 @@
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) or a native build missing a name the bridge can build | `hic-live-native-bridge.iife.min.js` BEFORE `hic-live-polyfill.iife.min.js` | mode `native-bridged` instead of the native build used as found |
 | Chrome 157+ (complete native), Firefox 155+, Safari 27+ | Chrome: nothing extra; Firefox / Safari: `hic-live-engines.iife.min.js` with the core (row above) | complete native: mode `native` (the core does no snapshotting; the effects bundle runs over the native implementation); Firefox 155+ and Safari 27+: mode `polyfill`; older Firefox / Safari, web views and Firefox for Android: refused loudly (one `console.warn`, `window.__HIC__.error`). Phones and tablets: see [MOBILE.md](guides/MOBILE.md) |
 | `ElementImage` in a dedicated worker (draw it on the worker's OffscreenCanvas) | the core in the page; `hic-live-worker.iife.min.js` at the top of the worker (`importScripts`), or `import '.../worker'` in a module worker | in the worker: `ElementImage`, `drawElementImage` on OffscreenCanvas 2D, the OffscreenCanvas geometry methods |
-| download nothing where the browser implements the API (Chrome 157+), and the core (+ the engines bundle on Firefox / Safari) only where the polyfill runs | `hic-live-loader.iife.min.js` next to the other files, then `await HicLiveLoader.load()` before app code reads the API; bundlers: `import { load } from '.../loader'` | `{status, mode, installed, native}` ([API-CONTRACT section 2.4](API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)); on Chrome 157 the page downloads 17,289 bytes (6,276 gzipped) instead of the core's 351,362 (119,262) |
+| download nothing where the browser implements the API (Chrome 157+), and the core (+ the engines bundle on Firefox / Safari) only where the polyfill runs | `hic-live-loader.iife.min.js` next to the other files, then `await HicLiveLoader.load()` before app code reads the API; bundlers: `import { load } from '.../loader'` | `{status, mode, installed, native}` ([API-CONTRACT section 2.4](API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)); on Chrome 157 the page downloads 17,293 bytes (6,277 gzipped) instead of the core's 351,362 (119,262) |
 | a bundler (Vite, webpack, rollup...) | `import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill'`, optionally `@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects`, `.../plugins/water`, `.../native-bridge`; `.../worker` in a module worker | tree-shakeable ESM with shared chunks; each plugin is one self-contained module |
 
 All scripts are classic `<script src>` tags (no `type=module`, no `import`), make no network request when they load (the loader requests the bundles only when `load()` is called), and the minified twins are drop-in replacements for the readable files (the gates and the mutants run the readable ones, G-bundle loads both).
@@ -77,13 +77,13 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-gpu.iife.min.js` | 11,320 | 4,328 |
 | `hic-live-worker.iife.js` | 17,986 | 5,353 |
 | `hic-live-worker.iife.min.js` | 9,098 | 3,646 |
-| `hic-live-loader.iife.js` | 30,198 | 9,053 |
-| `hic-live-loader.iife.min.js` | 17,289 | 6,276 |
+| `hic-live-loader.iife.js` | 30,198 | 9,054 |
+| `hic-live-loader.iife.min.js` | 17,293 | 6,277 |
 | `esm/index.js` | 716,597 | 193,222 |
 | `esm/effects.js` | 67,570 | 18,071 |
 | `esm/native-bridge.js` | 21,963 | 5,810 |
 | `esm/worker.js` | 6,977 | 2,402 |
-| `esm/loader.js` | 4,546 | 1,699 |
+| `esm/loader.js` | 4,546 | 1,700 |
 | `plugins/crt.iife.js` | 19,932 | 7,290 |
 | `plugins/crt.iife.min.js` | 13,808 | 6,025 |
 | `plugins/crt.esm.js` | 18,636 | 7,045 |
@@ -136,10 +136,10 @@ The runtime reads a feature's status from `src/contracts/feature-status.js`, an 
 
 ### What the loader costs and saves (measured 2026-11-04)
 
-- Bytes on Chrome 157.0.8103.39 (native, Resource Timing, uncompressed server): a page with `hic-live-loader.iife.min.js` downloads 17,289 bytes of script (6,276 gzipped), with a plain tag of `hic-live-polyfill.iife.min.js` 351,362 (119,262 gzipped), which then steps aside. The module loader's static imports are 35,217 bytes unminified (four files of `dist/esm/`); an app that imports only `load`, bundled and minified by esbuild with code splitting, starts with 20,103 bytes (7,749 gzipped, three files: the shared chunks carry whole modules such as the patch ledger) and fetches the package entry's chunks only on the polyfill path.
+- Bytes on Chrome 157.0.8103.39 (native, Resource Timing, uncompressed server): a page with `hic-live-loader.iife.min.js` downloads 17,293 bytes of script (6,277 gzipped), with a plain tag of `hic-live-polyfill.iife.min.js` 351,362 (119,262 gzipped), which then steps aside. The module loader's static imports are 35,217 bytes unminified (four files of `dist/esm/`); an app that imports only `load`, bundled and minified by esbuild with code splitting, starts with 20,103 bytes (7,749 gzipped, three files: the shared chunks carry whole modules such as the patch ledger) and fetches the package entry's chunks only on the polyfill path.
 - The decision takes 2.8 ms (`.min.js`) to 8.1 ms (the module loader, unbundled) from the module script to the settled result on that machine.
 - First paint on the polyfill path (headless Chrome 157, native disabled, the `.min.js` files, a canvas with one drawable; 15 runs each, alternating, same machine): directly 60.5 ms median from navigation start, through the loader 70.8 ms (+10.4 ms) from a local server; with 40 ms of emulated latency per request 123.9 against 169.3 ms (+45.4 ms): the loader adds one request in series before the core's.
-- Size: 6,276 bytes gzipped against the 5 KB goal. 4,338 of them are `install()`'s decision (the probe, the browser gate and the decision table with their texts, 3,314; the option validation, 1,024), shared with the core rather than reimplemented; the script loading and the result are 1,934.
+- Size: 6,277 bytes gzipped against the 5 KB goal. About 4,340 of them are `install()`'s decision (the probe, the browser gate and the decision table with their texts, about 3,310; the option validation, about 1,030), shared with the core rather than reimplemented; the script loading and the result about 1,935.
 
 ## The Chrome core, the engines bundle and the GPU bundle
 
