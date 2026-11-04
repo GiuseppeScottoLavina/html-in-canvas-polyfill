@@ -3,7 +3,7 @@
 // visual shape is measured in a screenshot of the presented frame (the oracle is the pixels the user sees, never the plugin's own mapper), and trusted clicks land 3 css px inside
 // its visual top and bottom edges and at its visual middle, at several columns. A trial counts only where the native hit test (the plain-DOM twin at the same point, labels resolved)
 // would NOT reach that field. The field the user sees must get the focus in >= 95 % of >= 30 such trials.
-// The same with the water plugin at full intensity (the presented frame frozen with framecap=1, then a strong drop near a field edge, measured and clicked in that frame).
+// The same with the water plugin at full intensity (the presented frame frozen with framecap=1, then a strong drop below a field, measured and clicked in that frame).
 // Positive control: the host created with `interposer:false` (clicks reach the DOM position): class `interposer` must go red.
 import { runGate, H, EFFECTS_BUNDLE, WATER_BUNDLE } from './lib/gate.mjs';
 import { openRef, rectsOf } from './lib/f1.mjs';
@@ -50,15 +50,15 @@ runGate('G-interposer-strong', async (ctx) => {
   ctx.check(`crt (curvature 1): >= ${MIN_TRIALS} trials where the native hit test would miss the field the user sees`, crt.discriminating >= MIN_TRIALS, crt, 'interposer');
   ctx.check(`crt (curvature 1): a trusted click focuses the field the user sees there in >= ${MIN_SHARE * 100} % of them (${crt.correct}/${crt.discriminating})`, crt.discriminating >= MIN_TRIALS && crt.correct >= MIN_SHARE * crt.discriminating, crt, 'interposer');
 
-  // --- water at full intensity: the presented frame frozen (framecap=1), a strong drop near a field edge, measured and clicked in that frame ----------------------
+  // --- water at full intensity: the presented frame frozen (framecap=1), a strong drop below a field, measured and clicked in that frame -------------------------
   await setup(ctx, page, 'water', { intensity: 1 }, !ctx.control);
   const water = { discriminating: 0, correct: 0, notDiscriminating: 0, missing: [], trials: [], spots: 0 };
   const twin = await rectsOf(ref, Object.keys(MARKS));
   for (let s = 0; s < 40 && water.discriminating < MIN_TRIALS + 10; s++) {
     const sel = Object.keys(MARKS)[s % 4];
     const r = twin[sel];
-    // a strong drop (the water plugin's action, strength 2) 8 css px inside the field's bottom or top edge
-    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = s % 2 ? r.y + r.height - 8 : r.y + 8;
+    // a strong drop (the water plugin's action, strength 2) 35 css px below the field: its crown pushes the field's visual bottom edge down
+    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + r.height + 35;
     await ctx.focus(page);
     await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
     // FREEZE first (framecap=1: every presented frame stays ~1 s), then the drop, shown by the next presented frame: the screenshot and the clicks judge that frame.

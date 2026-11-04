@@ -3,7 +3,7 @@
 //   - the presented frame is not blank; intensity 0 equals the plain surface; a ripple distorts it (displacement, not a repaint)
 //   - typing reaches the live field and changes the presented pixels
 //   - idle clicks 2 px inside the inner edge of controls activate exactly that control and no other
-//   - THE INTERPOSER, deterministically: the presented frame is FROZEN (framecap=1, one presented frame for ~1 s) and a strong drop displaces a field edge in it, the visual position of
+//   - THE INTERPOSER, deterministically: the presented frame is FROZEN (framecap=1, one presented frame for ~1 s) and a strong drop below a field displaces its edge in it, the visual position of
 //     the visual top/bottom edge of a field (flat unique marker colour) is measured in a screenshot of that frame; a trusted click 3 css px INSIDE the visual edge must focus that field (and not a neighbour).
 //     Only trials where the NATIVE hit test would give the other answer count. >= 10 such trials are required and >= 80 % must be correct.
 //     Positive control: the same run with `interposer:false` must fail that assertion (class 'interposer').
@@ -50,7 +50,7 @@ function visualEdges(img, c, x, dpr) {
 }
 
 /**
- * Deterministic interposer trials (see the header). Each attempt FREEZES the presented frame, lets a strong drop fall near a field edge, measures the visual top/bottom edge of a field at one column
+ * Deterministic interposer trials (see the header). Each attempt FREEZES the presented frame, lets a strong drop fall below a field, measures the visual top/bottom edge of a field at one column
  * from its marker colour, and clicks 3 css px INSIDE a visual edge where the native hit test (twin) would not reach the field: that field, and no neighbour, must be focused.
  */
 async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
@@ -64,8 +64,9 @@ async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
     const sel = targets[t % targets.length];
     const r = rects[sel];
     const cx = r.x + r.width * (0.3 + 0.4 * ((t % 5) / 4));
-    // the drop falls 8 css px inside the field's bottom or top edge (the water plugin's action, strength 2)
-    const cyDrop = t % 2 ? r.y + r.height - 8 : r.y + 8;
+    // the drop falls 35 css px below the field (the water plugin's action, strength 2): its crown pushes the field's visual bottom edge down, over what lies
+    // below the field (above a field is its own label, which a click focuses natively too)
+    const cyDrop = r.y + r.height + 35;
     out.attempts++;
     await page.evaluate('document.activeElement && document.activeElement.blur()');
     // FREEZE first: framecap=1 keeps every presented frame for ~1 s; the drop is then shown by the next presented frame, so the screenshot and the clicks judge the SAME

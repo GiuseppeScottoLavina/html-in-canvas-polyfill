@@ -105,7 +105,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/shatter.iife.js` | 49,413 | 15,252 |
 | `plugins/shatter.iife.min.js` | 28,897 | 11,855 |
 | `plugins/shatter.esm.js` | 46,710 | 14,878 |
-| `plugins/water.iife.js` | 37,773 | 12,088 |
+| `plugins/water.iife.js` | 37,773 | 12,089 |
 | `plugins/water.iife.min.js` | 23,504 | 9,756 |
 | `plugins/water.esm.js` | 35,703 | 11,775 |
 <!-- sizes:end -->
