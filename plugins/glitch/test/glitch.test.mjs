@@ -499,6 +499,10 @@ test('the action demo through the effect handle: the scripted sequence, then \'i
   inst.render(env.frame(10000));
   env.context.canvas.dispatchEvent(new Event('pointerdown'));
   assert.equal(await cut, null);
+  const opt = handle.trigger('demo');
+  inst.render(env.frame(20000));
+  handle.setOptions({ intensity: 0.5 });
+  assert.equal(await opt, null, 'setOptions takes over too');
   handle.remove();
 });
 

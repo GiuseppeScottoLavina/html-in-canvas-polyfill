@@ -84,7 +84,8 @@ async function main() {
     // the action of the effect handle, as a page uses it (the gallery's button calls handle.trigger('burst'))
     await actionChecks(page, check, [
       { action: 'burst', state: 'idle', midMs: 90, minChanged: 0.03 * area },
-      { action: 'demo', state: 'idle', midMs: 950, minChanged: 0.03 * area },
+      // 840 ms: early in the full burst of the demo (it starts at 820 ms), before its first clean pattern (135 ms into it)
+      { action: 'demo', state: 'idle', midMs: 840, minChanged: 0.03 * area },
     ], { older: 'demo', newer: 'burst', state: 'idle' });
     const errors = await page.evaluate('window.__e2e.errors');
     check('no effecterror', errors.length === 0, errors);
@@ -94,13 +95,13 @@ async function main() {
       await page.mouseMove(c.cx, c.cy);
       await sleep(400);
       const stop = await startRecording(page);
-      await sleep(2900);                                   // ambient (an event about every 1.4 s)
+      await sleep(1600);                                   // ambient (an event about every 1.4 s)
       await clickOn(page, '#submit');                      // the gallery's validation error: a burst
-      await sleep(1200);
-      await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sequence
-      await sleep(700);
+      await sleep(900);
+      await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sequence (resolves when it ends)
+      await sleep(300);
       const frames = await stop();
-      const bytes = writeWebp(frames, join(ROOT, 'plugins/glitch/media/glitch.webp'), { x: c.x, y: c.y, w: c.w, h: c.h });
+      const bytes = writeWebp(frames, join(ROOT, 'plugins/glitch/media/glitch.webp'), { x: c.x, y: c.y, w: c.w, h: c.h }, { width: 600, fps: 20, quality: 50 });
       check('recording: media/glitch.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
     }
   } finally {

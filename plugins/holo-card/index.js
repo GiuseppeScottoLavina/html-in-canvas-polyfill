@@ -217,6 +217,7 @@ export const plugin = Object.freeze({
 
     /** @param {Record<string, unknown>} next */
     function setOptions(next) {
+      interrupt();   // the user changed something: the demo ends
       readOptions(next ?? {});
       syncMotion();
       for (const sync of uiSyncs) sync(o);
@@ -388,7 +389,8 @@ export const plugin = Object.freeze({
       const slow = swaying() && !busy && time >= fastUntil;
       instance.continuous = !slow && (swaying() || busy || moving());
       clearTimeout(swayTimer);
-      swayTimer = slow ? setTimeout(() => { swayTimer = 0; context.requestRender?.(); }, 1000 / SWAY_HZ) : 0;
+      // (the timer fires 6 ms early: the frame it asks for lands on the display frame at 1/SWAY_HZ s, not one display frame later)
+      swayTimer = slow ? setTimeout(() => { swayTimer = 0; context.requestRender?.(); }, 1000 / SWAY_HZ - 6) : 0;
       // with reduced motion the card stays flat (no tilt); the glare still follows the pointer
       const tilt = reducedMotion ? 0 : (o.tilt * Math.PI) / 180;
       u[0] = frame.width; u[1] = frame.height; u[2] = frame.cssWidth; u[3] = frame.cssHeight;

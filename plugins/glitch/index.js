@@ -527,7 +527,7 @@ export const plugin = Object.freeze({
 
     return {
       spatial: true,   // not `continuous`: a frame is requested when the picture changes next, none between changes
-      setOptions(next) { applyOptions(next); context.requestRender(); },
+      setOptions(next) { if (params.script === DEMO_SCRIPT && bursting) stopDemo(); applyOptions(next); context.requestRender(); },
       // 'burst': one burst; 'demo': the scripted sequence. Each resolves 'idle' once it has ended (null when superseded or cut short)
       runAction(action) {
         const previous = actionDone;

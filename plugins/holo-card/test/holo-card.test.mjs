@@ -268,6 +268,12 @@ test('the demo with the idle sway on lands on the sway without a jump; a pointer
   listeners.pointermove({ pointerType: 'mouse', clientX: 900, clientY: 100 });
   await Promise.resolve();
   assert.equal(cut, null, 'the user took over');
+  let opt = 'pending';
+  Promise.resolve(instance.runAction('demo', {}, { reducedMotion: false })).then((v) => { opt = v; });
+  for (let k = 0; k < 30; k += 1) instance.render(frame());
+  instance.setOptions({ foil: 0.3 });
+  await Promise.resolve();
+  assert.equal(opt, null, 'setOptions takes over too');
 });
 
 test('the action demo with reduced motion resolves \'rest\' at once; the card stays flat', async () => {

@@ -82,9 +82,9 @@ try {
     const stage = await rectOf(page, '#stage');
     await sleep(600);
     const stop = await startRecording(page);
-    await sleep(1200);                                   // the idle sway
-    for (let i = 0; i <= 50; i += 1) {                   // the pointer circles over the card: the glare and the foil follow it
-      const a = (i / 50) * Math.PI * 2;
+    await sleep(500);                                    // the idle sway
+    for (let i = 0; i <= 40; i += 1) {                   // the pointer circles over the card: the glare and the foil follow it
+      const a = (i / 40) * Math.PI * 2;
       await page.mouseMove(stage.x + stage.w * (0.5 + 0.4 * Math.cos(a)), stage.y + stage.h * (0.5 + 0.38 * Math.sin(a)));
       await sleep(32);
     }
@@ -92,7 +92,7 @@ try {
     await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sweep
     await sleep(400);
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/holo-card/media/holo-card.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 660, fps: 30, quality: 55 });
+    const bytes = writeWebp(frames, join(ROOT, 'plugins/holo-card/media/holo-card.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 560, fps: 20, quality: 45 });
     c.check('recording: media/holo-card.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
   }
   const errors = await page.evaluate('window.__e2e.errors');
