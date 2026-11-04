@@ -39,9 +39,10 @@ runGate('G-resize-drag', async (ctx) => {
   await H.sleep(300);
   const drags = [];
   // the page sees one size per rendering update, so a drag must last enough updates for the "many sizes" precondition: 30 steps at 8 ms (240 ms) gave 15-16 sizes
-  // on a quiet machine but 7-13 on a loaded one (the plain DOM page the same as the polyfill's, 2026-10-29) and 7 once on the CI runner; 60 steps at 8 ms keep
-  // the cadence and double the updates
-  for (const [cadence, steps] of [[50, 30], [8, 60]]) {
+  // on a quiet machine but 7-13 on a loaded one (the plain DOM page the same as the polyfill's, 2026-10-29) and 7 once on the CI runner; 60 steps at 8 ms kept
+  // the cadence and doubled the updates, but a loaded CI runner on Chrome 157 still saw 7 and 14 sizes in two runs (2026-11-04, flagged high-load; the 50 ms drags
+  // 30 of 30, every pixel check green): 120 steps at 8 ms (960 ms) keep the cadence and the threshold
+  for (const [cadence, steps] of [[50, 30], [8, 120]]) {
     for (const [from, to] of [[BIG, SMALL], [SMALL, BIG]]) {
       const d = await H.dragResize(page, { from, to, steps, intervalMs: cadence, settleMs: 500 });
       drags.push({ cadence, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk });

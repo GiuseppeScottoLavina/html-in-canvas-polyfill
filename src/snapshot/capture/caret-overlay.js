@@ -56,6 +56,15 @@ export function transformText(text, cs) {
 const caretColor = (doc, el, cs) => engineSkins()?.caretColor?.(doc, el, cs) || (cs.caretColor && cs.caretColor !== 'auto' ? cs.caretColor : cs.color);
 
 /**
+ * The content box of a text field (where its inner editor lays out and clips the text), from the border box: an input's client box is not its padding box in every engine.
+ * Chrome 157 reports the content box (clientWidth 88 / scrollWidth 240 for a 100 px border box with 2 px borders, 4 px padding and 240 px of text; Chrome 156: 96 / 248),
+ * and Gecko a focused field's narrower; the overlay planned from clientWidth left the last 12 px of the old text unpainted.
+ * @param {HTMLInputElement} el @param {CSSStyleDeclaration} cs @returns {{width: number, height: number}}
+ */
+export const inputContentSize = (el, cs) => ({ width: el.offsetWidth - px(cs.borderLeftWidth) - px(cs.borderRightWidth) - px(cs.paddingLeft) - px(cs.paddingRight),
+  height: el.offsetHeight - px(cs.borderTopWidth) - px(cs.borderBottomWidth) - px(cs.paddingTop) - px(cs.paddingBottom) });
+
+/**
  * Horizontal geometry of a single-line input: where text starts and how wide a prefix is.
  * @param {HTMLInputElement} el
  * @param {CSSStyleDeclaration} cs
@@ -69,7 +78,7 @@ export function inputMetrics(el, cs, ctx, frame) {
   const m = ctx.measureText('Mg');
   const height = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent;
   const left = frame.x + px(cs.borderLeftWidth) + px(cs.paddingLeft);
-  const inner = el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight);
+  const content = inputContentSize(el, cs), inner = content.width;
   const total = ctx.measureText(raw).width;
   const rtl = cs.direction === 'rtl';
   const align = cs.textAlign;
@@ -78,7 +87,7 @@ export function inputMetrics(el, cs, ctx, frame) {
     if (align === 'center') shift = (inner - total) / 2;
     else if (align === 'right' || (align === 'end' && !rtl) || (align === 'start' && rtl)) shift = inner - total;
   }
-  const top = frame.y + px(cs.borderTopWidth) + px(cs.paddingTop) + (el.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom) - height) / 2;
+  const top = frame.y + px(cs.borderTopWidth) + px(cs.paddingTop) + (content.height - height) / 2;
   return { x: (chars) => left + shift + ctx.measureText(raw.slice(0, chars)).width - el.scrollLeft, top, height };
 }
 
@@ -252,7 +261,7 @@ export function inputSelectionRect(doc, focus, frame) {
   const cs = (doc.defaultView ?? window).getComputedStyle(focus);
   const g = inputMetrics(focus, cs, ctx, frame);
   const left = frame.x + px(cs.borderLeftWidth) + px(cs.paddingLeft);
-  const right = frame.x + px(cs.borderLeftWidth) + focus.clientWidth - px(cs.paddingRight);
+  const right = left + inputContentSize(focus, cs).width;
   const x0 = Math.max(g.x(a), left);
   const x1 = Math.min(g.x(b), right);
   return x1 > x0 ? { x: x0, y: g.top, width: x1 - x0, height: g.height } : null;
