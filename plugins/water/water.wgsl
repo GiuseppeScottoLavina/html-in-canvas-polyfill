@@ -180,7 +180,9 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let jxx = 1.0 + globals.caustic * hess.x;
   let jyy = 1.0 + globals.caustic * hess.y;
   let jxy = globals.caustic * hess.z;
-  let focus = min(1.0 / max(abs(jxx * jyy - jxy * jxy), 0.3), 3.2) - 1.0;   // -0.69 .. 2.2; 0 on still water
+  // the density, softly compressed (no hard edge where the light folds): -0.6 .. 1.8, 0 on still water
+  let density = 1.0 / max(abs(jxx * jyy - jxy * jxy), 0.05) - 1.0;
+  let focus = select(-0.6 * tanh(-density / 0.6), 1.8 * tanh(density / 1.8), density > 0.0);
 
   // absorption: about 9 % of red over the depth of the water at intensity 1, more in a trough (h < 0)
   let depth = 1.0 - clamp(h * 0.05, -0.5, 0.5);

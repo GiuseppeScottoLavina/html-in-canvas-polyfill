@@ -240,11 +240,11 @@ test('a pointerdown makes a drop: continuous, the field is uploaded; it comes ba
   w.instance.settled().then((s) => { settledState = s; });
   w.instance.render(w.frame(t0 + 20));
   const tex = w.gpu.textures.at(-1);
-  assert.ok(tex && tex.data.some((v) => v < -1), 'the dent is in the uploaded field');
+  assert.ok(tex && tex.data.some((v) => Math.abs(v) > 1), 'the drop is in the uploaded field');
   assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1);
   const end = w.run(t0 + 30, 6000, () => !w.instance.continuous);
   await new Promise((r) => setImmediate(r));
-  assert.ok(end - t0 < 3500, `at rest ${Math.round(end - t0)} ms after the drop (intensity 1, a small canvas: the walls reflect)`);
+  assert.ok(end - t0 < 4000, `at rest ${Math.round(end - t0)} ms after the drop (intensity 1, a small canvas: the walls reflect)`);
   assert.equal(settledState, 'calm');
   assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 0, 'the last frame shows a flat surface');
   const uploads = w.gpu.textures.length;

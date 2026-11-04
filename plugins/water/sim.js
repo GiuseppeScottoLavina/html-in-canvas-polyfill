@@ -27,7 +27,7 @@ export const VISCOSITY = 0.06;
 /** css px of displacement per unit slope at intensity 1 (the refraction through the water onto the page below) */
 export const REFRACT_PX = 30;
 /** the same for the light: the caustics focus as if the page lay this deep */
-export const CAUSTIC_PX = 64;
+export const CAUSTIC_PX = 52;
 
 /**
  * @typedef {Object} Field
@@ -134,7 +134,7 @@ export function stamp(f, x, y, radius, amplitude) {
 }
 
 /** the crown of a drop: cos(SPLASH_RINGS * pi * s) under a smooth window, s = distance / radius */
-const SPLASH_RINGS = 3;
+const SPLASH_RINGS = 2.5;
 
 /**
  * A drop: a crater of `depth` css px with a raised rim (a crown), `radius` css px across, at (x, y). It rings out as a train of ripples.
@@ -142,7 +142,8 @@ const SPLASH_RINGS = 3;
  */
 export function splash(f, x, y, radius, depth) {
   const { h, pw, gw, gh, cellX, cellY } = f;
-  const r = Math.max(radius, 3 * Math.max(cellX, cellY));
+  // at least 6 cells across the crown: a smaller one would ring at the scale of the grid (square ripples)
+  const r = Math.max(radius, 6 * Math.max(cellX, cellY));
   const gx = x / cellX - 0.5, gy = y / cellY - 0.5;
   const rx = r / cellX, ry = r / cellY;
   const x0 = Math.max(0, Math.floor(gx - rx)), x1 = Math.min(gw - 1, Math.ceil(gx + rx));

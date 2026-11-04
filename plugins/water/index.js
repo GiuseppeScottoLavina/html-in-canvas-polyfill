@@ -54,7 +54,7 @@ export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 /** a tap or a press: a drop of this radius and depth (css px, sim.js splash); the action drop scales the depth by its strength */
 export const DROP_RADIUS = 24;
-export const DROP_DEPTH = 8;
+export const DROP_DEPTH = 10;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (up to WAKE_FAST css px per ms) */
 const WAKE_RADIUS = 9;
 const WAKE_DEPTH = 2;
@@ -119,7 +119,7 @@ export function demoRain() {
   const n = 30;
   for (let i = 1; i <= n; i += 1) {
     const k = i / n;
-    rain.push({ t: 100 + 1500 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 10 + 12 * rnd(), depth: (2.5 + 3.5 * rnd()) * (1 - 0.7 * k) });
+    rain.push({ t: 100 + 1500 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 18 + 12 * rnd(), depth: (2 + 3 * rnd()) * (1 - 0.75 * k) });
   }
   return rain;
 }
