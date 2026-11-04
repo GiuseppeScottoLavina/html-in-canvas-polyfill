@@ -56,10 +56,10 @@ export async function runGalleryClickThrough(plan) {
     const page = await browser.newPage();
     await page.send('Emulation.setDeviceMetricsOverride', { width: VIEW.width, height: VIEW.height, deviceScaleFactor: 1, mobile: false });
     const open = async () => {
-      await page.navigate(`${server.url}/examples/plugins/?effect=${plan.name}`);
+      await page.navigate(`${server.url}/examples/plugins/?effect=${plan.name}&demo=0`);   // the plugin's own state, not its demo on selection
       await page.waitForFunction(`window.__gallery && window.__gallery.ready && window.__gallery.active === ${JSON.stringify(plan.name)}`, { timeout: 20000 });
       await H.sleep(500);
-      // the picker and the panel above grow with the manifest: bring the whole canvas into the viewport before measuring it
+      // bring the whole canvas into the viewport before measuring it
       await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'start' })`);
       await H.sleep(200);
       const canvas = await page.evaluate(`(() => { const c = document.getElementById('stage'); const r = c.getBoundingClientRect(); return { x: r.left + c.clientLeft, y: r.top + c.clientTop, w: c.clientWidth, h: c.clientHeight }; })()`);

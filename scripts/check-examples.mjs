@@ -369,14 +369,14 @@ const SCENARIOS = {
       await page.click(c.x, c.y);
       return H.until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
     };
-    await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title and description', async () => {
-      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, disabled: b.disabled }))`);
-      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.text.includes(p.description)));
+    await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title (its description as the chip\'s tooltip)', async () => {
+      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, tip: b.title, disabled: b.disabled }))`);
+      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.tip === p.description));
       return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name) };
     });
     if (mode === 'effect') {
       for (const p of manifest) {
-        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form, the presented pixels change against "Effect off", and the panel shows its title, version and reduced-motion behaviour`, async () => {
+        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form, the presented pixels change against "Effect off", and the panel shows its title, version, description and reduced-motion behaviour`, async () => {
           if (!(await pick('off'))) return { ok: false, reason: 'off not selected' };
           await sleep(600);
           const off = await canvasImage(page, '#stage', 'gpu');
@@ -385,7 +385,7 @@ const SCENARIOS = {
           const on = await canvasImage(page, '#stage', 'gpu');
           const controls = await page.evaluate(`document.getElementById('effect-controls').children.length`);
           const about = await page.evaluate(`document.getElementById('about').textContent`);
-          const described = about.includes(p.title) && about.includes(`v${p.version}`) && (!p.reducedMotion || about.includes(p.reducedMotion));
+          const described = about.includes(p.title) && about.includes(`v${p.version}`) && about.includes(p.description) && (!p.reducedMotion || about.includes(p.reducedMotion));
           const cmp = H.compareImages(on, off);
           run.shots[`effect-${p.name}`] = on;
           return { ok: !!selected && controls > 0 && described && cmp.countOver16 > 300 && H.pixelStats(on).nonBlank, controls, described, changedPixels: cmp.countOver16 };
@@ -909,7 +909,8 @@ function guidePluginProblem() {
 // ------------------------------------------------------------------------------------------------------------------------------------
 async function runExample(browser, server, name, opts = {}) {
   const scenarios = opts.smoke ? SMOKE : SCENARIOS;
-  const path = opts.url ?? (opts.smoke ? `test/examples-smoke/${name}/` : `examples/${name}/`);
+  // the gallery opens with ?demo=0: these checks compare each plugin with "Effect off"; its demo on selection is checked by scripts/check-gallery.mjs
+  const path = opts.url ?? (opts.smoke ? `test/examples-smoke/${name}/` : `examples/${name}/${name === 'plugins' ? '?demo=0' : ''}`);
   const page = await browser.newPage({ reuseFirst: false });
   const run = new Run(page, name, server.url); run.fast = !!opts.generic; // a control only needs to see red: short waits
   try {

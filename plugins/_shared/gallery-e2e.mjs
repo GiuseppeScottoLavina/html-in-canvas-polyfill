@@ -28,10 +28,12 @@ export const NATIVE = process.env.HIC_E2E_NATIVE === '1';
 /**
  * Open the gallery with this plugin selected, in a new headless Chrome. `window.__e2e` counts the presented effect frames (`frames`), the
  * time of the last one (`last`, performance.now()) and the effecterror events (`errors`). `initScript` runs before any script of the page.
+ * The gallery plays a plugin's `demo` action when it is selected; `demo: false` (the default here) opens it with `&demo=0`, so a test
+ * starts from the plugin's own state and triggers the demo itself when it checks it.
  * @param {string} name
- * @param {{reducedMotion?: boolean, width?: number, height?: number, initScript?: string}} [o]
+ * @param {{reducedMotion?: boolean, width?: number, height?: number, initScript?: string, demo?: boolean}} [o]
  */
-export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '' } = {}) {
+export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '', demo = false } = {}) {
   const bundle = builtBundle(name);
   const server = await startServer();
   const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'], ...(NATIVE ? { chrome: process.env.HIC_E2E_CHROME || 'canary', nativeDrawElement: true } : {}) });
@@ -42,7 +44,7 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     if (reducedMotion) await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     if (initScript) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: initScript });
-    await page.navigate(`${server.url}/examples/plugins/?effect=${name}`);
+    await page.navigate(`${server.url}/examples/plugins/?effect=${name}${demo ? '' : '&demo=0'}`);
     await page.waitForFunction(`!!(window.__gallery && window.__gallery.ready && window.__gallery.active === ${JSON.stringify(name)})`, { timeout: 20000 });
     const mode = await page.evaluate('window.__HIC__ && window.__HIC__.installed && window.__HIC__.installed.mode');
     if (NATIVE && mode !== 'native') throw new Error(`HIC_E2E_NATIVE=1: the gallery runs in mode ${mode}, not over the native implementation`);
@@ -53,7 +55,7 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
       c.addEventListener('effecterror', (e) => { window.__e2e.errors.push(String(e.detail && e.detail.error)); });
     })()`);
     await sleep(500);
-    // the picker above grows with the manifest: scroll once it is laid out, so that the whole canvas is in the viewport
+    // the canvas is the first thing under the gallery's bar and chips; scroll once it is laid out, so that the whole canvas is in the viewport
     await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'start' })`);
     await sleep(200);
     return { page, browser, server, bundle, close, chrome: browser.version?.Browser, mode };
