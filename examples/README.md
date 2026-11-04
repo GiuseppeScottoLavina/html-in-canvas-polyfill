@@ -20,7 +20,7 @@ The server answers only under `/examples` and `/dist` (403 elsewhere). To try yo
 | [effect-plugin](effect-plugin/) | the smallest page with effects (about 30 lines of script): create the host, add the water plugin, set the frame cap, run a disintegrate transition with `handle.trigger` from the page's submit handler; 2D fallback | core, effects, `plugins/water`, `plugins/disintegrate`, WebGPU for the effects |
 | [scroll-and-resize](scroll-and-resize/) | a scrolling list (sticky header, hover) and a responsive layout in one canvas | core |
 | [playground](playground/) | edit the explainer example and run it in a sandboxed preview frame (opaque origin); status line, console panel, Run, Reset and Share (the code in the link) | core, engines |
-| [webgl-texture](webgl-texture/) | a spinning cube textured with a live form via `gl.texElementSubImage2D` | core, WebGL2 |
+| [webgl-texture](webgl-texture/) | a spinning cube textured with a live form via `gl.texElementSubImage2D` | core, the GPU bundle (`hic-live-gpu`), WebGL2 |
 | [frameworks](frameworks/) | not self-contained: the same small app in React 19, Vue 3, Svelte 5 and Lit 3, its whole UI inside one canvas ([docs/guides/FRAMEWORKS.md](../docs/guides/FRAMEWORKS.md)); each folder's README says how to build it | core, the framework packages (test dependencies, installed separately) |
 | [field-test](field-test/) | not an example: a guided check of about six minutes for testers on other machines; compares the canvas with the plain page through a capture of the tab and downloads one JSON report ([docs/guides/FIELD-TEST.md](../docs/guides/FIELD-TEST.md)) | core; effects and `plugins/water` loaded in its effect step |
 

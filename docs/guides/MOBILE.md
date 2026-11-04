@@ -64,7 +64,8 @@ a whole scale on DPR 2 and DPR 3 devices. To save memory, `maxDpr: 2` on a DPR 3
   while the page is quiet: the first step of a gesture is composed, the first gesture included (iOS Simulator, the touch events of a pan emulated: the first canvas
   update 1-8 ms after the first scroll event, 0 plain builds, instead of 2-9 plain builds and the first composed update 33-268 ms later). This holds memory: two pages
   of each visible list (at DPR 3, 5.3 MB for the example's list, 16 MB for the two lists of the mobile fixture), held from the first rest instead of the first touch,
-  and counted toward `maxTotalSurfaceBytes`.
+  and counted toward `maxTotalSurfaceBytes`. A focused field above a list, with its caret showing, does not slow the list's composed scrolling in Safari: on the physical iPad
+  Pro (iPadOS 27.2, DPR 2, 4 s of scripted scrolling) 117.6-117.7 canvas updates per second, against 93.5-94.2 with 0.1.0-preview.21.
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
 - **Effects.** The effect plugins re-target touch input like mouse input (unit-tested with touch pointer events), but neither simulator has a WebGPU adapter, so effects
   with touch were not run.

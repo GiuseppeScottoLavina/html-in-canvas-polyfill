@@ -58,14 +58,14 @@ A summary with one green, amber or red line per part ends the step (Continue, or
 | `frameMs` | median animation frame interval of the part, under its own load (the relative limits below are 2.5 of it) |
 | `movingFrameHz` | animation frames per second while a list moved (frame intervals from the first move to the last of each stretch) |
 | `refreshHz`, `refreshShare` | the refresh rate at rest (`scrollSmoothness.device.refreshReferenceHz`), and `movingFrameHz` over it |
-| `over8_33Share`, `over16_67Share` | share of the frame intervals while a list moved that are longer than 1.5 x 8.33 ms / 1.5 x 16.67 ms: frames that missed a refresh at 120 / 60 Hz |
+| `over8_33Share`, `over16_67Share` | share of the frame intervals while a list moved that are longer than 1.5 x 8.33 ms / 1.5 x 16.67 ms (12.5 / 25 ms): frames that missed a refresh at 120 / 60 Hz |
 | `moves`, `movingMs` | frames in which a list moved; time from the first move to one frame after the last, summed over the stretches of movement |
 | `paintHz` | canvas updates per second while a list moves |
 | `paintedShare`, `unpainted` | share of the moves painted in their own frame; moves not painted |
 | `paintGaps`, `stuttersPerSec`, `maxPaintGap` | stutters: canvas update gaps longer than 2.5 frame intervals over an unpainted move; per second of movement; the longest |
 | `moveGaps`, `maxMoveGap`, `rafGaps`, `maxRaf` | the list itself stalled (gaps between moves), animation frames dropped |
 | `startLag` | per stretch of movement, from the first move to the first canvas update (the first-step lag) |
-| `stats.scroll` | the scroll compositor's counters during the part (`composed`, `fallbacks`, `refusals` and their reasons `refusedBy`, `plans`, `pages`, ...), from `__HIC__.installed.report().canvases[i].stats.snapshot.scroll` |
+| `stats.scroll` | the scroll compositor's counters during the part (`composed`, `fallbacks`, `refusals` and the part's refusals by reason `refusedBy`, `plans`, `pages`, `stale`, ...), from `__HIC__.installed.report().canvases[i].stats.snapshot.scroll` |
 | `stats.cloneMsP50` ... `decodeMsP95` | the snapshot's clone and decode times (p50, p95) at the end of the part |
 | `pixels.<list>.jumps[]` | per jump: composed from cached pages or not, `settlePaints` (0: no paint after the first one, the frame is final), `diff` (share of the canvas pixels with a channel more than 16 levels apart), its bounding box |
 
