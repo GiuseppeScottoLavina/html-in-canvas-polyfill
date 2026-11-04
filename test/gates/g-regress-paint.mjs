@@ -12,8 +12,8 @@
 //   M7 sliders whose values a script writes (the CRT plugin's presets: range.value and the percentage beside it) are repainted: after each of two preset changes the
 //      canvas equals a fresh page that shows that preset; before the fix only the outputs' damage repainted, and a slider kept its old thumb beside the new one
 // Positive control per class: M1 appends a plain element (no `drawable`), M2 runs with geometry never applied, M3 adds a real requestPaint() loop, M4 composites tiles
-// source-over instead of replacing them; every class (append, hit, loop, ghost) must go red. The final-canvas checks of M5 and M6 share the class `ghost`; the
-// mutants moved-siblings-ignored and truncation-cuts-inside-tile show that they can fail (test/gates/mutants/mutants.mjs).
+// source-over instead of replacing them; every class (append, hit, loop, ghost) must go red. The final-canvas checks of M5, M6 and M7 share the class `ghost`; the
+// mutants moved-siblings-ignored, truncation-cuts-inside-tile and control-state-ignored show that they can fail (test/gates/mutants/mutants.mjs).
 import { runGate, H } from './lib/gate.mjs';
 import { openRegress, differingPixels, LARGE_COUNTER } from './lib/regress.mjs';
 import { canvasShot, assertLayerHidden } from './lib/pixel.mjs';

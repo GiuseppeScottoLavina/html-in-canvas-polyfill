@@ -81,7 +81,7 @@ right element (checked once by hand on the Android Emulator with a 2.2x pinch; n
   iOS PASS with their controls red (classification, explainer with a trusted tap, form, moved, `scrollCompose` with every composed frame equal to the settled tile, a canvas
   resize, `controls` 62 of 62); touch scroll, the on-screen keyboard and long-press selection are not drivable through `safaridriver` and were skipped, as on the simulator.
   And two Android phones, 2026-10-30: a Pixel 7 Pro (Android 17, Chrome 156.0.8078.73, DPR 2.625) and a Huawei Mate 10 Pro (Android 10, EMUI, Chrome 156.0.8078.79,
-  a display-size override of 720 x 1440 at 320 dpi on its 1080 x 2160 panel, so DPR 2 and a 360 x 600 css px viewport): the gate's 11 scenarios PASS on each with their
+  a display-size override of 720 x 1440 at 320 dpi on its 1080 x 2160 panel, so DPR 2 and a 360 x 600 css px viewport): 9 of the gate's 11 scenarios PASS on each with their
   controls red (`nativeFirst` and `scrollCompose` not applicable), in a tab of the phone's own Chrome. On no device were memory and canvas limits pushed to
   their edge, frame timing measured on the phone's GPU, or battery use measured.
 - Chrome for Android: Chrome 156 on the phones has no native HTML-in-Canvas, so it ran the polyfill as users get it. The emulator ran Chromium 158.0.8108.0 (a Chromium

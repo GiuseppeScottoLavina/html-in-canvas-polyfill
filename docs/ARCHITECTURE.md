@@ -472,7 +472,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     (raster scale = device pixel ratio). At a REDUCED raster scale (above `maxDpr`, which is 2.5 on desktops, so headless Chrome at DPR 3; a surface over its pixel budget; a
     canvas grid other than the device pixels) the clone snaps border widths to other whole pixels than the page (a 1 px border is 2 surface px at 2.5, 3 device px live): a row
     of the clone is not the height of its live-measured spacer, and composed frames still differ from the settled tile by several device pixels (the mobile fixture at DPR 3 on
-    desktop: 35,000-165,000 pixels per frame). Composition is not refused there: in headless Chrome at DPR 3 with 4x CPU throttling, the plain path instead of it fell from
+    desktop: 35,000-165,000 pixels per frame). On Chromium composition is not refused there (WebKit and Gecko refuse a scale that is not a whole number, above): in headless Chrome at DPR 3 with 4x CPU throttling, the plain path instead of it fell from
     60 to 16-30 canvas updates per second under touch scrolls, with 84-119 of about 167 moves unpainted (0 composed); at 1x both kept 60 (test/bench/scroll-jank.mjs, a
     variant of the store that refuses). Refusing, or a desktop `maxDpr` of 3, is an open decision.
   - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
