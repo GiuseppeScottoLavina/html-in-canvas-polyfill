@@ -2,9 +2,9 @@
 //   node test/bench/scroll-jank.mjs [--cases=a,b] [--rates=1,4,6] [--inputs=wheel,touch] [--reps=N] [--bundle=/dist/...] [--headless] [--dpr=N] [--out=file] [--profile] [--touch-cold] [--keep-traces]
 // Per case x rate x input, in a fresh tab: a stream of three gestures with pauses between them (the pauses let the settle tile, the plan and the page builds run, as
 // they do between a user's gestures). Measured in the page, per rAF frame: the live scroller's offset and the count of canvas paint events.
-//   moveGaps   intervals between consecutive offset changes of the live scroller during a gesture longer than 2 frame intervals (the native scroll stalled)
-//   paintGaps  frames in which the scroller moved and the canvas has not been repainted for more than 2 frame intervals (the drawn scroller stuttered)
-//   rafGaps    rAF intervals longer than 2 frame intervals during the gestures (a main-thread frame dropped)
+//   moveGaps   intervals between consecutive offset changes of the live scroller during a gesture longer than 2.5 frame intervals (the native scroll stalled)
+//   paintGaps  frames in which the scroller moved and the canvas has not been repainted for more than 2.5 frame intervals (the drawn scroller stuttered)
+//   rafGaps    rAF intervals longer than 2.5 frame intervals during the gestures (a main-thread frame dropped)
 // These limits are relative to the median frame interval under the same load. The absolute frame budget is reported next to them: movingFrameHz (rAF frames per
 // second while the scroller moved), restHz and restShare (the rAF rate at rest before the throttling, and movingFrameHz over it), over8_33Share / over16_67Share
 // (share of those frame intervals longer than 1.5 x 8.33 / 1.5 x 16.67 ms: frames that missed a refresh at 120 / 60 Hz).
@@ -203,7 +203,9 @@ try {
       if (!KEEP_TRACES) unlinkSync(file);
       const m0 = evs?.find((e) => e.name === 'm0' && ['R', 'I', 'i', 'b', 'n'].includes(e.ph));
       const startTs = m0?.ts ?? 0;
-      const sDelta = sc0.map((a, i) => (a && sc1[i] ? Object.fromEntries(Object.entries(sc1[i]).filter(([, v]) => typeof v === 'number').map(([k, v]) => [k, v - (a[k] ?? 0)])) : null));
+      // numbers, and one level of counters by key (refusedBy: the refusals of the run by reason)
+      const diff = (a, b) => Object.fromEntries(Object.entries(b).flatMap(([k, v]) => (typeof v === 'number' ? [[k, v - (a[k] ?? 0)]] : v && typeof v === 'object' ? [[k, diff(a[k] ?? {}, v)]] : [])));
+      const sDelta = sc0.map((a, i) => (a && sc1[i] ? diff(a, sc1[i]) : null));
       const fm = frameMetrics(frames, windows, restHz);
       const inGesture = (l) => windows.some(([a, b]) => p0 + l.tsMs + l.durMs >= a && p0 + l.tsMs <= b);
       const long = (rep_.longFrames ?? []).map((l) => ({ at: +l.tsMs.toFixed(1), ms: +l.durMs.toFixed(1), gesture: inGesture(l), slices: l.topEvents.slice(0, 4).map(([n, d]) => `${n} ${d}`),

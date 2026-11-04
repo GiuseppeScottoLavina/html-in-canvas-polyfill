@@ -5,7 +5,8 @@
  * A rect is only safe when nothing around it moves. The memory therefore keeps, per element, the last box and the last reach (box grown to its scrollable overflow, the ink margin and the
  * ink it paints beyond its box: shadows, outline, LiveLayer.paintInk):
  * the next damage is the union of old and new reach (a dropdown that closes still clears its old pixels), and a first sighting or a box that changed size answers null (whole drawable),
- * because siblings may have shifted.
+ * because siblings may have shifted. So does a change of its `position` or `z-index` at the same size: what it is positioned against and what it paints over changed,
+ * and a scroll plan read them (a row that became fixed no longer scrolls with the list, snapshot/store/scroll-compose.js drops the plan on whole-drawable damage).
  */
 
 import { inflateRect, unionRect } from '../../util/rect.js';
@@ -17,7 +18,7 @@ import { inflateRect, unionRect } from '../../util/rect.js';
 /**
  * @typedef {Object} RectMemory
  * @property {(layer: LiveLayer, el: Element) => Rect|null} own  frame rect of `el` grown by the ink margin and its painted ink (and by the ink it painted before, which the change may have removed); for changes that stay inside the box (typing, caret, focus ring). Remembers the box for later `reach` calls. null = not laid out
- * @property {(layer: LiveLayer, el: Element) => Rect|null} reach  union of the previous and the current reach of `el`; null (whole drawable) on first sight, when the box changed size or when `el` is not laid out
+ * @property {(layer: LiveLayer, el: Element) => Rect|null} reach  union of the previous and the current reach of `el`; null (whole drawable) on first sight, when the box changed size, its position or z-index changed, or when `el` is not laid out
  * @property {(layer: LiveLayer, el: Element) => Rect|null} paintReach  for a change that only paints (no rule it triggers sets a layout property, CssBundle.pseudo.hoverLayout): the current reach of `el`, with
  *   its previous reach moved along with its box (scrolling moved it, the change did not); a first sighting needs no bound. null = not laid out
  */
@@ -44,7 +45,7 @@ export function getRectMemory(env) {
  * @returns {RectMemory}
  */
 function createRectMemory(ink) {
-  /** @type {WeakMap<Element, {box: Rect, reach: Rect, own: Rect, painted: boolean}>} */
+  /** @type {WeakMap<Element, {box: Rect, reach: Rect, own: Rect, painted: boolean, place: string}>} */
   const last = new WeakMap();
 
   /** @param {LiveLayer} layer @param {Element} el */
@@ -62,7 +63,8 @@ function createRectMemory(ink) {
       const g = inflateRect(r, ink);
       return painted && p ? { x: g.x - p.left, y: g.y - p.top, width: g.width + p.left + p.right, height: g.height + p.top + p.bottom } : g;
     };
-    return { box, reach: grow({ x: box.x, y: box.y, width, height }), own: grow(box), painted };
+    const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+    return { box, reach: grow({ x: box.x, y: box.y, width, height }), own: grow(box), painted, place: cs ? `${cs.position} ${cs.zIndex}` : '' };
   }
 
   return {
@@ -92,6 +94,8 @@ function createRectMemory(ink) {
       if (cur) last.set(el, cur);
       else last.delete(el);
       if (!cur) return null;
+      // a first sighting of a box positioned against something outside its parent's flow (absolute, fixed, sticky) answers null too: it may have just become so
+      if (prev ? prev.place !== cur.place : cur.place && !/^(static|relative) /.test(cur.place)) return null;
       if (prev && prev.box.width === cur.box.width && prev.box.height === cur.box.height) return unionRect(prev.reach, cur.reach);
       return bounded(layer, el, prev ? unionRect(prev.reach, cur.reach) : null);
     },
