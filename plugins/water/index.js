@@ -1,14 +1,20 @@
 /**
- * Water ripple effect plugin (effect plugin ABI v2): an EXAMPLE of the effects extension of html-in-canvas-polyfill, not part of the polyfill.
- * Shader: ./water.wgsl.
+ * Water effect plugin (effect plugin ABI v2): an EXAMPLE of the effects extension of html-in-canvas-polyfill, not part of the polyfill.
  *
- * The input mapper (`mapWaterPoint`) is the JS twin of the displacement in water.wgsl: same constants, same fast_exp_neg, same clamp.
- * It evaluates the uniform block that was submitted for the presented frame, so it describes exactly those pixels. The test
- * test/water-gpu.browser.test.mjs checks the twin against the pixels the GPU actually produced.
+ * A height-field water surface over the HTML drawn in the canvas: sim.js advances the wave equation on the CPU (a grid of cells of about
+ * 3 CSS px, 120 steps per second, reflecting walls, damping and viscosity that bring it back to a flat surface); the field is uploaded as
+ * an r32float texture, and water.wgsl evaluates it per device pixel as a cubic B-spline: refraction of the page from the surface normals,
+ * caustics, Fresnel reflection of a sky, a window light and a sun, absorption.
  *
- * Action 'drop' (`handle.trigger('drop', { point, strength })`): a drop falls at `point` (canvas CSS px, default the centre) with
- * `strength` (0.08 to 2, default 1.2). It resolves 'calm' once no ripple is left; `handle.settled()` does the same. With reduced motion no
- * ripple starts, so it resolves 'calm' at once.
+ * Input: the pointer and taps make drops, a moving pointer a wake. The listeners are passive: a finger keeps scrolling the page. The input
+ * mapper (`mapWaterPoint`) evaluates the very uniform block and height field that were submitted for the presented frame (copied into one
+ * of four slots) with the same B-spline as the shader, so clicks and typing reach the field the user sees.
+ *
+ * Zero work at rest: the instance is `continuous` only while the surface moves; once it is flat (below what a pixel shows) the field is
+ * cleared and the host stops rendering. The option `ambient` (a gentle swell) makes it continuous on purpose.
+ *
+ * Actions: 'drop' (a drop at `point`) and 'demo' (a short rain, then calm) resolve 'calm' once the surface is still. User input during the
+ * demo stops the rain at once and resolves the demo with null. With reduced motion both resolve 'calm' at once and nothing moves.
  *
  * `plugin` is a plain, frozen definition that `host.addPlugin` validates (docs/guides/EFFECTS-PLUGINS.md).
  */
@@ -17,156 +23,104 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
+import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
-/** @typedef {import('../../src/contracts/types.js').EffectPluginContext} EffectPluginContext */
-/** @typedef {import('../../src/contracts/types.js').EffectPluginInstance} EffectPluginInstance */
-/** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
+/** @typedef {import('./sim.js').Field} Field */
+/** @typedef {{t: number, x: number, y: number, radius: number, depth: number}} RainDrop  t: ms; x, y: 0..1 of the canvas; css px */
 
 /** What the plugin gallery and the build read (plugins/README.md). */
 export const meta = Object.freeze({
   name: 'water',
   title: 'Water',
-  description: 'Ripples that follow the pointer; clicks and typing are remapped through the displacement.',
-  defaults: Object.freeze({ intensity: 0.28 }),
-  reducedMotion: 'Calm water: a still surface with a static refraction, no ripples and no animation; clicks and typing are remapped through it.',
+  description: 'A water surface over the live page: drops, wakes, refraction, caustics and reflections; clicks and typing are remapped through it.',
+  defaults: Object.freeze({ intensity: 0.5 }),
+  reducedMotion: 'Still water: the surface keeps its reflection and tint; no ripple starts and nothing animates; drop and demo resolve at once.',
 });
 
-export const RIPPLE_COUNT = 4;
-/** The actions of `handle.trigger`: drop starts a ripple. */
-export const ACTIONS = Object.freeze(/** @type {const} */ (['drop']));
-/** floats in the uniform block: resolution(2) time ready | params(4) | ripples(4 x vec4) */
-export const GLOBALS_LENGTH = 8 + RIPPLE_COUNT * 4;
+/** The actions of `handle.trigger`: drop lets a drop fall, demo plays a short rain. */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['drop', 'demo']));
+
+/** Offsets in the uniform block (water.wgsl Globals), in floats. The mapper state is this block followed by the padded height field. */
+export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17 });
+export const GLOBALS_LENGTH = 20;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
-const DEFAULT_INTENSITY = 0.28;
-const RIPPLE_LIFETIME_S = 3.2;
-const CLEAR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
+const DEFAULT_INTENSITY = 0.5;
+/** css px of the ambient swell at `ambient: 1` */
+export const AMBIENT_PX = 2.6;
+const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
+/** a tap or a press: a dent of this radius and depth (css px); the action drop scales the depth by its strength */
+export const DROP_RADIUS = 13;
+export const DROP_DEPTH = 6;
+/** the wake of a moving pointer: dents along its path, deeper when it moves faster (up to WAKE_FAST css px per ms) */
+const WAKE_RADIUS = 9;
+const WAKE_DEPTH = 2;
+const WAKE_FAST = 1.6;
+const DEMO_SEED = 0x5eed;
 
 let uiSerial = 0;
 
-/** @param {unknown} v */
-function clamp01(v) { return Math.min(1, Math.max(0, Number(v) || 0)); }
-
-/** The reciprocal-cubic stand-in for exp(-x), shared with the shader. @param {number} value */
-function fastExpNeg(value) {
-  const q = Math.max(0, Number(value) || 0);
-  const q2 = q * q;
-  return 1 / (1 + q + 0.48 * q2 + 0.235 * q2 * q);
+/** @param {unknown} v @param {number} fallback */
+function clamp01(v, fallback) {
+  if (v === undefined || v === null) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
 }
 
 /**
- * Source point shown at the presented point `point`, for the uniform block `state` (same math as fs() in water.wgsl).
- * @param {Float32Array} state  layout of the uniform block: [2] time, [4] intensity, [8 + 4i ..] ripple x, y, radius, gain
+ * Source point shown at the presented point `point`, for the mapper state `state` (the uniform block, then the height field): the same
+ * math as fs() in water.wgsl (the B-spline gradient times the refraction, the ambient swell, the clamp). PURE.
+ * @param {Float32Array} state
  * @param {InputPoint} point  presented point, canvas css px, plus the presented size
  * @returns {{x: number, y: number}}
  */
 export function mapWaterPoint(state, point) {
   const width = Math.max(1, point.width);
   const height = Math.max(1, point.height);
-  const time = state[2];
-  const intensity = state[4];
-  let ux = point.x / width;
-  let uy = point.y / height;
-  const aspectX = width / height;
-  let rx = 0;
-  let ry = 0;
-  for (let i = 0; i < RIPPLE_COUNT; i += 1) {
-    const base = 8 + i * 4;
-    const gain = state[base + 3];
-    if (!(gain > 0)) continue;
-    const dx = (ux - state[base]) * aspectX;
-    const dy = uy - state[base + 1];
-    const distance = Math.max(Math.hypot(dx, dy), 0.0001);
-    const ring = Math.cos((distance - state[base + 2]) * 82);
-    const envelope = fastExpNeg(distance * 2.55) * gain;
-    rx += ((dx / distance) / aspectX) * ring * envelope * (0.0105 * intensity);
-    ry += (dy / distance) * ring * envelope * (0.0105 * intensity);
+  const u = point.x / width;
+  const v = point.y / height;
+  const cssW = Math.max(1, state[G.CSS]), cssH = Math.max(1, state[G.CSS + 1]);
+  let dx = 0, dy = 0;
+  if (state[G.ACTIVE] > 0.5) {
+    const gw = state[G.GRID], gh = state[G.GRID + 1];
+    const s = surfaceAt(state, GLOBALS_LENGTH, gw + 2 * PAD, gh + 2 * PAD, u * gw - 0.5 + PAD, v * gh - 0.5 + PAD);
+    dx = state[G.K] * s.hx;
+    dy = state[G.K + 1] * s.hy;
   }
-  const idleX = Math.sin(uy * 17 + time * 0.46) * (0.00155 * intensity);
-  const idleY = Math.cos(ux * 15 - time * 0.4) * (0.00155 * intensity);
-  ux = Math.min(0.999, Math.max(0.001, ux + idleX + rx));
-  uy = Math.min(0.999, Math.max(0.001, uy + idleY + ry));
-  return { x: ux * width, y: uy * height };
-}
-
-/**
- * @typedef {Object} Ripple
- * @property {number} x  0..1 of the canvas
- * @property {number} y
- * @property {number} time  start, seconds on the plugin clock (a delayed ripple starts in the future)
- * @property {number} strength
- */
-
-/**
- * No ripple is running or waiting to start at `time` (seconds on the plugin clock). PURE.
- * @param {Ripple[]} ripples @param {number} time
- */
-export function calmAt(ripples, time) {
-  return ripples.every((r) => !(r.strength > 0) || time - r.time >= RIPPLE_LIFETIME_S);
-}
-
-/**
- * The uniform block of one frame.
- * @param {Float32Array} globals
- * @param {{width: number, height: number, sourceReady: boolean}} frame
- * @param {Ripple[]} ripples
- * @param {number} time
- * @param {number} intensity
- */
-function fillGlobals(globals, frame, ripples, time, intensity) {
-  globals[0] = frame.width; globals[1] = frame.height; globals[2] = time; globals[3] = frame.sourceReady ? 1 : 0;
-  globals[4] = intensity; globals[5] = 0; globals[6] = 0; globals[7] = 0;
-  for (let i = 0; i < RIPPLE_COUNT; i += 1) {
-    const ripple = ripples[i];
-    const base = 8 + i * 4;
-    const age = time - ripple.time;
-    const active = age >= 0 && age < RIPPLE_LIFETIME_S && ripple.strength > 0;
-    globals[base] = ripple.x; globals[base + 1] = ripple.y;
-    globals[base + 2] = active ? age * 0.18 : 0;
-    globals[base + 3] = active ? fastExpNeg(age * 1.05) * ripple.strength : 0;
+  if (state[G.AMBIENT] > 0) {
+    const a = ambientSlope(u * cssW, v * cssH, state[G.TIME], state[G.AMBIENT]);
+    dx += state[G.REFRACT] * a.x;
+    dy += state[G.REFRACT] * a.y;
   }
+  return { x: Math.min(0.999, Math.max(0.001, u + dx / cssW)) * width, y: Math.min(0.999, Math.max(0.001, v + dy / cssH)) * height };
 }
 
-
-/**
- * Ripples from the pointer: a drop where it goes down, a faster pointer makes a stronger ripple. None at all when the user prefers reduced motion.
- * @param {EffectPluginContext} context
- * @param {(x: number, y: number, strength: number) => void} drop
- * @param {boolean} reducedMotion
- */
-function listenPointer(context, drop, reducedMotion) {
-  const canvas = context.canvas;
-  const win = /** @type {any} */ (canvas.ownerDocument.defaultView);
-  let last = { x: 0.5, y: 0.5, t: performance.now() };
-  let lastDrop = 0;
-  /** @param {PointerEvent} e */
-  const unit = (e) => {
-    const r = canvas.getBoundingClientRect();
-    const w = Math.max(1, canvas.clientWidth);
-    const h = Math.max(1, canvas.clientHeight);
-    return { x: (e.clientX - r.left - canvas.clientLeft) / w, y: (e.clientY - r.top - canvas.clientTop) / h, w, h };
+/** A small deterministic PRNG (mulberry32). @param {number} seed */
+function random(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  context.listen('pointermove', (event) => {
-    if (reducedMotion || !(event instanceof win.PointerEvent)) return;
-    const now = performance.now();
-    const { x, y, w, h } = unit(/** @type {PointerEvent} */ (event));
-    const dt = Math.max(8, now - last.t);
-    const dx = x - last.x;
-    const dy = y - last.y;
-    const speed = Math.hypot(dx * w, dy * h) / dt;
-    if (now - lastDrop > 24 && Math.abs(dx) + Math.abs(dy) > 0.002) {
-      drop(x, y, Math.min(1.55, 0.34 + speed * 0.48));
-      lastDrop = now;
-    }
-    last = { x, y, t: now };
-  });
-  context.listen('pointerdown', (event) => {
-    if (reducedMotion || !(event instanceof win.PointerEvent)) return;
-    const { x, y } = unit(/** @type {PointerEvent} */ (event));
-    drop(x, y, 1.4);
-  });
+}
+
+/**
+ * The rain of the action demo: a first large drop, then a shower that thins out; the last drop falls at 1.9 s. Deterministic. PURE.
+ * @returns {RainDrop[]}
+ */
+export function demoRain() {
+  const rnd = random(DEMO_SEED);
+  /** @type {RainDrop[]} */ const rain = [{ t: 0, x: 0.5, y: 0.44, radius: 20, depth: 6.5 }];
+  const n = 30;
+  for (let i = 1; i <= n; i += 1) {
+    const k = i / n;
+    rain.push({ t: 100 + 1500 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 6 + 8 * rnd(), depth: (2.2 + 2.8 * rnd()) * (1 - 0.7 * k) });
+  }
+  return rain;
 }
 
 /** CSS of the plugin UI (mountUI) */
@@ -193,7 +147,7 @@ function mountIntensityUi(root, ui, bind) {
   label.innerHTML = `<span>Water plugin · intensity</span><input id="${id}" type="range" min="0" max="100" step="1"><output for="${id}"></output>`;
   const range = /** @type {HTMLInputElement} */ (label.querySelector('input'));
   const output = /** @type {HTMLOutputElement} */ (label.querySelector('output'));
-  const percent = Math.round(clamp01(ui.getOptions().intensity) * 100);
+  const percent = Math.round(clamp01(ui.getOptions().intensity, DEFAULT_INTENSITY) * 100);
   range.value = String(percent);
   output.textContent = `${percent}%`;
   root.append(label);
@@ -207,26 +161,35 @@ function mountIntensityUi(root, ui, bind) {
   };
 }
 
-/**
- * @param {any} device
- * @param {string} code
- * @param {string} format
- */
+/** @param {any} device @param {string} code @param {string} format */
 function createPipeline(device, code, format) {
+  const stage = /** @type {any} */ (globalThis).GPUShaderStage?.FRAGMENT ?? 2;
+  const layout = device.createBindGroupLayout({
+    label: 'hic-water-effect-layout',
+    entries: [
+      { binding: 0, visibility: stage, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: stage, sampler: { type: 'filtering' } },
+      { binding: 2, visibility: stage, texture: { sampleType: 'float' } },
+      // the height field is read with textureLoad only: r32float needs no filtering (it is not filterable without an optional feature)
+      { binding: 3, visibility: stage, texture: { sampleType: 'unfilterable-float' } },
+    ],
+  });
   const module = device.createShaderModule({ code, label: 'hic-water-effect-shader' });
-  return device.createRenderPipeline({
-    label: 'hic-water-effect-pipeline', layout: 'auto',
+  const pipeline = device.createRenderPipeline({
+    label: 'hic-water-effect-pipeline',
+    layout: device.createPipelineLayout({ label: 'hic-water-effect-pipeline-layout', bindGroupLayouts: [layout] }),
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
   });
+  return { pipeline, layout };
 }
 
 /** @type {EffectPluginDefinition} */
 export const plugin = Object.freeze({
   type: 'water',
   apiVersion: 2,
-  version: 3,
+  version: 4,
   actions: ACTIONS,
   // The pass only writes its destination as a same-format colour attachment; it never samples or reads it back.
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
@@ -234,47 +197,146 @@ export const plugin = Object.freeze({
     const shader = initialOptions?.shader;
     const code = typeof shader === 'string' && shader !== '' ? shader : await wgsl('water.wgsl');
     const { device, format } = context;
-    const pipeline = createPipeline(device, code, format);
-    const usage = /** @type {any} */ (globalThis).GPUBufferUsage;
-    const uniformBuffer = device.createBuffer({ label: 'hic-water-effect-globals', size: GLOBALS_LENGTH * 4, usage: usage.UNIFORM | usage.COPY_DST });
+    const { pipeline, layout } = createPipeline(device, code, format);
+    const gpu = /** @type {any} */ (globalThis);
+    const bufferUsage = gpu.GPUBufferUsage;
+    const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
+    const uniformBuffer = device.createBuffer({ label: 'hic-water-effect-globals', size: GLOBALS_LENGTH * 4, usage: bufferUsage.UNIFORM | bufferUsage.COPY_DST });
     const sampler = device.createSampler({ label: 'hic-water-effect-sampler', magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const bindGroups = new WeakMap();
     const globals = new Float32Array(GLOBALS_LENGTH);
-    const mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(GLOBALS_LENGTH));
-    const mappers = mapperStates.map((s) => stateMapper(s, mapWaterPoint));
-    let mapperSlot = 0;
-    const start = performance.now();
-    const win = /** @type {any} */ (context.canvas.ownerDocument.defaultView);
-    // prefers-reduced-motion: calm water. The surface keeps its gentle refraction, frozen at time 0 (a static picture: rendered only when the page or an option changes),
-    // and no ripple ever starts (not on load, not from the pointer); the input mapper reads the same frozen state, so clicks still land where the controls are seen.
+    const canvas = context.canvas;
+    const win = /** @type {any} */ (canvas.ownerDocument.defaultView);
+    // prefers-reduced-motion (read now, and by the host at every trigger): still water. Nothing starts a ripple; the surface keeps its
+    // reflection and tint (a static picture, rendered only when the page or an option changes), and the mapper is the identity.
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    /** @type {Ripple[]} */
-    const ripples = Array.from({ length: RIPPLE_COUNT }, () => ({ x: 0.5, y: 0.5, time: -100, strength: 0 }));
-    let rippleIndex = 0;
-    let intensity = clamp01(initialOptions?.intensity ?? DEFAULT_INTENSITY);
+    const start = performance.now();
+
+    let intensity = clamp01(initialOptions?.intensity, DEFAULT_INTENSITY);
+    let light = clamp01(initialOptions?.light, 1);
+    let ambient = reducedMotion ? 0 : clamp01(initialOptions?.ambient, 0);
+
+    /** @type {Field|null} */ let field = null;
+    /** @type {any} */ let fieldTexture = null;
+    /** @type {any} */ let fieldView = null;
+    let bindGroups = new WeakMap();
+    /** the surface moves: frames are needed until it is flat again */
+    let awake = false;
+    /** the field changed since its last upload */
+    let dirty = false;
+    /** the simulation clock, ms on the performance.now() time base: the field has been stepped up to this time */
+    let simClock = 0;
+    let sinceCheck = 0;
+    /** drops of the running demo, on the simulation clock @type {RainDrop[]} */
+    let rain = [];
+    /** resolves the running demo with null when the user takes over @type {((state: string|null) => void)|null} */
+    let demoTakeover = null;
+    /** @type {((state: string|null) => void)[]} */ const waiters = [];
+    /** mapper states: the uniform block followed by the field (reallocated with the field) @type {Float32Array[]} */
+    let mapperStates = [];
+    /** @type {any[]} */ let mappers = [];
+    let mapperSlot = 0;
     /** @type {HTMLInputElement|null} */ let uiRange = null;
     /** @type {HTMLOutputElement|null} */ let uiOutput = null;
 
-    const elapsed = (/** @type {number} */ now = performance.now()) => (now - start) / 1000;
-    /** @param {number} x @param {number} y @param {number} strength @param {number} [delay] */
-    function addRipple(x, y, strength, delay = 0) {
-      ripples[rippleIndex++ % RIPPLE_COUNT] = {
-        x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)),
-        time: elapsed() + delay, strength: Math.min(2, Math.max(0.08, strength)),
-      };
-      context.requestRender();
-    }
-    listenPointer(context, addRipple, reducedMotion);
-    if (!reducedMotion) {
-      addRipple(0.68, 0.34, 0.75);
-      addRipple(0.24, 0.76, 0.5, 0.28);
+    /** The field of a canvas of this css size: the same grid follows a resize of a fraction of a cell; another grid starts flat. @param {number} cssWidth @param {number} cssHeight */
+    function ensureField(cssWidth, cssHeight) {
+      if (field && Math.abs(field.cssWidth - cssWidth) < 0.01 && Math.abs(field.cssHeight - cssHeight) < 0.01) return field;
+      const grid = gridOf(cssWidth, cssHeight);
+      if (field && field.gw === grid.gw && field.gh === grid.gh) { setSize(field, cssWidth, cssHeight); return field; }
+      const f = createField(cssWidth, cssHeight);
+      field = f;
+      fieldTexture?.destroy?.();
+      fieldTexture = device.createTexture({ label: 'hic-water-effect-height-field', size: { width: f.pw, height: f.ph }, format: 'r32float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
+      fieldView = fieldTexture.createView();
+      bindGroups = new WeakMap();
+      mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(GLOBALS_LENGTH + f.pw * f.ph));
+      mappers = mapperStates.map((s) => stateMapper(s, mapWaterPoint));
+      dirty = true;
+      return f;
     }
 
-    /** @type {((state: string|null) => void)[]} */ const waiters = [];
-    /** drops of the action, started by the next frame on the frame clock @type {{x: number, y: number, strength: number}[]} */ const drops = [];
-    /** the plugin clock (seconds) of the last rendered frame */
-    let clock = 0;
-    const wait = () => (!drops.length && calmAt(ripples, clock) ? 'calm' : new Promise((resolve) => { waiters.push(resolve); }));
+    /** the field (before the first frame: one of the canvas's client size) */
+    const currentField = () => field ?? ensureField(canvas.clientWidth || 1, canvas.clientHeight || 1);
+
+    /** The surface starts to move (input, an action): the simulation clock starts now. */
+    function wake() {
+      if (!awake) { awake = true; simClock = performance.now(); sinceCheck = 0; }
+      context.requestRender();
+    }
+
+    /** A dent at (x, y) css px of the field. @param {number} x @param {number} y @param {number} radius @param {number} depth */
+    function dent(x, y, radius, depth) {
+      stamp(currentField(), x, y, radius, -depth);
+      dirty = true;
+      wake();
+    }
+
+    /** User input during the demo: the rain stops at once and the demo resolves null; the input takes over. */
+    function takeOver() {
+      rain = [];
+      const resolve = demoTakeover;
+      demoTakeover = null;
+      resolve?.(null);
+    }
+
+    const calm = () => !awake && !rain.length;
+    /** @returns {'calm'|Promise<string|null>} */
+    const wait = () => (calm() ? 'calm' : new Promise((resolve) => { waiters.push(resolve); }));
+
+    /** canvas client px -> css px of the field @param {number} x @param {number} y */
+    const toField = (x, y) => {
+      const f = currentField();
+      return { x: (x * f.cssWidth) / Math.max(1, canvas.clientWidth), y: (y * f.cssHeight) / Math.max(1, canvas.clientHeight) };
+    };
+
+    if (!reducedMotion) {
+      /** @type {{x: number, y: number, t: number}|null} */ let last = null;
+      /** @param {PointerEvent} e */
+      const local = (e) => {
+        const r = canvas.getBoundingClientRect();
+        return toField(e.clientX - r.left - canvas.clientLeft, e.clientY - r.top - canvas.clientTop);
+      };
+      // passive: the water never claims a gesture (a finger keeps scrolling the page; the browser then cancels the pointer)
+      const passive = { passive: true };
+      context.listen('pointerdown', (event) => {
+        if (!(event instanceof win.PointerEvent)) return;
+        const e = /** @type {PointerEvent} */ (event);
+        const p = local(e);
+        takeOver();
+        dent(p.x, p.y, DROP_RADIUS, DROP_DEPTH);
+        last = { x: p.x, y: p.y, t: e.timeStamp || performance.now() };
+      }, passive);
+      context.listen('pointermove', (event) => {
+        if (!(event instanceof win.PointerEvent)) return;
+        const e = /** @type {PointerEvent} */ (event);
+        const p = local(e);
+        const t = e.timeStamp || performance.now();
+        const prev = last;
+        last = { x: p.x, y: p.y, t };
+        if (!prev) return;
+        const dist = Math.hypot(p.x - prev.x, p.y - prev.y);
+        const dt = t - prev.t;
+        // a jump (the pointer came back from elsewhere, a long pause) starts a new path
+        if (dist < 0.75 || dist > 220 || dt > 150) return;
+        // a drag (a pressed button, a finger) stirs harder than a hovering mouse
+        const pressed = e.buttons !== 0 || e.pointerType === 'touch' ? 1 : 0.7;
+        const depth = WAKE_DEPTH * pressed * Math.min(1, dist / Math.max(4, dt) / WAKE_FAST) ** 0.8;
+        if (depth < 0.02) return;
+        takeOver();
+        const spacing = WAKE_RADIUS * 0.5;
+        const n = Math.ceil(dist / spacing);
+        const f = currentField();
+        for (let i = 1; i <= n; i += 1) {
+          const k = i / n;
+          stamp(f, prev.x + (p.x - prev.x) * k, prev.y + (p.y - prev.y) * k, WAKE_RADIUS, (-depth * dist) / n / spacing);
+        }
+        dirty = true;
+        wake();
+      }, passive);
+      const end = () => { last = null; };
+      context.listen('pointerleave', end, passive);
+      context.listen('pointercancel', end, passive);
+    }
 
     function syncUi() {
       const percent = Math.round(intensity * 100);
@@ -282,53 +344,113 @@ export const plugin = Object.freeze({
       if (uiOutput && uiOutput.textContent !== `${percent}%`) uiOutput.textContent = `${percent}%`;
     }
 
+    /** Advance the simulation to `now` (ms): the due drops of the rain, fixed steps, and the check for a flat surface. @param {Field} f @param {number} now */
+    function advance(f, now) {
+      let n = Math.floor((now - simClock) / STEP_MS);
+      // a long gap (off-screen, a frame cap of 1) is skipped, not caught up
+      if (n > MAX_STEPS_PER_FRAME) { simClock = now - MAX_STEPS_PER_FRAME * STEP_MS; n = MAX_STEPS_PER_FRAME; }
+      for (let i = 0; i < n && awake; i += 1) {
+        while (rain.length && rain[0].t <= simClock) {
+          const d = /** @type {RainDrop} */ (rain.shift());
+          stamp(f, d.x * f.cssWidth, d.y * f.cssHeight, d.radius, -d.depth);
+        }
+        step(f);
+        simClock += STEP_MS;
+        dirty = true;
+        sinceCheck += 1;
+        if (sinceCheck >= 4) {
+          sinceCheck = 0;
+          if (!rain.length && quiet(f, intensity)) { clear(f); awake = false; }
+        }
+      }
+    }
+
     return {
       spatial: true,
-      continuous: !reducedMotion,
+      /** true while the surface moves (or with the ambient swell): the host renders every capped frame then, and none at rest */
+      get continuous() { return awake || ambient > 0; },
       setOptions(next) {
-        intensity = clamp01(next?.intensity ?? intensity);
+        intensity = clamp01(next?.intensity, intensity);
+        light = clamp01(next?.light, light);
+        if (!reducedMotion) ambient = clamp01(next?.ambient, ambient);
         syncUi();
       },
-      runAction(_action, options, info) {
-        // the one action, 'drop'; with reduced motion no ripple ever starts (calm water)
+      runAction(action, options, info) {
+        const still = reducedMotion || info.reducedMotion;
+        if (action === 'demo') {
+          takeOver();
+          if (still) return 'calm';
+          wake();
+          const t0 = simClock;
+          rain = demoRain().map((d) => ({ ...d, t: t0 + d.t }));
+          return new Promise((resolve) => {
+            demoTakeover = resolve;
+            waiters.push((state) => { if (demoTakeover === resolve) { demoTakeover = null; resolve(state); } });
+          });
+        }
+        // 'drop'
         const at = actionPoint(options.point, 'water');
         const strength = options.strength === undefined ? 1.2 : Number(options.strength);
         if (!Number.isFinite(strength)) throw new TypeError('water: `strength` must be a finite number (0.08 to 2)');
-        if (!reducedMotion && !info.reducedMotion) {
-          const w = Math.max(1, context.canvas.clientWidth), h = Math.max(1, context.canvas.clientHeight);
-          drops.push({ x: at ? at.x / w : 0.5, y: at ? at.y / h : 0.5, strength });
-          context.requestRender();
+        takeOver();
+        if (!still) {
+          const f = currentField();
+          const p = at ? toField(at.x, at.y) : { x: f.cssWidth / 2, y: f.cssHeight / 2 };
+          dent(p.x, p.y, DROP_RADIUS * 1.15, DROP_DEPTH * Math.min(2, Math.max(0.08, strength)));
         }
         return wait();
       },
       settled: wait,
       render(frame) {
-        const time = reducedMotion ? 0 : elapsed(frame.now);
-        clock = time;
-        for (const d of drops.splice(0)) {
-          ripples[rippleIndex++ % RIPPLE_COUNT] = { x: Math.min(1, Math.max(0, d.x)), y: Math.min(1, Math.max(0, d.y)), time, strength: Math.min(2, Math.max(0.08, d.strength)) };
+        const f = ensureField(frame.cssWidth || canvas.clientWidth || frame.width, frame.cssHeight || canvas.clientHeight || frame.height);
+        if (awake) advance(f, frame.now);
+        const active = awake ? 1 : 0;
+        if (active && dirty) {
+          mirror(f);
+          device.queue.writeTexture({ texture: fieldTexture }, f.h, { bytesPerRow: f.pw * 4, rowsPerImage: f.ph }, { width: f.pw, height: f.ph });
         }
-        fillGlobals(globals, frame, ripples, time, intensity);
-        if (waiters.length && calmAt(ripples, time)) for (const resolve of waiters.splice(0)) resolve('calm');
+        if (active || calm()) dirty = false;
+        const refract = REFRACT_PX * intensity;
+        globals[G.RES] = frame.width; globals[G.RES + 1] = frame.height;
+        globals[G.CSS] = f.cssWidth; globals[G.CSS + 1] = f.cssHeight;
+        globals[G.K] = refract / f.cellX; globals[G.K + 1] = refract / f.cellY;
+        globals[G.INV_CELL] = 1 / f.cellX; globals[G.INV_CELL + 1] = 1 / f.cellY;
+        globals[G.GRID] = f.gw; globals[G.GRID + 1] = f.gh;
+        globals[G.TIME] = (frame.now - start) / 1000;
+        globals[G.INTENSITY] = intensity;
+        globals[G.LIGHT] = light;
+        globals[G.AMBIENT] = ambient * AMBIENT_PX;
+        globals[G.ACTIVE] = active;
+        globals[G.READY] = frame.sourceReady ? 1 : 0;
+        globals[G.REFRACT] = refract;
+        globals[G.CAUSTIC] = CAUSTIC_PX * intensity;
+        if (waiters.length && calm()) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
           bindGroup = device.createBindGroup({
-            label: 'hic-water-effect-bind-group', layout: pipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView }],
+            label: 'hic-water-effect-bind-group', layout,
+            entries: [
+              { binding: 0, resource: { buffer: uniformBuffer } },
+              { binding: 1, resource: sampler },
+              { binding: 2, resource: frame.sourceView },
+              { binding: 3, resource: fieldView },
+            ],
           });
           bindGroups.set(frame.sourceView, bindGroup);
         }
         const timestampWrites = frame.profiling?.timestampWrites('water');
         const pass = frame.encoder.beginRenderPass({
-          colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store', clearValue: CLEAR }],
+          colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store', clearValue: CLEAR_COLOR }],
           ...(timestampWrites ? { timestampWrites } : {}),
         });
         pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); pass.end();
       },
       captureInputMapper() {
         mapperSlot = (mapperSlot + 1) % MAPPER_SLOTS;
-        mapperStates[mapperSlot].set(globals);
+        const s = mapperStates[mapperSlot];
+        s.set(globals);
+        if (globals[G.ACTIVE] > 0.5 && field) s.set(field.h, GLOBALS_LENGTH);
         return mappers[mapperSlot];
       },
       mountUI(root, ui) {
@@ -339,8 +461,13 @@ export const plugin = Object.freeze({
         });
       },
       destroy() {
+        rain = [];
+        const demo = demoTakeover;
+        demoTakeover = null;
+        demo?.(null);
         for (const resolve of waiters.splice(0)) resolve(null);
         uniformBuffer.destroy?.();
+        fieldTexture?.destroy?.();
       },
     };
   },
