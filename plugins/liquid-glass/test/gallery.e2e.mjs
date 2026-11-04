@@ -30,7 +30,9 @@ const plan = {
     const { w, h } = ctx.canvas;
     // a lens position near a control from which the lens draws that control away from its DOM position
     let pick = null;
-    for (const target of TARGETS) {
+    // the submit button first: it has no label around it, so the browser's hit test next to it cannot land on a label whose fractional
+    // box the DOM rectangles round differently (the glass shifts a control by at most about 9 CSS px, so the click lands close to it)
+    for (const target of [...TARGETS].sort((a, b) => Number(b.sel === '#submit') - Number(a.sel === '#submit'))) {
       const box = ctx.boxes.find((/** @type {any} */ b) => `#${b.id}` === target.sel);
       if (!box) continue;
       for (let r = 30; r <= 140 && !pick; r += 5) {
@@ -39,11 +41,7 @@ const plan = {
           const cy = Math.round(box.y + box.h / 2 + r * Math.sin((a * Math.PI) / 16));
           if (cx < 0 || cy < 0 || cx > w || cy > h) continue;
           const map = lensMapper(w, h, cx, cy);
-          const found = ctx.findDrawn(() => map, [target]);
-          // the rim of the glass maps steeply: keep only a click point at least 2 px clear of the control and its label in the DOM, so
-          // that the browser's own hit test (fractional boxes) cannot land on them
-          const clear = found && !ctx.boxes.some((/** @type {any} */ b) => (b.id === found.box.id || b.forId === found.box.id) && ctx.inside(b, found.p, -2));
-          if (clear) pick = { cx, cy, target };
+          if (ctx.findDrawn(() => map, [target])) pick = { cx, cy, target };
         }
       }
       if (pick) break;
