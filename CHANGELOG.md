@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- Report: the scroll compositor's refusals are counted by reason in `report().canvases[i].stats.snapshot.scroll.refusedBy` (`scale`, `focus`, `selection`, `budget`, `shape`, `pinned`, `plan`), next to the `refusals` total they add up to. Before, a list that was never composed showed only that total. Desktop Safari 27 at DPR 2 with `maxDpr: 1.5`: `refusedBy.scale` 5, 0 composed steps and 234 snapshots in a 4 s scripted scroll; with `maxDpr: 2`, 232 composed steps and 0 snapshots. The core bundle grows to 349,696 bytes minified, 118,612 gzipped (+317 / +149 bytes) and to 16,743 code lines (+6).
+- Report: the scroll compositor's refusals are counted by reason in `report().canvases[i].stats.snapshot.scroll.refusedBy` (`scale`, `focus`, `selection`, `budget`, `shape`, `pinned`, `plan`), next to the `refusals` total they add up to. Before, a list that was never composed showed only that total. Desktop Safari 27 at DPR 2 with `maxDpr: 1.5`: `refusedBy.scale` 5, 0 composed steps and 234 snapshots in a 4 s scripted scroll; with `maxDpr: 2`, 232 composed steps and 0 snapshots. The core bundle grows by 317 bytes minified (149 gzipped) and 6 code lines.
 - Scroll benches (`test/bench/scroll-jank.mjs`, `test/bench/scroll-jank-ios.mjs`): the absolute frame budget next to the gaps relative to the frame interval under load: `movingFrameHz`, the rAF rate at rest `restHz` and `restShare`, and the share of frame intervals over 1.5 x 8.33 / 16.67 ms. Reported data, no thresholds.
 
 ### Changed
