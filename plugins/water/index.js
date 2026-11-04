@@ -35,7 +35,7 @@ export const meta = Object.freeze({
   name: 'water',
   title: 'Water',
   description: 'A water surface over the live page: drops, wakes, refraction, caustics and reflections; clicks and typing are remapped through it.',
-  defaults: Object.freeze({ intensity: 0.55 }),
+  defaults: Object.freeze({ intensity: 0.5 }),
   reducedMotion: 'Still water: the surface keeps its reflection and tint; no ripple starts and nothing animates; drop and demo resolve at once.',
   touch: 'Tap the water for a drop; a finger still scrolls the page.',
 });
@@ -48,7 +48,7 @@ export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIM
 export const GLOBALS_LENGTH = 20;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
-const DEFAULT_INTENSITY = 0.55;
+const DEFAULT_INTENSITY = 0.5;
 /** css px of the ambient swell at `ambient: 1` */
 export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
@@ -59,6 +59,8 @@ export const DROP_DEPTH = 10;
 const WAKE_RADIUS = 28;
 const WAKE_DEPTH = 3;
 const WAKE_FAST = 0.8;
+/** a finger that scrolls the page stirs one spot: each touch move adds at most this share of a wake dent there */
+const SCROLL_STIR = 0.22;
 const DEMO_SEED = 0x5eed;
 
 let uiSerial = 0;
@@ -119,7 +121,7 @@ export function demoRain() {
   const n = 30;
   for (let i = 1; i <= n; i += 1) {
     const k = i / n;
-    rain.push({ t: 100 + 1300 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 18 + 12 * rnd(), depth: (3.5 + 4.5 * rnd()) * (1 - 0.75 * k) });
+    rain.push({ t: 100 + 1300 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 18 + 12 * rnd(), depth: (2.8 + 3.7 * rnd()) * (1 - 0.75 * k) });
   }
   return rain;
 }
@@ -292,17 +294,43 @@ export const plugin = Object.freeze({
 
     if (!reducedMotion) {
       /** @type {{x: number, y: number, t: number}|null} */ let last = null;
-      /** @param {PointerEvent} e */
-      const local = (e) => {
+      /** canvas css px of the field, from client px, with the canvas where it is NOW (it moves while the page scrolls) @param {number} cx @param {number} cy */
+      const local = (cx, cy) => {
         const r = canvas.getBoundingClientRect();
-        return toField(e.clientX - r.left - canvas.clientLeft, e.clientY - r.top - canvas.clientTop);
+        return toField(cx - r.left - canvas.clientLeft, cy - r.top - canvas.clientTop);
+      };
+      /**
+       * A wake from (a) to (b), canvas css px of the field; `travel` is how far the pointer or finger moved over the screen (more than a -> b while the page
+       * scrolls under a finger: the canvas moves with it), `dt` ms. A path along the canvas leaves dents along it; a finger that scrolls the page stays over
+       * nearly the same spot of the canvas and stirs it there, as long as it moves.
+       * @param {{x: number, y: number}} a @param {{x: number, y: number}} b @param {number} travel @param {number} dt @param {number} pressed
+       */
+      const wakeAlong = (a, b, travel, dt, pressed) => {
+        const along = Math.hypot(b.x - a.x, b.y - a.y);
+        const dist = Math.max(along, travel);
+        // a jump (the pointer came back from elsewhere, a long pause) starts a new path
+        if (dist < 0.75 || dist > 220 || dt > 150) return;
+        const depth = WAKE_DEPTH * pressed * Math.min(2, (dist / Math.max(4, dt) / WAKE_FAST) ** 0.5);
+        if (depth < 0.02) return;
+        takeOver();
+        const spacing = WAKE_RADIUS * 0.5;
+        const n = Math.max(1, Math.ceil(along / spacing));
+        // on one spot (a finger scrolling the page) a stamp stays shallow: the stirring goes on at every event while the finger moves
+        const each = along < spacing ? Math.min((depth * dist) / spacing, depth * SCROLL_STIR) : (depth * dist) / n / spacing;
+        const f = currentField();
+        for (let i = 1; i <= n; i += 1) {
+          const k = i / n;
+          stamp(f, a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, WAKE_RADIUS, -each);
+        }
+        dirty = true;
+        wake();
       };
       // passive: the water never claims a gesture (a finger keeps scrolling the page; the browser then cancels the pointer)
       const passive = { passive: true };
       context.listen('pointerdown', (event) => {
         if (!(event instanceof win.PointerEvent)) return;
         const e = /** @type {PointerEvent} */ (event);
-        const p = local(e);
+        const p = local(e.clientX, e.clientY);
         takeOver();
         dent(p.x, p.y, DROP_RADIUS, DROP_DEPTH);
         last = { x: p.x, y: p.y, t: e.timeStamp || performance.now() };
@@ -310,33 +338,40 @@ export const plugin = Object.freeze({
       context.listen('pointermove', (event) => {
         if (!(event instanceof win.PointerEvent)) return;
         const e = /** @type {PointerEvent} */ (event);
-        const p = local(e);
+        // a finger whose touch events arrive is followed by them (they go on while the page scrolls; pointer events stop there)
+        if (e.pointerType === 'touch' && fingers.size) return;
+        const p = local(e.clientX, e.clientY);
         const t = e.timeStamp || performance.now();
         const prev = last;
         last = { x: p.x, y: p.y, t };
         if (!prev) return;
-        const dist = Math.hypot(p.x - prev.x, p.y - prev.y);
-        const dt = t - prev.t;
-        // a jump (the pointer came back from elsewhere, a long pause) starts a new path
-        if (dist < 0.75 || dist > 220 || dt > 150) return;
         // a drag (a pressed button, a finger) stirs harder than a hovering mouse
-        const pressed = e.buttons !== 0 || e.pointerType === 'touch' ? 1 : 0.8;
-        const depth = WAKE_DEPTH * pressed * Math.min(2, (dist / Math.max(4, dt) / WAKE_FAST) ** 0.5);
-        if (depth < 0.02) return;
-        takeOver();
-        const spacing = WAKE_RADIUS * 0.5;
-        const n = Math.ceil(dist / spacing);
-        const f = currentField();
-        for (let i = 1; i <= n; i += 1) {
-          const k = i / n;
-          stamp(f, prev.x + (p.x - prev.x) * k, prev.y + (p.y - prev.y) * k, WAKE_RADIUS, (-depth * dist) / n / spacing);
-        }
-        dirty = true;
-        wake();
+        wakeAlong(prev, p, 0, t - prev.t, e.buttons !== 0 || e.pointerType === 'touch' ? 1 : 0.8);
       }, passive);
       const end = () => { last = null; };
       context.listen('pointerleave', end, passive);
       context.listen('pointercancel', end, passive);
+      // touch events: passive (never preventDefault), and they keep arriving while the finger scrolls the page
+      /** @type {Map<number, {x: number, y: number, cx: number, cy: number, t: number}>} */ const fingers = new Map();
+      const touches = (/** @type {Event} */ e) => /** @type {any} */ (e).changedTouches ?? [];
+      context.listen('touchstart', (event) => {
+        for (const touch of touches(event)) {
+          const p = local(touch.clientX, touch.clientY);
+          fingers.set(touch.identifier, { x: p.x, y: p.y, cx: touch.clientX, cy: touch.clientY, t: event.timeStamp || performance.now() });
+        }
+      }, passive);
+      context.listen('touchmove', (event) => {
+        const t = event.timeStamp || performance.now();
+        for (const touch of touches(event)) {
+          const prev = fingers.get(touch.identifier);
+          const p = local(touch.clientX, touch.clientY);
+          fingers.set(touch.identifier, { x: p.x, y: p.y, cx: touch.clientX, cy: touch.clientY, t });
+          if (prev) wakeAlong(prev, p, Math.hypot(touch.clientX - prev.cx, touch.clientY - prev.cy), t - prev.t, 1);
+        }
+      }, passive);
+      const lift = (/** @type {Event} */ event) => { for (const touch of touches(event)) fingers.delete(touch.identifier); };
+      context.listen('touchend', lift, passive);
+      context.listen('touchcancel', lift, passive);
     }
 
     function syncUi() {

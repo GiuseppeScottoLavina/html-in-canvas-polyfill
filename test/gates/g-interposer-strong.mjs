@@ -57,21 +57,25 @@ runGate('G-interposer-strong', async (ctx) => {
   for (let s = 0; s < 40 && water.discriminating < MIN_TRIALS + 10; s++) {
     const sel = Object.keys(MARKS)[s % 4];
     const r = twin[sel];
-    // a strong drop (the water plugin's action, strength 2) 35 css px below the field: its crown pushes the field's visual bottom edge down
-    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + r.height + 35;
+    // a strong drop (the water plugin's action, strength 2) 40 css px below the field: its crown pushes the field's visual bottom edge down
+    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + r.height + 40;
     await ctx.focus(page);
     await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
-    // FREEZE first (framecap=1: every presented frame stays ~1 s), then the drop, shown by the next presented frame: the screenshot and the clicks judge that frame.
-    // The water simulates its surface (its ripples travel on and settle), so it is stirred after the freeze, not before.
-    await page.evaluate(`(() => { const c = document.querySelector('#hic-surface'); c.setAttribute('framecap', 1);
-      const shown = new Promise((r) => c.addEventListener('effectframe', r, { once: true }));
+    await H.sleep(50);
+    // The drop, then the FREEZE inside the effectframe of the first frame 170 ms or more after it: framecap=1 keeps that frame presented for ~1 s, so the screenshot and
+    // the clicks judge it. Uncapped, the water advances in real time, so that frame shows the drop at a fixed age (~170 ms), when the crown has pushed the field's bottom
+    // edge down as one piece (at age 0 the crater magnifies a thin sliver of the field far below it instead).
+    await page.evaluate(`(() => { const c = document.querySelector('#hic-surface');
+      const t = performance.now();
+      const shown = new Promise((r) => { const on = () => { if (performance.now() - t >= 170) { c.setAttribute('framecap', 1); c.removeEventListener('effectframe', on); r(); } }; c.addEventListener('effectframe', on); });
       window.__fx.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cy - origin.y} }, strength: 2 }).catch(() => {});
       return shown; })()`);
     const shot = (await compositorShot(page, '#hic-surface')).img;
     water.spots++;
     // the candidates nearest the ripples first (the most displaced), three per frozen frame
     const cands = candidates(shot, [sel], origin, dpr, water.missing).sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
-    await clickTrials(ctx, page, ref, cands, water, 3);
+    // two per frozen frame: the frame cap of 1 holds the frame ~1 s, and a third click can outlast it (each click is also a drop, shown by the next frame)
+    await clickTrials(ctx, page, ref, cands, water, 2);
   }
   await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
   numbers.water = water;
