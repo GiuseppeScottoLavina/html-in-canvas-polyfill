@@ -2,7 +2,8 @@
 //   wheel scroll of the inner list at several offsets (sticky header must stay pinned), page scroll, keyboard scroll, Tab focus-reveal, a position:fixed child, :hover.
 //   Every step compares the CANVAS BACKING STORE with the twin (whole surface tight + per-element regions: the sticky header and the fixed child are checked from
 //   canvas pixels, not from the live DOM), with the live layer's computed opacity asserted 0. One blank watch spans all interaction (a one-frame blank during
-//   scroll fails). Positive control: a renderer that never repaints after the first draw (and one that draws black).
+//   scroll fails). Positive control (sabotage stale + nowheel): a renderer that never repaints after the first draw, and every wheel event cancelled (the live
+//   list never scrolls): the classes pixel, region, scroll and content must go red.
 import { runGate, H } from './lib/gate.mjs';
 import { openRef, openPoly, rectsOf, center } from './lib/f1.mjs';
 import { compareToTwin, canvasShot, colorShare, dumpFailure } from './lib/pixel.mjs';
