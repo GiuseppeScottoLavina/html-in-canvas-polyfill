@@ -1,5 +1,5 @@
 // The glitch input mapper against the pixels the GPU really produced (plugins/_shared/gpu-check.mjs): the displacement alone with the
-// shared check, then every layer on (split, sort streaks, grain, scanlines) read on the green channel, which the split does not move;
+// shared check, then every layer on (split, sort streaks, macroblocks, the band, grain, scanlines) read on the green channel, which the split does not move;
 // a wrong-mapper control (the next pattern of the same burst); the ambient mode; the action 'burst' through the effect handle; the GPU
 // time of the pass.
 import { assert } from '/test/unit/lib/t.js';
@@ -47,11 +47,12 @@ gpuTest('burst, every layer on: the mapper predicts every pixel outside the sort
     const p = { x: (i * 37) % W + 0.5, y: (i * 53) % H + 0.5, width: W, height: H };
     assert.deepEqual(/** @type {any} */ (mapper)(p), mapGlitchPoint(u, p), 'the presented frame is the first pattern of the burst');
   }
-  /** pixels inside a sort streak show the brightest pixel above them: the mapper makes no claim about their colour */
+  /** pixels inside a colour block (a sort streak shows the brightest pixel above it, a macroblock the chroma of its centre) or inside a
+   * slice of the tracking band (washed out, with dropout dashes): the mapper makes no claim about their colour */
   const streak = (/** @type {number} */ x, /** @type {number} */ y) => {
     for (let i = 0; i < u[8]; i += 1) {
       const b = HEADER_FLOATS + 8 * i;
-      if (u[b + 6] > 0.5 && x >= u[b] && y >= u[b + 1] && x < u[b + 2] && y < u[b + 3]) return true;
+      if (u[b + 6] > 0.1 && x >= u[b] && y >= u[b + 1] && x < u[b + 2] && y < u[b + 3]) return true;
     }
     return false;
   };
@@ -61,8 +62,9 @@ gpuTest('burst, every layer on: the mapper predicts every pixel outside the sort
   for (let j = 0; j < H; j += 1) for (let i = 0; i < W; i += 1) if (streak(i + 0.5, j + 0.5)) blank.data[(j * W + i) * 4] = 0;
   const real = agreement(blank, masked(mapper), scene);
   const flat = agreement(blank, masked(identity), scene);
-  const streaks = Array.from({ length: u[8] }, (_, i) => u[HEADER_FLOATS + 8 * i + 6]).filter((k) => k > 0.5).length;
-  console.error(`glitch mapper vs GPU (all layers, green): decided=${real.decided} wrong=${real.wrong} | identity wrong=${flat.wrong}; ${streaks} sort streaks masked`);
+  const kinds = Array.from({ length: u[8] }, (_, i) => u[HEADER_FLOATS + 8 * i + 6]);
+  const streaks = kinds.filter((k) => k === 1).length;
+  console.error(`glitch mapper vs GPU (all layers, green): decided=${real.decided} wrong=${real.wrong} | identity wrong=${flat.wrong}; ${kinds.filter((k) => k > 0.1).length} colour blocks masked (${streaks} sort streaks, ${kinds.filter((k) => k === 2).length} macroblocks, ${kinds.filter((k) => k === 0.25).length} band slices)`);
   assert.ok(streaks > 0, 'the frame has sort streaks');
   assert.ok(real.bright > 2000 && real.wrong <= 5 && flat.wrong >= 200, `mapper ${real.wrong}, identity ${flat.wrong}`);
 });
@@ -110,6 +112,15 @@ gpuTest('the action burst through the effect handle: a burst plays, every checke
   assert.ok(r.frames >= 25 && r.frames <= 40, `the burst lasts about ${520} ms: ${r.frames} frames at 60 Hz`);
   assert.ok(r.maxChanged > 300, `the burst moved pixels: ${r.maxChanged}`);
   assert.ok(r.worst !== null && r.checked >= 5 && r.worst.wrong <= 5, `a frame of the burst disagrees with its mapper on ${r.worst?.wrong} px`);
+  assert.ok(changedPixels(r.last, r.first) <= 5, 'the frame that resolves it is the page at rest');
+});
+
+gpuTest('the action demo through the effect handle: the scripted bursts play, every checked frame agrees with its mapper, it resolves idle on the page at rest', async (t) => {
+  const r = await runActionOnGpu(t, plugin, { ...BURST, split: false, sort: false, noise: false }, 'demo', undefined, { scene, maxMs: 6000, checkEvery: 4 });
+  console.error(`glitch demo: ${r.frames} frames, ${r.checked} checked, at most ${r.maxChanged} px changed, worst mapper ${r.worst?.wrong} px wrong`);
+  assert.equal(r.state, 'idle');
+  assert.ok(r.frames >= 160 && r.frames <= 200, `the demo lasts about 3 s: ${r.frames} frames at 60 Hz`);
+  assert.ok(r.maxChanged > 300 && r.worst !== null && r.checked >= 30 && r.worst.wrong <= 5, `worst ${r.worst?.wrong} px wrong over ${r.checked} frames`);
   assert.ok(changedPixels(r.last, r.first) <= 5, 'the frame that resolves it is the page at rest');
 });
 

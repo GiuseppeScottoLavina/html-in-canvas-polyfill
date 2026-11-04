@@ -1,7 +1,7 @@
 // The holo-card input mapper against the pixels the GPU really produced (plugins/_shared/gpu-check.mjs), a card tilting on its spring,
-// device loss, and the GPU time of the pass.
+// the action demo through the real host (every checked frame of the sweep agrees with its mapper), device loss, and the GPU time of the pass.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { definePlugin } from '/src/effects/plugin-abi.js';
 import { UNIFORM_FLOATS, mapCardPoint, plugin, writeCardPose } from '/plugins/holo-card/index.js';
 import { measureGpuTime } from '/plugins/_shared/gpu-time.mjs';
@@ -44,6 +44,15 @@ gpuTest('the card tilting on its spring towards the pointer: the newest mapper s
   console.error(`holo-card tilting (${mappers.length} frames): newest wrong=${moving.wrong}, first-frame mapper wrong=${first.wrong}`);
   assert.ok(moving.wrong <= 5, `${moving.wrong} wrong px`);
   assert.ok(first.wrong > 100, 'the card really moved: the mapper of the first frame no longer fits');
+});
+
+gpuTest('the action demo through the real host: the card sweeps, every checked frame agrees with its own mapper, it resolves rest', async (t) => {
+  const r = await runActionOnGpu(t, plugin, { ...GEOMETRY, idle: false }, 'demo', undefined, { scene, maxMs: 6000, checkEvery: 8 });
+  console.error(`holo-card demo: ${r.frames} frames, ${r.checked} checked, at most ${r.maxChanged} px changed, worst mapper ${r.worst?.wrong} px wrong`);
+  assert.equal(r.state, 'rest');
+  assert.ok(r.frames >= 190 && r.frames <= 290, `the demo lasts about 3.2 s and settles: ${r.frames} frames at 60 Hz`);
+  assert.ok(r.maxChanged > 2000, `the card moved: ${r.maxChanged} px changed`);
+  assert.ok(r.worst !== null && r.checked >= 20 && r.worst.wrong <= 5, `a frame of the demo disagrees with its mapper on ${r.worst?.wrong} px`);
 });
 
 gpuTest('device loss: the host re-creates the plugin on a new device and the card is drawn and mapped again', async (t) => {
