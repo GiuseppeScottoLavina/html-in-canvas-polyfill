@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-- The core bundle grows to 350,616 bytes minified, 118,951 gzipped (+1,220 / +482 bytes) and to 16,781 code lines (+43); the engines bundle to 45,767 / 17,398 bytes (+252 / +103).
+- Since 0.1.0-preview.20 the core bundle grows to 350,933 bytes minified, 119,093 gzipped (+2,545 / +999 bytes) and to 16,787 code lines (+88); the engines bundle to 45,767 / 17,398 bytes (+252 / +103).
 
 ### Added
 
