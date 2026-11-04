@@ -5,9 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, actionPoint, blockedMapper, CRACK_MS, crackFront, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions } from '../index.js';
+import { ACTIONS, actionPoint, blockedMapper, CRACK_MS, crackFront, DEMO_FALL_MS, DEMO_PAUSE_MS, FALL_SAMPLES, fillHeader, HEADER_FLOATS, identityMapper, meta, plugin, readOptions } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { BEVEL, buildShards, crackedLayout, crackedSource, HEAL, MAX_POLY, MAX_SHARDS, MAX_VERTICES, mulberry32, polygonCentroid, SHARD_FLOATS, shardPoint, SPAN, spiderweb, VERTEX_FLOATS } from '../shards.js';
+import { BEVEL, buildShards, crackedLayout, crackedSource, fallTime, HEAL, MAX_POLY, MAX_SHARDS, MAX_VERTICES, MAX_WALL_VERTICES, mulberry32, polygonCentroid, SHARD_FLOATS, shardPoint, SPAN, spiderweb, THICKNESS, VERTEX_FLOATS } from '../shards.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
 
 contractTest(import.meta.url);
@@ -160,9 +160,9 @@ test('options, the crack front and the uniform header', () => {
   assert.equal(crackFront(0, 500), 0);
   assert.equal(crackFront(1, 500), 700, 'open: past the farthest corner, every piece fully cracked');
   const data = new Float32Array(HEADER_FLOATS);
-  const look = { time: 0.4, crack: 1, far: 500, fade: 0.5, flash: 0, debrisT: 0.1, debrisN: 260, ghosts: 3, alpha: 1 };
+  const look = { time: 0.4, crack: 1, far: 500, fade: 0.5, flash: 0, debrisT: 0.1, debrisN: 260, alpha: 1 };
   fillHeader(data, { width: 960, height: 640, cssWidth: 480, cssHeight: 320 }, readOptions({}), look, { x: 10, y: 20 });
-  assert.deepEqual(Array.from(data.slice(0, 20)), [960, 640, 480, 320, Math.fround(0.4), 2400, 1, 700, 10, 20, Math.fround(0.85), 0.5, 0, 1, Math.fround(0.8), Math.fround(1.6 * 480), Math.fround(0.1), 260, 3, Math.fround(1.6)]);
+  assert.deepEqual(Array.from(data.slice(0, 20)), [960, 640, 480, 320, Math.fround(0.4), 2400, 1, 700, 10, 20, Math.fround(0.85), 0.5, 0, 1, Math.fround(0.8), Math.fround(1.6 * 480), Math.fround(0.1), 260, THICKNESS, Math.fround(1.6)]);
 });
 
 function fakeGpu() {
@@ -171,6 +171,9 @@ function fakeGpu() {
   g.GPUBufferUsage = { UNIFORM: 64, COPY_DST: 8, VERTEX: 32 };
   g.GPUTextureUsage = { TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
   const created = { bindGroup: 0, buffer: 0, texture: 0, pipeline: 0, submit: 0 };
+  /** the multisampled textures alive now (the targets of the fall) */
+  const live = new Set();
+  /** @type {any[]} */ const descriptors = [];
   /** @type {any[]} */ const writes = [];
   /** @type {any[]} */ const draws = [];
   const pass = { setPipeline() {}, setBindGroup() {}, setVertexBuffer() {}, draw: (/** @type {number[]} */ ...a) => draws.push(a), end() {} };
@@ -178,12 +181,17 @@ function fakeGpu() {
     createShaderModule: () => ({}), createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
     createRenderPipeline: () => { created.pipeline += 1; return {}; },
     createBuffer: (/** @type {any} */ d) => { created.buffer += 1; return { size: d.size, destroy() {} }; },
-    createTexture: (/** @type {any} */ d) => { created.texture += 1; return { width: d.size[0], height: d.size[1], createView: () => ({}), destroy() {} }; },
+    createTexture: (/** @type {any} */ d) => {
+      created.texture += 1;
+      const t = { width: d.size[0], height: d.size[1], d, createView: () => ({}), destroy() { live.delete(t); } };
+      if (d.sampleCount > 1) live.add(t);
+      return t;
+    },
     createSampler: () => ({}), createBindGroup: () => { created.bindGroup += 1; return {}; },
     createCommandEncoder: () => ({ beginRenderPass: () => pass, finish: () => ({}) }),
     queue: { writeBuffer: (/** @type {any} */ b, /** @type {number} */ offset, /** @type {Float32Array} */ d) => writes.push({ b, offset, impact: offset === 0 ? [d[8], d[9]] : null }), submit: () => { created.submit += 1; } },
   };
-  return { device, created, writes, draws, encoder: { beginRenderPass: () => pass } };
+  return { device, created, writes, draws, live, descriptors, encoder: { beginRenderPass: (/** @type {any} */ d) => { descriptors.push(d); draws.push(['pass', d.depthStencilAttachment ? '3d' : 'flat']); return pass; } } };
 }
 
 /** The plugin behind the real effect handle, over the fake GPU. @param {Record<string, unknown>} options @param {{reducedMotion?: boolean}} [o] */
@@ -249,13 +257,30 @@ test('instance: the first impact cracks (blocked while the cracks run, then the 
   for (let k = 0; k <= 400; k += 1) {
     inst.render(frame(700 + k * 8.33));
     if (k === 20) assert.equal(inst.captureInputMapper(frame(0)), blockedMapper, 'falling: blocked');
-    if (k === 60) assert.equal(gpu.draws.at(-2)[1], 3, 'three copies per shard while it falls (the motion blur)');
+    if (k === 60) {
+      const frameDraws = gpu.draws.slice(gpu.draws.findLastIndex((/** @type {any[]} */ d) => d[0] === 'pass'));
+      assert.deepEqual(frameDraws[0], ['pass', '3d'], 'falling: one pass with a depth buffer');
+      const [backdrop, shadows, faces, walls, debris] = frameDraws.slice(1);
+      assert.deepEqual(backdrop, [3], 'the lit backdrop behind the pane');
+      assert.equal(shadows[1], 1, 'the shadows: one copy of each face');
+      assert.equal(faces[0], shadows[0], 'then the faces, from the same vertices');
+      assert.equal(faces[1], 2, 'two faces per shard: the front and the back of the slab');
+      assert.ok(walls[0] > faces[0] / 3 && walls[0] % 6 === 0 && walls[1] === 1, `then the walls: one quad per edge (${walls[0]} vertices)`);
+      assert.deepEqual(debris, [3, 260], 'and the debris');
+      const d = gpu.descriptors.at(-1);
+      assert.ok(d.colorAttachments[0].resolveTarget && d.colorAttachments[0].storeOp === 'discard' && d.depthStencilAttachment.depthStoreOp === 'discard',
+        'MSAA resolved into the destination; nothing of the multisampled target or the depth is stored');
+      assert.equal(gpu.live.size, 2, 'the multisampled colour target and the depth buffer exist while shards fly');
+      assert.ok([...gpu.live].every((/** @type {any} */ t) => t.d.sampleCount === FALL_SAMPLES && t.width === 960 && t.height === 640), 'at the backing size, 4 samples');
+    }
   }
   assert.equal(await broken, 'intact', 'the second impact breaks the pane, it flies back: intact');
   assert.equal(patterns(gpu), 1, 'the fall breaks the pattern that cracked');
   assert.equal(inst.captureInputMapper(frame(0)), identityMapper, 'back in place, cracks closed: the identity');
   assert.deepEqual(gpu.draws.at(-1), [3], 'and the full-screen passthrough');
-  assert.deepEqual(gpu.created, { ...idle, texture: idle.texture + 1, submit: idle.submit + 1, bindGroup: idle.bindGroup + 1 }, 'only the freeze (texture, copy, bind group), once');
+  assert.equal(gpu.live.size, 0, 'the targets of the fall are released once it ends');
+  assert.deepEqual(gpu.created, { ...idle, texture: idle.texture + 3, submit: idle.submit + 1, bindGroup: idle.bindGroup + 1 },
+    'per fall: the freeze (texture, copy, bind group) and the two targets of the fall, once each, nothing per frame');
 });
 
 test('instance: the impact point is the last pointer press, else the centre of the invalid field, else the impact option, else the centre', async () => {
@@ -359,9 +384,9 @@ test('instance: reduced motion: nothing cracks; an impact crossfades', async () 
 test('instance: removal resolves the pending trigger null; an unknown action or a bad point rejects', async () => {
   const { inst, handle, frame, errors } = await instance({ onSubmit: 'always' });
   inst.render(frame(0));
-  assert.deepEqual([...handle.actions], ['impact', 'crack', 'out', 'in', 'play']);
+  assert.deepEqual([...handle.actions], ['impact', 'crack', 'out', 'in', 'play', 'demo']);
   assert.deepEqual([...ACTIONS], [...(plugin.actions ?? [])]);
-  await assert.rejects(handle.trigger('sideways'), /unknown action "sideways" of the plugin "shatter"; its actions are 'impact', 'crack', 'out', 'in', 'play'/);
+  await assert.rejects(handle.trigger('sideways'), /unknown action "sideways" of the plugin "shatter"; its actions are 'impact', 'crack', 'out', 'in', 'play', 'demo'/);
   await assert.rejects(handle.trigger('crack', { point: { x: NaN, y: 2 } }), (e) => e instanceof TypeError && /point/.test(e.message));
   await assert.rejects(handle.trigger('crack', { point: 'centre' }), TypeError);
   assert.equal(inst.continuous, false, 'a rejected action changes nothing');
@@ -404,4 +429,147 @@ test('actions: crack and out end in their states; in heals; play round-trips; a 
   assert.deepEqual(actionPoint(undefined, 'shatter'), null);
   assert.deepEqual(actionPoint({ x: 1, y: 2, z: 3 }, 'shatter'), { x: 1, y: 2 });
   assert.throws(() => actionPoint({ x: 1 }, 'shatter'), /shatter: `point`/);
+});
+
+test('the walls: one quad per edge of every cell, at both faces, with the outward normal of that edge; borders marked', () => {
+  const vertices = new Float32Array(MAX_VERTICES * VERTEX_FLOATS);
+  const shards = new Float32Array(MAX_SHARDS * SHARD_FLOATS);
+  const walls = new Float32Array(MAX_WALL_VERTICES * VERTEX_FLOATS);
+  for (const [impact, w, h, spokes, seed] of CASES) {
+    const cells = spiderweb(impact, w, h, spokes, mulberry32(seed));
+    const built = buildShards(impact, w, h, spokes, seed, vertices, shards, walls);
+    const again = buildShards(impact, w, h, spokes, seed, vertices, shards);
+    assert.equal(again.vertexCount, built.vertexCount, 'the walls draw no random number: the same pattern with or without them');
+    assert.equal(again.wallCount, 0, 'no walls array: none written');
+    const edges = cells.reduce((n, c) => n + c.poly.length, 0);
+    assert.equal(built.wallCount, edges * 6, 'two triangles per edge of every cell');
+    let borders = 0;
+    for (let q = 0; q < built.wallCount; q += 6) {
+      const at = (/** @type {number} */ k, /** @type {number} */ f) => walls[(q + k) * VERTEX_FLOATS + f];
+      const id = Math.floor(at(0, 2) / 2);
+      assert.deepEqual([0, 1, 2, 3, 4, 5].map((k) => at(k, 2) - id * 2), [0, 0, 1, 0, 1, 1], 'the front edge, then the back edge of the same shard');
+      const ax = at(0, 0), ay = at(0, 1), bx = at(1, 0), by = at(1, 1);
+      const len = Math.hypot(bx - ax, by - ay);
+      assert.ok(Math.abs(at(1, 7) - len) < 1e-3 && at(0, 6) === 0 && Math.abs(at(1, 6) - len) < 1e-3, 'the length of the edge and the distance along it');
+      // outward: the centre of the shard is behind the edge
+      const cx = shards[id * SHARD_FLOATS], cy = shards[id * SHARD_FLOATS + 1];
+      const nx = at(0, 4), ny = at(0, 5);
+      assert.ok(Math.abs(Math.hypot(nx, ny) - 1) < 1e-5 && nx * (cx - ax) + ny * (cy - ay) < 0, 'a unit normal pointing away from the shard');
+      if (at(0, 3) === 1) {
+        borders += 1;
+        const eps = 1e-3 * Math.max(w, h);   // buildShards' tolerance: an edge within it of the border is the border
+        const near = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ edge) => (Math.abs(a) < eps && Math.abs(b) < eps) || (Math.abs(a - edge) < eps && Math.abs(b - edge) < eps);
+        assert.ok(near(ax, bx, w) || near(ay, by, h), 'a border wall lies on the canvas border');
+      }
+    }
+    assert.ok(borders >= 4, `the canvas border is part of the outer shards (${borders} walls)`);
+    // the faces tell a crack (0) from the canvas border (1) and from a seam inside a cell (2)
+    for (let t = 0; t < built.vertexCount; t += 3) {
+      const o = t * VERTEX_FLOATS, kind = vertices[o + 7], flag = vertices[o + 2] % 2;
+      assert.ok(kind === 0 ? flag === 0 : flag === 1, 'kind 0 is exactly the edges that are cracks');
+    }
+  }
+});
+
+test('fallTime: real time on the way out, eased into place on the way back, continuous when a run reverses midway', () => {
+  const ta = HEAL * SPAN;
+  assert.equal(fallTime(1, 0, 0, 0), 0);
+  assert.equal(fallTime(1, 0.5, 0, 0), 0.5 * SPAN, 'out from the pane: g * SPAN');
+  assert.equal(fallTime(1, 1, 0, 0), SPAN);
+  assert.equal(fallTime(1, 1, 0, 0, 0.66), 0.66, 'a shorter end (the demo)');
+  assert.equal(fallTime(-1, 1, 1, SPAN), SPAN, 'in from gone: starts where the way out ended');
+  assert.ok(Math.abs(fallTime(-1, HEAL, 1, SPAN) - ta) < 1e-12, 'every shard is home (before any start) when the cracks begin to close');
+  assert.equal(fallTime(-1, 0, 1, SPAN), 0);
+  // the shards slow down as they arrive: the physics clock runs at a fraction of the way-out rate near HEAL
+  const rate = (/** @type {number} */ g) => (fallTime(-1, g + 1e-4, 1, SPAN) - fallTime(-1, g, 1, SPAN)) / 1e-4;
+  assert.ok(rate(HEAL + 0.02) < 0.1 * SPAN && rate(0.95) > 1.5 * SPAN, `arrives slowly (${rate(HEAL + 0.02).toFixed(3)} s per g), leaves fast (${rate(0.95).toFixed(2)})`);
+  // a reversal midway is continuous: from the time of the last frame, both ways
+  const tOut = fallTime(1, 0.6, 0, 0);
+  assert.equal(fallTime(-1, 0.6, 0.6, tOut), tOut, 'out, then in at g 0.6: no jump');
+  const tIn = fallTime(-1, 0.4, 1, SPAN);
+  assert.equal(fallTime(1, 0.4, 0.4, tIn), tIn, 'in, then out at g 0.4: no jump');
+  assert.equal(fallTime(1, 1, 0.4, tIn), SPAN);
+  assert.equal(fallTime(-1, 0.05, 0.08, 0.1), 0.1 * 0.05 / 0.08, 'reversed before any shard fell: linear back to 0');
+  for (let g = 0; g <= 1; g += 0.01) {
+    const a = fallTime(-1, g, 1, SPAN), b = fallTime(-1, Math.min(1, g + 0.01), 1, SPAN);
+    assert.ok(b >= a, 'monotonic');
+  }
+});
+
+/** render frames 1000/120 ms apart from `t0` until `done` settles or `ms` pass; returns the time reached @param {any} x @param {number} t0 @param {number} ms */
+async function renderFor(x, t0, ms) {
+  let now = t0;
+  for (; now <= t0 + ms; now += 1000 / 120) { x.inst.render(x.frame(now)); await flush(); }
+  return now;
+}
+
+test('demo: crack at the submit control, a rest, the break, the stop in the air, the rewind; ends intact in under 4 s, then no work', async () => {
+  const x = await instance({ intro: false, duration: 1600 });
+  const submit = { getBoundingClientRect: () => ({ left: 100, top: 200, width: 80, height: 30 }) };
+  x.source.querySelector = (/** @type {string} */ sel) => (/submit/.test(sel) ? submit : null);
+  x.inst.render(x.frame(0));
+  const seen = /** @type {string[]} */ ([]);
+  const passes = /** @type {string[]} */ ([]);
+  let state = /** @type {any} */ ('pending');
+  const t0 = Date.now();
+  x.handle.trigger('demo').then((v) => { state = v; });
+  let now = 10;
+  // the cracks run and rest: render through the pause in real time (the pause is a timer)
+  for (; state === 'pending' && now < 6000; now += 1000 / 120) {
+    x.inst.render(x.frame(now));
+    const m = x.inst.captureInputMapper(x.frame(now));
+    const kind = m === identityMapper ? 'intact' : m === blockedMapper ? 'moving' : 'cracked';
+    if (seen.at(-1) !== kind) seen.push(kind);
+    const pass = x.gpu.draws.findLast((/** @type {any[]} */ d) => d[0] === 'pass')[1];
+    if (passes.at(-1) !== pass) passes.push(pass);
+    await new Promise((r) => setTimeout(r, 1000 / 120 / 4));   // a quarter of real time: the pause (a timer) still passes
+  }
+  assert.equal(state, 'intact', 'the demo resolves with the state it rests in');
+  assert.deepEqual(seen, ['moving', 'cracked', 'moving', 'intact'], 'the cracks run, the pane rests cracked, it breaks and comes back');
+  assert.deepEqual(impactOf(x), [140, 215], 'struck at the centre of the submit control');
+  assert.deepEqual(passes, ['flat', '3d', 'flat'], 'the shards stay in the air through the hold (not faded out): every frame of the fall draws them');
+  const frameMs = now - 10, wallMs = Date.now() - t0;
+  assert.ok(frameMs - (wallMs - 0) < 4000 && CRACK_MS + DEMO_PAUSE_MS + 2 * DEMO_FALL_MS + 300 < 4000, `about 4 s at most (${Math.round(CRACK_MS + DEMO_PAUSE_MS + 2 * DEMO_FALL_MS + 300)} ms of animation)`);
+  assert.equal(x.inst.continuous, false, 'at rest: the host renders nothing more');
+  // the fall plays at the plugin's own duration again
+  const out = x.handle.trigger('out');
+  const reached = await renderFor(x, now + 100, 1000);
+  assert.equal(x.inst.continuous, true, `a full fall (1600 ms) is still running after 1000 ms (${reached - now - 100} ms rendered)`);
+  await renderFor(x, reached, 800);
+  assert.equal(await out, 'gone');
+});
+
+test('demo: the user takes over at once (a pointer press or a key on the canvas); a newer action supersedes it; reduced motion does nothing', async () => {
+  const x = await instance({ intro: false });
+  x.inst.render(x.frame(0));
+  const demo = x.handle.trigger('demo');
+  await renderFor(x, 10, 200);
+  assert.equal(x.inst.continuous, true, 'the cracks of the demo run');
+  x.press(10, 10);
+  const within = (/** @type {Promise<any>} */ p) => Promise.race([p, new Promise((r) => { setTimeout(() => r('still running'), 500); })]);
+  assert.equal(await within(demo), null, 'a press during the demo ends it (superseded)');
+  await renderFor(x, 300, CRACK_MS + 100);
+  assert.equal(await x.handle.settled(), 'intact', 'and the pane comes back into place: the form is the user\'s');
+  const key = await instance({ intro: false });
+  key.inst.render(key.frame(0));
+  const d2 = key.handle.trigger('demo');
+  await renderFor(key, 10, 100);
+  key.canvas.dispatchEvent(new Event('keydown'));
+  assert.equal(await within(d2), null, 'a key during the demo ends it');
+  const sup = await instance({ intro: false });
+  sup.inst.render(sup.frame(0));
+  const d3 = sup.handle.trigger('demo');
+  await renderFor(sup, 10, 100);
+  const crack = sup.handle.trigger('crack');
+  assert.equal(await d3, null, 'a newer action supersedes the demo');
+  await renderFor(sup, 200, CRACK_MS + 50);
+  assert.equal(await crack, 'cracked');
+  sup.press(5, 5);
+  await renderFor(sup, 800, 50);
+  assert.equal(await sup.handle.settled(), 'cracked', 'without a demo a press changes nothing');
+  const calm = await instance({ intro: false, reducedMotion: true });
+  calm.inst.render(calm.frame(0));
+  assert.equal(await calm.handle.trigger('demo'), 'intact', 'reduced motion: it resolves at once with the state it rests in');
+  assert.equal(calm.inst.continuous, false, 'nothing moves');
+  assert.equal(patterns(calm.gpu), 0);
 });
