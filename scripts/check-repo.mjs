@@ -147,7 +147,9 @@ if (!docsOnly) {
   // and the canvas with the oldest damage builds first (pump.js runPump; two always-dirty canvases at 4.1 ms per build built 120 / 0 times in 120 rounds)
   // 16700 -> 16740 (2026-11-03, measured 16,737): a script seek or timing change of a paused, finished or idle animation repaints the drawable (+38:
   // schedule/observers/animation-observer.js wraps the Animation timing members and the effect edits, and damages the retimed targets once per task)
-  if (total > 16740) problems.push(`G-size: core is ${total} code lines (> 16740)`);
+  // 16740 -> 16785 (2026-11-04, measured 16,780): the caret of a focused field follows a composed scroll step and is clipped to where the field shows (+43: store.js
+  // liveCaret / clipOf / keptCaret, scroll-compose.js pinned; webkit-caret.js resetCaretRules and the media results in the rule cache key)
+  if (total > 16785) problems.push(`G-size: core is ${total} code lines (> 16785)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
