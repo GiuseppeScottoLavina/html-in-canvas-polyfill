@@ -21,7 +21,7 @@ export function builtBundle(name) {
 
 /**
  * HIC_E2E_NATIVE=1 (set by test/native-effects/run.mjs): the same tests over the browser's own HTML-in-Canvas implementation, in Chrome Canary
- * with CanvasDrawElement; openGallery then requires the installed polyfill to be in mode native, so such a run cannot pass on the polyfill.
+ * with CanvasDrawElement (or the Chrome at HIC_E2E_CHROME, which the runner sets from its --chrome option); openGallery then requires the installed polyfill to be in mode native, so such a run cannot pass on the polyfill.
  */
 export const NATIVE = process.env.HIC_E2E_NATIVE === '1';
 
@@ -34,7 +34,7 @@ export const NATIVE = process.env.HIC_E2E_NATIVE === '1';
 export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '' } = {}) {
   const bundle = builtBundle(name);
   const server = await startServer();
-  const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'], ...(NATIVE ? { chrome: 'canary', nativeDrawElement: true } : {}) });
+  const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'], ...(NATIVE ? { chrome: process.env.HIC_E2E_CHROME || 'canary', nativeDrawElement: true } : {}) });
   browser.conn.sendTimeoutMs = 30000;
   const close = async () => { await browser.close().catch(() => browser.kill()); await server.close().catch(() => {}); };
   try {
