@@ -103,7 +103,7 @@ The source element (`form` here) must have exactly the size of the canvas conten
 
 | browser | what the polyfill does | source |
 |---|---|---|
-| desktop Chrome 130 to 156, without the native feature (154 and 155 measured; 130 to 153 not verified; 156 in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
+| desktop Chrome 130 to 156, without the native feature (154 and 155 measured; 130 to 153 not verified; 156 and 157, its native feature switched off, in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
 | Chrome 157 and Chrome Canary, which ship a native implementation enabled by default (Chrome 157.0.8103.39 measured 2026-11-04 without any flag; Canary 157.0.8103.0 on 2026-10-14, 158.0.8112.1 on 2026-10-22, 159.0.8128.2 on 2026-10-29 and 159.0.8137.0 on 2026-11-04) | steps aside (mode `native`, kind `complete`), never throws, needs no bridge; the extensions (frame cap, effects) run over the native implementation (measured on Chrome 157.0.8103.39 and Canary 159.0.8137.0) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
