@@ -63,7 +63,7 @@ One full-screen pass with one texture sample per pixel; no allocation per frame 
 
 - At most 4 ripples at once (the newest replaces the oldest).
 - Always animating (except with reduced motion): the host renders it at the frame cap, never idle.
-- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); measured there on Chrome Canary 158 with `--enable-blink-features=CanvasDrawElement`: the gallery e2e, the frame cap and trusted clicks through the ripples (gates G-native-effects and G-native-interposer, `npm run test:native-effects`).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); measured there on Chrome Canary 158 with `--enable-blink-features=CanvasDrawElement`: the gallery e2e, the frame cap and trusted clicks through the ripples (gates G-native-effects and G-native-interposer, `npm run test:native-effects`); again on 2026-11-04 on Chrome 157.0.8103.39, where the API is enabled by default, and on Canary 159.0.8137.0 (41 of 41 clicks, the gallery e2e 16 of 16).
 
 ## Files and tests
 
