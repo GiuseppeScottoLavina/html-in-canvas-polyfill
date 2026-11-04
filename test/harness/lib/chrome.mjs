@@ -158,6 +158,10 @@ export async function launchChrome(opts = {}) {
     // keep timers/rAF alive when another window covers ours (macOS occlusion tracking)
     '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
     '--disable-ipc-flooding-protection', '--noerrdialogs',
+    // Chrome for Testing shows a warning bar ("only for automated testing") that comes and goes with input in headless runs: the viewport flipped between 813 and
+    // 757 css px between a click and the next read (1400 x 900 window, CfT 157.0.8103.39, 2026-11-04), so 5-13 of 112 edge clicks on a plain page hit a neighbour
+    // and G-f1-form's edge hits failed on the twin as on the canvas. Without bars the viewport is 813 px on CfT 157 as on Chrome 156, and 0 of 112 miss.
+    '--disable-infobars',
     // Without sRGB the display profile shifts compositor screenshots by 1-8 levels vs canvas readback on EVERY pixel.
     ...(colorProfile ? [`--force-color-profile=${colorProfile}`] : []),
     `--window-size=${windowSize[0]},${windowSize[1]}`, `--window-position=${windowPosition[0]},${windowPosition[1]}`,
