@@ -164,6 +164,7 @@ function mountIntensityUi(root, ui, bind) {
 
 /** @param {any} device @param {string} code @param {string} format */
 function createPipeline(device, code, format) {
+  const module = device.createShaderModule({ code, label: 'hic-water-effect-shader' });
   const stage = /** @type {any} */ (globalThis).GPUShaderStage?.FRAGMENT ?? 2;
   const layout = device.createBindGroupLayout({
     label: 'hic-water-effect-layout',
@@ -175,7 +176,6 @@ function createPipeline(device, code, format) {
       { binding: 3, visibility: stage, texture: { sampleType: 'unfilterable-float' } },
     ],
   });
-  const module = device.createShaderModule({ code, label: 'hic-water-effect-shader' });
   const pipeline = device.createRenderPipeline({
     label: 'hic-water-effect-pipeline',
     layout: device.createPipelineLayout({ label: 'hic-water-effect-pipeline-layout', bindGroupLayouts: [layout] }),
