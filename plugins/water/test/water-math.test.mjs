@@ -169,7 +169,7 @@ test('the plugin definition: ABI v2, spatial, direct canvas attachment, the acti
   assert.deepEqual([...ACTIONS], ['drop', 'demo']);
   assert.deepEqual([...(WaterEffectPlugin.actions ?? [])], ['drop', 'demo']);
   assert.ok(Object.isFrozen(WaterEffectPlugin));
-  assert.equal(meta.defaults.intensity, 0.55);
+  assert.equal(meta.defaults.intensity, 0.5);
 });
 
 /** A GPU device that records what the plugin submits. */
@@ -199,9 +199,10 @@ async function createWater(options = {}, { reduced = false } = {}) {
   const listenOptions = {};
   let renders = 0;
   const win = { matchMedia: (q) => ({ matches: reduced && q === '(prefers-reduced-motion: reduce)' }), PointerEvent: class { constructor(o) { Object.assign(this, o); } } };
+  const rect = { left: 0, top: 0 };   // where the canvas is in the viewport (a test scrolls the page by moving it)
   const context = {
     apiVersion: 2, device: gpu.device, format: 'bgra8unorm', requestRender() { renders += 1; },
-    canvas: { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: W, clientHeight: H, clientLeft: 0, clientTop: 0 },
+    canvas: { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ ...rect }), clientWidth: W, clientHeight: H, clientLeft: 0, clientTop: 0 },
     listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; },
     viewport: () => ({}),
   };
@@ -210,7 +211,9 @@ async function createWater(options = {}, { reduced = false } = {}) {
   const pointer = (type, x, y, extra = {}) => listeners[type](new win.PointerEvent({ clientX: x, clientY: y, buttons: 0, pointerType: 'mouse', timeStamp: performance.now(), ...extra }));
   /** render frames at 120 Hz from `t` until `done()` or `maxMs`; returns the frame time reached */
   const run = (t, maxMs, done = () => false) => { let now = t; for (; now <= t + maxMs && !done(); now += 1000 / 120) instance.render(frame(now)); return now; };
-  return { instance, gpu, frame, listeners, listenOptions, win, pointer, run, renders: () => renders };
+  /** a touch event with one finger (id 1) at client (x, y) */
+  const touch = (type, x, y, t = performance.now()) => listeners[type]({ type, timeStamp: t, changedTouches: [{ identifier: 1, clientX: x, clientY: y }] });
+  return { instance, gpu, frame, listeners, listenOptions, win, pointer, touch, rect, run, renders: () => renders };
 }
 
 test('at rest nothing works: not continuous, settled at once, the field is never uploaded, the mapper is the identity, no frame requested', async () => {
@@ -229,7 +232,7 @@ test('at rest nothing works: not continuous, settled at once, the field is never
 
 test('a pointerdown makes a drop: continuous, the field is uploaded; it comes back to rest by itself, then continuous is false again; the listeners are passive', async () => {
   const w = await createWater({ intensity: 1 });
-  for (const type of ['pointerdown', 'pointermove']) assert.equal(w.listenOptions[type]?.passive, true, `${type} is passive: a finger keeps scrolling`);
+  for (const type of ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'touchend', 'touchcancel']) assert.equal(w.listenOptions[type]?.passive, true, `${type} is passive: a finger keeps scrolling`);
   w.listeners.pointerdown({ clientX: 200, clientY: 150 });
   assert.equal(w.instance.continuous, false, 'not a PointerEvent: ignored');
   const t0 = performance.now();
@@ -309,6 +312,50 @@ test('a moving pointer leaves a wake along its path; a faster stroke and a drag 
   assert.ok(fast > slow * 1.5 && slow > 0, `faster is stronger: ${fast} vs ${slow}`);
   assert.ok(drag > fast * 1.2, `a drag stirs harder than a hover: ${drag} vs ${fast}`);
   assert.equal(jump, 0, 'a jump of the pointer starts a new path');
+});
+
+test('a finger that scrolls the page keeps stirring the water: touch moves (which go on during the scroll) are followed with the canvas where it is now; control: pointer events alone stop at pointercancel', async () => {
+  // the finger moves up 200 px over 400 ms and the page scrolls with it: the canvas moves up by the same amount, so the finger stays over one spot of the canvas
+  const scroll = async (withTouch) => {
+    const w = await createWater({ intensity: 1 });
+    const t0 = performance.now();
+    if (withTouch) w.touch('touchstart', 200, 250, t0);
+    w.pointer('pointermove', 200, 250, { pointerType: 'touch', buttons: 1, timeStamp: t0 });
+    w.listeners.pointercancel({});   // the browser takes the gesture for scrolling
+    let now = t0;
+    for (let i = 1; i <= 25; i += 1) {
+      now = t0 + i * 16;
+      w.rect.top = -8 * i;
+      if (withTouch) w.touch('touchmove', 200, 250 - 8 * i, now);
+      // pointer events of that finger have stopped: these are ignored either way (they would double the touch moves)
+      w.pointer('pointermove', 200, 250 - 8 * i, { pointerType: 'touch', buttons: 1, timeStamp: now });
+    }
+    if (withTouch) w.touch('touchend', 200, 50, now);
+    w.instance.render(w.frame(now));
+    const data = w.gpu.textures.at(-1)?.data;
+    return { continuous: w.instance.continuous, depth: data ? -Math.min(...data) : 0 };
+  };
+  const finger = await scroll(true);
+  const control = await scroll(false);
+  assert.ok(finger.continuous && finger.depth > 1, `the scrolling finger stirred the water under it (${finger.depth.toFixed(2)} px deep)`);
+  assert.equal(control.continuous, false, 'control: without touch moves, nothing stirs once the scroll has started');
+});
+
+test('touch moves and the pointer moves of the same finger are not both counted', async () => {
+  const depth = async (pointerToo) => {
+    const w = await createWater({ intensity: 1 });
+    const t0 = performance.now();
+    w.touch('touchstart', 100, 150, t0);
+    for (let i = 1; i <= 6; i += 1) {
+      w.touch('touchmove', 100 + 20 * i, 150, t0 + 16 * i);
+      if (pointerToo) w.pointer('pointermove', 100 + 20 * i, 150, { pointerType: 'touch', buttons: 1, timeStamp: t0 + 16 * i });
+    }
+    w.instance.render(w.frame(t0 + 100));
+    return -Math.min(...w.gpu.textures.at(-1).data);
+  };
+  const touchOnly = await depth(false);
+  const both = await depth(true);
+  assert.ok(touchOnly > 0.5 && Math.abs(both - touchOnly) < 1e-6, `the same wake (${touchOnly} vs ${both})`);
 });
 
 test('intensity, light and ambient from options and setOptions reach the uniform block, clamped to 0..1; ambient makes it continuous on purpose', async () => {

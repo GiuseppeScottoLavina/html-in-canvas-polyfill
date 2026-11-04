@@ -105,9 +105,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/shatter.iife.js` | 49,413 | 15,252 |
 | `plugins/shatter.iife.min.js` | 28,897 | 11,855 |
 | `plugins/shatter.esm.js` | 46,710 | 14,878 |
-| `plugins/water.iife.js` | 37,773 | 12,087 |
-| `plugins/water.iife.min.js` | 23,503 | 9,756 |
-| `plugins/water.esm.js` | 35,703 | 11,774 |
+| `plugins/water.iife.js` | 39,342 | 12,425 |
+| `plugins/water.iife.min.js` | 24,222 | 10,010 |
+| `plugins/water.esm.js` | 37,212 | 12,111 |
 <!-- sizes:end -->
 
 Size target: the design target for the minified core was 150 KB (gate G-bundle), and **the core in the table above is over it**. `npm run check:bundle` therefore prints the target as KNOWN RED and fails on any growth above a recorded ceiling (`scripts/check-bundle.mjs`), which is raised only deliberately, with a measured reason.

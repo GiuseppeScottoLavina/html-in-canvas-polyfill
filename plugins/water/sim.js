@@ -25,9 +25,9 @@ export const WAVE_SPEED_PX_S = 270;
 export const DAMPING = 0.985;
 export const VISCOSITY = 0.06;
 /** css px of displacement per unit slope at intensity 1 (the refraction through the water onto the page below) */
-export const REFRACT_PX = 48;
+export const REFRACT_PX = 40;
 /** the same for the light: the caustics focus as if the page lay this deep */
-export const CAUSTIC_PX = 70;
+export const CAUSTIC_PX = 60;
 
 /**
  * @typedef {Object} Field
