@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Off-screen pause of the effect host (docs/ARCHITECTURE.md ADR-G) in the plugin gallery with the water plugin (continuous), in headless
-// Chrome: scrolled far out of view the host renders no effect frame and the renderer + GPU processes use less CPU; a source change made
-// meanwhile is not uploaded until the resume; an action triggered off-screen still resolves; scrolled back with a jump, the first effect
-// frame is rendered in the frame that shows the jump and already shows the changed source. Control: the same page with IntersectionObserver silenced
-// keeps rendering off-screen (the measurement does see frames when there are any).
+// Off-screen pause of the effect host (docs/ARCHITECTURE.md ADR-G) in the plugin gallery with the water plugin made continuous on purpose
+// (its option `ambient`, a gentle swell that never settles; without it the water at rest renders nothing at all), in headless Chrome:
+// scrolled far out of view the host renders no effect frame and the renderer + GPU processes use less CPU; a source change made meanwhile
+// is not uploaded until the resume; an action triggered off-screen still resolves; scrolled back with a jump, the first effect frame is
+// rendered in the frame that shows the jump and already shows the changed source. Control: the same page with IntersectionObserver
+// silenced keeps rendering off-screen (the measurement does see frames when there are any).
 //   npm run build && node plugins/water/test/offscreen.e2e.mjs     (`npm run test:plugins` runs every gallery e2e)
 import { checklist, openGallery, rectOf, shot, sleep } from '../../_shared/gallery-e2e.mjs';
 
@@ -41,9 +42,13 @@ async function scrollAway(page) {
   return page.evaluate(`document.getElementById('stage').getBoundingClientRect().bottom`);
 }
 
+/** the gentle swell: the water renders every capped frame (handle.setOptions) @param {any} page */
+const swell = (page) => page.evaluate(`window.__gallery.handle.setOptions({ ambient: 0.6 })`);
+
 const g = await openGallery('water');
 const { page, browser } = g;
 try {
+  await swell(page);
   const stage = await rectOf(page, '#stage');
   await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
   await sleep(1000);
@@ -55,7 +60,7 @@ try {
   };
   const before = colour((await shot(page)).img);
   const visible = await measure(page, browser, 2000);
-  c.check('on screen: the continuous water renders (about the 60 fps cap of the gallery)', visible.framesPerSecond > 40, visible);
+  c.check('on screen: the swelling water renders continuously (at about the cap of the gallery)', visible.framesPerSecond > 40, visible);
 
   const bottom = await scrollAway(page);
   const off = await measure(page, browser, 2000);
@@ -67,7 +72,7 @@ try {
   c.check('renderer + GPU process CPU drop off-screen (below 60 % of the on-screen value)', busyOff < 0.6 * busyOn, { onScreen: busyOn, offScreen: busyOff });
 
   // an action triggered off-screen resolves (the paused host advances it at about 10 frames per second)
-  const act = await page.evaluate(`(async () => { const t = performance.now(); const s0 = window.__gallery.host.stats(); const state = await window.__gallery.handle.trigger('drop');
+  const act = await page.evaluate(`(async () => { const t = performance.now(); const s0 = window.__gallery.host.stats(); const state = await window.__gallery.handle.trigger('drop', { strength: 2 });
     const s1 = window.__gallery.host.stats(); return { state, ms: Math.round(performance.now() - t), offscreenFrames: s1.offscreenFrames - s0.offscreenFrames, paused: s1.paused }; })()`);
   const rate = act.ms > 0 ? (1000 * act.offscreenFrames) / act.ms : Infinity;
   c.check("handle.trigger('drop') off-screen resolves 'calm', at about 10 frames per second", act.state === 'calm' && act.paused && act.offscreenFrames > 0 && rate <= 12, { ...act, framesPerSecond: Math.round(rate * 10) / 10 });
@@ -111,6 +116,7 @@ try {
 const silenced = 'window.IntersectionObserver = class { constructor() {} observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };';
 const k = await openGallery('water', { initScript: silenced });
 try {
+  await swell(k.page);
   await k.page.mouseMove(5, 5);
   await sleep(500);
   const bottom = await scrollAway(k.page);

@@ -408,11 +408,12 @@ test('the action drop, through the effect handle: a dent at the point at once; i
   w.inst.render(w.frame(t0 + 10));
   const f = w.gpu.textures.at(-1);
   const pw = f.size.width, ph = f.size.height;
-  let min = 0, at = -1;
-  f.data.forEach((v, i) => { if (v < min) { min = v; at = i; } });
+  // the centroid of the disturbance (|h|), interior cells
   const cx = W / (pw - 2 * PAD), cy = H / (ph - 2 * PAD);
-  const x = ((at % pw) - PAD + 0.5) * cx, y = (Math.floor(at / pw) - PAD + 0.5) * cy;
-  assert.ok(Math.abs(x - 300) < 2 * cx && Math.abs(y - 75) < 2 * cy, `the deepest cell is at the point (${x}, ${y})`);
+  let sum = 0, sx = 0, sy = 0;
+  for (let j = PAD; j < ph - PAD; j += 1) for (let i = PAD; i < pw - PAD; i += 1) { const a = Math.abs(f.data[j * pw + i]); sum += a; sx += a * (i - PAD + 0.5) * cx; sy += a * (j - PAD + 0.5) * cy; }
+  const x = sx / sum, y = sy / sum;
+  assert.ok(sum > 0 && Math.abs(x - 300) < cx && Math.abs(y - 75) < cy, `the drop is centred on the point (${x}, ${y})`);
   let now = t0 + 10;
   for (; now < t0 + 600; now += 1000 / 120) w.inst.render(w.frame(now));
   await w.flush();
@@ -456,7 +457,7 @@ test('the action demo: a short rain (the last drop by 1.7 s), then calm; it reso
   rm.handle.remove();
 });
 
-test('user input during the demo takes over at once: the rain stops and the demo resolves null', async () => {
+test('user input during the demo (a tap, setOptions) takes over at once: the rain stops and the demo resolves null', async () => {
   const atRest = async (interrupt) => {
     const w = await createWater({ ...meta.defaults });
     const t0 = performance.now();
@@ -472,6 +473,13 @@ test('user input during the demo takes over at once: the rain stops and the demo
     return { early, state, ms: now - t0 };
   };
   const tapped = await atRest(true);
+  const w = await createWater({ ...meta.defaults });
+  const demo = w.instance.runAction('demo', {}, { reducedMotion: false });
+  w.instance.render(w.frame(performance.now() + 20));
+  w.instance.setOptions({ intensity: 0.7 });
+  assert.equal(await demo, null, 'setOptions during the demo takes over too');
+  assert.equal(typeof meta.touch, 'string', 'meta.touch: the hint the gallery shows on a touch screen');
+  assert.equal(meta.continuous, undefined, 'not continuous by design: it settles to zero frames');
   const control = await atRest(false);
   assert.equal(tapped.early, null, 'the demo resolved null at the tap');
   assert.equal(control.state, 'calm', 'control: undisturbed, it resolves calm');

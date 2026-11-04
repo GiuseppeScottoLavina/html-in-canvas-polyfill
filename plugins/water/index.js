@@ -14,7 +14,7 @@
  * cleared and the host stops rendering. The option `ambient` (a gentle swell) makes it continuous on purpose.
  *
  * Actions: 'drop' (a drop at `point`) and 'demo' (a short rain, then calm) resolve 'calm' once the surface is still. User input during the
- * demo stops the rain at once and resolves the demo with null. With reduced motion both resolve 'calm' at once and nothing moves.
+ * demo (the pointer, setOptions) stops the rain at once and resolves the demo with null. With reduced motion both resolve 'calm' at once and nothing moves.
  *
  * `plugin` is a plain, frozen definition that `host.addPlugin` validates (docs/guides/EFFECTS-PLUGINS.md).
  */
@@ -23,7 +23,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
-import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
+import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, splash, stamp, step, surfaceAt } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -37,6 +37,7 @@ export const meta = Object.freeze({
   description: 'A water surface over the live page: drops, wakes, refraction, caustics and reflections; clicks and typing are remapped through it.',
   defaults: Object.freeze({ intensity: 0.5 }),
   reducedMotion: 'Still water: the surface keeps its reflection and tint; no ripple starts and nothing animates; drop and demo resolve at once.',
+  touch: 'Tap the water for a drop; a finger still scrolls the page.',
 });
 
 /** The actions of `handle.trigger`: drop lets a drop fall, demo plays a short rain. */
@@ -51,9 +52,9 @@ const DEFAULT_INTENSITY = 0.5;
 /** css px of the ambient swell at `ambient: 1` */
 export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
-/** a tap or a press: a dent of this radius and depth (css px); the action drop scales the depth by its strength */
-export const DROP_RADIUS = 13;
-export const DROP_DEPTH = 6;
+/** a tap or a press: a drop of this radius and depth (css px, sim.js splash); the action drop scales the depth by its strength */
+export const DROP_RADIUS = 24;
+export const DROP_DEPTH = 8;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (up to WAKE_FAST css px per ms) */
 const WAKE_RADIUS = 9;
 const WAKE_DEPTH = 2;
@@ -114,11 +115,11 @@ function random(seed) {
  */
 export function demoRain() {
   const rnd = random(DEMO_SEED);
-  /** @type {RainDrop[]} */ const rain = [{ t: 0, x: 0.5, y: 0.44, radius: 20, depth: 6.5 }];
+  /** @type {RainDrop[]} */ const rain = [{ t: 0, x: 0.5, y: 0.44, radius: 30, depth: 9 }];
   const n = 30;
   for (let i = 1; i <= n; i += 1) {
     const k = i / n;
-    rain.push({ t: 100 + 1500 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 6 + 8 * rnd(), depth: (2.2 + 2.8 * rnd()) * (1 - 0.7 * k) });
+    rain.push({ t: 100 + 1500 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 10 + 12 * rnd(), depth: (2.5 + 3.5 * rnd()) * (1 - 0.7 * k) });
   }
   return rain;
 }
@@ -266,7 +267,7 @@ export const plugin = Object.freeze({
 
     /** A dent at (x, y) css px of the field. @param {number} x @param {number} y @param {number} radius @param {number} depth */
     function dent(x, y, radius, depth) {
-      stamp(currentField(), x, y, radius, -depth);
+      splash(currentField(), x, y, radius, depth);
       dirty = true;
       wake();
     }
@@ -352,7 +353,7 @@ export const plugin = Object.freeze({
       for (let i = 0; i < n && awake; i += 1) {
         while (rain.length && rain[0].t <= simClock) {
           const d = /** @type {RainDrop} */ (rain.shift());
-          stamp(f, d.x * f.cssWidth, d.y * f.cssHeight, d.radius, -d.depth);
+          splash(f, d.x * f.cssWidth, d.y * f.cssHeight, d.radius, d.depth);
         }
         step(f);
         simClock += STEP_MS;
@@ -370,6 +371,8 @@ export const plugin = Object.freeze({
       /** true while the surface moves (or with the ambient swell): the host renders every capped frame then, and none at rest */
       get continuous() { return awake || ambient > 0; },
       setOptions(next) {
+        // an option change during the demo is the user's: it takes over (the rain stops, the demo resolves null)
+        if (rain.length || demoTakeover) takeOver();
         intensity = clamp01(next?.intensity, intensity);
         light = clamp01(next?.light, light);
         if (!reducedMotion) ambient = clamp01(next?.ambient, ambient);
@@ -396,7 +399,7 @@ export const plugin = Object.freeze({
         if (!still) {
           const f = currentField();
           const p = at ? toField(at.x, at.y) : { x: f.cssWidth / 2, y: f.cssHeight / 2 };
-          dent(p.x, p.y, DROP_RADIUS * 1.15, DROP_DEPTH * Math.min(2, Math.max(0.08, strength)));
+          dent(p.x, p.y, DROP_RADIUS, DROP_DEPTH * Math.min(2, Math.max(0.08, strength)) / 1.2);
         }
         return wait();
       },
