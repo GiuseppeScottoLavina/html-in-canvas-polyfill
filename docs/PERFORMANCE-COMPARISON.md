@@ -243,14 +243,14 @@ That is the floor of a userland approach: a snapshot has to be cloned, serialise
    on 2026-10-15, see the optimization log). Keep frequently updated drawables small (`docs/guides/PERFORMANCE.md`).
 2. **Click to focus pixel** (p50 14.6 vs 6.8 ms, p95 15.4 vs 7.7 ms): the caret appears at once, but an author `:focus` style needs a new snapshot, built inside
    the input task.
-3. **First paint** (new tab: explainer 58.3 vs 31.6 ms, F1 91.1 vs 66.1 ms) and **startup** (342 KB minified core, 10.6 ms parse + compile + install, the first
+3. **First paint** (new tab: explainer 58.3 vs 31.6 ms, F1 91.1 vs 66.1 ms) and **startup** (342 KB minified core in the build measured, 352 KB today; 10.6 ms parse + compile + install, the first
    `paint` event 19.1 ms after script start): the core waits for 342 KB to be fetched and parsed (V8 compile 8.0 ms in the trace of the bundle scenario, 6.4 ms on 2026-10-15), the
    canvas's styles are resolved when its layer is mounted, and the first snapshot needs a clone, a serialisation and a decode.
 4. **Memory** (F1: renderer RSS 203 vs 136 MB, GPU RSS 192 vs 128 MB): retained surfaces at DPR 2 and caches.
 5. **Idle with a focused input** (47 RunTask/s, renderer CPU p50 2.1 % vs 1.1 %): the caret blink is painted into the retained surface.
 
 Against the **other package**, this polyfill is slower on first paint (new tab: explainer 58.3 vs 38.1 ms, F1 91.1 vs 59.9 ms), startup (10.6 vs 1.9 ms), size
-(342 KB vs 33 KB minified, about 116 KB vs 11 KB gzip; the other package's figure is the adapted bundle the bench loads), memory (F1 JS heap 3.1 vs 1.2 MB, renderer RSS 203 vs 199 MB),
+(342 KB vs 33 KB minified in the build measured, about 116 KB vs 11 KB gzip; the other package's figure is the adapted bundle the bench loads), memory (F1 JS heap 3.1 vs 1.2 MB, renderer RSS 203 vs 199 MB),
 main-thread busy share while typing (11.3 vs 8.6 %) and during resize drags (18.0 vs 7.5 %), and click to focus pixel at p50 (14.6 vs 7.7 ms in run B; 14.3 ms in run A). It is correct in every pixel check of the
 table (in-field text scrolling, wheel scrolling, resize: 0 vs 542 blank frames), cheaper on large drawables at every size (F4 main thread 14.5-17.7 vs 23-70 ms
 per update, update to pixel 2-3 vs 13-52 ms), and faster at p95 on typing, slider and click (typing every 30 ms 9.1 vs 43.8 ms, slider 8.3 vs 41.6 ms, click to
