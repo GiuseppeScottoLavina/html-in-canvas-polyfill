@@ -19,6 +19,7 @@ test('meta and the definition agree; the defaults are valid options', () => {
   assert.equal(plugin.type, meta.name);
   assert.equal(plugin.apiVersion, 2);
   assert.deepEqual(Object.keys(meta.defaults).sort(), ['autoPeek', 'corner', 'dogEar', 'radius', 'shadow']);
+  assert.ok(typeof meta.touch === 'string' && meta.touch.length <= 160 && !('continuous' in meta), 'a touch hint; not continuous');
 });
 
 // ------------------------------------------------------------------------------------------------ the fold

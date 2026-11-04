@@ -39,6 +39,7 @@ export const meta = Object.freeze({
   title: 'Page curl',
   description: 'Grab a corner, with a mouse or a finger, and the live page rolls up under your hand in 3D, lit and shadowed, still updating; it springs back on release.',
   defaults: Object.freeze({ corner: 'any', radius: 48, shadow: 0.85, dogEar: 36, autoPeek: 0 }),
+  touch: 'Drag a corner with a finger to turn the page.',
   reducedMotion: 'With reduced motion the drag follows the hand without lag; the dog-ear stays still; release and hover lift are instant; peek and demo resolve at once.',
 });
 
@@ -53,7 +54,8 @@ export { NO_TARGET, isNoTarget };
 export const CORNERS = Object.freeze(['any', 'tl', 'tr', 'bl', 'br']);
 /** the camera's distance, in page sizes */
 export const DISTANCE = 2.4;
-const LIGHT = (() => { const v = [-0.3, -0.42, 1]; const l = Math.hypot(...v); return v.map((x) => x / l); })();
+/** towards the lamp: 60 degrees up, towards the top-right corner (page-curl.wgsl to_lamp); a roll of the top-right corner shows its highlight band */
+const LIGHT = (() => { const v = [0.354, -0.354, 0.866]; const l = Math.hypot(...v); return v.map((x) => x / l); })();
 
 const MAPPER_SLOTS = 4;       // the host keeps the mappers of the last 3 presented frames, plus the one being written
 const INK = 0.3;             // the front's ink seen through the paper
