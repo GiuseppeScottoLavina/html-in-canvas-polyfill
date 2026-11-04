@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>esm loader check</title>
+<!-- G-bundle (scripts/check-bundle.mjs): the module loader from dist/esm imports the package entry and installs (the harness disables the native API). -->
+<canvas id="c" content="drawable" width="200" height="100"><div drawable id="d" style="width:100px;height:40px">bundle check</div></canvas>
+<script type="module">
+  const out = { bad: [] };
+  window.__esm = out;
+  try {
+    const { load } = await import('/dist/esm/loader.js');
+    if (window[Symbol.for('hic.installed')]) out.bad.push('installed before load()');
+    const rs = await Promise.all(Array.from({ length: 10 }, () => load()));
+    const r = rs[0];
+    if (!rs.every((x) => x === r)) out.bad.push('concurrent calls gave different results');
+    if (r.status !== 'polyfill' || r.mode !== 'polyfill') out.bad.push('status ' + r.status + ': ' + r.reason);
+    const core = await import('/dist/esm/index.js');
+    if (core.getInstalled() !== r.installed) out.bad.push('result.installed is not the live install');
+    await r.installed.whenPainted(document.getElementById('c'), 4000).catch((e) => out.bad.push('no first paint: ' + e.message));
+    const entries = performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === '/dist/esm/index.js').length;
+    if (entries !== 1) out.bad.push('the package entry was requested ' + entries + ' times');
+    r.installed.uninstall();
+  } catch (e) { out.bad.push('threw ' + (e && e.stack || e)); }
+  out.done = true;
+</script>

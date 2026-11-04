@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-hic-bundle'">
+<title>bundle load check under a CSP</title>
+<!-- G-bundle (scripts/check-bundle.mjs): ?scripts=/dist/a.js,... as index.html, under a policy that allows only scripts with the nonce: the loader passes
+     its `nonce` option to the scripts it creates, and without it the core is blocked. -->
+<script nonce="hic-bundle">
+  new URLSearchParams(location.search).get('scripts').split(',').forEach(function (src) { document.write('<script nonce="hic-bundle" src="' + src + '"><\/script>'); });
+</script>
+<canvas id="c" content="drawable" width="200" height="100"><div drawable id="d" style="width:100px;height:40px">bundle check</div></canvas>

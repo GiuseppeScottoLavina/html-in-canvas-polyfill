@@ -6,8 +6,9 @@
 //   2. G-native-interposer    (headed gate, real + control) trusted clicks and hover through a strong displacement (CRT, water)
 //   3. the plugin gallery e2e of water and disintegrate (plugins/<name>/test/gallery.e2e.mjs, headless, HIC_E2E_NATIVE=1)
 //   4. examples/effect-plugin (scripts/check-examples.mjs --only=effect-plugin --native, headless)
+//   5. G-native-loader        (headless, real + control) the loader downloads nothing over the browser's implementation (test/native-effects/g-native-loader.mjs)
 //
-//   npm run build && npm run test:native-effects            [--only=gates,gallery,example] [--require-canary] [--chrome=canary|stable|/path]
+//   npm run build && npm run test:native-effects            [--only=gates,gallery,example,loader] [--require-canary] [--chrome=canary|stable|/path]
 //
 // Without Chrome Canary the suite is SKIPPED and says so loudly (exit 0, so machines without Canary, such as CI, stay green);
 // --require-canary turns that into a failure.
@@ -41,6 +42,7 @@ if (want('gallery')) {
   for (const name of ['water', 'disintegrate']) stages.push(['gallery', `gallery e2e: ${name}`, [`plugins/${name}/test/gallery.e2e.mjs`], { HIC_E2E_NATIVE: '1', HIC_E2E_CHROME: canary }]);
 }
 if (want('example')) stages.push(['example', 'examples/effect-plugin', ['scripts/check-examples.mjs', '--only=effect-plugin', '--native', '--no-control', `--chrome=${canary}`], {}]);
+if (want('loader')) stages.push(['loader', 'G-native-loader', ['test/native-effects/g-native-loader.mjs', `--chrome=${canary}`], {}]);
 
 console.log(`G-native-effects: ${chromeArg ? 'Chrome' : 'Chrome Canary'} at ${canary}`);
 const rows = [];

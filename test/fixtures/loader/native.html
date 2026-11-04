@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loader on a native implementation</title>
+<!-- test/native-effects/g-native-loader.mjs: ?script=/dist/x.js loads that classic script, ?module=/dist/esm/loader.js imports that module; window.__load is the
+     promise of its load() result. With neither, nothing is loaded (the page alone). -->
+<canvas id="c" content="drawable" width="200" height="100"><div drawable id="d" style="width:100px;height:40px;background:rgb(0,128,0)">native</div></canvas>
+<script>
+  var q = new URLSearchParams(location.search);
+  if (q.get('script')) document.write('<script src="' + q.get('script') + '"><\/script>');
+</script>
+<script type="module">
+  const q = new URLSearchParams(location.search);
+  const t0 = performance.now();
+  const loaded = q.get('module') ? import(q.get('module')).then((m) => m.load()) : q.get('script') && /loader/.test(q.get('script')) ? HicLiveLoader.load() : null;
+  window.__load = loaded && loaded.then((r) => ({ status: r.status, mode: r.mode, installed: r.installed !== null, kind: r.native && r.native.kind, reason: r.reason || null, ms: performance.now() - t0 }));
+</script>
