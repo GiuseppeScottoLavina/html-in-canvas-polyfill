@@ -227,7 +227,8 @@ const PLAYGROUND_VARIANTS = [
   { name: 'iframe-kept', edit: ['old.remove();', ''], check: 'running again replaces the preview frame' },
   { name: 'bounds-not-switched', edit: ["if (s) s.media = e.data === 'bounds:on' ? 'all' : 'not all';", ''], check: 'Show canvas bounds' },
   { name: 'highlight-stale', edit: ["code.addEventListener('input', refresh);", ''], check: 'the editor highlights the code' },
-  { name: 'muted-errors', edit: ['<script crossorigin="anonymous" src="', '<script src="'], check: 'an exception the polyfill throws' },
+  // its check is the polyfill's own exception, which mode native skips (the browser's implementation runs there)
+  { name: 'muted-errors', edit: ['<script crossorigin="anonymous" src="', '<script src="'], check: 'an exception the polyfill throws', polyfillOnly: true },
   { name: 'highlight-ungated', edit: [':root[data-highlight="on"] #code { color: transparent;', '#code { color: transparent;'], check: 'without Prism' },
 ];
 /** The Prism scripts of the playground's editor (cdnjs, pinned), which its fallback check blocks. */
@@ -1033,7 +1034,7 @@ async function main() {
       // the canvas bounds never switched off):
       // the playground scenario must turn the named check red on each
       if (names.includes('playground')) {
-        for (const variant of PLAYGROUND_VARIANTS) {
+        for (const variant of PLAYGROUND_VARIANTS.filter((v) => !(NATIVE && v.polyfillOnly))) {
           const text = playgroundVariant(variant);
           let red = [];
           if (text instanceof Error) red = null;
