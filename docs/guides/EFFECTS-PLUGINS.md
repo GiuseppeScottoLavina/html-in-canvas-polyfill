@@ -377,14 +377,20 @@ Three rules every interactive plugin of this repository follows, and that the pl
 
 ```js
 // in create(): the handle is where the current frame draws it, in canvas CSS px (the coordinates of the input mapper)
-const offTouch = context.listen('touchstart', (event) => {
+let mine = false;   // the current touch started on the handle
+const offStart = context.listen('touchstart', (event) => {
   const touch = event.touches[0];
   const box = context.canvas.getBoundingClientRect();
-  if (event.touches.length === 1 && onHandle(touch.clientX - box.left, touch.clientY - box.top)) event.preventDefault();   // this gesture is the plugin's
+  mine = event.touches.length === 1 && onHandle(touch.clientX - box.left, touch.clientY - box.top);
+}, { passive: true });
+const offMove = context.listen('touchmove', (event) => {
+  if (mine && event.cancelable) event.preventDefault();   // the first move decides: this gesture is the plugin's, not a scroll
 }, { passive: false });
 ```
 
-- `context.listen` adds the listener on the canvas and on its live layer, where touches land. `preventDefault()` in `touchstart` keeps the browser from scrolling (and from sending `pointercancel`); the pointer events of that gesture then follow, and the plugin's pointer listeners do the rest, as for a mouse.
+- `context.listen` adds the listeners on the canvas and on its live layer, where touches land. `preventDefault()` in the first `touchmove` of a touch that started on the handle keeps the browser from scrolling (and from sending `pointercancel`); the pointer events of that gesture then follow, and the plugin's pointer listeners do the rest, as for a mouse.
+- Claim at the first `touchmove`, not at `touchstart`: a prevented `touchstart` also cancels the tap, so a tap on a field seen through the handle (a lens) would no longer focus it. A handle that has nothing to tap through, such as a page corner, may claim at `touchstart`.
+- The effects host focuses and activates a control for a finger only on a tap (a touch that lifts within 10 css px of where it landed), as a page without effects does: dragging a handle across a field does not focus it.
 - `preventDefault()` in `pointerdown` does not stop a scroll, and `touch-action: none` on the canvas would block scrolling over the whole canvas: use neither.
 - A whole-surface effect (ripples, a tilt that follows the finger) does not block scrolling at all: it listens passively (`{ passive: true }`), reacts to taps and to the pointer events the browser delivers, and accepts the `pointercancel` that comes when the page scrolls.
 - Mouse and pen keep their own behaviour.
@@ -562,7 +568,7 @@ The smoke test also runs its action: `handle.trigger('pulse')` resolves `'calm'`
 - The mapper formula is the shader formula (test it against pixels with `checkMapperAgainstGpu`, also during your actions with `runActionOnGpu`).
 - Declared `actions` have `runAction` and `settled`; both resolve after the frame that shows the end state; your own triggers go through `context.trigger` / `ui.trigger`; `destroy` resolves your waiters with `null`.
 - `meta.reducedMotion` says what the plugin does under `prefers-reduced-motion: reduce`, and the actions honour `info.reducedMotion`.
-- Touch: a non-passive `touchstart` calls `preventDefault()` only for a touch that starts on your handle; a whole-surface effect never blocks scrolling (section 15.1).
+- Touch: a gesture is claimed (`preventDefault()` in its first `touchmove`, or in `touchstart` for a handle with nothing to tap through) only for a touch that starts on your handle; a whole-surface effect never blocks scrolling (section 15.1).
 - A plugin whose look depends on input has a `demo` action of at most about 4 s that ends at rest and gives way to user input.
 - At rest, 3 s after it settled, the canvas presents 0 effect frames, unless `meta.continuous` says what runs by design.
 - You did not call `getContext` on the canvas.
