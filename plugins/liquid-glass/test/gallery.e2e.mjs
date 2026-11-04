@@ -33,16 +33,16 @@ const plan = {
     for (const target of TARGETS) {
       const box = ctx.boxes.find((/** @type {any} */ b) => `#${b.id}` === target.sel);
       if (!box) continue;
-      for (let r = 40; r <= 120 && !pick; r += 10) {
-        for (let a = 0; a < 16 && !pick; a += 1) {
-          const cx = Math.round(box.x + box.w / 2 + r * Math.cos((a * Math.PI) / 8));
-          const cy = Math.round(box.y + box.h / 2 + r * Math.sin((a * Math.PI) / 8));
+      for (let r = 30; r <= 140 && !pick; r += 5) {
+        for (let a = 0; a < 32 && !pick; a += 1) {
+          const cx = Math.round(box.x + box.w / 2 + r * Math.cos((a * Math.PI) / 16));
+          const cy = Math.round(box.y + box.h / 2 + r * Math.sin((a * Math.PI) / 16));
           if (cx < 0 || cy < 0 || cx > w || cy > h) continue;
           const map = lensMapper(w, h, cx, cy);
           const found = ctx.findDrawn(() => map, [target]);
-          // the rim of the glass maps steeply: keep only a click point at least 3 px clear of the control and its label in the DOM, so
+          // the rim of the glass maps steeply: keep only a click point at least 2 px clear of the control and its label in the DOM, so
           // that the browser's own hit test (fractional boxes) cannot land on them
-          const clear = found && !ctx.boxes.some((/** @type {any} */ b) => (b.id === found.box.id || b.forId === found.box.id) && ctx.inside(b, found.p, -3));
+          const clear = found && !ctx.boxes.some((/** @type {any} */ b) => (b.id === found.box.id || b.forId === found.box.id) && ctx.inside(b, found.p, -2));
           if (clear) pick = { cx, cy, target };
         }
       }

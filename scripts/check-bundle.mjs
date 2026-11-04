@@ -251,7 +251,7 @@ const PLUGIN_LIMITS = {
   disintegrate: 26.25 * KB, // 26,080 (25,983 before the Terser pass); 26.5 -> 26.25 KB (2026-10-27); 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
   glitch: 13.75 * KB, // 13,500 (13,510 before the Terser pass); 13.5 -> 13.75 KB: the action 'burst' (handle.trigger) in place of the `trigger` option
   'holo-card': 12.5 * KB, // 12,486 (12,513 before the Terser pass); 12.75 -> 12.5 KB (2026-10-27)
-  'liquid-glass': 22.75 * KB, // 22,519 (2026-11-04); 12 -> 22.75 KB: the glass slab (height field, Snell refraction, spectral dispersion, Fresnel, Catmull-Rom sampling, frost; the WGSL is inlined, 8.9 KB), the finger drag and the demo action
+  'liquid-glass': 22.75 * KB, // 22,668 (2026-11-04); 12 -> 22.75 KB: the glass slab (height field, Snell refraction, spectral dispersion, Fresnel, Catmull-Rom sampling, frost; the WGSL is inlined, 9.4 KB), the finger drag and the demo action
   'page-curl': 33 * KB, // 32,986 (32,899 before the Terser pass); 33.5 -> 33 KB (2026-10-27); 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
   shatter: 29 * KB, // 28,902 (28,892 before the Terser pass); 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
   water: 11.75 * KB, // 11,629 (11,623 before the Terser pass); 10.5 -> 10.75 KB: meta.reducedMotion; 10.75 -> 11.75 KB: the action 'drop' (handle.trigger, settled when calm)

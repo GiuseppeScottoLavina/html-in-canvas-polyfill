@@ -27,9 +27,10 @@ struct U {
 const BG = vec3<f32>(0.004, 0.018, 0.034);
 const IOR = 1.5;
 const SPREAD = 0.1;
-const BEVEL = 0.4;
-const BEVEL_H = 0.55;
-const DOME = 0.75;
+const BEVEL = 0.45;
+const BEVEL_H = 1.4;
+const DOME = 0.36;
+const FADE = 0.95;
 // the key light comes low from the upper left (15 degrees above the page), so that its glints sit on the rim; a weaker rim light opposite
 const KEY = vec3<f32>(-0.5516, -0.7924, 0.2608);
 const KEY2 = vec2<f32>(-0.5713, -0.8207);
@@ -83,11 +84,12 @@ fn surface(p : vec2<f32>) -> Surf {
   // the rim: an elliptic quarter, vertical at the edge (e = 1), flat where the top begins (e = 0)
   let e = clamp(1.0 + d.x / bevel, 0.0, 1.0);
   let w = sqrt(1.0 - e * e);
-  // the dome: a paraboloid over the slab, faded in across the rim, so that the glass is 0 thick at its edge
+  // the dome: a paraboloid over the slab, faded in from the edge, so that the glass is 0 thick at its edge (no fold: index.js)
   let pd = max(0.0, 1.0 - dot(l, l) / r2);
-  let x = 1.0 - e;
+  let fade = FADE * m;
+  let x = clamp(-d.x / fade, 0.0, 1.0);
   let tau = x * x * (3.0 - 2.0 * x);
-  let dtau = 6.0 * x * (1.0 - x) / bevel;
+  let dtau = 6.0 * x * (1.0 - x) / fade;
   let gd = dome * (-tau * 2.0 * l / r2 - pd * dtau * g);
   // the normal (-grad z, 1), scaled by bevel w so that it stays finite where the rim is vertical (grad sd is not a unit vector)
   let bw = max(bevel * w, 1e-4 * bevel);

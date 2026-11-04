@@ -41,14 +41,14 @@ function oracle({ w, h, cx, cy, hx, hy, refraction, jx = 0, jy = 0, press = 1 },
     if (qx > 0 && qy > 0) return (qx ** 4 + qy ** 4) ** 0.25 - r;
     return Math.max(qx, qy) - r;
   };
-  const bevel = 0.4 * m;
-  const hb = refraction * 0.55 * bevel;
-  const dome = refraction * 0.75 * m;
+  const bevel = 0.45 * m;
+  const hb = refraction * 1.4 * bevel;
+  const dome = refraction * 0.36 * m;
   const R2 = hx * hx + hy * hy;
   const z = (x, y) => {
     const [lx, ly] = toLocal(x, y);
     const t = Math.min(1, Math.max(0, 1 + dist(lx, ly) / bevel));
-    const depth = Math.min(1, Math.max(0, -dist(lx, ly) / bevel));
+    const depth = Math.min(1, Math.max(0, -dist(lx, ly) / (0.95 * m)));
     return hb * Math.sqrt(1 - t * t) + dome * Math.max(0, 1 - (lx * lx + ly * ly) / R2) * depth * depth * (3 - 2 * depth);
   };
   const [lx, ly] = toLocal(p.x, p.y);
@@ -110,26 +110,46 @@ test('the slab: identity outside, fixed centre, a magnifying top, a rim that ben
   const c = at(400, 250);
   assert.ok(Math.abs(c.x - 400) < 1e-9 && Math.abs(c.y - 250) < 1e-9, 'the centre shows itself');
   const mag = 20 / (at(420, 250).x - 400);
-  assert.ok(mag > 1.12 && mag < 1.35, `the top magnifies: ${mag.toFixed(3)}x at refraction 1`);
+  assert.ok(mag > 1.06 && mag < 1.2, `the top magnifies: ${mag.toFixed(3)}x at refraction 1`);
   const magDefault = 20 / (mapLensPoint(state(), { x: 420, y: 250, width: 800, height: 500 }).x - 400);
-  assert.ok(magDefault > 1.05 && magDefault < mag, `less at the default refraction: ${magDefault.toFixed(3)}x`);
+  assert.ok(magDefault > 1.03 && magDefault < mag, `less at the default refraction: ${magDefault.toFixed(3)}x`);
   const hy = s[7];
   const rim = at(400, 250 - hy + 3);
   assert.ok(rim.y > 250 - hy + 3, `the rim shows the picture further in (y ${rim.y.toFixed(1)} > ${250 - hy + 3})`);
   // the glass is 0 thick at its edge: the picture is continuous across it (nothing under the rim is hidden); a ray entering at grazing
   // incidence leaves the normal by the critical angle asin(1 / 1.5), so it moves at most sqrt(1.5^2 - 1) = 1.118 px per px of thickness
   const q = { sd: 0, gl: 1, nx: 0, ny: 0, nz: 1, t: 0 };
-  for (const depth of [0.01, 0.5, 2, 6]) {
+  for (const depth of [1e-4, 0.5, 2, 6]) {
     lensSurface(s, 400, 250 - hy + depth, q);
     const moved = at(400, 250 - hy + depth).y - (250 - hy + depth);
     assert.ok(moved >= 0 && moved <= Math.sqrt(GLASS.ior ** 2 - 1) * q.t + 1e-9, `${depth} px in: ${moved.toFixed(2)} px through ${q.t.toFixed(2)} px of glass`);
-    if (depth === 0.01) assert.ok(moved < 0.6, `continuous at the edge: ${moved.toFixed(2)} px`);
+    if (depth === 1e-4) assert.ok(moved < 0.25, `continuous at the edge (it goes to 0 like the square root of the depth): ${moved.toFixed(3)} px`);
   }
   assert.ok(sdSquircle(0, 0, 10, 5) < 0 && sdSquircle(20, 0, 10, 5) > 0);
   // a superellipse corner, not a circular one: it bulges past the circle of the same radius at 45 degrees
   const r = 5;
   const diag = r * Math.SQRT1_2 + 0.3;
   assert.ok(sdSquircle(10 - r + diag, 5 - r + diag, 10, 5) < 0);
+});
+
+test('no fold: every point of the page under the glass is shown once (monotone along both axes and a diagonal), for any aspect and refraction', () => {
+  for (const aspect of [1, 1.45, 2, 2.5]) {
+    for (const refraction of [0.3, 0.75, 1]) {
+      const s = state({ aspect, refraction });
+      const hx = s[6];
+      const hy = s[7];
+      const lines = [[0, -1, hy], [-1, 0, hx], [-hx / Math.hypot(hx, hy), -hy / Math.hypot(hx, hy), 0.8 * Math.hypot(hx, hy)]];
+      for (const [dx, dy, len] of lines) {
+        let prev = -Infinity;
+        for (let t = len; t > 0; t -= 0.05) {
+          const q = mapLensPoint(s, { x: 400 + dx * t, y: 250 + dy * t, width: 800, height: 500 });
+          const along = -((q.x - 400) * dx + (q.y - 250) * dy);   // grows towards the centre
+          assert.ok(along >= prev - 1e-6, `aspect ${aspect}, refraction ${refraction}, ${t.toFixed(2)} px from the centre along (${dx.toFixed(2)}, ${dy.toFixed(2)}): ${along} after ${prev}`);
+          prev = along;
+        }
+      }
+    }
+  }
 });
 
 test('refraction 0 is a flat slab: the identity everywhere (up to the canvas clamp)', () => {

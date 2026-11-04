@@ -46,9 +46,10 @@ const LIMITS = Object.freeze({ size: [60, 280], refraction: [0, 1], dispersion: 
 export const GLASS = Object.freeze({
   ior: 1.5,          // crown glass: the index of the green channel, the one the mapper follows
   spread: 0.1,       // dispersion 1: red and blue indices down to 1.4 and up to 1.6 (glass dispersion, exaggerated so that it is seen)
-  bevel: 0.4,        // width of the curved rim
-  bevelHeight: 0.55, // height of the rim per unit of refraction, relative to its width (an elliptic quarter)
-  dome: 0.75,        // height of the magnifying dome per unit of refraction
+  bevel: 0.45,       // width of the curved rim
+  bevelHeight: 1.4,  // height of the rim per unit of refraction, relative to its width (an elliptic quarter)
+  dome: 0.36,        // height of the magnifying dome per unit of refraction
+  fade: 0.95,        // depth over which the dome fades in from the edge (it ends before the middle line of the slab: no crease)
 });
 
 /** pointer spring (mouse, pen, demo): stiffness (1/s^2) and damping (from the damping ratio) */
@@ -132,12 +133,14 @@ export function lensSurface(s, px, py, out) {
   // the rim: an elliptic quarter of width `bevel` and height `hb`, vertical at the edge (e = 1), flat where the top begins (e = 0)
   const e = Math.min(1, Math.max(0, 1 + sd / bevel));
   const w = Math.sqrt(1 - e * e);
-  // the dome: a paraboloid P over the whole slab, faded in across the rim (tau, a smoothstep of the depth 1 - e), so that the glass
-  // is 0 thick at its edge and the picture is continuous across it
+  // the dome: a paraboloid P over the whole slab, faded in from the edge (tau, a smoothstep of the depth -sd), so that the glass is 0
+  // thick at its edge and the picture is continuous across it. These numbers keep the picture free of folds (every point of the page
+  // is shown once) for aspects 1 to 2.5 and any refraction.
   const p = Math.max(0, 1 - (lx * lx + ly * ly) / r2);
-  const x = 1 - e;
+  const fade = GLASS.fade * m;
+  const x = Math.min(1, Math.max(0, -sd / fade));
   const tau = x * x * (3 - 2 * x);
-  const dtau = (6 * x * (1 - x)) / bevel;   // d tau / d depth; the depth grows against grad sd
+  const dtau = (6 * x * (1 - x)) / fade;   // d tau / d depth; the depth grows against grad sd
   const dx2 = dome * (-tau * ((2 * lx) / r2) - p * dtau * g[0]);
   const dy2 = dome * (-tau * ((2 * ly) / r2) - p * dtau * g[1]);
   // the normal (-grad z, 1) of z = hb sqrt(1 - e^2) + dome P tau, scaled by bevel w so that it stays finite where the rim is vertical
