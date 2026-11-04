@@ -149,7 +149,8 @@ if (!docsOnly) {
   // schedule/observers/animation-observer.js wraps the Animation timing members and the effect edits, and damages the retimed targets once per task)
   // 16740 -> 16785 (2026-11-04, measured 16,781): the caret of a focused field follows a composed scroll step and is clipped to where the field shows (+43: store.js
   // liveCaret / clipOf / keptCaret, scroll-compose.js pinned; webkit-caret.js resetCaretRules and the media results in the rule cache key)
-  if (total > 16785) problems.push(`G-size: core is ${total} code lines (> 16785)`);
+  // 16785 -> 16790 (2026-11-04, measured 16,787): the scroll compositor counts its refusals by reason (+6: scroll-compose.js refusedBy, noPlan)
+  if (total > 16790) problems.push(`G-size: core is ${total} code lines (> 16790)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

@@ -44,6 +44,12 @@ reached the drawable is rastered at a lower scale, or keeps its last picture, an
 size, a few per list. Pages are kept only in the room the drawables leave; without room the scroll steps are built instead of composed. A phone-sized drawable at
 DPR 3 (390 x 840 css px) costs about 12 MB.
 
+Keep the raster scale a whole number in Mobile Safari: WebKit's snapshot image puts box edges and scroll offsets on whole css px, so inner scrolling is composed only
+at scale 1, 2 or 3. An explicit fractional `maxDpr` (2.5, 1.5) or a surface reduced for its budget makes every scroll step a snapshot (`refusedBy.scale` in the report's
+scroll stats, [TROUBLESHOOTING.md](TROUBLESHOOTING.md)): on a physical iPad at 120 Hz, 54-59 canvas updates per second at scale 1.5 instead of 117 at scale 2 (audit of
+0.1.0-preview.20); on the iOS Simulator at scale 2.5, 0 composed steps and 238 snapshots in 4 s, against 232 composed steps at scale 3. The default `maxDpr` of 3 gives
+a whole scale on DPR 2 and DPR 3 devices. To save memory, `maxDpr: 2` on a DPR 3 phone keeps inner scrolling composed (55.6 % fewer surface pixels, softer text).
+
 ## Touch
 
 - **Tap.** A tap on a drawn element reaches the live element at the drawn place (focus, click, checkbox), also when `drawElementImage` draws it away from its layout box.

@@ -4,7 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-- The core bundle grows to 350,616 bytes minified, 118,951 gzipped (+1,220 / +482 bytes) and to 16,781 code lines (+43); the engines bundle to 45,767 / 17,398 bytes (+252 / +103).
+- Since 0.1.0-preview.20 the core bundle grows to 350,933 bytes minified, 119,093 gzipped (+2,545 / +999 bytes) and to 16,787 code lines (+88); the engines bundle to 45,767 / 17,398 bytes (+252 / +103).
+
+### Added
+
+- Report: the scroll compositor's refusals are counted by reason in `report().canvases[i].stats.snapshot.scroll.refusedBy` (`scale`, `focus`, `selection`, `budget`, `shape`, `pinned`, `plan`), next to the `refusals` total they add up to. Before, a list that was never composed showed only that total. Desktop Safari 27 at DPR 2 with `maxDpr: 1.5`: `refusedBy.scale` 5, 0 composed steps and 234 snapshots in a 4 s scripted scroll; with `maxDpr: 2`, 232 composed steps and 0 snapshots. The core bundle grows to 349,696 bytes minified, 118,612 gzipped (+317 / +149 bytes) and to 16,743 code lines (+6).
+- Scroll benches (`test/bench/scroll-jank.mjs`, `test/bench/scroll-jank-ios.mjs`): the absolute frame budget next to the gaps relative to the frame interval under load: `movingFrameHz`, the rAF rate at rest `restHz` and `restShare`, and the share of frame intervals over 1.5 x 8.33 / 16.67 ms. Reported data, no thresholds.
+
+### Changed
+
+- Docs: in Safari and Firefox inner scrolling is composed only at a whole-number raster scale. API-CONTRACT section 8 said composed frames can differ from the settled picture by a few device pixels whenever the raster scale is below the device pixel ratio; that holds for Chromium only. PERFORMANCE, MOBILE and TROUBLESHOOTING now state the trade-off of a fractional `maxDpr` or a budget-reduced scale on WebKit, with the measured numbers. A budget-reduced scale is not rounded down to a whole number: with the default budgets a surface is reduced only above 33,554,432 px (16,777,216 on phones and tablets), and an explicit `maxDpr` stays the value the page asked for.
 
 ### Fixed
 
@@ -17,10 +26,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - Docs: the typed-text shortcut (the text overlay) is Chromium only; PERFORMANCE, TROUBLESHOOTING, DESIGN-DECISIONS, API-CONTRACT, ARCHITECTURE, the FAQ and the README presented it as universal. In Firefox and Safari each keystroke goes through a snapshot build. The scroll compositor's conditions now say that it makes no new plan of a scroller while the focus is on an element inside it or a non-collapsed selection intersects it: a plan made before keeps composing, but once its pages are dropped every step is rebuilt until the focus leaves.
 - CHANGELOG 0.1.0-preview.20: the classic core's gzip size after the change is 118,094 bytes, as measured, not 118,095.
 - Animations: a script that changed the timing of a paused, finished or idle animation inside a drawable did not repaint the drawable, although the rendering of its children changed (natively the paint event fires). The frame-hook loop follows only running animations, and the script hooks reported only `element.animate()` and `animation.play()`. A page that pauses every animation and seeks it to `document.timeline.currentTime` 15 times a second (a scrubber, a timeline editor) got 0 paint events per second in Chrome 156: the canvas stayed frozen at the pause. The `currentTime`, `startTime` and `playbackRate` setters and `pause()`, `finish()`, `cancel()`, `reverse()` and `updatePlaybackRate()` of `Animation` are now wrapped through the install's ledger (restored on uninstall) and report the animation's target when the call changed its play state, current time or rate; `effect.updateTiming()`, `setKeyframes()` and the `target` and `effect` setters report the old and the new target. The changes of one task damage their drawables once, one microtask later; a target that the running loop already follows is left to its next tick. A seek to the current time, or of an animation outside the canvases, repaints nothing; nothing is polled, so an idle page still costs nothing. After: 15 paints in that second (three runs). Tests: real-install browser unit tests (the canvas equals a full rebuild of the drawable after a seek of a paused CSS animation and of a paused `element.animate()`, after `startTime`, `updateTiming()`, `setKeyframes()`, `cancel()`, `finish()` and a seek back into a finished animation, each change visible before as a positive control; the 15 Hz scrubber; an unchanged seek and a seek outside the canvas paint nothing while several changes in one task paint once; uninstall restores every patched member by identity) and observer unit tests for each member; they fail without the fix.
-
-### Added
-
-- Scroll benches (`test/bench/scroll-jank.mjs`, `test/bench/scroll-jank-ios.mjs`): the absolute frame budget next to the gaps relative to the frame interval under load: `movingFrameHz`, the rAF rate at rest `restHz` and `restShare`, and the share of frame intervals over 1.5 x 8.33 / 16.67 ms. Reported data, no thresholds.
 
 ## [0.1.0-preview.20] - 2026-11-03
 

@@ -202,6 +202,16 @@ function cacheBytes(c, held) {
   return n * 4;
 }
 
+/**
+ * Why the planner had no plan for `el`, as far as the compositor can tell after the fact: focus or a non-collapsed selection inside the scroller (two of the rules
+ * of scroll-pages.js planSteps; another rule may also have refused it), else 'plan' (its other rules). Read on a refusal only, never per step.
+ * @param {Element} el @returns {'focus'|'selection'|'plan'}
+ */
+function noPlan(el) {
+  const doc = el.ownerDocument, active = doc?.activeElement, sel = doc?.getSelection();
+  return active && active !== el && el.contains(active) ? 'focus' : sel?.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).intersectsNode(el) ? 'selection' : 'plan';
+}
+
 /** @param {ComposeDeps} deps */
 export function createScrollCompositor(deps) {
   const now = deps.now ?? (() => performance.now());
@@ -221,6 +231,8 @@ export function createScrollCompositor(deps) {
   let seq = 0;
   /** diagnostics (SnapshotStats.scroll) */
   const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0 };
+  /** `refusals` by reason (SnapshotStats.scroll.refusedBy): they add up to it */
+  const refusedBy = { plan: 0, focus: 0, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0 };
   const room = deps.room ?? (() => Infinity);
 
   /** Does `bytes` more fit the surface budget? Counted and reported when not. @param {Entry} entry @param {number} bytes @returns {boolean} */
@@ -298,36 +310,37 @@ export function createScrollCompositor(deps) {
     const m = mapOf(entry);
     m.delete(el);
     const geo = /** @type {Geometry} */ (entry.geo);
-    const refuse = () => {
+    const refuse = (/** @type {keyof typeof refusedBy} */ why) => {
       counters.refusals++;
+      refusedBy[why]++;
       let r = refused.get(entry);
       if (!r) refused.set(entry, (r = new Map()));
       r.set(el, { at: now(), seq, place: placeOf(el) });
       return null;
     };
-    if (!plan) return refuse();
+    if (!plan) return refuse(noPlan(el));
     refused.get(entry)?.delete(el);
     const grid = plan.grid;
     // a grid that is not a whole number of surface pixels (WebKit with a reduced or fractional scale) cannot be shifted by whole pixels
-    if (grid && !Number.isInteger(grid * geo.scale)) return refuse();
+    if (grid && !Number.isInteger(grid * geo.scale)) return refuse('scale');
     // Gecko (ScrollPlan.whole) at a scale that is not a whole number: not verified (a page offset n / scale css px reaches the image in app units of 1/60 css px)
-    if (plan.whole && !Number.isInteger(geo.scale)) return refuse();
+    if (plan.whole && !Number.isInteger(geo.scale)) return refuse('scale');
     const portPx = snapPx(plan.port, geo, grid);
     if (portPx.width <= 0 || portPx.height <= 0) return null;
     const live = topOf(el);
     const round = plan.round ?? null;
     // a rounded port on a grid (WebKit) is composed source-over (compose()): exact over opaque pages only
-    if (round && grid && !plan.opaque) return refuse();
+    if (round && grid && !plan.opaque) return refuse('shape');
     // Gecko: its own rounded clip and the canvas's clip antialias the arc differently (Firefox 157, an opaque port at a fractional position: up to 26 levels on 6 of
     // its 168 arc pixels, more than the 2 % of the arc accepted on Chromium and WebKit)
-    if (round && plan.whole) return refuse();
+    if (round && plan.whole) return refuse('shape');
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
     // what the scroller needs to compose a step: two pages (one covers the port at its own offset only), its pinned elements, its bar and backdrop tiles
     let need = AHEAD_PAGES * area(portPx) + (round ? area(padPx) : 0);
     if (plan.bar) need += 2 * area(snapPx(plan.bar.gutter, geo, grid));
     for (const p of plan.pinned) { const r = entry.record.layer?.frameRect(p); if (r) need += area(snapPx(r, geo, grid)); }
-    if (!fits(entry, need * 4)) return refuse();
+    if (!fits(entry, need * 4)) return refuse('budget');
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
@@ -349,7 +362,7 @@ export function createScrollCompositor(deps) {
       const port = portPx;
       // one device pixel of slack at each edge: the pinned box and the port are snapped each on its own (a 398.4 px header at DPR 1.25 came out 499 px wide in a
       // 498 px port); compose() clips every pinned tile to the port
-      if (px.x < port.x - 1 || px.y < port.y - 1 || px.x + px.width > port.x + port.width + 1 || px.y + px.height > port.y + port.height + 1) return refuse();
+      if (px.x < port.x - 1 || px.y < port.y - 1 || px.x + px.width > port.x + port.width + 1 || px.y + px.height > port.y + port.height + 1) return refuse('pinned');
       const slot = { pad: /** @type {Surface|null} */ (null), w: px.width, h: px.height };
       cache.pins.set(p, slot);
       build(entry, cache, px, { el, top: live, hide: [], shape }, slot);
@@ -652,7 +665,7 @@ export function createScrollCompositor(deps) {
     /** @param {Entry} entry @returns {Element[]} the sticky elements pinned over the cached scrollers (the store paints no caret under them) */
     pinned: (entry) => [...(caches.get(entry)?.values() ?? [])].flatMap((c) => c.plan.pinned),
 
-    stats: () => ({ ...counters }),
+    stats: () => ({ ...counters, refusedBy: { ...refusedBy } }),
 
     /** @param {Entry} entry */
     forget(entry) {

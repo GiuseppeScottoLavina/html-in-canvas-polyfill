@@ -205,6 +205,48 @@ test('a grid that is not a whole number of surface pixels (a reduced scale) is r
   assert.ok(rig.store.stats().scroll.refusals >= 1, 'grid 0.5 at scale 3: 1.5 surface px');
 });
 
+// The reason of every refusal (SnapshotStats.scroll.refusedBy): the counts add up to `refusals`, and each one moves only its own count.
+async function refusedFor(t, { plan, scale = 1, options, frameRect, scroller = { scrollTop: 0, nodeType: 1, localName: 'div' } }) {
+  const rig = await makeRig(t, { scale, options, frameRect, scrollPlan: () => (plan ? { frame: FRAME, port: FRAME, pinned: [], maxTop: 1000, scrollHeight: 1040, ...plan } : null) });
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  rig.store.scrollSettled(a, scroller);
+  rig.pump();
+  await until(() => rig.store.isSettled(a), 3000, 'planned');
+  const sc = rig.store.stats().scroll;
+  const named = Object.entries(sc.refusedBy).filter(([, n]) => n > 0);
+  assert.equal(Object.values(sc.refusedBy).reduce((x, n) => x + n, 0), sc.refusals, 'the reasons add up to the refusals');
+  return named;
+}
+
+test('a refusal is counted by its reason: scale, shape, budget, pinned', async (t) => {
+  const round = { tl: { x: 6, y: 6 }, tr: { x: 6, y: 6 }, br: { x: 6, y: 6 }, bl: { x: 6, y: 6 } };
+  assert.deepEqual(await refusedFor(t, { plan: { grid: 1 }, scale: 1.5 }), [['scale', 1]], 'WebKit at a fractional scale: the grid is 1.5 surface px');
+  assert.deepEqual(await refusedFor(t, { plan: { grid: 1 }, scale: 2 }), [], 'control: the same plan at scale 2 is composed');
+  assert.deepEqual(await refusedFor(t, { plan: { whole: true, opaque: true }, scale: 1.25 }), [['scale', 1]], 'Gecko at a fractional scale');
+  assert.deepEqual(await refusedFor(t, { plan: { grid: 1, round, opaque: false } }), [['shape', 1]], 'a translucent rounded port on a grid');
+  // the surface is (100 + 8) x (60 + 8) x 4 = 29,376 bytes; two pages of the port are 2 x 60 x 40 x 4 = 19,200 more
+  assert.deepEqual(await refusedFor(t, { plan: {}, options: { maxTotalSurfaceBytes: 40000 } }), [['budget', 1]], 'two pages do not fit the total budget');
+  assert.deepEqual(await refusedFor(t, { plan: {}, options: { maxTotalSurfaceBytes: 60000 } }), [], 'control: they fit a larger one');
+  const pin = document.createElement('div');
+  assert.deepEqual(await refusedFor(t, { plan: { pinned: [pin] }, frameRect: (el) => (el === pin ? { x: 10, y: 0, width: 60, height: 8 } : null) }), [['pinned', 1]], 'a pinned element outside the port');
+});
+
+test('a scroller without a plan is counted as focus or selection inside it, else as plan', async (t) => {
+  const sc = document.createElement('div');
+  sc.innerHTML = '<input value="field"><p>some text</p>';
+  document.body.append(sc);
+  t.cleanup(() => { sc.remove(); getSelection()?.removeAllRanges(); });
+  assert.deepEqual(await refusedFor(t, { plan: null, scroller: sc }), [['plan', 1]], 'nothing focused or selected inside it');
+  /** @type {HTMLInputElement} */ (sc.querySelector('input')).focus();
+  assert.deepEqual(await refusedFor(t, { plan: null, scroller: sc }), [['focus', 1]], 'focus inside it');
+  /** @type {HTMLInputElement} */ (sc.querySelector('input')).blur();
+  getSelection()?.selectAllChildren(/** @type {Element} */ (sc.querySelector('p')));
+  assert.deepEqual(await refusedFor(t, { plan: null, scroller: sc }), [['selection', 1]], 'a selection inside it');
+  getSelection()?.collapseToStart();
+  assert.deepEqual(await refusedFor(t, { plan: null, scroller: sc }), [['plan', 1]], 'a collapsed selection is no reason');
+});
+
 // Gecko (ScrollPlan.whole): the image renders a scroll offset at its exact value and snaps each box edge to surface pixels on its own, so only offsets on whole surface
 // pixels are composed; the plan vouched for the styles of the content, so a change inside it re-plans the scroller instead of dirtying its pages.
 async function geckoSetup(t, plan = {}, scale = 2) {

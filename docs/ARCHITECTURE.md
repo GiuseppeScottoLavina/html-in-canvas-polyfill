@@ -395,7 +395,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
     rendered at the nearest whole css px (a page asked at 133.333 shows 133; `scrollTop = 133.9` on a live WebKit scroller reads 133), then scaled. A WebKit plan carries
     `grid: 1` and the store snaps to it (`snapPx`, `rowOf`); without it the composed frames were one device pixel lower than the tile at DPR 3 and the port one device row
-    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused. A rounded
+    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused (stat `scroll.refusedBy.scale`; every refusal is counted by reason, `scroll-compose.js` `refusedBy`). A rounded
     port on WebKit is drawn source-over the backdrop under the rounded clip, and only for a scroller with an opaque background: an accelerated WebKit canvas drawing with
     `copy` under an antialiased clip multiplies the source by the coverage and drops the destination (canvases of 200 px and more; a 60 px one blends like Skia), which left
     the curve semi-transparent; a classic bar's track tile meets the same curve on the bar's side and is drawn the same way. Classic bars on WebKit: an author-styled
