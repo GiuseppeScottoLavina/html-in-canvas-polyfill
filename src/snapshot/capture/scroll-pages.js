@@ -129,11 +129,7 @@ function* portUnobstructed(doc, scroller, port, round, now, t0, still) {
     for (let r = 0; r < rows; r++) {
       const y = port.top + 1 + ((port.height - 2) * r) / Math.max(1, rows - 1);
       if (round && outsideCorner(x - port.left, y - port.top, port.width, port.height, round)) continue;
-      if (now() - t0 > STEP_MS) {
-        yield;
-        if (!still()) return false;
-        t0 = now();
-      }
+      if (now() - t0 > STEP_MS) { yield; if (!still()) return false; t0 = now(); }
       const top = hit.elementFromPoint(x, y);
       if (!top || (top !== scroller && !scroller.contains(top))) return false;
     }
@@ -243,8 +239,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   const pinned = [];
   let otherZ = -Infinity;
   const count = all.length;
-  const clock = win.performance ?? Date;
-  const now = () => clock.now();
+  const clock = win.performance ?? Date, now = () => clock.now();
   // between two steps: the subtree's size, the scroller's place in the viewport and the viewport's size are those the plan read (what else changes in the content
   // meanwhile is the damage the compositor tracks once the plan is installed, as for a change after it: the pages are built from the DOM of their own time)
   const vr = s.getBoundingClientRect();
