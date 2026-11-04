@@ -87,15 +87,16 @@ export function scrollFacts(src, cs) {
   const sL = src.scrollLeft;
   const html = /** @type {HTMLElement} */ (src);
   const bx = px(cs.borderLeftWidth) + px(cs.borderRightWidth), by = px(cs.borderTopWidth) + px(cs.borderBottomWidth);
-  // an inline box has no client box (clientWidth / clientHeight 0): no gutter
-  const boxed = src.clientWidth > 0 || src.clientHeight > 0;
+  // an inline box has no client box (clientWidth / clientHeight 0): no gutter. Nor an <input>: it never shows a bar, and its client box is not its padding box (Gecko reports a
+  // focused field's narrower: the clone came out 10 px narrower; Chrome 157 reports the content box: a scrolled field's clone got its padding again as a gutter and clipped
+  // the last glyph, 8 px of a 100 px field with 4 px padding)
+  const boxed = src.localName !== 'input' && (src.clientWidth > 0 || src.clientHeight > 0);
   const rv = boxed ? Math.max(0, html.offsetWidth - src.clientWidth - bx) || 0 : 0;
   const rh = boxed ? Math.max(0, html.offsetHeight - src.clientHeight - by) || 0 : 0;
   const scrollableY = cs.overflowY !== 'visible' && src.scrollHeight > src.clientHeight;
   const scrollableX = cs.overflowX !== 'visible' && src.scrollWidth > src.clientWidth;
-  // a gutter alone counts (overflow: scroll, a listbox select, scrollbar-gutter: stable): the clone has no bars, so it must keep the gutter to lay out as the page does.
-  // Not for an <input>: it never shows a bar, and Gecko reports a focused field's client box narrower than its padding box (the clone came out 10 px narrower)
-  const gutterOnly = src.localName !== 'input' && (rv || rh);
+  // a gutter alone counts (overflow: scroll, a listbox select, scrollbar-gutter: stable): the clone has no bars, so it must keep the gutter to lay out as the page does
+  const gutterOnly = rv || rh;
   if (!sT && !sL && !(scrollableY && rv) && !(scrollableX && rh) && !gutterOnly) return null;
   const bar = cs.getPropertyValue('width') ? (src.ownerDocument.defaultView ?? window).getComputedStyle(src, '::-webkit-scrollbar') : null;
   const styled = !!bar?.width && bar.width !== 'auto' && bar.width !== '0px' && cs.scrollbarWidth === 'auto';

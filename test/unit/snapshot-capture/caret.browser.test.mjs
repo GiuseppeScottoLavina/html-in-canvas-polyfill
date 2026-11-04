@@ -67,7 +67,8 @@ test('centered and right aligned text moves the caret', () => {
   input.setSelectionRange(3, 3);
   const box = m.layer.frameRect(input);
   const c = measureCaret(document, input, box);
-  const rightEdge = box.x + 2 + input.clientWidth - 6;
+  // the content box's right edge from the border box (2 px border, 6 px padding): clientWidth is the padding box only up to Chrome 156 (Chrome 157: the content box, 12 px less)
+  const rightEdge = box.x + input.offsetWidth - 2 - 6;
   assert.ok(Math.abs(c.rect.x - rightEdge) < 1.5, `${c.rect.x} vs ${rightEdge}`);
 });
 

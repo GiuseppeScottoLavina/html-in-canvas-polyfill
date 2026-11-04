@@ -12,7 +12,7 @@
 
 import { currentEngine } from '../../util/engine.js';
 import { layoutSize } from '../../util/box-scale.js';
-import { applyFont, inputMetrics, measureCaret, measuringContext, parseColor, transformText } from './caret-overlay.js';
+import { applyFont, inputContentSize, inputMetrics, measureCaret, measuringContext, parseColor, transformText } from './caret-overlay.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 /** @typedef {import('../../contracts/types.js').TextOverlayPlan} TextOverlayPlan */
@@ -124,8 +124,7 @@ export function planTextOverlay(doc, control, drawable, frame, epoch = 0) {
   const k = frame.width / (layoutSize(el, cs)?.width || el.offsetWidth || frame.width);
   const left = frame.x + px(cs.borderLeftWidth) + px(cs.paddingLeft);
   const top = frame.y + px(cs.borderTopWidth) + px(cs.paddingTop);
-  const width = el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight);
-  const height = el.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom);
+  const { width, height } = inputContentSize(el, cs);
   if (!(width > 0 && height > 0) || Math.abs(k - 1) > 1e-3) return null;
   const vr = el.getBoundingClientRect();
   const box = new DOMRect(vr.left + px(cs.borderLeftWidth) + px(cs.paddingLeft), vr.top + px(cs.borderTopWidth) + px(cs.paddingTop), width, height);
