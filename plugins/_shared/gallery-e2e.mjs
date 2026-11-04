@@ -118,11 +118,17 @@ export async function framesDuring(page, ms) {
   return (await page.evaluate('window.__e2e.frames')) - a;
 }
 
-/** Wait until no effect frame was presented for `quietMs` (the host went idle); false after `timeoutMs`. @param {any} page */
+/**
+ * Wait until no effect frame was presented for `quietMs` (the host went idle); false after `timeoutMs`. The quiet time counts from the call
+ * at the earliest: a frame that the caller's last input causes (a pointer move: hover) is presented a few ms after it, so a host whose
+ * last frame was long ago is not idle at once.
+ * @param {any} page
+ */
 export async function idle(page, quietMs = 400, timeoutMs = 10000) {
   const t = Date.now();
+  const since = await page.evaluate('performance.now()');
   for (;;) {
-    if (await page.evaluate(`performance.now() - window.__e2e.last > ${quietMs}`)) return true;
+    if (await page.evaluate(`performance.now() - Math.max(window.__e2e.last, ${since}) > ${quietMs}`)) return true;
     if (Date.now() - t > timeoutMs) return false;
     await sleep(50);
   }
