@@ -1,18 +1,23 @@
-// Liquid glass lens. Every length is in CSS px of the presented frame. mapLensPoint() in index.js is the JavaScript twin of
-// lens_source(): same rounded-box distance, same outward normal, same edge profile, same clamp.
+// Liquid glass: a slab of glass over the live HTML. Every length is in CSS px of the presented frame. index.js holds the JavaScript
+// twins: sdSquircle() = sd_squircle(), lensSurface() = surface(), bendThrough() = bend(), and mapLensPoint() is where the green
+// channel samples (the same constants: GLASS in index.js).
 struct U {
   res : vec2<f32>,        // presented size, backing px
   css : vec2<f32>,        // presented size, CSS px
   center : vec2<f32>,     // lens centre
-  half_size : vec2<f32>,  // lens half size (stretched by the spring velocity)
-  radius : f32,           // corner radius
-  bevel : f32,            // width of the curved rim
-  refraction : f32,       // 0..1
-  mag : f32,              // magnification of the flat centre
+  half_size : vec2<f32>,  // rest half size (local frame)
+  inv_a : f32,            // inverse deformation [[a, b], [b, c]]: screen offset -> local frame (jelly stretch, press swell)
+  inv_b : f32,
+  inv_c : f32,
+  refraction : f32,       // 0..1: curvature of the surface
   dispersion : f32,       // 0..1
+  frost : f32,            // 0..1
   highlight : f32,        // 0..1
   ready : f32,
-  pad : f32,
+  shadow : f32,           // 0..1: drop and inner shadow
+  pad0 : f32,
+  pad1 : f32,
+  pad2 : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : U;
@@ -20,7 +25,24 @@ struct U {
 @group(0) @binding(2) var src : texture_2d<f32>;
 
 const BG = vec3<f32>(0.004, 0.018, 0.034);
-const LIGHT = vec2<f32>(-0.55, -0.835);
+const IOR = 1.5;
+const SPREAD = 0.1;
+const BEVEL = 0.45;
+const BEVEL_H = 1.4;
+const DOME = 0.36;
+const FADE = 0.95;
+// the key light comes low from the upper left (15 degrees above the page), so that its glints sit on the rim; a weaker rim light opposite
+const KEY = vec3<f32>(-0.5516, -0.7924, 0.2608);
+const KEY2 = vec2<f32>(-0.5713, -0.8207);
+const HALF_KEY = vec3<f32>(-0.3473, -0.4990, 0.7939);   // normalize(KEY + view)
+const HALF_RIM = vec3<f32>(0.3473, 0.4990, 0.7939);
+
+struct Surf {
+  sd : f32,          // signed distance, local units
+  gl : f32,          // screen length of its gradient: sd / gl is CSS px
+  n : vec3<f32>,     // unit normal, screen space, z towards the viewer
+  t : f32,           // thickness
+}
 
 @vertex
 fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> {
@@ -28,23 +50,110 @@ fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> {
   return vec4<f32>(p[i], 0.0, 1.0);
 }
 
-fn sd_box(d : vec2<f32>, h : vec2<f32>, r : f32) -> f32 {
-  let q = abs(d) - h + vec2<f32>(r);
-  return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - r;
+fn to_local(d : vec2<f32>) -> vec2<f32> {
+  return vec2<f32>(u.inv_a * d.x + u.inv_b * d.y, u.inv_b * d.x + u.inv_c * d.y);
 }
 
-// gradient of sd_box: the outward normal of the rim
-fn outward(d : vec2<f32>, h : vec2<f32>, r : f32) -> vec2<f32> {
-  let s = select(vec2<f32>(1.0), vec2<f32>(-1.0), d < vec2<f32>(0.0));
-  let q = abs(d) - h + vec2<f32>(r);
-  if (q.x > 0.0 && q.y > 0.0) { return s * q / length(q); }
-  if (q.x > q.y) { return vec2<f32>(s.x, 0.0); }
-  return vec2<f32>(0.0, s.y);
+// distance to a rounded box whose corners are superellipse quarters |x|^4 + |y|^4 = r^4, r = min(h); .yz is its gradient
+fn sd_squircle(l : vec2<f32>, h : vec2<f32>) -> vec3<f32> {
+  let r = min(h.x, h.y);
+  let q = abs(l) - h + vec2<f32>(r);
+  let s = select(vec2<f32>(1.0), vec2<f32>(-1.0), l < vec2<f32>(0.0));
+  if (q.x > 0.0 && q.y > 0.0) {
+    let q2 = q * q;
+    let l4 = sqrt(sqrt(q2.x * q2.x + q2.y * q2.y));
+    return vec3<f32>(l4 - r, s * q2 * q / (l4 * l4 * l4));
+  }
+  if (q.x > q.y) { return vec3<f32>(q.x - r, s.x, 0.0); }
+  return vec3<f32>(q.y - r, 0.0, s.y);
 }
 
-fn tap(p : vec2<f32>) -> vec4<f32> {
+fn surface(p : vec2<f32>) -> Surf {
+  let l = to_local(p - u.center);
+  let h = u.half_size;
+  let d = sd_squircle(l, h);
+  let g = d.yz;
+  var o : Surf;
+  o.sd = d.x;
+  o.gl = length(to_local(g));
+  let m = min(h.x, h.y);
+  let bevel = BEVEL * m;
+  let hb = u.refraction * BEVEL_H * bevel;
+  let dome = u.refraction * DOME * m;
+  let r2 = dot(h, h);
+  // the rim: an elliptic quarter, vertical at the edge (e = 1), flat where the top begins (e = 0)
+  let e = clamp(1.0 + d.x / bevel, 0.0, 1.0);
+  let w = sqrt(1.0 - e * e);
+  // the dome: a paraboloid over the slab, faded in from the edge, so that the glass is 0 thick at its edge (no fold: index.js)
+  let pd = max(0.0, 1.0 - dot(l, l) / r2);
+  let fade = FADE * m;
+  let x = clamp(-d.x / fade, 0.0, 1.0);
+  let tau = x * x * (3.0 - 2.0 * x);
+  let dtau = 6.0 * x * (1.0 - x) / fade;
+  let gd = dome * (-tau * 2.0 * l / r2 - pd * dtau * g);
+  // the normal (-grad z, 1), scaled by bevel w so that it stays finite where the rim is vertical (grad sd is not a unit vector)
+  let bw = max(bevel * w, 1e-4 * bevel);
+  o.n = normalize(vec3<f32>(to_local(g * e * hb - bw * gd), bw));
+  o.t = hb * w + dome * pd * tau;
+  return o;
+}
+
+// where the view ray (straight down) refracted at the surface with index `ior` reaches the content, after the thickness
+fn bend(s : Surf, ior : f32) -> vec2<f32> {
+  let eta = 1.0 / ior;
+  let c = s.n.z;
+  let f = eta * c - sqrt(1.0 - eta * eta * (1.0 - c * c));
+  let tz = -eta + f * s.n.z;
+  return f * s.n.xy / -tz * s.t;
+}
+
+fn tap(p : vec2<f32>) -> vec3<f32> {
   let c = textureSampleLevel(src, samp, clamp(p / u.css, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
-  return vec4<f32>(mix(BG, c.rgb, c.a), 1.0);
+  return mix(BG, c.rgb, c.a);
+}
+
+// Catmull-Rom (bicubic) in five bilinear taps: the magnified picture stays as crisp as the source
+fn tap_sharp(p : vec2<f32>) -> vec3<f32> {
+  let size = vec2<f32>(textureDimensions(src));
+  let sp = clamp(p / u.css, vec2<f32>(0.0), vec2<f32>(1.0)) * size;
+  let tp = floor(sp - 0.5) + 0.5;
+  let f = sp - tp;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let w12 = w1 + w2;
+  let t0 = (tp - 1.0) / size;
+  let t3 = (tp + 2.0) / size;
+  let t12 = (tp + w2 / w12) / size;
+  var c = textureSampleLevel(src, samp, vec2<f32>(t12.x, t0.y), 0.0) * (w12.x * w0.y);
+  c += textureSampleLevel(src, samp, vec2<f32>(t0.x, t12.y), 0.0) * (w0.x * w12.y);
+  c += textureSampleLevel(src, samp, t12, 0.0) * (w12.x * w12.y);
+  c += textureSampleLevel(src, samp, vec2<f32>(t3.x, t12.y), 0.0) * (w3.x * w12.y);
+  c += textureSampleLevel(src, samp, vec2<f32>(t12.x, t3.y), 0.0) * (w12.x * w3.y);
+  c = clamp(c / (w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y), vec4<f32>(0.0), vec4<f32>(1.0));
+  return mix(BG, c.rgb, c.a);
+}
+
+// frosted: a 12-tap golden-angle disk of radius `rad`, rotated per pixel by `rot` (the noise hides the sampling pattern)
+fn frosted(p : vec2<f32>, rad : f32, rot : f32) -> vec3<f32> {
+  var acc = vec3<f32>(0.0);
+  for (var i = 0; i < 12; i += 1) {
+    let fi = f32(i);
+    let a = fi * 2.39996 + rot;
+    acc += tap(p + vec2<f32>(cos(a), sin(a)) * rad * sqrt((fi + 0.5) / 12.0));
+  }
+  return acc / 12.0;
+}
+
+fn look(p : vec2<f32>, rad : f32, rot : f32) -> vec3<f32> {
+  if (rad > 0.25) { return frosted(p, rad, rot); }
+  return tap_sharp(p);
+}
+
+// interleaved gradient noise: dither and frost rotation
+fn ign(q : vec2<f32>) -> f32 {
+  return fract(52.9829189 * fract(dot(q, vec2<f32>(0.06711056, 0.00583715))));
 }
 
 @fragment
@@ -52,36 +161,52 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   if (u.ready < 0.5) { return vec4<f32>(BG, 1.0); }
   let dpr = u.res.x / u.css.x;
   let p = pos.xy / dpr;
-  let d = p - u.center;
-  let sd = sd_box(d, u.half_size, u.radius);
-  // soft shadow under the lens (pixels outside it are not displaced, only darkened)
-  let ds = sd_box(d - vec2<f32>(0.0, 0.16 * u.half_size.y), u.half_size, u.radius);
-  let shadow = (1.0 - smoothstep(-0.2 * u.half_size.y, 0.55 * u.half_size.y, ds)) * 0.32;
-  let back = tap(p).rgb * (1.0 - shadow);
-  if (sd * dpr >= 0.34) { return vec4<f32>(back, 1.0); }
+  let s = surface(p);
+  let m = min(u.half_size.x, u.half_size.y);
+  let px = s.sd / max(s.gl, 1e-4);   // signed distance to the edge, CSS px
+  let noise = ign(pos.xy);
 
-  // edge-thickness profile: flat (magnifying) centre, curved rim that bends light from outside the lens inward
-  let n = outward(d, u.half_size, u.radius);
-  let t = clamp(-sd / u.bevel, 0.0, 1.0);
-  let e = (1.0 - t) * (1.0 - t);
-  let disp = u.refraction * u.bevel * 0.9 * e;
-  let base = u.center + d / u.mag;
-  var glass = tap(base + n * disp).rgb;
+  // what lies around the glass: the page, under a soft drop shadow (cast away from the key light) and a contact shadow at the edge
+  let ds = sd_squircle(to_local(p - u.center + KEY2 * 0.14 * m), u.half_size).x;
+  let drop = (1.0 - smoothstep(-0.35 * m, 0.55 * m, ds)) * 0.3 + (1.0 - smoothstep(0.0, 0.08 * m, px)) * 0.2;
+  let shade = drop * u.shadow;
+  var back = tap(p);
+  if (shade > 0.002) { back = back * (1.0 - shade) + (noise - 0.5) / 255.0; }
+  // analytic coverage over 2/3 of a backing pixel; 0.5 exactly on sd = 0, where the mapper switches
+  let cover = clamp(0.5 - 1.5 * px * dpr, 0.0, 1.0);
+  if (cover <= 0.0) { return vec4<f32>(back, 1.0); }
+
+  // through the glass: green at the mapper's index, red and blue at lower and higher ones (two taps each across their band)
+  let rad = u.frost * 0.09 * m;
+  let rot = noise * 6.2832;
+  var glass = look(p + bend(s, IOR), rad, rot);
   if (u.dispersion > 0.0) {
-    let spread = u.dispersion * e * 6.0;
-    glass = vec3<f32>(tap(base + n * (disp - spread)).r, glass.g, tap(base + n * (disp + spread)).b);
+    let dn = u.dispersion * SPREAD;
+    glass.r = 0.5 * (look(p + bend(s, IOR - 0.5 * dn), rad, rot).r + look(p + bend(s, IOR - dn), rad, rot).r);
+    glass.b = 0.5 * (look(p + bend(s, IOR + 0.5 * dn), rad, rot).b + look(p + bend(s, IOR + dn), rad, rot).b);
   }
-  glass = glass * 1.04 + vec3<f32>(0.022);
+  glass = glass * (1.02 - 0.06 * u.frost) + vec3<f32>(0.012 + 0.05 * u.frost);
 
-  // specular: a key light on the upper-left rim, a weaker bounce on the lower-right, a thin bright edge, a soft sheen on the upper half
-  let rim = (1.0 - t) * (1.0 - t) * (1.0 - t);
-  let key = max(dot(n, LIGHT), 0.0);
-  let bounce = max(dot(n, -LIGHT), 0.0);
-  let sheen = (1.0 - smoothstep(-u.half_size.y, 0.3 * u.half_size.y, d.y)) * 0.05;
-  let spec = (key * key * 0.62 + bounce * bounce * 0.24) * rim + smoothstep(-1.6, 0.0, sd) * 0.22 + sheen;
-  glass = glass + vec3<f32>(spec * u.highlight);
+  // inner shadow: the rim of the slab darkens what it shows, more on the side away from the light
+  let out2 = s.n.xy / max(length(s.n.xy), 1e-5);
+  let inner = 1.0 - smoothstep(0.0, 0.3 * m, -px);
+  glass = glass * (1.0 - u.shadow * inner * inner * (0.05 + 0.14 * (0.5 - 0.5 * dot(out2, KEY2))));
 
-  // anti-aliased edge over 2/3 of a backing pixel; coverage 0.5 exactly on sd = 0, where the mapper switches
-  let cover = clamp(0.5 - 1.5 * sd * dpr, 0.0, 1.0);
+  // Fresnel (Schlick, F0 = 0.04 for n = 1.5): the surface reflects a soft studio light, brightest towards the key light
+  let n = s.n;
+  let fres = 0.04 + 0.96 * pow(1.0 - clamp(n.z, 0.0, 1.0), 5.0);
+  let r = vec3<f32>(2.0 * n.z * n.xy, 2.0 * n.z * n.z - 1.0);
+  let env = vec3<f32>(0.86, 0.92, 1.0) * (0.08 + 1.1 * pow(max(dot(r, KEY), 0.0), 3.0));
+  glass = mix(glass, env, fres * u.highlight);
+
+  // specular: sharp glints of the key and the rim light (Blinn-Phong on the real normal), the light caught along the steep part of the
+  // rim (strongest facing the key light, weaker opposite it) and a thin bright edge
+  let face = dot(out2, KEY2);
+  let steep = smoothstep(0.6, 1.0, clamp(1.0 + s.sd / (BEVEL * m), 0.0, 1.0));
+  let spec = pow(max(dot(n, HALF_KEY), 0.0), 300.0) * 0.9 + pow(max(dot(n, HALF_RIM), 0.0), 300.0) * 0.35
+    + steep * steep * (0.7 * pow(max(face, 0.0), 2.0) + 0.28 * pow(max(-face, 0.0), 2.0)) * min(1.0, 2.0 * u.refraction);
+  let edge = (1.0 - smoothstep(0.0, 1.3, -px)) * (0.22 + 0.5 * abs(face));
+  glass = glass + vec3<f32>((spec + edge) * u.highlight) + (noise - 0.5) / 255.0;
+
   return vec4<f32>(mix(back, glass, cover), 1.0);
 }

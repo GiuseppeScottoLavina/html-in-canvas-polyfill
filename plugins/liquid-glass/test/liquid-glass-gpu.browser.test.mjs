@@ -1,22 +1,22 @@
 // The liquid-glass input mapper against the pixels the GPU really produced (plugins/_shared/gpu-check.mjs), a moving lens, device loss,
-// and the GPU time of the pass.
+// the demo action on the GPU, frost, and the GPU time of the pass.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { definePlugin } from '/src/effects/plugin-abi.js';
-import { UNIFORM_FLOATS, mapLensPoint, plugin, writeLensGeometry } from '/plugins/liquid-glass/index.js';
+import { UNIFORM_FLOATS, lensSurface, mapLensPoint, plugin, writeLensGeometry } from '/plugins/liquid-glass/index.js';
 import { measureGpuTime } from '/plugins/_shared/gpu-time.mjs';
 
 console.error(`liquid-glass gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
 
 const scene = markerScene({ w: 480, h: 320 });
-/** geometry only: no colour fringes and no highlight, so "bright" is decided by the sampled point alone */
-const GEOMETRY = { pinned: true, x: 0.5, y: 0.5, size: 170, refraction: 1, dispersion: 0, highlight: 0 };
+/** geometry only: no colour fringes, no highlight or reflection, no shadow, no frost, so "bright" is decided by the sampled point alone */
+const GEOMETRY = { pinned: true, x: 0.5, y: 0.5, size: 170, refraction: 1, dispersion: 0, highlight: 0, shadow: 0, frost: 0 };
 
 /** The uniform block of the GEOMETRY lens at rest at (cx, cy) on the 480 x 320 scene. @param {number} cx @param {number} cy */
 function lensState(cx, cy) {
   const s = new Float32Array(UNIFORM_FLOATS);
   s[0] = 480; s[1] = 320; s[2] = 480; s[3] = 320;
-  writeLensGeometry(s, { cx, cy, vx: 0, vy: 0, size: GEOMETRY.size, aspect: 1.45, refraction: GEOMETRY.refraction });
+  writeLensGeometry(s, { cx, cy, size: GEOMETRY.size, aspect: 1.45, refraction: GEOMETRY.refraction });
   return s;
 }
 
@@ -85,6 +85,39 @@ gpuTest('device loss: the host re-creates the plugin on a new device and the len
   assert.ok(v.bright > scene.centres.length * 80, `the frame after the loss is drawn (${v.bright} bright px)`);
   assert.ok(v.wrong <= 5, `and its mapper fits it: ${v.wrong} wrong px`);
   assert.ok(agreement(img, (p) => mapLensPoint(lensState(240, 160), p), scene).wrong <= 5, 'with the same pinned lens as before the loss');
+});
+
+gpuTest('the demo on the GPU: the lens tours the scene, every checked frame is mapped, and it ends at rest at home', async (t) => {
+  const r = await runActionOnGpu(t, plugin, { ...GEOMETRY, pinned: false }, 'demo', {}, { maxMs: 6000 });
+  console.error(`liquid-glass demo: state=${r.state} frames=${r.frames} checked=${r.checked} worst wrong=${r.worst?.wrong} changed=${r.maxChanged}`);
+  assert.equal(r.state, 'free');
+  assert.ok(r.frames / 60 < 4.5, `${(r.frames / 60).toFixed(2)} s of frames`);
+  assert.ok(r.checked >= 10 && (r.worst?.wrong ?? 99) <= 5, `the worst checked frame: ${r.worst?.wrong} wrong px`);
+  assert.ok(r.maxChanged > 2000, `the lens really moved (${r.maxChanged} px changed at most)`);
+  assert.ok(changedPixels(r.last, r.first) < 50, `and came back home: ${changedPixels(r.last, r.first)} px differ from the first frame`);
+  assert.equal(r.handle.enabled, true);
+});
+
+gpuTest('frost blurs only what the glass shows: the page around it is untouched', async (t) => {
+  const clear = await presentOnce(t, plugin, { ...GEOMETRY }, { scene });
+  const frosted = await presentOnce(t, plugin, { ...GEOMETRY, frost: 1 }, { scene });
+  const lens = lensState(240, 160);
+  const q = { sd: 0, gl: 1, nx: 0, ny: 0, nz: 1, t: 0 };
+  /** CSS px from the lens edge (> 0 outside); its anti-aliased ring is the pixel next to sd = 0 */
+  const edgeDistance = (/** @type {number} */ i, /** @type {number} */ j) => { lensSurface(lens, i + 0.5, j + 0.5, q); return q.sd / q.gl; };
+  let changedIn = 0;
+  let changedOut = 0;
+  for (let j = 0; j < 320; j += 1) {
+    for (let i = 0; i < 480; i += 1) {
+      const k = (j * 480 + i) * 4;
+      const diff = Math.abs(clear.img.data[k] - frosted.img.data[k]) + Math.abs(clear.img.data[k + 1] - frosted.img.data[k + 1]);
+      const d = edgeDistance(i, j);
+      if (diff > 12) { if (d > 1) changedOut += 1; else if (d < 0) changedIn += 1; }
+    }
+  }
+  console.error(`liquid-glass frost: ${changedIn} px changed under the lens, ${changedOut} outside`);
+  assert.ok(changedIn > 300, `frost changes the picture under the lens (${changedIn} px)`);
+  assert.ok(changedOut === 0, `and nothing more than a pixel outside it (${changedOut} px)`);
 });
 
 gpuTest('GPU time of the pass at the gallery size (1100 x 620 CSS px, DPR 2): well inside a 120 Hz frame', async () => {
