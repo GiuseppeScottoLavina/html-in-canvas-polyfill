@@ -4,7 +4,7 @@
  */
 
 /** Internal topics (Bus.on/emit). Payload types in the comment. */
-export const BUS = Object.freeze({
+export const BUS = /* @__PURE__ */ Object.freeze({
   /** {record: CanvasRecord} layer mounted, snapshotting begins */
   CANVAS_MOUNTED: 'canvas:mounted',
   /** {record: CanvasRecord} just before children are restored (uninstall, content=fallback, canvas removed) */
@@ -36,7 +36,7 @@ export const BUS = Object.freeze({
 });
 
 /** Public DOM events (the first two are the standard ones). */
-export const EVENTS = Object.freeze({
+export const EVENTS = /* @__PURE__ */ Object.freeze({
   PAINT: 'paint',
   ELEMENT_GEOMETRY_UPDATE: 'elementgeometryupdate',
   /** polyfill extension, CustomEvent<UnsupportedEntry>, bubbles:false, dispatched on the canvas */
@@ -47,7 +47,7 @@ export const EVENTS = Object.freeze({
 });
 
 /** DOM markers owned by the polyfill. Observers MUST ignore mutations on nodes carrying NODE_ATTR. */
-export const MARK = Object.freeze({
+export const MARK = /* @__PURE__ */ Object.freeze({
   /** on the live layer; value = CanvasRecord.id */
   LAYER_ATTR: 'data-hic-layer',
   /** tag name of the layer element: an unknown element, so author `div`, `:nth-of-type`, `* > *` margin rules never target it (ADR-A) */
@@ -77,7 +77,7 @@ export const MARK = Object.freeze({
 });
 
 /** Attribute / property names of the extensions. */
-export const EXT = Object.freeze({
+export const EXT = /* @__PURE__ */ Object.freeze({
   FRAME_CAP_ATTR: 'framecap',
   FRAME_CAP_PROP: 'frameCap',
   FRAME_CAP_MIN: 1,

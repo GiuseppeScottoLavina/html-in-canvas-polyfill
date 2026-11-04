@@ -17,6 +17,7 @@
  */
 
 import { carriesMark } from './patch.js';
+import { resolveOptions } from './options.js';
 import { engineOf } from '../util/engine.js';
 
 /** @typedef {import('../contracts/types.js').NativeState} NativeState */
@@ -335,4 +336,17 @@ export function decideMode(native, gate, opts) {
     ? `mode "polyfill" ignored: this browser implements HTML-in-Canvas (kind "${native.kind}") and a usable native implementation is never replaced`
     : null;
   return { mode: nativeMode, refusal: null, notice };
+}
+
+/**
+ * install()'s decision for a window and the options as given: the options resolved (a TypeError for an invalid one), the probe, the gate and the mode. install() and the
+ * loader (src/loader.js, src/loader-iife.js) both call it, so the loader downloads the core exactly when install() would run the polyfill or bridge a native implementation.
+ * @param {Window} win
+ * @param {import('../contracts/types.js').HicOptions} [options]
+ */
+export function decideInstall(win, options) {
+  const given = resolveOptions(options);
+  const native = probeNative(win);
+  const gate = browserGate(win);
+  return { given, native, gate, decision: decideMode(native, gate, given) };
 }

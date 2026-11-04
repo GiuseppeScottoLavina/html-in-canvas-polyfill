@@ -26,7 +26,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
  *    4 GB+ iPhones: >= 1 GiB), and Chrome for Android runs on 2 GB devices. A quarter of the smallest iOS cap leaves the rest to the page's own canvases.
  * None of these limits was measured on a real device (simulators and emulators use the Mac's memory): they are unverified.
  */
-export const MOBILE_BUDGETS = Object.freeze({ maxDpr: 3, maxSurfacePixels: 16777216, maxTotalSurfaceBytes: 268435456, lowMemoryTotalSurfaceBytes: 134217728 });
+export const MOBILE_BUDGETS = /* @__PURE__ */ Object.freeze({ maxDpr: 3, maxSurfacePixels: 16777216, maxTotalSurfaceBytes: 268435456, lowMemoryTotalSurfaceBytes: 134217728 });
 
 /**
  * The budgets of a mobile device class over options the user did not set. Pure.
