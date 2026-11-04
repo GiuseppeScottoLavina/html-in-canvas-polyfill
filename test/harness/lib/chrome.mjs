@@ -125,8 +125,11 @@ function mergeFeatureFlags(base, extra) {
  * @property {[number,number]} [windowSize=[1400,900]] OUTER window size; inner is smaller by the browser chrome (use Page.setInnerSize for exact)
  * @property {[number,number]} [windowPosition=[0,0]]
  * @property {1|2|number} [dpr] --force-device-scale-factor (real, not emulated); omit for the display's native (2 on Retina)
- * @property {boolean} [nativeDrawElement=false] true: --enable-blink-features=CanvasDrawElement (native HTML-in-Canvas baseline mode); false: --disable-blink-features=
- *           CanvasDrawElement, so the polyfill's own path is what runs (Chrome 157 ships the native API enabled; without the flag the polyfill steps aside)
+ * @property {boolean} [nativeDrawElement=false] true: --enable-blink-features=CanvasDrawElement (native HTML-in-Canvas baseline mode); false: CanvasDrawElement joins
+ *           --disable-features, so the polyfill's own path is what runs (Chrome 157 ships the native API enabled; without it the polyfill steps aside). Not
+ *           --disable-blink-features: Chrome shows its "unsupported command-line flag" bar on the first tab for it, which made that tab 56 css px shorter than
+ *           every later one (measured headless and headed, Chrome 156 and 157), so a gate's twin (the first tab) and its canvas page were laid out at different
+ *           heights (G-f1-form: a 1430 px twin against a 1516 px canvas at DPR 2)
  * @property {'default'|'hidden'|'overlay'|'classic'} [scrollbars='default'] 'hidden' = --hide-scrollbars; 'overlay'/'classic' toggle the Overlay
  *           Scrollbar feature and, on macOS (where the system setting wins over the feature), override "Show scroll bars" for this browser only
  *           (`-AppleShowScrollBars WhenScrolling|Always`, argument domain). 'default' follows the system setting, which macOS switches to classic bars
@@ -151,7 +154,7 @@ export async function launchChrome(opts = {}) {
     `--user-data-dir=${userDataDir}`, `--remote-debugging-port=${port}`, '--remote-allow-origins=*',
     '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic',
     '--disable-sync', '--disable-component-update', '--disable-default-apps', '--disable-background-networking',
-    '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication',
+    `--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication${nativeDrawElement ? '' : ',CanvasDrawElement'}`,
     // keep timers/rAF alive when another window covers ours (macOS occlusion tracking)
     '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
     '--disable-ipc-flooding-protection', '--noerrdialogs',
@@ -159,7 +162,7 @@ export async function launchChrome(opts = {}) {
     ...(colorProfile ? [`--force-color-profile=${colorProfile}`] : []),
     `--window-size=${windowSize[0]},${windowSize[1]}`, `--window-position=${windowPosition[0]},${windowPosition[1]}`,
     ...(dpr ? [`--force-device-scale-factor=${dpr}`] : []),
-    nativeDrawElement ? '--enable-blink-features=CanvasDrawElement' : '--disable-blink-features=CanvasDrawElement',
+    ...(nativeDrawElement ? ['--enable-blink-features=CanvasDrawElement'] : []),
   ];
   // the argument domain pair reaches NSUserDefaults; Chrome also opens its value as a URL (http://always/), a tab closed below
   const macBars = process.platform === 'darwin' ? { overlay: 'WhenScrolling', classic: 'Always' }[scrollbars] : undefined;
