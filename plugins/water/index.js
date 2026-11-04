@@ -55,7 +55,7 @@ const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 /** a tap or a press: a drop of this radius and depth (css px, sim.js splash); the action drop scales the depth by its strength */
 export const DROP_RADIUS = 24;
 export const DROP_DEPTH = 10;
-/** the wake of a moving pointer: dents along its path, deeper when it moves faster (up to WAKE_FAST css px per ms) */
+/** the wake of a moving pointer: dents along its path, deeper when it moves faster (WAKE_DEPTH at WAKE_FAST css px per ms, at most twice that for a flick) */
 const WAKE_RADIUS = 16;
 const WAKE_DEPTH = 2.6;
 const WAKE_FAST = 1.6;
@@ -321,7 +321,7 @@ export const plugin = Object.freeze({
         if (dist < 0.75 || dist > 220 || dt > 150) return;
         // a drag (a pressed button, a finger) stirs harder than a hovering mouse
         const pressed = e.buttons !== 0 || e.pointerType === 'touch' ? 1 : 0.7;
-        const depth = WAKE_DEPTH * pressed * Math.min(1, dist / Math.max(4, dt) / WAKE_FAST) ** 0.8;
+        const depth = WAKE_DEPTH * pressed * Math.min(2, (dist / Math.max(4, dt) / WAKE_FAST) ** 0.8);
         if (depth < 0.02) return;
         takeOver();
         const spacing = WAKE_RADIUS * 0.5;
