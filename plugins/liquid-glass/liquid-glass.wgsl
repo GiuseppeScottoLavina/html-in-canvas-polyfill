@@ -26,11 +26,10 @@ struct U {
 
 const BG = vec3<f32>(0.004, 0.018, 0.034);
 const IOR = 1.5;
-const SPREAD = 0.06;
+const SPREAD = 0.1;
 const BEVEL = 0.4;
 const BEVEL_H = 0.55;
 const DOME = 0.75;
-const BASE = 0.1;
 // the key light comes low from the upper left (15 degrees above the page), so that its glints sit on the rim; a weaker rim light opposite
 const KEY = vec3<f32>(-0.5516, -0.7924, 0.2608);
 const KEY2 = vec2<f32>(-0.5713, -0.8207);
@@ -84,12 +83,16 @@ fn surface(p : vec2<f32>) -> Surf {
   // the rim: an elliptic quarter, vertical at the edge (e = 1), flat where the top begins (e = 0)
   let e = clamp(1.0 + d.x / bevel, 0.0, 1.0);
   let w = sqrt(1.0 - e * e);
-  // normal of z = hb sqrt(1 - e^2): (-dz/dsd * grad sd, 1), scaled by bevel * w (grad sd is not a unit vector in the corners)
-  var n = normalize(vec3<f32>(g * e * hb, max(bevel * w, 1e-4 * bevel)));
-  // the dome tilts the normal outward in proportion to the distance from the centre
-  n = vec3<f32>(n.xy + 2.0 * dome * l / r2 * n.z, n.z);
-  o.n = normalize(vec3<f32>(to_local(n.xy), n.z));
-  o.t = BASE * m + hb * w + dome * max(0.0, 1.0 - dot(l, l) / r2);
+  // the dome: a paraboloid over the slab, faded in across the rim, so that the glass is 0 thick at its edge
+  let pd = max(0.0, 1.0 - dot(l, l) / r2);
+  let x = 1.0 - e;
+  let tau = x * x * (3.0 - 2.0 * x);
+  let dtau = 6.0 * x * (1.0 - x) / bevel;
+  let gd = dome * (-tau * 2.0 * l / r2 - pd * dtau * g);
+  // the normal (-grad z, 1), scaled by bevel w so that it stays finite where the rim is vertical (grad sd is not a unit vector)
+  let bw = max(bevel * w, 1e-4 * bevel);
+  o.n = normalize(vec3<f32>(to_local(g * e * hb - bw * gd), bw));
+  o.t = hb * w + dome * pd * tau;
   return o;
 }
 
@@ -167,7 +170,8 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let shade = drop * u.shadow;
   var back = tap(p);
   if (shade > 0.002) { back = back * (1.0 - shade) + (noise - 0.5) / 255.0; }
-  let cover = clamp(0.5 - px * dpr, 0.0, 1.0);   // analytic coverage over one backing pixel; 0.5 exactly on sd = 0
+  // analytic coverage over 2/3 of a backing pixel; 0.5 exactly on sd = 0, where the mapper switches
+  let cover = clamp(0.5 - 1.5 * px * dpr, 0.0, 1.0);
   if (cover <= 0.0) { return vec4<f32>(back, 1.0); }
 
   // through the glass: green at the mapper's index, red and blue at lower and higher ones (two taps each across their band)

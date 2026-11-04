@@ -3,7 +3,7 @@
 import { assert } from '/test/unit/lib/t.js';
 import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { definePlugin } from '/src/effects/plugin-abi.js';
-import { UNIFORM_FLOATS, mapLensPoint, plugin, writeLensGeometry } from '/plugins/liquid-glass/index.js';
+import { UNIFORM_FLOATS, lensSurface, mapLensPoint, plugin, writeLensGeometry } from '/plugins/liquid-glass/index.js';
 import { measureGpuTime } from '/plugins/_shared/gpu-time.mjs';
 
 console.error(`liquid-glass gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
@@ -101,21 +101,23 @@ gpuTest('the demo on the GPU: the lens tours the scene, every checked frame is m
 gpuTest('frost blurs only what the glass shows: the page around it is untouched', async (t) => {
   const clear = await presentOnce(t, plugin, { ...GEOMETRY }, { scene });
   const frosted = await presentOnce(t, plugin, { ...GEOMETRY, frost: 1 }, { scene });
-  const inside = (/** @type {number} */ i, /** @type {number} */ j) => mapLensPoint(lensState(240, 160), { x: i + 0.5, y: j + 0.5, width: 480, height: 320 });
+  const lens = lensState(240, 160);
+  const q = { sd: 0, gl: 1, nx: 0, ny: 0, nz: 1, t: 0 };
+  /** CSS px from the lens edge (> 0 outside); its anti-aliased ring is the pixel next to sd = 0 */
+  const edgeDistance = (/** @type {number} */ i, /** @type {number} */ j) => { lensSurface(lens, i + 0.5, j + 0.5, q); return q.sd / q.gl; };
   let changedIn = 0;
   let changedOut = 0;
   for (let j = 0; j < 320; j += 1) {
     for (let i = 0; i < 480; i += 1) {
       const k = (j * 480 + i) * 4;
       const diff = Math.abs(clear.img.data[k] - frosted.img.data[k]) + Math.abs(clear.img.data[k + 1] - frosted.img.data[k + 1]);
-      const m = inside(i, j);
-      const out = m.x === i + 0.5 && m.y === j + 0.5;
-      if (diff > 12) { if (out) changedOut += 1; else changedIn += 1; }
+      const d = edgeDistance(i, j);
+      if (diff > 12) { if (d > 1) changedOut += 1; else if (d < 0) changedIn += 1; }
     }
   }
   console.error(`liquid-glass frost: ${changedIn} px changed under the lens, ${changedOut} outside`);
   assert.ok(changedIn > 300, `frost changes the picture under the lens (${changedIn} px)`);
-  assert.ok(changedOut <= 2, `and nothing outside it (${changedOut} px)`);
+  assert.ok(changedOut === 0, `and nothing more than a pixel outside it (${changedOut} px)`);
 });
 
 gpuTest('GPU time of the pass at the gallery size (1100 x 620 CSS px, DPR 2): well inside a 120 Hz frame', async () => {

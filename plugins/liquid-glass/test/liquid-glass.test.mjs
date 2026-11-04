@@ -9,8 +9,10 @@ import { GLASS, UNIFORM_FLOATS, demoStops, lensSurface, mapLensPoint, meta, plug
 
 contractTest(import.meta.url);
 
-test('meta and the definition agree; ABI v2, direct canvas attachment, the demo action, frozen', () => {
+test('meta and the definition agree; ABI v2, direct canvas attachment, the demo action, a touch hint, not continuous, frozen', () => {
   assert.equal(plugin.type, meta.name);
+  assert.ok(typeof meta.touch === 'string' && meta.touch.length < 90);
+  assert.equal(/** @type {any} */ (meta).continuous, undefined, 'it renders only while something moves');
   assert.equal(plugin.apiVersion, 2);
   assert.equal(plugin.outputCapabilities?.directCanvasRenderAttachment, true);
   assert.deepEqual([...(plugin.actions ?? [])], ['demo']);
@@ -19,8 +21,8 @@ test('meta and the definition agree; ABI v2, direct canvas attachment, the demo 
 
 /**
  * Independent formula, written from the description: the deformation S (stretch 1 + e along the jelly vector, squash 1 / (1 + 0.6 e)
- * across it, times the press swell) inverted numerically; the slab height z = base m + hb sqrt(1 - e^2) + dome (1 - |l|^2 / R^2) over a
- * squircle-cornered box; its normal by central differences; the refracted ray by Snell's angles in the plane of incidence.
+ * across it, times the press swell) inverted numerically; the slab height z = hb sqrt(1 - e^2) + dome (1 - |l|^2 / R^2) smoothstep(depth)
+ * over a squircle-cornered box; its normal by central differences; the refracted ray by Snell's angles in the plane of incidence.
  */
 function oracle({ w, h, cx, cy, hx, hy, refraction, jx = 0, jy = 0, press = 1 }, p) {
   const e = Math.min(0.24, Math.hypot(jx, jy));
@@ -46,7 +48,8 @@ function oracle({ w, h, cx, cy, hx, hy, refraction, jx = 0, jy = 0, press = 1 },
   const z = (x, y) => {
     const [lx, ly] = toLocal(x, y);
     const t = Math.min(1, Math.max(0, 1 + dist(lx, ly) / bevel));
-    return 0.1 * m + hb * Math.sqrt(1 - t * t) + dome * Math.max(0, 1 - (lx * lx + ly * ly) / R2);
+    const depth = Math.min(1, Math.max(0, -dist(lx, ly) / bevel));
+    return hb * Math.sqrt(1 - t * t) + dome * Math.max(0, 1 - (lx * lx + ly * ly) / R2) * depth * depth * (3 - 2 * depth);
   };
   const [lx, ly] = toLocal(p.x, p.y);
   const d = dist(lx, ly);
@@ -100,7 +103,7 @@ test('mapLensPoint equals the independent formula on a dense grid, for several l
   }
 });
 
-test('the slab: identity outside, fixed centre, a magnifying top, a rim that bends the rays inward, bounded by the critical angle', () => {
+test('the slab: identity outside, fixed centre, a magnifying top, a rim that bends the rays inward, continuous at the edge', () => {
   const s = state({ refraction: 1 });
   const at = (x, y) => mapLensPoint(s, { x, y, width: 800, height: 500 });
   assert.deepEqual(at(50, 40), { x: 50, y: 40 }, 'outside the lens nothing moves');
@@ -113,12 +116,15 @@ test('the slab: identity outside, fixed centre, a magnifying top, a rim that ben
   const hy = s[7];
   const rim = at(400, 250 - hy + 3);
   assert.ok(rim.y > 250 - hy + 3, `the rim shows the picture further in (y ${rim.y.toFixed(1)} > ${250 - hy + 3})`);
-  // at the vertical edge the ray is refracted at most to the critical angle: it moves by at most tan(asin(1 / 1.5)) = 0.894 per unit of
-  // thickness, here a little under: the normal is not quite horizontal half a pixel in
-  const q = lensSurface(s, 400, 250 - hy + 0.5, { sd: 0, gl: 1, nx: 0, ny: 0, nz: 1, t: 0 });
-  const edge = at(400, 250 - hy + 0.5);
-  const moved = edge.y - (250 - hy + 0.5);
-  assert.ok(moved > 0.5 * q.t && moved < Math.tan(Math.asin(1 / GLASS.ior)) * q.t, `at the edge: ${moved.toFixed(1)} px through ${q.t.toFixed(1)} px of glass`);
+  // the glass is 0 thick at its edge: the picture is continuous across it (nothing under the rim is hidden); a ray entering at grazing
+  // incidence leaves the normal by the critical angle asin(1 / 1.5), so it moves at most sqrt(1.5^2 - 1) = 1.118 px per px of thickness
+  const q = { sd: 0, gl: 1, nx: 0, ny: 0, nz: 1, t: 0 };
+  for (const depth of [0.01, 0.5, 2, 6]) {
+    lensSurface(s, 400, 250 - hy + depth, q);
+    const moved = at(400, 250 - hy + depth).y - (250 - hy + depth);
+    assert.ok(moved >= 0 && moved <= Math.sqrt(GLASS.ior ** 2 - 1) * q.t + 1e-9, `${depth} px in: ${moved.toFixed(2)} px through ${q.t.toFixed(2)} px of glass`);
+    if (depth === 0.01) assert.ok(moved < 0.6, `continuous at the edge: ${moved.toFixed(2)} px`);
+  }
   assert.ok(sdSquircle(0, 0, 10, 5) < 0 && sdSquircle(20, 0, 10, 5) > 0);
   // a superellipse corner, not a circular one: it bulges past the circle of the same radius at 45 degrees
   const r = 5;
@@ -384,7 +390,7 @@ test('demo: the lens glides over the page in under 4 s and comes back to rest at
   assert.equal(instance.continuous, false, 'and at rest: no more frames');
 });
 
-test('demo: user input takes over at once (the demo resolves null), and a pinned lens comes back to its pin', async () => {
+test('demo: user input (a move, a press) or setOptions takes over at once (the demo resolves null); a pinned lens comes back to its pin', async () => {
   const { instance, listeners, frame, last } = await create({ x: 0.5, y: 0.5 });
   instance.render(frame());
   let state;
@@ -395,6 +401,17 @@ test('demo: user input takes over at once (the demo resolves null), and a pinned
   assert.equal(state, null, 'superseded by the user');
   for (let k = 0; k < 360 && instance.continuous; k += 1) instance.render(frame());
   assert.deepEqual([last()[4], last()[5]], [100, 400], 'the lens follows the user, not the tour');
+
+  for (const takeOver of [(l, i) => l.pointerdown({ pointerType: 'touch' }), (l, i) => i.setOptions({ size: 160 })]) {
+    const other = await create({ x: 0.5, y: 0.5 });
+    other.instance.render(other.frame());
+    let s2;
+    const run2 = Promise.resolve(other.instance.runAction('demo', {}, { reducedMotion: false })).then((v) => { s2 = v; });
+    for (let k = 0; k < 30; k += 1) other.instance.render(other.frame());
+    takeOver(other.listeners, other.instance);
+    await run2;
+    assert.equal(s2, null, `${takeOver}: the demo ends at once`);
+  }
 
   const pinned = await create({ pinned: true, x: 0.2, y: 0.4 });
   pinned.instance.render(pinned.frame());

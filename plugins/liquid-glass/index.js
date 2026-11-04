@@ -31,6 +31,7 @@ export const meta = Object.freeze({
   title: 'Liquid glass',
   description: 'A slab of refractive glass over the live page: drag it with a finger, or it follows the mouse; clicks through it reach what it shows.',
   defaults: Object.freeze({ size: 150, refraction: 0.75, dispersion: 0.5, frost: 0, pinned: false, x: 0.73, y: 0.3 }),
+  touch: 'Drag the glass with a finger; tap through it to use the form.',
   reducedMotion: 'With reduced motion the lens jumps to the pointer or the finger (no spring, no inertia, no stretch) and the demo resolves at once: nothing animates.',
 });
 
@@ -44,11 +45,10 @@ const LIMITS = Object.freeze({ size: [60, 280], refraction: [0, 1], dispersion: 
 /** The glass (the same numbers are in liquid-glass.wgsl; lengths are fractions of the smaller half size m). */
 export const GLASS = Object.freeze({
   ior: 1.5,          // crown glass: the index of the green channel, the one the mapper follows
-  spread: 0.06,      // dispersion 1: red and blue indices 1.5 -/+ 0.06 (crown-glass dispersion, exaggerated so that it is seen)
+  spread: 0.1,       // dispersion 1: red and blue indices down to 1.4 and up to 1.6 (glass dispersion, exaggerated so that it is seen)
   bevel: 0.4,        // width of the curved rim
   bevelHeight: 0.55, // height of the rim per unit of refraction, relative to its width (an elliptic quarter)
   dome: 0.75,        // height of the magnifying dome per unit of refraction
-  base: 0.1,         // thickness of the slab at its edge
 });
 
 /** pointer spring (mouse, pen, demo): stiffness (1/s^2) and damping (from the damping ratio) */
@@ -132,21 +132,25 @@ export function lensSurface(s, px, py, out) {
   // the rim: an elliptic quarter of width `bevel` and height `hb`, vertical at the edge (e = 1), flat where the top begins (e = 0)
   const e = Math.min(1, Math.max(0, 1 + sd / bevel));
   const w = Math.sqrt(1 - e * e);
-  // normal of z = hb sqrt(1 - e^2): (-dz/dsd * grad sd, 1), scaled by bevel * w (grad sd is not a unit vector in the corners)
-  let nx = g[0] * e * hb;
-  let ny = g[1] * e * hb;
-  let nz = Math.max(bevel * w, 1e-4 * bevel);
-  let l = Math.hypot(nx, ny, nz);
-  nx /= l; ny /= l; nz /= l;
-  // the dome (a paraboloid over the whole slab) tilts the normal outward in proportion to the distance from the centre
-  nx += ((2 * dome * lx) / r2) * nz;
-  ny += ((2 * dome * ly) / r2) * nz;
+  // the dome: a paraboloid P over the whole slab, faded in across the rim (tau, a smoothstep of the depth 1 - e), so that the glass
+  // is 0 thick at its edge and the picture is continuous across it
+  const p = Math.max(0, 1 - (lx * lx + ly * ly) / r2);
+  const x = 1 - e;
+  const tau = x * x * (3 - 2 * x);
+  const dtau = (6 * x * (1 - x)) / bevel;   // d tau / d depth; the depth grows against grad sd
+  const dx2 = dome * (-tau * ((2 * lx) / r2) - p * dtau * g[0]);
+  const dy2 = dome * (-tau * ((2 * ly) / r2) - p * dtau * g[1]);
+  // the normal (-grad z, 1) of z = hb sqrt(1 - e^2) + dome P tau, scaled by bevel w so that it stays finite where the rim is vertical
+  // (grad sd is not a unit vector in the corners, so it is not normalised)
+  const bw = Math.max(bevel * w, 1e-4 * bevel);
+  const nx = g[0] * e * hb - bw * dx2;
+  const ny = g[1] * e * hb - bw * dy2;
   // local slopes to screen slopes: a normal transforms by the inverse transpose of the deformation (here symmetric: the same matrix)
   const sxn = a * nx + b * ny;
   const syn = b * nx + c * ny;
-  l = Math.hypot(sxn, syn, nz);
-  out.nx = sxn / l; out.ny = syn / l; out.nz = nz / l;
-  out.t = GLASS.base * m + hb * w + dome * Math.max(0, 1 - (lx * lx + ly * ly) / r2);
+  const l = Math.hypot(sxn, syn, bw);
+  out.nx = sxn / l; out.ny = syn / l; out.nz = bw / l;
+  out.t = hb * w + dome * p * tau;
   return out;
 }
 
@@ -291,7 +295,7 @@ export function tourPoint(points, t, out) {
 const UI_CSS = `
     .hic-lg-ui { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)) auto; gap:4px 12px; align-items:end; }
     .hic-lg-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
-    .hic-lg-ui output { color:#9cf5ff; font-variant-numeric:tabular-nums; }
+    .hic-lg-ui output { color:#9cf5ff; font-variant-numeric:tabular-nums; white-space:nowrap; }
     .hic-lg-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#9fd8ff; cursor:ew-resize; }
     .hic-lg-ui label.pin { display:flex; align-items:center; gap:6px; padding-bottom:4px; white-space:nowrap; }
     .hic-lg-ui label.pin input { width:15px; height:15px; margin:0; accent-color:#9fd8ff; }
@@ -396,6 +400,7 @@ export const plugin = Object.freeze({
     function setOptions(next) {
       const wasPinned = o.pinned;
       const { x, y } = o;
+      endDemo(null);   // the page took over
       readOptions(next ?? {});
       if (o.pinned && (!wasPinned || x !== o.x || y !== o.y)) { lens.tx = o.x; lens.ty = o.y; spring = FOLLOW; }
       for (const sync of uiSyncs) sync(o);
@@ -404,7 +409,8 @@ export const plugin = Object.freeze({
 
     /**
      * `demo`: the lens glides over places of the drawn page (fields, headings, text) and comes back where it rests. Resolves with the
-     * state it rests in ('free' or 'pinned') once it is at rest; null when the user took over or the plugin went away.
+     * state it rests in ('free' or 'pinned') once it is at rest; null when the user or the page took over (a pointer move or press, a
+     * finger on the glass, setOptions) or the plugin went away.
      * @param {string} action @param {Readonly<Record<string, unknown>>} _options @param {{reducedMotion: boolean}} info
      */
     function runAction(action, _options, info) {
@@ -443,6 +449,8 @@ export const plugin = Object.freeze({
       lens.ty = Math.min(1, Math.max(0, p.y));
       wake();
     });
+    // a press anywhere (mouse, pen or finger) takes over from the demo; passive: it never blocks the page
+    context.listen?.('pointerdown', () => endDemo(null), { passive: true });
     // leaving the canvas (not just moving between the canvas and its live layer) sends the lens back to its home (x, y)
     context.listen?.('pointerleave', (event) => {
       const e = /** @type {PointerEvent} */ (event);
