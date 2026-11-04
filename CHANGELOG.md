@@ -4,9 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-preview.22] - 2026-11-04
+
+On Chrome 157, where the browser implements the API, a page can now download nothing but a 6 KB loader instead of the whole polyfill. On Safari, scrolling a list while a field shows its caret is back to full speed (measured on an iPad: 94 to 118 canvas updates a second). A scroller planned in steps no longer composes a box that changed while it was being planned at its old place.
+
+- The core bundle grows to 352,196 bytes minified, 119,615 gzipped (+942 / +368 bytes) and to 16,948 code lines (+151, of which 118 are the loader's own files); the effects bundle shrinks to 38,884 / 13,801 bytes (-456 / -211) and the native bridge to 13,457 / 4,909 (-399 / -218); the new loader is 17,293 / 6,277 bytes.
+
 ### Added
 
-- A loader that downloads nothing where the browser implements the API: `dist/hic-live-loader.iife(.min).js` (`window.HicLiveLoader.load()`) and `dist/esm/loader.js` (`import { load } from '<package>/loader'`, with types). `load(options?)` makes `install()`'s own decision (the same `decideInstall`, with `options.install`) and downloads the core, the engines bundle on Firefox and Safari, and the native bridge for a native build it can bridge, only when the polyfill or the bridge will run; then it calls `install()`. It resolves `{status, mode, installed, native, reason?, error?}` and never rejects: concurrent calls share one download and one install, and a timeout, a load error or a CSP block settle `status: 'error'`; a core that arrives after that never installs. On Chrome 157.0.8103.39 a page with the loader downloads 17,293 bytes (6,277 gzipped) instead of the core's 351,362 (119,262); on the polyfill path the first paint comes one request later (+10.4 ms median from a local server, +45.4 ms with 40 ms of latency per request, headless). The 5 KB gzip goal is not met: about 4,340 bytes of the 6,277 are `install()`'s decision, which the loader shares instead of reimplementing it. Docs: API-CONTRACT section 2.4, BUNDLES, GETTING-STARTED, FAQ. Tests: the decision against `install()` on the native-detect matrix, the shared load, the timeout with a late core, a 404 and a CSP (unit and G-bundle), and the native path on Chrome 157 (`test/native-effects/g-native-loader.mjs`).
+- A loader that downloads nothing where the browser implements the API: `dist/hic-live-loader.iife(.min).js` (`window.HicLiveLoader.load()`) and `dist/esm/loader.js` (`import { load } from '<package>/loader'`, with types). `load(options?)` makes `install()`'s own decision (the same `decideInstall`, with `options.install`) and downloads the core, the engines bundle on Firefox and Safari, and the native bridge for a native build it can bridge, only when the polyfill or the bridge will run; then it calls `install()`. It resolves `{status, mode, installed, native, reason?, error?}` and never rejects: concurrent calls share one download and one install, and a timeout, a load error or a CSP block settle `status: 'error'`; a core that arrives after that never installs. On Chrome 157.0.8103.39 a page with the loader downloads 17,293 bytes (6,277 gzipped) instead of the core's 352,196 (119,615); on the polyfill path the first paint comes one request later (+10.4 ms median from a local server, +45.4 ms with 40 ms of latency per request, headless). The 5 KB gzip goal is not met: about 4,340 bytes of the 6,277 are `install()`'s decision, which the loader shares instead of reimplementing it. Docs: API-CONTRACT section 2.4, BUNDLES, GETTING-STARTED, README, FAQ. Tests: the decision against `install()` on the native-detect matrix, the shared load, the timeout with a late core, a 404 and a CSP (unit and G-bundle), and the native path on Chrome 157 (`test/native-effects/g-native-loader.mjs`).
 - Test harness: the static server holds an answer with `?delay=<ms>`.
 
 ### Changed
@@ -475,7 +481,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.21...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.22...HEAD
+[0.1.0-preview.22]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.21...v0.1.0-preview.22
 [0.1.0-preview.21]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.20...v0.1.0-preview.21
 [0.1.0-preview.20]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.19...v0.1.0-preview.20
 [0.1.0-preview.19]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.18...v0.1.0-preview.19

@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.21`, a preview on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new preview is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.22`, a preview on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new preview is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 Live demo: [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · Try it in the browser: [playground](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/playground/)
 
@@ -79,7 +79,7 @@ Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 
 ### Loading the polyfill only where it runs
 
-Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (351 KB minified, 119 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (352 KB minified, 120 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
 
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->
@@ -91,7 +91,7 @@ Chrome 157 implements the API, so the core steps aside there, but a page that li
 </script>
 ```
 
-With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the package entry becomes a chunk that only the polyfill path fetches. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
+With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the package entry becomes a chunk that only the polyfill path fetches. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. The extensions (the frame cap, the effects host) need the core, which the loader does not download there: a page that uses them over a native implementation loads the core's own tag instead. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
 
 ## 4. Adding the effects
 

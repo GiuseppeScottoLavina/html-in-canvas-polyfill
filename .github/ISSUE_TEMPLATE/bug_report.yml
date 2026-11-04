@@ -12,7 +12,7 @@ body:
     attributes:
       label: Polyfill version
       description: The npm version, or the commit if you built from source (`HicLivePolyfill.version` with the classic script, `VERSION` of the ES module, or `version` in `__HIC__.installed.report()`).
-      placeholder: 0.1.0-preview.21
+      placeholder: 0.1.0-preview.22
     validations:
       required: true
   - type: input
@@ -34,7 +34,7 @@ body:
     id: report
     attributes:
       label: Install report
-      description: Run `JSON.stringify(__HIC__.installed.report(), null, 1)` in the page console (or `__HIC__.error` if the polyfill refused) and paste the output. With the ES module, log `JSON.stringify(getInstalled().report(), null, 1)` from your code, or the error `install()` threw.
+      description: Run `JSON.stringify(__HIC__.installed.report(), null, 1)` in the page console (or `__HIC__.error` if the polyfill refused) and paste the output. With the ES module, log `JSON.stringify(getInstalled().report(), null, 1)` from your code, or the error `install()` threw. With the loader, also give the `status` and `reason` that `load()` resolved with.
       render: json
     validations:
       required: true
@@ -42,7 +42,7 @@ body:
     id: repro
     attributes:
       label: Minimal reproduction
-      description: The smallest page that shows the problem (inline HTML, a gist, or a CodePen/StackBlitz link). Say how you load the polyfill (script tag, CDN URL, bundler).
+      description: The smallest page that shows the problem (inline HTML, a gist, or a CodePen/StackBlitz link). Say how you load the polyfill (script tag, CDN URL, bundler, or the loader).
     validations:
       required: true
   - type: textarea
