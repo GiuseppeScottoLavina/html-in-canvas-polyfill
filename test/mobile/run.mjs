@@ -173,8 +173,9 @@ for (const [label, D] of Object.entries(report.devices)) {
 const counts = tally(Object.assign({}, ...Object.entries(report.devices).map(([label, D]) => Object.fromEntries(Object.entries(D.scenarios ?? {}).map(([sc, r]) => [`${label}/${sc}`, r])))));
 report.counts = counts;
 console.table(table);
-writeFileSync(join(outRoot, `mobile-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));
+// --no-control never passes: set before the JSON is written, so the file and the exit code say the same
 if (noControl) report.pass = false;
+writeFileSync(join(outRoot, `mobile-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));
 const countLine = `${counts.PASS} PASS, ${counts.SKIP} SKIP, ${counts.FAIL} FAIL`;
 console.log(report.pass ? `G-mobile PASS (${countLine}; ${report.note})` : `G-mobile FAIL (${countLine})` + (noControl ? ' (--no-control never passes)' : ''));
 process.exit(report.pass ? 0 : 1);

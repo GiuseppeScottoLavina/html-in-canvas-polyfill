@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Scroll compositor: a plan made in steps (since 0.1.0-preview.21) ignored changes made between two of its steps. A box of the list that became `position: fixed` while the hit-test grid was being made was composed at its old place in the first scroll step, until the settled tile put it back (reproduced with the published bundles in Chrome and on an iPad with Safari 27.2). Damage between two steps that an installed plan would not survive now makes the plan again from the start, once (a second such change refuses it); damage inside the port is checked for an obstruction before the first composition; focus or a selection that comes inside the scroller ends the plan. A change of an element's `position` or `z-index` at the same size, and the first change of an element seen absolute, fixed or sticky, now damage the whole drawable: the rect of the old and new box missed that the element no longer scrolls with the list, for an installed plan too. New counter `stats.snapshot.scroll.stale`. The core bundle grows by 639 bytes minified (264 gzipped) and 22 code lines. Tests: a real-install browser test (the box at canvas row 20 instead of 60 in the first composed frame without the change, at 60 with it; a colour change between two steps still composes), compositor unit tests, a planner test for focus and selection between steps, and a damage-rect test.
+- Report: a refusal of a scroller inside a shadow root while a field in it had focus was counted as `refusedBy.plan` instead of `refusedBy.focus` (the document's active element is the shadow host).
+- Field test and Chrome scroll bench: the counters per phase kept only numbers, so `refusedBy` was dropped from each phase; it is now reported as the refusals of the phase by reason. The field test's summary line now says what `over8_33Share` and `over16_67Share` count: frames over 12.5 and 25 ms (a missed 120 Hz or 60 Hz refresh), not over 8.33 and 16.67 ms.
+- `test/mobile/run.mjs --no-control`: the JSON report was written before the run was marked as failed, so it could say `pass: true` while the command failed.
+- `scripts/check-bundle.mjs`: the sizes in `dist/sizes.json` are checked against the files in `dist/`, so `--no-build` no longer judges a file rebuilt or edited since by its old size.
+
 ## [0.1.0-preview.21] - 2026-11-04
 
 A focused field's caret no longer stays behind while its list scrolls (Safari and Chrome), and costs nothing when it is hidden or transparent. Chrome 157 ships HTML-in-Canvas enabled: the polyfill steps aside there (measured), and its own path is fixed for Chrome 157's text-field metrics. Planning a large scroller no longer blocks the main thread, and the report says why a scroller is not composed.

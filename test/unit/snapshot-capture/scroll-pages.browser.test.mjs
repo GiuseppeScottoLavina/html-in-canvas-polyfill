@@ -252,6 +252,23 @@ test('a scroller that moves between two steps of its hit-test grid gets no plan;
   assert.ok(onFakeClock({}, () => planSteps(document, m.layer, list, d)).value, 'planned again once it is still');
 });
 
+test('focus or a selection that comes inside the scroller between two steps of its plan ends it (a page would carry the caret or the highlight along)', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  await frames(1);
+  const list = m.layerEl.querySelector('.list');
+  const d = m.layerEl.firstElementChild;
+  const row = /** @type {HTMLElement} */ (list.querySelector('.row'));
+  row.tabIndex = -1;
+  const kept = onFakeClock({ hitMs: 0.5 }, () => planSteps(document, m.layer, list, d), () => {});
+  assert.ok(kept.value && kept.steps > 2, 'control: nothing changed, planned');
+  const focused = onFakeClock({ hitMs: 0.5 }, () => planSteps(document, m.layer, list, d), (i) => { if (i === 0) row.focus({ preventScroll: true }); });
+  row.blur();
+  assert.ok(focused.steps === 2 && focused.value === null, `focus: no plan, ended at the next step (${focused.steps})`);
+  const selected = onFakeClock({ hitMs: 0.5 }, () => planSteps(document, m.layer, list, d), (i) => { if (i === 0) getSelection().selectAllChildren(row); });
+  getSelection().removeAllRanges();
+  assert.ok(selected.steps === 2 && selected.value === null, `selection: no plan, ended at the next step (${selected.steps})`);
+});
+
 /** @param {Generator<void, any, void>} g */
 const run = (g) => { let r; while (!(r = g.next()).done); return r.value; };
 

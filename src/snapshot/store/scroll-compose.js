@@ -32,6 +32,8 @@ const MAX_SCROLLERS = 2;
 const REPLAN_MS = 1000;
 /** consecutive steps a needed page may stay dirty before it is rebuilt instead of waiting for a tile to repair it */
 const MAX_MISSES = 2;
+/** damage rects inside a scroller kept while its plan is being made (more: the plan is made again) */
+const MAX_PENDING_RECTS = 16;
 /** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
 const AHEAD_PAGES = 2;
 
@@ -43,6 +45,12 @@ const AHEAD_PAGES = 2;
  * @property {Rect[]} dirty  stale parts, CONTENT pixels (x: surface px; y: surface px from the scroll origin, i.e. port row + round(offset * scale))
  * @property {number[]} dirtySeq  the damage sequence number of each dirty rect
  * @property {number} misses  steps in a row that needed a dirty part of this page
+ */
+
+/**
+ * @typedef {Object} Pending  a plan being made (prepare): what changed in the drawable since its first step (damaged), for the install
+ * @property {boolean} stale  damage an installed plan would not survive (no rect, or one that covers the scroller): the rules were read before it
+ * @property {Rect[]} rects  damage that reached into the scroller (frame css): checked for an obstruction at the install; a Gecko plan (ScrollPlan.whole) is made again
  */
 
 /**
@@ -208,7 +216,8 @@ function cacheBytes(c, held) {
  * @param {Element} el @returns {'focus'|'selection'|'plan'}
  */
 function noPlan(el) {
-  const doc = el.ownerDocument, active = doc?.activeElement, sel = doc?.getSelection();
+  // the focused element of the scroller's own tree (inside a shadow root, the document's is its host)
+  const doc = el.ownerDocument, active = /** @type {Document|ShadowRoot|undefined} */ (el.getRootNode?.())?.activeElement ?? doc?.activeElement, sel = doc?.getSelection();
   return active && active !== el && el.contains(active) ? 'focus' : sel?.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).intersectsNode(el) ? 'selection' : 'plan';
 }
 
@@ -219,7 +228,7 @@ export function createScrollCompositor(deps) {
   const caches = new WeakMap();
   /** @type {WeakMap<Entry, Map<Element, {at: number, seq: number, place: string}>>} scrollers without a plan: planned again after newer damage or a move, at most every REPLAN_MS */
   const refused = new WeakMap();
-  /** @type {WeakMap<Entry, Set<Element>>} scrollers of a drawable whose plan waits for the pump */
+  /** @type {WeakMap<Entry, Map<Element, Pending>>} scrollers of a drawable whose plan waits for the pump or is being made in steps */
   const planning = new WeakMap();
   /** @type {WeakMap<Entry, number>} side builds in flight per drawable */
   const inFlight = new WeakMap();
@@ -230,7 +239,7 @@ export function createScrollCompositor(deps) {
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
   let seq = 0;
   /** diagnostics (SnapshotStats.scroll) */
-  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0 };
+  const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0, stale: 0 };
   /** `refusals` by reason (SnapshotStats.scroll.refusedBy): they add up to it */
   const refusedBy = { plan: 0, focus: 0, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0 };
   const room = deps.room ?? (() => Infinity);
@@ -490,18 +499,22 @@ export function createScrollCompositor(deps) {
       if (known && sameGeo(known.geo, entry.geo) && sameLayout(known)) return false;
       if (early && ahead.has(scroller)) return false;
       let set = planning.get(entry);
-      if (!set) planning.set(entry, (set = new Set()));
+      if (!set) planning.set(entry, (set = new Map()));
       if (set.has(scroller) || stillRefused(entry, scroller)) return false;
       // no plan (a scan of the scroller) when two pages of its client box do not fit the surface budget
       const h = /** @type {HTMLElement} */ (scroller);
       if (h.clientWidth > 0 && !fits(entry, AHEAD_PAGES * Math.ceil(h.clientWidth * entry.geo.scale) * Math.ceil(h.clientHeight * entry.geo.scale) * 4)) return false;
-      set.add(scroller);
+      /** @type {Pending} */
+      const pending = { stale: false, rects: [] };
+      set.set(scroller, pending);
       if (early) ahead.add(scroller);
       const at = epoch;
+      let again = 1;
       counters.plans++;
       /** @param {Iterator<void, ScrollPlan|null, void>|null} steps */
       const step = (steps) => deps.schedule(entry, () => {
         if (!entry.surface || !entry.geo || entry.lost || scroller.isConnected === false || (early && at !== epoch)) { set.delete(scroller); ahead.delete(scroller); return; }
+        if (!steps) { pending.stale = false; pending.rects = []; }
         const got = steps ?? deps.plan(scroller, entry.el);
         /** @type {ScrollPlan|null} */
         let plan;
@@ -511,8 +524,17 @@ export function createScrollCompositor(deps) {
           if (!r.done) { step(it); return; }
           plan = r.value;
         } else plan = /** @type {ScrollPlan|null} */ (got);
+        // a change between two steps that an installed plan would not survive (damaged): the rules were read before it (a child that became fixed). Planned again at
+        // once, from the start; a second such change leaves the scroller to the refusal path (planned again after REPLAN_MS): content that keeps changing is not scanned forever
+        if (plan && (pending.stale || (plan.whole && pending.rects.length))) {
+          counters.stale++;
+          if (again-- > 0) { step(null); return; }
+          plan = null;
+        }
         set.delete(scroller);
         const c = install(entry, scroller, plan, early);
+        // damage inside the port while the hit-test grid was being made: checked for an obstruction before the first composition, as after the install (verified)
+        if (c) for (const r of pending.rects) { const v = intersectRect(r, c.plan.port); if (v) c.unverified.push(v); }
         if (c) prefetch(entry, c, topOf(scroller), early ? AHEAD_PAGES : MAX_PAGES);
       });
       step(null);
@@ -576,6 +598,13 @@ export function createScrollCompositor(deps) {
     damaged(entry, rect, cause) {
       const m = caches.get(entry);
       const n = ++seq;
+      for (const [el, p] of planning.get(entry) ?? []) {
+        if (p.stale) continue;
+        const frame = entry.record.layer?.frameRect(el) ?? null;
+        if (cause === 'scroll' && rect && frame && sameRect(frame, rect)) continue;
+        if (!rect || !frame || holds(rect, frame) || p.rects.length >= MAX_PENDING_RECTS) p.stale = true;
+        else if (meets(rect, frame)) p.rects.push(rect);
+      }
       for (const c of [...(m?.values() ?? [])]) {
         // its own scrolling (a step that was not composed)
         if (cause === 'scroll' && rect && sameRect(c.plan.frame, rect)) continue;

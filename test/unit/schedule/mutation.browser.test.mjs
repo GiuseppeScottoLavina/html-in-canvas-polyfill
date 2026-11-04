@@ -45,6 +45,21 @@ test('a box that changes size is whole-drawable again (siblings may have moved)'
   assert.equal(rig.sink.damage[0].rect, null);
 });
 
+test('a box that changes position or z-index at the same size is whole-drawable (what it is placed against and what it paints over changed: a scroll plan read them); a box first seen absolute or fixed is too', async t => {
+  const rig = createRig({ html: '<div drawable id="d1" style="position:relative;width:200px;height:100px"><div id="pb" style="position:absolute;left:10px;top:10px;width:50px;height:20px"></div><div id="sb" style="width:50px;height:20px"></div></div>' });
+  t.cleanup(observeMutations(rig.env, rig.record));
+  const pb = rig.layerEl.querySelector('#pb'), sb = rig.layerEl.querySelector('#sb');
+  const next = async (el, f) => { rig.sink.clear(); f(el); await microtasks(); return rig.sink.damage[0]?.rect; };
+  assert.equal(await next(pb, (e) => { e.dataset.x = '1'; }), null, 'first sighting');
+  assert.ok(await next(pb, (e) => { e.style.background = 'red'; }), 'control: a paint change at the same place has a rect');
+  assert.equal(await next(pb, (e) => { e.style.position = 'fixed'; }), null, 'absolute to fixed, same size');
+  assert.ok(await next(pb, (e) => { e.style.background = 'blue'; }), 'a rect again once seen fixed');
+  assert.equal(await next(pb, (e) => { e.style.zIndex = '3'; }), null, 'z-index');
+  await next(sb, (e) => { e.dataset.x = '1'; });
+  assert.ok(await next(sb, (e) => { e.style.position = 'relative'; }) === null, 'static to relative is a change of position too');
+  assert.ok(await next(sb, (e) => { e.style.background = 'red'; }), 'control: then a rect');
+});
+
 test('text change maps to the parent element and its drawable', async t => {
   const rig = createRig({ html: PAGE });
   t.cleanup(observeMutations(rig.env, rig.record));

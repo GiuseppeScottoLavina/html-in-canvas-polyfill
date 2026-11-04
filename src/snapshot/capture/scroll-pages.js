@@ -225,10 +225,14 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     if (a === drawable) break;
   }
   const round = square(cs) ? null : innerRadii(cs, frame.width, frame.height);
-  const active = /** @type {Document|ShadowRoot} */ (s.getRootNode()).activeElement;
-  if (active && s.contains(active) && active !== s) return null;
+  const root = /** @type {Document|ShadowRoot} */ (s.getRootNode());
   const sel = doc.getSelection();
-  if (sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(s)) return null;
+  // focus or a selection inside the scroller (a page would carry its caret or highlight along); read again between two steps
+  const held = () => {
+    const active = root.activeElement;
+    return (!!active && s.contains(active) && active !== s) || (!!sel && !sel.isCollapsed && !!sel.rangeCount && sel.getRangeAt(0).intersectsNode(s));
+  };
+  if (held()) return null;
   // the scroller's own generated boxes scroll with its content
   if (gecko && !['::before', '::after', '::first-letter'].every((p) => clipInvariant(win.getComputedStyle(s, p)))) return null;
   const all = s.getElementsByTagName('*');
@@ -240,12 +244,13 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   let otherZ = -Infinity;
   const count = all.length;
   const clock = win.performance ?? Date, now = () => clock.now();
-  // between two steps: the subtree's size, the scroller's place in the viewport and the viewport's size are those the plan read (what else changes in the content
-  // meanwhile is the damage the compositor tracks once the plan is installed, as for a change after it: the pages are built from the DOM of their own time)
+  // between two steps: the subtree's size, the scroller's place in the viewport and the viewport's size are those the plan read, and nothing inside it took the focus
+  // or a selection (a change of the content meanwhile is damage: scroll-compose.js plans again after one an installed plan would not survive, and checks the port of
+  // the others for an obstruction; the pages are built from the DOM of their own time)
   const vr = s.getBoundingClientRect();
   const vw = win.innerWidth, vh = win.innerHeight;
   const still = () => {
-    if (all.length !== count || !s.isConnected || win.innerWidth !== vw || win.innerHeight !== vh) return false;
+    if (all.length !== count || !s.isConnected || win.innerWidth !== vw || win.innerHeight !== vh || held()) return false;
     const r = s.getBoundingClientRect();
     return r.left === vr.left && r.top === vr.top && r.width === vr.width && r.height === vr.height;
   };

@@ -8,6 +8,7 @@
 // --allow-size: the 150 KB target is a KNOWN RED (printed, does not fail); the ratchet still fails. Used by `npm test` and CI until the target is met (docs/BUNDLES.md).
 import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { gzipSync } from 'node:zlib';
 import { Script } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -173,7 +174,10 @@ const LIMITS = {
   // 351 -> 351.5 KB, gzip 119.15 -> 119.3 KB (+321 / +154 bytes, 2026-11-04, measured 351,254 / 119,247): the scroll planner yields every 3 ms inside its scan and
   //   its hit-test grid and checks the scroller between steps (scroll-pages.js: the grid over a 10,000-row list ran 113-120 ms in one task in Chrome 156); one
   //   computed-style read per cloned element, shared with the state sync (clone.js, state-sync.js: clone time -6.5 % for 5,000 elements in Safari 27)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 351.5 * KB, gzip: 119.3 * KB },
+  // 351.5 -> 352 KB, gzip 119.3 -> 119.55 KB (+639 / +264 bytes, 2026-11-04, measured 351,893 / 119,511): a plan made in steps is made again after damage between two
+  //   steps that an installed plan would not survive, and checks the port for an obstruction (scroll-compose.js Pending); focus and selection checked between steps;
+  //   a change of position or z-index is whole-drawable damage (damage-rect.js). Before, a box that became fixed during the plan was composed at its old place
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 352 * KB, gzip: 119.55 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -245,6 +249,12 @@ const known = [];
 
 if (!process.argv.includes('--no-build')) execFileSync(process.execPath, [join(root, 'scripts/build.mjs'), '--quiet'], { stdio: 'inherit' });
 const sizes = JSON.parse(readFileSync(join(root, 'dist/sizes.json'), 'utf8'));
+// the sizes of the last build must still be those of the files in dist/ (with --no-build, a file rebuilt or edited since would be judged by its old size)
+for (const r of sizes) {
+  let bytes = null;
+  try { bytes = readFileSync(join(root, 'dist', r.file)); } catch { /* missing: reported below */ }
+  if (bytes === null || bytes.length !== r.raw || gzipSync(bytes, { level: 9 }).length !== r.gzip) problems.push(`G-bundle: dist/sizes.json does not describe dist/${r.file} as it is (run npm run build)`);
+}
 const { plugins: PLUGINS } = JSON.parse(readFileSync(join(root, 'dist/plugins/manifest.json'), 'utf8'));
 for (const p of PLUGINS) {
   const ceiling = PLUGIN_LIMITS[p.name] ?? PLUGIN_CEILING;

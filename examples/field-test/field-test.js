@@ -865,7 +865,8 @@
   }
   /** the counters that changed during a phase (scroll compositor: composed steps, fallbacks to a rebuild, refusals, plans, pages...) and the stats at its end */
   function statsOfPhase(before, after) {
-    const delta = (a, b) => (a && b ? Object.fromEntries(Object.entries(b).filter(([, v]) => typeof v === 'number').map(([k, v]) => [k, v - (a[k] ?? 0)])) : null);
+    // numbers, and one level of counters by key (scroll.refusedBy: the refusals of the phase by reason)
+    const delta = (a, b) => (a && b ? Object.fromEntries(Object.entries(b).flatMap(([k, v]) => (typeof v === 'number' ? [[k, v - (a[k] ?? 0)]] : v && typeof v === 'object' ? [[k, delta(a[k] ?? {}, v)]] : []))) : null);
     return { scroll: delta(before?.scroll, after?.scroll), tiles: after && before ? after.tiles - before.tiles : null, commits: after && before ? after.commits - before.commits : null,
       cloneMsP50: after?.cloneMsP50 ?? null, cloneMsP95: after?.cloneMsP95 ?? null, decodeMsP50: after?.decodeMsP50 ?? null, decodeMsP95: after?.decodeMsP95 ?? null, decodeMainMsP95: after?.decodeMainMsP95 ?? null };
   }
@@ -889,7 +890,7 @@
   /** the absolute cadence of a part, for the check texts */
   function cadenceText(m) {
     if (m.movingFrameHz == null) return 'frame rate not measured';
-    return `${round(m.movingFrameHz, 0)} frames per second while it moved${m.refreshHz ? ` (${round(100 * (m.refreshShare ?? 0), 0)} % of the ${round(m.refreshHz, 0)} at rest)` : ''}, ${round(100 * (m.over8_33Share ?? 0), 0)} % of the frames over 8.33 ms, ${round(100 * (m.over16_67Share ?? 0), 0)} % over 16.67 ms`;
+    return `${round(m.movingFrameHz, 0)} frames per second while it moved${m.refreshHz ? ` (${round(100 * (m.refreshShare ?? 0), 0)} % of the ${round(m.refreshHz, 0)} at rest)` : ''}, ${round(100 * (m.over8_33Share ?? 0), 0)} % of the frames missed a 120 Hz refresh (over 12.5 ms), ${round(100 * (m.over16_67Share ?? 0), 0)} % a 60 Hz one (over 25 ms)`;
   }
   function pixelsVerdict(o) {
     if (!o || !o.jumps.length) return 'info';
