@@ -169,7 +169,7 @@ test('the plugin definition: ABI v2, spatial, direct canvas attachment, the acti
   assert.deepEqual([...ACTIONS], ['drop', 'demo']);
   assert.deepEqual([...(WaterEffectPlugin.actions ?? [])], ['drop', 'demo']);
   assert.ok(Object.isFrozen(WaterEffectPlugin));
-  assert.equal(meta.defaults.intensity, 0.5);
+  assert.equal(meta.defaults.intensity, 0.45);
 });
 
 /** A GPU device that records what the plugin submits. */

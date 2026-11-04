@@ -12,13 +12,13 @@ Recorded in headless Chrome from the plugin gallery (`node plugins/water/test/ga
 
 - **The surface.** A grid over the canvas, of cells of about 3 CSS px (at most 65,536 cells), runs the damped wave equation at a fixed 120 steps per second, whatever the display rate and the frame cap: an isotropic 9-point Laplacian, a viscosity that damps short ripples faster than long ones (as in real water), and walls at the edges of the canvas that reflect the ripples. It runs on the CPU, so that the input mapper reads the very field the GPU draws (see [Input](#input)).
 - **The picture.** Per device pixel, the shader evaluates the field as a cubic B-spline (smooth normals and curvature, no grid pattern) and draws:
-  - refraction: the page is sampled where the refracted view ray meets it (30 CSS px of displacement per unit of slope at intensity 1);
+  - refraction: the page is sampled where the refracted view ray meets it (42 CSS px of displacement per unit of slope at intensity 1);
   - caustics: the light refracted by the same surface focuses on the page (the inverse Jacobian of that displacement, at a deeper light depth); over dark content they show as a faint glow of the focused light;
   - Fresnel reflection (Schlick, F0 = 0.02 for water) of a sky, a soft window light and a small sun, seen from a viewer above the middle of the canvas: still water mirrors the window faintly over its top left, ripples break the reflection up and make the sun glint. The reflection is compressed so that it adds at most 38 % of the range and never hides what lies below;
   - absorption: a little more blue-green where the water is deeper, in the troughs;
   - a dither of half a level against banding.
 - **Input.** A pointerdown (a click, a tap) lets a drop fall there: a crater with a raised crown that rings out as a train of ripples. A moving pointer leaves a wake along its path, deeper when it moves faster, and deeper for a drag (a pressed button, a finger) than for a hovering mouse.
-- **At rest.** Once the surface is flat again, below what a pixel shows (no pixel moved by more than 0.06 CSS px, no caustic focus changed by more than 0.6 %, at intensity 1; proportionally more at a lower intensity), the field is cleared and the instance stops being `continuous`: the host renders nothing more until the page or the water changes. A drop is still again about 2 s later; the rain of the action `demo` about 1.5 s after its last drop.
+- **At rest.** Once the surface is flat again, below what a pixel shows (no pixel moved by more than 0.08 CSS px, no caustic focus changed by more than 0.6 %, at intensity 1; proportionally more at a lower intensity), the field is cleared and the instance stops being `continuous`: the host renders nothing more until the page or the water changes. A drop is still again about 2 s later; the rain of the action `demo` about 1.5 s after its last drop.
 
 ## Usage
 
@@ -28,7 +28,7 @@ Recorded in headless Chrome from the plugin gallery (`node plugins/water/test/ga
 <script src="dist/plugins/water.iife.min.js"></script>   <!-- window.HicLivePlugins.water -->
 <script type="module">
   const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
-  const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.5 });
+  const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.45 });
   water.mountUI(document.getElementById('controls'));                    // the plugin's intensity slider
   await water.trigger('demo');                                          // a short rain; 'calm' once the surface is still
   await water.trigger('drop', { point: { x: 120, y: 80 }, strength: 1.5 });
@@ -41,7 +41,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 
 | option | default | |
 |---|---|---|
-| `intensity` | 0.5 | 0 to 1: the strength of the water (its refraction and its light); 0 shows the source unchanged |
+| `intensity` | 0.45 | 0 to 1: the strength of the water (its refraction and its light); 0 shows the source unchanged |
 | `light` | 1 | 0 to 1: the caustics, the reflection and the glints; 0 keeps the refraction only |
 | `ambient` | 0 | 0 to 1: a gentle swell of three long waves that never settles. Above 0 the instance is `continuous` (rendered on every capped frame) on purpose. Off with reduced motion |
 | `shader` | `water.wgsl` | WGSL text that replaces the shader (same bindings and uniform layout) |
@@ -74,7 +74,7 @@ With `prefers-reduced-motion: reduce` (read when the plugin is added, and by the
 - **Zero work at rest.** At rest, and after every drop, wake and demo once the surface is still, the host renders no effect frame (0 in 3 s, measured in the gallery in headless Chrome and on the iPad below). A source change at rest renders one frame, which skips the field. The plugin requests frames only while the surface moves.
 - **CPU.** One simulation step costs about 0.38 ms for the full 65,536-cell grid of a 1100 x 620 canvas (Node 24, Apple M1 Max); at 120 steps per second that is about 4.5 % of one core while the water moves. The field (about 260 KB of r32float) is uploaded once per rendered frame while it moves, never at rest.
 - **GPU.** One full-screen pass: 16 texel loads of the field per pixel (the B-spline) and one sample of the page; the loads are skipped while the field is flat.
-- **On the iPad.** iPad Pro 11-inch (3rd generation, M1), iPadOS 27.2, Safari, 120 Hz, DPR 2, the plugin gallery with the frame cap at 120 (2026-11-04): 0 effect frames in 3 s at rest; during the demo effect frame intervals of 8.34 ms (p50) and 9.06 ms (p95), i.e. the display rate; 0 effect frames in 3 s after it.
+- **On the iPad.** iPad Pro 11-inch (3rd generation, M1), iPadOS 27.2, Safari, 120 Hz, DPR 2, the plugin gallery with the frame cap at 120 (2026-11-04): 0 effect frames in 3 s at rest; the demo (3.5 s until `'calm'`) renders at the display rate, effect frame intervals 8.34 ms at p50 and 9.14 ms at p95; 0 effect frames in 3 s after it.
 
 ## Limitations
 

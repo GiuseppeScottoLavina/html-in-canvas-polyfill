@@ -25,7 +25,7 @@ export const WAVE_SPEED_PX_S = 270;
 export const DAMPING = 0.987;
 export const VISCOSITY = 0.06;
 /** css px of displacement per unit slope at intensity 1 (the refraction through the water onto the page below) */
-export const REFRACT_PX = 30;
+export const REFRACT_PX = 42;
 /** the same for the light: the caustics focus as if the page lay this deep */
 export const CAUSTIC_PX = 52;
 
@@ -162,7 +162,7 @@ export function splash(f, x, y, radius, depth) {
 export function clear(f) { f.h.fill(0); f.v.fill(0); f.lap.fill(0); }
 
 /** what a pixel cannot show: a shift of the page (css px) and a change of the caustic focus (relative) at intensity 1 */
-export const QUIET_SHIFT_PX = 0.06;
+export const QUIET_SHIFT_PX = 0.08;
 export const QUIET_FOCUS = 0.006;
 
 /**

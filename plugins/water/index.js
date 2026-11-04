@@ -35,7 +35,7 @@ export const meta = Object.freeze({
   name: 'water',
   title: 'Water',
   description: 'A water surface over the live page: drops, wakes, refraction, caustics and reflections; clicks and typing are remapped through it.',
-  defaults: Object.freeze({ intensity: 0.5 }),
+  defaults: Object.freeze({ intensity: 0.45 }),
   reducedMotion: 'Still water: the surface keeps its reflection and tint; no ripple starts and nothing animates; drop and demo resolve at once.',
   touch: 'Tap the water for a drop; a finger still scrolls the page.',
 });
@@ -48,7 +48,7 @@ export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIM
 export const GLOBALS_LENGTH = 20;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
-const DEFAULT_INTENSITY = 0.5;
+const DEFAULT_INTENSITY = 0.45;
 /** css px of the ambient swell at `ambient: 1` */
 export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
@@ -56,8 +56,8 @@ const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 export const DROP_RADIUS = 24;
 export const DROP_DEPTH = 10;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (up to WAKE_FAST css px per ms) */
-const WAKE_RADIUS = 9;
-const WAKE_DEPTH = 2;
+const WAKE_RADIUS = 16;
+const WAKE_DEPTH = 2.6;
 const WAKE_FAST = 1.6;
 const DEMO_SEED = 0x5eed;
 

@@ -2,7 +2,7 @@
 // actions 'drop' and 'demo' through the effect handle; zero work at rest; the light (caustics and reflections) on a uniform page.
 import { assert } from '/test/unit/lib/t.js';
 import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, markerScene, presentOnce, runActionOnGpu } from '/plugins/_shared/gpu-check.mjs';
-import { plugin } from '/plugins/water/index.js';
+import { meta, plugin } from '/plugins/water/index.js';
 
 console.error(`water-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
 
@@ -71,7 +71,7 @@ gpuTest('zero work at rest: no frame without a change; drops render until the su
   const settledAt = host.stats().frames;
   tick(30);
   assert.equal(host.stats().frames, settledAt, `at rest again after ${settledAt - f0} frames: no frame in 30 ticks`);
-  assert.ok((settledAt - f0) / 60 < 4, `it settled within 4 s of the frame clock (${((settledAt - f0) / 60).toFixed(2)} s)`);
+  assert.ok((settledAt - f0) / 60 < 5, `four strong drops at intensity 1 settled within 5 s of the frame clock (${((settledAt - f0) / 60).toFixed(2)} s)`);
   const after = rig.snap();
   assert.ok(changedPixels(after, still) <= 2, `the frame at rest is the still picture again (${changedPixels(after, still)} px differ)`);
 });
@@ -119,7 +119,7 @@ gpuTest('the action drop through the effect handle: a drop moves pixels around i
 });
 
 gpuTest('the action demo: rain changes the picture, every checked frame agrees with its mapper, it resolves calm within about 4 s at the default intensity and ends at rest', async (t) => {
-  const r = await runActionOnGpu(t, plugin, { intensity: 0.5 }, 'demo', {}, { scene, stepMs: 1000 / 60, maxMs: 7000, checkEvery: 6 });
+  const r = await runActionOnGpu(t, plugin, { ...meta.defaults }, 'demo', {}, { scene, stepMs: 1000 / 60, maxMs: 7000, checkEvery: 6 });
   const ms = (r.frames * 1000) / 60;
   console.error(`water demo: ${r.frames} frames (${Math.round(ms)} ms), max changed ${r.maxChanged} px, worst mapper disagreement ${r.worst?.wrong} px of ${r.worst?.decided} (${r.checked} frames checked)`);
   assert.equal(r.state, 'calm');
