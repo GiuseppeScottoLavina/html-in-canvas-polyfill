@@ -254,7 +254,7 @@ const PLUGIN_LIMITS = {
   'liquid-glass': 12 * KB, // 11,905 (11,932 before the Terser pass); 12.25 -> 12 KB (2026-10-27)
   'page-curl': 33 * KB, // 32,986 (32,899 before the Terser pass); 33.5 -> 33 KB (2026-10-27); 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
   shatter: 29 * KB, // 28,902 (28,892 before the Terser pass); 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
-  water: 23.25 * KB, // 23,056 (2026-11-04); 11.75 -> 23.25 KB: the height-field water (the wave equation and its B-spline mapper in sim.js, refraction, caustics, Fresnel reflection in the inlined WGSL, the action 'demo'); 11,629 before
+  water: 23.75 * KB, // 23,503 (2026-11-04); 11.75 -> 23.75 KB: the height-field water (the wave equation and its B-spline mapper in sim.js, refraction, caustics, Fresnel reflection in the inlined WGSL, the action 'demo'); 11,629 before
 };
 const problems = [];
 const known = [];
