@@ -73,12 +73,14 @@ With `prefers-reduced-motion: reduce` the card stays flat (no tilt, no sway, no 
 
 ## Performance
 
-GPU time, measured on 2026-10-14 (Apple M1 Max, headless Chrome, 2200 x 1240 target = the gallery canvas at DPR 2, 600 frames back to back): 0.21 ms per frame, against 0.06 ms for a pass that only clears the target (`measureGpuTime` of `plugins/_shared/gpu-time.mjs`). The tilt follows the pointer on a spring that integrates `frame.delta` (the same timing at a 15 fps cap as at 120 fps); the instance is `continuous` only while the card moves or sways, and at rest the host renders nothing. No allocation per frame (one uniform array, one render pass descriptor, bind groups cached per source view). After a device loss the host re-creates the plugin with its latest options.
+GPU time, measured on 2026-11-04 (Apple M1 Max, headless Chrome, 2200 x 1240 target = the gallery canvas at DPR 2, 600 frames back to back): 0.37 ms per frame, against 0.06 ms for a pass that only clears the target (`measureGpuTime` of `plugins/_shared/gpu-time.mjs`; 0.21 ms before the lit shading). On the iPad Pro 11-inch (3rd generation, Safari, iPadOS 27.2, 120 Hz, frame cap 120), measured from `effectframe` events: the demo renders 120 frames per second with frame intervals of 8.32 ms (p50) and 8.54 ms (p95); with `idle: false` the card renders nothing at rest, before and after the demo (0 frames in 3 s).
+
+The tilt follows the pointer on a spring that integrates `frame.delta` (the same timing at a 15 fps cap as at 120 fps). The instance is `continuous` only while the card moves (a pointer, a finger, the device, the demo, the spring settling). The idle sway alone is slow (at most about 5 degrees a second), so once the spring has caught up with it the plugin redraws it 30 times a second from a timer instead of at the display rate (`SWAY_HZ`; `meta.continuous` says so): on the iPad at 120 Hz the sway rendered 120 frames per second before and 30 now, at 33.4 ms intervals (p50 and p95). No allocation per frame (one uniform array, one render pass descriptor, bind groups cached per source view). After a device loss the host re-creates the plugin with its latest options.
 
 ## Limitations
 
 - The space beside the tilted card takes no input (by design: it shows no element); the card is drawn at `scale` of the canvas.
-- With `idle: true` the card sways, so the host renders at the frame cap while the pointer is away. With `idle: false` it renders nothing at rest.
+- With `idle: true` the card sways, so the host renders 30 frames per second while the pointer is away. With `idle: false` it renders nothing at rest.
 - A finger tilts the card only while the browser delivers touch events (it does while it scrolls); the plugin does not claim the gesture.
 - Device tilt was tested with simulated orientation events, not on a real device in hand.
 - WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites (the native suite runs water, CRT and disintegrate); expected to behave the same, as the plugin uses only the plugin interface.

@@ -75,7 +75,9 @@ With `prefers-reduced-motion: reduce`: no block ever moves (the mapper is the id
 
 ## Performance
 
-`test/glitch-gpu.browser.test.mjs`, headless Chrome on an Apple M1 Max (Metal), 2200x1240 backing pixels (1100x620 CSS px at DPR 2), burst frames with every layer on (15 blocks), while other work ran on the machine: 0.11 ms per frame submitted back to back (the one-sample template pass: 0.09 ms); about 1.3 % of the 8.33 ms frame at 120 Hz. One run on one machine.
+`test/glitch-gpu.browser.test.mjs`, headless Chrome on an Apple M1 Max (Metal), 2200x1240 backing pixels (1100x620 CSS px at DPR 2), burst frames with every layer on, measured on 2026-11-04: 0.14 ms per frame submitted back to back (the one-sample template pass: 0.09 ms); under 2 % of the 8.33 ms frame at 120 Hz. One run on one machine.
+
+On the iPad Pro 11-inch (3rd generation, Safari, iPadOS 27.2, 120 Hz, frame cap 120), measured from `effectframe` events on 2026-11-04: the ambient mode at the default intensity renders 14 frames per second (it rendered 120 before this version), at 8.3 ms intervals while an event plays; a burst and the demo render 118 to 120 frames per second with frame intervals of 8.34 ms (p50) and 8.5 to 8.6 ms (p95); burst mode at rest renders nothing (0 frames in 3 s). Headless Chrome at 60 Hz: about 6 frames per second in the ambient mode.
 
 Frames are requested only while something plays: a burst, the demo or an ambient event, every frame within the frame cap. Between ambient events the picture is still: the plugin sets one timer for the next event and the host renders nothing, so the ambient mode costs a few frames per second instead of every frame (measured below). Burst mode at rest costs nothing. Per frame the render path allocates nothing (one uniform array rewritten in place, one reused pass descriptor; mappers are copied into 4 preallocated slots). After a GPU device loss the host re-creates the plugin with the same options.
 

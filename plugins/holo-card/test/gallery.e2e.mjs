@@ -92,7 +92,7 @@ try {
     await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sweep
     await sleep(400);
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/holo-card/media/holo-card.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 560, fps: 20, quality: 45 });
+    const bytes = writeWebp(frames, join(ROOT, 'plugins/holo-card/media/holo-card.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 480, fps: 15, quality: 40 });
     c.check('recording: media/holo-card.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
   }
   const errors = await page.evaluate('window.__e2e.errors');
