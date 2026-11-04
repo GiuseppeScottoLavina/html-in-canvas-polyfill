@@ -13,7 +13,9 @@
 // (classification: iPadOS sends a desktop UA), an iPhone on iOS 18.x (refusal: Safari 18 is below the minimum 26), then the AVD (ANDROID_AVD_HOME or --avd-home) with
 // its newest installed browser (Chromium from a snapshot's ChromePublic.apk, else the image's own Chrome); the refusal runs on a browser below 130 (the image's Chrome 124).
 // When no installed browser is 130+ the polyfill scenarios run as a labelled STAND-IN on the old Chrome (test/mobile/android.mjs).
-// Writes .scratch/results/mobile-<ts>.json (+ failing crops under .scratch/results/mobile-<ts>/), prints one table, exits 1 on any failure.
+// Verdicts per scenario (test/mobile/verdict.mjs): PASS, FAIL, or SKIP for a scenario that reported only documented skips (not drivable on that device, not
+// applicable to that browser), which is neither counted as a pass nor a failure.
+// Writes .scratch/results/mobile-<ts>.json (+ failing crops under .scratch/results/mobile-<ts>/), prints one table and the count of each verdict, exits 1 on any failure.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
@@ -24,6 +26,7 @@ import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RECORDER } from '../xbrowser/lib.mjs';
 import { SCENARIOS, CONTROL_CLASSES, unsupported, gate, explainer } from './scenarios.mjs';
 import { launchAndroid, attachDevice, plainTab, openPackage, AndroidUnavailable } from './android.mjs';
+import { verdicts as mergeVerdicts, verdictLabel, gateFailed, tally } from './verdict.mjs';
 
 const platforms = (arg('platform') ?? 'ios,android').split(',');
 const only = arg('only')?.split(',');
@@ -69,24 +72,7 @@ async function runScenarios(s, srv, label, platform, control, scenarios, extra =
   return { rows, numbers };
 }
 
-/** Merge a real and a control run into per-scenario verdicts. */
-function verdicts(real, control) {
-  const out = {};
-  for (const row of real.rows) {
-    const ok = !row.threw && row.checks.length > 0 && row.checks.every((c) => c.ok);
-    // a scenario that only reported a documented skip (class n/a) has nothing to control
-    const want = row.checks.every((c) => c.cls === 'n/a') ? [] : (CONTROL_CLASSES[row.scenario] ?? []);
-    let ctl = noControl ? 'skipped' : 'n/a';
-    if (!noControl && want.length) {
-      const cr = control?.rows.find((r) => r.scenario === row.scenario);
-      const red = new Set((cr?.checks ?? []).filter((c) => !c.ok).map((c) => c.cls));
-      const missing = cr?.threw ? want : want.filter((c) => !red.has(c));
-      ctl = missing.length ? `DID NOT FAIL: ${missing.join(',')}${cr?.threw ? ' (control threw: ' + cr.threw.slice(0, 120) + ')' : ''}` : `red [${want.join(',')}]`;
-    }
-    out[row.scenario] = { pass: ok && (noControl || !want.length || ctl.startsWith('red')), control: ctl, failed: row.checks.filter((c) => !c.ok).map((c) => c.label), threw: row.threw, ms: row.ms };
-  }
-  return out;
-}
+const verdicts = (real, control) => mergeVerdicts(real, control, { noControl, controlClasses: CONTROL_CLASSES });
 
 const physicalSerial = arg('android-serial');
 const iosDevices = platforms.includes('ios') ? arg('ios-device')?.split(',').filter(Boolean) : undefined;
@@ -113,7 +99,7 @@ async function device(label, launch, plan, { optional = false } = {}) {
   const D = report.devices[label] = { version: s.version, standIn: !!s.standIn, optional };
   console.log(`[${label}] ${s.version}`);
   try { await plan(s, D); } catch (e) { D.error = String(e.stack ?? e).slice(0, 600); report.pass = false; console.log(`[${label}] ERROR ${D.error}`); } finally { await s.close(); }
-  for (const v of Object.values(D.scenarios ?? {})) if (!v.pass) report.pass = false;
+  if (gateFailed(D.scenarios ?? {})) report.pass = false;
 }
 async function full(s, D, label, platform, scenarios, extra) {
   const real = await runScenarios(s, srv, label, platform, false, scenarios, extra);
@@ -131,7 +117,7 @@ try {
       const label = `${/^iPad/.test(model) ? 'iPadOS' : 'iOS'} ${info('ProductVersion')} ${model} (physical)`;
       await device(label, () => launchIosDevice({ udid }), async (s, D) => {
         Object.assign(D, { physical: true, model, ios });
-        await full(s, D, label, 'ios', ios >= 26 ? SCENARIOS : { unsupported });
+        await full(s, D, label, 'ios', ios >= 26 ? SCENARIOS : { unsupported }, { physical: true });
       });
     }
   } else if (platforms.includes('ios')) {
@@ -165,7 +151,7 @@ try {
         await s.navigate(new URL('/test/fixtures/mobile/index.html?mode=ref&iso=0', srv.url).href);
         D.native = await s.evaluate(`import('/src/api/native-detect.js').then((m) => { const n = m.probeNative(window); return { kind: n.kind, usable: m.nativeUsable(n), probe: n.probe, missing: n.missing }; })`);
         const forced = !!D.native?.usable;
-        await full(s, D, label, 'android', SCENARIOS, { standIn: s.standIn, forced, plainBundle: BUNDLES.android, bundle: forced ? `${BUNDLES.android},/test/mobile/force-polyfill.js` : BUNDLES.android });
+        await full(s, D, label, 'android', SCENARIOS, { standIn: s.standIn, physical: !!physical, forced, plainBundle: BUNDLES.android, bundle: forced ? `${BUNDLES.android},/test/mobile/force-polyfill.js` : BUNDLES.android });
       }
       // the refusal on a real browser below 130: the same one (stand-in run: its real agent in a second tab) or the image's own Chrome 124 after a Chromium run
       const old = s.chromeMajor < 130 ? null : (s.browsers ?? []).find((b) => b.major < 130);
@@ -181,10 +167,14 @@ try {
 const table = [];
 for (const [label, D] of Object.entries(report.devices)) {
   if (!D.scenarios) { table.push({ device: label, scenario: '-', verdict: D.verdict ?? 'ERROR', control: '', first_failure: (D.reason ?? D.error ?? '').slice(0, 100) }); continue; }
-  for (const [sc, r] of Object.entries(D.scenarios)) table.push({ device: label + (D.standIn ? ' [stand-in]' : ''), scenario: sc, verdict: r.pass ? 'PASS' : 'FAIL', control: r.control.slice(0, 30), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 80) });
+  for (const [sc, r] of Object.entries(D.scenarios)) table.push({ device: label + (D.standIn ? ' [stand-in]' : ''), scenario: sc, verdict: verdictLabel(r), control: r.control.slice(0, 30), first_failure: (r.threw ?? r.failed[0] ?? '').slice(0, 80), skip_reason: (r.reason ?? '').slice(0, 80) });
 }
+// SKIP: a scenario that reported only documented skips (not drivable on that device, not applicable to that browser); not a pass, and not a failure
+const counts = tally(Object.assign({}, ...Object.entries(report.devices).map(([label, D]) => Object.fromEntries(Object.entries(D.scenarios ?? {}).map(([sc, r]) => [`${label}/${sc}`, r])))));
+report.counts = counts;
 console.table(table);
 writeFileSync(join(outRoot, `mobile-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));
 if (noControl) report.pass = false;
-console.log(report.pass ? `G-mobile PASS (${report.note})` : 'G-mobile FAIL' + (noControl ? ' (--no-control never passes)' : ''));
+const countLine = `${counts.PASS} PASS, ${counts.SKIP} SKIP, ${counts.FAIL} FAIL`;
+console.log(report.pass ? `G-mobile PASS (${countLine}; ${report.note})` : `G-mobile FAIL (${countLine})` + (noControl ? ' (--no-control never passes)' : ''));
 process.exit(report.pass ? 0 : 1);

@@ -32,7 +32,7 @@ The expensive part of a snapshot runs in a task after the rendering update, so i
 
 ### 8. Typed text is drawn at once
 
-For a focused single-line text field, each keystroke is drawn into the retained surface immediately with `fillText`, from the live field's font, colour, alignment and scroll offset; the next snapshot replaces it. In the current comparison ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)) keydown to canvas pixel is 5.1 ms p50 on the explainer example and 6.8 ms on the F1 form, against 5.5 and 5.0 ms natively; a change that needs a snapshot, such as click to focus ring, takes 14.6 ms.
+In Chrome, for a focused single-line text field, each keystroke is drawn into the retained surface immediately with `fillText`, from the live field's font, colour, alignment and scroll offset; the next snapshot replaces it. In Firefox and Safari the overlay is not used: each keystroke goes through a snapshot build, as any other change does (the caret blink has its own patch there). In the current comparison (Chrome) ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)) keydown to canvas pixel is 5.1 ms p50 on the explainer example and 6.8 ms on the F1 form, against 5.5 and 5.0 ms natively; a change that needs a snapshot, such as click to focus ring, takes 14.6 ms.
 
 ### 9. Inner scrolling is composed from cached pages
 

@@ -9,8 +9,9 @@
 //                Xcode 27 install measured on 2026-10-27 had none, so only `script` and `oracle` ran there.
 // --empty adds an empty drawable canvas (no drawable child) to the page after the install, as a page that fills a canvas later has.
 // --load=MS busy-waits MS ms in every animation frame (a crude stand-in for a slower CPU: it takes main-thread time, it does not slow the polyfill's own work).
-// Metrics as test/bench/scroll-jank.mjs (rAF frames [t, scrollTop, paints]; canvas update gaps > 2.5 frame intervals while the scroller moves), plus the snapshot
-// stats (clone / decode percentiles, tiles) of the run.
+// Metrics as test/bench/scroll-jank.mjs (rAF frames [t, scrollTop, paints]; canvas update gaps > 2.5 frame intervals while the scroller moves; the absolute frame
+// budget: movingFrameHz, restHz / restShare against the rAF rate at rest before the gestures, over8_33Share / over16_67Share), plus the snapshot stats (clone / decode
+// percentiles, tiles) of the run.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -73,14 +74,23 @@ const RECORDER = (sel, load) => `(() => {
   return !!s;
 })()`;
 
+const REST_HZ = `new Promise((ok) => { const ts = []; const f = (t) => { ts.push(t); if (ts.length < 61) requestAnimationFrame(f); else done(); }; const done = () => { const iv = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b); ok(iv.length ? +(1000 / iv[iv.length >> 1]).toFixed(1) : null); }; requestAnimationFrame(f); setTimeout(done, 2000); })`;
+/** the absolute frame budget of the animation frame intervals while the scroller moved: their rate, its share of the rest rate, the frames that missed a 120 / 60 Hz refresh */
+function frameBudget(intervals, restHz) {
+  const sum = intervals.reduce((a, b) => a + b, 0);
+  const hz = sum > 0 ? (1000 * intervals.length) / sum : null;
+  const over = (ms) => (intervals.length ? +(intervals.filter((d) => d > 1.5 * ms).length / intervals.length).toFixed(3) : null);
+  return { movingFrameHz: hz && +hz.toFixed(1), restHz: restHz ?? null, restShare: hz && restHz ? +(hz / restHz).toFixed(3) : null, over8_33Share: over(1000 / 120), over16_67Share: over(1000 / 60) };
+}
 /** as test/bench/scroll-jank.mjs frameMetrics */
-function frameMetrics(frames, windows) {
+function frameMetrics(frames, windows, restHz = null) {
   const dts = []; for (let i = 1; i < frames.length; i++) dts.push(frames[i][0] - frames[i - 1][0]);
   const iv = stats(dts).p50 || 16.7;
   const lim = 2.5 * iv;
   let moves = 0, moveGaps = 0, paintGaps = 0, rafGaps = 0, maxPaintGap = 0, maxRaf = 0, unpainted = 0;
   const startLag = [];
   let paintsIn = 0, spanIn = 0;
+  const moving = [];
   for (const [w0, w1] of windows) {
     const idx = []; for (let i = 1; i < frames.length; i++) if (frames[i][0] >= w0 && frames[i][0] <= w1) idx.push(i);
     const mv = idx.filter((i) => frames[i][1] !== frames[i - 1][1]);
@@ -88,7 +98,7 @@ function frameMetrics(frames, windows) {
     moves += mv.length;
     const first = mv[0], last = mv[mv.length - 1];
     for (let k = 1; k < mv.length; k++) if (frames[mv[k]][0] - frames[mv[k - 1]][0] > lim) moveGaps++;
-    for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; }
+    for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; moving.push(d); }
     const painted = (m) => m + 1 < frames.length && frames[m + 1][2] > frames[m][2];
     for (const m of mv) if (!painted(m)) unpainted++;
     const pi = []; for (let i = first + 1; i <= Math.min(frames.length - 1, last + 1); i++) if (frames[i][2] > frames[i - 1][2]) pi.push(i);
@@ -101,7 +111,7 @@ function frameMetrics(frames, windows) {
     paintsIn += pi.length; spanIn += frames[Math.min(frames.length - 1, last + 1)][0] - frames[first][0];
     startLag.push(+((pi.length ? frames[pi[0]][0] : frames[frames.length - 1][0]) - frames[first][0]).toFixed(1));
   }
-  return { frameMs: +iv.toFixed(2), moves, moveGaps, paintGaps, maxPaintGap: +maxPaintGap.toFixed(1), unpainted, paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: +maxRaf.toFixed(1), startLag };
+  return { frameMs: +iv.toFixed(2), moves, moveGaps, paintGaps, maxPaintGap: +maxPaintGap.toFixed(1), unpainted, paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: +maxRaf.toFixed(1), startLag, ...frameBudget(moving, restHz) };
 }
 
 const STATS = `(() => { const c = window.__HIC__?.installed?.report?.().canvases?.[0]?.stats?.snapshot; return c ? { tiles: c.tiles, commits: c.commits, cloneMsP50: c.cloneMsP50, cloneMsP95: c.cloneMsP95, decodeMsP50: c.decodeMsP50, decodeMsP95: c.decodeMsP95, decodeMainMsP95: c.decodeMainMsP95, nodesLast: c.nodesLast, scroll: c.scroll } : null; })()`;
@@ -144,6 +154,7 @@ try {
       const sc = (name === 'mobile') ? await s.evaluate(`(() => { document.querySelector(${JSON.stringify(p.scroller)}).scrollIntoView({ block: 'center' }); return true; })()`) : null;
       void sc;
       await sleep(600);
+      const restHz = mode === 'oracle' ? null : await s.evaluate(REST_HZ);
       const st0 = await s.evaluate(STATS);
       const windows = [];
       await s.evaluate('window.__jank.start()');
@@ -177,11 +188,11 @@ try {
       }
       const frames = await s.evaluate('window.__jank.stop()');
       const st1 = await s.evaluate(STATS);
-      const fm = frameMetrics(frames, windows);
+      const fm = frameMetrics(frames, windows, restHz);
       const why = await s.evaluate('window.__why ?? null');
       const run = { name, mode, rep, load: LOAD, ...fm, why, top: frames.at(-1)?.[1], stats: { before: st0, after: st1 }, tiles: (st1?.tiles ?? 0) - (st0?.tiles ?? 0) };
       out.runs.push(run);
-      console.log(`${name.padEnd(8)} ${mode.padEnd(6)} load ${LOAD} composed ${(st1?.scroll?.composed ?? 0) - (st0?.scroll?.composed ?? 0)}  frame ${fm.frameMs}ms moves ${fm.moves} paintGaps ${fm.paintGaps} (max ${fm.maxPaintGap}) unpainted ${fm.unpainted} paintHz ${fm.paintHz} rafGaps ${fm.rafGaps} (max ${fm.maxRaf}) lag ${fm.startLag.join('/')} | tiles ${run.tiles} clone p50/p95 ${st1?.cloneMsP50?.toFixed?.(1)}/${st1?.cloneMsP95?.toFixed?.(1)} decode p50/p95 ${st1?.decodeMsP50?.toFixed?.(1)}/${st1?.decodeMsP95?.toFixed?.(1)} nodes ${st1?.nodesLast}${why ? ' why ' + JSON.stringify(why).slice(0, 300) : ''}`);
+      console.log(`${name.padEnd(8)} ${mode.padEnd(6)} load ${LOAD} composed ${(st1?.scroll?.composed ?? 0) - (st0?.scroll?.composed ?? 0)}  frame ${fm.frameMs}ms moves ${fm.moves} paintGaps ${fm.paintGaps} (max ${fm.maxPaintGap}) unpainted ${fm.unpainted} paintHz ${fm.paintHz} rafGaps ${fm.rafGaps} (max ${fm.maxRaf}) lag ${fm.startLag.join('/')} fps ${fm.movingFrameHz}/${fm.restHz} >8.33 ${fm.over8_33Share} >16.67 ${fm.over16_67Share} | tiles ${run.tiles} clone p50/p95 ${st1?.cloneMsP50?.toFixed?.(1)}/${st1?.cloneMsP95?.toFixed?.(1)} decode p50/p95 ${st1?.decodeMsP50?.toFixed?.(1)}/${st1?.decodeMsP95?.toFixed?.(1)} nodes ${st1?.nodesLast}${why ? ' why ' + JSON.stringify(why).slice(0, 300) : ''}`);
     }
   }
 } catch (e) { out.error = String(e.stack || e); console.error(out.error); }

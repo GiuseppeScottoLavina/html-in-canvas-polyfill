@@ -2,7 +2,7 @@
 // G-field-test: the field test page (examples/field-test/) runs end to end in HEADLESS Chrome and produces a valid report.
 //
 //   npm run build && npm run test:field
-//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing,smooth-drop,smooth-shift,phone] [--headed] [--scrollbars=overlay|classic]
+//   node scripts/check-field-test.mjs [--only=clean,dpr125,broken,denied,refused,missing,smooth-drop,smooth-half,smooth-shift,phone] [--headed] [--scrollbars=overlay|classic]
 //
 // Runs (each in a fresh page of one headless Chrome, trusted input through CDP):
 //   clean    every step with an accepted tab capture (--auto-select-tab-capture-source-by-title picks this tab): the capture calibrates,
@@ -19,6 +19,9 @@
 //   smooth-drop   POSITIVE CONTROL of the scroll smoothness metrics: every second canvas paint event is stopped before the page's onpaint (a canvas that
 //            updates in every other frame, as WebKit's rebuild per scroll step did before 0.1.0-preview.9): the scripted scroll must be red. The tester
 //            does not scroll: the touch part must end by its (shortened) timeout and be recorded as skipped.
+//   smooth-half   POSITIVE CONTROL of the absolute frame budget: while a list of the smoothness canvas scrolls, every animation frame busy-waits 30 ms, so the
+//            frames run at a stable half (or less) of the rest rate and the canvas still updates in each of them: the scripted scroll must be red (the limits
+//            relative to the frame interval under load alone scored it green). The tester does not scroll, as in smooth-drop.
 //   smooth-shift  POSITIVE CONTROL of the composed-vs-settled oracle: the first canvas paint after each scroll of a list is drawn 1 px lower (a composed
 //            frame that lands a pixel off): the pixel check must be red. The tester presses "I cannot scroll here": the touch part is skipped.
 //   phone    the scroll smoothness step on an emulated phone (390 x 844 css px, DPR 3, touch): the layout fits the phone's width, the step asks for a
@@ -261,6 +264,9 @@ function assertSmooth(run, r, { touch = 'done', expect = { script: 'pass', pixel
     const m = sm.script[k];
     run.check(`smoothness: the scripted scroll of the ${k} list moved and was measured (moves, updates per second, compositor counters, clone and decode times)`,
       m.moves >= 60 && m.paintHz > 0 && m.startLag.length === 3 && m.stats?.scroll && typeof m.stats.scroll.composed === 'number' && typeof m.stats.cloneMsP50 === 'number', { moves: m.moves, paintHz: m.paintHz, startLag: m.startLag, stats: m.stats });
+    run.check(`smoothness: the absolute frame budget of the ${k} list (frame rate while it moved, its share of the rest rate, frames over 8.33 / 16.67 ms)`,
+      m.movingFrameHz > 0 && m.refreshHz > 0 && m.refreshHz === sm.device.refreshReferenceHz && m.refreshShare > 0 && [m.over8_33Share, m.over16_67Share].every((v) => v >= 0 && v <= 1) && m.over16_67Share <= m.over8_33Share,
+      { movingFrameHz: m.movingFrameHz, refreshHz: m.refreshHz, refreshShare: m.refreshShare, over8_33Share: m.over8_33Share, over16_67Share: m.over16_67Share, restRefresh: sm.device.restRefresh, reference: sm.device.refreshReferenceHz });
   }
   run.check(`smoothness: scripted verdict ${expect.script}`, r.checks.find((c) => c.id === 'smoothness.script')?.verdict === expect.script, { check: r.checks.find((c) => c.id === 'smoothness.script'), round: sm.script.round, square: sm.script.square });
   if (expect.pixels) run.check('smoothness: every pixel jump measured (12 jumps, each repainted and compared)', sm.pixels.jumps === 12 && [...sm.pixels.round.jumps, ...sm.pixels.square.jumps].every((j) => typeof j.diff === 'number'), sm.pixels);
@@ -271,7 +277,7 @@ function assertSmooth(run, r, { touch = 'done', expect = { script: 'pass', pixel
 }
 
 /** a positive control of the scroll smoothness step: every other step skipped, `init` run in the page before its scripts */
-async function runSmoothControl(browser, site, name, { init, scroll, touch, expect }) {
+async function runSmoothControl(browser, site, name, { init, scroll, touch, expect, after }) {
   const run = new Run(name);
   const page = await browser.newPage({ reuseFirst: false });
   await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -285,8 +291,17 @@ async function runSmoothControl(browser, site, name, { init, scroll, touch, expe
   await skipUntil(page, 'finish');
   const r = await finishAndDownload(page, run, join(outDir, name));
   if (r) assertSmooth(run, r, { touch, expect });
+  if (r?.scrollSmoothness?.complete && after) after(run, r.scrollSmoothness);
   await page.close();
   return run;
+}
+/** smooth-half: the control exercises the absolute limit: the relative limits alone are green, the frame rate while the lists moved is under the red limit */
+function halfRateRed(run, sm) {
+  for (const k of ['round', 'square']) {
+    const m = sm.script[k];
+    run.check(`smooth-half: the ${k} list was painted in its frames without stutters (the relative limits alone are green) at under 60 % of the rest rate`,
+      m.paintedShare >= 0.85 && m.stuttersPerSec <= 0.5 && m.refreshShare < 0.6 && m.verdict === 'fail', { paintedShare: m.paintedShare, stuttersPerSec: m.stuttersPerSec, frameMs: m.frameMs, movingFrameHz: m.movingFrameHz, refreshHz: m.refreshHz, refreshShare: m.refreshShare, verdict: m.verdict });
+  }
 }
 /** the scroll smoothness step on an emulated phone, with touch flicks; the other steps are skipped */
 async function runPhone(browser, site) {
@@ -328,6 +343,12 @@ async function runPhone(browser, site) {
 }
 /** smooth-drop: every second paint event of the smoothness canvas is stopped before the page's onpaint (the canvas updates in every other frame) */
 const DROP_PAINTS = "(() => { let n = 0; addEventListener('paint', (e) => { if (e.target && e.target.id === 'ft-canvas-smooth' && (n++ % 2)) e.stopImmediatePropagation(); }, true); })();";
+/** smooth-half: every animation frame busy-waits 30 ms while a list of the smoothness canvas scrolled in the last 150 ms (a stable half rate or less, every frame painted) */
+const HALF_RATE = `(() => { let last = -1e9;
+  document.addEventListener('scroll', (e) => { if (e.target && e.target.closest && e.target.closest('#ft-canvas-smooth')) last = performance.now(); }, true);
+  const f = () => { if (performance.now() - last < 150) { const t = performance.now(); while (performance.now() - t < 30) { /* busy */ } } requestAnimationFrame(f); };
+  requestAnimationFrame(f);
+})();`;
 /** smooth-shift: the first paint of the smoothness canvas after a scroll of one of its lists is drawn 1 px lower */
 const SHIFT_FIRST = `(() => { let armed = false;
   document.addEventListener('scroll', (e) => { if (e.target && e.target.closest && e.target.closest('#ft-canvas-smooth')) armed = true; }, true);
@@ -426,7 +447,7 @@ async function runWithoutPolyfill(browser, site, name, setup) {
  * --scrollbars=overlay|classic sets every run.
  * @type {Record<string, 'overlay'|'classic'>}
  */
-const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay', 'smooth-drop': 'overlay', 'smooth-shift': 'overlay', phone: 'overlay' };
+const SCROLLBARS = { clean: 'overlay', dpr125: 'classic', broken: 'overlay', denied: 'overlay', refused: 'overlay', missing: 'overlay', 'smooth-drop': 'overlay', 'smooth-half': 'overlay', 'smooth-shift': 'overlay', phone: 'overlay' };
 
 const RUNS = {
   clean: (b, s) => runClean(b, s),
@@ -438,6 +459,7 @@ const RUNS = {
     userAgentMetadata: { brands: [{ brand: 'Chromium', version: '120' }, { brand: 'Google Chrome', version: '120' }], fullVersion: '120.0.0.0', platform: 'macOS', platformVersion: '15.0.0', architecture: 'arm', model: '', mobile: false } })),
   missing: (b, s) => runWithoutPolyfill(b, s, 'missing', async () => {}),
   'smooth-drop': (b, s) => runSmoothControl(b, s, 'smooth-drop', { init: DROP_PAINTS, scroll: 'none', touch: 'timeout', expect: { script: 'fail' } }),
+  'smooth-half': (b, s) => runSmoothControl(b, s, 'smooth-half', { init: HALF_RATE, scroll: 'none', touch: 'timeout', expect: { script: 'fail' }, after: halfRateRed }),
   phone: (b, s) => runPhone(b, s),
   'smooth-shift': (b, s) => runSmoothControl(b, s, 'smooth-shift', { init: SHIFT_FIRST, scroll: 'skip', touch: 'skipped', expect: { script: 'pass', pixels: 'fail' } }),
 };

@@ -768,6 +768,12 @@
     painted: { pass: 0.85, fail: 0.6 },
     /** stutters (canvas update gaps longer than 2.5 frame intervals while a list moves) per second of movement */
     stutters: { pass: 0.5, fail: 2 },
+    /**
+     * animation frames per second while a list moved, over the refresh rate the page runs at rest (refreshShare). The two limits above are relative to the frame
+     * interval measured under the same load, so a device whose frames drop to a stable half rate while the lists scroll got a doubled stutter limit and stayed green;
+     * this one is absolute. A canvas updated in every frame at half the rest rate is as late as one updated in every other frame at the full rate (`smooth-drop`: 0.49)
+     */
+    refresh: { pass: 0.85, fail: 0.6 },
     /** worst share of canvas pixels (any channel more than 16 levels apart) where the first paint after a jump differs from the settled canvas */
     pixels: { pass: 0.0001, fail: 0.01 },
     /** below this many moved frames a phase is not judged */
@@ -792,14 +798,20 @@
    *   moves       frames in which a list's offset changed          moveGaps   intervals between consecutive moves longer than 2.5 frames (the native scroll stalled)
    *   unpainted   moves without a canvas update in their frame      paintGaps  stutters: canvas update gaps longer than 2.5 frames over an unpainted move
    *   paintHz     canvas updates per second from the first move to one frame after the last                    startLag   first move to first canvas update, per window
+   * The absolute frame budget, over the animation frame intervals from the first move to the last of each window (not relative to the frame interval under load):
+   *   movingFrameHz  animation frames per second while a list moved          refreshHz, refreshShare  the rest rate given, and movingFrameHz over it
+   *   over8_33Share, over16_67Share  share of those intervals longer than 1.5 x 8.33 / 1.5 x 16.67 ms: a frame that missed a refresh at 120 / 60 Hz
+   * @param {number|null} [refreshHz]  the refresh rate the page runs at rest
    */
-  function frameMetrics(frames, windows) {
+  function frameMetrics(frames, windows, refreshHz = null) {
     const dts = []; for (let i = 1; i < frames.length; i++) dts.push(frames[i][0] - frames[i - 1][0]);
     const iv = quantile(dts, 0.5) || 16.7;
     const lim = 2.5 * iv;
     let moves = 0, moveGaps = 0, paintGaps = 0, rafGaps = 0, maxMoveGap = 0, maxPaintGap = 0, maxRaf = 0, unpainted = 0;
     const startLag = [];
     let paintsIn = 0, spanIn = 0;
+    /** animation frame intervals while a list moved (the absolute budget) */
+    const moving = [];
     for (const [w0, w1] of windows) {
       const idx = []; for (let i = 1; i < frames.length; i++) if (frames[i][0] >= w0 && frames[i][0] <= w1) idx.push(i);
       const mv = idx.filter((i) => frames[i][1] !== frames[i - 1][1]);
@@ -807,7 +819,7 @@
       moves += mv.length;
       const first = mv[0], last = mv[mv.length - 1];
       for (let k = 1; k < mv.length; k++) { const d = frames[mv[k]][0] - frames[mv[k - 1]][0]; if (d > lim) { moveGaps++; maxMoveGap = Math.max(maxMoveGap, d); } }
-      for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; }
+      for (let i = first + 1; i <= last; i++) { const d = frames[i][0] - frames[i - 1][0]; maxRaf = Math.max(maxRaf, d); if (d > lim) rafGaps++; moving.push(d); }
       const painted = (m) => m + 1 < frames.length && frames[m + 1][2] > frames[m][2];
       for (const m of mv) if (!painted(m)) unpainted++;
       const pi = []; for (let i = first + 1; i <= Math.min(frames.length - 1, last + 1); i++) if (frames[i][2] > frames[i - 1][2]) pi.push(i);
@@ -822,7 +834,15 @@
     }
     return { frameMs: round(iv, 2), frames: frames.length, moves, moveGaps, maxMoveGap: round(maxMoveGap, 1), paintGaps, maxPaintGap: round(maxPaintGap, 1), unpainted,
       paintHz: spanIn ? Math.round((1000 * paintsIn) / spanIn) : 0, rafGaps, maxRaf: round(maxRaf, 1), startLag, movingMs: Math.round(spanIn),
-      paintedShare: moves ? round(1 - unpainted / moves, 3) : null, stuttersPerSec: spanIn ? round(paintGaps / (spanIn / 1000), 2) : null };
+      paintedShare: moves ? round(1 - unpainted / moves, 3) : null, stuttersPerSec: spanIn ? round(paintGaps / (spanIn / 1000), 2) : null, ...frameBudget(moving, refreshHz) };
+  }
+  /** the absolute frame budget of animation frame intervals (frameMetrics): their rate, its share of the rest refresh rate, the frames that missed a 120 / 60 Hz refresh */
+  function frameBudget(intervals, refreshHz) {
+    const sum = intervals.reduce((a, b) => a + b, 0);
+    const hz = sum > 0 ? (1000 * intervals.length) / sum : null;
+    const over = (/** @type {number} */ ms) => (intervals.length ? round(intervals.filter((d) => d > 1.5 * ms).length / intervals.length, 3) : null);
+    return { movingFrameHz: round(hz, 1), refreshHz: refreshHz ? round(refreshHz, 1) : null, refreshShare: hz && refreshHz ? round(hz / refreshHz, 3) : null,
+      over8_33Share: over(1000 / 120), over16_67Share: over(1000 / 60) };
   }
   /** the stretches of frames in which a list moved, split where no move came for `gap` ms (a finger at rest, the end of a fling) */
   function movementWindows(frames, gap = 150) {
@@ -860,9 +880,16 @@
   function smoothVerdict(m) {
     if (!m || m.moves < SMOOTH.minMoves || !m.movingMs) return 'info';
     const p = m.paintedShare, s = m.stuttersPerSec;
-    if (p >= SMOOTH.painted.pass && s <= SMOOTH.stutters.pass) return 'pass';
-    if (p < SMOOTH.painted.fail || s > SMOOTH.stutters.fail) return 'fail';
+    // without a rest refresh rate (rAF did not run at rest) the cadence is not judged
+    const r = m.refreshShare ?? 1;
+    if (p >= SMOOTH.painted.pass && s <= SMOOTH.stutters.pass && r >= SMOOTH.refresh.pass) return 'pass';
+    if (p < SMOOTH.painted.fail || s > SMOOTH.stutters.fail || r < SMOOTH.refresh.fail) return 'fail';
     return 'warn';
+  }
+  /** the absolute cadence of a part, for the check texts */
+  function cadenceText(m) {
+    if (m.movingFrameHz == null) return 'frame rate not measured';
+    return `${round(m.movingFrameHz, 0)} frames per second while it moved${m.refreshHz ? ` (${round(100 * (m.refreshShare ?? 0), 0)} % of the ${round(m.refreshHz, 0)} at rest)` : ''}, ${round(100 * (m.over8_33Share ?? 0), 0)} % of the frames over 8.33 ms, ${round(100 * (m.over16_67Share ?? 0), 0)} % over 16.67 ms`;
   }
   function pixelsVerdict(o) {
     if (!o || !o.jumps.length) return 'info';
@@ -1224,10 +1251,16 @@
           intoView();
           await waitPaint(pair, 0, 5000);
           await sleep(1500);
+          // the refresh rate at rest on this page, the reference of the absolute frame budget: the higher of this and the environment's measurement (a reference
+          // measured too low would let a halved cadence pass; one too high only makes the verdict stricter)
+          const restRefresh = await measureRefresh();
+          const envHz = report.environment?.display?.refresh?.hz ?? null;
+          const refreshRef = Math.max(envHz ?? 0, restRefresh.hz ?? 0) || null;
           const s0 = snapshotStats();
           out.device = {
             userAgent: navigator.userAgent, platform: platformLabel(), browser: browserLabel(), devicePixelRatio, screen: [screen.width, screen.height], viewport: [innerWidth, innerHeight],
             pointer: touch ? 'coarse' : 'fine', maxTouchPoints: navigator.maxTouchPoints ?? 0, refreshHz: report.environment?.display?.refresh?.hz ?? null,
+            restRefresh, refreshReferenceHz: refreshRef,
             polyfillMode: window.__HIC__?.installed?.mode ?? null, polyfillVersion: window.HicLivePolyfill?.version ?? null, rasterScale: s0?.rasterScale ?? null,
             canvas: { backingStore: [pair.canvas.width, pair.canvas.height], cssBox: [pair.canvas.clientWidth, pair.canvas.clientHeight] },
             /** the states of the drawable canvases the polyfill manages on the page */
@@ -1255,13 +1288,14 @@
             }
             const frames = recorder.stop();
             if (ctx.signal.aborted) return 'skipped';
-            const m = frameMetrics(frames, windows);
+            const m = frameMetrics(frames, windows, refreshRef);
             out.script[name] = { ...m, verdict: smoothVerdict(m), canvasInView: inView, stats: statsOfPhase(before, snapshotStats()), pageHidden: document.visibilityState !== 'visible', ...(windows.timedOut ? { timedOut: true } : {}) };
           }
           const scriptWorst = ['fail', 'warn', 'pass', 'info'].find((v) => Object.values(out.script).some((r) => r.verdict === v));
           const sr = out.script.round;
-          check('smoothness.script', scriptWorst, `scripted scroll (baseline): canvas updated in ${round(100 * (sr.paintedShare ?? 0), 0)} % of the frames the Rounded list moved (${sr.paintHz} updates per second at ${round(1000 / sr.frameMs, 0)} frames per second), ${sr.paintGaps} stutters (longest gap ${sr.maxPaintGap} ms); Square list ${round(100 * (out.script.square.paintedShare ?? 0), 0)} %, ${out.script.square.paintGaps} stutters`,
-            { round: { paintedShare: sr.paintedShare, paintHz: sr.paintHz, paintGaps: sr.paintGaps, frameMs: sr.frameMs }, square: { paintedShare: out.script.square.paintedShare, paintHz: out.script.square.paintHz, paintGaps: out.script.square.paintGaps } });
+          check('smoothness.script', scriptWorst, `scripted scroll (baseline): canvas updated in ${round(100 * (sr.paintedShare ?? 0), 0)} % of the frames the Rounded list moved (${sr.paintHz} updates per second at ${round(1000 / sr.frameMs, 0)} frames per second), ${sr.paintGaps} stutters (longest gap ${sr.maxPaintGap} ms), ${cadenceText(sr)}; Square list ${round(100 * (out.script.square.paintedShare ?? 0), 0)} %, ${out.script.square.paintGaps} stutters, ${cadenceText(out.script.square)}`,
+            { round: { paintedShare: sr.paintedShare, paintHz: sr.paintHz, paintGaps: sr.paintGaps, frameMs: sr.frameMs, movingFrameHz: sr.movingFrameHz, refreshShare: sr.refreshShare, over8_33Share: sr.over8_33Share, over16_67Share: sr.over16_67Share },
+              square: { paintedShare: out.script.square.paintedShare, paintHz: out.script.square.paintHz, paintGaps: out.script.square.paintGaps, movingFrameHz: out.script.square.movingFrameHz, refreshShare: out.script.square.refreshShare }, refreshHz: refreshRef });
           // 2. composed vs settled pixels: jumps of each list
           say('Hands off: the page is checking the pictures of the lists.');
           const pixels = { round: null, square: null };
@@ -1315,12 +1349,12 @@
           }
           const frames = recorder.stop();
           if (outcome === 'aborted') return 'skipped';
-          const m = frameMetrics(frames, movementWindows(frames));
+          const m = frameMetrics(frames, movementWindows(frames), refreshRef);
           out.touch = { outcome, input: touch ? 'touch' : 'wheel or touchpad', activeMs: Math.round(active), scrollEvents: events, waitedMs: Math.round(performance.now() - start), canvasInView: touchInView, ...m, verdict: smoothVerdict(m), stats: statsOfPhase(before, snapshotStats()) };
           if (outcome === 'skipped' && !m.moves) check('smoothness.touch', 'skipped', `your own scrolling: skipped (${out.touch.input})`);
           else if (!m.moves) check('smoothness.touch', 'skipped', `your own scrolling: no scrolling of the lists within ${Math.round(limit / 1000)} s`);
-          else check('smoothness.touch', out.touch.verdict, `your own scrolling (${out.touch.input}${outcome === 'done' ? '' : ', ' + outcome}): canvas updated in ${round(100 * (m.paintedShare ?? 0), 0)} % of the frames a list moved (${m.paintHz} updates per second at ${round(1000 / m.frameMs, 0)} frames per second), ${m.paintGaps} stutters in ${round(m.movingMs / 1000, 1)} s of movement (longest gap ${m.maxPaintGap} ms), first update ${quantile(m.startLag, 0.5) ?? '?'} ms after a scroll starts (median)`,
-            { paintedShare: m.paintedShare, paintHz: m.paintHz, paintGaps: m.paintGaps, stuttersPerSec: m.stuttersPerSec, movingMs: m.movingMs, frameMs: m.frameMs });
+          else check('smoothness.touch', out.touch.verdict, `your own scrolling (${out.touch.input}${outcome === 'done' ? '' : ', ' + outcome}): canvas updated in ${round(100 * (m.paintedShare ?? 0), 0)} % of the frames a list moved (${m.paintHz} updates per second at ${round(1000 / m.frameMs, 0)} frames per second), ${m.paintGaps} stutters in ${round(m.movingMs / 1000, 1)} s of movement (longest gap ${m.maxPaintGap} ms), first update ${quantile(m.startLag, 0.5) ?? '?'} ms after a scroll starts (median), ${cadenceText(m)}`,
+            { paintedShare: m.paintedShare, paintHz: m.paintHz, paintGaps: m.paintGaps, stuttersPerSec: m.stuttersPerSec, movingMs: m.movingMs, frameMs: m.frameMs, movingFrameHz: m.movingFrameHz, refreshHz: m.refreshHz, refreshShare: m.refreshShare, over8_33Share: m.over8_33Share, over16_67Share: m.over16_67Share });
           // the summary: the worst of the judged parts
           const parts = { touch: out.touch.moves ? out.touch.verdict : 'skipped', script: scriptWorst, pixels: out.pixels.verdict };
           const order = ['fail', 'warn', 'pass'];
@@ -1328,7 +1362,7 @@
           out.complete = true;
           rec.results = { verdict: out.verdict, see: 'scrollSmoothness' };
           const row = (label, v, text) => `<tr><td class="v-${v}">${SMOOTH_WORDS[v] ?? v}</td><td><strong>${label}</strong>: ${escapeHtml(text)}</td></tr>`;
-          const ms = (r) => `${round(100 * (r.paintedShare ?? 0), 0)} % of the moving frames updated, ${r.paintGaps} stutters`;
+          const ms = (r) => `${round(100 * (r.paintedShare ?? 0), 0)} % of the moving frames updated, ${r.paintGaps} stutters, ${cadenceText(r)}`;
           ui.show({ meta: ctx.meta, title: `Scroll smoothness: ${SMOOTH_WORDS[out.verdict.overall]}`, html: `<table class="results smooth-summary">
             ${row('Your scrolling', parts.touch, out.touch.moves ? ms(out.touch) : 'not measured')}
             ${row('Scripted scroll', parts.script, `Rounded list ${ms(out.script.round)}; Square list ${ms(out.script.square)}`)}
@@ -1574,6 +1608,7 @@
       const sm = r.scrollSmoothness, num = (v) => typeof v === 'number' && Number.isFinite(v);
       need(isObj(sm.device) && num(sm.device.devicePixelRatio) && typeof sm.device.userAgent === 'string', 'scrollSmoothness.device missing');
       for (const k of ['round', 'square']) need(isObj(sm.script?.[k]) && num(sm.script[k].frameMs) && num(sm.script[k].moves) && num(sm.script[k].paintHz) && VERDICTS.includes(sm.script[k].verdict), `scrollSmoothness.script.${k} missing`);
+      for (const k of ['round', 'square']) need(num(sm.script?.[k]?.movingFrameHz) && num(sm.script[k].over8_33Share) && num(sm.script[k].over16_67Share) && (sm.script[k].refreshShare === null || num(sm.script[k].refreshShare)), `scrollSmoothness.script.${k}: the absolute frame budget is missing`);
       need(isObj(sm.touch) && ['done', 'timeout', 'skipped'].includes(sm.touch.outcome) && num(sm.touch.moves), 'scrollSmoothness.touch missing');
       need(isObj(sm.pixels) && Array.isArray(sm.pixels.round?.jumps) && Array.isArray(sm.pixels.square?.jumps), 'scrollSmoothness.pixels missing');
       need(isObj(sm.verdict) && VERDICTS.includes(sm.verdict.overall), 'scrollSmoothness.verdict missing');
@@ -1613,6 +1648,10 @@
       expect('a blank picture fails', compareShifted(blank, twin, M).verdict, 'fail');
       const noisy = cropImage(paint(M, M), M, M, W, H); for (let i = 0; i < noisy.data.length; i += 4) for (let k = 0; k < 3; k++) noisy.data[i + k] = Math.max(0, Math.min(255, noisy.data[i + k] + ((i >> 2) % 13) - 6));
       expect('noise of +-6 levels passes', compareShifted(noisy, twin, M).verdict, 'pass');
+      // the scroll smoothness verdict: a canvas updated in every frame, without stutters, while the frames ran at half the rest rate is not green
+      const fakeFrames = (ms, n) => Array.from({ length: n }, (_, i) => [i * ms, String(i), i]);
+      expect('smoothness: every frame painted at the rest rate passes', smoothVerdict(frameMetrics(fakeFrames(1000 / 60, 200), [[0, 200 * 1000 / 60]], 60)), 'pass');
+      expect('smoothness: every frame painted at half the rest rate fails', smoothVerdict(frameMetrics(fakeFrames(1000 / 60, 200), [[0, 200 * 1000 / 60]], 120)), 'fail');
       if (captureActive() && pairs.sample.twinBox) {
         const ok = await ensureCalibrated();
         lines.push(`calibration: ${ok ? `scale ${cap.calib.scaleX} x ${cap.calib.scaleY}, residual ${cap.calib.residualFramePx} frame px` : 'FAILED'}`);
