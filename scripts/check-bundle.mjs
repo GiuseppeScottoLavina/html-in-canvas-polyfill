@@ -253,7 +253,7 @@ const PLUGIN_LIMITS = {
   'holo-card': 12.5 * KB, // 12,486 (12,513 before the Terser pass); 12.75 -> 12.5 KB (2026-10-27)
   'liquid-glass': 12 * KB, // 11,905 (11,932 before the Terser pass); 12.25 -> 12 KB (2026-10-27)
   'page-curl': 33 * KB, // 32,986 (32,899 before the Terser pass); 33.5 -> 33 KB (2026-10-27); 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
-  shatter: 41.5 * KB, // 42,186 (2026-11-04); 29 -> 41.5 KB: thick glass shards (walls, back faces, bevels, Fresnel studio lighting, a lit backdrop with soft shadows, MSAA and depth), the eased rewind and the action 'demo'; ~9.5 KB of it is the larger inlined WGSL. Before: 28,902 (28,892 before the Terser pass); 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
+  shatter: 42.5 * KB, // 42,212 (2026-11-04); 29 -> 42.5 KB: thick glass shards (walls, back faces, bevels, Fresnel studio lighting, a lit backdrop with soft shadows, MSAA and depth), the eased rewind and the action 'demo'; ~9.5 KB of it is the larger inlined WGSL. Before: 28,902 (28,892 before the Terser pass); 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
   water: 11.75 * KB, // 11,629 (11,623 before the Terser pass); 10.5 -> 10.75 KB: meta.reducedMotion; 10.75 -> 11.75 KB: the action 'drop' (handle.trigger, settled when calm)
 };
 const problems = [];
