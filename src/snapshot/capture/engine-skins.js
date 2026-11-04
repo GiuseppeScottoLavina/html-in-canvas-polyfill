@@ -14,7 +14,7 @@ import { currentEngine } from '../../util/engine.js';
 /**
  * @typedef {Object} EngineSkins  what the engines bundle provides (src/engines.js)
  * @property {string} css  rules for the controls it paints, appended to every clone's base sheet (css-collector.js)
- * @property {(src: Element, clone: Element) => boolean|Element} paintNativeControl  paint the live look of a native control on its clone (an element when the clone is replaced); false when nothing was done
+ * @property {(src: Element, clone: Element, cs?: CSSStyleDeclaration) => boolean|Element} paintNativeControl  paint the live look of a native control on its clone (an element when the clone is replaced); false when nothing was done. `cs`: the computed style of `src` when the capture has read it (an older engines bundle ignores it and reads its own)
  * @property {() => boolean} consumeSkinPending  a skin painted since the last call was still decoding (the capture must be retried)
  * @property {(cb: () => void) => () => void} onSkinReady  a skin a capture used cold has decoded
  * @property {(cs: {boxShadow: string, outlineStyle: string, filter: string, position: string}) => string} webkitShadowStyle  WebKit 'transform' mode shadow rewrite

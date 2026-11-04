@@ -170,7 +170,10 @@ const LIMITS = {
   //   sticky elements cut out); a transparent caret has no patch. Before, the caret stayed where the field was for the whole gesture (35 of 86 composed paints)
   // 350.75 -> 351 KB, gzip 119 -> 119.15 KB (+317 / +142 bytes, 2026-11-04, measured 350,933 / 119,093): the scroll compositor counts its refusals by reason
   //   (scroll-compose.js refusedBy, noPlan: scale, shape, budget, pinned, focus, selection, plan), reported in stats.snapshot.scroll.refusedBy
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 351 * KB, gzip: 119.15 * KB },
+  // 351 -> 351.5 KB, gzip 119.15 -> 119.3 KB (+321 / +154 bytes, 2026-11-04, measured 351,254 / 119,247): the scroll planner yields every 3 ms inside its scan and
+  //   its hit-test grid and checks the scroller between steps (scroll-pages.js: the grid over a 10,000-row list ran 113-120 ms in one task in Chrome 156); one
+  //   computed-style read per cloned element, shared with the state sync (clone.js, state-sync.js: clone time -6.5 % for 5,000 elements in Safari 27)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 351.5 * KB, gzip: 119.3 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

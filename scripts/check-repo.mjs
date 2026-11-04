@@ -150,7 +150,9 @@ if (!docsOnly) {
   // 16740 -> 16785 (2026-11-04, measured 16,781): the caret of a focused field follows a composed scroll step and is clipped to where the field shows (+43: store.js
   // liveCaret / clipOf / keptCaret, scroll-compose.js pinned; webkit-caret.js resetCaretRules and the media results in the rule cache key)
   // 16785 -> 16790 (2026-11-04, measured 16,787): the scroll compositor counts its refusals by reason (+6: scroll-compose.js refusedBy, noPlan)
-  if (total > 16790) problems.push(`G-size: core is ${total} code lines (> 16790)`);
+  // 16790 -> 16800 (2026-11-04, measured 16,797): the scroll planner in steps of at most 3 ms, its hit-test grid resumable, with a check of the scroller between steps
+  // (snapshot/capture/scroll-pages.js; the grid over a 10,000-row list ran 113-120 ms in one task in Chrome 156) and one computed-style read per cloned element (clone.js)
+  if (total > 16800) problems.push(`G-size: core is ${total} code lines (> 16800)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

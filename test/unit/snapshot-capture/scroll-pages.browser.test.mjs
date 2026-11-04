@@ -174,6 +174,84 @@ test('a large scroller (9000 elements) is planned in steps; a change of its subt
   assert.equal(last.value, null, 'the subtree changed between steps: no plan');
 });
 
+/**
+ * Run `f` on a fake clock that only the slowed calls advance: every `document.elementFromPoint` by `hitMs`, every `getComputedStyle` by `styleMs` (Chrome 156 took
+ * 165 us per hit test over 10,000 rows). Per step of the generator `f` returns, `hits` counts the hit tests and `styles` the style reads; the planner reads the clock
+ * as `performance.now`.
+ * @param {{hitMs?: number, styleMs?: number}} cost @param {() => Generator<void, any, void>} f @param {(step: number) => void} [between]  runs after each step
+ */
+function onFakeClock({ hitMs = 0, styleMs = 0 }, f, between) {
+  let t = 0, h = 0, c = 0;
+  const hit = document.elementFromPoint, style = window.getComputedStyle;
+  performance.now = () => t;
+  document.elementFromPoint = function (x, y) { t += hitMs; h++; return hit.call(this, x, y); };
+  window.getComputedStyle = function (el, p) { t += styleMs; c++; return style.call(window, el, p); };
+  try {
+    const g = f();
+    const hits = [], styles = [];
+    for (let i = 0; ; i++) {
+      h = c = 0;
+      const r = g.next();
+      hits.push(h);
+      styles.push(c);
+      if (r.done) return { value: r.value, hits, styles, steps: hits.length };
+      between?.(i);
+    }
+  } finally {
+    delete performance.now;
+    delete document.elementFromPoint;
+    // an operation of the global object is its own property: put back, not deleted
+    window.getComputedStyle = style;
+  }
+}
+
+test('the hit-test grid is planned in steps of about 3 ms (a hit test costs in proportion to the scroller\'s children) and the plan still comes out', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  await frames(1);
+  const list = m.layerEl.querySelector('.list');
+  const d = m.layerEl.firstElementChild;
+  const whole = onFakeClock({}, () => planSteps(document, m.layer, list, d));
+  assert.ok(whole.value && whole.steps === 1, `control: free hit tests, one step (${whole.steps})`);
+  // 0.5 ms per hit test: the 15 x 10 grid of this port is 75 ms; at most 7 tests (3.5 ms) in one step
+  const sliced = onFakeClock({ hitMs: 0.5 }, () => planSteps(document, m.layer, list, d));
+  assert.ok(sliced.value?.pinned.length === 1, 'planned');
+  assert.ok(sliced.steps >= 15, `yielded inside the grid (${sliced.steps} steps)`);
+  assert.ok(sliced.hits.every((n) => n <= 8), `at most 8 hit tests per step: ${sliced.hits.join(',')}`);
+  assert.deepEqual(sliced.value.port, whole.value.port, 'the same plan');
+});
+
+test('a large scroller\'s scan steps are bounded in time too: slow style reads yield before 2500 elements', async () => {
+  const many = Array.from({ length: 3000 }, (_, i) => `<div class="row"><span class="b">${i}</span><span>Row ${i}</span></div>`).join('');
+  const m = mount(`<div class="d" drawable><div class="bar">bar</div><div class="list"><div class="head"><span>#</span></div>${many}</div></div>`, { css, width: 440, height: 320 });
+  const list = m.layerEl.querySelector('.list');
+  await frames(1);
+  const d = m.layerEl.firstElementChild;
+  const fast = onFakeClock({}, () => planSteps(document, m.layer, list, d));
+  assert.ok(fast.value && Math.max(...fast.styles) >= 2500, `control: free reads, steps of 2500 elements (${Math.max(...fast.styles)})`);
+  // 0.05 ms per read: 3 ms are 60 reads, the clock is read every 64 elements
+  const slow = onFakeClock({ styleMs: 0.05 }, () => planSteps(document, m.layer, list, d));
+  assert.ok(slow.value?.pinned.length === 1, 'planned');
+  // the first step also reads the scroller and its ancestors (the test layer's frame rects read styles too)
+  const scan = slow.styles.slice(1);
+  assert.ok(Math.max(...scan) <= 140, `at most 128 elements per step after the first: max ${Math.max(...scan)} reads in ${slow.steps} steps (first ${slow.styles[0]})`);
+});
+
+test('a scroller that moves between two steps of its hit-test grid gets no plan; planned again once it is still', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  await frames(1);
+  const list = m.layerEl.querySelector('.list');
+  const d = m.layerEl.firstElementChild;
+  const kept = onFakeClock({ hitMs: 0.5 }, () => planSteps(document, m.layer, list, d), () => {});
+  assert.ok(kept.value && kept.steps > 2, 'control: nothing changed, planned');
+  // the drawable moves down 8 px after the first step: the hit tests left would be made on the old port
+  const moved = onFakeClock({ hitMs: 0.5 }, () => planSteps(document, m.layer, list, d), (i) => { if (i === 0) m.layerEl.style.top = '18px'; });
+  m.layerEl.style.top = '10px';
+  assert.ok(moved.steps === 2, `ended at the next step (${moved.steps} of ${kept.steps})`);
+  assert.equal(moved.value, null, 'no plan');
+  await frames(1);
+  assert.ok(onFakeClock({}, () => planSteps(document, m.layer, list, d)).value, 'planned again once it is still');
+});
+
 /** @param {Generator<void, any, void>} g */
 const run = (g) => { let r; while (!(r = g.next()).done); return r.value; };
 

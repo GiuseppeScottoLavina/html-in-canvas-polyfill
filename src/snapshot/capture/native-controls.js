@@ -383,11 +383,11 @@ function iosBox(doc, cs, w, h, extra = '') {
 /**
  * iOS draws a listbox select (multiple, or a size) as a popup button too, and its image document does so as well, but fills the label in the system blue whatever the
  * colour (measured on the iOS 26.4 simulator): only the label colour is pinned. Elsewhere a listbox is left to the image.
- * @param {Element} src @param {Element} clone @returns {boolean}
+ * @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} [cs] @returns {boolean}
  */
-function iosListText(src, clone) {
+function iosListText(src, clone, cs) {
   if (src.localName !== 'select' || currentEngine().os !== 'ios') return false;
-  const color = (src.ownerDocument.defaultView ?? window).getComputedStyle(src).color;
+  const color = (cs ?? (src.ownerDocument.defaultView ?? window).getComputedStyle(src)).color;
   appendInlineStyle(clone, `color:${color}!important;-webkit-text-fill-color:${color}!important;`);
   return true;
 }
@@ -395,15 +395,16 @@ function iosListText(src, clone) {
 /**
  * Draw `src` (a control the live WebKit page paints natively) into `clone` in the refreshed look. No-op for controls drawn by CSS (appearance:none, or a devolvable control with an
  * author border/background), for kinds without a refreshed look here (listbox select) and for zero-size boxes.
- * @param {Element} src @param {Element} clone @returns {boolean|Element} the clone was changed (true), left alone (false) or must be replaced by the returned element
+ * @param {Element} src @param {Element} clone @param {CSSStyleDeclaration} [known]  computed style of `src`, when the capture has it
+ * @returns {boolean|Element} the clone was changed (true), left alone (false) or must be replaced by the returned element
  */
-export function paintNativeControl(src, clone) {
+export function paintNativeControl(src, clone, known) {
   const engine = currentEngine().engine;
   if (engine !== 'webkit' && engine !== 'gecko') return false;
   const kind = controlKind(src, engine);
   const doc = src.ownerDocument;
-  if (!kind) return iosListText(src, clone);
-  const cs = (doc.defaultView ?? window).getComputedStyle(src);
+  if (!kind) return iosListText(src, clone, known);
+  const cs = known ?? (doc.defaultView ?? window).getComputedStyle(src);
   if (cs.display === 'none') return false;
   if (kind === 'file') return engine === 'webkit' && fileButton(src, clone, cs);
   const box = borderBox(cs, /** @type {HTMLElement} */ (src));
