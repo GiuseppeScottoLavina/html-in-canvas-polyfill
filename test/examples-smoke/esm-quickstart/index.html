@@ -20,6 +20,8 @@
     new ResizeObserver((entries) => {
       const box = entries[0].devicePixelContentBoxSize[0];
       canvas.width = box.inlineSize; canvas.height = box.blockSize;
+      // the write clears the bitmap; a native implementation fires no paint for it (Chrome 157 and Canary 159), and this module script runs after the first paint
+      canvas.requestPaint();
     }).observe(canvas, { box: 'device-pixel-content-box' });
     window.__state = { ready: true, mode: hic.mode };
   } catch (error) {
