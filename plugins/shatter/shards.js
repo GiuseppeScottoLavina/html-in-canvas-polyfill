@@ -33,7 +33,7 @@ export const BEVEL = 7;
 /** the share of the fall timeline in which the cracks spread (way out) or close again (way back); no shard moves before it ends */
 export const HEAL = 0.1;
 /** physics seconds one way of the fall plays (g = 1 is SPAN seconds after the second impact) */
-export const SPAN = 1.7;
+export const SPAN = 1.2;   // the part of a fall in which shards are on the canvas (2026-11-04: 1.7 s left the pane empty for ~1.4 s of a play)
 /** css px per second at which the shards start to fall away from the impact point */
 export const FALL_WAVE = 2600;
 /** css px: the thickness of the glass (the walls of a falling shard) */
@@ -389,6 +389,7 @@ export function shardPoint(shards, id, home, t, o) {
  */
 export function fallTime(dir, g, g0, t0, end = SPAN) {
   if (dir > 0) return g0 >= 1 ? end : t0 + ((end - t0) * (g - g0)) / (1 - g0);
+  if (g >= g0) return t0;   // the first frame of the way back: exactly where the run before it stopped
   const ta = HEAL * SPAN;
   if (t0 <= ta || g0 <= HEAL) return g0 > 0 ? (t0 * Math.max(0, g)) / g0 : 0;
   if (g <= HEAL) return (ta * Math.max(0, g)) / HEAL;

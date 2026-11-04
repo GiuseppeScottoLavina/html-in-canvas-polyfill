@@ -34,7 +34,7 @@ export const meta = Object.freeze({
   name: 'shatter',
   title: 'Shatter',
   description: 'An invalid submit cracks the glass over the form (still usable through it); a second one shatters it into falling 3D shards that fly back.',
-  defaults: Object.freeze({ duration: 1600, onSubmit: 'invalid', intro: true }),
+  defaults: Object.freeze({ duration: 1200, onSubmit: 'invalid', intro: true }),
   reducedMotion: 'With reduced motion nothing cracks or falls: every impact crossfades the form to the backdrop and back.',
 });
 
@@ -83,7 +83,7 @@ export function readOptions(o) {
   return {
     cracks: Math.round(clampNumber(o.cracks, 6, 24, 13)),
     gravity: clampNumber(o.gravity, 0.2, 3, 1),
-    duration: clampNumber(o.duration, 300, 8000, 1600),
+    duration: clampNumber(o.duration, 300, 8000, 1200),
     edge: parseColor(o.edgeColor, DEFAULT_EDGE),
     edgeAmount: clampNumber(o.edgeAmount, 0, 1, 0.85),
     glint: clampNumber(o.glint, 0, 1, 0.8),
@@ -412,6 +412,7 @@ export const plugin = Object.freeze({
       spatial: true,                      // the pieces move: identity intact, the inverse of the offsets cracked, blocking while anything moves
       get continuous() { return cracks.animating || fall.animating; },
       setOptions(next) {
+        takeOver();                       // a change of options during the demo is the user's: the demo ends, the pane comes back
         s = readOptions(next ?? {});
         fall.setDuration(s.duration);
         if (s.state !== stateOption) { stateOption = s.state; request(s.state === 'cracked' ? 'crack' : s.state); }

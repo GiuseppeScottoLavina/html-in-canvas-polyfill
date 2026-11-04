@@ -17,7 +17,7 @@ test('meta and the definition agree; the gallery defaults are valid options', ()
   assert.equal(plugin.apiVersion, 2);
   const o = readOptions(meta.defaults);
   assert.equal(o.onSubmit, 'invalid');
-  assert.equal(o.duration, 1600);
+  assert.equal(o.duration, 1200, 'one way of the fall plays its 1.2 s of physics in real time');
   assert.equal(o.intro, true);
 });
 
@@ -567,6 +567,14 @@ test('demo: the user takes over at once (a pointer press or a key on the canvas)
   sup.press(5, 5);
   await renderFor(sup, 800, 50);
   assert.equal(await sup.handle.settled(), 'cracked', 'without a demo a press changes nothing');
+  const opt = await instance({ intro: false });
+  opt.inst.render(opt.frame(0));
+  const d4 = opt.handle.trigger('demo');
+  await renderFor(opt, 10, 100);
+  opt.handle.setOptions({ cracks: 9 });
+  assert.equal(await within(d4), null, 'setOptions during the demo ends it');
+  await renderFor(opt, 200, CRACK_MS + 50);
+  assert.equal(await opt.handle.settled(), 'intact', 'and the pane comes back into place');
   const calm = await instance({ intro: false, reducedMotion: true });
   calm.inst.render(calm.frame(0));
   assert.equal(await calm.handle.trigger('demo'), 'intact', 'reduced motion: it resolves at once with the state it rests in');
