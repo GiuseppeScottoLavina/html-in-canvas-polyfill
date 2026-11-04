@@ -165,7 +165,7 @@ const LIMITS = {
   // 348.5 -> 349.5 KB, gzip 118.25 -> 118.5 KB (+991 / +369 bytes, 2026-11-03, measured 349,379 / 118,463): a script seek or timing change of a paused, finished or
   //   idle animation repaints the drawable (schedule/observers/animation-observer.js: the Animation timing methods and setters and the effect edits are wrapped;
   //   a 15 Hz scrubber over paused animations painted 0 times per second before)
-  // 349.5 -> 350.75 KB, gzip 118.5 -> 119 KB (+1,216 / +453 bytes, 2026-11-04, measured 350,595 / 118,916): the caret of a focused field follows a composed scroll
+  // 349.5 -> 350.75 KB, gzip 118.5 -> 119 KB (+1,220 / +482 bytes, 2026-11-04, measured 350,616 / 118,951): the caret of a focused field follows a composed scroll
   //   step (store.js liveCaret: measured again from the live field) and is clipped to where the field shows (clipOf: its scrolling ancestors; the compositor's pinned
   //   sticky elements cut out); a transparent caret has no patch. Before, the caret stayed where the field was for the whole gesture (35 of 86 composed paints)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 350.75 * KB, gzip: 119 * KB },
