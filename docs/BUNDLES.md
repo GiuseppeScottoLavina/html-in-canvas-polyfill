@@ -74,7 +74,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-gpu.iife.min.js` | 11,320 | 4,328 |
 | `hic-live-worker.iife.js` | 17,986 | 5,353 |
 | `hic-live-worker.iife.min.js` | 9,098 | 3,646 |
-| `esm/index.js` | 740,711 | 199,630 |
+| `esm/index.js` | 740,734 | 199,640 |
 | `esm/effects.js` | 67,570 | 18,073 |
 | `esm/native-bridge.js` | 21,963 | 5,811 |
 | `esm/worker.js` | 6,977 | 2,403 |
@@ -143,7 +143,7 @@ Core = the 2D polyfill: native detection (`native-detect.js`: it decides between
 Moved out: the effect host, plugin ABI, GPU presenter, source providers, input mapper, interposer and frame sources (the effects bundle), the plugins (outside `src/` altogether, in `plugins/`), and the native bridge (`native-bridge.js` + `native-geometry.js` with its glue). Their sizes are in the generated table above.
 
 Native bridge, with the evidence for "separate script, not lazy":
-- It is only needed for a LEGACY native (Chrome 154 and 155 behind a flag) or a native missing a name it can build. Chrome Canary 157 (a complete native) needs nothing of it, and 154-156 without the flag has no native, so the polyfill path runs. No gate runs the bridged mode end to end; its unit tests (`test/unit/api-core/native-bridge.browser.test.mjs`, `install.browser.test.mjs`) load it through the same registration as a page would.
+- It is only needed for a LEGACY native (Chrome 154 and 155 behind a flag) or a native missing a name it can build. Chrome 157 and Chrome Canary (a complete native, enabled by default; measured on Chrome 157.0.8103.39: kind `complete`, no gaps) need nothing of it, and 154-156 without the flag has no native, so the polyfill path runs. No gate runs the bridged mode end to end; its unit tests (`test/unit/api-core/native-bridge.browser.test.mjs`, `install.browser.test.mjs`) load it through the same registration as a page would.
 - It cannot be fetched lazily: `install()` is synchronous (a fetch would make it asynchronous), the IIFE auto-installs during evaluation, and G-bundle requires no network request at load. So it is a second script that the page includes on purpose. When it is missing the core never throws: it uses the native build as found (mode `native`), records a `native-step-aside` entry in `report().deviations` that names the built files `dist/hic-live-native-bridge.iife.min.js` (or the readable `hic-live-native-bridge.iife.js`), and for the earlier `layoutsubtree` draft prints one `console.warn`, because `content="drawable"` canvases are not drawable there without the bridge.
 - A "native-complete-only" shell (load a tiny script, fetch the core only when the browser has no native) would be the lazy alternative. It is not built: it would make the first install asynchronous, which API-CONTRACT section 2 forbids.
 

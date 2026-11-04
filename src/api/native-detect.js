@@ -11,7 +11,8 @@
  *
  * Measured shapes (2026-10-14): Chrome 154 and 155.0.8059.40 with --enable-blink-features=CanvasDrawElement (legacy: layoutSubtree, ElementImage.width/height,
  * texElementImage2D, copyElementImageToTexture); Canary 157.0.8103.0 with or without the flag (current: content, getElementImageDefaultSize on HTMLCanvasElement
- * and OffscreenCanvas, ElementImage with close() only).
+ * and OffscreenCanvas, ElementImage with close() only). 2026-11-04: Chrome 157.0.8103.39 (stable, Chrome for Testing) ships that current shape enabled by
+ * default, without any flag: kind complete, probe ok, no gaps, mode native.
  * None exposes ElementImage.toImageBitmap or frameCap (both are extensions of this library), so they are not probed.
  */
 
@@ -141,8 +142,8 @@ function contentReflects(win) {
 
 /**
  * The behavioural half of the core check: a platform drawElementImage converts its first argument (a plain object is a TypeError) and refuses a
- * drawable of a canvas that was never rendered (an InvalidStateError DOMException; measured on Canary 157.0.8103.0). Runs on a detached canvas, so
- * nothing is laid out, painted or observable by the page. 'inert' = it returned without throwing (a stub); 'unexpected' = it threw something else.
+ * drawable of a canvas that was never rendered (an InvalidStateError DOMException; measured on Canary 157.0.8103.0 and Chrome 157.0.8103.39). Runs on a
+ * detached canvas, so nothing is laid out, painted or observable by the page. 'inert' = it returned without throwing (a stub); 'unexpected' = it threw something else.
  * @param {any} win
  * @param {Function} draw  the native CanvasRenderingContext2D.prototype.drawElementImage
  * @param {'content'|'layoutSubtree'} markup
@@ -237,7 +238,7 @@ export function probeNative(win) {
   return classifyNative(observe(win));
 }
 
-/** Oldest Chromium major the design is expected to work on (anchor positioning is 125; only 154 and Canary 157 were measured on desktop). Also Chrome for Android. */
+/** Oldest Chromium major the design is expected to work on (anchor positioning is 125; the polyfill path was measured on desktop on 154 to 156; 157 and later Canary builds have the native implementation). Also Chrome for Android. */
 export const MIN_CHROMIUM_MAJOR = 130;
 /** Oldest Firefox and Safari majors: the measured ones (G-xbrowser, 2026-10-09: Firefox 155.0.1, Safari 27.0.1 on macOS); older ones are unverified and refused. */
 export const MIN_FIREFOX_MAJOR = 155;

@@ -4,7 +4,7 @@ Short answers to the questions people ask first, with links to the evidence. Whe
 
 ## What is this?
 
-[HTML-in-Canvas](https://github.com/WICG/html-in-canvas) is a WICG proposal, with a draft pull request to the HTML Standard ([whatwg/html#11588](https://github.com/whatwg/html/pull/11588)), that lets a `<canvas>` draw its own live HTML children: you mark the canvas `content="drawable"`, mark children `drawable`, and draw them with `ctx.drawElementImage()` in a `paint` event (or upload them as WebGL / WebGPU textures). The elements stay real DOM, so they keep focus, typing, hit testing and accessibility. Chrome Canary exposes the API; the proposal is still changing.
+[HTML-in-Canvas](https://github.com/WICG/html-in-canvas) is a WICG proposal, with a draft pull request to the HTML Standard ([whatwg/html#11588](https://github.com/whatwg/html/pull/11588)), that lets a `<canvas>` draw its own live HTML children: you mark the canvas `content="drawable"`, mark children `drawable`, and draw them with `ctx.drawElementImage()` in a `paint` event (or upload them as WebGL / WebGPU textures). The elements stay real DOM, so they keep focus, typing, hit testing and accessibility. Chrome 157 ships the API enabled by default, and Chrome Canary exposes it too; the proposal is still changing.
 
 This package implements that API in JavaScript for browsers that do not have it yet: desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iOS / iPadOS 26+. Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
 
@@ -64,9 +64,9 @@ Partly, and less verified than the rest.
 - Not verified: any real screen reader (VoiceOver, NVDA, JAWS, TalkBack), and the accessibility trees of Firefox and Safari.
 - A drawable that is never drawn still exposes its layout position to assistive technology, where native exposes no geometry until it is drawn (deviation `a11y-geometry`). Mark unused views `aria-hidden`.
 
-## What happens when Chrome ships the native API?
+## What happens in a browser with the native API (Chrome 157)?
 
-The polyfill steps aside. `install()` detects the API by behaviour, not by browser version: if the core of the API is there (`content="drawable"` or the earlier `layoutsubtree`, `onpaint`, and a 2D `drawElementImage` that behaves like a platform method), it patches nothing of the standard surface, and it never throws because a native build lacks, renames or adds a secondary member ([API-CONTRACT.md, section 2](../API-CONTRACT.md#2-feature-detection-and-the-native-first-policy)). This was checked on Chrome Canary 157, 158 and 159, and on a Chromium 158 build for Android.
+The polyfill steps aside. `install()` detects the API by behaviour, not by browser version: if the core of the API is there (`content="drawable"` or the earlier `layoutsubtree`, `onpaint`, and a 2D `drawElementImage` that behaves like a platform method), it patches nothing of the standard surface, and it never throws because a native build lacks, renames or adds a secondary member ([API-CONTRACT.md, section 2](../API-CONTRACT.md#2-feature-detection-and-the-native-first-policy)). Chrome 157 ships the API enabled by default, and there the polyfill steps aside (mode `native`, kind `complete`, measured on 157.0.8103.39 on 2026-11-04). It was also checked on Chrome Canary 157, 158 and 159, and on a Chromium 158 build for Android. Safari, Firefox and Chrome before 157 use the polyfill's own path.
 
 Two caveats:
 
@@ -77,7 +77,7 @@ Two caveats:
 
 "Verified" below means an automated suite ran there with positive controls: deliberately broken variants that must make the checks fail. Most suites compare the canvas with the same HTML rendered as a plain page in the same browser.
 
-- **Desktop:** Chrome 154 and 155 on macOS (headed browser gates), Chrome 156 in CI (headless on Linux and Windows, headed on macOS). Firefox 155 and 157 and Safari 27.0.1 on macOS, through WebDriver. Chrome Canary 157 to 159 for the native path.
+- **Desktop:** Chrome 154 and 155 on macOS (headed browser gates), Chrome 156 in CI (headless on Linux and Windows, headed on macOS). Firefox 155 and 157 and Safari 27.0.1 on macOS, through WebDriver. Chrome 157 (Chrome for Testing 157.0.8103.39) and Chrome Canary 157 to 159 for the native path.
 - **Physical devices, 2026-10-30:** a Pixel 7 Pro (Android 17, Chrome 156), a Huawei Mate 10 Pro (Android 10, Chrome 156) and an iPad Pro 11-inch (iPadOS 27.2). An iPhone XR on iOS 18.7 checked that unsupported versions are refused cleanly.
 - **Simulators:** the iOS Simulator (iPhone 17 and iPad Air, iOS 26.4) and the Android Emulator (Chromium 158).
 - **Not verified:** a physical iPhone on iOS 26 or later; a physical Windows or Linux machine (CI only, headless, no GPU); Edge, Opera, Brave and other Chromium browsers; memory and canvas limits pushed to their edge on a phone (the phone budgets come from WebKit's limits, not from a measurement); frame timing on a phone GPU; battery use; WebGPU effects with touch.

@@ -46,7 +46,7 @@ If an example says the polyfill is missing, `dist/` was not built. If the `form`
     ctx.drawElementImage(form, 0, 0);   // draw the form's current snapshot
   };
 
-  new ResizeObserver((entries) => {     // keep the bitmap at device-pixel size (writing width/height clears it; the polyfill repaints in the same frame)
+  new ResizeObserver((entries) => {     // keep the bitmap at device-pixel size (writing width/height clears it; the polyfill repaints in the same frame, native Chrome does not: call canvas.requestPaint() after a write that comes after the first paint)
     const box = entries[0].devicePixelContentBoxSize[0];
     canvas.width = box.inlineSize;
     canvas.height = box.blockSize;
@@ -103,14 +103,14 @@ The source element (`form` here) must have exactly the size of the canvas conten
 
 | browser | what the polyfill does | source |
 |---|---|---|
-| desktop Chrome 130+ without the native feature (154 and 155 measured; 130 to 153 not verified; 156 in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
-| Chrome with a native implementation (Canary 157.0.8103.0 measured 2026-10-14 and 158.0.8112.1 on 2026-10-22, with or without `--enable-blink-features=CanvasDrawElement`; 159.0.8128.2 on 2026-10-29 with the flag) | steps aside (mode `native`), never throws; the extensions (frame cap, effects) run over the native implementation (Canary 158.0.8112.1 measured with the flag) | API-CONTRACT section 2, EFFECTS-PLUGINS |
+| desktop Chrome 130 to 156, without the native feature (154 and 155 measured; 130 to 153 not verified; 156 in CI, headless on Linux and Windows and headed on macOS) | runs (mode `polyfill`) | SUPPORT-MATRIX browsers |
+| Chrome 157 and Chrome Canary, which ship a native implementation enabled by default (Chrome 157.0.8103.39 measured 2026-11-04 without any flag; Canary 157.0.8103.0 on 2026-10-14, 158.0.8112.1 on 2026-10-22, 159.0.8128.2 on 2026-10-29 and 159.0.8137.0 on 2026-11-04) | steps aside (mode `native`, kind `complete`), never throws, needs no bridge; the extensions (frame cap, effects) run over the native implementation (measured on Chrome 157.0.8103.39 and Canary 159.0.8137.0) | API-CONTRACT section 2, EFFECTS-PLUGINS |
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) | used as found with one console warning; load `dist/hic-live-native-bridge.iife.min.js` BEFORE the core to bridge `content="drawable"` (mode `native-bridged`) | BUNDLES |
 | Firefox >= 155, Safari >= 27 (desktop) | polyfill runs, with documented form-control and text limits (`engine-gecko`, `engine-webkit`); classic pages also load `hic-live-engines.iife.min.js` (the Gecko / WebKit painters, docs/BUNDLES.md) | SUPPORT-MATRIX |
 | Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Android verified on a physical Pixel 7 Pro and a Huawei Mate 10 Pro (Chrome 156) and the Android Emulator; iPadOS on a physical iPad Pro (iPadOS 27.2), iOS 26 on the iOS Simulator only | MOBILE |
 | older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
-Measured on macOS: Chrome 154 and 155, Chrome Canary 157, 158 and 159 (native), Firefox 155.0.1 and 157.0.1, and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (11 of the 16 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.
+Measured on macOS: Chrome 154 and 155, Chrome 157 (native; Chrome for Testing 157.0.8103.39), Chrome Canary 157, 158 and 159 (native), Firefox 155.0.1 and 157.0.1, and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome 156 headed (11 of the 16 browser gates) and Firefox 155. Other Chromium browsers are expected to work and are unverified.
 
 ## 6. When something looks wrong
 

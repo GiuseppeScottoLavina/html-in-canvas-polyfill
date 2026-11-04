@@ -7,8 +7,8 @@ Sources: the WICG explainer (https://github.com/WICG/html-in-canvas), the Chromi
 (whatwg/html#11588) and the WPT tests, re-checked on 2026-10-14 against explainer commit `8aaaf5d6` (2026-10-09), pull request head `4cfec766`
 (2026-10-08, "Replace ElementImage width/height with getElementImageDefaultSize()"), Chromium `main` (`html_canvas_element.idl`; the runtime
 feature `CanvasDrawElement` has status `stable`) and WPT `master` (the revision the conformance gate runs is in section 2.3). Spec status: an explainer plus a draft in the HTML Standard PR; Chrome
-ran an origin trial in 148-150, the `content=drawable` rename landed 2026-09 (WICG issues 174, 179), and Chrome Canary exposes
-the API without any flag (measured on 157.0.8103.0 on 2026-10-14 and on 158.0.8112.1 on 2026-10-22). The API still changes week to week, so the polyfill decides on the core behaviour and never on
+ran an origin trial in 148-150, the `content=drawable` rename landed 2026-09 (WICG issues 174, 179), and Chrome 157 ships
+the API enabled by default (measured on 157.0.8103.39 on 2026-11-04, without any flag; Canary exposed it without a flag from 157.0.8103.0 on 2026-10-14). The API still changes week to week, so the polyfill decides on the core behaviour and never on
 a secondary member (section 2); sections 2.2 and 2.3 list the changes between the WPT revisions the conformance gate has pinned.
 
 Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" = layout pixels. The names of the typedefs
@@ -44,7 +44,7 @@ at once when the canvas has already fired `paint`, else at its first `paint`, an
 `content` reflecting only `fallback|drawable` (exercised on a detached canvas) or the legacy `layoutSubtree`, the `onpaint` handler, and
 `CanvasRenderingContext2D.prototype.drawElementImage`. The probe also calls that `drawElementImage` on a detached `content=drawable` canvas: a
 platform method converts its argument (a plain object is a `TypeError`) and refuses a drawable of a canvas that was never rendered
-(`InvalidStateError`), as Canary 157 does; the outcome is `NativeState.probe` (`ok`, `inert` for a stub that returns, `unexpected`, `skipped` without a core) and
+(`InvalidStateError`), as Chrome 157 and Canary 157 do; the outcome is `NativeState.probe` (`ok`, `inert` for a stub that returns, `unexpected`, `skipped` without a core) and
 `NativeState.verified`. Every other name of the current specification (`requestPaint`, `captureElementImage`, `getElementTransform`,
 `updateElementGeometry`, `clearElementGeometry`, `getElementImageDefaultSize`, `onelementgeometryupdate`, the OffscreenCanvas methods and
 Offscreen 2D `drawElementImage`, `ElementImage` with `close()`, `ElementGeometryUpdateEvent`, the WebGL and WebGPU names) is recorded in
@@ -58,7 +58,7 @@ nor be replaced safely. A failed behavioural probe alone is not a refusal either
 
 | kind | meaning | `HicMode` | what install does |
 |---|---|---|---|
-| `complete` | the core plus every other current name (Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. It defines only the extension property `canvas.frameCap` (removed by `uninstall()`); the effects host runs over the native implementation (section 7.6). |
+| `complete` | the core plus every other current name (Chrome 157.0.8103.39 without any flag; Canary 157.0.8103.0, with or without the flag) | `native` | patches NOTHING of the standard surface. It defines only the extension property `canvas.frameCap` (removed by `uninstall()`); the effects host runs over the native implementation (section 7.6). |
 | `partial` | the core works, some other current name is missing (for example the 2026-10-07 shape with `ElementImage.width/height` and no `getElementImageDefaultSize`) | `native`, or `native-bridged` when the bridge is loaded and can build a missing name (`NativeState.fillable`) | uses the native implementation as found; with the bridge, adds only the names it can build from public native API (`gaps`). Never throws. |
 | `legacy` | the core with the earlier `layoutSubtree` instead of `content` (Chrome 154 and 155.0.8059.40 behind `--enable-blink-features=CanvasDrawElement`, measured) | `native-bridged` with the bridge, else `native` | with the bridge: `content` IDL + attribute mirroring to `layoutsubtree`, method aliases, `getElementImageDefaultSize` over `ElementImage.width/height` (section 2.1; row `legacy-native-bridge`). Without it: used as found, one `console.warn` that `content="drawable"` canvases are not drawable in that build and how to load the bridge. Never throws. |
 | `broken` | something native exists but a core name is missing | `refused` | throws `HicUnsupportedError('partial-native')` unless `options.forcePolyfill` (test only); with `onUnsupportedBrowser: 'warn'` it logs once instead and installs nothing. |
@@ -462,6 +462,7 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
 - Not provided in the native modes: `report()` entries for the canvas (the polyfill does not manage it) and a cap on the browser's own `paint` events.
 - Verified on Chrome Canary 158.0.8112.1 with `--enable-blink-features=CanvasDrawElement` by `npm run test:native-effects` (gates G-native-effects and
   G-native-interposer with their controls, the water and disintegrate gallery e2e, `examples/effect-plugin`); numbers in `docs/guides/EFFECTS-PLUGINS.md`.
+  On 2026-11-04 the same suite passed on Chrome 157.0.8103.39, where the API is enabled by default, and on Canary 159.0.8137.0.
   The unit tests (`test/unit/gpu-effects/native-*.test.mjs`) run the same code over an emulated native API in any Chrome.
 - Safari Technology Preview's HTML-in-Canvas feature (the `layoutsubtree` draft) has neither the GPU upload nor the geometry methods: `createHost` rejects there.
 
@@ -474,7 +475,7 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
 - Resize: on a canvas content-box size change every drawable gets a metadata-only new version at once (new `canvasWidth/Height`, same
   pixels) so a `paint` fires in the next frame and a handler that wrote `canvas.width` (clearing the bitmap) redraws immediately from
   the previous pixels; the re-rasterised snapshots follow (deviation `resize-stale-first`).
-- Setting `canvas.width/height` on a managed canvas (also from a ResizeObserver callback, as in the explainer's basic example) refreshes the grid scale from the layer at once and fires ONE paint from a microtask in the SAME frame (a microtask checkpoint follows every ResizeObserver callback), at most one per frame and never re-entrant. A size write made INSIDE a `paint` handler of that canvas (detected synchronously in the setter) schedules nothing: the app clears the bitmap in order to redraw it right after, and native does not repaint on a size write either.
+- Setting `canvas.width/height` on a managed canvas (also from a ResizeObserver callback, as in the explainer's basic example) refreshes the grid scale from the layer at once and fires ONE paint from a microtask in the SAME frame (a microtask checkpoint follows every ResizeObserver callback), at most one per frame and never re-entrant. A size write made INSIDE a `paint` handler of that canvas (detected synchronously in the setter) schedules nothing: the app clears the bitmap in order to redraw it right after, and native does not repaint on a size write either. Native Chrome fires no `paint` for a size write made outside a `paint` handler either (measured 2026-11-04 on Chrome 157.0.8103.39 and Canary 159.0.8137.0: a write from a timer and one from a ResizeObserver callback after the first `paint` left the canvas cleared, with no `paint` event; the polyfill fired one for each). The explainer's basic example is not affected natively, because its ResizeObserver callback runs before the first `paint`; a page that writes the size later (a module script, a timer) should call `canvas.requestPaint()` after the write.
 - Inner scroll: on Chromium and WebKit a step of a scroller that the scroll compositor accepts is drawn in that step's own frame from cached pages of the scroller, and the
   exact snapshot replaces it when the scroll settles; on Gecko the same, but only at a device pixel ratio of 1, at whole-pixel offsets, for a scroller with square corners and content whose painting no clip edge changes (no rounded corners, dotted lines, transforms, images, SVG or form controls); every other Gecko step is a snapshot. On Chromium, where the raster scale is below the device pixel ratio (a desktop DPR above `maxDpr`,
   2.5 there; a surface over its pixel budget), composed frames can differ from the settled picture by a few device pixels until then (`docs/ARCHITECTURE.md`, "Pruned pages and tiles").
