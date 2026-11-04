@@ -165,13 +165,15 @@ The actions of the example plugins:
 
 | plugin | actions | options | states |
 |---|---|---|---|
-| [`disintegrate`](../../plugins/disintegrate/README.md#actions) | `out` (to dust, stays gone), `in` (re-forms), `play` (both) | none | `'in'`, `'out'` |
-| [`shatter`](../../plugins/shatter/README.md#actions) | `impact` (cracks an intact pane, breaks a cracked one), `crack`, `out`, `in`, `play` | `point: {x, y}` (canvas CSS px) | `'intact'`, `'cracked'`, `'gone'` |
-| [`glitch`](../../plugins/glitch/README.md#actions) | `burst` | none | `'idle'` |
-| [`page-curl`](../../plugins/page-curl/README.md#actions) | `peek` (the dog-ear opens and closes once) | none | `'rest'` |
-| [`water`](../../plugins/water/README.md#actions) | `drop` (a ripple) | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2) | `'calm'` |
+| [`disintegrate`](../../plugins/disintegrate/README.md#actions) | `out` (to dust, stays gone), `in` (re-forms), `play` (both), `demo` | none | `'in'`, `'out'` |
+| [`shatter`](../../plugins/shatter/README.md#actions) | `impact` (cracks an intact pane, breaks a cracked one), `crack`, `out`, `in`, `play`, `demo` | `point: {x, y}` (canvas CSS px) | `'intact'`, `'cracked'`, `'gone'` |
+| [`glitch`](../../plugins/glitch/README.md#actions) | `burst`, `demo` | none | `'idle'` |
+| [`page-curl`](../../plugins/page-curl/README.md#actions) | `peek` (the dog-ear opens and closes once), `demo` | none | `'rest'` |
+| [`water`](../../plugins/water/README.md#actions) | `drop` (a ripple), `demo` | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2) | `'calm'` |
+| [`holo-card`](../../plugins/holo-card/README.md#actions) | `demo` (a tilt sweep) | none | `'rest'` |
+| [`liquid-glass`](../../plugins/liquid-glass/README.md#actions) | `demo` (a tour of the page) | none | `'free'` |
 
-`crt`, `holo-card` and `liquid-glass` follow the pointer and have no actions. A plugin whose look depends on an input or an event also has the action `demo`, a short showcase that the plugin gallery plays on selection (section 15.1).
+`crt` is there at rest and has no actions. A plugin whose look depends on an input or an event also has the action `demo`, a short showcase that the plugin gallery plays on selection (section 15.1).
 
 ### 6. Reduced motion
 
