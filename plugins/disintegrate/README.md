@@ -11,10 +11,10 @@ Recorded in headless Chrome from the plugin gallery (`node plugins/disintegrate/
 ## What it does
 
 1. **Only the content goes.** Every pixel that differs from the background around it: text, field borders and fills, buttons, icons. The panels, cards and the page behind them stay, so no frame of the transition is dark.
-2. **An organic front sweeps across it**, from the top left (its edge is domain-warped noise, ragged at several scales): just before it goes, the content heats (a warm rim of light) and goes porous, then it is gone, with a faint afterglow where it was.
-3. **Every eroded cell becomes a grain of dust of its exact live colour.** A compute pass carries each grain through a wind blowing through a three-dimensional curl-noise flow field: the air is divergence-free, so the dust swirls in coherent clouds and filaments instead of scattering. The grains share most of their motion (the structure of the dust is the structure of the air) and a third of the page leaves as flakes that hold together for a moment, then crumble.
-4. **Depth.** The grains rise towards the viewer or sink away from the page, seen through a perspective camera: nearer grains are larger, cross the screen faster (parallax) and go out of focus (their light spreads over a circle of confusion); farther grains are smaller and dimmer.
-5. **Light.** Grains leave the front hot and cool within a fraction of their flight; a few catch the light as they tumble (glints). Every grain is analytically antialiased at device resolution (never smaller than half a device px: a smaller one keeps its light instead of flickering), motion-blurred over a fixed 8 ms exposure, and drawn premultiplied over the page; the gradients of the page pass are dithered.
+2. **An organic front sweeps across it**, from the top left (its edge is domain-warped noise, ragged at several scales): a glowing edge sweeps across the content: just before it goes it lights up and goes porous, then it is gone, with a brief afterglow where it was.
+3. **Every eroded cell becomes a grain of dust of its exact live colour.** A compute pass carries each grain through a wind blowing through a three-dimensional curl-noise flow field: the air is divergence-free, so the dust swirls in coherent clouds and filaments instead of scattering. The grains share most of their motion at first (the structure of the dust is the structure of the air), the cloud diffuses as it travels, and a third of the page leaves as flakes that hold together for a moment, then crumble.
+4. **Depth, as an accent.** The grains rise towards the viewer or sink away from the page, seen through a perspective camera: nearer grains are larger, cross the screen faster (parallax) and soften out of focus; farther grains are smaller and a little dimmer. Half of the light the defocus would spread is kept, so depth never dims the cloud as a whole.
+5. **Light.** Every grain is a small bright point of its pixel's colour, lit a little brighter than the flat page (a grain in the air catches light). Grains leave the front hot and cool within a third of their flight; a few catch the light as they tumble (glints). Every grain is analytically antialiased at device resolution (never smaller than half a device px: a smaller one keeps its light instead of flickering), with a short motion blur (a fixed 5 ms exposure, at most 0.8 of its radius: a point, never a dash), and drawn premultiplied over the page; the gradients of the page pass are dithered.
 6. **No still frame.** The way out takes 1.8 s (the content is gone after about 0.9 s, the dust keeps drifting); a play then turns at once and the dust flies back at full strength.
 7. **The re-forming**: in 1.2 s the dust flies back along the same paths, decelerating as it lands, and settles into the letters and fields of the page as it is now.
 
@@ -49,15 +49,15 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `duration` | 1800 | ms of the way out (the dust keeps drifting after the content is gone), 300 to 8000 |
 | `durationIn` | 1200 | ms of the way back, 300 to 8000 |
 | `particleSize` | 1.25 | dust cell, 1 to 4 CSS px; at most 420,000 cells (cells grow beyond) |
-| `wind` | 1 | 0 to 2: how far the dust travels (0.32 x the larger canvas side at 1) |
+| `wind` | 1 | 0 to 2: how far the dust travels (0.27 x the larger canvas side at 1) |
 | `direction` | -28 | wind direction in degrees, -180 to 180 (0 = right, negative = up) |
 | `sweep` | 24 | the direction the erosion sweeps across the page, degrees, -180 to 180 |
 | `turbulence` | 1 | 0 to 2: the swirl of the air |
 | `fragments` | 0.3 | 0 to 1: share of the page that leaves as flakes before they crumble |
-| `density` | 0.6 | 0.05 to 1: share of the cells of content that stay visible in flight; every cell lifts off, the others crumble into dust too fine to see within the first sixth of their flight |
+| `density` | 1 | 0.05 to 1: share of the cells of content that stay visible in flight; every cell lifts off, the others crumble into dust too fine to see within the first sixth of their flight |
 | `depth` | 0.7 | 0 to 1: how far the grains travel in depth (size, parallax and focus); 0 keeps them in the page plane |
 | `focus` | 1 | 0 to 2: the strength of the defocus of grains off the page plane; 0 keeps every grain sharp |
-| `glow` | 0.5 | 0 to 1: the heat of the eroding front and of the grains that leave it; 0 for none |
+| `glow` | 0.65 | 0 to 1: the heat of the eroding front and of the grains that leave it; 0 for none |
 | `glowColor` | `#ffad66` | the colour of that heat (`#rrggbb` or `[r, g, b]` 0..1) |
 | `sensitivity` | 0.5 | 0 to 1: how little a pixel must differ from its background to count as content |
 | `backdrop` | the host's clear colour | what a transparent pixel of the source shows (`#rrggbb` or `[r, g, b]` 0..1) |

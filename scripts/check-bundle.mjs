@@ -248,7 +248,7 @@ const PLUGIN_CEILING = 16 * KB;
  */
 const PLUGIN_LIMITS = {
   crt: 14 * KB, // 13,796 (13,766 before the Terser pass); 10.5 -> 14 KB: the arcade look (glow rings, aperture grille, glass), the presets and their picker
-  disintegrate: 35.5 * KB, // 35,362 (2026-11-04); 26.25 -> 35.5 KB: the grains in a compute pass (3D curl-noise flow, perspective, defocus, heat, density, the 24-byte records), the analytic AA of the dust, the demo action and its take-over; +7.8 KB of it is WGSL, inlined uncompressed. Before: 26,080 (25,983 before the Terser pass); 26.5 -> 26.25 KB (2026-10-27); 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
+  disintegrate: 36 * KB, // 35,795 (2026-11-04); 26.25 -> 36 KB: the grains in a compute pass (3D curl-noise flow, perspective, defocus, heat, density, the 24-byte records), the analytic AA of the dust, the demo action and its take-over; +7.8 KB of it is WGSL, inlined uncompressed. Before: 26,080 (25,983 before the Terser pass); 26.5 -> 26.25 KB (2026-10-27); 41.5 -> 26.5 KB: content-only dust (background estimate by mean shift, eroding sweep, instanced grains with live colours; the WGSL is inlined)
   glitch: 13.75 * KB, // 13,500 (13,510 before the Terser pass); 13.5 -> 13.75 KB: the action 'burst' (handle.trigger) in place of the `trigger` option
   'holo-card': 12.5 * KB, // 12,486 (12,513 before the Terser pass); 12.75 -> 12.5 KB (2026-10-27)
   'liquid-glass': 12 * KB, // 11,905 (11,932 before the Terser pass); 12.25 -> 12 KB (2026-10-27)

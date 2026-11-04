@@ -22,7 +22,7 @@ test('meta and the definition agree; the gallery defaults are valid options', ()
   assert.equal(o.intro, true);
   assert.equal(o.duration, 1800, 'about 1.5 s of dust leaving plus the drift while no content is left');
   assert.equal(o.durationIn, 1200);
-  assert.deepEqual([o.particleSize, o.depth, o.glow, o.focus, o.density], [1.25, 0.7, 0.5, 1, 0.6]);
+  assert.deepEqual([o.particleSize, o.depth, o.glow, o.focus, o.density], [1.25, 0.7, 0.65, 1, 1]);
   assert.deepEqual(o.glowColor, [...GLOW_COLOUR]);
 });
 
@@ -152,18 +152,18 @@ test('uniforms: the layout of disintegrate.wgsl', () => {
   assert.deepEqual(Array.from(data.slice(0, 8)), [800, 400, 400, 200, 0.5, 1, 1.5, 267]);
   assert.deepEqual(Array.from(data.slice(8, 12)), [1, 0, 0, 400], 'the sweep: to the right, across 400 css px');
   assert.deepEqual([data[12], data[13]], [1, 0], 'wind direction 0: to the right');
-  assert.equal(data[14], Math.fround(0.32 * 400));
+  assert.equal(data[14], Math.fround(0.27 * 400));
   assert.deepEqual([data[16], data[18], data[19], data[21]], [Math.fround(0.9), Math.fround(SWEEP_END), LIFE, BG_CELL]);
   assert.ok(data[22] > 0 && data[23] > data[22], 'content thresholds');
   assert.equal(data[27], 1);
   assert.equal(data[28], 0, 'a play turns at full strength');
-  assert.deepEqual([data[29], data[30], data[31]], [Math.fround(0.7), 0.5, Math.fround(1.8 * 400)], 'depth, glow, the camera distance');
+  assert.deepEqual([data[29], data[30], data[31]], [Math.fround(0.7), Math.fround(0.65), Math.fround(1.8 * 400)], 'depth, glow, the camera distance');
   assert.deepEqual(Array.from(data.slice(32, 36)), [...GLOW_COLOUR, 1].map(Math.fround), 'the colour of the heat, the defocus');
   fillUniforms(data, { width: 800, height: 400, cssWidth: 400, cssHeight: 200 }, readOptions({ duration: 2000 }), 0.5, { cell: 1.5, cols: 267, count: 36000 }, 1);
   assert.equal(data[28], 1, 'otherwise the dust fades as the transition ends gone');
   assert.equal(data[36], 36000, 'the dust cells (the compute threads that do work)');
   assert.equal(data[37], Math.fround(SHUTTER_MS / 2000), 'the exposure of the motion blur, in units of g: fixed in ms, so the same at every frame cap');
-  assert.equal(data[38], Math.fround(0.6), 'the share of cells that stay visible in flight');
+  assert.equal(data[38], 1, 'the share of cells that stay visible in flight');
   const wgsl2 = readFileSync(new URL('../disintegrate.wgsl', import.meta.url), 'utf8');
   assert.match(wgsl2, new RegExp(`@workgroup_size\\(${WORKGROUP}\\)`), 'the dispatch size of index.js is the workgroup of cs_grains');
   assert.match(wgsl2, /let base = i \* 6u;/, `a record is ${GRAIN_BYTES / 4} words`);

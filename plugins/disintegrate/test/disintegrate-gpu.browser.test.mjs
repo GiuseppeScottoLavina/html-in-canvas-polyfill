@@ -59,27 +59,70 @@ gpuTest('play: mid-transition frames are non-blank, never dark (the page stays),
   assert.deepEqual(/** @type {any} */ (mappers.at(-1))({ x: 120, y: 60, width: W, height: H }), { x: 120, y: 60 }, 'identity again');
 });
 
-gpuTest('the background stays: while the content turns to dust, the page around it is untouched (apart from dust passing over it); the content is gone', async (t) => {
+/**
+ * A definition whose page pass ERODES THE BACKGROUND: where the front has passed, the page shows its background estimate darkened by 30 %,
+ * content or not (the mutation of fs_base below). The positive control of the background check: a plugin that really changes the page.
+ */
+const erodesBackground = (() => {
+  const from = 'var col = mix(bg, heated, mix(1.0, shown, k));';
+  const to = 'var col = mix(bg * 0.7, heated, shown);';
+  return {
+    ...plugin,
+    async create(/** @type {any} */ ctx, /** @type {any} */ options) {
+      const device = new Proxy(ctx.device, {
+        get(target, key) {
+          if (key === 'createShaderModule') {
+            return (/** @type {any} */ d) => { if (!d.code.includes(from)) throw new Error('the mutation no longer applies to disintegrate.wgsl'); return target.createShaderModule({ ...d, code: d.code.replace(from, to) }); };
+          }
+          const v = Reflect.get(target, key);
+          return typeof v === 'function' ? v.bind(target) : v;
+        },
+      });
+      return plugin.create({ ...ctx, device }, options);
+    },
+  };
+})();
+const mutantRig = transitionRig(erodesBackground, { duration: DURATION, durationIn: DURATION });
+
+gpuTest('the background stays: where the page pass draws it, the page around the content is the source; only dust passes over it; the content is gone. Control: a page pass that erodes the background is caught', async (t) => {
+  // What is measured: the pixels of the page around the content (10 px away from it) that differ from the source by more than 6 levels,
+  // at 62 % of the way out, in two runs whose only difference is the wind direction (-28 and 152 degrees). The page pass does not read the
+  // wind, the dust follows it: dust over the page is in a different place in the two runs, a change of the page itself is in the same
+  // place. A pixel changed in BOTH runs is the page (or dust that has barely left its cell next to the content). Changed in one run only,
+  // it is dust flying over the page: printed, not limited (it is the effect).
   const ref = await reference(t);
-  const { rig, handle } = await start(t, { intro: false });
-  const t0 = performance.now();
-  rig.tick(t0);
-  handle.trigger('out');
-  rig.tick(t0 + 10);
-  rig.tick(t0 + 10 + DURATION * 0.62);               // every pixel of content has eroded by 0.5
-  const img = rig.snap();
-  let bg = 0, bgSame = 0, content = 0, contentGone = 0;
-  for (let y = 0; y < H; y += 1) {
-    for (let x = 0; x < W; x += 1) {
-      const k = (y * W + x) * 4;
-      const d = Math.max(Math.abs(img.data[k] - ref.data[k]), Math.abs(img.data[k + 1] - ref.data[k + 1]), Math.abs(img.data[k + 2] - ref.data[k + 2]));
-      if (!inContent(x, y, 10)) { bg += 1; if (d <= 6) bgSame += 1; }
-      else if (inContent(x, y, -3) && Math.max(ref.data[k], ref.data[k + 1]) > 200) { content += 1; if (d > 60) contentGone += 1; }
+  /** @param {any} rigOf @param {number} direction */
+  const at62 = async (rigOf, direction) => {
+    const { rig, host, handle } = await rigOf.start(t, { intro: false, direction });
+    const t0 = performance.now();
+    rig.tick(t0);
+    handle.trigger('out');
+    rig.tick(t0 + 10);
+    rig.tick(t0 + 10 + DURATION * 0.62);               // every pixel of content has eroded by 0.5
+    const img = rig.snap();
+    host.destroy();
+    rig.root.remove();
+    return img;
+  };
+  const near = (/** @type {ImageData} */ img, /** @type {number} */ k) => Math.max(Math.abs(img.data[k] - ref.data[k]), Math.abs(img.data[k + 1] - ref.data[k + 1]), Math.abs(img.data[k + 2] - ref.data[k + 2]));
+  /** @param {ImageData} a @param {ImageData} b */
+  const measure = (a, b) => {
+    let bg = 0, both = 0, dustOnly = 0, content = 0, contentGone = 0;
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        const k = (y * W + x) * 4;
+        if (!inContent(x, y, 10)) { bg += 1; const da = near(a, k) > 6, db = near(b, k) > 6; if (da && db) both += 1; else if (da || db) dustOnly += 1; }
+        else if (inContent(x, y, -3) && Math.max(ref.data[k], ref.data[k + 1]) > 200) { content += 1; if (near(a, k) > 60) contentGone += 1; }
+      }
     }
-  }
-  console.error(`disintegrate background: ${bgSame} of ${bg} background px unchanged; ${contentGone} of ${content} light content px gone`);
-  assert.ok(bgSame > 0.85 * bg, `the background changed: only ${(100 * bgSame / bg).toFixed(1)} % unchanged`);
-  assert.ok(contentGone > 0.8 * content, `the content is still there: ${contentGone} of ${content} px gone`);
+    return { bg, both, dustOnly, content, contentGone };
+  };
+  const m = measure(await at62({ start }, -28), await at62({ start }, 152));
+  const c = measure(await at62(mutantRig, -28), await at62(mutantRig, 152));
+  console.error(`disintegrate background: changed in both wind directions ${m.both} of ${m.bg} px (${(100 * m.both / m.bg).toFixed(2)} %); dust over the page in one run only ${m.dustOnly} px; ${m.contentGone} of ${m.content} light content px gone. Control (a page pass that erodes the background): ${c.both} px (${(100 * c.both / c.bg).toFixed(1)} %)`);
+  assert.ok(m.both < 0.015 * m.bg, `the page around the content changed: ${(100 * m.both / m.bg).toFixed(2)} % of it in both wind directions`);
+  assert.ok(c.both > 0.3 * c.bg, `the control is not caught: a page pass that erodes the background changes only ${(100 * c.both / c.bg).toFixed(1)} % of it`);
+  assert.ok(m.contentGone > 0.8 * m.content, `the content is still there: ${m.contentGone} of ${m.content} px gone`);
 });
 
 gpuTest('the dust keeps the colour of its pixel: the orange button leaves orange dust where there was none', async (t) => {

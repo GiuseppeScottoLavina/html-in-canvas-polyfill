@@ -254,9 +254,10 @@ fn fs_base(v : FullOut) -> @location(0) vec4<f32> {
   let gone = select(0.0, 1.0, u.g >= t);
   let shown = (1.0 - gone) * (1.0 - 0.4 * heat);
   let hot = mix(src, u.glow_colour.rgb, 0.55) * 1.35;
-  let heated = mix(src, hot, heat * u.glow * 0.8 * k);
+  let heated = mix(src, hot, heat * u.glow * k);
   var col = mix(bg, heated, mix(1.0, shown, k));
-  col += u.glow_colour.rgb * (after * 0.4 + heat * 0.35) * u.glow * k;
+  // the glowing edge: the content lights up as the front reaches it, the light stays a moment where it was
+  col += u.glow_colour.rgb * (after * 0.5 + heat * heat * 0.9) * u.glow * k;
   return vec4<f32>(col + dither(dpx), 1.0);
 }
 
@@ -266,9 +267,11 @@ fn fs_base(v : FullOut) -> @location(0) vec4<f32> {
 fn flow(p : vec3<f32>, s : f32, r : vec4<f32>) -> vec3<f32> {
   // a grain detaches gently and then rides the air: the speed ramps from rest (the displacement grows as s^1.6)
   let ramp = 1.6 * pow(max(s, 1e-4), 0.6);
-  // little spread from grain to grain: the structure of the dust (wisps, filaments) is the structure of the air, not of the randoms
-  let gust = vec3<f32>(u.wind * (0.8 + 0.4 * r.x), 0.0) * u.travel;
-  let lift = vec3<f32>(0.0, -0.16 * (0.5 + r.y), (r.z * 2.0 - 1.0) * 0.45 * u.depth) * u.travel;
+  // little spread from grain to grain at first: the structure of the dust (wisps, filaments) is the structure of the air; the spread
+  // grows with the age (the cloud diffuses as it travels)
+  let spread = mix(0.4, 1.0, smoothstep(0.15, 0.9, s));
+  let gust = vec3<f32>(u.wind * (1.0 + (r.x - 0.5) * spread), 0.0) * u.travel;
+  let lift = vec3<f32>(0.0, -0.16 * (1.0 + (r.y - 0.5) * 1.6 * spread), (r.z * 2.0 - 1.0) * 0.45 * u.depth) * u.travel;
   let q = vec3<f32>(p.xy, p.z * 1.5) * 0.0042 + vec3<f32>(u.seed * 0.37, 0.0, u.time * 0.3);
   let swirl = (curl3(q) + 0.5 * curl3(q * 2.1 + 5.0) + 0.3 * curl3(q * 4.7 - 3.0)) * u.travel * 0.7 * u.turbulence;
   return (gust + lift + vec3<f32>(swirl.xy, swirl.z * u.depth)) * ramp;
@@ -325,15 +328,15 @@ fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
   let pr = project(p);
   let dpr = u.resolution.x / u.css.x;
 
-  // the size: the cell itself at birth (the content lifts off whole), then a speck of its own size that crumbles finer as it travels;
-  // nearer is bigger
+  // the size: the cell itself at birth (the content lifts off whole), then a speck of its own size; nearer is bigger
   let birth = smoothstep(0.0, 0.16, a);
-  var radius = u.cell * 0.5 * mix(1.0, 0.75 + 0.55 * rg.w, birth) * (1.0 - 0.4 * smoothstep(0.25, 1.0, a)) * pr.z;
+  var radius = u.cell * 0.5 * mix(1.0, 0.9 + 0.5 * rg.w, birth) * pr.z;
   // out of focus off the page plane: the circle of confusion grows with the depth; the light of the grain spreads over it
-  let coc = abs(p.z) / u.focal * 16.0 * u.glow_colour.a;
+  let coc = abs(p.z) / u.focal * 7.0 * u.glow_colour.a;
   let focused = radius;
   radius = sqrt(radius * radius + coc * coc);
-  var alpha = k * (focused * focused) / (radius * radius);
+  // (an accent: half of the light the defocus would spread is kept, so depth never dims the cloud as a whole)
+  var alpha = k * mix(1.0, (focused * focused) / (radius * radius), 0.5);
   let soft = clamp(0.35 + coc / max(radius, 1e-3), 0.35, 1.0);
   // never smaller than half a device px: a smaller grain keeps its light (alpha) instead of flickering between pixels
   let minR = 0.5 / dpr;
@@ -342,21 +345,22 @@ fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
   let screenVel = vel.xy * pr.z;
   let speed = length(screenVel);
   let dir = select(vec2<f32>(1.0, 0.0), screenVel / max(speed, 1e-4), speed > 1e-3);
-  let streak = min(speed * u.shutter / max(u.life - t, 1e-3) * 0.5, 2.0 * radius + 1.0);
-  alpha *= max(0.5, radius / (radius + streak));
+  // (short: a grain stays a point of light with a little blur, never a dash)
+  let streak = min(speed * u.shutter / max(u.life - t, 1e-3) * 0.5, 0.8 * radius);
+  alpha *= max(0.8, radius / (radius + streak));
   // when the transition ends gone, the dust thins out over the second half of its flight (it disperses below sight); a play's dust turns
   // back at full strength
-  alpha *= 1.0 - u.vanish * smoothstep(0.5, 1.0, a);
+  alpha *= 1.0 - u.vanish * smoothstep(0.65, 1.0, a);
   alpha *= select(1.0, 1.0 - smoothstep(0.03, 0.15, a), fine);
-  // the colour of its pixel, a touch greyer as it thins to dust; dimmer far away (behind the page plane)
-  var colour = mix(src, vec3<f32>(luma(src)) * 1.06 + 0.02, 0.12 * smoothstep(0.25, 1.0, a));
-  colour *= 1.0 - 0.3 * smoothstep(0.0, 0.35 * u.focal, -p.z);
+  // the colour of its pixel, lit: a grain in the air catches more light than the flat page did; dimmer far behind the page plane
+  var colour = mix(src * 1.12 + 0.03, vec3<f32>(luma(src)) * 1.12 + 0.05, 0.08 * smoothstep(0.25, 1.0, a));
+  colour *= 1.0 - 0.15 * smoothstep(0.0, 0.35 * u.focal, -p.z);
   // light: hot as it leaves the front, cooling fast; a few grains catch the light as they tumble (glints)
-  let heat = u.glow * (1.0 - smoothstep(0.0, 0.22, a)) * k;
+  let heat = u.glow * (1.0 - smoothstep(0.0, 0.3, a)) * k;
   let spin = 0.5 + 0.5 * sin(u.time * (9.0 + 16.0 * rg.y) + rg.z * 6.2832);
   let glint = select(0.0, pow(spin, 14.0) * 0.9 * smoothstep(0.1, 0.3, a), rg.w > 0.9) * k;
-  let emit = mix(colour, u.glow_colour.rgb, 0.6) * heat * 1.2 + vec3<f32>(glint);
-  let shape = 1.0 - birth;                                // square at birth (the cell), round in flight
+  let emit = mix(colour, u.glow_colour.rgb, 0.6) * heat * 1.5 + vec3<f32>(glint);
+  let shape = 1.0 - smoothstep(0.0, 0.05, a);            // square at birth (the cell), round as soon as it is in the air
 
   let base = i * 6u;
   grains[base] = bitcast<u32>(pr.x);

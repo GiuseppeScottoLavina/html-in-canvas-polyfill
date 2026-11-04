@@ -62,7 +62,7 @@ export const WORKGROUP = 256;
 /** ms of the way back when a user takes over a demo (a press or a key re-forms the page at once) */
 export const TAKEOVER_MS = 450;
 /** ms of exposure of the motion blur (fixed, so that a frame looks the same at every frame cap) */
-export const SHUTTER_MS = 8;
+export const SHUTTER_MS = 5;
 
 /** The actions of `handle.trigger`: out turns the content to dust and leaves it gone, in re-forms it, play does both, demo is a play that
  *  user input interrupts (the gallery runs it when the effect is picked). */
@@ -113,10 +113,10 @@ export function readOptions(o) {
     fragments: clampNumber(o.fragments, 0, 1, 0.3),
     sensitivity: clampNumber(o.sensitivity, 0, 1, 0.5),
     depth: clampNumber(o.depth, 0, 1, 0.7),
-    glow: clampNumber(o.glow, 0, 1, 0.5),
+    glow: clampNumber(o.glow, 0, 1, 0.65),
     glowColor: parseColor(o.glowColor, GLOW_COLOUR),
     focus: clampNumber(o.focus, 0, 2, 1),
-    density: clampNumber(o.density, 0.05, 1, 0.6),
+    density: clampNumber(o.density, 0.05, 1, 1),
     backdrop: parseColor(o.backdrop, HOST_BACKDROP),
     onSubmit: submit === 'valid' || submit === 'always' ? submit : 'off',
     invalidSelector: typeof o.invalidSelector === 'string' && o.invalidSelector ? o.invalidSelector : DEFAULT_INVALID_SELECTOR,
@@ -148,7 +148,7 @@ export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = 
   data[4] = g; data[5] = fade; data[6] = grid.cell; data[7] = grid.cols;
   data[8] = sw.x; data[9] = sw.y; data[10] = sw.min; data[11] = sw.span;
   data[12] = Math.cos(wind); data[13] = Math.sin(wind);
-  data[14] = 0.32 * Math.max(frame.cssWidth, frame.cssHeight) * s.wind; data[15] = s.turbulence;
+  data[14] = 0.27 * Math.max(frame.cssWidth, frame.cssHeight) * s.wind; data[15] = s.turbulence;
   data[16] = time; data[17] = s.seed; data[18] = SWEEP_END; data[19] = LIFE;
   data[20] = s.fragments; data[21] = BG_CELL;
   // the colour distance from the background where content starts and where it is full content (sensitivity 0.5: 0.05 .. 0.14)
