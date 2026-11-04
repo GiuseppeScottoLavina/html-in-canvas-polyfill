@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { readFileSync } from 'node:fs';
-import { ACTIONS, BG_CELL, GLOW_COLOUR, GRAIN_BYTES, HOLD_MS, LIFE, MAX_GRAINS, NO_TARGET, SHUTTER_MS, SWEEP_END, TAKEOVER_MS, UNIFORM_FLOATS, WORKGROUP, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf } from '../index.js';
+import { ACTIONS, BG_CELL, GLOW_COLOUR, GRAIN_BYTES, HOLD_MS, LIFE, ROUND_EXIT_MS, MAX_GRAINS, NO_TARGET, SHUTTER_MS, SWEEP_END, TAKEOVER_MS, UNIFORM_FLOATS, WORKGROUP, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { findInvalid, sourcePointOnCanvas } from '../../_lib/transition.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
@@ -92,7 +92,8 @@ test('timeline: one late frame jumps to the end (any frame cap), a request alrea
 
 test('timing: every pixel of content has eroded by SWEEP_END; a grain lives from its birth to g = LIFE = 1, so the page is whole at g = 0 and empty of content at g = 1', () => {
   assert.ok(SWEEP_END < LIFE && LIFE === 1);
-  assert.equal(HOLD_MS, 0, 'no still frame: the end of the way out is the pause');
+  assert.ok(HOLD_MS >= 300 && HOLD_MS <= 500, 'a play shows the empty page for a short beat before it re-forms');
+  assert.ok(ROUND_EXIT_MS > 0, 'and its way out is longer: the dust has time to leave');
   const wgsl = readFileSync(new URL('../disintegrate.wgsl', import.meta.url), 'utf8');
   assert.match(wgsl, /let a = \(u\.g - t\) \/ max\(u\.life - t, 1e-3\);/, 'the age of a grain runs from its birth to u.life');
   assert.match(wgsl, /\* u\.sweep_end;/, 'erosion ends at u.sweep_end');
@@ -260,22 +261,35 @@ test('instance: identity mapper when assembled, blocked while it moves; continuo
   inst.render(frame(1010));
   inst.render(frame(1500));
   inst.render(frame(2100));
-  assert.equal(inst.captureInputMapper(frame(2100)), identityMapper);
+  inst.render(frame(2900));           // out 1000 + ROUND_EXIT_MS, the empty beat, back 1000
+  assert.equal(inst.captureInputMapper(frame(2900)), identityMapper);
   assert.deepEqual(gpu.draws.at(-1), [3], 'assembled: the full-screen pass');
   assert.equal(await done, 'in', 'the play ends assembled');
   assert.equal(inst.continuous, false);
 });
 
-test('instance: the way out and the way back have their own lengths (play: out, no pause, in)', async () => {
-  const { inst, handle, frame } = await instance({ duration: 1000, durationIn: 400 });
+test('instance: play = out (duration + ROUND_EXIT_MS, the dust fades out entirely), the empty page for HOLD_MS, back (durationIn)', async () => {
+  const { inst, handle, frame, gpu } = await instance({ duration: 1000, durationIn: 400 });
   inst.render(frame(0));
   const done = handle.trigger('play');
   inst.render(frame(100));            // the clock starts here
-  inst.render(frame(1100));           // the way out ends: the way back starts at once
-  inst.render(frame(1300));
-  assert.equal(inst.captureInputMapper(frame(1300)), blockedMapper, 'half way back');
-  inst.render(frame(1510));
-  assert.equal(inst.captureInputMapper(frame(1510)), identityMapper, 'back after 400 ms');
+  const outEnd = 100 + 1000 + ROUND_EXIT_MS, backAt = outEnd + HOLD_MS;
+  inst.render(frame(outEnd - 300));
+  assert.equal(gpu.draws.at(-1)[0], 4, 'on its way out: dust');
+  inst.render(frame(outEnd));
+  const dispatched = gpu.dispatches.length;
+  for (let now = outEnd; now < backAt; now += 8.33) {
+    inst.render(frame(now));
+    assert.equal(inst.continuous, true, 'the empty beat keeps its clock running');
+    assert.equal(inst.captureInputMapper(frame(now)), blockedMapper);
+  }
+  assert.deepEqual(gpu.draws.at(-1), [3], 'the empty beat: the page alone, no grain left');
+  assert.equal(gpu.dispatches.length, dispatched, 'no grain computed during the beat');
+  inst.render(frame(backAt + 200));
+  assert.equal(inst.captureInputMapper(frame(backAt + 200)), blockedMapper, 'half way back');
+  assert.equal(gpu.draws.at(-1)[0], 4, 'the dust is back');
+  inst.render(frame(backAt + 410));
+  assert.equal(inst.captureInputMapper(frame(backAt + 410)), identityMapper, 'back after 400 ms');
   assert.equal(await done, 'in');
 });
 
@@ -372,16 +386,16 @@ test('demo: out and back in (a play), resolves with the state it rests in, then 
   run(it, 10, 900);
   assert.equal(it.inst.captureInputMapper(it.frame(900)), blockedMapper, 'on its way out');
   assert.ok(it.gpu.dispatches.length > 50, 'the dust moved');
-  run(it, 908, 1830);
+  run(it, 908, 2700);
   await flush();
-  assert.equal(state, 'in', 'out (1000 ms) and back (800 ms): it rests assembled');
-  assert.equal(it.inst.captureInputMapper(it.frame(1830)), identityMapper);
+  assert.equal(state, 'in', 'out (1000 + ROUND_EXIT_MS), the empty beat (HOLD_MS) and back (800 ms): it rests assembled');
+  assert.equal(it.inst.captureInputMapper(it.frame(2700)), identityMapper);
   // zero work at rest: the host renders only while a plugin is continuous or asks for a frame
   const asked = it.requests(), dispatched = it.gpu.dispatches.length;
   assert.equal(it.inst.continuous, false, 'at rest: not continuous');
   await new Promise((r) => setTimeout(r, 120));
   assert.equal(it.requests(), asked, 'at rest: no frame requested (no timer, no loop)');
-  run(it, 1840, 4840);   // what the host would render if anything else asked
+  run(it, 2710, 5710);   // what the host would render if anything else asked
   assert.equal(it.gpu.dispatches.length, dispatched, 'at rest: no compute pass');
   assert.deepEqual(it.gpu.draws.at(-1), [3], 'at rest: the passthrough');
   assert.equal(it.requests(), asked);
@@ -410,11 +424,23 @@ test('demo: user input takes over at once: a press, a key, a submit or new optio
   back.inst.render(back.frame(0));
   let st = /** @type {any} */ ('pending');
   back.handle.trigger('demo').then((v) => { st = v; });
-  run(back, 10, 1210);                                   // out in 400 ms, then 800 ms of the 4 s way back: g = 0.8
+  run(back, 10, 10 + 400 + ROUND_EXIT_MS + HOLD_MS + 800);   // out, the beat, then 800 ms of the 4 s way back: g = 0.8
   back.press();
-  run(back, 1218, 1218 + TAKEOVER_MS * 0.8 + 20);
+  const t1 = 18 + 400 + ROUND_EXIT_MS + HOLD_MS + 800;
+  run(back, t1, t1 + TAKEOVER_MS * 0.8 + 20);
   await flush();
   assert.equal(st, 'in');
+  // and during the empty beat: the page re-forms from nothing in TAKEOVER_MS
+  const beat = await instance({ duration: 400, durationIn: 4000 });
+  beat.inst.render(beat.frame(0));
+  let sb = /** @type {any} */ ('pending');
+  beat.handle.trigger('demo').then((v) => { sb = v; });
+  run(beat, 10, 10 + 400 + ROUND_EXIT_MS + 100);
+  beat.press();
+  const t2 = 18 + 400 + ROUND_EXIT_MS + 100;
+  run(beat, t2, t2 + TAKEOVER_MS + 20);
+  await flush();
+  assert.equal(sb, 'in', 'a press during the beat re-forms the page at once');
 });
 
 test('play (not a demo) ignores user input; a press at rest does nothing; reduced motion: the demo resolves at once and nothing moves', async () => {
@@ -430,7 +456,7 @@ test('play (not a demo) ignores user input; a press at rest does nothing; reduce
   run(it, 318, 900);
   await flush();
   assert.equal(state, 'pending', 'a play is not interrupted by a press: it is the page\'s transition (the press is swallowed)');
-  run(it, 908, 2100);
+  run(it, 908, 2900);
   await flush();
   assert.equal(state, 'in');
   const calm = await instance({}, { reducedMotion: true });

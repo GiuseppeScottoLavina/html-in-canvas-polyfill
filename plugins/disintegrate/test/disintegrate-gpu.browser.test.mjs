@@ -6,7 +6,7 @@
 import { assert, sleep } from '/test/unit/lib/t.js';
 import { gpuAvailable, gpuTest } from '/plugins/_shared/gpu-check.mjs';
 import { CONTROLS, DURATION, H, W, diff, diffNear, paint, transitionRig } from '/plugins/_shared/transition-gpu-rig.mjs';
-import { plugin } from '/plugins/disintegrate/index.js';
+import { HOLD_MS, ROUND_EXIT_MS, plugin } from '/plugins/disintegrate/index.js';
 import { isNoTarget } from '/src/effects/no-target.js';
 
 console.error(`disintegrate-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
@@ -51,8 +51,8 @@ gpuTest('play: mid-transition frames are non-blank, never dark (the page stays),
   console.error(`disintegrate mid frames: 15%->30% ${d01.over} px, 15% vs source ${d0r.over} px, 30%->45% ${d12.over} px`);
   assert.ok(d01.over > 1500 && d12.over > 1500 && d0r.over > 1500, 'frames move');
   assert.ok(isNoTarget(midMapper({ x: 120, y: 60, width: W, height: H })), 'input blocked mid-transition (NO_TARGET)');
-  for (let now = t0 + 10 + DURATION * 1.8; now <= t0 + 10 + DURATION * 2.2; now += 8.33) rig.tick(now);
-  rig.tick(t0 + 10 + DURATION * 2.3);
+  for (let now = t0 + 10 + DURATION * 1.8; now <= t0 + 10 + DURATION * 3; now += 8.33) rig.tick(now);
+  rig.tick(t0 + 10 + DURATION * 3.1);                 // out (DURATION + ROUND_EXIT_MS), the empty beat (HOLD_MS), back (DURATION)
   assert.equal(await done, 'in', 'the play promise resolves with the end state, assembled');
   const end = diff(rig.snap(), ref);
   assert.equal(end.max, 0, `reassembled frame differs from the source by up to ${end.max} levels`);
@@ -322,14 +322,14 @@ gpuTest('demo: out and back through the real host; it ends on the source bit for
   const done = handle.trigger('demo');
   const f0 = host.stats().frames;
   let mid = null;
-  for (let now = t0 + 10; now <= t0 + 10 + DURATION * 2.2; now += 8.33) { rig.tick(now); if (!mid && now >= t0 + 10 + DURATION * 0.6) mid = rig.snap(); }
+  for (let now = t0 + 10; now <= t0 + 10 + DURATION * 3; now += 8.33) { rig.tick(now); if (!mid && now >= t0 + 10 + DURATION * 0.6) mid = rig.snap(); }
   const moving = host.stats().frames - f0;
   assert.equal(await done, 'in', 'the demo resolves with the state it rests in');
   assert.ok(moving > 200, `the demo rendered ${moving} frames while it moved`);
   assert.ok(mid && diff(mid, ref).over > 2000, 'it moved');
   assert.equal(diff(rig.snap(), ref).max, 0, 'at rest: the source, bit for bit');
   const f1 = host.stats().frames;
-  for (let now = t0 + 20 + DURATION * 2.2; now <= t0 + 20 + DURATION * 5.2; now += 8.33) rig.tick(now);
+  for (let now = t0 + 20 + DURATION * 3; now <= t0 + 20 + DURATION * 6; now += 8.33) rig.tick(now);
   assert.equal(host.stats().frames - f1, 0, 'at rest: no effect frame in 3 s');
 });
 
@@ -377,4 +377,34 @@ gpuTest('glow: the eroding front and the grains that leave it heat (warmer than 
   console.error(`disintegrate glow: ${hot} px warmer with glow 1 than without; control (two runs without glow) ${control} px`);
   assert.equal(control, 0, 'without glow two runs are identical');
   assert.ok(hot > 300, `the front heats: ${hot} px warmer`);
+});
+
+gpuTest('play: the dust leaves entirely, the page shows empty for the beat (the frame of a finished \'out\', still), then the dust re-forms', async (t) => {
+  // the end of an 'out': every grain dissolved, the content gone
+  const gone = await (async () => {
+    const { rig, host, handle } = await start(t, { intro: false });
+    const t0 = performance.now();
+    rig.tick(t0); handle.trigger('out'); rig.tick(t0 + 10); rig.tick(t0 + 10 + DURATION + 50);
+    const img = rig.snap(); host.destroy(); rig.root.remove(); return img;
+  })();
+  const { rig, handle } = await start(t, { intro: false });
+  const t0 = performance.now();
+  rig.tick(t0);
+  handle.trigger('play');
+  rig.tick(t0 + 10);
+  const outEnd = t0 + 10 + DURATION + ROUND_EXIT_MS, backAt = outEnd + HOLD_MS;
+  rig.tick(outEnd - 0.4 * DURATION);
+  const leaving = rig.snap();
+  for (let now = t0 + 10; now <= outEnd + 30; now += 8.33) rig.tick(now);
+  const early = rig.snap();
+  rig.tick(backAt - 30);
+  const late = rig.snap();
+  rig.tick(backAt + 0.15 * DURATION);
+  const returning = rig.snap();
+  const dg = diff(early, gone), still = diff(early, late), back = diff(returning, early), drift = diff(leaving, gone);
+  console.error(`disintegrate empty beat: beat vs a finished 'out' max ${dg.max} levels; start vs end of the beat ${still.over} px; ${drift.over} px of dust 40 % before the beat; ${back.over} px changed once the dust returns`);
+  assert.ok(drift.over > 1000, 'on its way out the dust is there');
+  assert.ok(dg.max <= 2, `the beat shows the page without content and without a grain (as a finished 'out'): up to ${dg.max} levels apart`);
+  assert.equal(still.over, 0, 'nothing moves during the beat');
+  assert.ok(back.over > 1000, 'then the dust re-forms');
 });
