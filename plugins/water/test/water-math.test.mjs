@@ -145,10 +145,10 @@ test('the simulation is stable for every cell size it uses (noise stays bounded 
   }
 });
 
-test('quiet() is a visibility threshold: a ripple that moves the page by 0.1 px is not quiet, one of 0.01 px is; NaN resets to flat', () => {
+test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px is not quiet, one of 0.02 px is; NaN resets to flat', () => {
   const f = createField(400, 400);
-  // a raised cosine of radius r and height a has a largest slope of a * pi / (2 r): this one moves the page by 0.1 px at intensity 1
-  const a = ((0.1 / REFRACT_PX) * 2 * 40) / Math.PI;
+  // a raised cosine of radius r and height a has a largest slope of a * pi / (2 r): this one moves the page by 0.2 px at intensity 1
+  const a = ((0.2 / REFRACT_PX) * 2 * 40) / Math.PI;
   stamp(f, 200, 200, 40, a);
   mirror(f);
   assert.equal(quiet(f), false);
@@ -169,7 +169,7 @@ test('the plugin definition: ABI v2, spatial, direct canvas attachment, the acti
   assert.deepEqual([...ACTIONS], ['drop', 'demo']);
   assert.deepEqual([...(WaterEffectPlugin.actions ?? [])], ['drop', 'demo']);
   assert.ok(Object.isFrozen(WaterEffectPlugin));
-  assert.equal(meta.defaults.intensity, 0.45);
+  assert.equal(meta.defaults.intensity, 0.55);
 });
 
 /** A GPU device that records what the plugin submits. */

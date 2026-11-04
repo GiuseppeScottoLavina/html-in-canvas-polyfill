@@ -3,7 +3,7 @@
 //   - refraction: the page is sampled where the refracted view ray meets it (displacement = slope x depth), exactly as mapWaterPoint()
 //     in index.js computes it for the input mapper;
 //   - caustics: the light refracted by the same surface focuses on the page (the inverse Jacobian of that displacement, at a deeper light
-//     depth); a faint glow of the focused light in the water shows them over dark content too;
+//     depth): it brightens the page where it lands, and a web of the focused light scattered in the water shows over dark content too;
 //   - Fresnel reflection (Schlick, water F0 = 0.02) of an environment (a sky, a soft window light, a small sun) seen from a viewer above
 //     the middle of the canvas: still water shows a faint reflection, and ripples break it up and make the sun glint;
 //   - absorption: a little more blue-green where the water is deeper (in the troughs);
@@ -126,11 +126,12 @@ fn environment(r : vec3<f32>) -> vec3<f32> {
   // a soft window light up and to the left: still water mirrors it over the top-left of the canvas
   let window_dir = normalize(vec3<f32>(-0.20, -0.19, 0.96));
   let wnd = soft_box(r, window_dir, vec2<f32>(0.17, 0.10), 0.05);
-  c = c + vec3<f32>(5.2, 5.6, 6.0) * wnd * (0.75 + 0.25 * max(dot(r, window_dir), 0.0));
+  c = c + vec3<f32>(6.5, 7.0, 7.5) * wnd * (0.75 + 0.25 * max(dot(r, window_dir), 0.0));
   // a small, bright sun to the upper right, just outside what still water mirrors: it glints only on the slopes of the ripples
   let sun_dir = normalize(vec3<f32>(0.33, -0.25, 0.91));
-  let sun = pow(max(dot(r, sun_dir), 0.0), 1400.0);
-  return c + vec3<f32>(17.0, 16.0, 14.5) * sun;
+  let sun_cos = max(dot(r, sun_dir), 0.0);
+  let sun = pow(sun_cos, 900.0) * 20.0 + pow(sun_cos, 90.0) * 1.6;   // the disc and its halo
+  return c + vec3<f32>(1.0, 0.95, 0.86) * sun;
 }
 
 // interleaved gradient noise: a dither of +-0.5 level, stable per pixel
@@ -187,8 +188,8 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   // absorption: about 9 % of red over the depth of the water at intensity 1, more in a trough (h < 0)
   let depth = 1.0 - clamp(h * 0.05, -0.5, 0.5);
   let transmit = exp(-vec3<f32>(0.090, 0.030, 0.014) * intensity * depth);
-  var color = below * transmit * (vec3<f32>(1.0) + 0.24 * light * focus * vec3<f32>(1.0, 0.98, 0.93));
-  color = color + vec3<f32>(0.030, 0.160, 0.200) * (0.55 * light * max(focus, 0.0));
+  // the focused light brightens the page where it lands (and the defocused light darkens it a little)
+  var color = below * transmit * (vec3<f32>(1.0) + 0.30 * light * focus * vec3<f32>(1.0, 0.98, 0.93));
 
   // Fresnel reflection of the environment, seen from above the middle of the canvas
   let eye = vec3<f32>(0.5 * css, 1.45 * max(css.x, css.y));
@@ -196,9 +197,13 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let tilt = slope * intensity;
   let n = normalize(vec3<f32>(-tilt.x, -tilt.y, 1.0));
   let fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
-  let reflected = fresnel * environment(reflect(-view, n)) * light;
-  // compressed (a soft knee): the reflection adds at most 0.38 of the range, so it never hides what lies below the water
-  color = color + 0.38 * (vec3<f32>(1.0) - exp(-reflected / 0.38));
+  let reflected = fresnel * environment(reflect(-view, n));
+  // the caustic web: the focused light scattered by the water itself, so that it shows over dark content too; sharpened (the
+  // brightest where the light folds), a cool white
+  let web = pow(max(focus, 0.0), 1.6);
+  let added = (reflected + vec3<f32>(0.42, 0.78, 1.0) * (0.26 * web)) * light;
+  // light that the water adds, compressed with a soft knee: at most 0.38 of the range per channel, so it never hides what lies below
+  color = color + 0.38 * (vec3<f32>(1.0) - exp(-added / 0.38));
 
   color = color + vec3<f32>(dither(position.xy) / 255.0) * step(0.001, intensity);
   return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);

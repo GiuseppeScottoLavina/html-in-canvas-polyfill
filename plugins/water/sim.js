@@ -22,12 +22,12 @@ export const MIN_CELL_PX = 3;
 export const WAVE_SPEED_PX_S = 270;
 /** velocity damping per step, and the viscosity (damps short ripples faster than long waves, as in real water): a strong drop is flat
  * again (below the thresholds of `quiet`) about 1.5 s later, the rain of the action demo about 2 s after its last drop */
-export const DAMPING = 0.987;
+export const DAMPING = 0.985;
 export const VISCOSITY = 0.06;
 /** css px of displacement per unit slope at intensity 1 (the refraction through the water onto the page below) */
-export const REFRACT_PX = 42;
+export const REFRACT_PX = 48;
 /** the same for the light: the caustics focus as if the page lay this deep */
-export const CAUSTIC_PX = 52;
+export const CAUSTIC_PX = 70;
 
 /**
  * @typedef {Object} Field
@@ -162,8 +162,8 @@ export function splash(f, x, y, radius, depth) {
 export function clear(f) { f.h.fill(0); f.v.fill(0); f.lap.fill(0); }
 
 /** what a pixel cannot show: a shift of the page (css px) and a change of the caustic focus (relative) at intensity 1 */
-export const QUIET_SHIFT_PX = 0.08;
-export const QUIET_FOCUS = 0.006;
+export const QUIET_SHIFT_PX = 0.1;
+export const QUIET_FOCUS = 0.012;
 
 /**
  * The surface is visibly flat and still at `intensity` (0..1): the refraction moves no pixel by more than QUIET_SHIFT_PX, the caustics
