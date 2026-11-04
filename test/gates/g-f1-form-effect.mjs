@@ -3,7 +3,7 @@
 //   - the presented frame is not blank; intensity 0 equals the plain surface; a ripple distorts it (displacement, not a repaint)
 //   - typing reaches the live field and changes the presented pixels
 //   - idle clicks 2 px inside the inner edge of controls activate exactly that control and no other
-//   - THE INTERPOSER, deterministically: while four stacked ripples displace the form, the presented frame is FROZEN (framecap=1, one presented frame for ~1 s), the visual position of
+//   - THE INTERPOSER, deterministically: the presented frame is FROZEN (framecap=1, one presented frame for ~1 s) and a strong drop displaces a field edge in it, the visual position of
 //     the visual top/bottom edge of a field (flat unique marker colour) is measured in a screenshot of that frame; a trusted click 3 css px INSIDE the visual edge must focus that field (and not a neighbour).
 //     Only trials where the NATIVE hit test would give the other answer count. >= 10 such trials are required and >= 80 % must be correct.
 //     Positive control: the same run with `interposer:false` must fail that assertion (class 'interposer').
@@ -50,7 +50,7 @@ function visualEdges(img, c, x, dpr) {
 }
 
 /**
- * Deterministic interposer trials (see the header). Each attempt stacks four ripples, FREEZES the presented frame, measures the visual top/bottom edge of a field at one column
+ * Deterministic interposer trials (see the header). Each attempt FREEZES the presented frame, lets a strong drop fall near a field edge, measures the visual top/bottom edge of a field at one column
  * from its marker colour, and clicks 3 css px INSIDE a visual edge where the native hit test (twin) would not reach the field: that field, and no neighbour, must be focused.
  */
 async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
@@ -64,13 +64,16 @@ async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
     const sel = targets[t % targets.length];
     const r = rects[sel];
     const cx = r.x + r.width * (0.3 + 0.4 * ((t % 5) / 4));
-    const cyDrop = r.y + r.height - 12 - 64 * (t % 2 ? 1 : -0.8);
+    // the drop falls 8 css px inside the field's bottom or top edge (the water plugin's action, strength 2)
+    const cyDrop = t % 2 ? r.y + r.height - 8 : r.y + 8;
     out.attempts++;
     await page.evaluate('document.activeElement && document.activeElement.blur()');
-    for (let k = 0; k < 4; k++) { await drop(page, cx, cyDrop); await H.sleep(26); } // the four ripple slots stack on one spot (and replace the previous trial's)
-    await H.sleep(250 + 25 * (t % 4));
-    // FREEZE: framecap=1 keeps the frame presented now for ~1 s, so the screenshot and the clicks judge the SAME displacement (the mapper of that presented frame)
-    await page.evaluate(`document.querySelector(${JSON.stringify(surface)}).setAttribute('framecap', 1); new Promise((r) => document.querySelector(${JSON.stringify(surface)}).addEventListener('effectframe', r, { once: true }))`);
+    // FREEZE first: framecap=1 keeps every presented frame for ~1 s; the drop is then shown by the next presented frame, so the screenshot and the clicks judge the SAME
+    // displacement (the mapper of that frame). The water simulates its surface (it settles to rest and its ripples travel on), so it is stirred after the freeze, not before.
+    await page.evaluate(`(() => { const c = document.querySelector(${JSON.stringify(surface)}); c.setAttribute('framecap', 1);
+      const shown = new Promise((r) => c.addEventListener('effectframe', r, { once: true }));
+      window.__water.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cyDrop - origin.y} }, strength: 2 }).catch(() => {});
+      return shown; })()`);
     const shot = (await compositorShot(page, surface)).img;
     const e = visualEdges(shot, MARKS[sel], cx - origin.x, dpr);
     if (!e) { out.noMark++; out.trials.push({ sel, skipped: 'marker not found' }); await frozen(false); continue; }
@@ -179,7 +182,8 @@ runGate('G-f1-form-effect', async (ctx) => {
   ctx.check('no effecterror', numbers.errors.length === 0, numbers.errors, 'content');
 
   // --- FPS cap from an independent clock --------------------------------------------------------------------------------------------------------------
-  await page.evaluate('window.__water.setOptions({ intensity: 0.28 })');
+  // the water's ambient swell: continuous by declaration (still water renders nothing, so it could not show a cap)
+  await page.evaluate('window.__water.setOptions({ intensity: 0.28, ambient: 0.5 })');
   const raf = await page.measureRaf({ frames: 90 });
   numbers.rafHz = Math.round(raf.hz);
   const caps = ctx.control ? [30, 60] : [30, 60, 120].filter((n) => n <= raf.hz + 8);

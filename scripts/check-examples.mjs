@@ -299,7 +299,7 @@ const SCENARIOS = {
     const kind = pathOk === 'effect' ? 'gpu' : '2d';
     const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!document.getElementById('status').dataset.path` });
     if (!first || opts.generic) return;
-    if (pathOk === 'effect') await sleep(3600); // the water plugin starts two ripples (3.2 s lifetime): wait until they are gone so the pointer map is near the identity
+    if (pathOk === 'effect') await sleep(3600); // ripples from the page load (if any) settle, so the pointer map is near the identity
     await run.step('interact', 'click + type in the name field reaches the live input', async () => {
       const c = await centerOf(page, 'input[name=name]');
       await page.click(c.x, c.y); await sleep(200);
@@ -319,7 +319,14 @@ const SCENARIOS = {
     if (pathOk === 'effect') {
       await run.step('interact', 'the effect renders at about the cap (15 and 30 fps, page-side count of effectframe, +-30 %)', async () => {
         await page.evaluate(`window.__ef = 0; document.getElementById('stage').addEventListener('effectframe', () => { window.__ef += 1; })`);
-        const rate = async (seconds) => { await page.evaluate('window.__ef = 0'); await sleep(seconds * 1000); return (await page.evaluate('window.__ef')) / seconds; };
+        // the pointer stirs the water during the count (still water renders nothing: the plugin requests frames only while its surface moves)
+        const stage = await centerOf(page, '#stage');
+        const rate = async (seconds) => {
+          await page.evaluate('window.__ef = 0');
+          const t0 = Date.now();
+          for (let i = 0; Date.now() - t0 < seconds * 1000; i += 1) { await page.mouseMove(stage.x + 160 * Math.sin(i / 3), stage.y + 60 * Math.cos(i / 4)); await sleep(30); }
+          return (await page.evaluate('window.__ef')) / ((Date.now() - t0) / 1000);
+        };
         await page.evaluate(`document.getElementById('cap').focus()`); await page.key('Home'); await sleep(300);
         const r15 = await rate(2);
         await page.key('ArrowRight'); await sleep(300);

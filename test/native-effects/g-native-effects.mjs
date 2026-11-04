@@ -97,7 +97,8 @@ runGate('G-native-effects', async (ctx) => {
   await page.evaluate('document.activeElement && document.activeElement.blur()');
 
   // --- cap: a continuous plugin under framecap 15 and 30 ------------------------------------------------------------------------------
-  numbers.water = await page.evaluate(`(async () => { window.__water = await __host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.3 }); return true; })()`);
+  // the water with its ambient swell: continuous by declaration (still water renders nothing, so it could not show a cap)
+  numbers.water = await page.evaluate(`(async () => { window.__water = await __host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.3, ambient: 0.5 }); return true; })()`);
   await page.mouseMove(name.x, name.y + 40);
   const rates = {};
   for (const cap of [15, 30]) {
