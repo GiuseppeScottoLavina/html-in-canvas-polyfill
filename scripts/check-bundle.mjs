@@ -177,7 +177,10 @@ const LIMITS = {
   // 351.5 -> 352 KB, gzip 119.3 -> 119.55 KB (+639 / +264 bytes, 2026-11-04, measured 351,893 / 119,511): a plan made in steps is made again after damage between two
   //   steps that an installed plan would not survive, and checks the port for an obstruction (scroll-compose.js Pending); focus and selection checked between steps;
   //   a change of position or z-index is whole-drawable damage (damage-rect.js). Before, a box that became fixed during the plan was composed at its old place
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 352 * KB, gzip: 119.55 * KB },
+  // 352 -> 352.25 KB, gzip 119.55 -> 119.65 KB (+195 / +84 bytes, 2026-11-04, measured 352,088 / 119,595): the caret patch is put back before a composed step only
+  //   when it lies across the port's edge (store.js scrollStep, caret-patch.js meets); the save and put-back pair at every step ran a focused list at 94 updates a
+  //   second instead of 118 on an iPad (Safari, 120 Hz)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 352.25 * KB, gzip: 119.65 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

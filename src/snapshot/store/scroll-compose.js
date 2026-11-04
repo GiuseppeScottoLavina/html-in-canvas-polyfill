@@ -663,10 +663,11 @@ export function createScrollCompositor(deps) {
     /**
      * Compose every cached scroller whose port does not show its live offset (promised, or a tile drew another offset). Returns the css rects written, and the frames of
      * the scrollers that were promised but cannot be composed (the caller damages them: the plain path takes over).
-     * @param {Entry} entry @param {() => Surface|null} surfaceOf  the writable surface (asked only when a composition happens)
+     * @param {Entry} entry @param {(portPx: Rect) => Surface|null} surfaceOf  the writable surface (asked only when a composition of the port `portPx` is about to happen)
+     * @param {(portPx: Rect) => void} [composed]  the port `portPx` was composed: every pixel of it was written
      * @returns {{dirty: Rect[], fallback: Rect[]}}
      */
-    step(entry, surfaceOf) {
+    step(entry, surfaceOf, composed) {
       /** @type {Rect[]} */ const dirty = [];
       /** @type {Rect[]} */ const fallback = [];
       for (const c of [...(caches.get(entry)?.values() ?? [])]) {
@@ -676,12 +677,13 @@ export function createScrollCompositor(deps) {
         const top = topOf(c.el);
         if (c.shown === top) continue;
         const pages = verified(entry, c) ? usable(c, top, true) : null;
-        const surface = pages ? surfaceOf() : null;
+        const surface = pages ? surfaceOf(c.portPx) : null;
         if (!pages || !surface || !compose(entry, c, surface, top, pages)) {
           if (promised || c.shown !== null) { fallback.push(c.plan.frame); counters.fallbacks++; }
           continue;
         }
         counters.composed++;
+        composed?.(c.portPx);
         c.shown = top;
         dirty.push(c.plan.bar ? { ...c.plan.port, width: c.plan.port.width + c.plan.bar.gutter.width } : c.plan.port);
       }

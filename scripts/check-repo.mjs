@@ -154,7 +154,9 @@ if (!docsOnly) {
   // (snapshot/capture/scroll-pages.js; the grid over a 10,000-row list ran 113-120 ms in one task in Chrome 156) and one computed-style read per cloned element (clone.js)
   // 16800 -> 16825 (2026-11-04, measured 16,819): a plan made in steps is made again after damage between two steps that an installed plan would not survive (+22:
   // scroll-compose.js Pending, scroll-pages.js focus and selection between steps, damage-rect.js position and z-index)
-  if (total > 16825) problems.push(`G-size: core is ${total} code lines (> 16825)`);
+  // 16825 -> 16830 (2026-11-04, measured 16,826): the caret patch is put back before a composed step only when it lies across the port's edge (+7: store.js
+  // scrollStep, caret-patch.js meets, scroll-compose.js step's composed callback)
+  if (total > 16830) problems.push(`G-size: core is ${total} code lines (> 16830)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

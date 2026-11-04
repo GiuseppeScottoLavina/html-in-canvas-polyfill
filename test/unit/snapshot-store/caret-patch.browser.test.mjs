@@ -90,3 +90,19 @@ test('hide puts back transparent pixels too (copy, not source-over)', () => {
   assert.deepEqual(pixel(s, 25, 8), [0, 0, 0, 0], 'the transparent part is transparent again');
   assert.deepEqual(pixel(s, 12, 8), RGBA.lime);
 });
+
+test('meets(): where the shown caret lies against a rect (none when hidden); tileLanded forgets it only when the rect covers it', () => {
+  const s = patterned();
+  const p = createCaretPatch();
+  assert.equal(p.meets({ x: 0, y: 0, width: 60, height: 40 }), 'none', 'hidden');
+  p.show(s, rect, 'rgb(255,0,0)');
+  assert.equal(p.meets({ x: 0, y: 0, width: 60, height: 40 }), 'inside');
+  assert.equal(p.meets({ x: 20, y: 10, width: 2, height: 16 }), 'inside', 'the rect itself');
+  assert.equal(p.meets({ x: 0, y: 20, width: 60, height: 20 }), 'partly', 'across the edge');
+  assert.equal(p.meets({ x: 22, y: 0, width: 38, height: 40 }), 'none', 'beside it (edges touch)');
+  assert.equal(p.meets({ x: 0, y: 26, width: 60, height: 14 }), 'none', 'below it');
+  p.tileLanded({ x: 0, y: 20, width: 60, height: 20 });
+  assert.equal(p.visible(), true, 'a rect across it does not forget it');
+  p.tileLanded({ x: 10, y: 0, width: 20, height: 40 });
+  assert.equal(p.visible(), false, 'a rect over it does');
+});

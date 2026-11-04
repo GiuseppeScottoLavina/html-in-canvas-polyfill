@@ -113,3 +113,62 @@ test('caret-color: transparent paints no patch', async (t) => {
   await sleep(1200);
   assert.ok(draws.n > 0, 'a visible caret colour does paint it (control)');
 });
+
+test('a field beside the composed scroller (above the list, in the same drawable): its caret is neither put back nor read again at each composed step, and stays drawn inside the field', async (t) => {
+  const i = inst(t);
+  const host = document.createElement('div');
+  host.innerHTML = '<canvas content="drawable" width="300" height="220" style="display:block;width:300px;height:220px"><div id="od" drawable style="width:300px;height:220px;background:white">'
+    + '<div style="height:34px;padding:5px;box-sizing:border-box"><input id="of" value="" style="width:180px;height:24px;font:14px sans-serif;caret-color:rgb(255,0,255);color:rgb(23,38,56);background:white;border:1px solid rgb(120,120,120)"></div>'
+    + '<div id="ol" style="height:170px;overflow:auto;scrollbar-width:none;background:white">'
+    + Array.from({ length: 60 }, (_, n) => `<div style="height:34px;padding:5px;box-sizing:border-box;color:hsl(${n * 7} 60% 30%)">row ${n}</div>`).join('')
+    + '</div></div></canvas>';
+  document.body.append(host);
+  t.cleanup(() => host.remove());
+  const canvas = /** @type {HTMLCanvasElement} */ (host.querySelector('canvas'));
+  const ctx = /** @type {any} */ (canvas.getContext('2d'));
+  canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(host.querySelector('#od'), 0, 0); };
+  canvas.requestPaint();
+  await i.whenPainted(canvas);
+  const list = /** @type {HTMLElement} */ (host.querySelector('#ol'));
+  const field = /** @type {HTMLInputElement} */ (host.querySelector('#of'));
+  list.scrollTop = 1;
+  await sleep(800);
+  field.focus({ preventScroll: true });
+  await sleep(400);
+  const composed = () => i.report().canvases[0].stats.snapshot.scroll.composed;
+  const fieldPx = () => { const c = canvas.getBoundingClientRect(), f = field.getBoundingClientRect(); return { x: f.left - c.left, y: f.top - c.top, r: f.right - c.left, b: f.bottom - c.top }; };
+  const magenta = () => {
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data, f = fieldPx();
+    let n = 0, out = 0;
+    for (let p = 0; p < d.length; p += 4) {
+      if (!MAGENTA(d, p)) continue;
+      n++;
+      const x = (p / 4) % canvas.width, y = Math.floor(p / 4 / canvas.width);
+      if (x < f.x || y < f.y || x >= f.r || y >= f.b) out++;
+    }
+    return { n, out };
+  };
+  for (let k = 0; k < 60 && !magenta().n; k++) await sleep(25);
+  assert.ok(magenta().n > 0, 'the focused field shows its caret');
+  // reads of a large canvas into a caret-sized one (the patch saving the pixels under the caret) and writes of a caret-sized canvas into a large one (putting them back)
+  const io = { read: 0, back: 0 };
+  const draw = CanvasRenderingContext2D.prototype.drawImage, odraw = globalThis.OffscreenCanvasRenderingContext2D?.prototype.drawImage;
+  const count = function (/** @type {any} */ src) { const big = (/** @type {any} */ c) => c && c.width >= 200; if (big(src) && !big(this.canvas)) io.read++; if (!big(src) && src?.width <= 40 && big(this.canvas)) io.back++; };
+  CanvasRenderingContext2D.prototype.drawImage = function (...a) { count.call(this, a[0]); return draw.apply(this, a); };
+  if (odraw) globalThis.OffscreenCanvasRenderingContext2D.prototype.drawImage = function (...a) { count.call(this, a[0]); return odraw.apply(this, a); };
+  t.cleanup(() => { CanvasRenderingContext2D.prototype.drawImage = draw; if (odraw) globalThis.OffscreenCanvasRenderingContext2D.prototype.drawImage = odraw; });
+  const c0 = composed();
+  const ghosts = [];
+  for (let top = 8; top <= 120; top += 8) {
+    await new Promise((resolve) => { canvas.addEventListener('paint', () => setTimeout(resolve, 0), { once: true }); list.scrollTop = top; });
+    const m = magenta();
+    if (m.out) ghosts.push(`${top}: ${m.out}`);
+  }
+  const steps = composed() - c0;
+  CanvasRenderingContext2D.prototype.drawImage = draw;
+  if (odraw) globalThis.OffscreenCanvasRenderingContext2D.prototype.drawImage = odraw;
+  assert.ok(steps >= 10, `the steps were composed (${steps})`);
+  assert.equal(ghosts.length, 0, `no caret pixel outside the field (${ghosts.join(', ')})`);
+  // blinks during the gesture (about 2 a second) save and put back the pixels; the steps themselves do neither
+  assert.ok(io.read + io.back <= 4, `patch reads ${io.read} and writes back ${io.back} over ${steps} composed steps`);
+});

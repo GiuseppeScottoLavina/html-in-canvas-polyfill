@@ -546,16 +546,19 @@ export function createSnapshotStore(env, capture, extras = {}) {
    */
   function scrollStep(entry, round) {
     if (!extras.scrollPlan || !entry.surface || entry.lost) return;
-    const out = compositor.step(entry, () => {
+    // the caret is put back only when it lies across the edge of the port about to be composed. Outside the port the composition leaves it as it is; inside it, every
+    // pixel of the port is written and its saved pixels are forgotten once the port was composed. Putting it back at every step cost a read of the surface into the
+    // patch and a write back of it in the same step: in Safari on an iPad (120 Hz, a 760 x 1000 surface) a step with that pair ran at 87 frames per second, without it at 120
+    const out = compositor.step(entry, (portPx) => {
       try {
         const surface = writable(entry, 'copy');
-        if (surface && entry.patch.visible()) entry.patch.hide(surface);
+        if (surface && entry.patch.meets(portPx) === 'partly') entry.patch.hide(surface);
         return surface;
       } catch (err) {
         noteFailure(entry, err, 'scroll-compose');
         return null;
       }
-    });
+    }, (portPx) => entry.patch.tileLanded(portPx));
     for (const r of out.fallback) markDamage(entry.el, r, 'scroll');
     if (!out.dirty.length) return;
     entry.caret = liveCaret(entry, focusOf(entry));
