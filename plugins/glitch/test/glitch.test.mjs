@@ -154,7 +154,7 @@ test('ambient: a still damaged signal, an event once per cycle (slices, a tracki
   const styles = new Set();
   for (let now = 0; now < 20 * AMBIENT_CYCLE_MS; now += 1000 / 120) {
     const next = fillGlitchFrame(u, params({ now }));
-    assert.ok(next > 0 && Number.isFinite(next), 'ambient always has a next change');
+    assert.ok(next >= 0 && Number.isFinite(next), 'ambient always has a next change');
     assert.ok(u[5] >= 0.8 && u[7] >= 0.13, `split ${u[5]} px, scanlines ${u[7]}`);
     frames += 1;
     const cycle = Math.floor(now / AMBIENT_CYCLE_MS);
@@ -186,8 +186,8 @@ function framesAsked(o, ms, fps = 120) {
   return frames;
 }
 
-test('the time it returns is honest: the picture does not change before it, and it does change at it (bursts, the demo, ambient)', () => {
-  let changes = 0, checks = 0;
+test('the time it returns is honest: 0 while something plays; otherwise the picture does not change before it, and does change at it', () => {
+  let changes = 0, checks = 0, playing = 0;
   const cases = [
     { mode: 'burst', burstAt: 1000 }, { mode: 'ambient', burstAt: 1000, intensity: 1 }, { mode: 'ambient' }, { mode: 'ambient', intensity: 1 },
     { mode: 'burst', burstAt: 1000, script: DEMO_SCRIPT }, { mode: 'ambient', reduced: true, burstAt: 1000 },
@@ -196,7 +196,8 @@ test('the time it returns is honest: the picture does not change before it, and 
     for (let now = 900; now < 4500; now += 7.3) {
       const u = new Float32Array(UNIFORM_FLOATS);
       const next = fillGlitchFrame(u, params({ ...o, now }));
-      if (!Number.isFinite(next) || next < 0.5) continue;
+      if (next === 0) { playing += 1; continue; }
+      if (!Number.isFinite(next)) continue;
       for (const f of [0.3, 0.7, 0.98]) {
         const v = new Float32Array(UNIFORM_FLOATS);
         fillGlitchFrame(v, params({ ...o, now: now + f * next }));
@@ -208,19 +209,19 @@ test('the time it returns is honest: the picture does not change before it, and 
       if (w.some((x, i) => x !== u[i])) changes += 1;
     }
   }
-  assert.ok(checks > 1000 && changes > 300, `${checks} checks, ${changes} changes at the returned time`);
+  assert.ok(checks > 600 && changes > 30 && playing > 300, `${checks} checks, ${changes} changes at the returned time, ${playing} instants playing`);
 });
 
-test('frames asked for: ambient only while an event plays (a few per second), a burst at its pattern and grain steps, nothing at rest', () => {
+test('frames asked for: ambient only while an event plays (a few per second at 120 Hz), a burst every frame, nothing at rest', () => {
   const ambient = framesAsked({ mode: 'ambient' }, 14000) / 14;
-  assert.ok(ambient > 1 && ambient < 12, `ambient: ${ambient.toFixed(1)} frames per second at 120 Hz (it rendered every vsync before: 120)`);
+  assert.ok(ambient > 2 && ambient < 25, `ambient: ${ambient.toFixed(1)} frames per second at 120 Hz (it rendered every vsync before: 120)`);
   const burst = framesAsked({ mode: 'burst', now: 1000, burstAt: 1000 }, BURST_MS);
-  assert.ok(burst >= BURST_MS / PATTERN_MS && burst <= 2.5 * (BURST_MS / PATTERN_MS) + 2, `a burst: ${burst} frames (patterns ${Math.ceil(BURST_MS / PATTERN_MS)})`);
+  assert.ok(Math.abs(burst - (BURST_MS / 1000) * 120) <= 2, `a burst: ${burst} frames at 120 Hz`);
   assert.equal(framesAsked({ mode: 'burst', now: 1000 }, 5000), 1, 'burst mode at rest: one frame, then nothing');
   assert.equal(framesAsked({ mode: 'ambient', reduced: true, now: 1000 }, 5000), 1, 'reduced motion at rest: one frame, then nothing');
 });
 
-test('the demo script: about 3 s, every step glitches, the gaps between steps are clean and wait for the next step', () => {
+test('the demo script: about 3 s, every step glitches, the gaps between steps are clean (and still render every frame: the script keeps its timing)', () => {
   const total = scriptLength(DEMO_SCRIPT);
   assert.ok(total >= 2500 && total <= 4000, `${total} ms`);
   const u = new Float32Array(UNIFORM_FLOATS);
@@ -231,7 +232,7 @@ test('the demo script: about 3 s, every step glitches, the gaps between steps ar
     if (gap && gap[0] > start + length + 2) {
       const next = fillGlitchFrame(u, params({ mode: 'burst', script: DEMO_SCRIPT, burstAt: 0, now: start + length + 1 }));
       assert.equal(u[8], 0, 'a clean gap');
-      assert.ok(Math.abs(next - (gap[0] - start - length - 1)) < 1e-6, 'it waits for the next step');
+      assert.equal(next, 0, 'the script goes on frame by frame');
     }
   }
   assert.equal(fillGlitchFrame(u, params({ mode: 'burst', script: DEMO_SCRIPT, burstAt: 0, now: total })), Infinity, 'then calm');
@@ -430,13 +431,14 @@ test('ambient asks for a frame only when its picture changes next (one timer, no
   assert.equal(env.renders(), n0 + 1, 'one frame at the start of the event');
   inst.render(env.frame(ev.start + 0.5));
   assert.ok(env.writes.at(-1)[8] > 0 || env.writes.at(-1)[5] > AMBIENT_SPLIT * 0.35 + 1e-5, 'the event plays');
-  // a render for another reason (the page changed) re-arms the same single timer: one frame, not two
-  inst.render(env.frame(ev.start + 1));
-  t.mock.timers.tick(60);
-  assert.equal(env.renders(), n0 + 2, 'one frame at the next pattern or grain step');
+  assert.equal(env.renders(), n0 + 2, 'while it plays: the next frame at once');
+  inst.render(env.frame(ev.start + ev.length + 1));
+  assert.equal(env.renders(), n0 + 2, 'after it: no frame until the next event (a timer)');
+  t.mock.timers.tick(AMBIENT_CYCLE_MS * 2);
+  assert.equal(env.renders(), n0 + 3, 'one timer: one frame');
   inst.destroy();
   t.mock.timers.tick(10000);
-  assert.equal(env.renders(), n0 + 2, 'destroy cancels the timer');
+  assert.equal(env.renders(), n0 + 3, 'destroy cancels the timer');
   const quiet = fakeEnv();
   const still = await created(t, quiet, { mode: 'burst' });
   still.render(quiet.frame(0));

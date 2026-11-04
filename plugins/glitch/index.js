@@ -12,8 +12,8 @@
  * (by default a validation error: [aria-invalid="true"], .invalid, [data-state="error"]) or an `invalid` event fires in the page. The action
  * 'demo' plays a scripted sequence of bursts (about 3 s) and resolves 'idle'.
  *
- * Frames are requested only when the picture changes: at a pattern or grain step of a burst or of an ambient event, never between them.
- * Between ambient events the picture is still and the host renders nothing.
+ * Frames are requested only while something plays (a burst, the demo, an ambient event: every frame within the frame cap); between
+ * them the picture is still, the plugin sets one timer for the next event, and the host renders nothing.
  *
  * Input mapper (`mapGlitchPoint`): the block table is the only layer that moves the page. Outside the displaced blocks the mapper is the
  * identity; inside a block it is the exact inverse of that block's offset (wrapped around the page, like the shader), so a click on a
@@ -216,14 +216,12 @@ export function ambientEvent(seed, cycle) {
   };
 }
 
-/** ms from `e` to the next multiple of `step` (a full step when e is on one) */
-const toNext = (/** @type {number} */ e, /** @type {number} */ step) => step - (e - Math.floor(e / step) * step);
 
 /**
  * Writes the uniform block of one frame. Everything is a function of the frame clock and the parameters, so the same instant gives the
- * same picture (and mapper) at every frame cap. Returns the time in ms until the picture changes next (the plugin asks for a frame then):
- * a pattern or grain step while a burst or an ambient event plays, the start of the next step or event between them, Infinity when
- * nothing is scheduled (burst mode at rest, reduced motion at rest). PURE apart from `out`.
+ * same picture (and mapper) at every frame cap. Returns when the plugin needs its next frame, in ms: 0 while a burst, the demo or an
+ * ambient event plays (every frame), the time until the next ambient event while nothing plays (the picture is still until then), the
+ * end of a steady reduced-motion burst, Infinity when nothing is scheduled (burst mode at rest, reduced motion at rest). PURE apart from `out`.
  * @param {Float32Array} out
  * @param {GlitchFrameParams} f
  * @returns {number}
@@ -251,11 +249,8 @@ export function fillGlitchFrame(out, f) {
       next = total - e;
     } else {
       let step = null;
-      next = total - e;
-      for (const s of script) {
-        if (e >= s[0] && e < s[0] + s[1]) { step = s; break; }
-        if (s[0] > e) next = Math.min(next, s[0] - e);
-      }
+      for (const s of script) if (e >= s[0] && e < s[0] + s[1]) { step = s; break; }
+      next = 0;   // a script plays on the frame clock, every frame (its gaps are short), so it keeps its timing at any frame cap
       if (step) {
         const local = e - step[0];
         const pattern = Math.floor(local / PATTERN_MS);
@@ -272,7 +267,6 @@ export function fillGlitchFrame(out, f) {
           if (f.noise) { grain = Math.max(grain, 0.6 * level); scan = Math.max(scan, 0.25 * level); }
           flash = pattern === 0 ? 0.3 : 0.12 * level * (pattern % 2);
         }
-        next = Math.min(step[1] - local, toNext(local, PATTERN_MS), toNext(f.now, grainMs));
       }
     }
   } else if (ambient && !f.reduced && k > 0) {
@@ -291,7 +285,7 @@ export function fillGlitchFrame(out, f) {
         split += f.split ? (2 + 4 * level) * (pattern % 2 ? 0.6 : 1) : 0;
         if (f.noise) scan = Math.max(scan, 0.3 + 0.3 * level);
       }
-      next = Math.min(ev.length - local, toNext(local, 50), toNext(f.now, grainMs));
+      next = 0;
     } else {
       // the next event that can play (one that would start while the user types is skipped)
       let c = f.now < ev.start ? cycle : cycle + 1;
@@ -449,7 +443,8 @@ export const plugin = Object.freeze({
     /** @param {ReadonlyArray<ReadonlyArray<number>>} script @param {boolean} debounce */
     function burst(script = BURST_SCRIPT, debounce = true) {
       const now = performance.now();
-      if (debounce && bursting && now - lastTrigger < TRIGGER_DEBOUNCE_MS) return false;   // one burst per validation pass: the running one
+      // one burst per validation pass: the running one (a burst never joins the demo: it replaces it)
+      if (debounce && bursting && pendingScript === BURST_SCRIPT && now - lastTrigger < TRIGGER_DEBOUNCE_MS) return false;
       lastTrigger = now;
       pendingScript = script;
       burstPending = true;   // the burst starts on the next frame, on the frame clock
@@ -498,7 +493,9 @@ export const plugin = Object.freeze({
     }
 
     // validation errors in the drawn page start a burst: `invalid` events, and elements that start to match `watch`
-    const onInvalid = () => { burst(); };
+    // (they join a running burst, and the demo, which is glitching already)
+    const autoBurst = () => { if (!(bursting && pendingScript === DEMO_SCRIPT)) burst(); };
+    const onInvalid = () => { autoBurst(); };
     source.addEventListener('invalid', onInvalid, true);
     // typing holds the ambient events off; a press or a key during the demo ends it (the user takes over)
     const onTyping = () => {
@@ -522,7 +519,7 @@ export const plugin = Object.freeze({
       if (!watch) return;
       for (const r of records) {
         const el = /** @type {Element} */ (r.target);
-        try { if (el.matches?.(watch)) { burst(); return; } } catch { return; /* not a valid selector */ }
+        try { if (el.matches?.(watch)) { autoBurst(); return; } } catch { return; /* not a valid selector */ }
       }
     }) : null;
     observer?.observe(source, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-invalid', 'data-state'] });
