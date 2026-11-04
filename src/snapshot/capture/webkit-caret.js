@@ -40,26 +40,44 @@ export function webkitAccentCaret(caretAt, colorAt, caretIsColor) {
 
 /** @typedef {{sel: string, value: string, important: boolean}} Decl */
 
-/** @type {WeakMap<Document|ShadowRoot, {sig: string, color: Decl[], caret: Decl[]}>} */
+/** @typedef {{sig: string, color: Decl[], caret: Decl[], media: Array<[MediaQueryList, boolean]>}} Rules  media: each condition evaluated and its result then */
+
+/** @type {WeakMap<Document|ShadowRoot, Rules>} */
 const ruleCache = new WeakMap();
 /** @type {WeakMap<CSSStyleSheet, number>} */
 const sheetIds = new WeakMap();
+/** @type {WeakMap<Window, Map<string, MediaQueryList>>} */
+const queries = new WeakMap();
 let nextSheet = 0;
+/** bumped by resetCaretRules: a change the rule count does not show (a declaration edited, a rule replaced, replaceSync) */
+let epoch = 0;
+
+/** The page's styles changed (the core's 'stylesheet' damage, EngineSkins.stylesChanged): every cached rule list and the system accent are read again at their next use. */
+export function resetCaretRules() {
+  epoch++;
+  accents = new WeakMap();
+}
 
 /**
  * The author style rules of a tree that declare color or caret-color (media and supports conditions evaluated, imported sheets followed, other group rules entered), cached until a
- * sheet is added, removed or replaced or its rule count changes.
- * @param {Document|ShadowRoot} root @returns {{color: Decl[], caret: Decl[]}}
+ * sheet is added, removed or replaced, its rule count changes, a media condition it evaluated changes its result, or resetCaretRules.
+ * @param {Document|ShadowRoot} root @returns {Rules}
  */
 function rulesOf(root) {
   const win = (root.ownerDocument ?? /** @type {Document} */ (root)).defaultView;
   const sheets = [...root.styleSheets, ...(root.adoptedStyleSheets ?? [])].filter((s) => !s.disabled);
   const count = (/** @type {CSSStyleSheet} */ s) => { try { return s.cssRules.length; } catch { return -1; } };
-  const sig = sheets.map((s) => { if (!sheetIds.has(s)) sheetIds.set(s, nextSheet++); return `${sheetIds.get(s)}:${count(s)}`; }).join(',');
+  const sig = `${epoch}|` + sheets.map((s) => { if (!sheetIds.has(s)) sheetIds.set(s, nextSheet++); return `${sheetIds.get(s)}:${count(s)}`; }).join(',');
   const hit = ruleCache.get(root);
-  if (hit && hit.sig === sig) return hit;
-  const out = { sig, color: /** @type {Decl[]} */ ([]), caret: /** @type {Decl[]} */ ([]) };
-  const media = (/** @type {string} */ q) => !q || !!win?.matchMedia(q).matches;
+  if (hit && hit.sig === sig && hit.media.every(([m, was]) => m.matches === was)) return hit;
+  /** @type {Rules} */
+  const out = { sig, color: [], caret: [], media: [] };
+  const mqls = win ? queries.get(win) ?? /** @type {Map<string, MediaQueryList>} */ (queries.set(win, new Map()).get(win)) : null;
+  const media = (/** @type {string} */ q) => {
+    const m = q && win && mqls ? mqls.get(q) ?? /** @type {MediaQueryList} */ (mqls.set(q, win.matchMedia(q)).get(q)) : null;
+    if (m) out.media.push([m, m.matches]);
+    return !m || m.matches;
+  };
   /** @param {CSSRuleList|undefined} list */
   const walk = (list) => {
     for (const r of Array.from(list ?? [])) {
@@ -124,7 +142,7 @@ export function accentCaretOf(el, cs) {
 }
 
 /** @type {WeakMap<Document, string>} */
-const accents = new WeakMap();
+let accents = new WeakMap();
 
 /** @param {Document} doc @returns {string} the system accent as a computed colour */
 function accentOf(doc) {

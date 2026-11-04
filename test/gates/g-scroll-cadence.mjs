@@ -9,6 +9,10 @@
 //   compose  the scroll compositor drew the steps (snapshot stats): a scroll is not re-photographed per frame. Case touch (CDP touch emulation, a touch-first
 //            device): the first touch gesture over a list with :hover rows, and the next, are composed from their first canvas update (no plain build
 //            before it: 0 in every run of the sound build, headed and headless; the mutants scroll-ahead-off and touch-hover left 1 on a fast machine, 2 headless).
+//   caret    case caret: a focused text field (magenta caret-color) in row 9 of the list; a slow wheel stream moves it inside the port for more than a blink period, a
+//            fast one takes it out of the port, under the sticky header, and back. At every composed canvas paint no caret pixel lies outside the field's visible
+//            rect (the field, inside the list's client box, below the header), and the caret was drawn inside it in composed frames (a tile may show an older offset). Before the fix the caret patch stayed
+//            where the field was until a tile after the gesture (35 of 86 composed paints, headless Chrome, 2026-11-04; the mutant caret-stale-compose).
 //   pixel    samples of the canvas taken INSIDE paint handlers during the stream each equal the plain-DOM twin at one of the offsets the list had in the frames
 //            just before (a composed frame shows the live offset, a fallback tile a slightly older one; anything else is a wrong frame), and the settled canvas
 //            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row;
@@ -225,6 +229,27 @@ runGate('G-scroll-cadence', async (ctx) => {
     numbers[`${c.name}Settled`] = d.sizeMatch ? { top: fin, fraction: d.fraction, countOver: d.countOver16, bbox: d.overBBox } : { sizes: d.sizes };
     ctx.check(`${c.name}: the settled canvas equals the twin at the final offset (whole stage, tolerance ${TOLERANCE}, <= ${MAX_FRACTION * 100} %)`, d.sizeMatch && d.fraction <= MAX_FRACTION && H.pixelStats(poly).nonBlank, numbers[`${c.name}Settled`], 'pixel');
     await ctx.focus(page);
+  }
+  // a focused field inside the composed list: its caret moves with it and never shows where it is not (store.js followCaret)
+  if (!only || only.includes('caret')) {
+    await open(ctx, page, { rows: 300, caret: 1 }, true);
+    const geo = await page.evaluate(GEO);
+    await page.mouseMove(geo.at.x - 30, geo.at.y);
+    await page.mouseMove(geo.at.x, geo.at.y);
+    await H.sleep(800);
+    await page.evaluate(`document.getElementById('field').focus({ preventScroll: true })`);
+    await H.sleep(600);
+    await page.evaluate('window.__rec.caretStart()');
+    await H.wheelStream(page, { ...geo.at, deltaY: 5, count: 70, intervalMs: 16 });
+    await H.wheelStream(page, { ...geo.at, deltaY: 40, count: 25, intervalMs: 8 });
+    await H.wheelStream(page, { ...geo.at, deltaY: -40, count: 40, intervalMs: 8 });
+    await H.sleep(700);
+    const r = await page.evaluate('window.__rec.caretReport()');
+    numbers.caret = r;
+    // headless Chrome on a loaded machine: 65 to 86 paints and 61 to 82 composed steps (2026-11-04)
+    ctx.check('caret: the streams were painted and composed (>= 40 paints, >= 25 composed steps)', r.paints >= 40 && r.composed >= 25, r, 'compose');
+    ctx.check('caret: no composed canvas paint shows a caret pixel outside the focused field\'s visible rect (inside the list\'s client box, below the sticky header)', r.bad === 0, r, 'caret');
+    ctx.check('caret: the caret was drawn inside the moving field in composed frames (>= 3)', r.composedInside >= 3, r, 'caret');
   }
   // a finger on a touch-first device (CDP touch emulation: primary pointer coarse, no hover). The list has :hover rows, nothing rests over it, and the measured gesture
   // is the FIRST one: a touch drag with its fling, then one back. A finger's first contact is its gesture, so the plan and the pages must be there before it (planned

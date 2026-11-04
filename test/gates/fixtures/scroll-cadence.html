@@ -3,7 +3,7 @@
 <title>scroll cadence: an inner list drawn into a canvas, and its plain-DOM twin</title>
 <script>
   // ?bundle=<core>  (absent: the plain-DOM twin)  rows=N  round=0|1  hover=0|1  frac=0|1 (a list column of fractional width, 400.4 px)
-  //   fracrows=1 (rows of fractional height: 36.6 css px, their content's own height)
+  //   fracrows=1 (rows of fractional height: 36.6 css px, their content's own height)  caret=1 (row 9 holds a text field with a magenta caret-color, focused by the gate)
   var q = new URLSearchParams(location.search); window.__q = q;
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '"></scr' + 'ipt>');
 </script>
@@ -48,6 +48,12 @@
   if (q.get('round') === '1') list.classList.add('round');
   if (q.get('fracrows') === '1') list.classList.add('fracrows');
   if (q.get('frac') === '1') document.getElementById('app').style.gridTemplateColumns = '400.4px 1fr';
+  if (q.get('caret') === '1') {
+    const f = document.createElement('input');
+    f.id = 'field';
+    f.style.cssText = 'width:160px;height:20px;padding:0 4px;border:1px solid #9aa6b8;font:14px Arial, sans-serif;color:#1b2330;background:#fff;caret-color:rgb(255, 0, 255)';
+    rows.children[9].lastChild.replaceWith(f);
+  }
   if (q.get('hover') === '1') { const st = document.createElement('style'); st.textContent = '#list li:hover { background: #cfdcf8; }'; document.head.append(st); }
   let canvas = document.getElementById('stage');
   const app = document.getElementById('app');
@@ -64,11 +70,12 @@
   } else {
     const ctx = canvas.getContext('2d');
     // the recorder (gate): per paint, optionally a copy of the canvas as drawn, with the scroller offset at that moment
-    const R = window.__rec = { on: false, frames: [], samples: [], every: 0, max: 0 };
+    const R = window.__rec = { on: false, frames: [], samples: [], every: 0, max: 0, strips: null };
     canvas.onpaint = () => {
       window.__paints++;
       ctx.reset();
       ctx.drawElementImage(app, 0, 0);
+      if (R.strips && R.strips.length < 600) R.strip();
       if (R.on && R.every && R.samples.length < R.max && window.__paints % R.every === 0) {
         const copy = new OffscreenCanvas(canvas.width, canvas.height);
         copy.getContext('2d').drawImage(canvas, 0, 0);
@@ -85,6 +92,39 @@
       requestAnimationFrame(f);
     };
     R.stop = () => { R.on = false; return R.frames; };
+    // caret=1: per paint, a copy of the canvas strip around the field's caret (the field's left 40 css px, full height) and the field's visible rect at that moment
+    // (the field, inside the list's client box, below the sticky header), canvas px; caretReport counts the magenta pixels outside it
+    R.strip = () => {
+      const field = document.getElementById('field'), head = list.querySelector('header');
+      const c = canvas.getBoundingClientRect(), f = field.getBoundingClientRect(), l = list.getBoundingClientRect(), h = head.getBoundingClientRect(), k = canvas.width / c.width;
+      const sx = Math.max(0, Math.floor((f.left - c.left - 4) * k)), w = Math.min(canvas.width - sx, Math.ceil(48 * k));
+      const copy = new OffscreenCanvas(w, canvas.height);
+      copy.getContext('2d').drawImage(canvas, sx, 0, w, canvas.height, 0, 0, w, canvas.height);
+      const top = Math.max(f.top, l.top + list.clientTop, h.bottom), bottom = Math.min(f.bottom, l.top + list.clientTop + list.clientHeight);
+      R.strips.push({ copy, sx, x0: (f.left - c.left) * k, x1: (f.right - c.left) * k, y0: (top - c.top) * k, y1: (bottom - c.top) * k, scrollTop: list.scrollTop,
+        composed: window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll.composed });
+    };
+    R.caretStart = () => { R.strips = []; };
+    R.caretReport = () => {
+      const S = R.strips; R.strips = null;
+      // bad: a composed paint (the compositor drew since the paint before) with a caret pixel outside the live field's visible rect; other: the same in a paint of a
+      // tile, which may show the list at a slightly older offset than the live one (the caret then sits in the field as that tile drew it)
+      let inside = 0, bad = 0, other = 0, composedInside = 0; const worst = [];
+      S.forEach((s, i) => {
+        const d = s.copy.getContext('2d').getImageData(0, 0, s.copy.width, s.copy.height).data;
+        let n = 0, out = 0, box = null;
+        for (let p = 0; p < d.length; p += 4) {
+          if (!(d[p] > 230 && d[p + 1] < 40 && d[p + 2] > 230 && d[p + 3] > 230)) continue;
+          const x = s.sx + ((p / 4) % s.copy.width), y = Math.floor(p / 4 / s.copy.width);
+          n++;
+          // one device px of slack at each edge of the visible rect (the caret is rounded out to whole pixels)
+          if (x < Math.floor(s.x0) - 1 || x >= Math.ceil(s.x1) + 1 || y < Math.floor(s.y0) - 1 || y >= Math.ceil(s.y1) + 1) { out++; box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y]; }
+        }
+        const composed = i > 0 && s.composed > S[i - 1].composed;
+        if (out && !composed) other++; else if (out) { bad++; if (worst.length < 4) worst.push({ paint: i, scrollTop: s.scrollTop, composed, out, n, box, visible: [s.x0, s.y0, s.x1, s.y1].map((v) => +v.toFixed(1)) }); } else if (n) { inside++; if (composed) composedInside++; }
+      });
+      return { paints: S.length, composed: S.length ? S[S.length - 1].composed - S[0].composed : 0, inside, composedInside, bad, other, worst };
+    };
     /** sample i as a PNG data URL (read after the run) */
     R.png = async (i) => { const b = await R.samples[i].copy.convertToBlob({ type: 'image/png' }); return await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); }); };
     window.__ready = true;

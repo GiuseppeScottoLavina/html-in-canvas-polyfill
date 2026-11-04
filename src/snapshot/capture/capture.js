@@ -167,7 +167,7 @@ export function createCapture(env) {
     };
   }
 
-  env.bus.on(BUS.DAMAGE, (/** @type {{cause?: string}} */ d) => { if (d?.cause === 'stylesheet') collector.invalidate(); });
+  env.bus.on(BUS.DAMAGE, (/** @type {{cause?: string}} */ d) => { if (d?.cause === 'stylesheet') { collector.invalidate(); engineSkins()?.stylesChanged?.(); } });
 
   /** @type {Capture} */
   const capture = Object.assign((/** @type {CaptureRequest} */ req) => {

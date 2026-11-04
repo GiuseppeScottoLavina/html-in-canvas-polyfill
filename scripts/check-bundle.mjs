@@ -165,7 +165,10 @@ const LIMITS = {
   // 348.5 -> 349.5 KB, gzip 118.25 -> 118.5 KB (+991 / +369 bytes, 2026-11-03, measured 349,379 / 118,463): a script seek or timing change of a paused, finished or
   //   idle animation repaints the drawable (schedule/observers/animation-observer.js: the Animation timing methods and setters and the effect edits are wrapped;
   //   a 15 Hz scrubber over paused animations painted 0 times per second before)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 349.5 * KB, gzip: 118.5 * KB },
+  // 349.5 -> 350.75 KB, gzip 118.5 -> 119 KB (+1,220 / +482 bytes, 2026-11-04, measured 350,616 / 118,951): the caret of a focused field follows a composed scroll
+  //   step (store.js liveCaret: measured again from the live field) and is clipped to where the field shows (clipOf: its scrolling ancestors; the compositor's pinned
+  //   sticky elements cut out); a transparent caret has no patch. Before, the caret stayed where the field was for the whole gesture (35 of 86 composed paints)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 350.75 * KB, gzip: 119 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -199,7 +202,9 @@ const LIMITS = {
   //   (webkitSystemKnob: whole css px, a 20 / 16 px minimum) and its vertical knob as a box of its own, which the scroll compositor captures and moves
   // 45 -> 45.75 KB, gzip 17.25 -> 17.5 KB (+615 / +153 bytes, 2026-10-30, measured 45,515 / 17,295): the scale of a box read from its fractional layout size (util/box-scale.js boxScale / layoutSize) instead of the rounded offsetWidth / offsetHeight
   //   (native-states.js pressOnThumb: Safari's slider press test)
-  'hic-live-engines.iife.min.js': { target: 45.75 * KB, ceiling: 45.75 * KB, gzip: 17.5 * KB },
+  // 45.75 -> 45.875 KB (+252 / +103 bytes, 2026-11-04, measured 45,767 / 17,398): Safari's caret rules are read again after a style sheet change (webkit-caret.js
+  //   resetCaretRules through EngineSkins.stylesChanged) and when a media condition they used changes its result (an edited declaration or a matchMedia change kept the old colour)
+  'hic-live-engines.iife.min.js': { target: 45.875 * KB, ceiling: 45.875 * KB, gzip: 17.5 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
   //   OffscreenCanvas.getElementTransform removed
