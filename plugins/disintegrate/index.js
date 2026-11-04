@@ -15,7 +15,8 @@
  *
  * Actions (the effect handle: `handle.trigger('out' | 'in' | 'play' | 'demo')`, `handle.settled()`; states 'in' and 'out'), also run by
  * the "Turn to dust" button of mountUI and, with `onSubmit`, by the submit of the form inside the source; `handle.setOptions({ state })`
- * sets the end state declaratively. 'demo' is a play that the user can interrupt: a press or a key during it re-forms the page at once.
+ * sets the end state declaratively. 'demo' is a play that the user can interrupt: a press, a key, a submit or setOptions during it
+ * re-forms the page at once.
  * With prefers-reduced-motion the same actions crossfade the content, and 'demo' resolves at once.
  * At rest (assembled or gone, nothing moving) the plugin is not `continuous` and requests no frame: the host renders nothing.
  */
@@ -115,6 +116,7 @@ export function readOptions(o) {
     glow: clampNumber(o.glow, 0, 1, 0.5),
     glowColor: parseColor(o.glowColor, GLOW_COLOUR),
     focus: clampNumber(o.focus, 0, 2, 1),
+    density: clampNumber(o.density, 0.05, 1, 0.6),
     backdrop: parseColor(o.backdrop, HOST_BACKDROP),
     onSubmit: submit === 'valid' || submit === 'always' ? submit : 'off',
     invalidSelector: typeof o.invalidSelector === 'string' && o.invalidSelector ? o.invalidSelector : DEFAULT_INVALID_SELECTOR,
@@ -154,7 +156,7 @@ export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = 
   data[24] = s.backdrop[0]; data[25] = s.backdrop[1]; data[26] = s.backdrop[2]; data[27] = 1;
   data[28] = turning ? 0 : 1; data[29] = s.depth; data[30] = s.glow; data[31] = 1.8 * Math.max(frame.cssWidth, frame.cssHeight);
   data[32] = s.glowColor[0]; data[33] = s.glowColor[1]; data[34] = s.glowColor[2]; data[35] = s.focus;
-  data[36] = grid.count ?? 0; data[37] = SHUTTER_MS / s.duration; data[38] = 0; data[39] = 0;
+  data[36] = grid.count ?? 0; data[37] = SHUTTER_MS / s.duration; data[38] = s.density; data[39] = 0;
 }
 
 /** CSS of the plugin UI (mountUI) */
@@ -311,18 +313,20 @@ export const plugin = Object.freeze({
     if (timeline.phase === 'gone' && s.state === 'in') request('in');   // the intro: re-form from dust once the first snapshot is there
 
     const onSubmit = () => {
+      if (playing?.demo) { takeOver(); return; }   // a submit during the demo: the user takes over (the page re-forms at once)
       if (s.onSubmit === 'off' || !timeline.assembled) return;
       if (s.onSubmit === 'valid' && findInvalid(source, s.invalidSelector)) return;
       context.trigger('play');   // through the host, like handle.trigger: it supersedes a pending trigger of the page
     };
-    source.addEventListener('submit', onSubmit);
-    // a demo gives way to the user at once: a press (mouse, pen, finger) or a key re-forms the page fast, from where the dust is
-    const takeOver = () => {
+    // a demo gives way to the user at once: a press (mouse, pen, finger), a key, a submit or new options re-form the page fast, from where
+    // the dust is
+    function takeOver() {
       const play = playing;
       if (!play || !play.demo || play.back && timeline.phase !== 'in' || destroyed) return;
       goBack(play, TAKEOVER_MS);
       context.requestRender();
-    };
+    }
+    source.addEventListener('submit', onSubmit);
     // passive: the plugin never claims a gesture (it has no handle to grab); the page keeps its scrolling and the form its input
     context.listen('pointerdown', takeOver, { passive: true });
     context.listen('keydown', takeOver);
@@ -334,7 +338,7 @@ export const plugin = Object.freeze({
       setOptions(next) {
         s = readOptions(next ?? {});
         optionsSerial += 1;
-        if (s.state !== stateOption) { stateOption = s.state; request(s.state); }
+        if (s.state !== stateOption) { stateOption = s.state; request(s.state); } else takeOver();
         context.requestRender();
       },
       runAction(action, _options, info) {

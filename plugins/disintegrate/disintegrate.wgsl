@@ -34,7 +34,7 @@ struct Uniforms {
   glow_colour : vec4<f32>, // rgb: the colour of the heat; a: the strength of the defocus
   count : f32,             // dust cells
   shutter : f32,           // the exposure of the motion blur, in units of g (SHUTTER_MS of the way out)
-  pad0 : f32,
+  density : f32,           // share of the cells of content that leave as a visible grain (the rest is dust too fine to see)
   pad1 : f32,
 }
 
@@ -300,6 +300,10 @@ fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
   let src = src_at(home / u.css);
   let k = content(src, bg_at(home));
   if (k < 0.2) { no_grain(i); return; }
+  // a share of the content crumbles into dust too fine to see: every cell lifts off whole, then only `density` of them stay visible (the
+  // others fade out at the start of their flight)
+  let fine = hash_cell(c, 25u) >= u.density;
+  if (fine && a >= 0.15) { no_grain(i); return; }
   let rg = vec4<f32>(hash_cell(c, 21u), hash_cell(c, 22u), hash_cell(c, 23u), hash_cell(c, 24u));
   // a flake: its grains share the randoms of the flake (so the coherent flow carries them together) until it crumbles
   let chunk = flake_of(home);
@@ -331,8 +335,8 @@ fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
   radius = sqrt(radius * radius + coc * coc);
   var alpha = k * (focused * focused) / (radius * radius);
   let soft = clamp(0.35 + coc / max(radius, 1e-3), 0.35, 1.0);
-  // never smaller than 0.6 device px: a smaller grain keeps its light (alpha) instead of flickering between pixels
-  let minR = 0.6 / dpr;
+  // never smaller than half a device px: a smaller grain keeps its light (alpha) instead of flickering between pixels
+  let minR = 0.5 / dpr;
   if (radius < minR) { alpha *= (radius / minR) * (radius / minR); radius = minR; }
   // motion blur: the screen distance covered during a fixed exposure (the same at every frame cap); its light spreads along the streak
   let screenVel = vel.xy * pr.z;
@@ -343,6 +347,7 @@ fn cs_grains(@builtin(global_invocation_id) id : vec3<u32>) {
   // when the transition ends gone, the dust thins out over the second half of its flight (it disperses below sight); a play's dust turns
   // back at full strength
   alpha *= 1.0 - u.vanish * smoothstep(0.5, 1.0, a);
+  alpha *= select(1.0, 1.0 - smoothstep(0.03, 0.15, a), fine);
   // the colour of its pixel, a touch greyer as it thins to dust; dimmer far away (behind the page plane)
   var colour = mix(src, vec3<f32>(luma(src)) * 1.06 + 0.02, 0.12 * smoothstep(0.25, 1.0, a));
   colour *= 1.0 - 0.3 * smoothstep(0.0, 0.35 * u.focal, -p.z);
@@ -408,9 +413,9 @@ fn fs_dust(v : DustOut) -> @location(0) vec4<f32> {
   let d_round = length(vec2<f32>(along, v.local.y));
   let d_square = max(along, abs(v.local.y));
   let d = mix(d_round, d_square, v.shape.w);
-  // analytic antialiasing: coverage over an edge at least one device px wide; out of focus, a soft disc
+  // analytic antialiasing: coverage over an edge 0.85 device px wide (a pixel's footprint across the edge); out of focus, a soft disc
   let px = u.css.x / u.resolution.x;
-  let w = max(px, r * v.shape.z);
+  let w = max(0.85 * px, r * v.shape.z);
   let cover = clamp((r - d) / w + 0.5, 0.0, 1.0);
   if (cover <= 0.0) { discard; }
   return vec4<f32>(v.colour.rgb * cover + v.emit * cover * v.colour.a, v.colour.a * cover);

@@ -270,3 +270,68 @@ gpuTest('live: the dust keeps sampling the page, so a change made after it blew 
   console.error(`disintegrate live: the change shows on ${inside} px inside the button's rectangle and ${outside} px outside it (on the dust that carries it)`);
   assert.ok(outside > 150, `the change is visible on the moving dust: ${outside} px outside the rectangle`);
 });
+
+gpuTest('demo: out and back through the real host; it ends on the source bit for bit, and then the host renders nothing (zero work at rest; positive control: frames while it moves)', async (t) => {
+  const ref = await reference(t);
+  const { rig, host, handle } = await start(t, { intro: false });
+  const t0 = performance.now();
+  rig.tick(t0);
+  const done = handle.trigger('demo');
+  const f0 = host.stats().frames;
+  let mid = null;
+  for (let now = t0 + 10; now <= t0 + 10 + DURATION * 2.2; now += 8.33) { rig.tick(now); if (!mid && now >= t0 + 10 + DURATION * 0.6) mid = rig.snap(); }
+  const moving = host.stats().frames - f0;
+  assert.equal(await done, 'in', 'the demo resolves with the state it rests in');
+  assert.ok(moving > 200, `the demo rendered ${moving} frames while it moved`);
+  assert.ok(mid && diff(mid, ref).over > 2000, 'it moved');
+  assert.equal(diff(rig.snap(), ref).max, 0, 'at rest: the source, bit for bit');
+  const f1 = host.stats().frames;
+  for (let now = t0 + 20 + DURATION * 2.2; now <= t0 + 20 + DURATION * 5.2; now += 8.33) rig.tick(now);
+  assert.equal(host.stats().frames - f1, 0, 'at rest: no effect frame in 3 s');
+});
+
+gpuTest('depth: with depth the dust spreads in size and focus (parallax), without it every grain stays the size of its cell', async (t) => {
+  const at = async (/** @type {number} */ depth, /** @type {number} */ focus) => {
+    const { rig, host, handle } = await start(t, { intro: false, depth, focus, turbulence: 0.6 });
+    const t0 = performance.now();
+    rig.tick(t0);
+    handle.trigger('out');
+    rig.tick(t0 + 10);
+    rig.tick(t0 + 10 + DURATION * 0.75);
+    const img = rig.snap();
+    host.destroy();
+    rig.root.remove();
+    return img;
+  };
+  const flat = await at(0, 1), deep = await at(1, 1), deepSharp = await at(1, 0);
+  const d1 = diff(flat, deep), d2 = diff(deep, deepSharp);
+  console.error(`disintegrate depth: flat vs deep ${d1.over} px, deep vs deep without defocus ${d2.over} px`);
+  assert.ok(d1.over > 800, 'the grains move in depth: their screen paths and sizes change');
+  assert.ok(d2.over > 100, 'out of focus off the page plane (the defocus changes the picture)');
+});
+
+gpuTest('glow: the eroding front and the grains that leave it heat (warmer than the same frame without glow); two runs without glow are identical (control)', async (t) => {
+  const frames = async (/** @type {number} */ glow) => {
+    const { rig, host, handle } = await start(t, { intro: false, glow, glowColor: '#ff6000' });
+    const t0 = performance.now();
+    rig.tick(t0);
+    handle.trigger('out');
+    rig.tick(t0 + 10);
+    const out = [];
+    for (const f of [0.15, 0.25, 0.35]) { rig.tick(t0 + 10 + DURATION * f); out.push(rig.snap()); }
+    host.destroy();
+    rig.root.remove();
+    return out;
+  };
+  /** pixels where `a` is warmer (red minus blue) than `b` by more than 40 levels @param {ImageData[]} a @param {ImageData[]} b */
+  const warmer = (a, b) => {
+    let n = 0;
+    for (let f = 0; f < a.length; f += 1) for (let i = 0; i < a[f].data.length; i += 4) if ((a[f].data[i] - a[f].data[i + 2]) - (b[f].data[i] - b[f].data[i + 2]) > 40) n += 1;
+    return n;
+  };
+  const off = await frames(0), off2 = await frames(0), on = await frames(1);
+  const hot = warmer(on, off), control = warmer(off2, off);
+  console.error(`disintegrate glow: ${hot} px warmer with glow 1 than without; control (two runs without glow) ${control} px`);
+  assert.equal(control, 0, 'without glow two runs are identical');
+  assert.ok(hot > 300, `the front heats: ${hot} px warmer`);
+});
