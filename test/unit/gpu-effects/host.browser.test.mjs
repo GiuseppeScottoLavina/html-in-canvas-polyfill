@@ -182,7 +182,7 @@ gtest('frame cap: a frame that is not due is not rendered and the host asks to b
 
 gtest('a continuous plugin keeps the hook alive every due frame, and the frame event reports the cap', async (t) => {
   const { rig, host } = await startHost(t);
-  const handle = await host.addPlugin(WaterEffectPlugin, { intensity: 0.3 });
+  const handle = await host.addPlugin(WaterEffectPlugin, { intensity: 0.3, ambient: 0.5 });   // the swell: continuous by declaration (still water renders nothing)
   const events = [];
   rig.canvas.addEventListener(EVENTS.EFFECT_FRAME, (e) => events.push(e.detail));
   for (let i = 0; i < 5; i += 1) assert.equal(rig.tick(performance.now(), true, 60), true);

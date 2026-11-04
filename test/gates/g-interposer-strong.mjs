@@ -3,7 +3,7 @@
 // visual shape is measured in a screenshot of the presented frame (the oracle is the pixels the user sees, never the plugin's own mapper), and trusted clicks land 3 css px inside
 // its visual top and bottom edges and at its visual middle, at several columns. A trial counts only where the native hit test (the plain-DOM twin at the same point, labels resolved)
 // would NOT reach that field. The field the user sees must get the focus in >= 95 % of >= 30 such trials.
-// The same with the water plugin at full intensity (four stacked ripples, the presented frame frozen with framecap=1 while it is measured and clicked).
+// The same with the water plugin at full intensity (the presented frame frozen with framecap=1, then a strong drop below a field, measured and clicked in that frame).
 // Positive control: the host created with `interposer:false` (clicks reach the DOM position): class `interposer` must go red.
 import { runGate, H, EFFECTS_BUNDLE, WATER_BUNDLE } from './lib/gate.mjs';
 import { openRef, rectsOf } from './lib/f1.mjs';
@@ -50,19 +50,23 @@ runGate('G-interposer-strong', async (ctx) => {
   ctx.check(`crt (curvature 1): >= ${MIN_TRIALS} trials where the native hit test would miss the field the user sees`, crt.discriminating >= MIN_TRIALS, crt, 'interposer');
   ctx.check(`crt (curvature 1): a trusted click focuses the field the user sees there in >= ${MIN_SHARE * 100} % of them (${crt.correct}/${crt.discriminating})`, crt.discriminating >= MIN_TRIALS && crt.correct >= MIN_SHARE * crt.discriminating, crt, 'interposer');
 
-  // --- water at full intensity: four stacked ripples per spot, the presented frame frozen (framecap=1) while it is measured and clicked ------------------------------
+  // --- water at full intensity: the presented frame frozen (framecap=1), a strong drop below a field, measured and clicked in that frame -------------------------
   await setup(ctx, page, 'water', { intensity: 1 }, !ctx.control);
   const water = { discriminating: 0, correct: 0, notDiscriminating: 0, missing: [], trials: [], spots: 0 };
   const twin = await rectsOf(ref, Object.keys(MARKS));
   for (let s = 0; s < 40 && water.discriminating < MIN_TRIALS + 10; s++) {
     const sel = Object.keys(MARKS)[s % 4];
     const r = twin[sel];
-    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + (s % 2 ? r.height + 20 : -20);
+    // a strong drop (the water plugin's action, strength 2) 35 css px below the field: its crown pushes the field's visual bottom edge down
+    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + r.height + 35;
     await ctx.focus(page);
     await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
-    for (let k = 0; k < 4; k++) { await page.mouseMove(cx - 30, cy); await H.sleep(10); await page.mouseMove(cx + 30, cy); await H.sleep(26); }
-    await H.sleep(260);
-    await page.evaluate('document.querySelector("#hic-surface").setAttribute("framecap", 1); new Promise((r) => document.querySelector("#hic-surface").addEventListener("effectframe", r, { once: true }))');
+    // FREEZE first (framecap=1: every presented frame stays ~1 s), then the drop, shown by the next presented frame: the screenshot and the clicks judge that frame.
+    // The water simulates its surface (its ripples travel on and settle), so it is stirred after the freeze, not before.
+    await page.evaluate(`(() => { const c = document.querySelector('#hic-surface'); c.setAttribute('framecap', 1);
+      const shown = new Promise((r) => c.addEventListener('effectframe', r, { once: true }));
+      window.__fx.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cy - origin.y} }, strength: 2 }).catch(() => {});
+      return shown; })()`);
     const shot = (await compositorShot(page, '#hic-surface')).img;
     water.spots++;
     // the candidates nearest the ripples first (the most displaced), three per frozen frame
@@ -71,8 +75,8 @@ runGate('G-interposer-strong', async (ctx) => {
   }
   await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
   numbers.water = water;
-  ctx.check(`water (intensity 1, stacked ripples): >= ${MIN_TRIALS} trials where the native hit test would miss`, water.discriminating >= MIN_TRIALS, water, 'interposer');
-  ctx.check(`water (intensity 1, stacked ripples): a trusted click focuses the field the user sees there in >= ${MIN_SHARE * 100} % of them (${water.correct}/${water.discriminating})`, water.discriminating >= MIN_TRIALS && water.correct >= MIN_SHARE * water.discriminating, water, 'interposer');
+  ctx.check(`water (intensity 1, a strong drop): >= ${MIN_TRIALS} trials where the native hit test would miss`, water.discriminating >= MIN_TRIALS, water, 'interposer');
+  ctx.check(`water (intensity 1, a strong drop): a trusted click focuses the field the user sees there in >= ${MIN_SHARE * 100} % of them (${water.correct}/${water.discriminating})`, water.discriminating >= MIN_TRIALS && water.correct >= MIN_SHARE * water.discriminating, water, 'interposer');
 
   numbers.effectErrors = await page.evaluate('window.__errs');
   const errs = page.errors({ includeWarnings: false }).slice(errors0);

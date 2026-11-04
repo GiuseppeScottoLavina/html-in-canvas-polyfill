@@ -254,7 +254,7 @@ const PLUGIN_LIMITS = {
   'liquid-glass': 22.75 * KB, // 22,668 (2026-11-04); 12 -> 22.75 KB: the glass slab (height field, Snell refraction, spectral dispersion, Fresnel, Catmull-Rom sampling, frost; the WGSL is inlined, 9.4 KB), the finger drag and the demo action
   'page-curl': 39.75 * KB, // 39,681 (2026-11-04); 33 -> 39.75 KB (+6,695 bytes, +2,418 gzip): the actions demo, the touch claim, meta.touch, the lit paper (lamp and room light by the real normal across the roll, highlight band, the roll's occlusion on the page beneath, relief, paper thickness, light through the paper, dithering; most of it WGSL with its comments, inlined); 32,986 (32,899 before the Terser pass); 33.5 -> 33 KB (2026-10-27); 15.5 -> 33.5 KB: 3D sheet (fold model, strip mesh, MSAA, shadow and blur passes, perspective mapper; the WGSL is inlined)
   shatter: 42.5 * KB, // 42,212 (2026-11-04); 29 -> 42.5 KB: thick glass shards (walls, back faces, bevels, Fresnel studio lighting, a lit backdrop with soft shadows, MSAA and depth), the eased rewind and the action 'demo'; ~9.5 KB of it is the larger inlined WGSL. Before: 28,902 (28,892 before the Terser pass); 16.25 -> 29 KB: two-stage glass (spiderweb cracks, the cracked-pane mapper, 3D fall, debris; the WGSL is inlined)
-  water: 11.75 * KB, // 11,629 (11,623 before the Terser pass); 10.5 -> 10.75 KB: meta.reducedMotion; 10.75 -> 11.75 KB: the action 'drop' (handle.trigger, settled when calm)
+  water: 23.75 * KB, // 23,503 (2026-11-04); 11.75 -> 23.75 KB: the height-field water (the wave equation and its B-spline mapper in sim.js, refraction, caustics, Fresnel reflection in the inlined WGSL, the action 'demo'); 11,629 before
 };
 const problems = [];
 const known = [];
