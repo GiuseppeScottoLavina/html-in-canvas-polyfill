@@ -89,9 +89,9 @@ With `prefers-reduced-motion: reduce`: the drag still curls the page (it follows
 
 ## Performance
 
-`test/page-curl-gpu.browser.test.mjs`, headless Chrome 156 on an Apple M1 Max (Metal), 2200x1240 backing pixels (the gallery canvas at DPR 2), the page curled, while other work ran on the machine (2026-11-04): 1.32 ms per frame submitted back to back (the one-sample template pass: 0.09 ms), 16 % of the 8.33 ms frame at 120 Hz (0.81 ms before the lit paper of 2026-11: its relief and sheen cost about 0.5 ms). One run on one machine.
+`test/page-curl-gpu.browser.test.mjs`, headless Chrome 156 on an Apple M1 Max (Metal), 2200x1240 backing pixels (the gallery canvas at DPR 2), the page curled, while other work ran on the machine (2026-11-04): 1.34 ms per frame submitted back to back (the one-sample template pass: 0.09 ms), 16 % of the 8.33 ms frame at 120 Hz (0.81 ms before the lit paper of 2026-11: its light, relief and occlusion cost about 0.5 ms). One run on one machine.
 
-On the physical iPad (iPad Pro 11-inch, 3rd generation, iPadOS 27.2, Safari, 120 Hz, DPR 2, the gallery at frame cap 120, 2026-11-04): during the action `demo` 119.7 effect frames per second, frame interval p50 8.34 ms and p95 8.6 ms (three runs); 0 effect frames in 3 s at rest, before and after it. One run on one device.
+On the physical iPad (iPad Pro 11-inch, 3rd generation, iPadOS 27.2, Safari, 120 Hz, DPR 2, the gallery at frame cap 120, 2026-11-04): during the action `demo` 119.8 effect frames per second, frame interval p50 8.34 ms and p95 8.6 ms (three runs, the lighting of this version); 0 effect frames in 3 s at rest, before and after it. One run on one device.
 
 Per curled frame, all on the GPU and nothing allocated: the lifted paper as the lamp sees it (half resolution, only when the fold moved), two soft copies of it (six separable Gaussian passes, about 4 and 24 CSS px) for contact-hardening shadows, then the page underneath and the sheet as a triangle strip in the fold's frame (4x MSAA, a depth buffer, the cut edges antialiased by alpha to coverage). At rest without a curl (`dogEar: 0`) the pass draws the source unchanged. Frames are requested only while something moves (drag, release, hover lift, a peek, the demo); at rest the plugin costs nothing (with `autoPeek` set, one timer for the next peek, until the first drag).
 

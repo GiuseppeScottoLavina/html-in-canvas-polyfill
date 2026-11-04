@@ -331,13 +331,15 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     let paper = u.paper.rgb * (1.0 + grain(v.local + 911.0)) * (1.0 - u.ink * mark * (0.35 + 0.75 * (lt.x + lt.y)));
     // thin paper lets the lamp through where its other side faces it: warm, with the ink of the front darker in it
     let through = max(dot(nUp, normalize(to_lamp(v.page))), 0.0) * 0.3 * (1.0 - 1.6 * u.ink * mark);
-    col = paper * light + paper * through * vec3<f32>(1.0, 0.84, 0.62) + gloss(v.page, nb, 0.2, 40.0) * sh.x;
+    // the highlight of paper is partly its own colour (light scattered in its fibres): weaker on a dark paper
+    let tone = 0.3 + 0.7 * luma(u.paper.rgb);
+    col = paper * light + paper * through * vec3<f32>(1.0, 0.84, 0.62) + gloss(v.page, nb, 0.2, 40.0) * sh.x * tone;
   }
   // the cut edge of the lifted sheet shows the paper's thickness: a darker outer line (the cut face, turned away) and a lit lip just inside
   let lifted = smoothstep(0.3, 2.5, v.page.z);
   let rim = (1.0 - smoothstep(0.0, 0.9, inside)) * lifted;
   let lip = smoothstep(0.6, 1.1, inside) * (1.0 - smoothstep(1.1, 2.0, inside)) * lifted;
-  col = mix(col, col * 0.6, rim) + lip * 0.07;
+  col = mix(col, col * 0.6, rim) + col * lip * 0.08;
   // dither what the effect lit or shaded; the flat, unshadowed front stays the page's own pixels
   let d = select(1.0, max(lifted, 1.0 - sh.x), front);
   return vec4<f32>(col + dither(v.position.xy) * d, cover);
