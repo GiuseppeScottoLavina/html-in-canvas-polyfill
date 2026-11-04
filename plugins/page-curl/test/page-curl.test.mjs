@@ -1,12 +1,13 @@
 // Node tests of the page-curl plugin: the folder contract; the fold (an isometry, the corner under the pointer, the bound edge flat); the
 // mapper against an independent forward rendering of the sheet (every point of the sheet splatted through the camera into a z-buffer);
 // the grab gesture (which events are taken from the page); the springs on the frame clock (the same pose at the same time whatever the
-// frame cap); the rest pose (dog-ear, hover lift, auto-peek, grab cursor); reduced motion; and the render path (no allocation per frame).
+// frame cap); the rest pose (dog-ear, hover lift, auto-peek, grab cursor); zero work at rest; the touch claim on a corner; the actions peek
+// and demo; reduced motion; and the render path (no allocation per frame).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
-import { ACTIONS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
+import { ACTIONS, DEMO_RELEASE_MS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, demoHand, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 const W = 480;
@@ -195,14 +196,15 @@ function fakeEnv({ reduced = false, timers = false } = {}) {
     getBoundingClientRect: () => ({ left: 10, top: 20, width: W, height: H }),
     setPointerCapture: (/** @type {number} */ id) => captured.push(id), releasePointerCapture: (/** @type {number} */ id) => captured.push(-id),
     // context.listen of the real host (plugins/_shared/node-host.mjs) listens here
-    addEventListener: (/** @type {string} */ type, /** @type {any} */ fn) => layerListeners.set(type, fn), removeEventListener() {},
+    addEventListener: (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) => { layerListeners.set(type, fn); listenOptions.set(type, o); }, removeEventListener() {},
   };
   let renders = 0;
   const layerListeners = new Map();
+  const listenOptions = new Map();
   const attrs = new Map();
   const layer = { setAttribute: (/** @type {string} */ k, /** @type {string} */ v) => attrs.set(k, v), removeAttribute: (/** @type {string} */ k) => attrs.delete(k),
     setPointerCapture: (/** @type {number} */ id) => captured.push(`layer${id}`), releasePointerCapture: (/** @type {number} */ id) => captured.push(`layer-${id}`) };
-  const context = { device, format: 'bgra8unorm', canvas, source: {}, requestRender() { renders += 1; }, listen: (/** @type {string} */ type, /** @type {any} */ fn) => { layerListeners.set(type, fn); return () => {}; } };
+  const context = { device, format: 'bgra8unorm', canvas, source: {}, requestRender() { renders += 1; }, listen: (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) => { layerListeners.set(type, fn); listenOptions.set(type, o); return () => {}; } };
   const fire = (/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, o = {}) => {
     const e = {
       type, pointerId: 1, isPrimary: true, button: 0, detail: 1, clientX: 10 + x, clientY: 20 + y, prevented: false, stopped: false,
@@ -213,7 +215,8 @@ function fakeEnv({ reduced = false, timers = false } = {}) {
   };
   const frame = (/** @type {number} */ now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, sourceReady: true, sourceView: {}, destinationView: {}, encoder });
   const atLayer = (/** @type {string} */ type) => layerListeners.get(type)?.({ type, currentTarget: layer });
-  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders, draws: () => draws, pending, atLayer, attrs };
+  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders, draws: () => draws, pending, atLayer, attrs,
+    layerListeners: (/** @type {string} */ type) => layerListeners.get(type), listenOptions: (/** @type {string} */ type) => listenOptions.get(type) };
 }
 
 /** @param {any} t @param {any} env @param {Record<string, unknown>} [options] */
@@ -456,9 +459,9 @@ test('the action peek, through the effect handle: the dog-ear opens and closes o
   t.after(() => { globalThis.fetch = realFetch; });
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   const { handle, inst } = await nodeHandle(plugin, { ...meta.defaults, autoPeek: 0 }, { device: env.context.device, canvas: env.context.canvas, source: {} });
-  assert.deepEqual([...handle.actions], ['peek']);
+  assert.deepEqual([...handle.actions], ['peek', 'demo']);
   assert.deepEqual([...ACTIONS], [...(plugin.actions ?? [])]);
-  await assert.rejects(handle.trigger('turn'), /unknown action "turn" of the plugin "page-curl"; its actions are 'peek'/);
+  await assert.rejects(handle.trigger('turn'), /unknown action "turn" of the plugin "page-curl"; its actions are 'peek', 'demo'/);
   inst.render(env.frame(0));
   const rest = last(env)[9];
   assert.equal(await handle.settled(), 'rest', 'at rest: at once');
@@ -501,4 +504,135 @@ test('the action peek, through the effect handle: the dog-ear opens and closes o
   for (let now = 16; now <= PEEK_MS; now += 16) calm.inst.render(calmEnv.frame(now));
   assert.equal(last(calmEnv)[9], calmRest, 'the dog-ear stays still');
   calm.handle.remove();
+});
+
+test('zero work at rest with the defaults: after the first frame no frame is requested and no timer is set (the opt-in autoPeek sets one)', async (t) => {
+  const env = fakeEnv({ timers: true });
+  const inst = await created(t, env, meta.defaults);
+  assert.equal(meta.defaults.autoPeek, 0, 'the auto-peek is opt-in');
+  inst.render(env.frame(0));
+  const r0 = env.renders();
+  for (let now = 16; now <= 3000; now += 16) inst.render(env.frame(now));
+  assert.equal(env.renders(), r0, 'no frame requested at rest');
+  assert.equal(env.pending.length, 0, 'no timer at rest');
+  assert.ok(last(env)[9] > 0, 'the dog-ear is drawn');
+  // positive control: the same check sees the periodic work of the auto-peek
+  const peeking = fakeEnv({ timers: true });
+  const other = await created(t, peeking, { ...meta.defaults, autoPeek: 5 });
+  other.render(peeking.frame(0));
+  assert.equal(peeking.pending.length, 1, 'control: autoPeek 5 sets a timer at rest');
+  inst.destroy(); other.destroy();
+});
+
+/** a touchstart at page (x, y) on the layer (context.listen), with `n` fingers down @param {any} env */
+function touchAt(env, /** @type {number} */ x, /** @type {number} */ y, n = 1) {
+  const e = { type: 'touchstart', touches: Array.from({ length: n }, () => ({ clientX: 10 + x, clientY: 20 + y })), prevented: false, preventDefault() { this.prevented = true; } };
+  env.layerListeners('touchstart')?.(e);
+  return e;
+}
+
+test('touch: a finger that lands on a corner claims the touch (touchstart prevented: no scroll, no pointercancel); anywhere else the page keeps it', async (t) => {
+  const env = fakeEnv();
+  const inst = await created(t, env, FLAT);
+  inst.render(env.frame(0));
+  assert.equal(typeof env.layerListeners('touchstart'), 'function', 'a touchstart listener through context.listen');
+  assert.equal(env.listenOptions('touchstart')?.passive, false, 'not passive: it may prevent the scroll');
+  for (const [x, y] of [[W - 6, 6], [6, H - 6], [W - 30, H - 30], [20, 20]]) assert.ok(touchAt(env, x, y).prevented, `a corner at ${x}, ${y}`);
+  for (const [x, y] of [[240, 160], [W / 2, 6], [6, H / 2], [W - 100, 100]]) assert.equal(touchAt(env, x, y).prevented, false, `the page scrolls from ${x}, ${y}`);
+  assert.equal(touchAt(env, W - 6, 6, 2).prevented, false, 'two fingers (a pinch) are the page\'s');
+  env.fire('pointerdown', W - 6, 6, { pointerType: 'touch' });
+  assert.ok(touchAt(env, 200, 150, 2).prevented, 'while a corner is held every touch is claimed');
+  env.fire('pointerup', 200, 150, { pointerType: 'touch' });
+  const only = fakeEnv();
+  const bl = await created(t, only, { ...FLAT, corner: 'bl' });
+  bl.render(only.frame(0));
+  assert.equal(touchAt(only, W - 6, 6).prevented, false, 'corner bl: the top-right corner is not a handle');
+  assert.ok(touchAt(only, 6, H - 6).prevented);
+  inst.destroy(); bl.destroy();
+});
+
+test('demoHand: from the corner, along an arc, most of the way to the bound edge; it lets go at DEMO_RELEASE_MS', () => {
+  assert.equal(demoHand(-1, 'tr', W, H), null);
+  assert.equal(demoHand(DEMO_RELEASE_MS, 'tr', W, H), null);
+  const a = /** @type {number[]} */ (demoHand(0, 'tr', W, H)), b = /** @type {number[]} */ (demoHand(DEMO_RELEASE_MS - 1, 'tr', W, H));
+  assert.ok(Math.hypot(a[0] - W, a[1]) < 0.05 * W, `it starts at the corner: ${a}`);
+  assert.ok(b[0] < 0.2 * W && b[1] > 0.35 * H && b[1] < 0.55 * H, `it ends near the bound edge, half way down: ${b}`);
+  const c = /** @type {number[]} */ (demoHand(0, 'bl', W, H));
+  assert.ok(Math.hypot(c[0], c[1] - H) < 0.05 * W, 'the bottom-left corner mirrors it');
+});
+
+test('the action demo, through the effect handle: the page turns most of the way and springs back to the dog-ear; it resolves \'rest\'; the pose depends on the time only; a press or a key takes over at once; reduced motion resolves at once', async (t) => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
+  t.after(() => { globalThis.fetch = realFetch; });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  /** @param {number} dt @param {Record<string, unknown>} [o] */
+  async function run(dt, o = {}) {
+    const env = fakeEnv();
+    const h = await nodeHandle(plugin, { ...meta.defaults }, { device: env.context.device, canvas: env.context.canvas, source: {}, ...o });
+    h.inst.render(env.frame(0));
+    const rest = Array.from(last(env).slice(4, 10));
+    return { env, h, rest };
+  }
+  const { env, h, rest } = await run(16);
+  const demo = h.handle.trigger('demo');
+  let state = 'pending';
+  demo.then((v) => { state = v; });
+  let maxPull = 0, frames = 0, at1000 = 0;
+  for (let now = 100; now <= 100 + DEMO_RELEASE_MS + 2000; now += 8) {
+    const r0 = h.requests();
+    h.inst.render(env.frame(now));
+    if (h.requests() > r0) frames += 1;
+    maxPull = Math.max(maxPull, last(env)[9]);
+    if (now === 1100) at1000 = last(env)[9];
+  }
+  await flush();
+  assert.ok(maxPull > 0.75 * W, `the page turns most of the way over: pull ${maxPull.toFixed(1)} of a ${W} px page`);
+  assert.ok(frames > DEMO_RELEASE_MS / 8 - 4, `frames are asked for while it plays: ${frames}`);
+  assert.equal(state, 'rest', 'it resolves rest');
+  const after = Array.from(last(env).slice(4, 10));
+  after.forEach((v, i) => assert.ok(Math.abs(v - rest[i]) < 1e-3, `back on the dog-ear: ${after} vs ${rest}`));
+  const r1 = h.requests();
+  for (let now = 4200; now <= 7200; now += 16) h.inst.render(env.frame(now));
+  assert.equal(h.requests(), r1, 'and then nothing: zero work at rest');
+  // the same time at 30 fps: the same pose (the hand and the springs run on the frame clock)
+  const slow = await run(33);
+  slow.h.handle.trigger('demo');
+  for (let now = 100; now <= 1100; now += 1000 / 30) slow.h.inst.render(slow.env.frame(Math.min(now, 1100)));
+  slow.h.inst.render(slow.env.frame(1100));
+  assert.ok(Math.abs(last(slow.env)[9] - at1000) < 0.5, `the same pose at 30 fps: ${last(slow.env)[9]} vs ${at1000}`);
+  // a press on the page takes over at once: the hand lets go, the page springs back long before the demo would have ended
+  // (control: without either, the demo still plays at 2600 ms)
+  for (const interrupt of [null, (/** @type {any} */ e) => e.fire('pointerdown', 240, 160), (/** @type {any} */ e) => e.fire('keydown', 0, 0, { key: 'a' })]) {
+    const x = await run(16);
+    let done = 'pending';
+    x.h.handle.trigger('demo').then((v) => { done = v; });
+    for (let now = 100; now <= 1300; now += 16) x.h.inst.render(x.env.frame(now));
+    const mid = last(x.env)[9];
+    const e = interrupt?.(x.env);
+    if (e) assert.equal(e.prevented || e.stopped, false, 'the press or key itself still belongs to the page');
+    for (let now = 1316; now <= 2600; now += 16) x.h.inst.render(x.env.frame(now));
+    await flush();
+    assert.ok(mid > 3 * x.rest[5], `it was mid-turn: pull ${mid} (at rest ${x.rest[5]})`);
+    assert.equal(done, e ? 'rest' : 'pending', e ? `${e.type} ends the demo at once: at rest 1.3 s later` : 'control: still playing');
+    x.h.handle.remove();
+  }
+  // grabbing the corner during the demo: the hand is the user's from then on
+  const g = await run(16);
+  g.h.handle.trigger('demo');
+  for (let now = 100; now <= 500; now += 16) g.h.inst.render(g.env.frame(now));
+  g.env.fire('pointerdown', W - 4, 4);
+  g.env.fire('pointermove', 300, 60);
+  for (let now = 516; now <= 3500; now += 16) g.h.inst.render(g.env.frame(now));
+  const s = last(g.env), D = s[11], k = D / (D - 2 * s[8]);
+  const cx = s[2] - s[4] * s[9], cy = -s[5] * s[9];   // the top-right corner, pulled (bound on the left)
+  const seen = [W / 2 + (cx - W / 2) * k, H / 2 + (cy - H / 2) * k];
+  assert.ok(Math.hypot(seen[0] - 300, seen[1] - 60) < 1, `the held corner is seen under the pointer, not where the demo would take it: ${seen}`);
+  assert.notEqual(await Promise.race([g.h.handle.settled(), new Promise((r) => setTimeout(() => r('held'), 20))]), 'rest', 'held: not at rest');
+  // reduced motion (as the host read it): nothing moves, it resolves at once
+  const calm = await run(16, { reducedMotion: true });
+  assert.equal(await calm.h.handle.trigger('demo'), 'rest');
+  for (let now = 16; now <= 1000; now += 16) calm.h.inst.render(calm.env.frame(now));
+  assert.equal(last(calm.env)[9], calm.rest[5], 'the dog-ear stays still');
+  for (const x of [h, slow.h, g.h, calm.h]) x.handle.remove();
 });
