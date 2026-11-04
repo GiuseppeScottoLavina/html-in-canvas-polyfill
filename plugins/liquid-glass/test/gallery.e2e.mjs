@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import * as H from '../../../test/harness/index.mjs';
 import { UNIFORM_FLOATS, mapLensPoint, meta, writeLensGeometry } from '../index.js';
 import { TARGETS, runGalleryClickThrough } from '../../_shared/gallery-click.mjs';
-import { ROOT, checklist, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, checklist, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 /** the mapper of the default lens at rest, centred on (cx, cy), on a w x h canvas */
 function lensMapper(/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ cx, /** @type {number} */ cy) {
@@ -89,6 +89,9 @@ const { page } = g;
 console.log(`Chrome ${g.chrome}, plugin bundle ${g.bundle.bytes} bytes (minified)`);
 try {
   await page.evaluate(`document.getElementById('stage').frameCap = 120`);
+  // the premise of the touch checks: the page can scroll (the gallery's own page is barely taller than the viewport)
+  const room = await scrollRoom(page);
+  c.check('premise: the page can scroll by several hundred px either way', room.up >= 300 && room.down >= 300, room);
   // the stage 100 px below the top of the viewport: the page can still scroll up by several hundred px
   await page.evaluate(`(() => { const r = document.getElementById('stage').getBoundingClientRect(); scrollTo(0, Math.max(0, scrollY + r.top - 100)); })()`);
   await page.mouseMove(2, 2);

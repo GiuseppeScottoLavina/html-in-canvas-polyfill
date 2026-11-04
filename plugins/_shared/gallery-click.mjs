@@ -110,14 +110,31 @@ export async function runGalleryClickThrough(plan) {
     const { boxes, inside, nativeAt } = ctx;
     const W = ctx.canvas.w, Hh = ctx.canvas.h;
     const drawnAt = (/** @type {{x: number, y: number}} */ p) => plan.mapFor(p)({ x: p.x, y: p.y, width: W, height: Hh });
-    // prefer a target whose DOM centre the effect draws as something else, so that the control click below is meaningful
-    const candidates = (plan.targets ?? TARGETS).map((t) => ctx.findDrawn(plan.mapFor, [t])).filter(Boolean);
-    const controllable = (/** @type {any} */ c) => {
-      const dom = { x: c.box.x + c.box.w / 2, y: c.box.y + c.box.h / 2 };
-      const m = drawnAt(dom);
-      return !boxes.some((b) => (b.id === c.box.id || b.forId === c.box.id) && inside(b, m));
+    /** how far q lies outside every box of `list`, in CSS px along the farthest axis (<= 0: inside one of them) */
+    const clearance = (/** @type {any[]} */ list, /** @type {{x: number, y: number}} */ q) => Math.min(...list.map((b) => Math.max(b.x - q.x, q.x - (b.x + b.w), b.y - q.y, q.y - (b.y + b.h))));
+    /** the control click needs a margin: a drawn source on the edge of the label is decided by a sub-pixel difference of the pose */
+    const CLEAR = 3;
+    /**
+     * A point of the control's DOM box (1 px inside it, so that a click there natively reaches the control) where the effect draws
+     * something at least CLEAR px away from the control and its label: the farthest such point, or null when the effect draws the control
+     * (or its label) over its own DOM box.
+     */
+    const domControlPoint = (/** @type {any} */ box) => {
+      const rel = boxes.filter((b) => b.id === box.id || b.forId === box.id);
+      const sx = Math.max(1, box.w / 40), sy = Math.max(1, box.h / 20);
+      let best = null;
+      for (let y = box.y + 1; y <= box.y + box.h - 1; y += sy) {
+        for (let x = box.x + 1; x <= box.x + box.w - 1; x += sx) {
+          const m = drawnAt({ x, y });
+          const c = clearance(rel, m);
+          if (c >= CLEAR && (!best || c > best.c)) best = { p: { x, y }, m, c };
+        }
+      }
+      return best;
     };
-    const chosen = candidates.find(controllable) ?? candidates[0] ?? null;
+    // prefer a target whose DOM box the effect draws, somewhere, clearly as something else, so that the control click below is meaningful
+    const candidates = (plan.targets ?? TARGETS).map((t) => ctx.findDrawn(plan.mapFor, [t])).filter(Boolean);
+    const chosen = candidates.find((/** @type {any} */ c) => !!domControlPoint(c.box)) ?? candidates[0] ?? null;
     if (!check('a control is drawn where a click natively reaches something else (found with the plugin mapper)', !!chosen, chosen && { target: chosen.target.sel, drawnAt: chosen.p, dom: { x: chosen.box.x, y: chosen.box.y, w: chosen.box.w, h: chosen.box.h } })) return finish();
     const { target, box, p } = /** @type {any} */ (chosen);
     const native = await page.evaluate(`(() => { const e = document.elementFromPoint(${ctx.canvas.x + p.x}, ${ctx.canvas.y + p.y}); const c = e && e.closest(${JSON.stringify(CONTROLS)}); return { el: e && (e.id || e.localName), control: c && c.id }; })()`);
@@ -127,11 +144,10 @@ export async function runGalleryClickThrough(plan) {
     const activated = (/** @type {any} */ before, /** @type {any} */ after) => target.kind === 'checkbox' ? after.checked !== before.checked
       : target.kind === 'focus' ? after.active === box.id : after.feedback === 'success' && before.feedback !== 'success';
 
-    // control: a click at the control's DOM centre, if the effect draws something else there, must not activate it
-    const dom = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
-    const domDrawn = drawnAt(dom);
-    const related = boxes.filter((b) => b.id === box.id || b.forId === box.id);
-    if (!related.some((b) => inside(b, domDrawn))) {
+    // control: a click inside the control's DOM box where the effect draws something else (clear of the control and its label) must not activate it
+    const clear = domControlPoint(box);
+    if (clear) {
+      const dom = clear.p, domDrawn = clear.m;
       await page.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
       await ctx.moveTo(dom.x, dom.y);
       if (plan.settleBeforeClick) await H.sleep(plan.settleBeforeClick);
@@ -139,8 +155,8 @@ export async function runGalleryClickThrough(plan) {
       await ctx.clickAt(dom.x, dom.y);
       await H.sleep(250);
       const after = await read();
-      check('control: a click at the DOM position of the control (the effect draws something else there) does not activate it', !activated(before, after), { at: dom, drawnSource: domDrawn, before, after });
-    } else result.checks.push({ name: 'control skipped: the effect draws the control itself at its DOM position', ok: true, detail: { at: dom } });
+      check('control: a click at the DOM position of the control (the effect draws something else there) does not activate it', !activated(before, after), { at: dom, drawnSource: domDrawn, clearancePx: Math.round(clear.c * 10) / 10, before, after });
+    } else result.checks.push({ name: `control skipped: the effect draws the control or its label over its whole DOM box (no point drawn ${CLEAR} px clear of them)`, ok: true, detail: { box: { x: box.x, y: box.y, w: box.w, h: box.h } } });
 
     await page.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
     await ctx.moveTo(p.x, p.y);

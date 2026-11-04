@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import * as H from '../../../test/harness/index.mjs';
 import { UNIFORM_FLOATS, mapCardPoint, meta, writeCardPose } from '../index.js';
 import { runGalleryClickThrough } from '../../_shared/gallery-click.mjs';
-import { ROOT, actionChecks, checklist, framesDuring, idle, openGallery, rectOf, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, checklist, framesDuring, idle, openGallery, rectOf, scrollRoom, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 let size = { w: 1, h: 1 };
 const tilt = (meta.defaults.tilt * Math.PI) / 180;
@@ -53,6 +53,9 @@ try {
     await sleep(700);
     return { scrolled: Math.round(y0 - (await page.evaluate('scrollY'))), framesDuringDrag: during, scrollY: y0 };
   };
+  // the premise of the scroll checks: the page can scroll (the gallery's own page is barely taller than the viewport)
+  const room = await scrollRoom(page);
+  c.check('premise: the page can scroll by several hundred px either way', room.up >= 300 && room.down >= 300, room);
   await page.evaluate(`window.scrollTo(0, Math.max(400, scrollY))`);
   await sleep(300);
   const free = await fingerDrag();

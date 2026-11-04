@@ -65,6 +65,28 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
   }
 }
 
+/**
+ * Room for the page to scroll, for a touch check whose premise is "a drag on the stage scrolls the PAGE" (or must not): the gallery puts the
+ * stage at the top, and its page can be barely taller than the viewport. Adds `px` of empty page above the gallery and below it (outside
+ * the drawn form; the stage keeps its size, the gallery sizes it from the height of its own bar) and scrolls so that the stage stays where
+ * it was in the viewport. Idempotent. Returns how far the page can then scroll up and down, in CSS px.
+ * @param {any} page @param {number} [px]
+ * @returns {Promise<{up: number, down: number}>}
+ */
+export function scrollRoom(page, px = 800) {
+  return page.evaluate(`(() => {
+    const stage = document.getElementById('stage');
+    if (!document.getElementById('e2e-room-above')) {
+      const top0 = stage.getBoundingClientRect().top;
+      const room = (id) => Object.assign(document.createElement('div'), { id, style: 'height: ${px}px' });
+      document.body.prepend(room('e2e-room-above'));
+      document.body.append(room('e2e-room-below'));
+      scrollTo(0, scrollY + stage.getBoundingClientRect().top - top0);
+    }
+    return { up: Math.round(scrollY), down: Math.round(document.documentElement.scrollHeight - innerHeight - scrollY) };
+  })()`);
+}
+
 /** viewport rectangle of an element @param {any} page @param {string} selector */
 export function rectOf(page, selector) {
   return page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2, sx: scrollX, sy: scrollY }; })()`);

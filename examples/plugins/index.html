@@ -219,7 +219,8 @@
 
   // the stage fills the first viewport under the bar and the chips: --chrome is their height (a ResizeObserver: no work while nothing changes)
   const top = $('top');
-  new ResizeObserver(() => { document.documentElement.style.setProperty('--chrome', Math.ceil(top.getBoundingClientRect().bottom + scrollY) + 'px'); }).observe(top);
+  // (their own height plus the body's top padding, not their position in the document: content a page or a test puts above them leaves the stage's size alone)
+  new ResizeObserver(() => { document.documentElement.style.setProperty('--chrome', Math.ceil(top.getBoundingClientRect().height + parseFloat(getComputedStyle(document.body).paddingTop)) + 'px'); }).observe(top);
 
   // ---- a one-line hint above the stage: how to use the selected effect with a finger (coarse pointers) or a mouse ----------
   // `meta.touch` of the plugin wins (a plugin knows its own handle); these lines are the gallery's own words for its plugins.
@@ -321,8 +322,11 @@
   }
 
   // ---- the frame cap (an extension): canvas.frameCap reflects the framecap attribute ------------------------------------------
-  // It defaults to the display's rate. The slider's top is the display rate measured at rest (rAF intervals, median, as the field test
-  // does); there the canvas is uncapped (frameCap 0 = the display rate exactly, without the phase drift of a numeric cap at the refresh rate).
+  // It defaults to the display's rate. The slider's top is the display rate, measured from 90 animation frames while the page starts
+  // (the 20th percentile of the intervals: no interval is shorter than the refresh period, a busy frame only makes one longer); there the
+  // canvas is uncapped (frameCap 0 = the display rate exactly, without the phase drift of a numeric cap at the refresh rate). The page is
+  // ready only once the slider shows the measured rate: a later change of the slider (its max, its label) would change the drawn form,
+  // and the effect would present a frame for it while the page is otherwise at rest.
   const range = $('fps-cap'), output = $('fps-cap-value');
   let capTouched = false;
   const showCap = () => { $('m-cap').textContent = !extensions ? 'n/a' : canvas.frameCap > 0 ? String(canvas.frameCap) : state.displayHz ? Math.round(state.displayHz) + ' Hz' : 'display'; };
@@ -347,17 +351,18 @@
         const iv = [];
         for (let i = 1; i < ts.length; i++) iv.push(ts[i] - ts[i - 1]);
         iv.sort((a, b) => a - b);
-        resolve(iv.length >= 20 ? 1000 / iv[iv.length >> 1] : null);
+        resolve(iv.length >= 20 ? 1000 / iv[Math.floor(iv.length * 0.2)] : null);
       };
       const f = (t) => { if (finished) return; ts.push(t); if (ts.length < 91) requestAnimationFrame(f); else done(); };
       requestAnimationFrame(f);
-      setTimeout(done, 3000);   // a hidden page has no animation frames: the cap stays uncapped (the display rate), without a number
+      setTimeout(done, 2000);   // a hidden page has no animation frames: the cap stays uncapped (the display rate), without a number
     });
   }
+  const displayMeasure = measureDisplay();   // from the start, in parallel with the host and the plugin
   async function calibrateCap() {
-    const hz = await measureDisplay();
+    const hz = await displayMeasure;
     state.displayHz = hz ? Math.round(hz * 10) / 10 : null;
-    $('m-display').textContent = hz ? state.displayHz + ' Hz (rAF, median of 90 intervals at rest)' : 'not measured (no animation frames)';
+    $('m-display').textContent = hz ? state.displayHz + ' Hz (rAF, 20th percentile of 90 intervals)' : 'not measured (no animation frames)';
     if (!hz || !extensions) { showCap(); return; }
     const max = Math.min(240, Math.max(30, Math.round(hz / 5) * 5));
     // a test or a script may have set the cap meanwhile (the slider or canvas.frameCap): keep what it set
@@ -509,11 +514,11 @@
   const wanted = new URL(location.href).searchParams.get('effect');
   const first = wanted && (wanted === 'off' || plugins.some((p) => p.name === wanted)) ? wanted : plugins.length ? plugins[0].name : 'off';
   await select(host ? first : 'off');
+  await calibrateCap();
   state.ready = true;
   // a narrow strip of chips scrolls sideways: bring the selected one into it (no vertical scroll of the page)
   const strip = $('picker'), chip = buttons.get(state.active);
   if (chip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = Math.max(0, chip.offsetLeft - strip.offsetLeft - 24);
-  calibrateCap();
 })();
 </script>
 </body>
