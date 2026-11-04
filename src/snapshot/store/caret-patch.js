@@ -13,7 +13,8 @@ import { makeCanvas } from './surfaces.js';
  * @typedef {Object} CaretPatch
  * @property {(surface: HTMLCanvasElement|OffscreenCanvas, rectPx: Rect, color: string) => void} show  save the pixels under the caret rect, fillRect the caret
  * @property {(surface: HTMLCanvasElement|OffscreenCanvas) => void} hide  put the saved pixels back (no-op when hidden)
- * @property {(landedRectPx: Rect) => void} tileLanded  a tile covered the caret rect: forget the saved pixels (the tile is caret-free) so the next show() re-saves
+ * @property {(landedRectPx: Rect) => void} tileLanded  a tile (or a composed scrollport) covered the caret rect: forget the saved pixels (it is caret-free) so the next show() re-saves
+ * @property {(rectPx: Rect) => 'none'|'inside'|'partly'} meets  where the shown caret lies against `rectPx`: outside it (or hidden), inside it, or across its edge
  * @property {() => boolean} visible
  */
 
@@ -38,6 +39,12 @@ export function createCaretPatch() {
   const padOf = (w, h) => {
     if (!pad || pad.width < w || pad.height < h) pad = makeCanvas(Math.max(w, pad?.width ?? 0), Math.max(h, pad?.height ?? 0));
     return pad;
+  };
+
+  /** @param {Rect} r @returns {boolean} */
+  const inside = (r) => {
+    const s = saved;
+    return !!s && r.x <= s.x && r.y <= s.y && r.x + r.width >= s.x + s.width && r.y + r.height >= s.y + s.height;
   };
 
   /** @param {Surface} surface */
@@ -78,10 +85,12 @@ export function createCaretPatch() {
     },
     hide,
     tileLanded(landedRectPx) {
-      const s = saved;
-      if (!s) return;
-      const r = landedRectPx;
-      if (r.x <= s.x && r.y <= s.y && r.x + r.width >= s.x + s.width && r.y + r.height >= s.y + s.height) saved = null;
+      if (inside(landedRectPx)) saved = null;
+    },
+    meets(rectPx) {
+      const s = saved, r = rectPx;
+      if (!s || s.x >= r.x + r.width || s.y >= r.y + r.height || s.x + s.width <= r.x || s.y + s.height <= r.y) return 'none';
+      return inside(r) ? 'inside' : 'partly';
     },
     visible: () => saved !== null,
   };
