@@ -4,7 +4,7 @@
 // the model plugin, whose `demo` exercises the gallery's demo path). HEADLESS Chrome, against the BUILT dist/.
 //
 //   npm run build && npm run test:gallery
-//   node scripts/check-gallery.mjs [--only=water,template] [--views=phone,ipad] [--no-control]
+//   node scripts/check-gallery.mjs [--only=water,template] [--views=phone,ipad] [--no-control] [--controls-only]
 //
 // Per plugin and view (phone 390 x 844 at DPR 3, iPad landscape 1194 x 748 at DPR 2; mobile metrics and touch emulation):
 //   fold      the stage (the canvas) lies entirely in the first viewport; no horizontal page scroll
@@ -155,12 +155,12 @@ async function runOne(browser, server, name, view, o = {}) {
     }
 
     // fold and fit, with the plugin's controls mounted
-    if (want('fold')) {
+    if (want('fold') || want('fit')) {
       const m = await page.evaluate(`(() => { const s = document.getElementById('stage').getBoundingClientRect(); const f = document.getElementById('demo-form');
         return { stage: { top: s.top, bottom: s.bottom, left: s.left, right: s.right }, vw: innerWidth, vh: innerHeight, scrollWidth: document.documentElement.scrollWidth, formScroll: f.scrollHeight, formClient: f.clientHeight }; })()`);
       numbers.layout = m;
-      check('fold', `the stage lies entirely in the first viewport (${view.width} x ${view.height}), no horizontal page scroll`, m.stage.top >= 0 && m.stage.left >= 0 && m.stage.bottom <= m.vh + 0.5 && m.stage.right <= m.vw + 0.5 && m.scrollWidth <= m.vw, m);
-      check('fit', 'the form fits the stage without an inner scroll', m.formScroll <= m.formClient + 1, { scrollHeight: m.formScroll, clientHeight: m.formClient });
+      if (want('fold')) check('fold', `the stage lies entirely in the first viewport (${view.width} x ${view.height}), no horizontal page scroll`, m.stage.top >= 0 && m.stage.left >= 0 && m.stage.bottom <= m.vh + 0.5 && m.stage.right <= m.vw + 0.5 && m.scrollWidth <= m.vw, m);
+      if (want('fit')) check('fit', 'the form fits the stage without an inner scroll', m.formScroll <= m.formClient + 1, { scrollHeight: m.formScroll, clientHeight: m.formClient });
     }
 
     // a vertical touch drag on the stage scrolls the page
@@ -200,7 +200,7 @@ async function withBrowser(/** @type {(b: any) => Promise<void>} */ fn) {
   try { await fn(browser); } finally { await browser.close().catch(() => browser.kill()); }
 }
 try {
-  for (const name of all) {
+  for (const name of process.argv.includes('--controls-only') ? [] : all) {
     await withBrowser(async (browser) => {
       for (const view of VIEWS) {
         const r = await runOne(browser, server, name, view, { steps: ['demo', 'rest', 'fold', 'fit', 'scroll'] });
@@ -214,7 +214,7 @@ try {
       }
     });
   }
-  if (!only || only.includes('off')) {
+  if ((!only || only.includes('off')) && !process.argv.includes('--controls-only')) {
     await withBrowser(async (browser) => {
       const view = VIEWS.find((v) => v.name === 'ipad') ?? VIEWS[0];
       const r = await runOne(browser, server, 'off', view, { steps: ['cap', 'fold', 'fit'] });
