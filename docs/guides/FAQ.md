@@ -53,7 +53,7 @@ Where the bytes go: the bytes esbuild attributes to each source module of the mi
 
 **What is already split out.** The effect host, the example plugins, the native bridge for older Chrome drafts, the Firefox / Safari form-control painters, the WebGL / WebGPU texture methods and the worker side are separate bundles that a page loads only if it needs them.
 
-**On a browser with the native API** the core patches nothing, but its bytes are still downloaded and parsed, since the core makes that decision itself. To skip the download there, a page has to feature-detect before loading the script; the package ships no such loader.
+**On a browser with the native API** the core patches nothing, but a page that lists its tag still downloads and parses it, since the core makes that decision itself. The loader avoids that download ([Does Chrome 157 download the polyfill?](#does-chrome-157-download-the-polyfill)).
 
 ## Is it accessible?
 
@@ -72,6 +72,10 @@ Two caveats:
 
 - The proposal still changes (on 2026-10-08, `ElementImage.width/height` became `getElementImageDefaultSize()`). The polyfill follows the WPT tests and can lag behind a change.
 - Native implementations do not provide the two extensions. This library runs them over a native implementation too, with differences: there the frame cap bounds only effect frames, not the browser's own `paint` events ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md#on-a-native-implementation), [API-CONTRACT.md, section 7.6](../API-CONTRACT.md#76-over-a-native-implementation)). Code that relies on them depends on this library, not on the standard.
+
+## Does Chrome 157 download the polyfill?
+
+With the core's script tag, yes: 351,362 bytes (119,262 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,289 bytes, 6,276 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 

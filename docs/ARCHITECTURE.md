@@ -612,7 +612,7 @@ Seven modules on disjoint file sets that talk only through the typed interfaces 
 
 | module | dir | depends on (interfaces only) |
 |---|---|---|
-| api-core | `src/api/{install,options,compose,native-detect,native-bridge,native-geometry,native-paint,canvas-registry,report,env,patch,selection-patch}.js`, `src/index.js`, `src/iife.js`, `src/native-bridge.js`, `src/version.js` | all factories (composition root) |
+| api-core | `src/api/{install,options,compose,native-detect,native-bridge,native-geometry,native-paint,canvas-registry,report,env,patch,selection-patch,loader}.js`, `src/index.js`, `src/iife.js`, `src/native-bridge.js`, `src/version.js`; the loader's entries `src/loader.js`, `src/loader-iife.js` (`api/loader.js` imports only `native-detect.js`, which `install()` shares with it through `decideInstall`, and the contracts) | all factories (composition root) |
 | api-surface | `src/api/{canvas-patch,context2d-patch,texture-patch,texture-math,gpu-seam,offscreen-patch,element-image,paint-event,geometry,draw-math,validate,ro-dpcb,fullscreen-guard,worker-guard,worker-transfer,worker-wire,worker-scope}.js`; the entries of the GPU and worker bundles, `src/gpu.js`, `src/gpu-iife.js`, `src/worker.js` | `env.store`, `env.scheduler`, `record.layer`, `patch.js` |
 | live | `src/live/*` (among them `root-scope`, `ancestor-clip`, `geometry-sheet`, `a11y-link`, `stacking-audit`) | contracts, util |
 | snapshot-capture | `src/snapshot/capture/*` (among them `css-shake`, `shells`; `caret-overlay` measures the caret, it does not draw it); the Gecko / WebKit painters of the engines bundle (`native-controls`, `webkit-*`, `gecko-skins`) and its entries `src/engines.js`, `src/engines-iife.js` | contracts, util |

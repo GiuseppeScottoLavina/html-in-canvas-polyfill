@@ -1,5 +1,5 @@
 /**
- * Entry of the classic loader (dist/hic-live-loader.iife.js): window.HicLiveLoader = {load, version}. A few KB that decide exactly as install() would and download
+ * Entry of the classic loader (dist/hic-live-loader.iife.js): window.HicLiveLoader = {load, version}. A small bundle that decides exactly as install() would and downloads
  * the core (and the engines bundle on Firefox and Safari) only when the polyfill will run: on a browser that implements HTML-in-Canvas it downloads nothing.
  * The default bundle URLs are beside this script's own src (the .min.js files when it is the .min.js), read when it runs (docs/BUNDLES.md, docs/API-CONTRACT.md section 2.4).
  * Module: api-core (entry).

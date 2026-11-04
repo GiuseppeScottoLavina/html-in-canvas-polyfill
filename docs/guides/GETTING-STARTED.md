@@ -77,6 +77,22 @@ console.log(hic.mode);                            // 'polyfill' | 'native' | 'na
 
 Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'` (an example plugin, `plugins/README.md`), `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-155 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
 
+### Loading the polyfill only where it runs
+
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (351 KB minified, 119 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
+
+```html
+<script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->
+<script type="module">
+  const { status, installed } = await HicLiveLoader.load();   // never rejects: 'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'
+  const canvas = document.getElementById('c');
+  canvas.onpaint = () => { /* draw */ };
+  if (installed) await installed.whenPainted(canvas);           // installed is null where nothing was loaded (native, refused, error)
+</script>
+```
+
+With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the package entry becomes a chunk that only the polyfill path fetches. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
+
 ## 4. Adding the effects
 
 The effects and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them. They run over the polyfill and over a native implementation the installed polyfill steps aside for ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md#extensions-not-the-standard)).
