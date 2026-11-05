@@ -4,7 +4,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { startServer, launchChrome, sleep, PROJECT_ROOT } from '../harness/index.mjs';
-import { describeHang } from './lib/hang.mjs';
+import { describeHang, expectFailMet } from './lib/hang.mjs';
 
 const UNIT_DIR = resolve(PROJECT_ROOT, 'test/unit');
 const { values: opt, positionals } = parseArgs({
@@ -66,10 +66,14 @@ async function runFile(browser, srv, file) {
     await page.send('Runtime.addBinding', { name: PROGRESS_BINDING });
     const q = new URLSearchParams({ file: '/' + rel, timeout: opt.timeout, filter: opt.filter ?? '' });
     const at = srv.requests.length;
-    await page.navigate(`${srv.url}/test/unit/lib/host.html?${q}`, { timeout: 30000 }).catch(e => {
-      // the navigation itself failed: say what the server answered and what the browser printed, so a platform problem can be read from a CI log
+    await page.navigate(`${srv.url}/test/unit/lib/host.html?${q}`, { timeout: 30000 }).catch(async e => {
+      // the navigation itself failed: say what the server answered, what the browser printed and how busy its renderers are (one whose CPU time grows by
+      // the seconds waited is stuck), so a platform problem can be read from a CI log
       const served = srv.requests.slice(at).map((/** @type {any} */ x) => `${x.status} ${x.url.split('?')[0]}`).join(', ') || 'no request reached the server';
-      res.loadError = `${e.message} (server: ${served}; browser stderr: ${browser.getStderr().trim().split('\n').slice(-6).join(' | ') || 'empty'})`;
+      const procs = await browser.conn.send('SystemInfo.getProcessInfo', {}, undefined, 2000).then((/** @type {any} */ i) => i.processInfo
+        .filter((/** @type {any} */ p) => p.type === 'renderer').map((/** @type {any} */ p) => p.cpuTime).sort((/** @type {number} */ a, /** @type {number} */ b) => b - a)
+        .map((/** @type {number} */ t) => t.toFixed(1)).join(', '), () => 'unknown');
+      res.loadError = `${e.message} (server: ${served}; renderer CPU s: ${procs}; browser stderr: ${browser.getStderr().trim().split('\n').slice(-6).join(' | ') || 'empty'})`;
     });
     const deadline = Date.now() + Number(opt['file-timeout']);
     // a page counts as hung once it has not answered for as long as one test may run (--timeout): a test blocking the main thread that long is broken, while a
@@ -139,34 +143,31 @@ function report(r) {
 const count = (/** @type {any[]} */ rs, /** @type {string} */ s) => rs.reduce((n, r) => n + r.tests.filter((/** @type {any} */ t) => t.status === s).length, 0);
 const problem = (/** @type {any} */ r) => r.tests.some((/** @type {any} */ t) => t.status === 'fail' || t.status === 'timeout') || r.loadError || r.hung || r.pageErrors.length > 0;
 
-/**
- * --expect-fail: file name prefix says what the runner must detect: fail-*, timeout-*, pageerror-*, loaderror-*, hung-* (a page that never answers again,
- * with the test it hung in named), stall-* (hung too, but diagnosed as a stall: the page answers again and reports the long task of that test).
- */
+/** --expect-fail: the file name prefix says what the runner must detect (lib/hang.mjs expectFailMet). */
 function expectationMet(/** @type {any} */ r) {
-  const kind = r.rel.split('/').pop().split('-')[0];
-  const h = r.hang;
-  const hit = {
-    fail: r.tests.some((/** @type {any} */ t) => t.status === 'fail'), timeout: r.tests.some((/** @type {any} */ t) => t.status === 'timeout'),
-    pageerror: r.pageErrors.length > 0, loaderror: !!r.loadError,
-    hung: !!r.hung && !!h?.test && h.answeredAfterMs == null,
-    stall: !!r.hung && !!h?.test && h.answeredAfterMs != null && h.longTasks.some((/** @type {any} */ t) => t.test === h.test && t.ms >= Number(opt.timeout)),
-  }[kind];
+  const hit = expectFailMet(r.rel.split('/').pop().split('-')[0], r, Number(opt.timeout));
   if (hit === undefined) throw new Error(`expect-fail file needs a fail-/timeout-/pageerror-/loaderror-/hung-/stall- prefix: ${r.rel}`);
   return hit;
 }
 
 const srv = await startServer();
-const browser = await launchChrome({
+const launch = () => launchChrome({
   name: 'unit', chrome: opt.chrome, windowSize: [1000, 800], dpr: 1,
   extraArgs: opt.headed ? [] : ['--headless=new', '--hide-scrollbars'],
 });
+let browser = await launch();
 const stop = async () => { await browser.close().catch(() => {}); await srv.close().catch(() => {}); };
 process.once('SIGINT', async () => { await stop(); process.exit(130); });
 const t0 = Date.now();
 /** @type {any[]} */ const results = [];
 try {
-  for (const f of files) { const r = await runFile(browser, srv, f); results.push(r); report(r); }
+  for (const f of files) {
+    const r = await runFile(browser, srv, f); results.push(r); report(r);
+    // A hung page's renderer can outlive its closed tab, its main thread still busy, and Chrome may put a later tab of the same site in that process:
+    // on the Windows runner (2026-11-05) the file after two hung ones never got past host.html (host.js never requested in 30 s). After a hang the
+    // browser is started again, so no later file can share a stuck renderer.
+    if (r.hung && f !== files.at(-1)) { await browser.close().catch(() => browser.kill()); browser = await launch(); console.log('  note: Chrome restarted after the hang'); }
+  }
 } finally { await stop(); }
 
 const total = results.reduce((n, r) => n + r.tests.length, 0);

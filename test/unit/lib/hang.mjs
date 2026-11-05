@@ -36,3 +36,22 @@ export function describeHang(h) {
   if (h.answeredAfterMs != null && h.silentMs > 0 && !h.longTasks.length) lines.push('no main-thread task of a second or more was reported: the delay was outside the page (the CDP channel or the browser process)');
   return lines;
 }
+
+/**
+ * --expect-fail: whether the runner detected what a deliberate failure's file name prefix says. `undefined` for an unknown prefix. A file that failed in
+ * another way (a load error for a timeout- file) is NOT a detection: each self-test proves one kind of report.
+ * @param {string} kind fail, timeout, pageerror, loaderror, hung (the page never answers again, its test named) or stall (it answers again, with the long task
+ *   of that test, at least one test timeout long)
+ * @param {{tests: {status: string}[], pageErrors: string[], loadError: string|null, hung: boolean, hang: HangInfo|null}} r
+ * @param {number} timeoutMs the runner's --timeout
+ * @returns {boolean|undefined}
+ */
+export function expectFailMet(kind, r, timeoutMs) {
+  const h = r.hang;
+  return {
+    fail: () => r.tests.some((t) => t.status === 'fail'), timeout: () => r.tests.some((t) => t.status === 'timeout'),
+    pageerror: () => r.pageErrors.length > 0, loaderror: () => !!r.loadError,
+    hung: () => !!r.hung && !!h?.test && h.answeredAfterMs == null,
+    stall: () => !!r.hung && !!h?.test && h.answeredAfterMs != null && h.longTasks.some((t) => t.test === h.test && t.ms >= timeoutMs),
+  }[kind]?.();
+}
