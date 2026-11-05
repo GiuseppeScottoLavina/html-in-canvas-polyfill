@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Water: the simulation clock started at the event's time, so the first frame after a tap from rest showed nothing new, and with frame timestamps that jitter around a step boundary every later frame alternated zero and two steps (58 of 240 frames without new water at 120 Hz with 0.25 ms of jitter, in Node). The first frame after a wake now moves the clock by less than a step, to half a step away from the frame times, and a skipped gap moves it by whole steps. On an iPad Pro (Safari's frame times do not jitter there) taps already ran at 118 effect frames a second and still do; a test at 5 tap phases, 3 jitter levels and 3 pauses leaves no frame without new water (red on 0.1.0-preview.24).
+- README: the hero recording shows the water of this release, at the display rate (the old one showed the preview.21 water, and a capture of this one had caught the frame cap at 15 fps from an earlier check).
+
 ## [0.1.0-preview.24] - 2026-11-05
 
 A plain `position: sticky` header without a z-index no longer stops the scroll compositor, so such lists scroll at the display rate (an iPad Pro: 116 canvas updates a second instead of 76 to 94). Dragging an effect over the drawn HTML no longer rebuilds it at every element the pointer crosses (on an iPad the liquid glass now holds 120 Hz while dragged fast, was 96 to 100 Hz), and a finger hovers through an effect as it does without one. The water drops a pebble into a pond, with physical caustics, centred on the tap; the page curl rolls on a cone; disintegrate appears at once.
