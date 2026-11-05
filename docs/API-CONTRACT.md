@@ -477,7 +477,9 @@ layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `poi
 the native hit control it prevents the native handling and re-implements the activation: focus, button/link/checkbox/radio/label click
 on `pointerup`, `input[type=range]` value + `input`/`change` events during the gesture, text caret placement. For a finger (`pointerType` `touch`) the focus
 and the click wait for `pointerup` and happen only on a tap, a touch that lifts within 10 CSS px of where it landed, as on a page without effects: a touch that
-travels (a scroll, a plugin's drag across a field) focuses and activates nothing; a range is dragged from the press. Mouse and pen focus at `pointerdown`. Not re-targeted: select
+travels (a scroll, a plugin's drag across a field) focuses and activates nothing; a range is dragged from the press. A finger also hovers as on a page without effects: its press
+activates the element drawn under it (`:active`) and hovers nothing, a pan or a drag moves no `:hover` across what it passes, and a tap leaves the element drawn where it
+landed under `:hover` until the next tap (a tap outside the canvas ends it). Mouse and pen focus at `pointerdown` and hover what is drawn under them at every move. Not re-targeted: select
 popups, drag selection, contenteditable (row `interposer-retarget`). Validated against GPU pixels, not against the mapper itself
 (gates G-f1-form-effect and G-interposer-strong; G-native-interposer over a native implementation). In the native modes the interposer works on the browser's own hit testing instead (section 7.6).
 
