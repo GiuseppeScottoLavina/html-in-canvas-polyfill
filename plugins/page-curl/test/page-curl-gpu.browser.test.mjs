@@ -4,7 +4,7 @@
 // mid-drag, and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
 import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
-import { UNIFORM_FLOATS, isNoTarget, mapCurlPoint, meta, plugin, poseState, stateOf, unproject } from '/plugins/page-curl/index.js';
+import { UNIFORM_FLOATS, foldOf, foldPoint, heldCorner, isNoTarget, mapCurlPoint, meta, plugin, poseState, project, stateOf } from '/plugins/page-curl/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
 
@@ -31,10 +31,10 @@ const dragged = (/** @type {number[]} */ to) => (/** @type {any} */ rig) => { dr
 /** present frames until the spring that follows the pointer has settled (its corner lies under the pointer) */
 function settle(/** @type {any} */ rig) { const t = performance.now(); for (let k = 1; k <= 8; k += 1) rig.tick(t + k * 250); return rig.snap(); }
 
-/** where the held corner of a presented state lies (page css px): the fold's corner minus the pull @param {Float32Array} s */
+/** where the held corner of a presented state lies (page css px) and its height (on a cone, the flap is tilted) @param {Float32Array} s */
 function cornerOf(s) {
-  const lx = s[2] - s[4] * s[9], ly = s[3] - s[5] * s[9];
-  return [s[10] > 0 ? lx : s[2] - lx, ly];
+  const [lx, ly, z] = heldCorner(s);
+  return [s[10] > 0 ? lx : s[2] - lx, ly, z];
 }
 
 gpuTest('curled: the mapper predicts every presented pixel (identity on the flat page, the page point on the front of the roll, no target on the back and beneath); identity does not', async (t) => {
@@ -49,10 +49,9 @@ gpuTest('a mapper of a pose 20 px away is measurably wrong on the same frame; th
   const img = settle(rig);
   const mapper = /** @type {any} */ (mappers.at(-1));
   const s = /** @type {Float32Array} */ (stateOf(mapper));
-  // the corner is drawn 2R above the page; seen from the camera it lies under the pointer
-  const [cx, cy] = cornerOf(s);
-  const D = s[11], k = D / (D - 2 * s[8]);
-  const seen = { x: W / 2 + (cx - W / 2) * k, y: H / 2 + (cy - H / 2) * k };
+  // the corner is drawn above the page; seen from the camera it lies under the pointer
+  const [cx, cy, cz] = cornerOf(s);
+  const seen = project(cx, cy, cz, W, H, s[11], { x: 0, y: 0 });
   assert.ok(Math.hypot(seen.x - POSE[0], seen.y - POSE[1]) < 1, `the corner is seen at ${seen.x.toFixed(2)}, ${seen.y.toFixed(2)}, the pointer is at ${POSE}`);
   const near = poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'br', cx + 20, cy + 14, /** @type {number} */ (meta.defaults.radius));
   const good = agreement(img, mapper, scene).wrong;
@@ -66,19 +65,22 @@ gpuTest('the back of the sheet is paper, and the source shows through it mirrore
   const { rig, mappers } = await presentOnce(t, plugin, { ...meta.defaults, autoPeek: 0 }, { scene, before: dragTo(far) });
   const img = settle(rig);
   const s = /** @type {Float32Array} */ (stateOf(/** @type {any} */ (mappers.at(-1))));
-  const [nx, ny, ax, ay, R, D] = [s[4], s[5], s[6], s[7], s[8], s[11]];
-  const q = { x: 0, y: 0 };
+  // forward, from the fold of the presented state: each point of the source that lies on the folded flap (and 3 px inside it), drawn where
+  // the camera sees it; the flap is the top layer, so that pixel shows it
+  const f = foldOf(s), D = s[11], m = s[10];
+  const p = [0, 0, 0], q = { x: 0, y: 0 };
+  const flap = (/** @type {number} */ x, /** @type {number} */ y) => foldPoint(x, y, f, p) === 2;
   /** @type {number[]} */ const onMark = [];
   /** @type {number[]} */ const onPaper = [];
-  for (let j = 0; j < H; j += 1) {
-    for (let i = 0; i < W; i += 1) {
-      // the flat part of the folded flap (2R above the page): the source point it carries, by the fold's reflection
-      unproject(i + 0.5, j + 0.5, 2 * R, W, H, D, q);
-      const tt = (q.x - ax) * nx + (q.y - ay) * ny;
-      if (tt > -3) continue;                                   // only well inside the flat part of the flap
-      const kk = Math.PI * R - 2 * tt;
-      const sx = q.x + nx * kk, sy = q.y + ny * kk;
-      if (sx < 3 || sy < 3 || sx > W - 3 || sy > H - 3) continue;
+  const seen = new Uint8Array(W * H);
+  for (let sy = 3; sy <= H - 3; sy += 0.5) {
+    for (let sx = 3; sx <= W - 3; sx += 0.5) {
+      const lx = m > 0 ? sx : W - sx;
+      if (!flap(lx - 3, sy) || !flap(lx + 3, sy) || !flap(lx, sy - 3) || !flap(lx, sy + 3) || !flap(lx, sy)) continue;
+      project(m > 0 ? p[0] : W - p[0], p[1], p[2], W, H, D, q);
+      const i = Math.floor(q.x), j = Math.floor(q.y);
+      if (i < 0 || j < 0 || i >= W || j >= H || seen[j * W + i]) continue;
+      seen[j * W + i] = 1;
       const d = scene.distance(sx, sy);
       const red = img.data[(j * W + i) * 4];
       if (d < -2) onMark.push(red); else if (d > 14) onPaper.push(red);
