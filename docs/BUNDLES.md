@@ -96,9 +96,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/holo-card.iife.js` | 28,967 | 9,245 |
 | `plugins/holo-card.iife.min.js` | 17,070 | 7,280 |
 | `plugins/holo-card.esm.js` | 27,005 | 8,964 |
-| `plugins/liquid-glass.iife.js` | 33,612 | 10,795 |
-| `plugins/liquid-glass.iife.min.js` | 19,581 | 8,349 |
-| `plugins/liquid-glass.esm.js` | 31,406 | 10,467 |
+| `plugins/liquid-glass.iife.js` | 33,918 | 10,885 |
+| `plugins/liquid-glass.iife.min.js` | 19,761 | 8,418 |
+| `plugins/liquid-glass.esm.js` | 31,683 | 10,554 |
 | `plugins/page-curl.iife.js` | 51,011 | 14,887 |
 | `plugins/page-curl.iife.min.js` | 30,479 | 11,688 |
 | `plugins/page-curl.esm.js` | 48,050 | 14,504 |
