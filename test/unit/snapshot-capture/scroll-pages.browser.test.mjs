@@ -140,6 +140,19 @@ test('ScrollPlan.clear: an opaque box outside the list of opacity 0, on itself o
   assert.equal(plan.clear([boxRect]), true, 'an ancestor of opacity 0');
   wrap.style.opacity = '0.5';
   assert.equal(plan.clear([boxRect]), false, 'an ancestor of opacity 0.5');
+  // display: contents generates no box for its opacity to apply to: the box inside it paints
+  wrap.style.cssText = 'display:contents;opacity:0';
+  assert.equal(plan.clear([boxRect]), false, 'an ancestor of display: contents and opacity 0');
+  // an open popover is painted in the top layer, outside its ancestors and their opacity
+  wrap.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;opacity:0';
+  assert.equal(plan.clear([boxRect]), true, 'control: back under the wrapper of opacity 0');
+  const vr = m.layerEl.querySelector('.o-l').getBoundingClientRect();
+  box.popover = 'manual';
+  box.style.cssText = `position:fixed;inset:auto;left:${vr.left}px;top:${vr.top + 60}px;width:300px;height:20px;margin:0;border:0;padding:0;background:rgb(255,0,255);pointer-events:none`;
+  box.showPopover?.();
+  if (box.matches(':popover-open')) assert.equal(plan.clear([boxRect]), false, 'an open popover under the wrapper of opacity 0');
+  box.hidePopover?.();
+  box.removeAttribute('popover');
   // opacity 0 on an ancestor of the list does not count as hiding what lies outside the list (it hides the list too)
   wrap.style.opacity = '';
   m.layerEl.firstElementChild.style.opacity = '0';

@@ -194,7 +194,7 @@ const LIMITS = {
   //   mappedTarget, the tap outside the canvas)
   // 360.75 -> 361.75 KB, gzip 123 -> 123.25 KB (+863 / +247 bytes, 2026-11-05, measured 361,508 / 123,063): ScrollPlan.unlayered, the check of a change inside
   //   a list whose pinned header has no z-index (a row that gets a layer of its own after the plan made the composed steps hide it under the header's tile)
-  // 361.75 -> 362 KB (+301 bytes, 2026-11-05, measured 361,809): an element outside a list of effective opacity 0 paints nothing (scroll-pages.js faded), and the
+  // 361.75 -> 362 KB (+431 bytes, 2026-11-05, measured 361,939): an element outside a list of effective opacity 0 paints nothing (scroll-pages.js faded), and the
   //   cover check renders the port in two colours (an overlay of exactly the one colour of 0.1.0-preview.24 passed it)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 362 * KB, gzip: 123.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)

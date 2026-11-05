@@ -485,15 +485,23 @@ function painting(win, e, cs) {
  * `e` (outside the scroller `s`) paints nothing for an opacity of exactly 0 on it or on one of its ancestors below the first one it shares with the scroller: opacity
  * applies to the element and its whole subtree as one group (CSS Color 4 section 11.2; a descendant cannot undo it, as it can visibility), its generated boxes, shadows
  * and outline included. Any other opacity paints (0.02 of an opaque box shifts its pixels by 5 levels). A change of it back to a value above 0 is damage, checked
- * again here. Memoised per check over the ancestors (`memo`).
+ * again here. Not faded by an opacity of 0: a box of display: contents (it generates no box; its children paint), and, under it, an element in the top layer (a
+ * popover or modal dialog paints outside its ancestors). Memoised per check over the ancestors (`memo`).
  * @param {Window} win @param {Element|null} e @param {Element} s @param {Map<Element, boolean>} memo @returns {boolean}
  */
 function faded(win, e, s, memo) {
   if (!e || e.contains(s)) return false;
   let v = memo.get(e);
-  if (v === undefined) memo.set(e, (v = parseFloat(win.getComputedStyle(e).opacity) === 0 || faded(win, e.parentElement, s, memo)));
+  if (v === undefined) {
+    const cs = win.getComputedStyle(e);
+    // a box of display: contents has no box for its opacity to apply to; an element in the top layer is not painted inside its ancestors
+    memo.set(e, (v = (cs.display !== 'contents' && parseFloat(cs.opacity) === 0) || (!topLayer(e) && faded(win, e.parentElement, s, memo))));
+  }
   return v;
 }
+
+/** @param {Element} e @returns {boolean} in the top layer (a modal dialog, an open popover, a fullscreen element; a selector the engine does not know: no) */
+const topLayer = (e) => { try { return e.matches(':modal, :popover-open, :fullscreen'); } catch { return false; } };
 
 /**
  * ScrollPlan.clear, beside the hit test: no element of the drawable outside the scroller (its ancestors aside) may paint over the damage inside the port. A hit test
