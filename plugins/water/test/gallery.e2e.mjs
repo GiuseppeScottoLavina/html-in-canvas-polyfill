@@ -9,9 +9,10 @@ import { join } from 'node:path';
 import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('water gallery e2e');
-// the uniform block the water writes (its drop sources), read where the page writes it
-const WATCH_UNIFORMS = `(() => { const q = GPUQueue.prototype; const wb = q.writeBuffer; window.__wg = null;
-  q.writeBuffer = function (buf, off, data, ...rest) { if (buf && buf.label === 'hic-water-effect-globals' && data) window.__wg = Array.from(data); return wb.call(this, buf, off, data, ...rest); }; })();`;
+// the uniform block the water writes (its drop sources) and its wake field (the pond drops), read where the page writes them
+const WATCH_UNIFORMS = `(() => { const q = GPUQueue.prototype; const wb = q.writeBuffer, wt = q.writeTexture; window.__wg = null; window.__wf = null;
+  q.writeBuffer = function (buf, off, data, ...rest) { if (buf && buf.label === 'hic-water-effect-globals' && data) window.__wg = Array.from(data); return wb.call(this, buf, off, data, ...rest); };
+  q.writeTexture = function (dst, data, layout, size, ...rest) { if (dst && dst.texture && dst.texture.label === 'hic-water-effect-height-field') window.__wf = { h: Float32Array.from(data), w: size.width, ht: size.height }; return wt.call(this, dst, data, layout, size, ...rest); }; })();`;
 const g = await openGallery('water', { initScript: WATCH_UNIFORMS });
 const { page } = g;
 console.log(`Chrome ${g.chrome}, plugin bundle ${g.bundle.bytes} bytes (minified)`);
@@ -55,8 +56,9 @@ try {
   await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
   await idle(page, 400, 8000);
 
-  // where a trusted click's drop falls: exactly one new drop source, within 1 css px of the click (canvas content box, css px of the
-  // field); control: with the canvas's reported position moved by 6 px (a page that offsets it behind the plugin's back), the check fails
+  // where a trusted click's drop falls (the default pond drop: the centre of the disturbance of the wake field; an exact drop: its one new
+  // source), within 1 css px of the click (canvas content box, css px of the field); control: with the canvas's reported position moved by
+  // 6 px (a page that offsets it behind the plugin's back), the check fails
   const aimAt = async (/** @type {number} */ fx, /** @type {number} */ fy) => {
     await idle(page, 400, 8000);
     const x = stage.x + stage.w * fx, y = stage.y + stage.h * fy;
@@ -66,7 +68,12 @@ try {
       const cssW = s[2], cssH = s[3], young = [];
       for (let q = 0; q < s[18]; q++) { const o = 20 + q * 8; if (s[o] < 0 || s[o] > cssW || s[o + 1] < 0 || s[o + 1] > cssH || s[o + 2] > 24) continue;
         young.push([r.left + bl + s[o] * c.clientWidth / cssW - ${x}, r.top + bt + s[o + 1] * c.clientHeight / cssH - ${y}]); }
-      return young; })()`);
+      if (young.length || !window.__wf) return young;
+      // the pond: the centroid of |h| over the interior cells of the field (PAD 2), within 120 css px of the click
+      const f = window.__wf, gw = s[8], gh = s[9], pw = gw + 4; let m = 0, sx = 0, sy = 0;
+      for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) { const px = r.left + bl + (i + 0.5) * c.clientWidth / gw, py = r.top + bt + (j + 0.5) * c.clientHeight / gh;
+        if (Math.hypot(px - ${x}, py - ${y}) > 120) continue; const a = Math.abs(f.h[(j + 2) * pw + i + 2]); m += a; sx += a * px; sy += a * py; }
+      return m > 0 ? [[sx / m - ${x}, sy / m - ${y}]] : []; })()`);
   };
   const aims = [];
   for (const [fx, fy] of [[0.1, 0.12], [0.5, 0.5], [0.92, 0.85]]) aims.push(await aimAt(fx, fy));

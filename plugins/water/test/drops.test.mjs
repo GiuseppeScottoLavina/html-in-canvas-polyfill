@@ -181,7 +181,7 @@ test('the walls reflect the drops: mirror images make the slope across a wall ze
   const win = { matchMedia: () => ({ matches: false }), PointerEvent: class { constructor(/** @type {any} */ o) { Object.assign(this, o); } } };
   /** @type {Record<string, Function>} */ const listeners = {};
   const canvas = { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: 400, clientHeight: 300, clientLeft: 0, clientTop: 0 };
-  const inst = await WaterEffectPlugin.create(/** @type {any} */ ({ apiVersion: 2, device, format: 'bgra8unorm', requestRender() {}, canvas, listen: (/** @type {string} */ t, /** @type {Function} */ fn) => { listeners[t] = fn; return () => {}; } }), { shader: '//', intensity: 1 });
+  const inst = await WaterEffectPlugin.create(/** @type {any} */ ({ apiVersion: 2, device, format: 'bgra8unorm', requestRender() {}, canvas, listen: (/** @type {string} */ t, /** @type {Function} */ fn) => { listeners[t] = fn; return () => {}; } }), { shader: '//', intensity: 1, drops: 'exact' });
   const t0 = performance.now();
   listeners.pointerdown(new win.PointerEvent({ clientX: 18, clientY: 150, timeStamp: t0 }));
   const pass = { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} };

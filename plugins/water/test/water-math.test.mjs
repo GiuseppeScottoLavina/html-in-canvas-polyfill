@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, dropDepth, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
+import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
 import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, createDropTable, dropsAt, prepareTable } from '../drops.js';
@@ -238,7 +238,7 @@ test('at rest nothing works: not continuous, settled at once, the field is never
 });
 
 test('a pointerdown makes a drop: continuous, a drop source in the uniform block (not in the field), the table rows it needs uploaded; it comes back to rest by itself, then continuous is false again; the listeners are passive', async () => {
-  const w = await createWater({ intensity: 1 });
+  const w = await createWater({ intensity: 1, drops: 'exact' });
   for (const type of ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'touchend', 'touchcancel']) assert.equal(w.listenOptions[type]?.passive, true, `${type} is passive: a finger keeps scrolling`);
   w.listeners.pointerdown({ clientX: 200, clientY: 150 });
   assert.equal(w.instance.continuous, false, 'not a PointerEvent: ignored');
@@ -271,7 +271,7 @@ test('a pointerdown makes a drop: continuous, a drop source in the uniform block
 });
 
 test('one pointerdown is one drop, also when it reaches both of the plugin\'s listen targets (the layer inside the canvas); control: two pointerdowns are two drops', async () => {
-  const w = await createWater({ intensity: 1 });
+  const w = await createWater({ intensity: 1, drops: 'exact' });
   const e = new w.win.PointerEvent({ clientX: 200, clientY: 150, buttons: 0, pointerType: 'mouse', timeStamp: performance.now() });
   w.listeners.pointerdown(e);
   w.listeners.pointerdown(e);   // the same event, at its second target
@@ -282,8 +282,75 @@ test('one pointerdown is one drop, also when it reaches both of the plugin\'s li
   assert.equal(w.gpu.writes.at(-1)[G.DROPS], 2, 'control: another pointerdown is another drop');
 });
 
+/** the field of the last upload: heights of the interior cells, and their centres in css px @param {any} w */
+function lastField(w) {
+  const t = w.gpu.textures.at(-1);
+  const pw = t.size.width, ph = t.size.height, gw = pw - 2 * PAD, gh = ph - 2 * PAD;
+  const at = (/** @type {number} */ i, /** @type {number} */ j) => t.data[(j + PAD) * pw + i + PAD];
+  return { gw, gh, at, cx: W / gw, cy: H / gh };
+}
+/** the rings of a radial profile: its crests and troughs beyond 15 % of its largest |h| @param {number[]} prof */
+function ringsOf(prof) {
+  const max = Math.max(...prof.map(Math.abs));
+  let n = 0;
+  for (let i = 1; i < prof.length - 1; i += 1) if (Math.abs(prof[i]) > 0.15 * max && (prof[i] - prof[i - 1]) * (prof[i + 1] - prof[i]) <= 0 && prof[i] !== prof[i - 1]) n += 1;
+  return n;
+}
+/** the rings of the last uploaded field along +x from (x0, y0) css px @param {any} w @param {number} x0 @param {number} y0 */
+function crestsAlong(w, x0, y0) {
+  const f = lastField(w);
+  const j = Math.round(y0 / f.cy - 0.5), i0 = Math.round(x0 / f.cx - 0.5);
+  const prof = []; for (let i = i0; i < f.gw; i += 1) prof.push(f.at(i, j));
+  return ringsOf(prof);
+}
+
+test('drops: \'pond\' (the default): a tap is a pebble on the wake field, centred on the tap (within 0.5 css px), ringing out as several separated rings that live about 2 s; controls: a wake dent of the same size makes fewer rings; another point moves the centre', async () => {
+  const w = await createWater({ intensity: 0.5 });
+  const t0 = performance.now();
+  w.pointer('pointerdown', 180, 140);
+  w.instance.render(w.frame(t0 + 60));
+  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 0, 'no analytic source');
+  assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1, 'the field holds it');
+  const centre = () => { const f = lastField(w); let m = 0, sx = 0, sy = 0; for (let j = 0; j < f.gh; j += 1) for (let i = 0; i < f.gw; i += 1) { const a = Math.abs(f.at(i, j)); m += a; sx += a * (i + 0.5) * f.cx; sy += a * (j + 0.5) * f.cy; } return [sx / m, sy / m]; };
+  const [x, y] = centre();
+  assert.ok(Math.hypot(x - 180, y - 140) < 0.5, `centred on the tap: (${x.toFixed(2)}, ${y.toFixed(2)})`);
+  let now = w.run(t0 + 70, 380);
+  const rings = crestsAlong(w, 180, 140);
+  assert.ok(rings >= 4, `several rings (crests and troughs) 450 ms later (${rings})`);
+  now = w.run(now, 700);
+  assert.equal(w.instance.continuous, true, 'still ringing after 1.2 s');
+  const end = w.run(now, 6000, () => !w.instance.continuous);
+  assert.ok(end - t0 < 4200, `at rest ${Math.round(end - t0)} ms after the tap`);
+  // control: one wake dent of the pebble's size and depth (stamp) at the same point, as long after
+  const field = createField(W, H);
+  stamp(field, 180, 140, POND_RADIUS, -POND_DEPTH);
+  for (let k = 0; k < 54; k += 1) step(field);
+  const j = Math.round(140 / field.cellY - 0.5) + PAD, i0 = Math.round(180 / field.cellX - 0.5) + PAD;
+  const prof = []; for (let i = i0; i < field.gw + PAD; i += 1) prof.push(field.h[j * field.pw + i]);
+  const single = ringsOf(prof);
+  assert.ok(single < rings, `control: a single dent rings out as fewer rings (${single} vs ${rings})`);
+  const o = await createWater({ intensity: 0.5 });
+  o.pointer('pointerdown', 186, 140);
+  o.instance.render(o.frame(performance.now() + 60));
+  const of = lastField(o); let m = 0, sx = 0; for (let jj = 0; jj < of.gh; jj += 1) for (let i = 0; i < of.gw; i += 1) { const a = Math.abs(of.at(i, jj)); m += a; sx += a * (i + 0.5) * of.cx; }
+  assert.ok(Math.abs(sx / m - 186) < 0.5 && Math.abs(sx / m - 180) > 5, 'control: a tap 6 px away is centred 6 px away');
+});
+
+test('drops: \'pond\': one pointerdown is one pebble, also when it reaches both listen targets; control: two pointerdowns stir twice as deep', async () => {
+  const depthAfter = async (/** @type {number} */ n, /** @type {boolean} */ same) => {
+    const w = await createWater({ intensity: 1 });
+    const e = new w.win.PointerEvent({ clientX: 200, clientY: 150, buttons: 0, pointerType: 'mouse', timeStamp: performance.now() });
+    for (let k = 0; k < n; k += 1) w.listeners.pointerdown(same ? e : new w.win.PointerEvent({ clientX: 200, clientY: 150, buttons: 0, pointerType: 'mouse', timeStamp: performance.now() }));
+    w.instance.render(w.frame(performance.now() + 30));
+    return -Math.min(...w.gpu.textures.at(-1).data);
+  };
+  const once = await depthAfter(1, true), twiceSame = await depthAfter(2, true), twice = await depthAfter(2, false);
+  assert.ok(Math.abs(twiceSame - once) < 1e-6, `the same event twice: one pebble (${once.toFixed(3)} vs ${twiceSame.toFixed(3)})`);
+  assert.ok(twice > 1.8 * once, `control: two events, twice as deep (${twice.toFixed(3)})`);
+});
+
 test('a long gap between frames (a frame cap of 1, a pause) is skipped by the drops as by the field: a drop is shown at most 167 ms older per frame; the rain skips it too', async () => {
-  const w = await createWater({ intensity: 1 });
+  const w = await createWater({ intensity: 1, drops: 'exact' });
   const t0 = performance.now();
   w.pointer('pointerdown', 200, 150);
   w.instance.render(w.frame(t0 + 1000));
@@ -292,7 +359,7 @@ test('a long gap between frames (a frame cap of 1, a pause) is skipped by the dr
   w.instance.render(w.frame(t0 + 1000 + 1000 / 120));
   assert.ok(Math.abs(w.gpu.writes.at(-1)[SOURCES_OFFSET + 2] - row - 1) < 0.05, 'then it ages one row per frame of 120 Hz');
   // the rain: the drops due within a skipped gap fall later, one by one, not all at once
-  const r = await createWater({ intensity: 1 });
+  const r = await createWater({ intensity: 1, drops: 'exact' });
   const t1 = performance.now();
   r.instance.runAction('demo', {}, { reducedMotion: false });
   r.instance.render(r.frame(t1 + 1200));
@@ -301,7 +368,7 @@ test('a long gap between frames (a frame cap of 1, a pause) is skipped by the dr
 
 test('a burst of taps costs a bounded frame: beyond 20 drops the oldest fade out over 150 ms, at most 64 sources; control: 20 taps fade none', async () => {
   const burst = async (n) => {
-    const w = await createWater({ intensity: 1 });
+    const w = await createWater({ intensity: 1, drops: 'exact' });
     const t0 = performance.now();
     for (let i = 0; i < n; i += 1) w.pointer('pointerdown', 20 + (360 * i) / n, 40 + (220 * i) / n);
     w.instance.render(w.frame(t0 + 10));
@@ -322,7 +389,7 @@ test('a burst of taps costs a bounded frame: beyond 20 drops the oldest fade out
 });
 
 test('the mapper evaluates the very uniform block, field and drop table that were submitted for the frame', async () => {
-  const w = await createWater({ intensity: 1 });
+  const w = await createWater({ intensity: 1, drops: 'exact' });
   const t0 = performance.now();
   w.pointer('pointerdown', 150, 120);
   w.pointer('pointerdown', 260, 160);
@@ -355,7 +422,7 @@ test('the mapper evaluates the very uniform block, field and drop table that wer
 });
 
 test('mapper states survive the whole mapper-chain ring (3 presented frames) and a gesture snapshot survives forever', async () => {
-  const w = await createWater({ intensity: 1 });
+  const w = await createWater({ intensity: 1, drops: 'exact' });
   const t0 = performance.now();
   w.pointer('pointerdown', 200, 150);
   const probe = { x: 214, y: 150, width: W, height: H };
@@ -510,19 +577,19 @@ test('a failed shader fetch is not cached: the next create (e.g. after a device 
 });
 
 /** the plugin behind the real handle of the host, over a fake GPU; the test renders the frames */
-async function handleOf({ reducedMotion = false } = {}) {
+async function handleOf({ reducedMotion = false, options = {} } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const gpu = fakeGpu();
   const win = { matchMedia: () => ({ matches: reducedMotion }), PointerEvent: class {} };
   const canvas = Object.assign(new EventTarget(), { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: W, clientHeight: H, clientLeft: 0, clientTop: 0 });
-  const h = await nodeHandle(WaterEffectPlugin, { shader: '// wgsl', ...meta.defaults }, { device: gpu.device, canvas, source: {}, reducedMotion });
+  const h = await nodeHandle(WaterEffectPlugin, { shader: '// wgsl', ...meta.defaults, ...options }, { device: gpu.device, canvas, source: {}, reducedMotion });
   const frame = (now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder });
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   return { ...h, gpu, frame, flush };
 }
 
 test('the action drop, through the effect handle: a drop at the point at once, of the depth its strength asks; it resolves \'calm\' at rest; bad options reject; reduced motion starts none', async () => {
-  const w = await handleOf();
+  const w = await handleOf({ options: { drops: 'exact' } });
   assert.deepEqual([...w.handle.actions], ['drop', 'demo']);
   assert.equal(await w.handle.settled(), 'calm', 'calm at once: nothing moves after creation');
   await assert.rejects(w.handle.trigger('drop', { point: { x: 'left' } }), /water: `point`/);
@@ -565,7 +632,7 @@ test('the action drop with swell: true raises one broad ring on the wake field (
   const f = w.gpu.textures.at(-1);
   assert.ok(Math.max(...f.data) > 5, `a crown of more than 5 css px (${Math.max(...f.data).toFixed(2)})`);
   w.handle.remove();
-  const c = await handleOf();
+  const c = await handleOf({ options: { drops: 'exact' } });
   c.handle.trigger('drop', { point: { x: 200, y: 150 }, strength: 2 });
   c.inst.render(c.frame(t0 + 10));
   assert.equal(c.gpu.writes.at(-1)[G.ACTIVE], 0, 'control: a drop leaves the field flat');
