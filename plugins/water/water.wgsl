@@ -1,6 +1,5 @@
-// Water over the live HTML. A height field simulated on the CPU (sim.js, the wave equation: the wakes) is evaluated here per device pixel
-// as a cubic B-spline (smooth normals and curvature, no grid pattern); the drops (drops.js: the exact response of capillary-gravity water
-// to a drop, tabulated per radius and age) are added per pixel at device resolution; the surface lights the page below it:
+// Water over the live HTML. A height field simulated on the CPU (sim.js, the wave equation: the wakes and the pebbles of the taps) is
+// evaluated here per device pixel as a cubic B-spline (smooth normals and curvature, no grid pattern), and it lights the page below it:
 //   - refraction: the page is sampled where the refracted view ray meets it (displacement = slope x depth), exactly as mapWaterPoint()
 //     in index.js computes it for the input mapper;
 //   - caustics, computed as light is: a mesh of the water surface (vs_caustics) refracts the sunlight by Snell's law onto the page, which
@@ -27,26 +26,18 @@ struct Globals {
   form_ready : f32,
   refract : f32,            // css px of displacement per unit slope (the refraction depth x intensity)
   caustic : f32,            // css px: how deep the page lies under the water for the sunlight (the caustics)
-  drops : f32,              // sources in use (drops and their mirror images in the walls)
   caustics_on : f32,        // 1: the caustic texture of this frame is valid (the surface moves); 0: the light is uniform (1)
-  // per source: x, y (css px), row of the table (age x rows a second), depth (css px); the ring: inner, outer radius (css px), 0, 0
-  sources : array<vec4<f32>, 128>,
+  pad0 : f32,
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
 @group(0) @binding(1) var form_sampler : sampler;
 @group(0) @binding(2) var form_texture : texture_2d<f32>;
 @group(0) @binding(3) var height_field : texture_2d<f32>;
-// the profile of a drop of unit depth (drops.js): h, dh/dr, d2h/dr2, (dh/dr)/r; x: r (TABLE_DR css px per texel), y: the age (fs_drops)
-@group(0) @binding(4) var drop_table : texture_2d<f32>;
-// the drops, evaluated once per css pixel by fs_drops: slope x, slope y, height (fs, vs_caustics)
-@group(0) @binding(5) var drops_a : texture_2d<f32>;
 // the light on the page, one texel per css px (fs_caustics; 1 under still water)
-@group(0) @binding(6) var caustic_texture : texture_2d<f32>;
+@group(0) @binding(4) var caustic_texture : texture_2d<f32>;
 
 const PAD : f32 = 2.0;
-const TABLE_DR : f32 = 1.0;
-const TABLE_SCALE : f32 = 256.0;   // drops.js TABLE_SCALE
 // the share of the page's light that comes from the sun (the rest from the sky), and how much of the focused light the water scatters
 const SUN_SHARE : f32 = 0.85;
 const SCATTER : f32 = 0.11;
@@ -125,40 +116,9 @@ fn ambient(p : vec2<f32>, t : f32, amp : f32, slope : ptr<function, vec2<f32>>, 
   }
 }
 
-// the drops at p (css px): height, slope and Hessian (xx, yy, xy), per css px (drops.js dropsAt: the same sources, the same ring test,
-// the same bilinear interpolation of the table)
-fn drops(p : vec2<f32>, h : ptr<function, f32>, slope : ptr<function, vec2<f32>>, hess : ptr<function, vec3<f32>>) {
-  let n = u32(globals.drops);
-  let size = vec2<f32>(textureDimensions(drop_table));
-  for (var s = 0u; s < n; s = s + 1u) {
-    let a = globals.sources[2u * s];
-    let b = globals.sources[2u * s + 1u];
-    let d = p - a.xy;
-    let r = length(d);
-    if (r < b.x || r > b.y) { continue; }
-    let v = textureSampleLevel(drop_table, form_sampler, vec2<f32>((r / TABLE_DR + 0.5) / size.x, (a.z + 0.5) / size.y), 0.0) * (a.w / TABLE_SCALE);
-    let nrm = select(vec2<f32>(0.0), d / r, r > 1e-4);
-    *h = *h + v.x;
-    *slope = *slope + v.y * nrm;
-    // the Hessian of a radial function: h'' n n^T + (h' / r) (I - n n^T)
-    *hess = *hess + vec3<f32>(v.z * nrm.x * nrm.x + v.w * (1.0 - nrm.x * nrm.x), v.z * nrm.y * nrm.y + v.w * (1.0 - nrm.y * nrm.y), (v.z - v.w) * nrm.x * nrm.y);
-  }
-}
-
-// the grid of the drop textures: one texel per css px (drops.js dropGrid)
-fn drop_grid(css : vec2<f32>) -> vec2<f32> {
+// the grid of the caustic texture: one texel per css px (index.js lightGrid)
+fn light_grid(css : vec2<f32>) -> vec2<f32> {
   return max(ceil(css - vec2<f32>(0.01)), vec2<f32>(1.0));
-}
-
-// the drops pass: the drops at the centre of each texel of the drop grid (css px), for the picture to sample bilinearly
-@fragment
-fn fs_drops(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
-  let css = max(globals.css, vec2<f32>(1.0));
-  var h = 0.0;
-  var slope = vec2<f32>(0.0);
-  var hess = vec3<f32>(0.0);
-  drops(position.xy * css / drop_grid(css), &h, &slope, &hess);
-  return vec4<f32>(slope, h, 0.0);
 }
 
 // ---- the caustics --------------------------------------------------------------------------------------------------------------------
@@ -176,7 +136,7 @@ fn caustic_margin() -> f32 {
   return ceil(0.1 * globals.caustic + 16.0);
 }
 
-// the slope of the whole surface (wakes, drops, swell) at p css px, flat beyond the edges of the canvas; tilted by the intensity as the
+// the slope of the whole surface (the field, the swell) at p css px, flat beyond the edges of the canvas; tilted by the intensity as the
 // picture's normals are
 fn surface_slope(p : vec2<f32>) -> vec2<f32> {
   let css = max(globals.css, vec2<f32>(1.0));
@@ -185,7 +145,6 @@ fn surface_slope(p : vec2<f32>) -> vec2<f32> {
   if (inside) {
     let uv = p / css;
     if (globals.field_active > 0.5) { slope = slope + surface_at(uv).grad * globals.inv_cell; }
-    if (globals.drops > 0.5) { slope = slope + textureSampleLevel(drops_a, form_sampler, uv, 0.0).xy; }
   }
   if (globals.ambient > 0.0) {
     var aslope = vec2<f32>(0.0);
@@ -220,7 +179,7 @@ fn vs_caustics(@builtin(vertex_index) index : u32, @builtin(instance_index) row 
 @fragment
 fn fs_caustics(in : CausticOut) -> @location(0) vec4<f32> {
   let css = max(globals.css, vec2<f32>(1.0));
-  let texel = css / drop_grid(css);
+  let texel = css / light_grid(css);
   let a = dpdx(in.surface);
   let b = dpdy(in.surface);
   let ratio = abs(a.x * b.y - a.y * b.x) / (texel.x * texel.y);
@@ -272,12 +231,6 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
     h = s.h;
     disp = globals.k * s.grad;
     slope = s.grad * globals.inv_cell;
-  }
-  if (globals.drops > 0.5) {
-    let da = textureSampleLevel(drops_a, form_sampler, uv, 0.0);
-    h = h + da.z;
-    disp = disp + globals.refract * da.xy;
-    slope = slope + da.xy;
   }
   if (globals.ambient > 0.0) {
     var aslope = vec2<f32>(0.0);
