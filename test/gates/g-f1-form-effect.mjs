@@ -67,7 +67,8 @@ async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
     const sel = targets[t % targets.length];
     const r = rects[sel];
     const cx = r.x + r.width * (0.3 + 0.4 * ((t % 5) / 4));
-    // the drop falls 40 css px below the field (the water plugin's action, strength 2): its crown pushes the field's visual bottom edge down, over what lies
+    // the drop falls 40 css px below the field (the water plugin's action, strength 2, `swell: true`: one broad crater with a crown on the wake field; a tap's pebble
+    // rings in narrow bands that move an edge by +-4 px only, 2026-11-05): its crown pushes the field's visual bottom edge down, over what lies
     // below the field (above a field is its own label, which a click focuses natively too)
     const cyDrop = r.y + r.height + 40;
     out.attempts++;
@@ -79,7 +80,7 @@ async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
     const frame = await page.evaluate(`(() => { const c = document.querySelector(${JSON.stringify(surface)}); c.setAttribute('framecap', 1);
       const t = performance.now();
       const shown = new Promise((r) => { const on = () => { if (performance.now() - t >= 500) { c.removeEventListener('effectframe', on); r(); } }; c.addEventListener('effectframe', on); });
-      window.__water.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cyDrop - origin.y} }, strength: 2 }).catch(() => {});
+      window.__water.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cyDrop - origin.y} }, strength: 2, swell: true }).catch(() => {});
       return shown.then(() => ({ shownT: window.__efT[window.__efT.length - 1], waitMs: Math.round(performance.now() - t) })); })()`);
     const shot = (await compositorShot(page, surface)).img;
     const e = visualEdges(shot, MARKS[sel], cx - origin.x, dpr);

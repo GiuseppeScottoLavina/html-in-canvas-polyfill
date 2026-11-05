@@ -216,6 +216,10 @@
   showMotion();
   // ?demo=0: no showcase on selection (a still link; the page's tests use it so that the state they check is the plugin's own)
   const autoDemo = new URL(location.href).searchParams.get('demo') !== '0';
+  // ?opt.<plugin>.<name>=<value>: an option of that plugin over its defaults, to compare variants by link (e.g. &opt.water.intensity=1); numbers and true / false as
+  // such. Scoped to its plugin: it stays in the address when another effect is chosen, and must not reach that one
+  const urlOptions = (/** @type {string} */ name) => Object.fromEntries([...new URL(location.href).searchParams].filter(([k]) => k.startsWith(`opt.${name}.`))
+    .map(([k, v]) => [k.slice(5 + name.length), v === 'true' ? true : v === 'false' ? false : v !== '' && Number.isFinite(Number(v)) ? Number(v) : v]));
 
   // the stage fills the first viewport under the bar and the chips: --chrome is their height (a ResizeObserver: no work while nothing changes)
   const top = $('top');
@@ -478,7 +482,7 @@
     try {
       const entry = await loadPlugin(p);
       if (mine !== serial) return;                                              // another choice was made meanwhile
-      const handle = await host.addPlugin(entry.plugin, { ...p.defaults });
+      const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions(p.name) });
       if (mine !== serial) { handle.remove(); return; }
       current = state.handle = handle;
       handle.mountUI($('effect-controls'));                                     // the plugin's own controls, as HTML inside the drawn form

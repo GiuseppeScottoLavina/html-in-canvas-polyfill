@@ -108,7 +108,8 @@ runGate('G-interposer-strong', async (ctx) => {
   for (let s = 0; s < 40 && water.discriminating < MIN_TRIALS + 10; s++) {
     const sel = Object.keys(MARKS)[s % 4];
     const r = twin[sel];
-    // a strong drop (the water plugin's action, strength 2) 40 css px below the field: its crown pushes the field's visual bottom edge down
+    // a strong drop (the water plugin's action, strength 2, `swell: true`: one broad crater with a crown on the wake field; a tap's pebble rings in narrow bands that
+    // move an edge by +-4 px only, 2026-11-05) 40 css px below the field: its crown pushes the field's visual bottom edge down
     const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + r.height + 40;
     await ctx.focus(page);
     await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
@@ -119,7 +120,7 @@ runGate('G-interposer-strong', async (ctx) => {
     await page.evaluate(`(() => { const c = document.querySelector('#hic-surface');
       const t = performance.now();
       const shown = new Promise((r) => { const on = () => { if (performance.now() - t >= 170) { c.setAttribute('framecap', 1); c.removeEventListener('effectframe', on); r(); } }; c.addEventListener('effectframe', on); });
-      window.__fx.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cy - origin.y} }, strength: 2 }).catch(() => {});
+      window.__fx.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cy - origin.y} }, strength: 2, swell: true }).catch(() => {});
       return shown; })()`);
     const shot = (await compositorShot(page, '#hic-surface')).img;
     water.spots++;

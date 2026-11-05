@@ -4,6 +4,7 @@ import { test, assert } from '/test/unit/lib/t.js';
 import { gpuAvailable, makeRig } from './lib/rig.mjs';
 import { createEffectHost } from '/src/effects/effect-host.js';
 import { plugin as WaterEffectPlugin } from '/plugins/water/index.js'; // the example plugin (plugins/water), used here as a real spatial plugin
+import { spyMappers } from '/plugins/_shared/gpu-check.mjs';
 
 const GPU = await gpuAvailable();
 console.error(`interposer-gpu tests: WebGPU ${GPU ? 'available' : 'NOT available'}`);
@@ -40,7 +41,9 @@ async function scene(t, { interposer, touch = false }) {
   rig.commit();
   const host = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, { interposer });
   t.cleanup(() => host.destroy());
-  await host.addPlugin(WaterEffectPlugin, { intensity: 1 });
+  // the mappers the host asks the water for (the last one describes the presented frame)
+  const { def, mappers } = spyMappers(WaterEffectPlugin);
+  await host.addPlugin(def, { intensity: 1 });
   const rect = rig.canvas.getBoundingClientRect();
   for (const c of CONTROLS.filter((k) => k.drop)) rig.layerEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: rect.left + c.x + c.w / 2 + c.drop[0], clientY: rect.top + c.y + c.h / 2 + c.drop[1] }));
   const T = performance.now() + RING_AGE_MS;
@@ -60,7 +63,7 @@ async function scene(t, { interposer, touch = false }) {
   const state = { clicks: [], pointerType: touch ? 'touch' : 'mouse' };
   rig.layerEl.addEventListener('click', (e) => state.clicks.push(e.target.closest('[data-id]')?.dataset.id ?? 'none'));
   const api = {
-    rig, host, masks, el, state,
+    rig, host, masks, el, state, mappers,
     /** drawn pixels of control `id`, one pixel inside the mask edge, scanning order */
     pixelsOf(id) {
       const m = masks.get(id);
@@ -223,8 +226,11 @@ gtest('range drag: the value follows the drawn track on every pointermove, input
   s.fire('pointerdown', ...row[0]);
   const values = [Number(range.value)];
   const STEPS = 8;
+  const points = [row[0]];
   for (let k = 1; k <= STEPS; k += 1) {
-    s.fire('pointermove', ...row[Math.floor((k / STEPS) * (row.length - 1))]);
+    const p = row[Math.floor((k / STEPS) * (row.length - 1))];
+    points.push(p);
+    s.fire('pointermove', ...p);
     values.push(Number(range.value));
   }
   s.fire('pointerup', ...row[row.length - 1]);
@@ -232,7 +238,22 @@ gtest('range drag: the value follows the drawn track on every pointermove, input
   console.error(`range drag values: ${values.join(' ')}`);
   assert.ok(values[0] <= 12, `the left end of the drawn track is near the minimum, got ${values[0]}`);
   assert.ok(values.at(-1) >= 88, `the right end is near the maximum, got ${values.at(-1)}`);
-  for (let i = 1; i < values.length; i += 1) assert.ok(values[i] > values[i - 1], `strictly increasing on every move: ${values}`);
+  // The value follows the track the user sees: between two moves it rises where the presented frame shows the track further right (the
+  // source point under the pointer moves right by more than a css px) and falls where it shows it further left. A pebble 12 px above the
+  // range (intensity 1) folds a stretch of the drawn track (its picture there is mirrored), so along the drawn row the source can step
+  // back: the mapper of the presented frame (which G-pixel's oracle holds to the GPU pixels) says where.
+  const frameMapper = s.mappers.at(-1);
+  const sourceX = (/** @type {(p: any) => {x: number}} */ map) => points.map(([x, y]) => map({ x: x + 0.5, y: y + 0.5, width: W, height: H }).x);
+  // (a value pinned at an end of the range, 0 or 100, may stay put: the thumb's half width at each end maps to the end value)
+  const end = (/** @type {number} */ v) => v === 0 || v === 100;
+  const follows = (/** @type {number[]} */ src) => src.every((x, i) => i === 0 || Math.abs(x - src[i - 1]) <= 1
+    || (values[i] === values[i - 1] ? end(values[i]) : (x > src[i - 1]) === (values[i] > values[i - 1])));
+  const src = sourceX(frameMapper);
+  console.error(`range drag source x (presented frame): ${src.map((v) => v.toFixed(1)).join(' ')}`);
+  assert.ok(follows(src), `the value follows the track the presented frame shows: values ${values}, source x ${src.map((v) => v.toFixed(1))}`);
+  assert.ok(values.slice(1).every((v, i) => v !== values[i] || end(v)), `the value changes on every move away from the ends: ${values}`);
+  // positive control: a mapper that ignores the water (the identity) predicts a different order on this frame, so the check above can fail
+  assert.ok(!follows(sourceX((p) => ({ x: p.x }))), 'control: the identity mapping disagrees with the values (the water folds the drawn track)');
   assert.equal(events.filter((e) => e[0] === 'input').length >= STEPS, true, 'an input event per move');
   assert.equal(events.filter((e) => e[0] === 'change').length, 1, 'exactly one change, at the end');
   assert.equal(s.state.clicks.length, 0, 'the native click was swallowed');
