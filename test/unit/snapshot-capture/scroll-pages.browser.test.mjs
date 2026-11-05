@@ -403,6 +403,17 @@ test('wholeRow: Gecko composes an offset only on a whole surface pixel (it rende
   assert.deepEqual([wholeRow(133.5, 1), wholeRow(133.2, 3), wholeRow(133.25, 2), wholeRow(0.4, 1)], [false, false, false, false]);
 });
 
+test('snapPx: an edge read back in single precision snaps as the engine snaps it, on its 1/64 px grid and a half up (DPR 1.25)', () => {
+  const geo = { scale: 1.25, ink: { left: 24, top: 24, right: 24, bottom: 24 } };
+  // a list column 400.4 css px wide at x 16 with 0.8 px borders (1 device px): its padding box ends at 415.6 css px, 549.5 surface px with the ink, which the
+  // engine snaps to 550; the rect reads back in single precision (Math.fround), 549.49999 surface px
+  const r = { x: 16.8, y: 16.8, width: Math.fround(400.4) - 1.6, height: Math.fround(400.4) - 1.6 };
+  assert.ok((r.x + r.width + 24) * 1.25 < 549.5, 'positive control: the plain product lands below the half (Math.round gives 549)');
+  assert.deepEqual(snapPx(r, geo), { x: 51, y: 51, width: 499, height: 499 }, 'the right and bottom edges at 550, as the settled tile has them');
+  assert.deepEqual(snapPx({ x: 16.8, y: 16.8, width: 398.39, height: 9.6 }, geo), { x: 51, y: 51, width: 498, height: 12 }, 'an edge truly below the half still rounds down');
+  assert.deepEqual(snapPx({ x: 10.4, y: 10.4, width: 60, height: 40.2 }, { scale: 3, ink: { left: 4, top: 4, right: 4, bottom: 4 } }), { x: 43, y: 43, width: 180, height: 121 }, 'edges off the half are unchanged');
+});
+
 test('snapPx / rowOf / covers on a css px grid: edges and offsets snap as WebKit renders them (DPR 3)', () => {
   const geo = { scale: 3, ink: { left: 4, top: 4, right: 4, bottom: 4 } };
   const r = { x: 10.4, y: 10.4, width: 60, height: 40.2 };

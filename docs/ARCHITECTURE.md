@@ -405,11 +405,19 @@ Tick RUN(now), for each canvas record in reverse tree order:
     Measured before the fix (headless Chrome 156, a 400 x 240 port): a box with `pointer-events: none`, a 12 px box between the grid's points, a shadow or outline reaching in from below,
     a `::after` of the drawable and a gradient behind a transparent list all composed wrong frames (288 to 92,112 of 104,000 pixels). Pages and tiles count toward `maxTotalSurfaceBytes` (ADR-B): a scroller is planned only when two pages and its tiles fit the room the retained surfaces leave, a page beyond that room replaces a farther one instead of being added (at most four), and a drawable surface that needs the room drops the caches served least recently, only until it fits (a promised step of a dropped cache becomes scroll damage).
   - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1, only square scrollers and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row
-    where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. WebKit lays it out at css scale
+    where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. The store snaps an edge as
+    the engine does, on its 1/64 px layout grid and then to the nearest pixel, a half up (`snapPx`): a live rect reads back in single precision, and a 400.4 css px list
+    column at DPR 1.25 ended at 549.49999 surface px where the engine snaps 549.5 to 550 (each composed frame left the last port column at an older offset: 26-27 pixels,
+    up to 21 levels). WebKit lays it out at css scale
     and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
     rendered at the nearest whole css px (a page asked at 133.333 shows 133; `scrollTop = 133.9` on a live WebKit scroller reads 133), then scaled. A WebKit plan carries
     `grid: 1` and the store snaps to it (`snapPx`, `rowOf`); without it the composed frames were one device pixel lower than the tile at DPR 3 and the port one device row
-    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused (stat `scroll.refusedBy.scale`; every refusal is counted by reason, `scroll-compose.js` `refusedBy`). A rounded
+    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused (stat `scroll.refusedBy.scale`; every refusal is counted by reason, `scroll-compose.js` `refusedBy`). Two ways around it at
+    `maxDpr: 1.5` were measured and neither is exact (desktop Safari 27.0.1 at DPR 2, the scroll-cadence list, 2026-11-05): composing only the offsets that are a whole
+    number of surface pixels (an even number of css px) fails because the settled tiles at offsets 2 css px apart are not a shift of each other: 1,800-17,900 canvas
+    pixels of the port differ after the 3 surface px shift (up to 125 levels; offsets 1 css px apart, the control, 98,000); snapping the scale down to 1 composes (20 of 24
+    jumps) but every composed frame differs from its settled tile by 3,700-4,500 canvas pixels (11 levels, at the rounded badges of the rows), where at scale 2 all 20
+    are pixel-equal. Scale 1 below a DPR of 2 is admitted today (its grid is one surface pixel) and composes with that difference. A rounded
     port on WebKit is drawn source-over the backdrop under the rounded clip, and only for a scroller with an opaque background: an accelerated WebKit canvas drawing with
     `copy` under an antialiased clip multiplies the source by the coverage and drops the destination (canvases of 200 px and more; a 60 px one blends like Skia), which left
     the curve semi-transparent; a classic bar's track tile meets the same curve on the bar's side and is drawn the same way. Classic bars on WebKit: an author-styled
@@ -489,6 +497,16 @@ Tick RUN(now), for each canvas record in reverse tree order:
     desktop: 35,000-165,000 pixels per frame). On Chromium composition is not refused there (WebKit and Gecko refuse a scale that is not a whole number, above): in headless Chrome at DPR 3 with 4x CPU throttling, the plain path instead of it fell from
     60 to 16-30 canvas updates per second under touch scrolls, with 84-119 of about 167 moves unpainted (0 composed); at 1x both kept 60 (test/bench/scroll-jank.mjs, a
     variant of the store that refuses). Refusing, or a desktop `maxDpr` of 3, is an open decision.
+    Measured again on 2026-11-05 (headless Chrome 156, `--force-device-scale-factor`; the last composed frame of each step against the tile that settles at the same offset,
+    24 scripted jumps and 4 wheel gestures per list): `maxDpr: 1.5` at DPR 2, 116-795 pixels per composed frame on the 300-row list (up to 140 levels) and 8,264-160,669 on
+    rows of fractional height; DPR 3 (raster 2.5), 180-2,576 and 13,674-272,826; the same lists at raster 3 (`maxDpr: 3`), 0 (one frame with one pixel off by 1 level).
+  - **Fractional device pixel ratios (Chromium).** Where the raster scale is the device pixel ratio, a fractional ratio is composed like a whole one: no refusal at
+    1.25, 1.5 or 1.75 (`refusedBy` empty, 25-26 of 28 steps composed, every wheel move painted in the headless wheel bench, as at 1 and 2; the scale refusal concerns
+    the WebKit grid and Gecko only). Same oracle, same build: at 1.25 and 1.5 every composed frame of the plain, long, fractional-width and fractional-row lists equals the
+    settled tile, as at 1 (at 2, 18-20 of 26 do, the rest one or two pixels off by 1 level). At 1.75 every composed frame of those lists differs from the settled tile by
+    24,000-26,600 pixels (up to 177 levels), but there the composed frame equals a rebuild of the whole drawable at the same offset (one step measured), and the settled tile (a crop of
+    the scroller's damage) is what differs from it (about 90,000 pixels: glyphs a fraction of a pixel to the side); a viewBox crop alone does not do it (an image of the
+    same markup cropped at 1 to 28 px from its origin is pixel-equal at zoom 1 to 2). Open.
   - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
     the scroller's content ('backdrop': border, background and whatever lies behind the corners); the composition draws the backdrop in the corner squares and the pages inside the
     antialiased rounded clip of the inner border radii with `copy` (which lerps by the clip coverage): within 0.1 % of a live capture in the unit oracle. Not with a classic
