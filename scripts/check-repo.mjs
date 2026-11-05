@@ -173,7 +173,9 @@ if (!docsOnly) {
   // 17250 -> 17275 (2026-11-05, measured 17,270): a change inside the content of a list whose pinned header has no z-index is checked for a new layer of its own
   // (+22: scroll-pages.js unlayered, insideOf; scroll-compose.js the relayer list and its check); before it, a row that got opacity or a transform after the plan
   // was hidden under the header's tile while the list moved (11,981 of 104,000 pixels wrong)
-  if (total > 17275) problems.push(`G-size: core is ${total} code lines (> 17275)`);
+  // 17275 -> 17285 (2026-11-05, measured 17,283): the neutral form of a :hover rule makes every other pseudo-class state-free (+13: css-rewrite.js anyState); a
+  // `.b:hover:focus` kept its :focus, so a "cannot match" cached while the button had no focus outlived the focus and the hover look stayed after the mouse left
+  if (total > 17285) problems.push(`G-size: core is ${total} code lines (> 17285)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
