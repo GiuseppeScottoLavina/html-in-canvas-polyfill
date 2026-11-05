@@ -26,22 +26,28 @@ export const SCALE = 11;
 export const GRAVITY = 981 * SCALE;
 export const TENSION = 72.8 * SCALE ** 3;
 export const VISCOSITY = 0.01 * SCALE ** 2;
-/** the damping of a surface film (1/s, all wavelengths): with the viscosity it brings a drop to rest in about 2 s, as a basin does */
-export const FILM_DAMPING = 0.9;
+/** the damping of a surface film (1/s, all wavelengths): with the viscosity it brings a drop to rest in under 2 s */
+export const FILM_DAMPING = 1.2;
 /** the radius of the crater a drop leaves, css px (the profile h0 = -(1 - r^2/a^2) exp(-r^2/a^2): a crater with a raised rim) */
-export const DROP_A = 9;
+export const DROP_A = 6;
 /** the table: radius (css px), sample spacing (css px), rows a second, rows (its duration) */
-export const TABLE_R = 720;
+export const TABLE_R = 560;
 export const TABLE_DR = 1;
 export const TABLE_W = Math.round(TABLE_R / TABLE_DR);
 export const ROWS_PER_S = 120;
-export const TABLE_ROWS = 360;
-/** the wavenumbers of the integral: spaced so that the integral repeats only beyond 1.3 TABLE_R (no ghost ring), up to where H0 has faded */
-const K_MAX = 9 / DROP_A;
-const DK = (2 * Math.PI) / (1.3 * TABLE_R);
+export const TABLE_ROWS = 240;
+/**
+ * The wavenumbers of the integral, up to where H0 has faded (exp(-12) of its peak). Spaced by 2 pi / (2 TABLE_R): a discrete sum over k
+ * repeats in r with that period, so the ripples that run beyond the table come back as ghost rings, and they need longer than the
+ * table's duration to do so (measured against a six times finer spacing: below 1e-6 of the largest slope over the 2 s of the table).
+ */
+const K_MAX = 7 / DROP_A;
+const DK = (2 * Math.PI) / (2 * TABLE_R);
 export const K_COUNT = Math.ceil(K_MAX / DK);
-/** the table fades out over the last 12 % of its radius (the leading capillary ripples there are far below a pixel) */
+/** the table fades out over the last 12 % of its radius (the leading capillary ripples there are far below a pixel), and over its last
+ * 0.3 s (only the strongest drops at full intensity still show a little then: they fade instead of stopping) */
 const FADE_FROM = 0.88 * TABLE_R;
+const FADE_ROWS = 0.3 * ROWS_PER_S;
 /** a sample of a row is "in the ring" above this share of the row's largest slope or curvature: outside, the GPU skips the drop */
 export const RING_SHARE = 0.004;
 
@@ -116,8 +122,8 @@ export function fromHalf(h) {
  * @property {Float32Array} curv  per row: the largest curvature (|d2h/dr2| or |(dh/dr)/r|)
  * @property {Float32Array} inner  per row: the ring, css px: below `inner` and beyond `outer` the drop is below RING_SHARE of its row
  * @property {Float32Array} outer
- * @property {Float64Array} j0  J0(k r) for every (r, k), and J1(k r)/(k r)
- * @property {Float64Array} j1x
+ * @property {Float32Array} j0  J0(k r) for every (r, k), and J1(k r)/(k r)
+ * @property {Float32Array} j1x
  * @property {Float64Array} k  the wavenumbers, and their weights H0(k) k dk; omega, gamma
  * @property {Float64Array} weight
  * @property {Float64Array} omega
@@ -146,7 +152,7 @@ export function createDropTable() {
     deepest = Math.max(deepest, -h);
   }
   for (let j = 0; j < n; j += 1) weight[j] /= deepest;
-  const j0 = new Float64Array(TABLE_W * n), j1x = new Float64Array(TABLE_W * n);
+  const j0 = new Float32Array(TABLE_W * n), j1x = new Float32Array(TABLE_W * n);
   const b = new Float64Array(2);
   for (let i = 0; i < TABLE_W; i += 1) {
     const r = i * TABLE_DR;
@@ -159,15 +165,16 @@ export function createDropTable() {
   };
 }
 
-const C = new Float64Array(256), CK = new Float64Array(256);
+const C = new Float64Array(K_COUNT), CK = new Float64Array(K_COUNT);
 
 /** Compute the next row of the table. @param {DropTable} tb */
 export function computeRow(tb) {
   const row = tb.rows;
   if (row >= TABLE_ROWS) return;
   const t = row / ROWS_PER_S, n = K_COUNT;
+  const left = (TABLE_ROWS - 1 - row) / FADE_ROWS, fade = left >= 1 ? 1 : left * left * (3 - 2 * left);
   for (let j = 0; j < n; j += 1) {
-    C[j] = tb.weight[j] * Math.sin(tb.omega[j] * t) * Math.exp(-tb.gamma[j] * t);
+    C[j] = fade * tb.weight[j] * Math.sin(tb.omega[j] * t) * Math.exp(-tb.gamma[j] * t);
     CK[j] = C[j] * tb.k[j] * tb.k[j];
   }
   const base = row * TABLE_W * 4;

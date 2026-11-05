@@ -58,7 +58,7 @@ const DEFAULT_INTENSITY = 0.5;
 export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 /** a tap or a press: a drop whose crater is this deep (css px, drops.js); the action drop scales it by its strength / 1.2 */
-export const DROP_DEPTH = 5;
+export const DROP_DEPTH = 4;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (WAKE_DEPTH at WAKE_FAST css px per ms, at most twice that for a flick) */
 const WAKE_RADIUS = 28;
 const WAKE_DEPTH = 3;
@@ -436,7 +436,7 @@ export const plugin = Object.freeze({
       let need = 0;
       drops = drops.filter((d) => {
         const row = Math.max(0, ((now - d.born) / 1000) * ROWS_PER_S);
-        if (row >= TABLE_ROWS - 1) return false;
+        if (row >= TABLE_ROWS - 1) return false;   // the table has faded to flat by its last row
         need = Math.max(need, Math.min(TABLE_ROWS - 1, Math.floor(row) + 1));
         return true;
       });

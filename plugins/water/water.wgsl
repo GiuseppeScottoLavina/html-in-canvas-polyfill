@@ -237,7 +237,7 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   // the caustic web: the focused light scattered by the water itself, so that it shows over dark content too; sharpened (the
   // brightest where the light folds), a cool white
   let web = pow(max(focus, 0.0), 1.8);
-  let added = (reflected + vec3<f32>(0.42, 0.78, 1.0) * (0.15 * web)) * light;
+  let added = (reflected + vec3<f32>(0.42, 0.78, 1.0) * (0.05 * web)) * light;
   // light that the water adds, compressed with a soft knee: at most 0.38 of the range per channel, so it never hides what lies below
   color = color + 0.38 * (vec3<f32>(1.0) - exp(-added / 0.38));
 
