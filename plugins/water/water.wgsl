@@ -48,8 +48,8 @@ const PAD : f32 = 2.0;
 const TABLE_DR : f32 = 1.0;
 const TABLE_SCALE : f32 = 256.0;   // drops.js TABLE_SCALE
 // the share of the page's light that comes from the sun (the rest from the sky), and how much of the focused light the water scatters
-const SUN_SHARE : f32 = 0.7;
-const SCATTER : f32 = 0.06;
+const SUN_SHARE : f32 = 0.85;
+const SCATTER : f32 = 0.11;
 
 struct VertexOut {
   @builtin(position) position : vec4<f32>,
