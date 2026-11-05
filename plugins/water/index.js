@@ -1,14 +1,18 @@
 /**
  * Water effect plugin (effect plugin ABI v2): an EXAMPLE of the effects extension of html-in-canvas-polyfill, not part of the polyfill.
  *
- * A height-field water surface over the HTML drawn in the canvas: sim.js advances the wave equation on the CPU (a grid of cells of about
- * 3 CSS px, 120 steps per second, reflecting walls, damping and viscosity that bring it back to a flat surface); the field is uploaded as
- * an r32float texture, and water.wgsl evaluates it per device pixel as a cubic B-spline: refraction of the page from the surface normals,
- * caustics, Fresnel reflection of a sky, a window light and a sun, absorption.
+ * A water surface over the HTML drawn in the canvas, made of two linear parts that add up:
+ *   - the wakes: sim.js advances the wave equation on the CPU (a grid of cells of about 3 CSS px, 120 steps per second, reflecting walls,
+ *     damping and viscosity that bring it back to a flat surface); the field is uploaded as an r32float texture, and water.wgsl
+ *     evaluates it per device pixel as a cubic B-spline;
+ *   - the drops: drops.js tabulates the exact response of capillary-gravity water to a drop (the Cauchy-Poisson integral: a train of
+ *     rings whose short ripples run ahead), and water.wgsl sums the drops and their mirror images in the walls once per CSS pixel;
+ * then refraction of the page from the surface normals, caustics, Fresnel reflection of a sky, a window light and a sun, absorption.
  *
  * Input: the pointer and taps make drops, a moving pointer a wake. The listeners are passive: a finger keeps scrolling the page. The input
- * mapper (`mapWaterPoint`) evaluates the very uniform block and height field that were submitted for the presented frame (copied into one
- * of four slots) with the same B-spline as the shader, so clicks and typing reach the field the user sees.
+ * mapper (`mapWaterPoint`) evaluates the very uniform block (with the drop sources) and height field that were submitted for the
+ * presented frame (copied into one of four slots), with the same B-spline, the same drop texels and the same interpolation as the shader,
+ * so clicks and typing reach the field the user sees.
  *
  * Zero work at rest: the instance is `continuous` only while the surface moves; once it is flat (below what a pixel shows) the field is
  * cleared and the host stops rendering. The option `ambient` (a gentle swell) makes it continuous on purpose.
