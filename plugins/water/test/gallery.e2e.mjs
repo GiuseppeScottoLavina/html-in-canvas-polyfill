@@ -127,7 +127,8 @@ try {
     c.check('recording: media/water.webp under 900 KB', bytes < 900 * 1024, { screencastFrames: frames.length, bytes });
     if (process.argv.includes('--hero')) {
       // the README's hero (docs/media/hero.webp): rain, the pointer stirs, a click through the ripples focuses the name field and the typing shows in the drawn form
-      await page.evaluate(`(() => { document.getElementById('name').value = 'Ada'; document.activeElement && document.activeElement.blur(); })()`);
+      // the frame cap at the display rate (the slider at its max): the click checks before may have moved it, and the hero must not show a capped effect
+      await page.evaluate(`(() => { const r = document.getElementById('fps-cap'); r.value = r.max; r.dispatchEvent(new Event('input')); document.getElementById('name').value = 'Ada'; document.activeElement && document.activeElement.blur(); })()`);
       await idle(page, 400, 8000);
       const stopHero = await startRecording(page);
       await page.evaluate(`window.__gallery.handle.trigger('demo'); 0`);
