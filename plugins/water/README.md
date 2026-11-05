@@ -71,7 +71,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 
 | action | options | | resolves with |
 |---|---|---|---|
-| `drop` | `point`: `{x, y}` in canvas CSS px (default: the centre); `strength`: 0.08 to 2 (default 1.2, a tap's drop) | a drop falls there at once; its depth grows with the square of `strength`, from a light drip to a heavy drop (2.8 times a tap's at 2) | `'calm'`, once the surface is still again (under 2 s) |
+| `drop` | `point`: `{x, y}` in canvas CSS px (default: the centre); `strength`: 0.08 to 2 (default 1.2, a tap's drop) | a drop falls there at once, its depth in proportion to `strength` | `'calm'`, once the surface is still again (under 2 s) |
 | `demo` | none | a short rain: a drop at the centre, then a shower of 30 smaller drops that thins out over 1.4 s, then calm | `'calm'`, once the surface is still (about 3 s at the default intensity); `null` when the user takes over during the rain (the pointer, `setOptions`: the rain stops at once) |
 
 `handle.settled()` resolves with `'calm'` once no ripple runs (pointer ripples count too; the ambient swell does not). A `point` that is not `{x, y}` or a non-finite `strength` rejects with a `TypeError`; a newer trigger resolves a pending one with `null` (and stops the rain of a demo). The plugin never starts the demo by itself: the page decides when to show it.

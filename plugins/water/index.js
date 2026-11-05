@@ -59,9 +59,8 @@ export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 /** a tap or a press: a drop whose crater is this deep (css px, drops.js); the action drop scales it by its strength / 1.2 */
 export const DROP_DEPTH = 4;
-/** The depth of the drop of the action at `strength` (0.08 to 2): it grows with the square of the strength, from a light drip to a heavy
- * drop (2.8 times a tap's at 2); a tap's drop at the default 1.2. @param {number} strength */
-export const dropDepth = (strength) => DROP_DEPTH * (Math.min(2, Math.max(0.08, strength)) / 1.2) ** 2;
+/** The depth of the drop of the action at `strength` (0.08 to 2), in proportion: a tap's drop at the default 1.2. @param {number} strength */
+export const dropDepth = (strength) => (DROP_DEPTH * Math.min(2, Math.max(0.08, strength))) / 1.2;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (WAKE_DEPTH at WAKE_FAST css px per ms, at most twice that for a flick) */
 const WAKE_RADIUS = 28;
 const WAKE_DEPTH = 3;

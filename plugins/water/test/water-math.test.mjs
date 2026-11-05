@@ -501,7 +501,7 @@ test('the action drop, through the effect handle: a drop at the point at once, o
   assert.deepEqual([u[o], u[o + 1]], [300, 75], 'the drop is at the point');
   assert.ok(Math.abs(u[o + 3] - dropDepth(1.5)) < 1e-5, `of the depth of strength 1.5 (${u[o + 3]})`);
   assert.equal(dropDepth(1.2), DROP_DEPTH, 'the default strength is a tap\'s drop');
-  assert.ok(Math.abs(dropDepth(2) / DROP_DEPTH - (2 / 1.2) ** 2) < 1e-12 && dropDepth(5) === dropDepth(2) && dropDepth(0) === dropDepth(0.08), 'the square of the strength, clamped to 0.08 .. 2');
+  assert.ok(Math.abs(dropDepth(2) / DROP_DEPTH - 2 / 1.2) < 1e-12 && dropDepth(5) === dropDepth(2) && dropDepth(0) === dropDepth(0.08), 'in proportion to the strength, clamped to 0.08 .. 2');
   let now = t0 + 10;
   for (; now < t0 + 600; now += 1000 / 120) w.inst.render(w.frame(now));
   await w.flush();
