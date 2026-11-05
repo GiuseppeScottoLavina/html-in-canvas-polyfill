@@ -166,11 +166,14 @@ fn fs_drops(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
 // water beyond an edge land inside), one triangle strip per row (index.js causticMesh draws the same counts)
 const MESH_PX : f32 = 2.0;
 const IOR : f32 = 1.333;
-// the light that draws the caustics comes from the window of environment(), up and to the left
-const LIGHT_DIR : vec3<f32> = vec3<f32>(-0.20, -0.19, 0.96);
+// the light that draws the caustics comes from straight above, as the viewer looks: a drop's caustic rings are centred on the drop (an
+// oblique light shifts them along its direction, by about 0.2 x the depth: seen from above, a wave whose light lands beside it)
+const LIGHT_DIR : vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
 
+// the light that meets the water beyond an edge can land inside: by at most the depth x the light's tilt by the steepest slope (about
+// 1/4 of it), well within this
 fn caustic_margin() -> f32 {
-  return ceil(0.36 * globals.caustic + 24.0);
+  return ceil(0.1 * globals.caustic + 16.0);
 }
 
 // the slope of the whole surface (wakes, drops, swell) at p css px, flat beyond the edges of the canvas; tilted by the intensity as the

@@ -270,6 +270,18 @@ test('a pointerdown makes a drop: continuous, a drop source in the uniform block
   assert.equal(w.gpu.writes.length, writes + 1);
 });
 
+test('one pointerdown is one drop, also when it reaches both of the plugin\'s listen targets (the layer inside the canvas); control: two pointerdowns are two drops', async () => {
+  const w = await createWater({ intensity: 1 });
+  const e = new w.win.PointerEvent({ clientX: 200, clientY: 150, buttons: 0, pointerType: 'mouse', timeStamp: performance.now() });
+  w.listeners.pointerdown(e);
+  w.listeners.pointerdown(e);   // the same event, at its second target
+  w.instance.render(w.frame(performance.now() + 20));
+  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 1, 'one drop');
+  w.pointer('pointerdown', 120, 100);
+  w.instance.render(w.frame(performance.now() + 40));
+  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 2, 'control: another pointerdown is another drop');
+});
+
 test('a long gap between frames (a frame cap of 1, a pause) is skipped by the drops as by the field: a drop is shown at most 167 ms older per frame; the rain skips it too', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();

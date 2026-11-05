@@ -187,7 +187,7 @@ function mountIntensityUi(root, ui, bind) {
 /** The caustic mesh (water.wgsl vs_caustics): a vertex every MESH_PX css px over the canvas and a margin, one strip per row.
  * @param {number} cssW @param {number} cssH @param {number} depth  CAUSTIC_DEPTH_PX */
 export function causticMesh(cssW, cssH, depth) {
-  const margin = Math.ceil(0.36 * depth + 24);
+  const margin = Math.ceil(0.1 * depth + 16);
   return { margin, columns: Math.ceil((Math.fround(cssW) + 2 * margin) / MESH_PX), rows: Math.ceil((Math.fround(cssH) + 2 * margin) / MESH_PX) };
 }
 /** css px between the vertices of the caustic mesh (water.wgsl MESH_PX) */
@@ -449,8 +449,12 @@ export const plugin = Object.freeze({
       };
       // passive: the water never claims a gesture (a finger keeps scrolling the page; the browser then cancels the pointer)
       const passive = { passive: true };
+      /** the last pointerdown handled: context.listen listens on the canvas and on the live layer, and where the layer lies inside the
+       * canvas (the polyfill) one event reaches both, which made every tap two drops on the same spot @type {Event|null} */
+      let lastDown = null;
       context.listen('pointerdown', (event) => {
-        if (!(event instanceof win.PointerEvent)) return;
+        if (!(event instanceof win.PointerEvent) || event === lastDown) return;
+        lastDown = event;
         const e = /** @type {PointerEvent} */ (event);
         const p = local(e.clientX, e.clientY);
         takeOver();
