@@ -1,5 +1,6 @@
-// Water over the live HTML. A height field simulated on the CPU (sim.js, the wave equation) is evaluated here per device pixel as a cubic
-// B-spline (smooth normals and curvature, no grid pattern), and it lights the page below it:
+// Water over the live HTML. A height field simulated on the CPU (sim.js, the wave equation: the wakes) is evaluated here per device pixel
+// as a cubic B-spline (smooth normals and curvature, no grid pattern); the drops (drops.js: the exact response of capillary-gravity water
+// to a drop, tabulated per radius and age) are added per pixel at device resolution; the surface lights the page below it:
 //   - refraction: the page is sampled where the refracted view ray meets it (displacement = slope x depth), exactly as mapWaterPoint()
 //     in index.js computes it for the input mapper;
 //   - caustics: the light refracted by the same surface focuses on the page (the inverse Jacobian of that displacement, at a deeper light
@@ -24,16 +25,21 @@ struct Globals {
   form_ready : f32,
   refract : f32,            // css px of displacement per unit slope (the refraction depth x intensity)
   caustic : f32,            // the same for the light (the caustic depth x intensity)
-  pad0 : f32,
+  drops : f32,              // sources in use (drops and their mirror images in the walls)
   pad1 : f32,
+  // per source: x, y (css px), row of the table (age x rows a second), depth (css px); the ring: inner, outer radius (css px), 0, 0
+  sources : array<vec4<f32>, 192>,
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
 @group(0) @binding(1) var form_sampler : sampler;
 @group(0) @binding(2) var form_texture : texture_2d<f32>;
 @group(0) @binding(3) var height_field : texture_2d<f32>;
+// the profile of a drop of unit depth (drops.js): h, dh/dr, d2h/dr2, (dh/dr)/r; x: r (TABLE_DR css px per texel), y: the age
+@group(0) @binding(4) var drop_table : texture_2d<f32>;
 
 const PAD : f32 = 2.0;
+const TABLE_DR : f32 = 1.0;
 
 struct VertexOut {
   @builtin(position) position : vec4<f32>,
@@ -109,6 +115,26 @@ fn ambient(p : vec2<f32>, t : f32, amp : f32, slope : ptr<function, vec2<f32>>, 
   }
 }
 
+// the drops at p (css px): height, slope and Hessian (xx, yy, xy), per css px (drops.js dropsAt: the same sources, the same ring test,
+// the same bilinear interpolation of the table)
+fn drops(p : vec2<f32>, h : ptr<function, f32>, slope : ptr<function, vec2<f32>>, hess : ptr<function, vec3<f32>>) {
+  let n = u32(globals.drops);
+  let size = vec2<f32>(textureDimensions(drop_table));
+  for (var s = 0u; s < n; s = s + 1u) {
+    let a = globals.sources[2u * s];
+    let b = globals.sources[2u * s + 1u];
+    let d = p - a.xy;
+    let r = length(d);
+    if (r < b.x || r > b.y) { continue; }
+    let v = textureSampleLevel(drop_table, form_sampler, vec2<f32>((r / TABLE_DR + 0.5) / size.x, (a.z + 0.5) / size.y), 0.0) * a.w;
+    let nrm = select(vec2<f32>(0.0), d / r, r > 1e-4);
+    *h = *h + v.x;
+    *slope = *slope + v.y * nrm;
+    // the Hessian of a radial function: h'' n n^T + (h' / r) (I - n n^T)
+    *hess = *hess + vec3<f32>(v.z * nrm.x * nrm.x + v.w * (1.0 - nrm.x * nrm.x), v.z * nrm.y * nrm.y + v.w * (1.0 - nrm.y * nrm.y), (v.z - v.w) * nrm.x * nrm.y);
+  }
+}
+
 // a rounded rectangle of directions around `centre` (half sizes in radians, roughly), with a soft edge
 fn soft_box(r : vec3<f32>, centre : vec3<f32>, half_size : vec2<f32>, round : f32) -> f32 {
   let e1 = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), centre));
@@ -156,6 +182,16 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
     disp = globals.k * s.grad;
     slope = s.grad * globals.inv_cell;
     hess = s.hess * vec3<f32>(globals.inv_cell.x * globals.inv_cell.x, globals.inv_cell.y * globals.inv_cell.y, globals.inv_cell.x * globals.inv_cell.y);
+  }
+  if (globals.drops > 0.5) {
+    var dh = 0.0;
+    var dslope = vec2<f32>(0.0);
+    var dhess = vec3<f32>(0.0);
+    drops(uv * css, &dh, &dslope, &dhess);
+    h = h + dh;
+    disp = disp + globals.refract * dslope;
+    slope = slope + dslope;
+    hess = hess + dhess;
   }
   if (globals.ambient > 0.0) {
     var aslope = vec2<f32>(0.0);

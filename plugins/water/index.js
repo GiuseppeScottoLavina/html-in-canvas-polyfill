@@ -23,12 +23,14 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
-import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, splash, stamp, step, surfaceAt } from './sim.js';
+import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
+import { MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropsAt } from './drops.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
 /** @typedef {import('./sim.js').Field} Field */
-/** @typedef {{t: number, x: number, y: number, radius: number, depth: number}} RainDrop  t: ms; x, y: 0..1 of the canvas; css px */
+/** @typedef {{t: number, x: number, y: number, depth: number}} RainDrop  t: ms; x, y: 0..1 of the canvas; depth: css px */
+/** @typedef {{x: number, y: number, born: number, depth: number}} Drop  css px of the field; born: ms (performance.now() time base) */
 
 /** What the plugin gallery and the build read (plugins/README.md). */
 export const meta = Object.freeze({
@@ -44,17 +46,19 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['drop', 'demo']));
 
 /** Offsets in the uniform block (water.wgsl Globals), in floats. The mapper state is this block followed by the padded height field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17 });
+export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, DROPS: 18 });
 export const GLOBALS_LENGTH = 20;
+/** the uniform block: the globals, then MAX_SOURCES drop sources (drops.js SOURCE_FLOATS each); the mapper state appends the field */
+export const SOURCES_OFFSET = GLOBALS_LENGTH;
+export const UNIFORM_LENGTH = GLOBALS_LENGTH + MAX_SOURCES * SOURCE_FLOATS;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
 const DEFAULT_INTENSITY = 0.5;
 /** css px of the ambient swell at `ambient: 1` */
 export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
-/** a tap or a press: a drop of this radius and depth (css px, sim.js splash); the action drop scales the depth by its strength */
-export const DROP_RADIUS = 24;
-export const DROP_DEPTH = 10;
+/** a tap or a press: a drop whose crater is this deep (css px, drops.js); the action drop scales it by its strength / 1.2 */
+export const DROP_DEPTH = 7;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (WAKE_DEPTH at WAKE_FAST css px per ms, at most twice that for a flick) */
 const WAKE_RADIUS = 28;
 const WAKE_DEPTH = 3;
@@ -74,12 +78,13 @@ function clamp01(v, fallback) {
 
 /**
  * Source point shown at the presented point `point`, for the mapper state `state` (the uniform block, then the height field): the same
- * math as fs() in water.wgsl (the B-spline gradient times the refraction, the ambient swell, the clamp). PURE.
+ * math as fs() in water.wgsl (the B-spline gradient times the refraction, the drops, the ambient swell, the clamp). PURE.
  * @param {Float32Array} state
  * @param {InputPoint} point  presented point, canvas css px, plus the presented size
+ * @param {Float32Array|null} [table]  the drop table (drops.js; its rows never change once computed); none: no drop is evaluated
  * @returns {{x: number, y: number}}
  */
-export function mapWaterPoint(state, point) {
+export function mapWaterPoint(state, point, table = null) {
   const width = Math.max(1, point.width);
   const height = Math.max(1, point.height);
   const u = point.x / width;
@@ -88,9 +93,14 @@ export function mapWaterPoint(state, point) {
   let dx = 0, dy = 0;
   if (state[G.ACTIVE] > 0.5) {
     const gw = state[G.GRID], gh = state[G.GRID + 1];
-    const s = surfaceAt(state, GLOBALS_LENGTH, gw + 2 * PAD, gh + 2 * PAD, u * gw - 0.5 + PAD, v * gh - 0.5 + PAD);
+    const s = surfaceAt(state, UNIFORM_LENGTH, gw + 2 * PAD, gh + 2 * PAD, u * gw - 0.5 + PAD, v * gh - 0.5 + PAD);
     dx = state[G.K] * s.hx;
     dy = state[G.K + 1] * s.hy;
+  }
+  if (state[G.DROPS] > 0.5 && table) {
+    const d = dropsAt(table, state, SOURCES_OFFSET, state[G.DROPS], u * cssW, v * cssH);
+    dx += state[G.REFRACT] * d.sx;
+    dy += state[G.REFRACT] * d.sy;
   }
   if (state[G.AMBIENT] > 0) {
     const a = ambientSlope(u * cssW, v * cssH, state[G.TIME], state[G.AMBIENT]);
@@ -117,11 +127,11 @@ function random(seed) {
  */
 export function demoRain() {
   const rnd = random(DEMO_SEED);
-  /** @type {RainDrop[]} */ const rain = [{ t: 0, x: 0.5, y: 0.44, radius: 30, depth: 9 }];
+  /** @type {RainDrop[]} */ const rain = [{ t: 0, x: 0.5, y: 0.44, depth: DROP_DEPTH }];
   const n = 30;
   for (let i = 1; i <= n; i += 1) {
     const k = i / n;
-    rain.push({ t: 100 + 1300 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), radius: 18 + 12 * rnd(), depth: (2.8 + 3.7 * rnd()) * (1 - 0.75 * k) });
+    rain.push({ t: 100 + 1300 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), depth: DROP_DEPTH * (0.3 + 0.45 * rnd()) * (1 - 0.6 * k) });
   }
   return rain;
 }
@@ -176,6 +186,8 @@ function createPipeline(device, code, format) {
       { binding: 2, visibility: stage, texture: { sampleType: 'float' } },
       // the height field is read with textureLoad only: r32float needs no filtering (it is not filterable without an optional feature)
       { binding: 3, visibility: stage, texture: { sampleType: 'unfilterable-float' } },
+      // the drop table (rgba16float, filtered bilinearly in r and t by the same sampler as the page)
+      { binding: 4, visibility: stage, texture: { sampleType: 'float' } },
     ],
   });
   const pipeline = device.createRenderPipeline({
@@ -204,9 +216,14 @@ export const plugin = Object.freeze({
     const gpu = /** @type {any} */ (globalThis);
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
-    const uniformBuffer = device.createBuffer({ label: 'hic-water-effect-globals', size: GLOBALS_LENGTH * 4, usage: bufferUsage.UNIFORM | bufferUsage.COPY_DST });
+    const uniformBuffer = device.createBuffer({ label: 'hic-water-effect-globals', size: UNIFORM_LENGTH * 4, usage: bufferUsage.UNIFORM | bufferUsage.COPY_DST });
+    // the profile of a drop (drops.js): rows are computed as drops age and uploaded once each; they never change afterwards
+    const table = createDropTable();
+    let uploadedRows = 0;
+    const tableTexture = device.createTexture({ label: 'hic-water-effect-drop-table', size: { width: TABLE_W, height: TABLE_ROWS }, format: 'rgba16float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
+    const tableView = tableTexture.createView();
     const sampler = device.createSampler({ label: 'hic-water-effect-sampler', magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const globals = new Float32Array(GLOBALS_LENGTH);
+    const globals = new Float32Array(UNIFORM_LENGTH);
     const canvas = context.canvas;
     const win = /** @type {any} */ (canvas.ownerDocument.defaultView);
     // prefers-reduced-motion (read now, and by the host at every trigger): still water. Nothing starts a ripple; the surface keeps its
@@ -224,6 +241,8 @@ export const plugin = Object.freeze({
     let bindGroups = new WeakMap();
     /** the surface moves: frames are needed until it is flat again */
     let awake = false;
+    /** the field holds a wake (it is not flat): it is stepped, uploaded and read only then */
+    let fieldLive = false;
     /** the field changed since its last upload */
     let dirty = false;
     /** the simulation clock, ms on the performance.now() time base: the field has been stepped up to this time */
@@ -231,6 +250,8 @@ export const plugin = Object.freeze({
     let sinceCheck = 0;
     /** drops of the running demo, on the simulation clock @type {RainDrop[]} */
     let rain = [];
+    /** drops that still ring @type {Drop[]} */
+    let drops = [];
     /** resolves the running demo with null when the user takes over @type {((state: string|null) => void)|null} */
     let demoTakeover = null;
     /** @type {((state: string|null) => void)[]} */ const waiters = [];
@@ -251,9 +272,10 @@ export const plugin = Object.freeze({
       fieldTexture?.destroy?.();
       fieldTexture = device.createTexture({ label: 'hic-water-effect-height-field', size: { width: f.pw, height: f.ph }, format: 'r32float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
       fieldView = fieldTexture.createView();
+      fieldLive = false;
       bindGroups = new WeakMap();
-      mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(GLOBALS_LENGTH + f.pw * f.ph));
-      mappers = mapperStates.map((s) => stateMapper(s, mapWaterPoint));
+      mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_LENGTH + f.pw * f.ph));
+      mappers = mapperStates.map((s) => stateMapper(s, (state, point) => mapWaterPoint(state, point, table.data)));
       dirty = true;
       return f;
     }
@@ -267,10 +289,10 @@ export const plugin = Object.freeze({
       context.requestRender();
     }
 
-    /** A dent at (x, y) css px of the field. @param {number} x @param {number} y @param {number} radius @param {number} depth */
-    function dent(x, y, radius, depth) {
-      splash(currentField(), x, y, radius, depth);
-      dirty = true;
+    /** A drop at (x, y) css px of the field, born at `born` ms. @param {number} x @param {number} y @param {number} depth @param {number} [born] */
+    function addDrop(x, y, depth, born = performance.now()) {
+      currentField();
+      drops.push({ x, y, born, depth });
       wake();
     }
 
@@ -282,7 +304,7 @@ export const plugin = Object.freeze({
       resolve?.(null);
     }
 
-    const calm = () => !awake && !rain.length;
+    const calm = () => !awake && !rain.length && !drops.length;
     /** @returns {'calm'|Promise<string|null>} */
     const wait = () => (calm() ? 'calm' : new Promise((resolve) => { waiters.push(resolve); }));
 
@@ -322,6 +344,7 @@ export const plugin = Object.freeze({
           const k = i / n;
           stamp(f, a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, WAKE_RADIUS, -each);
         }
+        fieldLive = true;
         dirty = true;
         wake();
       };
@@ -332,7 +355,7 @@ export const plugin = Object.freeze({
         const e = /** @type {PointerEvent} */ (event);
         const p = local(e.clientX, e.clientY);
         takeOver();
-        dent(p.x, p.y, DROP_RADIUS, DROP_DEPTH);
+        addDrop(p.x, p.y, DROP_DEPTH);
         last = { x: p.x, y: p.y, t: e.timeStamp || performance.now() };
       }, passive);
       context.listen('pointermove', (event) => {
@@ -388,17 +411,70 @@ export const plugin = Object.freeze({
       for (let i = 0; i < n && awake; i += 1) {
         while (rain.length && rain[0].t <= simClock) {
           const d = /** @type {RainDrop} */ (rain.shift());
-          splash(f, d.x * f.cssWidth, d.y * f.cssHeight, d.radius, d.depth);
+          drops.push({ x: d.x * f.cssWidth, y: d.y * f.cssHeight, born: d.t, depth: d.depth });
         }
-        step(f);
+        if (fieldLive) { step(f); dirty = true; }
         simClock += STEP_MS;
-        dirty = true;
         sinceCheck += 1;
         if (sinceCheck >= 4) {
           sinceCheck = 0;
-          if (!rain.length && quiet(f, intensity)) { clear(f); awake = false; }
+          if (fieldLive && quiet(f, intensity)) { clear(f); fieldLive = false; }
+          if (!fieldLive && !rain.length && !drops.length) awake = false;
         }
       }
+    }
+
+    /**
+     * The sources of this frame (drops.js dropsAt): every drop that still shows, at its age, and its mirror images in the walls of the
+     * canvas that its ring reaches (the walls reflect, as they do for the field). A drop whose ring has faded below what a pixel shows
+     * (QUIET_SHIFT_PX, QUIET_FOCUS) is forgotten. Rows of the table that the frame needs are computed and uploaded first.
+     * @param {Field} f @param {number} now
+     */
+    function writeSources(f, now) {
+      const k = Math.max(1e-3, intensity);
+      const slopeLimit = QUIET_SHIFT_PX / (REFRACT_PX * k), curvLimit = QUIET_FOCUS / (CAUSTIC_PX * k);
+      let need = 0;
+      drops = drops.filter((d) => {
+        const row = Math.max(0, ((now - d.born) / 1000) * ROWS_PER_S);
+        if (row >= TABLE_ROWS - 1) return false;
+        need = Math.max(need, Math.min(TABLE_ROWS - 1, Math.floor(row) + 1));
+        return true;
+      });
+      while (table.rows <= need) computeRow(table);
+      if (table.rows > uploadedRows) {
+        const rows = table.rows - uploadedRows;
+        device.queue.writeTexture({ texture: tableTexture, origin: { x: 0, y: uploadedRows } }, table.half, { offset: uploadedRows * TABLE_W * 8, bytesPerRow: TABLE_W * 8, rowsPerImage: rows }, { width: TABLE_W, height: rows });
+        uploadedRows = table.rows;
+      }
+      drops = drops.filter((d) => {
+        const r0 = Math.floor(Math.max(0, ((now - d.born) / 1000) * ROWS_PER_S));
+        return r0 < 2 * ROWS_PER_S / 10 || d.depth * table.slope[r0] > slopeLimit || d.depth * table.curv[r0] > curvLimit;
+      });
+      const W = f.cssWidth, H = f.cssHeight;
+      let n = 0;
+      const put = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ row, /** @type {number} */ depth, /** @type {number} */ inner, /** @type {number} */ outer) => {
+        if (n >= MAX_SOURCES) return;
+        const o = SOURCES_OFFSET + n * SOURCE_FLOATS;
+        globals[o] = x; globals[o + 1] = y; globals[o + 2] = row; globals[o + 3] = depth; globals[o + 4] = inner; globals[o + 5] = outer; globals[o + 6] = 0; globals[o + 7] = 0;
+        n += 1;
+      };
+      /** @type {number[][]} */ const images = [];
+      for (const d of drops) {
+        const row = Math.max(0, ((now - d.born) / 1000) * ROWS_PER_S);
+        const r0 = Math.floor(row), r1 = Math.min(TABLE_ROWS - 1, r0 + 1);
+        const inner = Math.min(table.inner[r0], table.inner[r1]), outer = Math.max(table.outer[r0], table.outer[r1]);
+        put(d.x, d.y, row, d.depth, inner, outer);
+        for (const ix of [-1, 0, 1]) {
+          for (const iy of [-1, 0, 1]) {
+            if (!ix && !iy) continue;
+            const x = ix < 0 ? -d.x : ix > 0 ? 2 * W - d.x : d.x, y = iy < 0 ? -d.y : iy > 0 ? 2 * H - d.y : d.y;
+            const gap = Math.hypot(Math.max(0, -x, x - W), Math.max(0, -y, y - H));
+            if (gap < outer) images.push([x, y, row, d.depth, inner, outer]);
+          }
+        }
+      }
+      for (const im of images) put(im[0], im[1], im[2], im[3], im[4], im[5]);
+      globals[G.DROPS] = n;
     }
 
     return {
@@ -434,7 +510,7 @@ export const plugin = Object.freeze({
         if (!still) {
           const f = currentField();
           const p = at ? toField(at.x, at.y) : { x: f.cssWidth / 2, y: f.cssHeight / 2 };
-          dent(p.x, p.y, DROP_RADIUS, DROP_DEPTH * Math.min(2, Math.max(0.08, strength)) / 1.2);
+          addDrop(p.x, p.y, DROP_DEPTH * Math.min(2, Math.max(0.08, strength)) / 1.2);
         }
         return wait();
       },
@@ -442,12 +518,13 @@ export const plugin = Object.freeze({
       render(frame) {
         const f = ensureField(frame.cssWidth || canvas.clientWidth || frame.width, frame.cssHeight || canvas.clientHeight || frame.height);
         if (awake) advance(f, frame.now);
-        const active = awake ? 1 : 0;
+        if (drops.length) writeSources(f, frame.now); else globals[G.DROPS] = 0;
+        const active = fieldLive ? 1 : 0;
         if (active && dirty) {
           mirror(f);
           device.queue.writeTexture({ texture: fieldTexture }, f.h, { bytesPerRow: f.pw * 4, rowsPerImage: f.ph }, { width: f.pw, height: f.ph });
         }
-        if (active || calm()) dirty = false;
+        dirty = false;
         const refract = REFRACT_PX * intensity;
         globals[G.RES] = frame.width; globals[G.RES + 1] = frame.height;
         globals[G.CSS] = f.cssWidth; globals[G.CSS + 1] = f.cssHeight;
@@ -473,6 +550,7 @@ export const plugin = Object.freeze({
               { binding: 1, resource: sampler },
               { binding: 2, resource: frame.sourceView },
               { binding: 3, resource: fieldView },
+              { binding: 4, resource: tableView },
             ],
           });
           bindGroups.set(frame.sourceView, bindGroup);
@@ -488,7 +566,7 @@ export const plugin = Object.freeze({
         mapperSlot = (mapperSlot + 1) % MAPPER_SLOTS;
         const s = mapperStates[mapperSlot];
         s.set(globals);
-        if (globals[G.ACTIVE] > 0.5 && field) s.set(field.h, GLOBALS_LENGTH);
+        if (globals[G.ACTIVE] > 0.5 && field) s.set(field.h, UNIFORM_LENGTH);
         return mappers[mapperSlot];
       },
       mountUI(root, ui) {
@@ -500,12 +578,14 @@ export const plugin = Object.freeze({
       },
       destroy() {
         rain = [];
+        drops = [];
         const demo = demoTakeover;
         demoTakeover = null;
         demo?.(null);
         for (const resolve of waiters.splice(0)) resolve(null);
         uniformBuffer.destroy?.();
         fieldTexture?.destroy?.();
+        tableTexture.destroy?.();
       },
     };
   },
