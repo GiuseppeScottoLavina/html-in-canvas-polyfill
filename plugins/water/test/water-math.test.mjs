@@ -341,6 +341,35 @@ test('a long gap between frames (a frame cap of 1, a pause) is skipped by the pe
   assert.ok(near < 120 && far > near + 40, `after a 1 s gap the rings reach ${near.toFixed(0)} px; with frames all along ${far.toFixed(0)} px`);
 });
 
+test('a pebble animates at the display rate: at 120 Hz with jittered frame times, every frame from the first after the tap to rest shows a new field, wherever the tap falls in the frame; control: at 144 Hz (faster than the simulation) frames without a new field are seen', async () => {
+  /** frames rendered from a tap `delta` ms after a frame until rest, and how many of them uploaded no new field @param {number} hz @param {number} delta @param {number} jitter */
+  const ring = async (hz, delta, jitter) => {
+    const w = await createWater({ intensity: 1 });
+    let s = 11;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const period = 1000 / hz, tk = performance.now() - delta;   // the tap is delivered `delta` ms after the frame at tk
+    w.pointer('pointerdown', 200, 150, { pointerType: 'touch', buttons: 1 });
+    let frames = 0, stale = 0;
+    for (let k = 1; k < hz * 8; k += 1) {
+      const before = w.gpu.textures.length;
+      w.instance.render(w.frame(tk + k * period + (rnd() * 2 - 1) * jitter));
+      if (!w.instance.continuous) break;                          // the frame that found it at rest
+      frames += 1;
+      if (w.gpu.textures.length === before) stale += 1;
+    }
+    return { frames, stale };
+  };
+  for (const delta of [0.02, 0.3, 2, 4.2, 8.3]) {
+    for (const jitter of [0, 0.3, 0.6]) {
+      const { frames, stale } = await ring(120, delta, jitter);
+      assert.ok(frames > 200, `it rang (${frames} frames)`);
+      assert.equal(stale, 0, `tap ${delta} ms after a frame, ±${jitter} ms jitter: ${stale} of ${frames} frames showed no new water`);
+    }
+  }
+  const control = await ring(144, 0.3, 0.3);
+  assert.ok(control.stale > control.frames / 10, `control: at 144 Hz ${control.stale} of ${control.frames} frames have no new step (the counter sees a missed frame)`);
+});
+
 test('the mapper evaluates the very uniform block and field that were submitted for the frame', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();

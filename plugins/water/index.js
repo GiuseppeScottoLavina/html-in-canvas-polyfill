@@ -304,6 +304,8 @@ export const plugin = Object.freeze({
     let dirty = false;
     /** the simulation clock, ms on the performance.now() time base: the field has been stepped up to this time */
     let simClock = 0;
+    /** woken by an event, no frame since: the first frame sets the clock's phase (advance) */
+    let clockFromEvent = false;
     let sinceCheck = 0;
     /** drops of the running demo, on the simulation clock @type {RainDrop[]} */
     let rain = [];
@@ -339,9 +341,9 @@ export const plugin = Object.freeze({
     /** the field (before the first frame: one of the canvas's client size) */
     const currentField = () => field ?? ensureField(canvas.clientWidth || 1, canvas.clientHeight || 1);
 
-    /** The surface starts to move (input, an action): the simulation clock starts now. */
+    /** The surface starts to move (input, an action): the simulation clock starts now, and the first frame aligns it to the frames (advance). */
     function wake() {
-      if (!awake) { awake = true; simClock = performance.now(); sinceCheck = 0; }
+      if (!awake) { awake = true; simClock = performance.now(); clockFromEvent = true; sinceCheck = 0; }
       context.requestRender();
     }
 
@@ -470,6 +472,17 @@ export const plugin = Object.freeze({
 
     /** Advance the simulation to `now` (ms): the due drops of the rain, fixed steps, and the check for a flat surface. @param {Field} f @param {number} now */
     function advance(f, now) {
+      if (clockFromEvent) {
+        // The first frame after a wake moves the clock (and what is due on it) from the event's time to the frame's, at half a step of phase:
+        // the frame shows the first step at once, and a step boundary never sits on the frame times. On the event's phase, a tap delivered
+        // just after a frame left every later frame a jitter away from a boundary, and a 120 Hz display then alternated 0 and 2 steps per frame
+        // (the water at 60 Hz with double steps; plugins/water/test/water-math.test.mjs measures it).
+        clockFromEvent = false;
+        const shift = now - 1.5 * STEP_MS - simClock;
+        simClock += shift;
+        for (const d of rain) d.t += shift;
+        for (const p of impulses) p.t += shift;
+      }
       let n = Math.floor((now - simClock) / STEP_MS);
       // a long gap (off-screen, a frame cap of 1) is skipped, not caught up: the pebbles and the rain skip it too (their clock is the simulation's)
       if (n > MAX_STEPS_PER_FRAME) {
@@ -479,12 +492,13 @@ export const plugin = Object.freeze({
         for (const p of impulses) p.t += skipped;
       }
       for (let i = 0; i < n && awake; i += 1) {
-        while (rain.length && rain[0].t <= simClock) {
+        // what is due in this step: born before its end (a tap delivered after the frame the clock was aligned to lands in the first step)
+        while (rain.length && rain[0].t < simClock + STEP_MS) {
           const d = /** @type {RainDrop} */ (rain.shift());
           // the rain is raindrops, not pebbles: smaller and lighter (POND_RAIN)
           addDrop(d.x * f.cssWidth, d.y * f.cssHeight, d.depth * POND_RAIN[1], d.t, POND_RAIN[0]);
         }
-        while (impulses.length && impulses[0].t <= simClock) {
+        while (impulses.length && impulses[0].t < simClock + STEP_MS) {
           const p = /** @type {Impulse} */ (impulses.shift());
           stamp(f, p.x, p.y, p.r, p.a);
           fieldLive = true;
