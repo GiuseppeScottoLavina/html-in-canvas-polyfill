@@ -23,6 +23,8 @@
 //   C5 demo    the gallery opened with ?demo=0                    C6 scroll  a non-passive touchstart listener that cancels every touch
 //   C7 reduced the page sees no reduced-motion preference while the emulation sets it
 //   C8 cap     the slider moved to 60 before the check ('off')
+// A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
+// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs).
 // Results: .scratch/results/gallery-<timestamp>.json.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -30,23 +32,26 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import * as H from '../test/harness/index.mjs';
 import { startServer } from '../examples/serve.mjs';
+import { galleryPlan, galleryVerdict } from './gallery-plan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const only = H.arg('only')?.split(',');
-const viewsWanted = H.arg('views')?.split(',');
-const withControl = !process.argv.includes('--no-control');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 
-const VIEWS = [
+const ALL_VIEWS = [
   { name: 'phone', width: 390, height: 844, dpr: 3 },
   { name: 'ipad', width: 1194, height: 748, dpr: 2 },
-].filter((v) => !viewsWanted || viewsWanted.includes(v.name));
+];
 /** Plugins whose look does not depend on an input or an event, so they need no `demo` (EFFECTS-PLUGINS.md 15.1, rule 2). */
 const NO_DEMO = /** @type {Record<string, string>} */ ({ crt: 'a monitor look that is there at rest; it is continuous by design' });
 const DEMO_LIMIT_MS = 6000;
 
 if (!existsSync(join(ROOT, 'dist/plugins/manifest.json'))) { console.error('dist/plugins/manifest.json is missing: run `npm run build` first.'); process.exit(2); }
 const { plugins: manifest } = JSON.parse(readFileSync(join(ROOT, 'dist/plugins/manifest.json'), 'utf8'));
+// the selection, refused before any browser starts when a name is unknown or it checks nothing (--controls-only --no-control used to exit 0 with 0 checks)
+const plan = galleryPlan(process.argv.slice(2), { plugins: [...manifest.map((/** @type {any} */ p) => p.name), 'template'], views: ALL_VIEWS.map((v) => v.name) });
+if (plan.error !== null) { console.error(`G-gallery: ${plan.error}`); process.exit(2); }
+const VIEWS = ALL_VIEWS.filter((v) => plan.views.includes(v.name));
+const withControl = plan.controls;
 
 // ---- the template plugin, bundled like scripts/build.mjs does (its .wgsl inlined) and registered by an init script ---------------------
 async function templateBundle() {
@@ -63,7 +68,6 @@ async function templateBundle() {
   return { source: out.outputFiles[0].text, entry };
 }
 const template = await templateBundle();
-const all = [...manifest.map((/** @type {any} */ p) => p.name), 'template'].filter((n) => !only || only.includes(n));
 
 /** init script: the template registered, and appended to the manifest the gallery fetches; the effect frames counted from the first one */
 const initScript = `${template.source}
@@ -200,7 +204,7 @@ async function withBrowser(/** @type {(b: any) => Promise<void>} */ fn) {
   try { await fn(browser); } finally { await browser.close().catch(() => browser.kill()); }
 }
 try {
-  for (const name of process.argv.includes('--controls-only') ? [] : all) {
+  for (const name of plan.plugins) {
     await withBrowser(async (browser) => {
       for (const view of VIEWS) {
         const r = await runOne(browser, server, name, view, { steps: ['demo', 'rest', 'fold', 'fit', 'scroll'] });
@@ -214,7 +218,7 @@ try {
       }
     });
   }
-  if ((!only || only.includes('off')) && !process.argv.includes('--controls-only')) {
+  if (plan.off) {
     await withBrowser(async (browser) => {
       const view = VIEWS.find((v) => v.name === 'ipad') ?? VIEWS[0];
       const r = await runOne(browser, server, 'off', view, { steps: ['cap', 'fold', 'fit'] });
@@ -250,10 +254,11 @@ try {
 } finally {
   await server.close().catch(() => {});
 }
-results.pass = failed === 0;
+const verdict = galleryVerdict({ failed, checks: results.runs.reduce((n, r) => n + r.checks.length, 0), controls: results.controls.length });
+results.pass = verdict.pass;
 const outDir = resolve(ROOT, '.scratch/results'); mkdirSync(outDir, { recursive: true });
 const file = join(outDir, `gallery-${stamp}.json`);
 writeFileSync(file, JSON.stringify(results, null, 1));
 console.log(`\nresults: ${file}`);
-console.log(failed ? `G-gallery: FAILED (${failed} checks)` : `G-gallery: OK (${results.runs.reduce((n, r) => n + r.checks.length, 0)} checks, ${results.controls.length} controls red)`);
-process.exit(failed ? 1 : 0);
+console.log(verdict.line);
+process.exit(verdict.pass ? 0 : 1);
