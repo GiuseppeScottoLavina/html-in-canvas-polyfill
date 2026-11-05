@@ -92,10 +92,12 @@ function conePoint(x, y, s, f) {
   const rho = /** @type {number} */ (f.gs) * (w - /** @type {number} */ (f.wA));
   const r = Math.hypot(rho, s), th = Math.atan2(s, rho);
   const c = coneOut;
+  // beyond the apex nothing is curled (coneFor puts the apex beyond the curl): a point there lies on the fold line, by rounding past it
+  if (rho <= 0) { c[0] = 0; c[1] = 0; c[2] = 0; c[3] = 0; c[4] = 0; return c; }
   if (th < Math.PI * k) {
     const b = th / k;
     c[0] = r * k * Math.sin(b) - s;
-    c[1] = (rho > 0 ? (s * s) / (r + rho) : r - rho) - r * k * k * (1 - Math.cos(b));
+    c[1] = (s * s) / (r + rho) - r * k * k * (1 - Math.cos(b));
     c[2] = r * k * ca * (1 - Math.cos(b)); c[3] = 1; c[4] = b;
   } else {
     const tp = th - Math.PI * k, r1 = r * Math.cos(tp);
@@ -186,18 +188,25 @@ export function coneFor(f, lead, W, H, taper = TAPER, span) {
   const tx = -f.ny, ty = f.nx;
   const wC = (cx - f.ax) * tx + (cy - f.ay) * ty, sC = (cx - f.ax) * f.nx + (cy - f.ay) * f.ny;
   const m = curledPolygon(f, W, H);
-  let w0 = Infinity, w1 = -Infinity;
-  for (let i = 0; i < m; i += 1) { const w = (poly[2 * i] - f.ax) * tx + (poly[2 * i + 1] - f.ay) * ty; w0 = Math.min(w0, w); w1 = Math.max(w1, w); }
-  const d0 = Math.max(0, wC - w0), d1 = Math.max(0, w1 - wC);
-  const far = Math.max(d0, d1);
-  if (!(far > EPS)) return f;
-  // how far off the middle of the curl the corner is (0 in the middle, 1 at one end), eased
-  const off = Math.abs(d1 - d0) / (d0 + d1);
+  // the fold line across the page (the polygon's corners with s = 0) and the whole curl, along the axis
+  let e0 = Infinity, e1 = -Infinity, w0 = Infinity, w1 = -Infinity;
+  for (let i = 0; i < m; i += 1) {
+    const x = poly[2 * i], y = poly[2 * i + 1];
+    const w = (x - f.ax) * tx + (y - f.ay) * ty;
+    w0 = Math.min(w0, w); w1 = Math.max(w1, w);
+    if (Math.abs((x - f.ax) * f.nx + (y - f.ay) * f.ny) < 1e-6 * (W + H)) { e0 = Math.min(e0, w); e1 = Math.max(e1, w); }
+  }
+  if (!(e1 > e0)) return f;
+  // how far off the middle of the fold the corner's foot is (0 in the middle, 1 half way to one end or beyond), eased
+  const d0 = Math.max(0, wC - e0), d1 = Math.max(0, e1 - wC);
+  const off = Math.min(1, (2 * Math.abs(d1 - d0)) / Math.max(d0 + d1, EPS));
   const q = 1 - (1 - taper) * off * off * (3 - 2 * off);
-  // the apex from the corner's foot, beyond the far end: the roll narrows to q there (and the cone is never sharper than K_MAX)
-  const dA = Math.max(far / Math.max(1 - q, EPS), Math.sqrt(Math.max(0, (f.R / K_MAX) ** 2 - sC * sC)));
-  if (dA > FAR_APEX) return f;
   f.gs = d1 > d0 ? -1 : 1;                 // g points from the apex towards the page
+  // the apex from the corner's foot: beyond the far end of the fold, where the roll narrows to q, and beyond the whole curl; the cone is
+  // never sharper than K_MAX
+  const far = Math.max(d0, d1), farCurl = f.gs < 0 ? w1 - wC : wC - w0;
+  const dA = Math.max(far / Math.max(1 - q, EPS), 1.08 * farCurl + 4, Math.sqrt(Math.max(0, (f.R / K_MAX) ** 2 - sC * sC)));
+  if (dA > FAR_APEX) return f;
   f.wA = wC - f.gs * dA;
   const rC = Math.hypot(dA, sC);
   f.k = f.R / rC;                           // the corner's own line of the cone has the roll radius R

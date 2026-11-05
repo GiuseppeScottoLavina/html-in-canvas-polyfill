@@ -145,6 +145,25 @@ export const rollFor = (radius, L, W) => radius * (1 + 0.9 * Math.sin(Math.PI * 
 
 const fold = { nx: 1, ny: 0, ax: 0, ay: 0, R: 0, L: 0, k: 0, ca: 1, wA: 0, gs: 1 };
 const leafAt = { x: 0, y: 0 }, aimed = { x: 0, y: 0 }, corner3 = [0, 0, 0], reach = [0, 0, 0];
+/** what poseState solves for (module state: a pose allocates nothing) */
+const pose = { lead: /** @type {'top'|'bottom'} */ ('top'), W: 0, H: 0, cy: 0, radius: 0, taper: 0 };
+const res = [0, 0];
+/** the cone fold that puts the corner at the aim (x, y); writes the corner to corner3; false when it is a cylinder @param {number} x @param {number} y */
+function solve(x, y) {
+  const { lead, W, H, cy } = pose;
+  aimed.x = x; aimed.y = y;
+  foldFor(aimed, lead, W, H, rollFor(pose.radius, Math.hypot(W - x, cy - y), W), fold);
+  coneFor(fold, lead, W, H, pose.taper, reach);
+  corner3[0] = W; corner3[1] = cy; corner3[2] = 0;
+  foldPoint(W, cy, fold, corner3);
+  return fold.k > 0;
+}
+/** how far the corner of the aim (x, y) lands from where it is wanted (leafAt; the vector in res); Infinity on a cylinder @param {number} x @param {number} y */
+function residual(x, y) {
+  if (!solve(x, y)) return Infinity;
+  res[0] = corner3[0] - leafAt.x; res[1] = corner3[1] - leafAt.y;
+  return Math.hypot(res[0], res[1]);
+}
 /** The fold of a uniform block (or a mapper's state), as fold.js takes it. @param {Float32Array} st */
 export const foldOf = (st) => ({ nx: st[4], ny: st[5], ax: st[6], ay: st[7], R: st[8], L: st[9], wA: st[36], gs: st[37], k: st[38], ca: st[39] });
 /** Where the held corner of a uniform block lies, leaf space [x, y, z] (page x = W - x when st[10] < 0). @param {Float32Array} st */
@@ -168,17 +187,25 @@ export function poseState(out, W, H, key, x, y, radius, taper = TAPER) {
   const cy = lead === 'bottom' ? H : 0;
   leafAt.x = mirror > 0 ? x : W - x; leafAt.y = y;
   constrainCorner(leafAt, lead, W, H, leafAt);
-  aimed.x = leafAt.x; aimed.y = leafAt.y;
-  corner3[0] = W; corner3[1] = cy; corner3[2] = 0;
-  for (let i = 0; i < 6; i += 1) {
-    foldFor(aimed, lead, W, H, rollFor(radius, Math.hypot(W - aimed.x, cy - aimed.y), W), fold);
-    coneFor(fold, lead, W, H, taper, reach);
-    foldPoint(W, cy, fold, corner3);
-    if (!(fold.k > 0)) break;
-    const ex = leafAt.x - corner3[0], ey = leafAt.y - corner3[1];
-    if (Math.abs(ex) + Math.abs(ey) < 1e-4) break;
-    aimed.x += ex; aimed.y += ey;
+  pose.lead = lead; pose.W = W; pose.H = H; pose.cy = cy; pose.radius = radius; pose.taper = taper;
+  // Newton on the aim, its Jacobian by finite differences, with backtracking (a plain fixed point oscillates: the cone's taper depends on
+  // the fold, and near the bound edge the map bends sharply)
+  let x0 = leafAt.x, y0 = leafAt.y;
+  let e = residual(x0, y0);
+  for (let i = 0; i < 8 && e > 1e-3 && e < Infinity; i += 1) {
+    const fx = res[0], fy = res[1];
+    residual(x0 + 0.25, y0); const a = (res[0] - fx) * 4, c = (res[1] - fy) * 4;
+    residual(x0, y0 + 0.25); const b = (res[0] - fx) * 4, d = (res[1] - fy) * 4;
+    const det = a * d - b * c;
+    let sx = fx, sy = fy;
+    if (Math.abs(det) > 1e-3) { sx = (d * fx - b * fy) / det; sy = (a * fy - c * fx) / det; }
+    let step = 1, next = Infinity;
+    for (let j = 0; j < 6; j += 1, step *= 0.5) { next = residual(x0 - sx * step, y0 - sy * step); if (next < e) break; }
+    if (!(next < e)) break;
+    x0 -= sx * step; y0 -= sy * step; e = next;
   }
+  // a cylinder puts the corner exactly where it is aimed
+  if (!solve(x0, y0)) solve(leafAt.x, leafAt.y);
   out[2] = W; out[3] = H;
   out[4] = fold.nx; out[5] = fold.ny; out[6] = fold.ax; out[7] = fold.ay; out[8] = fold.R; out[9] = fold.L < 0.5 ? 0 : fold.L;
   out[10] = mirror; out[11] = DISTANCE * Math.max(W, H);
@@ -273,51 +300,56 @@ export function mapCurlPoint(st, point) {
  * @returns {{x: number, y: number}}
  */
 function mapCone(st, point, px, py, sx, sy) {
-  const W = st[2], H = st[3], nx = st[4], ny = st[5], ax = st[6], ay = st[7], m = st[10], D = st[11];
-  // the cosine from the sine in doubles: the 32-bit pair is not exactly on the unit circle, and the cone's quadratic is sensitive to it far from the apex
+  const W = st[2], H = st[3], ax = st[6], ay = st[7], m = st[10], D = st[11];
+  const nl = Math.hypot(st[4], st[5]), nx = st[4] / nl, ny = st[5] / nl;
+  // the cosine from the sine in doubles: the 32-bit pair is not exactly on the unit circle
   const wA = st[36], gs = st[37], k = st[38], ca = Math.sqrt(1 - k * k);
   const gx = -ny * gs, gy = nx * gs;
-  const Ax = ax - ny * wA, Ay = ay + nx * wA;           // the apex (leaf space, on the page)
-  // the ray, leaf space, from the apex: X(t) = X0 + t d, t = 0 at the camera and 1 on the page
   const lx = m > 0 ? px : W - px;
-  const X0x = W / 2 - Ax, X0y = H / 2 - Ay, X0z = D;
+  // Everything relative to O, the point of the fold line nearest the presented point, rho from the apex: X = Y + rho g. The cone
+  // (X.c)^2 = ca^2 |X|^2 then reads (Y.c)^2 - ca^2 |Y|^2 + 2 rho ca k Y.z = 0: its large constant terms cancel exactly, so a far apex
+  // (a nearly cylindrical roll) stays exact.
+  const wO = -(lx - ax) * ny + (py - ay) * nx;
+  const Ox = ax - ny * wO, Oy = ay + nx * wO, rho = gs * (wO - wA);
+  // the ray, from the camera (t = 0) to the page (t = 1): Y(t) = Y0 + t d
+  const Y0x = W / 2 - Ox, Y0y = H / 2 - Oy, Y0z = D;
   const dx = lx - W / 2, dy = py - H / 2, dz = -D;
-  // the cone's axis c = ca g + k z; the down direction e1 = k g - ca z; what lies on the cone: (X.c)^2 = ca^2 |X|^2, X.c > 0
-  const cx = ca * gx, cy = ca * gy, cz = k;
-  const dc = dx * cx + dy * cy + dz * cz, Xc = X0x * cx + X0y * cy + X0z * cz;
-  const c2 = ca * ca;
+  const cx = ca * gx, cy = ca * gy, cz = k;   // the cone's axis; e1 = k g - ca z points from it to the line where it touches the page
+  const c2 = ca * ca, lin = 2 * rho * ca * k;
+  const dc = dx * cx + dy * cy + dz * cz, Yc = Y0x * cx + Y0y * cy + Y0z * cz;
   const qa = dc * dc - c2 * (dx * dx + dy * dy + dz * dz);
-  const qb = 2 * (Xc * dc - c2 * (X0x * dx + X0y * dy + X0z * dz));
-  const qc = Xc * Xc - c2 * (X0x * X0x + X0y * X0y + X0z * X0z);
+  const qb = 2 * (Yc * dc - c2 * (Y0x * dx + Y0y * dy + Y0z * dz)) + lin * dz;
+  const qc = Yc * Yc - c2 * (Y0x * Y0x + Y0y * Y0y + Y0z * Y0z) + lin * Y0z;
   let best = Infinity, bx = 0, by = 0, kind = 0, bb = 0;
-  /** the flat point of the sheet at distance r from the apex and polar angle th; keep it if it lies inside the page and nearer @param {number} t @param {number} r @param {number} th @param {number} part @param {number} b */
+  /** the flat point at distance r from the apex and polar angle th, kept if it lies inside the page and nearer @param {number} t @param {number} r @param {number} th @param {number} part @param {number} b */
   const consider = (t, r, th, part, b) => {
-    const qx = Ax + gx * r * Math.cos(th) + nx * r * Math.sin(th), qy = Ay + gy * r * Math.cos(th) + ny * r * Math.sin(th);
+    const u = r * Math.cos(th) - rho, v = r * Math.sin(th);
+    const qx = Ox + gx * u + nx * v, qy = Oy + gy * u + ny * v;
     if (t < best && qx >= 0 && qy >= 0 && qx <= W && qy <= H) { best = t; bx = qx; by = qy; kind = part; bb = b; }
   };
   const disc = qb * qb - 4 * qa * qc;
   if (disc >= 0 && Math.abs(qa) > 1e-12) {
     const sq = Math.sqrt(disc);
     for (const t of [(-qb - sq) / (2 * qa), (-qb + sq) / (2 * qa)]) {
-      // a hair beyond the page (t > 1): the roll where it leaves the page along the fold line, seen through 32-bit rounding of the fold
+      // a hair beyond the page (t > 1): the roll where it leaves the page along the fold line, through 32-bit rounding of the fold
       if (!(t > 0 && t < 1 + 1e-4)) continue;
-      const Xx = X0x + t * dx, Xy = X0y + t * dy, Xz = X0z + t * dz;
-      const along = Xx * cx + Xy * cy + Xz * cz;
-      if (along <= 0) continue;
-      const px2 = Xx - along * cx, py2 = Xy - along * cy, pz2 = Xz - along * cz;   // X off the axis
-      const b = Math.atan2(px2 * nx + py2 * ny, px2 * k * gx + py2 * k * gy - pz2 * ca);
+      const Yx = Y0x + t * dx, Yy = Y0y + t * dy, Yz = Y0z + t * dz;
+      const along = Yx * cx + Yy * cy + Yz * cz;
+      if (along + rho * ca <= 0) continue;   // the other nappe
+      // X off the axis: Y - (Y.c) c + rho k e1; the angle round the cone from e1 towards n
+      const b = Math.atan2(Yx * nx + Yy * ny, k * (Yx * gx + Yy * gy) - ca * Yz + rho * k);
       if (b < 0 || b > Math.PI) continue;
-      consider(t, Math.hypot(Xx, Xy, Xz), b * k, 1, b);
+      consider(t, Math.hypot(Yx + rho * gx, Yy + rho * gy, Yz), b * k, 1, b);
     }
   }
   // the flap: the plane through the apex that touches the cone along its top line G = (1 - 2k^2) g + 2 k ca z; its normal (2 k ca g, k^2 - ca^2)
   const Nx = 2 * k * ca * gx, Ny = 2 * k * ca * gy, Nz = k * k - c2;
   const dn = dx * Nx + dy * Ny + dz * Nz;
   if (Math.abs(dn) > 1e-12) {
-    const t = -(X0x * Nx + X0y * Ny + X0z * Nz) / dn;
+    const t = -(Y0x * Nx + Y0y * Ny + Y0z * Nz + rho * 2 * k * ca) / dn;
     if (t > 0 && t < 1 + 1e-9) {
-      const Xx = X0x + t * dx, Xy = X0y + t * dy, Xz = X0z + t * dz;
-      const r1 = (Xx * gx + Xy * gy) * (1 - 2 * k * k) + Xz * 2 * k * ca, r2 = -(Xx * nx + Xy * ny);
+      const Yx = Y0x + t * dx, Yy = Y0y + t * dy, Yz = Y0z + t * dz;
+      const r1 = (Yx * gx + Yy * gy + rho) * (1 - 2 * k * k) + Yz * 2 * k * ca, r2 = -(Yx * nx + Yy * ny);
       const tp = Math.atan2(r2, r1);
       if (r1 > 0 && tp >= 0) consider(t, Math.hypot(r1, r2), tp + Math.PI * k, 2, Math.PI);
     }

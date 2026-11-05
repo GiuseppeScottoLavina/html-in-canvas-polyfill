@@ -56,9 +56,11 @@ fn cone_point(q : vec2<f32>, s : f32) -> vec4<f32> {
   let rho = u.cone.y * (dot(q - u.a, axis_t()) - u.cone.x);
   let r = length(vec2<f32>(rho, s));
   let th = atan2(s, rho);
+  // beyond the apex nothing is curled (the apex lies beyond the curl): a point there lies on the fold line, by rounding past it
+  if (rho <= 0.0) { return vec4<f32>(0.0); }
   if (th < PI * k) {
     let b = th / k;
-    let dg = select(r - rho, s * s / (r + rho), rho > 0.0) - r * k * k * (1.0 - cos(b));
+    let dg = s * s / (r + rho) - r * k * k * (1.0 - cos(b));
     return vec4<f32>(r * k * sin(b) - s, dg, r * k * ca * (1.0 - cos(b)), b);
   }
   let tp = th - PI * k;
