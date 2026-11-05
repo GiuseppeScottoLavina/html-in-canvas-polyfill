@@ -378,7 +378,9 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   };
   // chromium 131 -> 132.5 KB, geckoWebkit 147.5 -> 149 KB (2026-11-05, measured 132,220 / 148,797): the core it loads grew by the scroll compositor's cover and pin checks
   // (+1,482 bytes gzipped in the core alone); before them 130,633 / 147,210
-  const LOADER_APP = { start: 8.1 * KB, chromium: 132.5 * KB, geckoWebkit: 149 * KB };
+  // chromium 132.5 -> 132.75 KB, geckoWebkit 149 -> 149.25 KB (2026-11-05, measured 132,564 / 149,141): the core it loads grew by the pinning of a sticky header
+  // without a z-index and the flex item check (+357 bytes gzipped in the core alone)
+  const LOADER_APP = { start: 8.1 * KB, chromium: 132.75 * KB, geckoWebkit: 149.25 * KB };
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';
