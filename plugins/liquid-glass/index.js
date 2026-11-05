@@ -52,12 +52,24 @@ export const GLASS = Object.freeze({
   fade: 0.95,        // depth over which the dome fades in from the edge (it ends before the middle line of the slab: no crease)
 });
 
-/** pointer spring (mouse, pen, demo): stiffness (1/s^2) and damping (from the damping ratio) */
-const FOLLOW = { k: 260, c: 2 * 0.74 * Math.sqrt(260) };
-/** finger drag: stiffer, so the lens stays under the finger */
-const DRAG = { k: 900, c: 2 * 0.9 * Math.sqrt(900) };
-/** the jelly stretch follows the velocity on an underdamped spring: it wobbles once when the lens stops */
-const JELLY = { k: 420, c: 2 * 0.32 * Math.sqrt(420), gain: 1 / 2600, max: 0.24 };
+/**
+ * The springs the lens follows, one per pointer kind: `stiffness` (1/s^2) sets how closely it keeps up, `damping` (the damping ratio) how much it overshoots.
+ * mouse: a mouse or pen (and the demo); finger: a finger dragging the lens, stiffer so that the lens stays under it. The README gives the lag they measure.
+ */
+export const SPRINGS = Object.freeze({
+  mouse: Object.freeze({ stiffness: 600, damping: 0.74 }),
+  finger: Object.freeze({ stiffness: 1300, damping: 0.9 }),
+});
+/** @param {{stiffness: number, damping: number}} s @returns {{k: number, c: number}} */
+const springOf = (s) => ({ k: s.stiffness, c: 2 * s.damping * Math.sqrt(s.stiffness) });
+const FOLLOW = springOf(SPRINGS.mouse);
+const DRAG = springOf(SPRINGS.finger);
+/**
+ * The jelly stretch follows the velocity on an underdamped spring: it wobbles once when the lens stops. Its stiffness keeps the ratio it had to the mouse spring's
+ * (420 to 260, the look the owner approved): a jelly slower than the lens it follows rebounds at full stretch when the lens stops.
+ */
+const JELLY_K = (420 / 260) * SPRINGS.mouse.stiffness;
+const JELLY = { k: JELLY_K, c: 2 * 0.32 * Math.sqrt(JELLY_K), gain: 1 / 2600, max: 0.24 };
 /** the swell while a finger holds the lens */
 const PRESS = { k: 520, c: 2 * 0.55 * Math.sqrt(520), scale: 1.07 };
 /** a flick carries the lens on by its release velocity times this time (s) */

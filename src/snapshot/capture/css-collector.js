@@ -7,7 +7,7 @@ import { BUS } from '../../contracts/events.js';
 import { inlineCssUrls, resolveResource } from './inline-resources.js';
 import { engineSkins } from './engine-skins.js';
 import {
-  detectPseudos, dropUnclonableSelectors, parseRules, rewriteLinkPseudos, rewriteCanvasSelectors, rewriteHostSelectors, rewriteInteractionPseudos, rewriteRootSelectors, rewriteViewportUnits, serializeRules,
+  detectPseudos, dropUnclonableSelectors, hoverScope, selectorTokens, parseRules, rewriteLinkPseudos, rewriteCanvasSelectors, rewriteHostSelectors, rewriteInteractionPseudos, rewriteRootSelectors, rewriteViewportUnits, serializeRules,
 } from './css-rewrite.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -74,6 +74,12 @@ function flattenNestedMedia(css, matches) {
   };
   return serializeRules(walk(parseRules(css)));
 }
+
+/** @param {CssBundle['pseudo']} pseudo @param {string} css @returns {CssBundle['pseudo']} with the neutral :hover selectors (computed once per bundle, i.e. per stylesheet change) */
+const withHoverScope = (pseudo, css) => {
+  const scope = pseudo.hover ? hoverScope(css) : [];
+  return { ...pseudo, hoverScope: scope && scope.map((sel) => ({ sel, ...selectorTokens(sel) })) };
+};
 
 /**
  * Walk document.styleSheets + adoptedStyleSheets (imports followed), evaluate @media with matchMedia, rewrite via css-rewrite.js, inline url()s via the ResourceCache.
@@ -185,7 +191,7 @@ export function createCssCollector(env) {
       css = rewriteCanvasSelectors(dropUnclonableSelectors(css), record.canvas);
       if (record.root !== doc) css = rewriteHostSelectors(css);
       /** @type {CssBundle} */
-      const bundle = { css: BASE_CSS + engineCss() + '\n' + css, key, pseudo: detectPseudos(joined), pendingUrls: [...new Set(pending)] };
+      const bundle = { css: BASE_CSS + engineCss() + '\n' + css, key, pseudo: withHoverScope(detectPseudos(joined), joined), pendingUrls: [...new Set(pending)] };
       if (record.state !== 'disposed') cache.set(record.id, { key, bundle });
       return bundle;
     },

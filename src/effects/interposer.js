@@ -7,6 +7,9 @@
  * Pointer events themselves are NOT stopped: plugin listeners (water ripples) and page code keep seeing them, with the native target.
  * A mapper that returns NO_TARGET (no element is shown at that point) gets a swallowed gesture: no focus change, no activation, no click,
  * and nothing of the page is hovered.
+ * A finger hovers as on a page without effects (interaction-tracker.js): a press activates the element drawn under it but hovers nothing, a pan or a drag (a scroll,
+ * a lens moved by its handle) moves no :hover across what it passes, and a tap leaves the element drawn where it landed under :hover until the next tap. Mouse and pen
+ * hover what is drawn under them at every move.
  */
 
 import { invalidState } from '../contracts/errors.js';
@@ -19,7 +22,7 @@ import { isNoTarget } from './no-target.js';
 /** @typedef {import('../contracts/types.js').InputPoint} InputPoint */
 /** @typedef {(p: InputPoint) => {x: number, y: number}} Mapper */
 /** @typedef {{left: number, top: number, sx: number, sy: number, width: number, height: number}} LayerFrame */
-/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null, tap?: {x: number, y: number, point: {x: number, y: number}}|null}} Gesture */
+/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null, tap?: {x: number, y: number, point: {x: number, y: number}}|null, finger?: {x: number, y: number, moved: boolean}}} Gesture */
 
 /** css px a finger may travel and still tap: beyond it the press is a drag (a scroll, or a plugin's own gesture) and focuses or activates nothing */
 const TAP_SLOP = 10;
@@ -77,7 +80,8 @@ export function createInterposer(env, record, chain, tracker) {
    */
   function follow(el, none = false) {
     const next = none ? layerEl : el;
-    if (next === shown) return;
+    // the tracker forgets a mapped hover by itself when a finger taps outside the canvas
+    if (next === shown && (tracker.mappedTarget?.(record) ?? null) === next) return;
     shown = next;
     tracker.setMappedTarget(record, next);
     setCursor(none ? 'default' : el ? cursorOf(el) : '');
@@ -104,9 +108,19 @@ export function createInterposer(env, record, chain, tracker) {
     else layerEl.style.removeProperty('cursor');
   }
 
+  /** A finger moves no :hover: only its gesture is followed (the slider it drags, how far it travelled). @param {PointerEvent} e @param {Gesture|null} g */
+  function onFingerMove(e, g) {
+    if (!g) { counts.passedThrough += 1; return; }
+    if (g.finger && Math.hypot(e.clientX - g.finger.x, e.clientY - g.finger.y) > TAP_SLOP) g.finger.moved = true;
+    if (g.tap && Math.hypot(e.clientX - g.tap.x, e.clientY - g.tap.y) > TAP_SLOP) g.tap = null;
+    if (g.drag) { const { point } = resolve(e, g.map); if (point) g.drag.move(point.x); }
+    counts.remapped += 1;
+  }
+
   /** @param {PointerEvent} e */
   function onMove(e) {
     const g = gesture && gesture.pointerId === e.pointerId ? gesture : null;
+    if (e.pointerType === 'touch') { onFingerMove(e, g); return; }
     if (!g && !chain.active()) { counts.passedThrough += 1; follow(null); return; }
     const { point, element } = resolve(e, g ? g.map : (p) => chain.map(p));
     follow(element, !point);
@@ -122,13 +136,16 @@ export function createInterposer(env, record, chain, tracker) {
     if (!chain.active()) { counts.passedThrough += 1; follow(null); return; }
     const map = chain.captureGesture();
     const { point, element } = resolve(e, map);
-    follow(element, !point);
+    const finger = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, moved: false } : undefined;
+    // a finger's press activates what is drawn under it and hovers nothing (its tap does, in onUp)
+    if (finger) tracker.setMappedPress?.(record, point ? element : layerEl);
+    else follow(element, !point);
     if (!point) {
       // NO_TARGET: what the user sees there is not an element of the page. Swallow the gesture: no mousedown, focus change or text
       // selection on the natively hit element, no activation on pointerup, no click; the focused element keeps the focus.
       counts.remapped += 1;
       e.preventDefault();
-      gesture = { pointerId: e.pointerId, map, retargeted: true, control: null, drag: null };
+      gesture = { pointerId: e.pointerId, map, retargeted: true, control: null, drag: null, finger };
       return;
     }
     const intended = controlOf(layerEl, element);
@@ -136,7 +153,7 @@ export function createInterposer(env, record, chain, tracker) {
     const range = isRange(intended);
     if (intended === controlOf(layerEl, first instanceof Element ? first : null) && !range) {
       counts.passedThrough += 1;
-      gesture = { pointerId: e.pointerId, map, retargeted: false, control: intended, drag: null };
+      gesture = { pointerId: e.pointerId, map, retargeted: false, control: intended, drag: null, finger };
       return;
     }
     counts.remapped += 1;
@@ -150,7 +167,7 @@ export function createInterposer(env, record, chain, tracker) {
       try { layerEl.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
       drag.move(point.x);
     }
-    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag, tap };
+    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag, tap, finger };
   }
 
   /** @param {Element|null} intended @param {{x: number, y: number}} point */
@@ -165,6 +182,8 @@ export function createInterposer(env, record, chain, tracker) {
     const g = gesture;
     if (!g || g.pointerId !== e.pointerId) return;
     gesture = null;
+    // a finger that lifted without travelling tapped: the element drawn there takes the :hover, and keeps it until the next tap (the tracker ends it for a tap elsewhere)
+    if (g.finger && !g.finger.moved && !g.drag) { const at = resolve(e, g.map); follow(at.element, !at.point); }
     if (!g.retargeted) return;
     const { point, element } = resolve(e, g.map);
     if (g.drag) {
@@ -200,7 +219,8 @@ export function createInterposer(env, record, chain, tracker) {
   /** @type {Record<string, (e: any) => void>} */
   const handlers = { pointermove: onMove, pointerdown: onDown, pointerup: onUp, pointercancel: onCancel, click: onClick };
   for (const type of TYPES) layerEl.addEventListener(type, handlers[type], { capture: true });
-  const onLeave = () => { if (!gesture) follow(null); };
+  // a finger's pointerleave follows its pointerup: the hover of its tap stays
+  const onLeave = (/** @type {PointerEvent} */ e) => { if (!gesture && e.pointerType !== 'touch') follow(null); };
   layerEl.addEventListener('pointerleave', onLeave);
 
   return {

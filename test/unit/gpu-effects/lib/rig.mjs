@@ -56,7 +56,13 @@ export function makeRig({ w = 480, h = 320, html = '', paint } = {}) {
     requestPaint() { scheduler.wakes += 1; },
   };
   const geometry = { calls: [], update: (rec, el, o) => geometry.calls.push(['update', o]), clear: () => geometry.calls.push(['clear']), get: () => new DOMMatrix() };
-  const tracker = { mapped: [], snapshot: () => ({}), setMappedTarget: (rec, el) => tracker.mapped.push(el), onChange: () => () => {} };
+  /** the tracker as the interposer sees it: every setMappedTarget (`mapped`) and setMappedPress (`presses`), and the current mapped target */
+  const tracker = {
+    mapped: [], presses: [], current: /** @type {Element|null} */ (null), snapshot: () => ({}), onChange: () => () => {},
+    setMappedTarget: (rec, el) => { tracker.mapped.push(el); tracker.current = el; },
+    setMappedPress: (rec, el) => tracker.presses.push(el),
+    mappedTarget: () => tracker.current,
+  };
   const deps = { store, scheduler, geometry, tracker };
 
   const rig = {
