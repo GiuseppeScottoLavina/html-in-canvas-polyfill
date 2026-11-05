@@ -300,9 +300,9 @@ runGate('G-scroll-cadence', async (ctx) => {
   // 104,000 pixels wrong) and the header's opaque tile was drawn over pages without it (12,000 wrong, up to 128 levels; headless Chrome 156, 2026-11-05). Controls:
   // nothing over the list, a row of the list that changes, a header that stays opaque: composed, and equal to the settled canvas. A sticky header without a z-index
   // is composed where nothing else of the list paints in its layer, and refused (refusedBy.sticky) under a first row of position: relative or of opacity 0.9, which
-  // the engine paints over it (scroll-pages.js ownLayer)
+  // the engine paints over it (scroll-pages.js ownLayer), and made stale when that first row gets opacity 0.9 after the plan (ScrollPlan.unlayered)
   if (!only || only.includes('covers')) {
-    for (const [mode, composes] of /** @type {Array<[string, boolean]>} */ ([['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false], ['head-auto', true], ['head-auto-row', false], ['head-auto-layer', false]])) {
+    for (const [mode, composes] of /** @type {Array<[string, boolean]>} */ ([['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false], ['head-auto', true], ['head-auto-row', false], ['head-auto-layer', false], ['head-auto-late', false]])) {
       const u = new URL('/test/gates/fixtures/scroll-covers.html', ctx.srv.url);
       u.searchParams.set('bundle', ctx.bundle);
       await page.navigate(u.href);

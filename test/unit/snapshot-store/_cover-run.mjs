@@ -11,7 +11,7 @@ const CSS = '.cv-d{position:relative;width:400px;height:260px;background:white;f
   + '.cv-grad .cv-d{background:linear-gradient(rgb(255,0,0),rgb(0,0,255))}.cv-grad .cv-l{background:transparent}.cv-grad .cv-r{background:transparent!important;border-bottom:1px solid black}';
 
 /**
- * @param {any} t @param {{extra?: string, head?: boolean, cls?: string, before?: (h: HTMLElement) => void, after?: (h: HTMLElement) => void}} o
+ * @param {any} t @param {{extra?: string, head?: boolean, cls?: string, seen?: string, before?: (h: HTMLElement) => void, after?: (h: HTMLElement) => void}} o
  * `before` runs before the install, `after` once the list is planned (its pages built)
  */
 export async function run(t, o) {
@@ -32,7 +32,7 @@ export async function run(t, o) {
   await i.whenPainted(canvas);
   const scroll = () => i.report().canvases[0].stats.snapshot.scroll;
   // what the test changes is seen changed once first (the first change of an element damages the whole drawable, which plans the list again)
-  for (const el of host.querySelectorAll('.cv-h, .cv-o, .cv-r:nth-child(4)')) /** @type {HTMLElement} */ (el).dataset.seen = '1';
+  for (const el of host.querySelectorAll(o.seen ?? '.cv-h, .cv-o, .cv-r:nth-child(4)')) /** @type {HTMLElement} */ (el).dataset.seen = '1';
   await sleep(400);
   list.scrollTop = 1;
   for (let k = 0; k < 100; k++) {
