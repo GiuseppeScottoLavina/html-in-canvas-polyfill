@@ -132,7 +132,7 @@ export function demoRain() {
   const n = 30;
   for (let i = 1; i <= n; i += 1) {
     const k = i / n;
-    rain.push({ t: 100 + 1300 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), depth: DROP_DEPTH * (0.3 + 0.45 * rnd()) * (1 - 0.6 * k) });
+    rain.push({ t: 100 + 1300 * k ** 1.3, x: 0.06 + 0.88 * rnd(), y: 0.08 + 0.84 * rnd(), depth: DROP_DEPTH * (0.45 + 0.5 * rnd()) * (1 - 0.5 * k) });
   }
   return rain;
 }

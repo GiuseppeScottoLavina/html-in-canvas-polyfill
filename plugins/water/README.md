@@ -23,6 +23,20 @@ Recorded in headless Chrome from the plugin gallery (`node plugins/water/test/ga
 - **Input.** A pointerdown (a click, a tap) lets a drop fall there (4 CSS px deep). A moving pointer leaves a wake along its path, deeper when it moves faster, and deeper for a drag (a pressed button, a finger) than for a hovering mouse.
 - **At rest.** Once the surface is flat again, below what a pixel shows (no pixel moved by more than 0.1 CSS px, no caustic focus changed by more than 1.2 %, at intensity 1; proportionally more at a lower intensity), the field is cleared, the drops are forgotten and the instance stops being `continuous`: the host renders nothing more until the page or the water changes. A drop is still again about 1.7 s later at the default intensity (at most 2 s), the rain of the action `demo` under 2 s after its last drop, a long stir of the whole canvas about 4 s after it ends.
 
+### Why the drops are made this way
+
+A drop on real water does not make one ring that travels unchanged. Water waves are dispersive: each wavelength runs at its own speed, so an impact rings out as a packet that spreads, gains crests and loses amplitude. How interactive water usually does it:
+
+| approach | dispersion | cost | used here |
+|---|---|---|---|
+| the wave equation on a grid (Hugo Elias's 2D water; Evan Wallace's WebGL Water: a neighbour average, a damping of 0.995, drops as cosine bumps) | none: every wavelength at one speed, so a drop's ring keeps its shape | one step of a few loads per cell | for the wakes (as in 0.1.0-preview.23, which also made drops this way) |
+| iWave (Tessendorf, *Interactive Water Surfaces*, 2004): the wave equation with the vertical derivative as a 13 x 13 convolution kernel | deep-water gravity waves, ω² = g k | 169 multiply-adds per cell per step: about 1.3 G a second on this grid, on the CPU the mapper needs | no |
+| spectral and wavelet methods (FFT height fields; Jeschke and Wojtan, *Water Wave Packets*, 2017, and *Water Surface Wavelets*, 2018) | any dispersion relation | transforms or packets per frame, built for large scenes | no |
+| analytic ripples (common in shader demos: sin(k r - ω t) under an envelope) | none, or an ad hoc one | cheap | no |
+| the exact linear response (the Cauchy-Poisson integral), tabulated | the dispersion of real capillary-gravity water | a table computed once (about 90 ms), then one filtered sample per drop and CSS pixel | for the drops |
+
+For a drop, whose shape is the same every time, the exact solution is cheaper than any simulation and as physical as linear water gets.
+
 ## Usage
 
 ```html
@@ -75,9 +89,9 @@ With `prefers-reduced-motion: reduce` (read when the plugin is added, and by the
 ## Performance
 
 - **Zero work at rest.** At rest, and after every drop, wake and demo once the surface is still, the host renders no effect frame (0 in 3 s, measured in the gallery in headless Chrome and on the iPad below). A source change at rest renders one frame, which skips the field. The plugin requests frames only while the surface moves.
-- **CPU.** One simulation step costs about 0.38 ms for the full 65,536-cell grid of a 1100 x 620 canvas (Node 24, Apple M1 Max); at 120 steps per second that is about 4.5 % of one core while the water moves. The field (about 260 KB of r32float) is uploaded once per rendered frame while it moves, never at rest.
-- **GPU.** One full-screen pass: 16 texel loads of the field per pixel (the B-spline) and one sample of the page; the loads are skipped while the field is flat.
-- **On the iPad.** iPad Pro 11-inch (3rd generation, M1), iPadOS 27.2, Safari, 120 Hz, DPR 2, the plugin gallery uncapped (2026-11-05): 0 effect frames in 3 s at rest; the demo (3 s until `'calm'`) at 120 effect frames per second, intervals 8.34 ms at p50 and 8.88 ms at p95; a 0.7 s wake (pointer events dispatched by the page: the driver delivers no touch) at 117 per second, p95 10 ms; 0 effect frames in 3 s after each.
+- **CPU.** One step of the wake field costs about 0.38 ms for the full 65,536-cell grid of a 1100 x 620 canvas (Node 24, Apple M1 Max); at 120 steps per second that is about 4.5 % of one core while a wake moves; the field (about 260 KB of r32float) is uploaded once per rendered frame then, never at rest, and not at all while only drops ring. The drop table costs about 90 ms once, in idle slices of 3 ms; a frame with drops writes their sources (32 bytes each) into the uniform block.
+- **GPU.** The drops pass: per CSS pixel, a loop over the sources and one filtered sample of the table for each source whose ring covers the pixel (it runs only while drops ring). The picture: per device pixel, 16 texel loads of the field (skipped while it is flat), two samples of the drop textures (skipped without drops) and one of the page. On the iPad below, at 1100 x 620 CSS px and DPR 2 (frames back to back, until the GPU is done): 0.8 ms a frame at rest, 1.0 to 1.4 ms with one drop (2.2 ms in preview.23), at most 3.6 ms at the peak of the demo's rain (2.2 ms in preview.23, which drew every drop into the field).
+- **On the iPad.** iPad Pro 11-inch (3rd generation, M1), iPadOS 27.2, Safari, 120 Hz, DPR 2, the plugin gallery uncapped (2026-11-05): 0 effect frames in 3 s at rest; the demo at 120 effect frames per second, intervals 8.34 ms at p50 and 8.54 ms at p95; eight drops in a second at 120 per second, p95 8.48 ms; a 0.7 s wake (pointer events dispatched by the page: the driver delivers no touch) at 119 per second, p95 8.52 ms; 0 effect frames in 3 s after each. The effect's frame work ends 0.5 ms into the frame at p50 with drops (1.6 ms in preview.23).
 
 ## Limitations
 
