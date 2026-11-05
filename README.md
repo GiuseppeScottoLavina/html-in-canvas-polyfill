@@ -34,9 +34,9 @@ install(); // synchronous: call it before your code uses the API; throws HicUnsu
 Or from a CDN, with plain script tags placed before your own scripts (no `defer`, `async` or `type="module"`: the polyfill installs while its tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.22/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.23/dist/hic-live-polyfill.iife.min.js"></script>
 <!-- Firefox and Safari: this second bundle draws form controls in those engines' look. Chrome does not need it. -->
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.22/dist/hic-live-engines.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.23/dist/hic-live-engines.iife.min.js"></script>
 ```
 
 To download nothing in a browser that implements the API (Chrome 157), load `dist/hic-live-loader.iife.min.js` instead (6 KB gzipped) and `await HicLiveLoader.load()` before your code uses the API; it fetches the core, and the engines bundle on Firefox and Safari, only where the polyfill runs. With a bundler, `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'` does the same through `import()`, which the bundler must keep split ([GETTING-STARTED](docs/guides/GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs)).
@@ -103,7 +103,7 @@ Short answers to the common questions (size, lag behind the DOM, accessibility, 
 - **Animated images:** an animated GIF, APNG, WebP or AVIF `<img>` plays where the browser has `ImageDecoder` (WebCodecs), in a secure context; Safari 27, which has none, shows its first frame. Animated CSS images (`background-image` and the like) show their first frame everywhere.
 - **Phones and tablets:** verified on a physical Pixel 7 Pro (Android 17, Chrome 156), a physical Huawei Mate 10 Pro (Android 10, Chrome 156) and a physical iPad Pro 11-inch (iPadOS 27.2), and on the Android Emulator and the iOS Simulator (iPhone 17, iOS 26.4). No physical iPhone on iOS 26 or later was run; a physical iPhone on iOS 18 confirmed the clean refusal. Pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it).
-- **Preview.** `0.1.0-preview.22` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Preview.** `0.1.0-preview.23` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 
@@ -171,7 +171,7 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 ## Testing and conformance
 
 - **Official WPT tests:** the 248 HTML-in-Canvas test files at the newest WPT commit that touches them (2026-10-28). The polyfill passes 214 files (333 of 381 subtests); native Chrome passes 236 (369) in every full run on Canary 159.0.8128.2, a build whose copy of the tests is byte-identical to that commit; without the polyfill 11 pass, all vacuously. Every difference has a written reason, and no polyfill bug is open ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)).
-- **Unit tests:** 678 in Node and 985 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check (CI has no GPU, so the WebGPU tests skip there).
+- **Unit tests:** 680 in Node and 1,038 in headless Chrome (the plugin tests included), run in CI on Linux and Windows with type checks, module-boundary checks and a bundle check (CI has no GPU, so the WebGPU tests skip there).
 - **Browser gates:** 16 gates in real, headed Chrome (20 runs: two of them run at two device pixel ratios, G-pixel-dpr at three) compare the canvas with the same HTML rendered as a plain page or, at DPR 1, 1.25 and 1.5, with Chrome's native implementation (pixels, text weight, hit testing through strong effects, typing, resize, scrolling and its cadence); two more run the effects over Chrome's own implementation, in Chrome 157 or Canary (G-native-effects, G-native-interposer), and a third checks that the loader downloads no core there (G-native-loader). Each has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite checks that all 65 seeded bugs are caught. `npm run test:gates:all` runs them with the WPT gate, the static checks, the unit tests and the mutation suite. In CI, the platform probe (G-platform) checks fonts, form controls, scrollbars, fractional DPR and text selection against native pixels on Linux, Windows and macOS.
 - **Firefox and Safari:** 11 scenarios each through WebDriver, against the plain page in the same engine; Safari Technology Preview as an optional engine, which with its HTML-in-Canvas internal feature on checks the native path instead (install steps aside, the explainer and a form drawn natively through the bridge, clicks, typing, uninstall).
 - **Phones:** `npm run test:mobile` drives Mobile Safari in the iOS Simulator or on a physical iPhone or iPad over USB (`--ios-device`) and Chrome in the Android Emulator or on a physical Android phone over USB (`--android-serial`): taps on moved drawables, typing, touch scroll, composed scroll frames against the settled picture (iOS), the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
