@@ -132,10 +132,13 @@ try {
   const still = (await shot(page)).img;
   const idleFrames = await framesDuring(page, 1000);
   for (let i = 0; i <= 24; i += 1) { await page.mouseMove(stage.x + stage.w * (0.15 + 0.7 * (i / 24)), stage.y + stage.h * 0.45); await sleep(16); }
+  // back at rest before the shot: a hover look (the browser's own :hover of the frame-cap slider, on the native path) goes at once, while a
+  // ripple lasts seconds (the same sweep with motion on changes about 5,000 pixels here, 2026-11-05)
+  await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
   await sleep(300);
   const after = changed((await shot(page)).img, still, 16);
   c.check('reduced motion: no animation while idle (at most 2 effect frames in one second)', idleFrames <= 2, { idleFrames });
-  c.check('reduced motion: pointer moves raise no ripple (the presented pixels stay put, apart from the hover look of the controls)', after.px < 2000, after);
+  c.check('reduced motion: pointer moves raise no ripple (the presented pixels stay put once the pointer is back at rest)', after.px < 2000, after);
   await clickOn(page, '#name');
   await sleep(200);
   const s = await page.evaluate(`({ active: document.activeElement && document.activeElement.id })`);
