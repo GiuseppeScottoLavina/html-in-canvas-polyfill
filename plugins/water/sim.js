@@ -112,7 +112,7 @@ export function step(f) {
 }
 
 /**
- * Add a smooth bump (raised cosine) of `amplitude` css px (negative: a dent, as a drop makes) and `radius` css px at (x, y) css px.
+ * Add a smooth bump (raised cosine) of `amplitude` css px (negative: a dent, as a wake makes) and `radius` css px at (x, y) css px.
  * The ghost cells are refreshed by the next `step` or `mirror`. @param {Field} f
  * @param {number} x @param {number} y @param {number} radius @param {number} amplitude
  */
@@ -129,31 +129,6 @@ export function stamp(f, x, y, radius, amplitude) {
       const dx = (cx - gx) * cellX;
       const d = Math.sqrt(dx * dx + dy * dy);
       if (d < r) h[(cy + PAD) * pw + cx + PAD] += amplitude * (0.5 + 0.5 * Math.cos((Math.PI * d) / r));
-    }
-  }
-}
-
-/** the crown of a drop: cos(SPLASH_RINGS * pi * s) under a smooth window, s = distance / radius */
-const SPLASH_RINGS = 2.5;
-
-/**
- * A drop: a crater of `depth` css px with a raised rim (a crown), `radius` css px across, at (x, y). It rings out as a train of ripples.
- * @param {Field} f @param {number} x @param {number} y @param {number} radius @param {number} depth
- */
-export function splash(f, x, y, radius, depth) {
-  const { h, pw, gw, gh, cellX, cellY } = f;
-  // at least 6 cells across the crown: a smaller one would ring at the scale of the grid (square ripples)
-  const r = Math.max(radius, 6 * Math.max(cellX, cellY));
-  const gx = x / cellX - 0.5, gy = y / cellY - 0.5;
-  const rx = r / cellX, ry = r / cellY;
-  const x0 = Math.max(0, Math.floor(gx - rx)), x1 = Math.min(gw - 1, Math.ceil(gx + rx));
-  const y0 = Math.max(0, Math.floor(gy - ry)), y1 = Math.min(gh - 1, Math.ceil(gy + ry));
-  for (let cy = y0; cy <= y1; cy += 1) {
-    const dy = (cy - gy) * cellY;
-    for (let cx = x0; cx <= x1; cx += 1) {
-      const dx = (cx - gx) * cellX;
-      const s2 = (dx * dx + dy * dy) / (r * r);
-      if (s2 < 1) { const w = 1 - s2; h[(cy + PAD) * pw + cx + PAD] -= depth * Math.cos(SPLASH_RINGS * Math.PI * Math.sqrt(s2)) * w * w; }
     }
   }
 }

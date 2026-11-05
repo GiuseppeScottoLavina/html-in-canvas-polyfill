@@ -43,6 +43,7 @@ struct Globals {
 
 const PAD : f32 = 2.0;
 const TABLE_DR : f32 = 1.0;
+const TABLE_SCALE : f32 = 256.0;   // drops.js TABLE_SCALE
 
 struct VertexOut {
   @builtin(position) position : vec4<f32>,
@@ -129,7 +130,7 @@ fn drops(p : vec2<f32>, h : ptr<function, f32>, slope : ptr<function, vec2<f32>>
     let d = p - a.xy;
     let r = length(d);
     if (r < b.x || r > b.y) { continue; }
-    let v = textureSampleLevel(drop_table, form_sampler, vec2<f32>((r / TABLE_DR + 0.5) / size.x, (a.z + 0.5) / size.y), 0.0) * a.w;
+    let v = textureSampleLevel(drop_table, form_sampler, vec2<f32>((r / TABLE_DR + 0.5) / size.x, (a.z + 0.5) / size.y), 0.0) * (a.w / TABLE_SCALE);
     let nrm = select(vec2<f32>(0.0), d / r, r > 1e-4);
     *h = *h + v.x;
     *slope = *slope + v.y * nrm;

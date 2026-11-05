@@ -48,6 +48,9 @@ export const K_COUNT = Math.ceil(K_MAX / DK);
  * 0.3 s (only the strongest drops at full intensity still show a little then: they fade instead of stopping) */
 const FADE_FROM = 0.88 * TABLE_R;
 const FADE_ROWS = 0.3 * ROWS_PER_S;
+/** the half floats store the profile times this power of two (exact): its values (at most 1) then use the normal range of a half float,
+ * whose subnormals below 6e-5 would lose the faint tail of a ring (water.wgsl divides by it, data holds the profile itself) */
+export const TABLE_SCALE = 256;
 /** a sample of a row is "in the ring" above this share of the row's largest slope or curvature: outside, the GPU skips the drop */
 export const RING_SHARE = 0.004;
 
@@ -117,7 +120,7 @@ export function fromHalf(h) {
  * @typedef {Object} DropTable
  * @property {number} rows  rows computed so far (0 .. TABLE_ROWS)
  * @property {number} bessel  radii whose Bessel terms are computed so far (0 .. TABLE_W)
- * @property {Uint16Array} half  TABLE_W x TABLE_ROWS x 4 halfs: h, dh/dr, d2h/dr2, (dh/dr)/r of a drop of unit depth
+ * @property {Uint16Array} half  TABLE_W x TABLE_ROWS x 4 halfs: h, dh/dr, d2h/dr2, (dh/dr)/r of a drop of unit depth, times TABLE_SCALE
  * @property {Float32Array} data  the same values, decoded (what the mapper reads)
  * @property {Float32Array} slope  per row: the largest |dh/dr|
  * @property {Float32Array} curv  per row: the largest curvature (|d2h/dr2| or |(dh/dr)/r|)
@@ -211,7 +214,7 @@ export function computeRow(tb) {
     if (r > FADE_FROM) { const s = (TABLE_R - r) / (TABLE_R - FADE_FROM); const w = s * s * (3 - 2 * s); h *= w; hr *= w; hrr *= w; q *= w; }
     const p = base + i * 4;
     const vals = [h, hr, hrr, q];
-    for (let c = 0; c < 4; c += 1) { const hv = toHalf(vals[c]); tb.half[p + c] = hv; tb.data[p + c] = fromHalf(hv); }
+    for (let c = 0; c < 4; c += 1) { const hv = toHalf(vals[c] * TABLE_SCALE); tb.half[p + c] = hv; tb.data[p + c] = fromHalf(hv) / TABLE_SCALE; }
     slope = Math.max(slope, Math.abs(tb.data[p + 1]));
     curv = Math.max(curv, Math.abs(tb.data[p + 2]), Math.abs(tb.data[p + 3]));
   }
