@@ -35,8 +35,11 @@ struct Globals {
 @group(0) @binding(1) var form_sampler : sampler;
 @group(0) @binding(2) var form_texture : texture_2d<f32>;
 @group(0) @binding(3) var height_field : texture_2d<f32>;
-// the profile of a drop of unit depth (drops.js): h, dh/dr, d2h/dr2, (dh/dr)/r; x: r (TABLE_DR css px per texel), y: the age
+// the profile of a drop of unit depth (drops.js): h, dh/dr, d2h/dr2, (dh/dr)/r; x: r (TABLE_DR css px per texel), y: the age (fs_drops)
 @group(0) @binding(4) var drop_table : texture_2d<f32>;
+// the drops, evaluated once per css pixel by fs_drops: slope x, slope y, height; Hessian xx, yy, xy (fs)
+@group(0) @binding(5) var drops_a : texture_2d<f32>;
+@group(0) @binding(6) var drops_b : texture_2d<f32>;
 
 const PAD : f32 = 2.0;
 const TABLE_DR : f32 = 1.0;
@@ -135,6 +138,30 @@ fn drops(p : vec2<f32>, h : ptr<function, f32>, slope : ptr<function, vec2<f32>>
   }
 }
 
+// the grid of the drop textures: one texel per css px (drops.js dropGrid)
+fn drop_grid(css : vec2<f32>) -> vec2<f32> {
+  return max(ceil(css - vec2<f32>(0.01)), vec2<f32>(1.0));
+}
+
+struct DropsOut {
+  @location(0) a : vec4<f32>,
+  @location(1) b : vec4<f32>,
+}
+
+// the drops pass: the drops at the centre of each texel of the drop grid (css px), for the picture to sample bilinearly
+@fragment
+fn fs_drops(@builtin(position) position : vec4<f32>) -> DropsOut {
+  let css = max(globals.css, vec2<f32>(1.0));
+  var h = 0.0;
+  var slope = vec2<f32>(0.0);
+  var hess = vec3<f32>(0.0);
+  drops(position.xy * css / drop_grid(css), &h, &slope, &hess);
+  var out : DropsOut;
+  out.a = vec4<f32>(slope, h, 0.0);
+  out.b = vec4<f32>(hess, 0.0);
+  return out;
+}
+
 // a rounded rectangle of directions around `centre` (half sizes in radians, roughly), with a soft edge
 fn soft_box(r : vec3<f32>, centre : vec3<f32>, half_size : vec2<f32>, round : f32) -> f32 {
   let e1 = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), centre));
@@ -184,14 +211,12 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
     hess = s.hess * vec3<f32>(globals.inv_cell.x * globals.inv_cell.x, globals.inv_cell.y * globals.inv_cell.y, globals.inv_cell.x * globals.inv_cell.y);
   }
   if (globals.drops > 0.5) {
-    var dh = 0.0;
-    var dslope = vec2<f32>(0.0);
-    var dhess = vec3<f32>(0.0);
-    drops(uv * css, &dh, &dslope, &dhess);
-    h = h + dh;
-    disp = disp + globals.refract * dslope;
-    slope = slope + dslope;
-    hess = hess + dhess;
+    let da = textureSampleLevel(drops_a, form_sampler, uv, 0.0);
+    let db = textureSampleLevel(drops_b, form_sampler, uv, 0.0);
+    h = h + da.z;
+    disp = disp + globals.refract * da.xy;
+    slope = slope + da.xy;
+    hess = hess + db.xyz;
   }
   if (globals.ambient > 0.0) {
     var aslope = vec2<f32>(0.0);

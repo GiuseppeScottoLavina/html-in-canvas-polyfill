@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, AMBIENT_PX, G, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
+import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
 import { AMBIENT_WAVES, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
+import { ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, createDropTable, dropsAt, prepareTable } from '../drops.js';
+
+/** a complete drop table (deterministic: the plugin computes the very same rows) */
+const TABLE = createDropTable();
+prepareTable(TABLE, Infinity);
 
 contractTest(import.meta.url);
 
@@ -23,8 +28,8 @@ function oracle(state, point) {
   let dx = 0, dy = 0;
   if (state[G.ACTIVE] > 0.5) {
     const e = 1e-4, gx = u * gw - 0.5 + PAD, gy = v * gh - 0.5 + PAD;
-    const hx = (oracleHeight(state, GLOBALS_LENGTH, pw, gx + e, gy) - oracleHeight(state, GLOBALS_LENGTH, pw, gx - e, gy)) / (2 * e);
-    const hy = (oracleHeight(state, GLOBALS_LENGTH, pw, gx, gy + e) - oracleHeight(state, GLOBALS_LENGTH, pw, gx, gy - e)) / (2 * e);
+    const hx = (oracleHeight(state, UNIFORM_LENGTH, pw, gx + e, gy) - oracleHeight(state, UNIFORM_LENGTH, pw, gx - e, gy)) / (2 * e);
+    const hy = (oracleHeight(state, UNIFORM_LENGTH, pw, gx, gy + e) - oracleHeight(state, UNIFORM_LENGTH, pw, gx, gy - e)) / (2 * e);
     // per cell -> per css px, times the refraction at this intensity
     dx = state[G.REFRACT] * hx * (gw / cssW);
     dy = state[G.REFRACT] * hy * (gh / cssH);
@@ -45,12 +50,12 @@ function stateOf(cssW, cssH, { intensity = 1, ambient = 0, time = 1.7, seed = 1,
   for (let i = 0; i < 6; i += 1) stamp(f, rnd() * cssW, rnd() * cssH, 6 + 14 * rnd(), -2 - 6 * rnd());
   for (let i = 0; i < steps; i += 1) step(f);
   mirror(f);
-  const state = new Float32Array(GLOBALS_LENGTH + f.pw * f.ph);
+  const state = new Float32Array(UNIFORM_LENGTH + f.pw * f.ph);
   const refract = REFRACT_PX * intensity;
   state[G.CSS] = cssW; state[G.CSS + 1] = cssH; state[G.K] = refract / f.cellX; state[G.K + 1] = refract / f.cellY;
   state[G.INV_CELL] = 1 / f.cellX; state[G.INV_CELL + 1] = 1 / f.cellY; state[G.GRID] = f.gw; state[G.GRID + 1] = f.gh;
   state[G.TIME] = time; state[G.INTENSITY] = intensity; state[G.AMBIENT] = ambient; state[G.ACTIVE] = 1; state[G.REFRACT] = refract;
-  state.set(f.h, GLOBALS_LENGTH);
+  state.set(f.h, UNIFORM_LENGTH);
   return { state, field: f };
 }
 
@@ -89,10 +94,10 @@ test('a dent is a diverging lens: points beside it map further out (the page loo
   const f = createField(400, 400);
   stamp(f, 200, 200, 20, -6);
   mirror(f);
-  const state = new Float32Array(GLOBALS_LENGTH + f.pw * f.ph);
+  const state = new Float32Array(UNIFORM_LENGTH + f.pw * f.ph);
   state[G.CSS] = 400; state[G.CSS + 1] = 400; state[G.GRID] = f.gw; state[G.GRID + 1] = f.gh;
   state[G.K] = REFRACT_PX / f.cellX; state[G.K + 1] = REFRACT_PX / f.cellY; state[G.ACTIVE] = 1;
-  state.set(f.h, GLOBALS_LENGTH);
+  state.set(f.h, UNIFORM_LENGTH);
   const right = mapWaterPoint(state, { x: 210, y: 200, width: 400, height: 400 });
   const above = mapWaterPoint(state, { x: 200, y: 190, width: 400, height: 400 });
   assert.ok(right.x > 212 && Math.abs(right.y - 200) < 0.01, `right of the dent: ${JSON.stringify(right)}`);
@@ -176,6 +181,7 @@ test('the plugin definition: ABI v2, spatial, direct canvas attachment, the acti
 function fakeGpu() {
   const writes = [];
   const textures = [];
+  const tables = [];
   const created = [];
   const device = {
     createShaderModule: () => ({}), createRenderPipeline: () => ({}), createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
@@ -183,12 +189,13 @@ function fakeGpu() {
     createTexture: (d) => { const t = { d, destroyed: false, createView: () => ({}), destroy() { t.destroyed = true; } }; created.push(t); return t; },
     queue: {
       writeBuffer: (buf, off, data) => writes.push(new Float32Array(data)),
-      writeTexture: (dst, data, layout, size) => textures.push({ data: new Float32Array(data), layout, size }),
+      // the height field (r32float) is recorded in `textures`; the drop table's rows (rgba16float) in `tables`
+      writeTexture: (dst, data, layout, size) => (dst.texture?.d?.format === 'rgba16float' ? tables : textures).push({ data: dst.texture?.d?.format === 'rgba16float' ? data : new Float32Array(data), layout, size }),
     },
   };
   const pass = { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} };
   const encoder = { beginRenderPass: () => pass };
-  return { device, writes, textures, created, encoder };
+  return { device, writes, textures, tables, created, encoder };
 }
 
 const W = 400, H = 300;
@@ -230,7 +237,7 @@ test('at rest nothing works: not continuous, settled at once, the field is never
   assert.equal(w.renders(), 0, 'it never asked for a frame');
 });
 
-test('a pointerdown makes a drop: continuous, the field is uploaded; it comes back to rest by itself, then continuous is false again; the listeners are passive', async () => {
+test('a pointerdown makes a drop: continuous, a drop source in the uniform block (not in the field), the table rows it needs uploaded; it comes back to rest by itself, then continuous is false again; the listeners are passive', async () => {
   const w = await createWater({ intensity: 1 });
   for (const type of ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'touchend', 'touchcancel']) assert.equal(w.listenOptions[type]?.passive, true, `${type} is passive: a finger keeps scrolling`);
   w.listeners.pointerdown({ clientX: 200, clientY: 150 });
@@ -241,39 +248,56 @@ test('a pointerdown makes a drop: continuous, the field is uploaded; it comes ba
   assert.ok(w.renders() >= 1, 'it asked for a frame');
   let settledState = 'pending';
   w.instance.settled().then((s) => { settledState = s; });
-  w.instance.render(w.frame(t0 + 20));
-  const tex = w.gpu.textures.at(-1);
-  assert.ok(tex && tex.data.some((v) => Math.abs(v) > 1), 'the drop is in the uploaded field');
-  assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1);
-  const end = w.run(t0 + 30, 6000, () => !w.instance.continuous);
+  w.instance.render(w.frame(t0 + 100));
+  const u = w.gpu.writes.at(-1);
+  assert.equal(u.length, UNIFORM_LENGTH);
+  assert.equal(u[G.DROPS], 1, 'one source: the drop (no wall is within its reach yet)');
+  const o = SOURCES_OFFSET;
+  assert.deepEqual([u[o], u[o + 1], u[o + 3]], [200, 150, DROP_DEPTH], 'at the point, of the drop depth');
+  assert.ok(Math.abs(u[o + 2] - 0.1 * ROWS_PER_S) < 0.5, `its age, in rows of the table (${u[o + 2]})`);
+  assert.ok(u[o + 4] < u[o + 5], 'its ring');
+  assert.equal(u[G.ACTIVE], 0, 'the field is not touched: no upload of it');
+  assert.equal(w.gpu.textures.length, 0);
+  assert.ok(w.gpu.tables.length >= 1 && w.gpu.tables[0].size.height >= 13, 'the rows of the table up to its age are uploaded');
+  const end = w.run(t0 + 110, 6000, () => !w.instance.continuous);
   await new Promise((r) => setImmediate(r));
-  assert.ok(end - t0 < 4000, `at rest ${Math.round(end - t0)} ms after the drop (intensity 1, a small canvas: the walls reflect)`);
+  assert.ok(end - t0 < 2400, `at rest ${Math.round(end - t0)} ms after the drop (intensity 1)`);
   assert.equal(settledState, 'calm');
-  assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 0, 'the last frame shows a flat surface');
-  const uploads = w.gpu.textures.length;
+  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 0, 'the last frame shows a flat surface');
+  const writes = w.gpu.writes.length, tables = w.gpu.tables.length;
   w.instance.render(w.frame(end + 100));
-  assert.equal(w.gpu.textures.length, uploads, 'no upload at rest');
+  assert.equal(w.gpu.tables.length, tables, 'no upload at rest');
+  assert.equal(w.gpu.writes.length, writes + 1);
 });
 
-test('the mapper evaluates the very uniform block and field that were submitted for the frame', async () => {
+test('the mapper evaluates the very uniform block, field and drop table that were submitted for the frame', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();
   w.pointer('pointerdown', 150, 120);
   w.pointer('pointerdown', 260, 160);
+  // and a wake (the field) across them
+  for (let i = 0; i <= 6; i += 1) w.pointer('pointermove', 100 + 30 * i, 140, { timeStamp: t0 + 10 * i });
   w.instance.render(w.frame(t0 + 120));
-  const submitted = new Float32Array(GLOBALS_LENGTH + w.gpu.textures.at(-1).data.length);
+  const field = w.gpu.created.find((t) => t.d.format === 'r32float').d.size;
+  const submitted = new Float32Array(UNIFORM_LENGTH + field.width * field.height);
   submitted.set(w.gpu.writes.at(-1));
-  submitted.set(w.gpu.textures.at(-1).data, GLOBALS_LENGTH);
+  submitted.set(w.gpu.textures.at(-1).data, UNIFORM_LENGTH);
+  assert.equal(submitted[G.ACTIVE], 1, 'the field is in use');
+  assert.equal(submitted[G.DROPS], 2, 'and two drops');
   const mapper = w.instance.captureInputMapper();
-  let moved = 0;
-  for (let x = 100; x <= 320; x += 20) {
-    for (let y = 80; y <= 220; y += 20) {
+  let moved = 0, byDrops = 0;
+  const fieldOnly = new Float32Array(submitted);
+  fieldOnly[G.DROPS] = 0;
+  for (let x = 100; x <= 320; x += 10) {
+    for (let y = 80; y <= 220; y += 10) {
       const pt = { x, y, width: W, height: H };
-      assert.deepEqual(mapper(pt), mapWaterPoint(submitted, pt));
+      assert.deepEqual(mapper(pt), mapWaterPoint(submitted, pt, TABLE.data));
       if (Math.hypot(mapper(pt).x - x, mapper(pt).y - y) > 0.3) moved += 1;
+      const f = mapWaterPoint(fieldOnly, pt, TABLE.data);
+      if (Math.hypot(mapper(pt).x - f.x, mapper(pt).y - f.y) > 0.3) byDrops += 1;
     }
   }
-  assert.ok(moved > 10, `the drops displace (${moved} probes)`);
+  assert.ok(moved > 10 && byDrops > 10, `the wake and the drops displace (${moved} probes; ${byDrops} by the drops)`);
   assert.equal(submitted[G.RES], W * 2);
   assert.equal(submitted[G.CSS], W);
   assert.equal(submitted[G.INTENSITY], 1);
@@ -383,15 +407,17 @@ test('intensity, light and ambient from options and setOptions reach the uniform
 test('a resize by a fraction of a cell keeps the ripples; another grid starts flat with a new texture', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();
-  w.pointer('pointerdown', 200, 150);
+  for (let i = 0; i <= 6; i += 1) w.pointer('pointermove', 120 + 30 * i, 150, { timeStamp: t0 + 10 * i });
   w.instance.render(w.frame(t0 + 20));
   const texturesBefore = w.gpu.created.length;
+  const fieldTexture = w.gpu.created.find((t) => t.d.format === 'r32float');
   w.instance.render({ ...w.frame(t0 + 40), cssWidth: W + 0.3 });
   assert.equal(w.gpu.created.length, texturesBefore, 'the same grid');
-  assert.ok(w.gpu.textures.at(-1).data.some((v) => v < -0.5), 'the ripple is still there');
+  assert.ok(w.gpu.textures.at(-1).data.some((v) => v < -0.3), 'the ripple is still there');
   w.instance.render({ ...w.frame(t0 + 60), cssWidth: W * 2, width: W * 4 });
   assert.equal(w.gpu.created.length, texturesBefore + 1, 'a new grid, a new texture');
-  assert.ok(w.gpu.created[texturesBefore - 1].destroyed, 'the old texture is destroyed');
+  assert.ok(fieldTexture.destroyed, 'the old texture is destroyed');
+  assert.equal(w.gpu.created.at(-1).d.format, 'r32float', 'the new one is the field');
 });
 
 test('prefers-reduced-motion: still water; no ripple from the pointer, not continuous, the mapper is the identity; control: without it the pointer stirs', async () => {
@@ -443,7 +469,7 @@ async function handleOf({ reducedMotion = false } = {}) {
   return { ...h, gpu, frame, flush };
 }
 
-test('the action drop, through the effect handle: a dent at the point at once; it resolves \'calm\' at rest; bad options reject; reduced motion starts none', async () => {
+test('the action drop, through the effect handle: a drop at the point at once, of the depth its strength asks; it resolves \'calm\' at rest; bad options reject; reduced motion starts none', async () => {
   const w = await handleOf();
   assert.deepEqual([...w.handle.actions], ['drop', 'demo']);
   assert.equal(await w.handle.settled(), 'calm', 'calm at once: nothing moves after creation');
@@ -453,27 +479,25 @@ test('the action drop, through the effect handle: a dent at the point at once; i
   let state = 'pending';
   w.handle.trigger('drop', { point: { x: 300, y: 75 }, strength: 1.5 }).then((v) => { state = v; });
   w.inst.render(w.frame(t0 + 10));
-  const f = w.gpu.textures.at(-1);
-  const pw = f.size.width, ph = f.size.height;
-  // the centroid of the disturbance (|h|), interior cells
-  const cx = W / (pw - 2 * PAD), cy = H / (ph - 2 * PAD);
-  let sum = 0, sx = 0, sy = 0;
-  for (let j = PAD; j < ph - PAD; j += 1) for (let i = PAD; i < pw - PAD; i += 1) { const a = Math.abs(f.data[j * pw + i]); sum += a; sx += a * (i - PAD + 0.5) * cx; sy += a * (j - PAD + 0.5) * cy; }
-  const x = sx / sum, y = sy / sum;
-  assert.ok(sum > 0 && Math.abs(x - 300) < cx && Math.abs(y - 75) < cy, `the drop is centred on the point (${x}, ${y})`);
+  const u = w.gpu.writes.at(-1), o = SOURCES_OFFSET;
+  assert.ok(u[G.DROPS] >= 1);
+  assert.deepEqual([u[o], u[o + 1]], [300, 75], 'the drop is at the point');
+  assert.ok(Math.abs(u[o + 3] - (DROP_DEPTH * 1.5) / 1.2) < 1e-5, `of the depth of strength 1.5 (${u[o + 3]})`);
   let now = t0 + 10;
   for (; now < t0 + 600; now += 1000 / 120) w.inst.render(w.frame(now));
   await w.flush();
   assert.equal(state, 'pending', 'still moving after 0.6 s');
   for (; now < t0 + 6000 && state === 'pending'; now += 1000 / 120) { w.inst.render(w.frame(now)); await w.flush(); }
   assert.equal(state, 'calm');
+  assert.ok(now - t0 < 2400, `calm ${Math.round(now - t0)} ms after the drop`);
   const pending = w.handle.trigger('drop');
   w.handle.remove();
   assert.equal(await pending, null, 'removed: null');
   const still = await handleOf({ reducedMotion: true });
   assert.equal(await still.handle.trigger('drop', { point: { x: 10, y: 10 } }), 'calm', 'reduced motion (as the host read it): no ripple, calm at once');
   still.inst.render(still.frame(t0 + 100));
-  assert.equal(still.gpu.textures.length, 0, 'nothing to upload: the surface stayed flat');
+  assert.equal(still.gpu.textures.length + still.gpu.tables.length, 0, 'nothing to upload: the surface stayed flat');
+  assert.equal(still.gpu.writes.at(-1)[G.DROPS], 0);
   still.handle.remove();
 });
 

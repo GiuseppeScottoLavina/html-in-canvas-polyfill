@@ -24,7 +24,7 @@ import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
 import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
-import { MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropsAt } from './drops.js';
+import { MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropGrid, dropsSlope, prepareTable } from './drops.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -98,7 +98,7 @@ export function mapWaterPoint(state, point, table = null) {
     dy = state[G.K + 1] * s.hy;
   }
   if (state[G.DROPS] > 0.5 && table) {
-    const d = dropsAt(table, state, SOURCES_OFFSET, state[G.DROPS], u * cssW, v * cssH);
+    const d = dropsSlope(table, state, SOURCES_OFFSET, state[G.DROPS], u * cssW, v * cssH, cssW, cssH);
     dx += state[G.REFRACT] * d.sx;
     dy += state[G.REFRACT] * d.sy;
   }
@@ -186,8 +186,9 @@ function createPipeline(device, code, format) {
       { binding: 2, visibility: stage, texture: { sampleType: 'float' } },
       // the height field is read with textureLoad only: r32float needs no filtering (it is not filterable without an optional feature)
       { binding: 3, visibility: stage, texture: { sampleType: 'unfilterable-float' } },
-      // the drop table (rgba16float, filtered bilinearly in r and t by the same sampler as the page)
-      { binding: 4, visibility: stage, texture: { sampleType: 'float' } },
+      // the drops of this frame, one texel per css px (rgba16float, filtered)
+      { binding: 5, visibility: stage, texture: { sampleType: 'float' } },
+      { binding: 6, visibility: stage, texture: { sampleType: 'float' } },
     ],
   });
   const pipeline = device.createRenderPipeline({
@@ -197,7 +198,23 @@ function createPipeline(device, code, format) {
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
   });
-  return { pipeline, layout };
+  // the drops pass: the globals (sources), the sampler and the drop table (rgba16float, filtered bilinearly in r and t)
+  const dropsLayout = device.createBindGroupLayout({
+    label: 'hic-water-effect-drops-layout',
+    entries: [
+      { binding: 0, visibility: stage, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: stage, sampler: { type: 'filtering' } },
+      { binding: 4, visibility: stage, texture: { sampleType: 'float' } },
+    ],
+  });
+  const dropsPipeline = device.createRenderPipeline({
+    label: 'hic-water-effect-drops-pipeline',
+    layout: device.createPipelineLayout({ label: 'hic-water-effect-drops-pipeline-layout', bindGroupLayouts: [dropsLayout] }),
+    vertex: { module, entryPoint: 'vs' },
+    fragment: { module, entryPoint: 'fs_drops', targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }] },
+    primitive: { topology: 'triangle-list' },
+  });
+  return { pipeline, layout, dropsPipeline, dropsLayout };
 }
 
 /** @type {EffectPluginDefinition} */
@@ -212,7 +229,7 @@ export const plugin = Object.freeze({
     const shader = initialOptions?.shader;
     const code = typeof shader === 'string' && shader !== '' ? shader : await wgsl('water.wgsl');
     const { device, format } = context;
-    const { pipeline, layout } = createPipeline(device, code, format);
+    const { pipeline, layout, dropsPipeline, dropsLayout } = createPipeline(device, code, format);
     const gpu = /** @type {any} */ (globalThis);
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
@@ -222,6 +239,19 @@ export const plugin = Object.freeze({
     let uploadedRows = 0;
     const tableTexture = device.createTexture({ label: 'hic-water-effect-drop-table', size: { width: TABLE_W, height: TABLE_ROWS }, format: 'rgba16float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
     const tableView = tableTexture.createView();
+    /** the drop textures (drops.js dropGrid of the field's css size); 1 x 1 until a drop falls */
+    let dropTargets = { w: 0, h: 0, a: /** @type {any} */ (null), b: /** @type {any} */ (null), viewA: /** @type {any} */ (null), viewB: /** @type {any} */ (null) };
+    /** @param {number} w @param {number} h */
+    const ensureDropTargets = (w, h) => {
+      if (dropTargets.w === w && dropTargets.h === h) return;
+      dropTargets.a?.destroy?.(); dropTargets.b?.destroy?.();
+      const make = (/** @type {string} */ label) => device.createTexture({ label, size: { width: w, height: h }, format: 'rgba16float', usage: textureUsage.TEXTURE_BINDING | textureUsage.RENDER_ATTACHMENT });
+      const a = make('hic-water-effect-drops-a'), b = make('hic-water-effect-drops-b');
+      dropTargets = { w, h, a, b, viewA: a.createView(), viewB: b.createView() };
+      bindGroups = new WeakMap();
+    };
+    /** @type {any} */ let dropsBindGroup = null;
+
     const sampler = device.createSampler({ label: 'hic-water-effect-sampler', magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const globals = new Float32Array(UNIFORM_LENGTH);
     const canvas = context.canvas;
@@ -234,6 +264,18 @@ export const plugin = Object.freeze({
     let intensity = clamp01(initialOptions?.intensity, DEFAULT_INTENSITY);
     let light = clamp01(initialOptions?.light, 1);
     let ambient = reducedMotion ? 0 : clamp01(initialOptions?.ambient, 0);
+    /** the table of the drops is filled in idle time, in slices of a few ms, starting a moment after create (about 90 ms of work in all,
+     * once): the first drop then finds it ready. A drop that comes earlier computes the rows it needs at once. */
+    /** @type {{idle: boolean, id: number}|null} */ let prefetch = null;
+    const idle = (/** @type {() => void} */ fn, /** @type {number} */ delay) => {
+      prefetch = win.requestIdleCallback && !delay ? { idle: true, id: win.requestIdleCallback(fn, { timeout: 500 }) } : { idle: false, id: win.setTimeout(fn, delay || 20) };
+    };
+    const cancelIdle = () => {
+      if (prefetch?.idle) win.cancelIdleCallback(prefetch.id); else if (prefetch) win.clearTimeout(prefetch.id);
+      prefetch = null;
+    };
+    const fill = () => { prefetch = null; if (!prepareTable(table, performance.now() + 3)) idle(fill, 0); };
+    if (!reducedMotion && win.setTimeout) idle(fill, 400);
 
     /** @type {Field|null} */ let field = null;
     /** @type {any} */ let fieldTexture = null;
@@ -541,6 +583,10 @@ export const plugin = Object.freeze({
         globals[G.CAUSTIC] = CAUSTIC_PX * intensity;
         if (waiters.length && calm()) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
+        if (globals[G.DROPS] > 0) {
+          const g = dropGrid(f.cssWidth, f.cssHeight);
+          ensureDropTargets(g.w, g.h);
+        } else if (!dropTargets.a) ensureDropTargets(1, 1);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
           bindGroup = device.createBindGroup({
@@ -550,10 +596,24 @@ export const plugin = Object.freeze({
               { binding: 1, resource: sampler },
               { binding: 2, resource: frame.sourceView },
               { binding: 3, resource: fieldView },
-              { binding: 4, resource: tableView },
+              { binding: 5, resource: dropTargets.viewA },
+              { binding: 6, resource: dropTargets.viewB },
             ],
           });
           bindGroups.set(frame.sourceView, bindGroup);
+        }
+        if (globals[G.DROPS] > 0) {
+          dropsBindGroup ??= device.createBindGroup({
+            label: 'hic-water-effect-drops-bind-group', layout: dropsLayout,
+            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: sampler }, { binding: 4, resource: tableView }],
+          });
+          const dp = frame.encoder.beginRenderPass({
+            colorAttachments: [
+              { view: dropTargets.viewA, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
+              { view: dropTargets.viewB, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
+            ],
+          });
+          dp.setPipeline(dropsPipeline); dp.setBindGroup(0, dropsBindGroup); dp.draw(3); dp.end();
         }
         const timestampWrites = frame.profiling?.timestampWrites('water');
         const pass = frame.encoder.beginRenderPass({
@@ -579,6 +639,7 @@ export const plugin = Object.freeze({
       destroy() {
         rain = [];
         drops = [];
+        cancelIdle();
         const demo = demoTakeover;
         demoTakeover = null;
         demo?.(null);
@@ -586,6 +647,7 @@ export const plugin = Object.freeze({
         uniformBuffer.destroy?.();
         fieldTexture?.destroy?.();
         tableTexture.destroy?.();
+        dropTargets.a?.destroy?.(); dropTargets.b?.destroy?.();
       },
     };
   },

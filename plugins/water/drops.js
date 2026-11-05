@@ -116,6 +116,7 @@ export function fromHalf(h) {
 /**
  * @typedef {Object} DropTable
  * @property {number} rows  rows computed so far (0 .. TABLE_ROWS)
+ * @property {number} bessel  radii whose Bessel terms are computed so far (0 .. TABLE_W)
  * @property {Uint16Array} half  TABLE_W x TABLE_ROWS x 4 halfs: h, dh/dr, d2h/dr2, (dh/dr)/r of a drop of unit depth
  * @property {Float32Array} data  the same values, decoded (what the mapper reads)
  * @property {Float32Array} slope  per row: the largest |dh/dr|
@@ -130,7 +131,7 @@ export function fromHalf(h) {
  * @property {Float64Array} gamma
  */
 
-/** The empty table (the Bessel terms are computed here: about 100k of each). @returns {DropTable} */
+/** The empty table: no Bessel term and no row yet (prepareTable and computeRow compute them). @returns {DropTable} */
 export function createDropTable() {
   const n = K_COUNT;
   const k = new Float64Array(n), weight = new Float64Array(n), omega = new Float64Array(n), gamma = new Float64Array(n);
@@ -153,24 +154,44 @@ export function createDropTable() {
   }
   for (let j = 0; j < n; j += 1) weight[j] /= deepest;
   const j0 = new Float32Array(TABLE_W * n), j1x = new Float32Array(TABLE_W * n);
-  const b = new Float64Array(2);
-  for (let i = 0; i < TABLE_W; i += 1) {
-    const r = i * TABLE_DR;
-    for (let j = 0; j < n; j += 1) { bessel(k[j] * r, b); j0[i * n + j] = b[0]; j1x[i * n + j] = b[1]; }
-  }
   return {
-    rows: 0, half: new Uint16Array(TABLE_W * TABLE_ROWS * 4), data: new Float32Array(TABLE_W * TABLE_ROWS * 4),
+    rows: 0, bessel: 0, half: new Uint16Array(TABLE_W * TABLE_ROWS * 4), data: new Float32Array(TABLE_W * TABLE_ROWS * 4),
     slope: new Float32Array(TABLE_ROWS), curv: new Float32Array(TABLE_ROWS), inner: new Float32Array(TABLE_ROWS), outer: new Float32Array(TABLE_ROWS),
     j0, j1x, k, weight, omega, gamma,
   };
 }
 
 const C = new Float64Array(K_COUNT), CK = new Float64Array(K_COUNT);
+const B2 = new Float64Array(2);
+
+/** The Bessel terms of `count` more radii (about 200 wavenumbers each). @param {DropTable} tb @param {number} count */
+function besselRadii(tb, count) {
+  const n = K_COUNT, end = Math.min(TABLE_W, tb.bessel + count);
+  for (let i = tb.bessel; i < end; i += 1) {
+    const r = i * TABLE_DR;
+    for (let j = 0; j < n; j += 1) { bessel(tb.k[j] * r, B2); tb.j0[i * n + j] = B2[0]; tb.j1x[i * n + j] = B2[1]; }
+  }
+  tb.bessel = end;
+}
+
+/**
+ * Advance the table until `deadline` (performance.now() ms): the Bessel terms first, then the rows, in slices of about 0.4 ms, so that a
+ * page can fill it in idle time before the first drop needs it. Returns true once the table is complete.
+ * @param {DropTable} tb @param {number} deadline
+ */
+export function prepareTable(tb, deadline) {
+  while (tb.rows < TABLE_ROWS) {
+    if (tb.bessel < TABLE_W) besselRadii(tb, 24); else computeRow(tb);
+    if (performance.now() >= deadline) break;
+  }
+  return tb.rows >= TABLE_ROWS;
+}
 
 /** Compute the next row of the table. @param {DropTable} tb */
 export function computeRow(tb) {
   const row = tb.rows;
   if (row >= TABLE_ROWS) return;
+  if (tb.bessel < TABLE_W) besselRadii(tb, TABLE_W);
   const t = row / ROWS_PER_S, n = K_COUNT;
   const left = (TABLE_ROWS - 1 - row) / FADE_ROWS, fade = left >= 1 ? 1 : left * left * (3 - 2 * left);
   for (let j = 0; j < n; j += 1) {
@@ -253,4 +274,36 @@ export function dropsAt(data, state, offset, count, x, y) {
     hxy += (rad - tan) * nx * ny;
   }
   return { h, sx, sy, hxx, hyy, hxy };
+}
+
+/**
+ * The drops are evaluated once per CSS pixel into two rgba16float textures (water.wgsl fs_drops), which the picture samples bilinearly:
+ * the grid of a canvas of css size (w, h) has ceil(w) x ceil(h) texels (water.wgsl drop_grid). @param {number} w @param {number} h
+ */
+export function dropGrid(w, h) {
+  return { w: Math.max(1, Math.ceil(Math.fround(w) - 0.01)), h: Math.max(1, Math.ceil(Math.fround(h) - 0.01)) };
+}
+
+const S00 = [0, 0], S10 = [0, 0], S01 = [0, 0], S11 = [0, 0];
+/**
+ * The drops' slope at (x, y) css px as the picture sees it: dropsAt at the four texel centres of the grid around the point, rounded to
+ * half floats as the texture stores them, interpolated bilinearly (clamped to the edge texels) as the GPU's sampler does.
+ * @param {Float32Array} data @param {ArrayLike<number>} state @param {number} offset @param {number} count
+ * @param {number} x @param {number} y @param {number} cssW @param {number} cssH
+ */
+export function dropsSlope(data, state, offset, count, x, y, cssW, cssH) {
+  const g = dropGrid(cssW, cssH);
+  const sx = cssW / g.w, sy = cssH / g.h;
+  const tx = Math.min(g.w - 1, Math.max(0, x / sx - 0.5)), ty = Math.min(g.h - 1, Math.max(0, y / sy - 0.5));
+  const i0 = Math.floor(tx), j0 = Math.floor(ty), i1 = Math.min(g.w - 1, i0 + 1), j1 = Math.min(g.h - 1, j0 + 1);
+  const fx = tx - i0, fy = ty - j0;
+  const at = (/** @type {number} */ i, /** @type {number} */ j, /** @type {number[]} */ out) => {
+    const d = dropsAt(data, state, offset, count, (i + 0.5) * sx, (j + 0.5) * sy);
+    out[0] = fromHalf(toHalf(d.sx)); out[1] = fromHalf(toHalf(d.sy));
+  };
+  at(i0, j0, S00); at(i1, j0, S10); at(i0, j1, S01); at(i1, j1, S11);
+  return {
+    sx: (S00[0] * (1 - fx) + S10[0] * fx) * (1 - fy) + (S01[0] * (1 - fx) + S11[0] * fx) * fy,
+    sy: (S00[1] * (1 - fx) + S10[1] * fx) * (1 - fy) + (S01[1] * (1 - fx) + S11[1] * fx) * fy,
+  };
 }
