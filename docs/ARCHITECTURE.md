@@ -486,7 +486,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     1.25, 1.5 or 1.75 (`refusedBy` empty, 25-26 of 28 steps composed, every wheel move painted in the headless wheel bench, as at 1 and 2; the scale refusal concerns
     the WebKit grid and Gecko only). Same oracle, same build: at 1.25 and 1.5 every composed frame of the plain, long, fractional-width and fractional-row lists equals the
     settled tile, as at 1 (at 2, 18-20 of 26 do, the rest one or two pixels off by 1 level). At 1.75 every composed frame of those lists differs from the settled tile by
-    24,000-26,600 pixels (up to 177 levels), but there the composed frame equals a rebuild of the whole drawable at the same offset, and the settled tile (a crop of
+    24,000-26,600 pixels (up to 177 levels), but there the composed frame equals a rebuild of the whole drawable at the same offset (one step measured), and the settled tile (a crop of
     the scroller's damage) is what differs from it (about 90,000 pixels: glyphs a fraction of a pixel to the side); a viewBox crop alone does not do it (an image of the
     same markup cropped at 1 to 28 px from its origin is pixel-equal at zoom 1 to 2). Open.
   - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
