@@ -61,12 +61,15 @@ try {
     await idle(page, 500, 10000);
     return { scrolledPx: (await page.evaluate('scrollY')) - y0, stirredMsAfterLift: Math.round((await page.evaluate('window.__e2e.last')) - lift) };
   };
+  // the tap of the touch start drops a pebble, whose rings outlast a 1.2 s scroll in both runs: kept from the water here (a window
+  // capture listener stops the pointerdown), so that the two runs differ only by the stirring of the touch moves
+  await page.evaluate(`window.addEventListener('pointerdown', (e) => e.stopPropagation(), { capture: true, passive: true }); true`);
   const stirred = await longScroll();
   // control: the same scroll with the touch moves kept from the canvas and its layer (a window capture listener stops them; pointer events still arrive until the scroll starts)
   await page.evaluate(`window.addEventListener('touchmove', (e) => e.stopPropagation(), { capture: true, passive: true }); true`);
   const unstirred = await longScroll();
   c.check('a finger that scrolls the page keeps stirring the water: it moves on well after the lift (the touch moves go on during the scroll)', stirred.scrolledPx > 100 && stirred.stirredMsAfterLift > unstirred.stirredMsAfterLift + 600, { stirred, unstirred });
-  c.check('control: without the touch moves only the drop of the touch start shows; the water comes to rest early', unstirred.scrolledPx > 100 && unstirred.stirredMsAfterLift < stirred.stirredMsAfterLift, unstirred);
+  c.check('control: without the touch moves nothing stirs the water during the scroll; it comes to rest early', unstirred.scrolledPx > 100 && unstirred.stirredMsAfterLift < stirred.stirredMsAfterLift, unstirred);
   await page.evaluate(`(() => {
     const block = (e) => e.preventDefault();
     for (const el of [document.getElementById('stage'), document.querySelector('hic-layer') || document.getElementById('demo-form')]) el.addEventListener('touchstart', block, { passive: false });
