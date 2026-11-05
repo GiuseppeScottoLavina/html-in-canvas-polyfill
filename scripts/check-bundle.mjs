@@ -342,6 +342,41 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   if (lean) problems.push(`G-bundle: an app that imports only install() from dist/esm/index.js carries ${lean} of ${prose.length} summary / reason strings of src/contracts/features.js (the public FEATURES table is no longer tree-shaken)`);
   if (full !== prose.length || regressed !== prose.length) problems.push(`G-bundle: the tree-shaking check failed its controls (FEATURES imported: ${full}, status read from the table: ${regressed}, of ${prose.length} prose strings)`);
   console.log(`ESM tree-shaking: install() alone carries ${lean} of ${prose.length} feature prose strings (controls: ${full}, ${regressed})`);
+
+  // ---- 2c. the module loader's payload (docs/BUNDLES.md, "What the loader costs and saves"): an app that imports only load() from dist/esm/loader.js, bundled and
+  // minified by esbuild with code splitting. Its polyfill path imports install() and the GPU bundle (chunks/loader-core-*.js), not the package entry, whose other
+  // exports a dynamic import keeps, and the engines (chunks/engines-*.js) only on Gecko / WebKit. Measured 2026-11-05 (gzip level 9, the sum over the files of each
+  // path): start 8,036 bytes; polyfill path on Chromium 130,637 (159,020 when it imported the package entry), on Gecko / WebKit 147,212. The ceilings are those plus a
+  // small margin. Control: the same app with the loader importing the package entry carries the feature prose and the engines in its Chromium path.
+  /** @param {any} [plugin] @returns {Promise<{dyn: string[], start: number, chromium: number|null, geckoWebkit: number|null, prose: number, engines: boolean, enginesSplit: boolean}>} */
+  const loaderApp = async (plugin) => {
+    const r = await esbuild({ stdin: { contents: "import { load } from './dist/esm/loader.js'; globalThis.load = load;", resolveDir: root, sourcefile: 'app.js', loader: 'js' }, bundle: true, minify: true, format: 'esm', target: 'chrome130', splitting: true, outdir: join(root, '.scratch/loader-app'), write: false, metafile: true, logLevel: 'silent', plugins: plugin ? [plugin] : [] });
+    const files = new Map(r.outputFiles.map((/** @type {any} */ f) => [f.path, f]));
+    const meta = new Map(Object.entries(r.metafile.outputs).map(([k, m]) => [resolve(root, k), /** @type {any} */ (m)]));
+    /** @param {string} p @param {Set<string>} set @returns {Set<string>} */
+    const closure = (p, set) => { if (!set.has(p)) { set.add(p); for (const i of meta.get(p).imports) if (i.kind === 'import-statement') closure(resolve(root, i.path), set); } return set; };
+    const gz = (/** @type {Set<string>} */ set) => [...set].reduce((n, p) => n + gzipSync(files.get(p).contents, { level: 9 }).length, 0);
+    const text = (/** @type {Set<string>} */ set) => [...set].map((p) => files.get(p).text).join('\n');
+    const ENGINES = '[data-hic-range]::-moz-range-thumb'; // a rule of the engines' ENGINE_CSS (src/snapshot/capture/native-controls.js)
+    const [appPath, app] = [...meta].find(([, m]) => m.entryPoint === 'app.js') ?? [];
+    const dyn = app.imports.filter((/** @type {any} */ i) => i.kind === 'dynamic-import').map((/** @type {any} */ i) => ({ path: resolve(root, i.path), entry: String(meta.get(resolve(root, i.path)).entryPoint) }));
+    const start = closure(/** @type {string} */ (appPath), new Set());
+    const core = dyn.find((d) => /loader-core-|esm\/index\.js$/.test(d.entry));
+    const eng = dyn.find((d) => /engines-/.test(d.entry));
+    const chromium = core ? closure(core.path, new Set(start)) : null;
+    const both = core && eng ? closure(eng.path, new Set(chromium)) : null;
+    return { dyn: dyn.map((d) => d.entry), start: gz(start), chromium: chromium && gz(chromium), geckoWebkit: both && gz(both), prose: chromium ? prose.filter((s) => text(chromium).includes(s)).length : -1, engines: !!chromium && text(chromium).includes(ENGINES), enginesSplit: !!both && text(both).includes(ENGINES) && !text(start).includes(ENGINES) };
+  };
+  const LOADER_APP = { start: 8.1 * KB, chromium: 131 * KB, geckoWebkit: 147.5 * KB };
+  const app = await loaderApp();
+  const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
+  const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';
+  if (app.dyn.length !== 3 || !app.dyn.some((e) => /loader-core-/.test(e)) || !app.dyn.some((e) => /engines-/.test(e))) problems.push(`${where} has the dynamic imports ${JSON.stringify(app.dyn)} (the native bridge, the engines, chunks/loader-core-*.js expected)`);
+  if (app.prose || app.engines) problems.push(`${where} carries ${app.prose} feature prose strings${app.engines ? ' and the engines' : ''} in its Chromium polyfill path (the loader imports more than install())`);
+  if (!app.enginesSplit) problems.push(`${where}: the engines are not a chunk of their own that only the Gecko / WebKit path fetches`);
+  for (const k of /** @type {const} */ (['start', 'chromium', 'geckoWebkit'])) if (!((app[k] ?? Infinity) <= LOADER_APP[k])) problems.push(`${where}: its ${k} path is ${app[k]} bytes gzipped, above its ceiling ${LOADER_APP[k]} (a regression)`);
+  if (entryApp.prose !== prose.length || !entryApp.engines || !(/** @type {number} */ (entryApp.chromium) > LOADER_APP.chromium)) problems.push(`G-bundle: the loader payload check failed its control (the loader importing the package entry: ${entryApp.prose} prose strings, engines ${entryApp.engines}, ${entryApp.chromium} bytes)`);
+  console.log(`ESM loader app (gzip): start ${app.start}, polyfill path Chromium ${app.chromium}, Gecko / WebKit ${app.geckoWebkit} (control, the package entry: ${entryApp.chromium}, ${entryApp.prose} prose strings)`);
 }
 
 // ---- 3. browser
@@ -547,7 +582,7 @@ if (!process.argv.includes('--skip-browser')) {
         results.push({ name: 'ESM builds', bad: [...(out.bad ?? []), ...(out.done ? [] : ['the module did not finish']), ...stray.map((u) => `unexpected request ${u}`), ...errs.map((e) => `page error: ${e}`)] });
       } finally { await page.close(); }
     }
-    // the ESM loader: imports dist/esm/index.js once for ten concurrent calls and installs
+    // the ESM loader: imports its core module (chunks/loader-core-*.js, not the package entry, not the engines on Chromium) once for ten concurrent calls and installs
     {
       const page = await browser.newPage({ reuseFirst: false });
       srv.requests.length = 0;

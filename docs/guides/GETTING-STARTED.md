@@ -84,14 +84,14 @@ Chrome 157 implements the API, so the core steps aside there, but a page that li
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->
 <script type="module">
-  const { status, installed } = await HicLiveLoader.load();   // never rejects: 'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'
+  const { status, installed } = await HicLiveLoader.load();   // 'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'; rejects only for an invalid option
   const canvas = document.getElementById('c');
   canvas.onpaint = () => { /* draw */ };
   if (installed) await installed.whenPainted(canvas);           // installed is null where nothing was loaded (native, refused, error)
 </script>
 ```
 
-With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the package entry becomes a chunk that only the polyfill path fetches. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. The extensions (the frame cap, the effects host) need the core, which the loader does not download there: a page that uses them over a native implementation loads the core's own tag instead. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
+With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the core (and the engines, on Firefox and Safari) become chunks that only the polyfill path fetches. The bundler must keep dynamic imports split: Vite, webpack and rollup do by default, esbuild needs `splitting: true`; without it the core lands in the initial payload (149 KB gzipped instead of 8 KB, [BUNDLES.md](../BUNDLES.md#what-the-loader-costs-and-saves-measured-2026-11-04)). An invalid option (a typo in `install` too) rejects with a `TypeError`, as `install()` throws it; every other outcome resolves. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. The extensions (the frame cap, the effects host) need the core, which the loader does not download there: a page that uses them over a native implementation loads the core's own tag instead. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
 
 ## 4. Adding the effects
 

@@ -138,36 +138,87 @@ test('the engines bundle is asked for on Firefox and Safari on the polyfill path
   assert.equal(fetched.length, 0, 'a native Firefox downloads nothing');
 });
 
-test('options: an invalid install option is install()\'s TypeError (status error, nothing fetched); an invalid loader option too; an existing install is returned as is', async t => {
-  const typo = await loadAnswer(t, () => {}, { maxDprr: 2 });
-  assert.equal(typo.r.status, 'error');
-  assert.equal(typo.r.mode, null);
-  assert.ok(typo.r.error instanceof TypeError && /unknown option "maxDprr"/.test(typo.r.error.message), String(typo.r.error));
-  assert.equal(typo.fetched.length, 0);
-  assert.equal(typo.r.native?.kind, 'absent', 'the NativeState is still reported');
-  const typoNative = await loadAnswer(t, (w) => defineFakeNative(w), { mode: 'bogus' });
-  assert.equal(typoNative.r.status, 'error', 'on a native browser too: install() would throw there as well');
-  for (const bad of [{ timeout: -1 }, { timeout: Infinity }, { engines: true }, { core: 1 }, { nonce: 3 }, { extra: 1 }]) {
-    const { r, fetched } = await loadAnswer(t, () => {}, {}, bad);
-    assert.equal(r.status, 'error', JSON.stringify(bad));
-    assert.ok(r.error instanceof TypeError, JSON.stringify(bad));
-    assert.equal(fetched.length, 0);
+/** load() with an invalid option on a fresh frame: how it settles (rejects or resolves), what it fetched, and the frame. */
+async function loadInvalid(/** @type {any} */ t, /** @type {(w: any) => void} */ setup, /** @type {object} */ opts, /** @type {object} */ loadOpts = {}) {
+  const w = makeFrame(t, '<canvas content="drawable"><b drawable></b></canvas>');
+  setup(w);
+  quiet(w);
+  /** @type {Array<{bridge: boolean, engines: boolean}>} */ const fetched = [];
+  const load = createLoad({ check() {}, fetch: async (_w, need) => { fetched.push(need); return { install: (/** @type {any} */ o) => installWith(o, fakeServices()) }; } });
+  /** @type {any} */ let resolved = null;
+  /** @type {any} */ let rejected = null;
+  await load({ ...loadOpts, install: { window: w, ...opts } }).then((r) => { resolved = r; t.cleanup(() => r.installed?.uninstall()); }, (e) => { rejected = e; });
+  return { w, load, fetched, resolved, rejected };
+}
+
+test('options: an invalid install option or loader option rejects with install()\'s TypeError, before anything is fetched, also on a native browser; nothing is installed', async t => {
+  /** @type {Array<[string, (w: any) => void, object, object, RegExp]>} label, window shape, install options, loader options, the message */
+  const rows = [
+    ['an install typo', () => {}, { maxDprr: 2 }, {}, /unknown option "maxDprr"/],
+    ['an install typo over a complete native (install() throws there too)', (w) => defineFakeNative(w), { maxDprr: 2 }, {}, /unknown option "maxDprr"/],
+    ['an invalid install mode over a complete native', (w) => defineFakeNative(w), { mode: 'bogus' }, {}, /mode/],
+    ['an install document that is not a Document', () => {}, { document: {} }, {}, /option "document" must be a Document/],
+    ['timeout -1', () => {}, {}, { timeout: -1 }, /timeout/],
+    ['timeout Infinity', () => {}, {}, { timeout: Infinity }, /timeout/],
+    ['engines: true', () => {}, {}, { engines: true }, /engines/],
+    ['core: 1', () => {}, {}, { core: 1 }, /core/],
+    ['nonce: 3', () => {}, {}, { nonce: 3 }, /nonce/],
+    ['an unknown loader option', () => {}, {}, { extra: 1 }, /unknown load\(\) option "extra"/],
+  ];
+  for (const [label, setup, opts, loadOpts, message] of rows) {
+    const { w, fetched, resolved, rejected } = await loadInvalid(t, setup, opts, loadOpts);
+    assert.equal(resolved, null, `${label}: load() must reject, it resolved ${resolved && JSON.stringify({ status: resolved.status, native: resolved.native })}`);
+    assert.ok(rejected instanceof TypeError && message.test(rejected.message), `${label}: ${rejected}`);
+    assert.equal(fetched.length, 0, `${label}: nothing fetched`);
+    assert.equal(w[Symbol.for('hic.installed')], undefined, `${label}: nothing installed`);
   }
-  const w = makeFrame(t);
-  const installed = installWith({ window: w }, fakeServices());
+  // install() agrees on the same rows: it throws a TypeError for each invalid install option
+  for (const opts of [{ maxDprr: 2 }, { mode: 'bogus' }, { document: {} }]) {
+    const w = makeFrame(t);
+    assert.throws(() => installWith({ window: w, ...opts }, fakeServices()), TypeError);
+  }
+});
+
+test('options: a rejected call does not take the window\'s load (a later valid call loads and installs, its native the probe); over an existing install it rejects too', async t => {
+  const { w, load, fetched } = await loadInvalid(t, () => {}, { maxDprr: 2 });
+  const r = await load({ install: { window: w } });
+  t.cleanup(() => r.installed?.uninstall());
+  assert.equal(r.status, 'polyfill', `the valid call after the rejected one: ${r.status} ${r.reason}`);
+  assert.equal(fetched.length, 1);
+  assert.equal(r.native?.kind, 'absent', 'native is the probe of the window');
+  await assert.rejects(load({ install: { window: w, maxDprr: 2 } }), TypeError);
+  assert.equal(await load({ install: { window: w } }), r, 'the settled load is still shared');
+  // an existing install: returned as is, nothing fetched; an invalid option over it is install()'s TypeError (installWith throws it there as well)
+  const own = makeFrame(t);
+  const installed = installWith({ window: own }, fakeServices());
   t.cleanup(() => installed.uninstall());
   let asked = 0;
-  const r = await createLoad({ check() {}, fetch: async () => { asked++; return { install: () => installed }; } })({ install: { window: w } });
-  assert.equal(r.status, 'polyfill');
-  assert.equal(r.installed, installed, 'the window\'s existing HicInstalled');
+  const loadOwn = createLoad({ check() {}, fetch: async () => { asked++; return { install: () => installed }; } });
+  assert.throws(() => installWith({ window: own, maxDprr: 2 }, fakeServices()), TypeError);
+  await assert.rejects(loadOwn({ install: { window: own, maxDprr: 2 } }), TypeError);
+  const existing = await loadOwn({ install: { window: own } });
+  assert.equal(existing.status, 'polyfill');
+  assert.equal(existing.installed, installed, 'the window\'s existing HicInstalled');
   assert.equal(asked, 0, 'nothing fetched');
-  const again = makeFrame(t);
-  const second = installWith({ window: again }, fakeServices());
-  t.cleanup(() => second.uninstall());
-  assert.throws(() => installWith({ window: again, maxDprr: 2 }, fakeServices()), TypeError);
-  const typoAgain = await createLoad({ check() {}, fetch: async () => { asked++; return { install: () => second }; } })({ install: { window: again, maxDprr: 2 } });
-  assert.equal(typoAgain.status, 'error', 'an invalid option over an existing install is install()\'s TypeError too');
-  assert.ok(typoAgain.error instanceof TypeError);
+});
+
+test('native is null only without a window: every result with a window carries the probe (native, refused, polyfill, error)', async t => {
+  const cases = /** @type {Array<[string, (w: any) => void, object, object]>} */ ([
+    ['native', (w) => defineFakeNative(w), {}, {}],
+    ['refused', (w) => asAgent(w, UA.firefox140), {}, {}],
+    ['polyfill', () => {}, {}, {}],
+  ]);
+  for (const [label, setup, opts, loadOpts] of cases) {
+    const { r } = await loadAnswer(t, setup, opts, loadOpts);
+    assert.ok(r.native && typeof r.native.kind === 'string', `${label}: ${JSON.stringify(r.native)}`);
+  }
+  const w = makeFrame(t);
+  const failed = await createLoad({ check() {}, fetch: async () => { throw new TypeError('fetch failed'); } })({ install: { window: w } });
+  assert.equal(failed.status, 'error');
+  assert.equal(failed.native?.kind, 'absent', 'a load error still reports the probe');
+  const none = await createLoad({ check() {}, fetch: async () => { throw new Error('unreachable'); } })({ install: { window: /** @type {any} */ ({}) } });
+  assert.equal(none.status, 'error');
+  assert.equal(none.native, null, 'without a window, native is null');
 });
 
 // ---------------------------------------------------------------------------------------------- the classic fetcher on stand-in bundles

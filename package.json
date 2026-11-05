@@ -38,6 +38,8 @@
     "./src/engines.js",
     "./src/engines-iife.js",
     "./dist/esm/index.js",
+    "./dist/esm/chunks/*.js",
+    "./src/loader-core.js",
     "./src/gpu.js",
     "./src/gpu-iife.js",
     "./src/worker.js",
