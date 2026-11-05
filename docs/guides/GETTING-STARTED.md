@@ -79,7 +79,7 @@ Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 
 ### Loading the polyfill only where it runs
 
-Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (356 KB minified, 121 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (361 KB minified, 123 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
 
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->
@@ -91,7 +91,7 @@ Chrome 157 implements the API, so the core steps aside there, but a page that li
 </script>
 ```
 
-With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the core (and the engines, on Firefox and Safari, unless `engines: false`) become chunks that only the polyfill path fetches. The bundler must keep dynamic imports split: Vite, webpack and rollup do by default, esbuild needs `splitting: true`; without it the core lands in the initial payload (151 KB gzipped instead of 8 KB, [BUNDLES.md](../BUNDLES.md#what-the-loader-costs-and-saves-measured-2026-11-04)). The module loader imports its modules from the package, so of the URL options it takes only `engines: false` and `bridge: false`; `core`, `nonce` and a URL for `engines` or `bridge` belong to the classic loader. An invalid option (a typo in `install` too, or a classic-loader option) rejects with a `TypeError`, as `install()` throws it, and a later valid call still loads; every other outcome resolves. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. The extensions (the frame cap, the effects host) need the core, which the loader does not download there: a page that uses them over a native implementation loads the core's own tag instead. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
+With a bundler: `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'`; the core (and the engines, on Firefox and Safari, unless `engines: false`) become chunks that only the polyfill path fetches. The bundler must keep dynamic imports split: Vite, webpack and rollup do by default, esbuild needs `splitting: true`; without it the core lands in the initial payload (153 KB gzipped instead of 8 KB, [BUNDLES.md](../BUNDLES.md#what-the-loader-costs-and-saves-measured-2026-11-04)). The module loader imports its modules from the package, so of the URL options it takes only `engines: false` and `bridge: false`; `core`, `nonce` and a URL for `engines` or `bridge` belong to the classic loader. An invalid option (a typo in `install` too, or a classic-loader option) rejects with a `TypeError`, as `install()` throws it, and a later valid call still loads; every other outcome resolves. The start is asynchronous: app code that reads the API runs after `load()` settles. On status `native` there is no `HicInstalled` (no `whenPainted`, no report); use the browser's API directly and draw from `paint`. The extensions (the frame cap, the effects host) need the core, which the loader does not download there: a page that uses them over a native implementation loads the core's own tag instead. Options, the result and the CSP it needs: [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult).
 
 ## 4. Adding the effects
 
@@ -108,7 +108,7 @@ Two more classic scripts, after the core: the effects host and a plugin (the wat
 // do NOT call canvas.getContext() first: the host owns the canvas bitmap and its 'webgpu' context
 const host = await HTMLInCanvasEffects.createHost(canvas, form, { interposer: true });
 const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.28 });
-await water.trigger('drop', { point: { x: 120, y: 80 } });   // an action of the plugin: resolves 'calm' once the ripple has died out
+await water.trigger('drop', { point: { x: 120, y: 80 } });   // an action of the plugin: resolves 'calm' once the water is still again
 ```
 
 The source element (`form` here) must have exactly the size of the canvas content box (for example `width` and `height` in CSS on both, `box-sizing: border-box`). The host stretches the source over the whole canvas and maps pointer input back through that stretch, so a smaller or larger source is drawn distorted and clicks land beside what the user sees; `createHost` prints one `console.warn` with both sizes when they differ by more than 1 CSS pixel. The complete page is in [EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md) section 9.
