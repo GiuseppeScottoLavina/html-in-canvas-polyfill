@@ -403,8 +403,9 @@ Tick RUN(now), for each canvas record in reverse tree order:
     must each show its colour on every pixel (rounded corners excepted), and for a scroller that is not opaque, a tile with its content hidden must be one colour (what
     shows through it); otherwise the plan is refused (`refusedBy.cover`). One colour alone passed an overlay of exactly that colour (0.1.0-preview.24); every channel of
     the two lies near opposite ends (249 levels apart at least), so an opaque overlay differs from one of them whatever its colour, and a translucent one passes both
-    only below an alpha of 0.004, about one level over the content. The tiles are side builds like the pages (the second colour: one side build more per plan, held
-    in the plan's surface budget until read), read back in bands of 262,144 pixels, one
+    only below an alpha of 0.004, about one level over the content. The tiles are side builds like the pages (the second colour: one side build more per plan, and one
+    port tile more in the plan's surface budget until it is read; a 400 x 240 list, headless Chrome 156, 6 runs: the first composition 43 ms after the first step at
+    DPR 2 as before, 42-60 ms at DPR 1 against 40-43, at most a frame later), read back in bands of 262,144 pixels, one
     post-frame job each (about 1 ms; a 2116 x 2000 px port read and tested at once took 15 ms). The planner's own steps are unchanged (10,000 rows, a 600 px port: 41-45 ms in
     16-17 steps of at most 3.4 ms, before and after).
     Measured before the fix (headless Chrome 156, a 400 x 240 port): a box with `pointer-events: none`, a 12 px box between the grid's points, a shadow or outline reaching in from below,
