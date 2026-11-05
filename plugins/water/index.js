@@ -70,9 +70,11 @@ export const DROP_DEPTH = 4;
  * impulse rings out as a ring that the wave equation carries outwards: a few separated rings, about 2.5 s. [ms after the impact,
  * radius (share of POND_RADIUS), height (share of POND_DEPTH; negative: a dip)]
  */
-export const POND_RADIUS = 18;
-export const POND_DEPTH = 9;
+export const POND_RADIUS = 22;
+export const POND_DEPTH = 12;
 export const POND_IMPULSES = Object.freeze(Array.from({ length: 4 }, (_, k) => Object.freeze([k * 90, Math.max(0.45, 1 - 0.18 * k), (k % 2 ? 1 : -1) * 0.65 ** k])));
+/** the rain of the demo on the pond: raindrops of this share of a tap's pebble in size, and in depth */
+export const POND_RAIN = Object.freeze([0.65, 0.6]);
 /** the kinds of drop (option `drops`) */
 export const DROP_KINDS = Object.freeze(['pond', 'exact']);
 /** The depth of the drop of the action at `strength` (0.08 to 2), in proportion: a tap's drop at the default 1.2. @param {number} strength */
@@ -405,11 +407,11 @@ export const plugin = Object.freeze({
     }
 
     /** A drop at (x, y) css px of the field, born at `born` ms. @param {number} x @param {number} y @param {number} depth @param {number} [born] */
-    function addDrop(x, y, depth, born = performance.now()) {
+    function addDrop(x, y, depth, born = performance.now(), size = 1) {
       currentField();
       if (dropKind === 'pond') {
         const k = depth / DROP_DEPTH;
-        for (const [dt, r, a] of POND_IMPULSES) impulses.push({ t: born + dt, x, y, r: r * POND_RADIUS, a: a * POND_DEPTH * k });
+        for (const [dt, r, a] of POND_IMPULSES) impulses.push({ t: born + dt * size, x, y, r: r * POND_RADIUS * size, a: a * POND_DEPTH * k });
         impulses.sort((p, q) => p.t - q.t);
       } else drops.push({ x, y, born, depth });
       wake();
@@ -540,7 +542,8 @@ export const plugin = Object.freeze({
       for (let i = 0; i < n && awake; i += 1) {
         while (rain.length && rain[0].t <= simClock) {
           const d = /** @type {RainDrop} */ (rain.shift());
-          addDrop(d.x * f.cssWidth, d.y * f.cssHeight, d.depth, d.t);
+          // on the pond the rain is raindrops, not pebbles: smaller and lighter (POND_RAIN)
+          addDrop(d.x * f.cssWidth, d.y * f.cssHeight, d.depth * (dropKind === 'pond' ? POND_RAIN[1] : 1), d.t, dropKind === 'pond' ? POND_RAIN[0] : 1);
         }
         while (impulses.length && impulses[0].t <= simClock) {
           const p = /** @type {{t: number, x: number, y: number, r: number, a: number}} */ (impulses.shift());
