@@ -136,6 +136,28 @@ export function stamp(f, x, y, radius, amplitude) {
   }
 }
 
+/**
+ * A swell: a broad crater with a raised crown (cos(2.5 pi s) under a smooth window, s = distance / radius), `depth` css px, on the field
+ * of the wave equation, which carries it outwards as one ring that keeps its shape (no dispersion): a large, slow, reproducible
+ * displacement of the page (the action drop with `swell: true`). @param {Field} f
+ * @param {number} x @param {number} y @param {number} radius @param {number} depth
+ */
+export function swell(f, x, y, radius, depth) {
+  const { h, pw, gw, gh, cellX, cellY } = f;
+  const r = Math.max(radius, 6 * Math.max(cellX, cellY));
+  const gx = x / cellX - 0.5, gy = y / cellY - 0.5;
+  const x0 = Math.max(0, Math.floor(gx - r / cellX)), x1 = Math.min(gw - 1, Math.ceil(gx + r / cellX));
+  const y0 = Math.max(0, Math.floor(gy - r / cellY)), y1 = Math.min(gh - 1, Math.ceil(gy + r / cellY));
+  for (let cy = y0; cy <= y1; cy += 1) {
+    const dy = (cy - gy) * cellY;
+    for (let cx = x0; cx <= x1; cx += 1) {
+      const dx = (cx - gx) * cellX;
+      const s2 = (dx * dx + dy * dy) / (r * r);
+      if (s2 < 1) { const w = 1 - s2; h[(cy + PAD) * pw + cx + PAD] -= depth * Math.cos(2.5 * Math.PI * Math.sqrt(s2)) * w * w; }
+    }
+  }
+}
+
 /** Flat and still. @param {Field} f */
 export function clear(f) { f.h.fill(0); f.v.fill(0); f.lap.fill(0); }
 

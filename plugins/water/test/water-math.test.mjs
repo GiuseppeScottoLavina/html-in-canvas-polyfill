@@ -543,6 +543,24 @@ test('the action drop, through the effect handle: a drop at the point at once, o
   still.handle.remove();
 });
 
+test('the action drop with swell: true raises one broad ring on the wake field (no drop source), which travels as one piece; control: without it, a drop source and a flat field', async () => {
+  const w = await handleOf();
+  const t0 = performance.now();
+  w.handle.trigger('drop', { point: { x: 200, y: 150 }, strength: 2, swell: true });
+  w.inst.render(w.frame(t0 + 10));
+  assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1, 'the field holds it');
+  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 0, 'no drop source');
+  const f = w.gpu.textures.at(-1);
+  assert.ok(Math.max(...f.data) > 5, `a crown of more than 5 css px (${Math.max(...f.data).toFixed(2)})`);
+  w.handle.remove();
+  const c = await handleOf();
+  c.handle.trigger('drop', { point: { x: 200, y: 150 }, strength: 2 });
+  c.inst.render(c.frame(t0 + 10));
+  assert.equal(c.gpu.writes.at(-1)[G.ACTIVE], 0, 'control: a drop leaves the field flat');
+  assert.ok(c.gpu.writes.at(-1)[G.DROPS] >= 1);
+  c.handle.remove();
+});
+
 test('the action demo: a short rain (the last drop by 1.7 s), then calm; it resolves \'calm\' within about 4 s (the default intensity) and the instance is at rest; reduced motion resolves at once', async () => {
   const rain = demoRain();
   assert.ok(rain.length >= 20 && rain.at(-1).t <= 1700 && rain.every((d, i) => i === 0 || d.t >= rain[i - 1].t), 'sorted, the last drop by 1.7 s');

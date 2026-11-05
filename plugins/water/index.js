@@ -27,7 +27,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
-import { CAUSTIC_DEPTH_PX, CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
+import { CAUSTIC_DEPTH_PX, CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt, swell } from './sim.js';
 import { DROP_FADE_MS, MAX_DROPS, MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropGrid, dropsSlope, prepareTable } from './drops.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -65,6 +65,9 @@ const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 export const DROP_DEPTH = 4;
 /** The depth of the drop of the action at `strength` (0.08 to 2), in proportion: a tap's drop at the default 1.2. @param {number} strength */
 export const dropDepth = (strength) => (DROP_DEPTH * Math.min(2, Math.max(0.08, strength))) / 1.2;
+/** the swell of the action drop with `swell: true`: a crater with a crown this wide and deep (css px) on the wake field */
+export const SWELL_RADIUS = 24;
+export const SWELL_DEPTH = 10;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (WAKE_DEPTH at WAKE_FAST css px per ms, at most twice that for a flick) */
 const WAKE_RADIUS = 28;
 const WAKE_DEPTH = 3;
@@ -617,7 +620,11 @@ export const plugin = Object.freeze({
         if (!still) {
           const f = currentField();
           const p = at ? toField(at.x, at.y) : { x: f.cssWidth / 2, y: f.cssHeight / 2 };
-          addDrop(p.x, p.y, dropDepth(strength));
+          if (options.swell === true) {
+            // a swell on the wake field: one broad ring, as one piece (SWELL_RADIUS, SWELL_DEPTH at the default strength)
+            swell(f, p.x, p.y, SWELL_RADIUS, (SWELL_DEPTH * Math.min(2, Math.max(0.08, strength))) / 1.2);
+            fieldLive = true; dirty = true; wake();
+          } else addDrop(p.x, p.y, dropDepth(strength));
         }
         return wait();
       },
