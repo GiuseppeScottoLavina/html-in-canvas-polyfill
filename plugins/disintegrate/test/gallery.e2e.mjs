@@ -8,6 +8,20 @@
 import { runTransitionGalleryE2E } from '../../_shared/transition-e2e.mjs';
 import { actionChecks, actionResult, clickAction, clickOn, compareImages, framesDuring, idle, rectOf, shot, sleep } from '../../_shared/gallery-e2e.mjs';
 
+/** open the gallery at `url` in the same page, with the effect-frame counters of openGallery (gallery-e2e.mjs) @param {any} page @param {string} url */
+async function reopen(page, url) {
+  await page.navigate(url);
+  await page.waitForFunction('!!(window.__gallery && window.__gallery.ready)', { timeout: 20000 });
+  await page.evaluate(`(() => {
+    const c = document.getElementById('stage');
+    window.__e2e = { frames: 0, last: performance.now(), errors: [] };
+    c.addEventListener('effectframe', () => { window.__e2e.frames += 1; window.__e2e.last = performance.now(); });
+    c.addEventListener('effecterror', (e) => { window.__e2e.errors.push(String(e.detail && e.detail.error)); });
+    c.scrollIntoView({ block: 'start' });
+  })()`);
+  await idle(page);
+}
+
 /** the live counter of the plugin's controls, on (trusted click on its checkbox) @param {any} page */
 async function counterOn(page) {
   if (!(await page.evaluate(`document.querySelector('#effect-controls .hic-dis-live input').checked`))) await clickOn(page, '#effect-controls .hic-dis-live input');
@@ -97,6 +111,26 @@ await runTransitionGalleryE2E({
       }
     }
     c.check('the form re-forms in its new live state: the text typed meanwhile is drawn in the name field', changedInField > 60, { changedInField });
+    // the first appearance, as a visitor meets it: the gallery plays the demo on selection (this run opened it with &demo=0, so it is
+    // opened again without). A trusted click on the chip, from "Effect off"; 250 ms later the canvas shows the page (the demo's way out has
+    // just begun), not the page without its content (before the fix the demo waited 2.7 s there). The control: that empty page, after 'out'.
+    const url = await page.evaluate('location.href');
+    await reopen(page, url.replace(/[?&]demo=0/, '').replace(/effect=[^&]*/, 'effect=off'));
+    const off = (await shot(page)).img;
+    await page.evaluate('window.scrollTo(0, 0)');
+    await clickOn(page, '#picker button[data-effect="disintegrate"]');
+    await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'start' })`);
+    await sleep(250);
+    const early = (await shot(page)).img;
+    await page.waitForFunction('!!(window.__gallery.demo && window.__gallery.demo.done)', { timeout: 15000 });
+    await idle(page);
+    await clickAction(page, 'out'); await actionResult(page); await idle(page);
+    const empty = (await shot(page)).img;
+    await clickAction(page, 'in'); await actionResult(page); await idle(page);
+    const span = compareImages(off, empty).countOver16, fromEmpty = compareImages(early, empty).countOver16;
+    c.check('first appearance: 250 ms after a trusted click on the chip (with the demo on selection) the canvas shows the page, not the page without its content',
+      span > 3000 && fromEmpty > 0.5 * span, { offVsEmptyPage: span, at250msVsEmptyPage: fromEmpty });
+    await reopen(page, url);
     // the film starts from the form as the page first shows it, so that the way back shows the new (success) state
     await page.evaluate(`(() => { const f = document.getElementById('form-feedback'); f.dataset.state = 'idle'; f.textContent = 'Nothing is sent anywhere.'; document.getElementById('name').value = 'Ada'; })()`);
   },
