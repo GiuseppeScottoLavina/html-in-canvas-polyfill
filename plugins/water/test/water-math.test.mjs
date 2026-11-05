@@ -585,8 +585,10 @@ test('the action drop with swell: true raises one broad ring with a crown on the
   assert.ok(crown > 5, `a crown of more than 5 css px (${crown.toFixed(2)})`);
   w.handle.remove();
   const c = await handleOf();
+  // its own time: created later than t0 (more than 10 ms later on a slow runner), a frame at t0 + 10 would come before its drop (1 failure on Windows)
+  const t1 = performance.now();
   c.handle.trigger('drop', { point: { x: 200, y: 150 }, strength: 2 });
-  c.inst.render(c.frame(t0 + 10));
+  c.inst.render(c.frame(t1 + 10));
   const pebble = Math.max(...c.gpu.textures.at(-1).data);
   assert.ok(pebble < 0.5, `control: a pebble starts as a crater, with no crown (${pebble.toFixed(2)})`);
   c.handle.remove();
