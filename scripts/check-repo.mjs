@@ -167,7 +167,10 @@ if (!docsOnly) {
   // 17085 -> 17110 (2026-11-05, measured 17,106): a sticky element without a z-index is pinned where nothing else of the scroller paints over it, and a flex item's
   // z-index counts (+26: scroll-pages.js zOf, ownLayer, the flex / grid and display: contents boxes, scrollRefusal; the refusal's reason from the planner through
   // capture.js, store.js and scroll-compose.js noPlan)
-  if (total > 17110) problems.push(`G-size: core is ${total} code lines (> 17110)`);
+  // 17110 -> 17250 (2026-11-05, measured 17,248): a :hover rule counts for a drawn source only where it can match, and a finger moves no :hover through an effect
+  // (+142: css-rewrite.js hoverScope and selectorTokens 70, interaction-tracker.js hoverCounts with its token filter, setMappedPress, mappedTarget and the tap outside
+  // 57, interposer.js the finger path 11, css-collector.js the tokens of the bundle 4)
+  if (total > 17250) problems.push(`G-size: core is ${total} code lines (> 17250)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

@@ -259,3 +259,40 @@ test('a finger: a tap focuses and activates the mapped control when it lifts, no
   assert.equal(document.activeElement, s.el('b'), 'a mouse press focuses on pointerdown (control)');
   s.fire('pointerup', 20, 20);
 });
+
+test('a finger hovers like a native one: its press activates the mapped element and hovers nothing, a pan or a drag hovers nothing, a tap hovers the mapped element and it stays after the finger leaves; a mouse hovers at every move (control)', (t) => {
+  const s = setup(t, shiftRight);
+  const touch = { pointerType: 'touch' };
+  const { tracker } = s.rig;
+  // a pan across A and the text field (a scroll, or a lens dragged by its handle)
+  s.fire('pointerdown', 20, 20, touch);
+  assert.deepEqual(tracker.presses, [s.el('b')], 'the press activates B, the element drawn under the finger');
+  for (let x = 30; x <= 150; x += 20) s.fire('pointermove', x, 20 + x / 2, touch);
+  s.fire('pointerup', 150, 95, touch);
+  s.fire('pointerleave', 150, 95, touch);
+  assert.deepEqual(tracker.mapped, [], 'no :hover moved during the press, the pan or after it');
+  // a tap on A: B (drawn there) is hovered, and stays hovered when the finger's pointerleave follows
+  s.fire('pointerdown', 20, 20, touch);
+  s.fire('pointerup', 21, 21, touch);
+  s.fire('pointerleave', 21, 21, touch);
+  assert.deepEqual(tracker.mapped, [s.el('b')], 'the tap hovers B and nothing clears it');
+  // a tap where no element is drawn ends that hover, as a native tap on an empty spot does
+  s.fire('pointerdown', 300, 300, touch);
+  s.fire('pointerup', 300, 300, touch);
+  assert.equal(tracker.mapped.at(-1), null);
+  // control: a mouse hovers what is drawn under it at every move, and leaving the layer ends it
+  s.fire('pointermove', 20, 20);
+  assert.equal(tracker.mapped.at(-1), s.el('b'));
+  s.fire('pointerleave', 20, 20);
+  assert.equal(tracker.mapped.at(-1), null, 'a mouse leaving the layer ends the hover');
+});
+
+test('the interposer asks the tracker again when the tracker dropped a mapped hover itself (a tap outside the canvas): the same element is hovered again', (t) => {
+  const s = setup(t, shiftRight);
+  s.fire('pointermove', 20, 20);
+  s.fire('pointermove', 22, 20);
+  assert.equal(s.rig.tracker.mapped.length, 1, 'the same element is not set twice');
+  s.rig.tracker.current = null;   // the tracker forgot it
+  s.fire('pointermove', 24, 20);
+  assert.deepEqual(s.rig.tracker.mapped, [s.el('b'), s.el('b')]);
+});
