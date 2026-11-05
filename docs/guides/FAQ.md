@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.23`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.24`) unless dated.
 
 ## What is this?
 
@@ -32,7 +32,7 @@ Yes, and this is the main structural difference from native. The children of the
 
 ## Why is the core about 361 KB minified (123 KB gzipped)?
 
-In the current build, 360,645 bytes minified and 122,816 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 361,508 bytes minified and 123,063 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
 Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 361 KB, so they are approximate.
 
@@ -75,7 +75,7 @@ Two caveats:
 
 ## Does Chrome 157 download the polyfill?
 
-With the core's script tag, yes: 360,645 bytes (122,816 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,465 bytes, 6,328 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
+With the core's script tag, yes: 361,508 bytes (123,063 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,465 bytes, 6,328 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 
@@ -134,7 +134,7 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a preview of a proposed standard (`0.1.0-preview.23` on npm; a new preview goes to the `next` tag first and to `latest` once checked). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a preview of a proposed standard (`0.1.0-preview.24` on npm; a new preview goes to the `next` tag first and to `latest` once checked). The API it implements may still change, the two extensions may change between previews, and only the newest preview gets fixes. Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
@@ -143,7 +143,7 @@ What is tested:
 - a mutation suite of 68 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 68 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 69 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 

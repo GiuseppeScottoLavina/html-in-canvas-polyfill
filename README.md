@@ -34,9 +34,9 @@ install(); // synchronous: call it before your code uses the API; throws HicUnsu
 Or from a CDN, with plain script tags placed before your own scripts (no `defer`, `async` or `type="module"`: the polyfill installs while its tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.23/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.24/dist/hic-live-polyfill.iife.min.js"></script>
 <!-- Firefox and Safari: this second bundle draws form controls in those engines' look. Chrome does not need it. -->
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.23/dist/hic-live-engines.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.24/dist/hic-live-engines.iife.min.js"></script>
 ```
 
 To download nothing in a browser that implements the API (Chrome 157), load `dist/hic-live-loader.iife.min.js` instead (6 KB gzipped) and `await HicLiveLoader.load()` before your code uses the API; it fetches the core, and the engines bundle on Firefox and Safari, only where the polyfill runs. With a bundler, `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'` does the same through `import()`, which the bundler must keep split ([GETTING-STARTED](docs/guides/GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs)).
@@ -103,7 +103,7 @@ Short answers to the common questions (size, lag behind the DOM, accessibility, 
 - **Animated images:** an animated GIF, APNG, WebP or AVIF `<img>` plays where the browser has `ImageDecoder` (WebCodecs), in a secure context; Safari 27, which has none, shows its first frame. Animated CSS images (`background-image` and the like) show their first frame everywhere.
 - **Phones and tablets:** verified on a physical Pixel 7 Pro (Android 17, Chrome 156), a physical Huawei Mate 10 Pro (Android 10, Chrome 156) and a physical iPad Pro 11-inch (iPadOS 27.2), and on the Android Emulator and the iOS Simulator (iPhone 17, iOS 26.4). No physical iPhone on iOS 26 or later was run; a physical iPhone on iOS 18 confirmed the clean refusal. Pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it).
-- **Preview.** `0.1.0-preview.23` follows a proposed standard that may still change. The two extensions below may change between previews.
+- **Preview.** `0.1.0-preview.24` follows a proposed standard that may still change. The two extensions below may change between previews.
 
 ## How it works
 
@@ -177,7 +177,7 @@ What each plugin does and how its input mapping works: [plugins/README.md](plugi
 - **Phones:** `npm run test:mobile` drives Mobile Safari in the iOS Simulator or on a physical iPhone or iPad over USB (`--ios-device`) and Chrome in the Android Emulator or on a physical Android phone over USB (`--android-serial`): taps on moved drawables, typing, touch scroll, composed scroll frames against the settled picture (iOS), the virtual keyboard, rotation, the iOS form-control look and the refusal of older browsers, each with a positive control.
 - **Frameworks:** React 19 (including hydration), Vue 3, Svelte 5 and Lit 3 apps ([docs/guides/FRAMEWORKS.md](docs/guides/FRAMEWORKS.md)).
 
-The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless on Linux and on Windows, and the browser gates (11 of the 16, with their controls), 34 of the 68 mutants, the example, site and framework suites and Firefox on GitHub-hosted macOS runners; what needs a 120 Hz display, a fast machine for throughput checks, continuous WebGPU frames, Safari 27, Chrome Canary's oracle for WPT or the phone simulators runs locally on macOS (`npm run test:local`; [CONTRIBUTING.md](CONTRIBUTING.md#where-the-suites-run)).
+The gate list, oracles and thresholds are in [docs/TEST-PLAN.md](docs/TEST-PLAN.md). CI runs everything that works headless on Linux and on Windows, and the browser gates (11 of the 16, with their controls), 34 of the 69 mutants, the example, site and framework suites and Firefox on GitHub-hosted macOS runners; what needs a 120 Hz display, a fast machine for throughput checks, continuous WebGPU frames, Safari 27, Chrome Canary's oracle for WPT or the phone simulators runs locally on macOS (`npm run test:local`; [CONTRIBUTING.md](CONTRIBUTING.md#where-the-suites-run)).
 
 ## Documentation
 
