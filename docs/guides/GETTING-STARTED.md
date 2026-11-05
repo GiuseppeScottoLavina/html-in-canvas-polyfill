@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.24`, a preview on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new preview is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `0.1.0-preview.25`, a preview on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new preview is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 Live demo: [giuseppescottolavina.github.io/html-in-canvas-polyfill](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/) · Try it in the browser: [playground](https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/playground/)
 
