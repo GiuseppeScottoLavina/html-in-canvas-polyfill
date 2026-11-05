@@ -82,9 +82,10 @@ function clamp01(v, fallback) {
  * @param {Float32Array} state
  * @param {InputPoint} point  presented point, canvas css px, plus the presented size
  * @param {Float32Array|null} [table]  the drop table (drops.js; its rows never change once computed); none: no drop is evaluated
+ * @param {Map<number, number[]>} [cache]  the drop texels already evaluated for this very state
  * @returns {{x: number, y: number}}
  */
-export function mapWaterPoint(state, point, table = null) {
+export function mapWaterPoint(state, point, table = null, cache = undefined) {
   const width = Math.max(1, point.width);
   const height = Math.max(1, point.height);
   const u = point.x / width;
@@ -98,7 +99,7 @@ export function mapWaterPoint(state, point, table = null) {
     dy = state[G.K + 1] * s.hy;
   }
   if (state[G.DROPS] > 0.5 && table) {
-    const d = dropsSlope(table, state, SOURCES_OFFSET, state[G.DROPS], u * cssW, v * cssH, cssW, cssH);
+    const d = dropsSlope(table, state, SOURCES_OFFSET, state[G.DROPS], u * cssW, v * cssH, cssW, cssH, cache);
     dx += state[G.REFRACT] * d.sx;
     dy += state[G.REFRACT] * d.sy;
   }
@@ -300,6 +301,9 @@ export const plugin = Object.freeze({
     /** mapper states: the uniform block followed by the field (reallocated with the field) @type {Float32Array[]} */
     let mapperStates = [];
     /** @type {any[]} */ let mappers = [];
+    /** the drop texels a mapper has evaluated, per mapper state (a slot's is cleared when the slot is rewritten; a gesture snapshot gets its own) */
+    let texelCaches = new WeakMap();
+    const texelCache = (/** @type {Float32Array} */ state) => { let c = texelCaches.get(state); if (!c) { c = new Map(); texelCaches.set(state, c); } return c; };
     let mapperSlot = 0;
     /** @type {HTMLInputElement|null} */ let uiRange = null;
     /** @type {HTMLOutputElement|null} */ let uiOutput = null;
@@ -317,7 +321,7 @@ export const plugin = Object.freeze({
       fieldLive = false;
       bindGroups = new WeakMap();
       mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_LENGTH + f.pw * f.ph));
-      mappers = mapperStates.map((s) => stateMapper(s, (state, point) => mapWaterPoint(state, point, table.data)));
+      mappers = mapperStates.map((s) => stateMapper(s, (state, point) => mapWaterPoint(state, point, table.data, texelCache(state))));
       dirty = true;
       return f;
     }
@@ -448,8 +452,13 @@ export const plugin = Object.freeze({
     /** Advance the simulation to `now` (ms): the due drops of the rain, fixed steps, and the check for a flat surface. @param {Field} f @param {number} now */
     function advance(f, now) {
       let n = Math.floor((now - simClock) / STEP_MS);
-      // a long gap (off-screen, a frame cap of 1) is skipped, not caught up
-      if (n > MAX_STEPS_PER_FRAME) { simClock = now - MAX_STEPS_PER_FRAME * STEP_MS; n = MAX_STEPS_PER_FRAME; }
+      // a long gap (off-screen, a frame cap of 1) is skipped, not caught up: the drops and the rain skip it too (their clock is the simulation's)
+      if (n > MAX_STEPS_PER_FRAME) {
+        const skipped = now - MAX_STEPS_PER_FRAME * STEP_MS - simClock;
+        simClock += skipped; n = MAX_STEPS_PER_FRAME;
+        for (const d of drops) d.born += skipped;
+        for (const d of rain) d.t += skipped;
+      }
       for (let i = 0; i < n && awake; i += 1) {
         while (rain.length && rain[0].t <= simClock) {
           const d = /** @type {RainDrop} */ (rain.shift());
@@ -625,6 +634,7 @@ export const plugin = Object.freeze({
       captureInputMapper() {
         mapperSlot = (mapperSlot + 1) % MAPPER_SLOTS;
         const s = mapperStates[mapperSlot];
+        texelCaches.get(s)?.clear();
         s.set(globals);
         if (globals[G.ACTIVE] > 0.5 && field) s.set(field.h, UNIFORM_LENGTH);
         return mappers[mapperSlot];

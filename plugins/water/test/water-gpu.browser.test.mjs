@@ -91,7 +91,7 @@ gpuTest('the light: on a uniform page drops make caustics and reflections (the b
   assert.ok(dark.hi - dark.lo < 12, `without the light only the absorption varies a little: ${dark.lo}..${dark.hi}`);
 });
 
-gpuTest('the action drop through the effect handle: a drop moves pixels around its point, the frame agrees with its mapper, it resolves calm', async (t) => {
+gpuTest('the action drop through the effect handle: a drop moves pixels centred on its point, the frame agrees with its mapper, it resolves calm', async (t) => {
   const { rig, handle, mappers } = await presentOnce(t, plugin, { intensity: 1 }, { scene });
   let now = performance.now() + 100;
   const tick = (/** @type {number} */ n = 1) => { for (let i = 0; i < n; i += 1) { rig.tick(now); now += 50; } };
@@ -107,11 +107,20 @@ gpuTest('the action drop through the effect handle: a drop moves pixels around i
   tick(5);
   const img = rig.snap();
   const moved = changedPixels(img, quietLater);
-  let near = 0;
-  for (let y = 100; y < 220; y += 1) for (let x = 180; x < 300; x += 1) { const k = (y * img.width + x) * 4; if (Math.abs(img.data[k] - quietLater.data[k]) > 16) near += 1; }
-  console.error(`water action: idle drift ${idle} px in 250 ms, the drop ${moved} px (${near} within 60 px of its point)`);
+  // a drop rings out as a train of rings around its point: the displacement of the frame (its mapper, which the same test holds to the
+  // pixels below) is centred on it. The point is the centre of the canvas, so that the reflections in the four walls are symmetric too
+  // (the Node tests check that a drop falls at any point it is given)
+  const m = /** @type {any} */ (mappers.at(-1));
+  let wsum = 0, sx = 0, sy = 0;
+  for (let y = 2; y < 320; y += 4) for (let x = 2; x < 480; x += 4) {
+    if (Math.hypot(x - 240, y - 160) > 150) continue;
+    const q = m({ x, y, width: 480, height: 320 }), d = Math.hypot(q.x - x, q.y - y);
+    wsum += d; sx += d * x; sy += d * y;
+  }
+  const cx = sx / Math.max(1e-9, wsum), cy = sy / Math.max(1e-9, wsum);
+  console.error(`water action: idle drift ${idle} px in 250 ms, the drop ${moved} px, its displacement centred at (${cx.toFixed(1)}, ${cy.toFixed(1)})`);
   assert.equal(idle, 0, 'nothing moves at rest');
-  assert.ok(moved > 500 && near > 60, `the drop moved pixels: ${moved}, near its point ${near}`);
+  assert.ok(moved > 500 && wsum > 100 && Math.hypot(cx - 240, cy - 160) < 4, `the drop moved pixels: ${moved}, displaced around (${cx.toFixed(1)}, ${cy.toFixed(1)}), its point (240, 160)`);
   const a = agreement(img, /** @type {any} */ (mappers.at(-1)), scene);
   assert.ok(a.wrong <= 5, `the frame of the drop disagrees with its mapper on ${a.wrong} px`);
   for (let i = 0; i < 120 && state === null; i += 1) { tick(); await later(); }
@@ -127,4 +136,4 @@ gpuTest('the action demo: rain changes the picture, every checked frame agrees w
   assert.ok(r.maxChanged > 1500, `it rains: ${r.maxChanged} px changed`);
   assert.ok(r.worst && r.worst.wrong <= 5, `input follows the pixels while it rains: ${r.worst?.wrong} px disagree`);
   assert.ok(changedPixels(r.last, r.first) <= 2, 'it ends at rest: the last frame is the still picture');
-});
+}, { timeout: 20000 });   // about 150 frames on the frame clock, and the mapper of every 6th judged on 150,000 pixels (each through up to 96 drop sources)

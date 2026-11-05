@@ -270,6 +270,23 @@ test('a pointerdown makes a drop: continuous, a drop source in the uniform block
   assert.equal(w.gpu.writes.length, writes + 1);
 });
 
+test('a long gap between frames (a frame cap of 1, a pause) is skipped by the drops as by the field: a drop is shown at most 167 ms older per frame; the rain skips it too', async () => {
+  const w = await createWater({ intensity: 1 });
+  const t0 = performance.now();
+  w.pointer('pointerdown', 200, 150);
+  w.instance.render(w.frame(t0 + 1000));
+  const row = w.gpu.writes.at(-1)[SOURCES_OFFSET + 2];
+  assert.ok(row > 0.15 * ROWS_PER_S && row <= (1000 / 6 / 1000) * ROWS_PER_S + 1.5, `after a 1 s gap the drop is ${((row / ROWS_PER_S) * 1000).toFixed(0)} ms old (at most 167 ms of water time per frame)`);
+  w.instance.render(w.frame(t0 + 1000 + 1000 / 120));
+  assert.ok(Math.abs(w.gpu.writes.at(-1)[SOURCES_OFFSET + 2] - row - 1) < 0.05, 'then it ages one row per frame of 120 Hz');
+  // the rain: the drops due within a skipped gap fall later, one by one, not all at once
+  const r = await createWater({ intensity: 1 });
+  const t1 = performance.now();
+  r.instance.runAction('demo', {}, { reducedMotion: false });
+  r.instance.render(r.frame(t1 + 1200));
+  assert.ok(r.gpu.writes.at(-1)[G.DROPS] <= 6, `after a 1.2 s gap only the rain of the first 167 ms has fallen (${r.gpu.writes.at(-1)[G.DROPS]} sources)`);
+});
+
 test('the mapper evaluates the very uniform block, field and drop table that were submitted for the frame', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();

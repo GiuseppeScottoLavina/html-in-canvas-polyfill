@@ -263,8 +263,10 @@ export function dropsAt(data, state, offset, count, x, y) {
   for (let s = 0; s < count; s += 1) {
     const o = offset + s * SOURCE_FLOATS;
     const dx = x - state[o], dy = y - state[o + 1];
-    const r = Math.sqrt(dx * dx + dy * dy);
-    if (r < state[o + 4] || r > state[o + 5]) continue;
+    const d2 = dx * dx + dy * dy, inner = state[o + 4], outer = state[o + 5];
+    if (d2 > outer * outer || d2 < inner * inner) continue;
+    const r = Math.sqrt(d2);
+    if (r < inner || r > outer) continue;
     profileAt(data, r, state[o + 2], P);
     const amp = state[o + 3];
     const nx = r > 1e-4 ? dx / r : 0, ny = r > 1e-4 ? dy / r : 0;
@@ -293,16 +295,20 @@ const S00 = [0, 0], S10 = [0, 0], S01 = [0, 0], S11 = [0, 0];
  * half floats as the texture stores them, interpolated bilinearly (clamped to the edge texels) as the GPU's sampler does.
  * @param {Float32Array} data @param {ArrayLike<number>} state @param {number} offset @param {number} count
  * @param {number} x @param {number} y @param {number} cssW @param {number} cssH
+ * @param {Map<number, number[]>} [cache]  texels already evaluated for this very state (a mapper maps many points of one frame)
  */
-export function dropsSlope(data, state, offset, count, x, y, cssW, cssH) {
+export function dropsSlope(data, state, offset, count, x, y, cssW, cssH, cache) {
   const g = dropGrid(cssW, cssH);
   const sx = cssW / g.w, sy = cssH / g.h;
   const tx = Math.min(g.w - 1, Math.max(0, x / sx - 0.5)), ty = Math.min(g.h - 1, Math.max(0, y / sy - 0.5));
   const i0 = Math.floor(tx), j0 = Math.floor(ty), i1 = Math.min(g.w - 1, i0 + 1), j1 = Math.min(g.h - 1, j0 + 1);
   const fx = tx - i0, fy = ty - j0;
   const at = (/** @type {number} */ i, /** @type {number} */ j, /** @type {number[]} */ out) => {
+    const known = cache?.get(j * g.w + i);
+    if (known) { out[0] = known[0]; out[1] = known[1]; return; }
     const d = dropsAt(data, state, offset, count, (i + 0.5) * sx, (j + 0.5) * sy);
     out[0] = fromHalf(toHalf(d.sx)); out[1] = fromHalf(toHalf(d.sy));
+    cache?.set(j * g.w + i, [out[0], out[1]]);
   };
   at(i0, j0, S00); at(i1, j0, S10); at(i0, j1, S01); at(i1, j1, S11);
   return {
