@@ -90,7 +90,7 @@ The plugin is `spatial`. Its mapper is one of two constant functions, chosen by 
 
 ## Touch
 
-The plugin has no handle to grab and claims no gesture: its `pointerdown` and `keydown` listeners (the demo's take-over) are passive, so on a phone or a tablet a finger keeps scrolling the page and the form keeps its own input.
+The plugin has no handle to grab and claims no gesture: it listens to `pointerdown` (passively) and `keydown` only to end the demo, and prevents neither, so on a phone or a tablet a finger keeps scrolling the page and the form keeps its own input.
 
 ## Reduced motion
 

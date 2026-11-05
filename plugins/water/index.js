@@ -112,7 +112,7 @@ function random(seed) {
 }
 
 /**
- * The rain of the action demo: a first large drop, then a shower that thins out; the last drop falls at 1.9 s. Deterministic. PURE.
+ * The rain of the action demo: a first large drop, then a shower that thins out; the last drop falls at 1.4 s. Deterministic. PURE.
  * @returns {RainDrop[]}
  */
 export function demoRain() {

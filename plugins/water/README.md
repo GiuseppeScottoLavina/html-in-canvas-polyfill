@@ -82,7 +82,7 @@ With `prefers-reduced-motion: reduce` (read when the plugin is added, and by the
 - The wave equation has no dispersion of its own: the trains of ripples come from the crown of each drop, not from capillary physics.
 - The environment that the water reflects is fixed (a sky, a window light up and to the left, a sun up and to the right); it is not the page's surroundings.
 - A resize to another grid starts with a flat surface (a resize by a fraction of a cell keeps the ripples).
-- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)).
+- WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); the native suite (`npm run test:native-effects`) runs it.
 
 ## Files and tests
 
