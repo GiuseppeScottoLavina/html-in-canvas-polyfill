@@ -7,12 +7,13 @@
  * contact is its gesture). The snapshot stays the authority: a tile always lands when the scrolling stops.
  *
  * Validity, per scroller: damage that does not reach into the scroller's content box (a counter elsewhere in the drawable) leaves its pages as they are; damage
- * inside the content box (a :hover row, a row updated by script) marks that part of every page captured before it DIRTY; damage that crosses the scroller's edge,
- * has no rect, or touches a pinned element drops the cache. A dirty part is never composed: the step falls back to the plain path, whose tile repairs the pages
- * (its pixels are copied into them), and a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is checked for an obstruction (an
- * element outside the scroller over the port, which a page must not carry) before the next composition, and a pinned element the damage reaches against the pin
- * requirements (a header that turned translucent). Before its first composition the port is checked in pixels (ScrollPlan.cover, vet): rendered without the scroller's
- * content, nothing but the scroller's background may show there. Everything the plan cannot vouch for keeps the plain path.
+ * inside the content box (a :hover row, a row updated by script) marks that part of every page captured before it DIRTY, and a pinned element it reaches is rendered
+ * again; damage that has no rect or covers the whole scroller (on Gecko, any damage inside the content) drops the cache. A dirty part is never composed: the step
+ * falls back to the plain path, whose tile repairs the pages (its pixels are copied into them), and a page that stays dirty where it is needed is rebuilt. Damage
+ * inside the visible port is checked for an obstruction (an element outside the scroller over the port, which a page must not carry) before the next composition,
+ * and a pinned element the damage reaches against the pin requirements (a header that turned translucent). Before its first composition the port is checked in
+ * pixels (ScrollPlan.cover, vet): rendered without the scroller's content, nothing but the scroller's background may show there. Everything the plan cannot vouch
+ * for keeps the plain path.
  * Module: snapshot-store (src/snapshot/store/*).
  */
 
