@@ -392,7 +392,10 @@ Tick RUN(now), for each canvas record in reverse tree order:
     elements, grown by the offset change since its build, and rounded corners excluded); a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is
     hit-tested (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages. Pages and tiles count toward `maxTotalSurfaceBytes` (ADR-B): a scroller is planned only when two pages and its tiles fit the room the retained surfaces leave, a page beyond that room replaces a farther one instead of being added (at most four), and a drawable surface that needs the room drops the caches served least recently, only until it fits (a promised step of a dropped cache becomes scroll damage).
   - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1, only square scrollers and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row
-    where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. WebKit lays it out at css scale
+    where the snapshot image puts them. Chromium lays the image out at device scale (`zoom`): edges and scroll offsets fall on surface pixels. The store snaps an edge as
+    the engine does, on its 1/64 px layout grid and then to the nearest pixel, a half up (`snapPx`): a live rect reads back in single precision, and a 400.4 css px list
+    column at DPR 1.25 ended at 549.49999 surface px where the engine snaps 549.5 to 550 (each composed frame left the last port column at an older offset: 26-27 pixels,
+    up to 21 levels). WebKit lays it out at css scale
     and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
     rendered at the nearest whole css px (a page asked at 133.333 shows 133; `scrollTop = 133.9` on a live WebKit scroller reads 133), then scaled. A WebKit plan carries
     `grid: 1` and the store snaps to it (`snapPx`, `rowOf`); without it the composed frames were one device pixel lower than the tile at DPR 3 and the port one device row

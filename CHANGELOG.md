@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Scroll compositor on Chromium at a fractional device pixel ratio: a scrollport whose edge falls on a half device pixel is composed to that edge. The live rect reads back in single precision, a hair below the half (a 400.4 css px list column at DPR 1.25 ended at 549.49999 surface px, where the engine has 549.5 and draws to 550), so every page and composed frame was one device column narrower than the settled picture and that column kept older pixels (26-27 pixels per composed frame, up to 21 levels). Edges are now put on the engine's 1/64 px layout grid before they are rounded. Composed frames against the settled tile at the same offset, headless Chrome at DPR 1.25: 0 of 26 pixel-equal before, 26 of 26 after; unchanged at DPR 1, 1.5 and 2. The core bundle grows by 6 bytes minified (18 gzipped).
+
 ## [0.1.0-preview.22] - 2026-11-04
 
 On Chrome 157, where the browser implements the API, a page can now download nothing but a 6 KB loader instead of the whole polyfill. On Safari, scrolling a list while a field shows its caret is back to full speed (measured on an iPad: 94 to 118 canvas updates a second). A scroller planned in steps no longer composes a box that changed while it was being planned at its old place.
