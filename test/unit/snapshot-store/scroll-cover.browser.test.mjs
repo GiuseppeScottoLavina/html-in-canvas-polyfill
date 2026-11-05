@@ -6,6 +6,7 @@
 //     before the fix). The plan is refused (refusedBy.cover); controls: no box, a hidden one, a transparent one.
 //   - Such a box starts to paint after the plan (a background, a shadow): the damage is checked against the elements outside the list, and the step falls back.
 //     Control: a row of the list changes, and the step is still composed.
+//   (A box of a cover colour and boxes of opacity 0: scroll-cover-faded.browser.test.mjs, this file is near the runner's per-file limit.)
 //   - The sticky header turns translucent after the plan (12,000 pixels wrong before the fix, at most 128 levels): the plan is stale; controls: a header that stays
 //     opaque (its text changes) is composed, one translucent from the start is refused.
 import { test, assert } from '/test/unit/lib/t.js';

@@ -12,7 +12,7 @@ DOM logic: `test/unit/<module>/*.browser.test.mjs` (and `plugins/**/*.browser.te
 | `node test/unit/run.mjs --filter <text or /regex/>` | tests whose `"<file> > <test name>"` matches (case-insensitive) |
 | `node test/unit/run.mjs path/to/x.browser.test.mjs` | explicit files |
 | `--headed` | visible window instead of headless (only for debugging; never for perf claims) |
-| `--timeout <ms>` | default per-test timeout (5000); per test: `test(name, fn, { timeout })`. A page that does not answer the runner for that long is reported as hung; a shorter stall recovers and is printed as a note |
+| `--timeout <ms>` | default per-test timeout (5000); per test: `test(name, fn, { timeout })`. A page that does not answer the runner for that long is reported as hung; a shorter stall recovers and is printed as a note. A HUNG report names the test and its phase (body, cleanup, the task after it; known from a CDP binding even when the page never answers again), says whether the browser process answered, whether the page answered again within 10 s (a stall) or not (it never yields), and lists the main-thread tasks of a second or more the page reported; a test that had not finished is printed `RUN`, never `ok`. After a hung file Chrome is started again, so no later file shares a stuck renderer |
 | `--file-timeout <ms>` | whole-file limit (60000), catches a main thread stuck in a sync loop |
 | `--chrome stable\|canary\|<path>`, `--list`, `--quiet` | |
 | `npm run test:unit:selftest` | the runner's own tests plus the expect-fail proof |
@@ -37,6 +37,6 @@ substring or error class), `fixture(html, style?)`, `frames(n)`, `microtasks()`,
 
 ## Expect-fail selftest
 `--expect-fail` runs `*.expect-fail.mjs` files instead and exits 0 only if the runner reports each as a problem. The file-name prefix
-states the expected detection: `fail-`, `timeout-`, `pageerror-`, `loaderror-`, `hung-`. These files are never picked up by the normal run.
+states the expected detection: `fail-`, `timeout-`, `pageerror-`, `loaderror-`, `hung-` (hung, the test named, the page never answering again), `stall-` (hung, the test named, the page answering again with the long task of that test). These files are never picked up by the normal run.
 
 Chrome: found per platform (`--chrome` or `HIC_CHROME_PATH` for another executable), own PID only, throwaway profile under `.profiles/` (the OS temp directory on Windows), removed on exit, unique debugging port, server on 127.0.0.1 with an ephemeral port.

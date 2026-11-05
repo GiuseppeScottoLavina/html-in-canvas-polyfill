@@ -21,7 +21,9 @@
 //   covers   case covers (fixture scroll-covers.html): a composed step equals the settled canvas where a box with pointer-events: none paints over the list (from
 //            the start, or from a change after the plan) and where its sticky header turns translucent after the plan (scroll-compose.js vet, pinnable;
 //            scroll-pages.js quietOutside); controls: nothing over the list, a row that changes, a header that stays opaque are composed. A sticky header without
-//            a z-index is composed, and not under a row painted above it (position: relative, opacity 0.9).
+//            a z-index is composed, and not under a row painted above it (position: relative, opacity 0.9). A box of exactly a cover colour (opaque, at alpha 0.5,
+//            over a rounded list) is not composed; a box of opacity 0 (its own or a wrapper's) over a row that changes leaves the step composed, and is not
+//            composed once it turns visible (opacity 1, 0.02). `--covers=<mode,...>` runs some modes only.
 // Positive control (sabotage stale + nosync + nocompose + halfpaint): only the first draw reaches the canvas, the live scroller is never synchronised, every
 // scroller under the pointer gets an empty position:fixed child (no plan for it), and every second paint event is dropped: every class must go red. With the
 // dropped paints every cadence check is red in every case (paint share 0.49-0.51, movement 0.67-0.68; 6 of 6 runs at DPR 2 and 1.25, Chrome 155, 2026-10-29).
@@ -300,18 +302,31 @@ runGate('G-scroll-cadence', async (ctx) => {
   // 104,000 pixels wrong) and the header's opaque tile was drawn over pages without it (12,000 wrong, up to 128 levels; headless Chrome 156, 2026-11-05). Controls:
   // nothing over the list, a row of the list that changes, a header that stays opaque: composed, and equal to the settled canvas. A sticky header without a z-index
   // is composed where nothing else of the list paints in its layer, and refused (refusedBy.sticky) under a first row of position: relative or of opacity 0.9, which
-  // the engine paints over it (scroll-pages.js ownLayer), and made stale when that first row gets opacity 0.9 after the plan (ScrollPlan.unlayered)
+  // the engine paints over it (scroll-pages.js ownLayer), and made stale when that first row gets opacity 0.9 after the plan (ScrollPlan.unlayered).
+  // The cover check in two colours (scroll-pages.js COVERS): a box of exactly the one colour of 0.1.0-preview.24, rgb(1, 254, 3), passed it, and the first composed
+  // step carried the box along (16,061 of 104,000 pixels wrong, up to 254 levels; at alpha 0.5 16,059, up to 127; over a rounded list 16,109; headless Chrome 156,
+  // 2026-11-05). A box of opacity 0 over the port made every change of a row under it an obstruction, which dropped a valid cache (0 steps composed instead of 1;
+  // ScrollPlan.clear, scroll-pages.js faded); its change to opacity 1 or 0.02, on itself or a wrapper, must still drop it. A rounded list's corner squares are
+  // compared apart (arcBad, arcMax: the compositor's clip antialiases the arc, 48 pixels up to 80 levels at DPR 1, as before the fix)
   if (!only || only.includes('covers')) {
-    for (const [mode, composes] of /** @type {Array<[string, boolean]>} */ ([['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false], ['head-auto', true], ['head-auto-row', false], ['head-auto-layer', false], ['head-auto-late', false]])) {
+    // composes: true = the step must be composed; false = it must equal the settled canvas; 0 = also not composed (a composition could not be exact, or its error
+    // is under the pixel tolerance: opacity 0.02)
+    /** @type {Array<[string, boolean|0]>} */
+    const modes = [['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false], ['head-auto', true], ['head-auto-row', false],
+      ['head-auto-layer', false], ['head-auto-late', false], ['sentinel', 0], ['sentinel-alpha', 0], ['sentinel-near', 0], ['sentinel-second', 0], ['round', true],
+      ['sentinel-round', 0], ['hidden-row', true], ['hidden-parent-row', true], ['hidden-shown', 0], ['hidden-faint', 0], ['hidden-parent-shown', 0]];
+    const pick = process.argv.find((a) => a.startsWith('--covers='))?.slice(9).split(',');
+    for (const [mode, composes] of modes.filter(([m]) => !pick || pick.includes(m))) {
       const u = new URL('/test/gates/fixtures/scroll-covers.html', ctx.srv.url);
       u.searchParams.set('bundle', ctx.bundle);
       await page.navigate(u.href);
       await page.waitForFunction('window.__ready', { timeout: 15000 });
       const r = await page.evaluate(`window.run(${JSON.stringify(mode)})`, { timeout: 30000 });
-      const n = { composed: r.composed, bad: r.bad, max: r.max, nonWhite: r.nonWhite, refusedBy: r.after.refusedBy, stale: r.after.stale, obstructed: r.after.obstructed };
+      const n = { composed: r.composed, bad: r.bad, max: r.max, ...(r.arcMax ? { arcBad: r.arcBad, arcMax: r.arcMax } : {}), nonWhite: r.nonWhite, refusedBy: r.after.refusedBy, stale: r.after.stale, obstructed: r.after.obstructed };
       numbers[`covers-${mode}`] = n;
-      ctx.check(`covers ${mode}: the canvas paint after the scroll step equals the settled canvas (no pixel more than 16 levels off)`, r.bad === 0 && r.nonWhite > 1000, n, 'pixel');
+      ctx.check(`covers ${mode}: the canvas paint after the scroll step equals the settled canvas (no pixel more than 16 levels off${mode.includes('round') ? ', outside the rounded corners' : ''})`, r.bad === 0 && r.nonWhite > 1000, n, 'pixel');
       if (composes) ctx.check(`covers ${mode}: the step was composed (nothing paints over the list but the list)`, r.composed === 1, n, 'compose');
+      if (composes === 0) ctx.check(`covers ${mode}: the step was not composed (something outside the list paints over its port)`, r.composed === 0, n, 'compose');
     }
   }
   const mean = shares.reduce((a, b) => a + b, 0) / Math.max(1, shares.length);

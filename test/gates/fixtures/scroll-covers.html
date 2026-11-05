@@ -14,6 +14,17 @@
   //   head-auto-row a sticky header without a z-index and a first row of position: relative, which the engine paints over it where it scrolls under: not composed
   //   head-auto-layer  the same with a first row of opacity 0.9 (a stacking context of its own, painted with the header's layer): not composed
   //   head-auto-late   a sticky header without a z-index whose first row gets opacity 0.9 after the plan (a :hover transition, say): the plan is stale, not composed
+  //   sentinel      the box has the background of the cover check's first colour, rgb(1, 254, 3): not composed (scroll-compose.js vet, the second colour)
+  //   sentinel-alpha   the same colour at alpha 0.5: not composed
+  //   sentinel-near    a colour one level off, rgb(2, 254, 3): not composed
+  //   sentinel-second  the cover check's second colour, rgb(254, 1, 252): not composed
+  //   round         (control) the list with rounded corners, nothing over it: composed
+  //   sentinel-round   the rounded list under a box of the first cover colour: not composed
+  //   hidden-row    (control) the opaque box over the port has opacity: 0 (it paints nothing), a row under it changes after the plan: composed
+  //   hidden-parent-row  (control) the same with opacity: 0 on a wrapper of the box (its effective opacity): composed
+  //   hidden-shown  the box of opacity: 0 turns opacity: 1 after the plan: not composed
+  //   hidden-faint  the box of opacity: 0 turns opacity: 0.02 after the plan (5 levels, under the pixel tolerance): not composed
+  //   hidden-parent-shown  the wrapper of opacity: 0 turns opacity: 1 after the plan: not composed
   var q = new URLSearchParams(location.search);
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '" data-hic-manual></scr' + 'ipt>');
 </script>
@@ -26,6 +37,8 @@
   .row:nth-child(2n) { background: rgb(0, 255, 0); }
   .row:nth-child(2n+1) { background: rgb(0, 0, 255); }
   .box { position: absolute; left: 0; top: 60px; width: 400px; height: 30px; z-index: 5; pointer-events: none; background: rgb(255, 0, 255); }
+  .wrap { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; }
+  .list.round { border-radius: 12px; }
   .head { position: sticky; top: 0; z-index: 2; height: 30px; background: rgb(255, 0, 255); color: black; box-sizing: border-box; }
 </style></head>
 <body>
@@ -42,13 +55,25 @@
     'head-auto-row': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; d.querySelector('.row').style.position = 'relative'; } },
     'head-auto-layer': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; d.querySelector('.row').style.opacity = '0.9'; } },
     'head-auto-late': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; }, after: (d) => { d.querySelector('.row').style.opacity = '0.9'; } },
+    sentinel: { box: 'background:rgb(1, 254, 3)' },
+    'sentinel-alpha': { box: 'background:rgba(1, 254, 3, 0.5)' },
+    'sentinel-near': { box: 'background:rgb(2, 254, 3)' },
+    'sentinel-second': { box: 'background:rgb(254, 1, 252)' },
+    round: { round: true },
+    'sentinel-round': { round: true, box: 'background:rgb(1, 254, 3)' },
+    'hidden-row': { box: 'opacity:0', after: (d) => { d.querySelectorAll('.row')[2].style.background = 'rgb(255, 128, 0)'; } },
+    'hidden-parent-row': { box: '', wrap: true, after: (d) => { d.querySelectorAll('.row')[2].style.background = 'rgb(255, 128, 0)'; } },
+    'hidden-shown': { box: 'opacity:0', after: (d) => { d.querySelector('.box').style.opacity = '1'; } },
+    'hidden-faint': { box: 'opacity:0', after: (d) => { d.querySelector('.box').style.opacity = '0.02'; } },
+    'hidden-parent-shown': { box: '', wrap: true, after: (d) => { d.querySelector('.wrap').style.opacity = '1'; } },
   };
   window.run = async (mode) => {
     const m = MODES[mode];
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), d = document.querySelector('.d'), list = document.querySelector('.list');
     list.innerHTML = (m.head ? '<div class="head">HEADER</div>' : '') + Array.from({ length: 120 }, (_, i) => '<div class="row">row ' + i + '</div>').join('');
-    if (m.box !== undefined) d.insertAdjacentHTML('beforeend', '<div class="box" style="' + m.box + '"></div>');
+    if (m.round) list.classList.add('round');
+    if (m.box !== undefined) d.insertAdjacentHTML('beforeend', (m.wrap ? '<div class="wrap">' : '') + '<div class="box" style="' + m.box + '"></div>' + (m.wrap ? '</div>' : ''));
     m.before?.(d);
     const installed = HicLivePolyfill.install({ maxDpr: 1 });
     canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(d, 0, 0); };
@@ -57,7 +82,7 @@
     const scroll = () => JSON.parse(JSON.stringify(installed.report().canvases[0].stats.snapshot.scroll));
     try {
       // the elements a mode changes are seen changed once first (the first change of an element damages the whole drawable, which plans the list again)
-      for (const el of [...d.querySelectorAll('.head, .box, .row:nth-child(4)'), d.querySelector('.row')]) if (el) el.dataset.seen = '1';
+      for (const el of [...d.querySelectorAll('.head, .box, .wrap, .row:nth-child(3), .row:nth-child(4)'), d.querySelector('.row')]) if (el) el.dataset.seen = '1';
       await wait(400);
       list.scrollTop = 1;
       for (let n = 0; n < 100; n++) { await wait(30); const s = scroll(); if (s.pages >= 2 || s.refusals > 0) { await wait(300); break; } }
@@ -72,15 +97,18 @@
       });
       await wait(500);
       const settled = pixels();
-      let bad = 0, max = 0, nonWhite = 0;
+      let bad = 0, max = 0, nonWhite = 0, arcBad = 0, arcMax = 0;
+      // a rounded list: its four corner squares (12 css px, the list's port at 0,0 400 x 240), where the compositor's clip antialiases the arc, are counted apart
+      const arc = (i) => { const x = i % 400, y = (i - x) / 400; return !!m.round && (x < 12 || x >= 388) && (y < 12 || (y >= 228 && y < 240)); };
       for (let p = 0; p < settled.length; p += 4) {
         let delta = 0;
         for (let k = 0; k < 4; k++) delta = Math.max(delta, Math.abs(first.px[p + k] - settled[p + k]));
+        if (arc(p / 4)) { if (delta > 16) arcBad++; arcMax = Math.max(arcMax, delta); continue; }
         if (delta > 16) bad++;
         max = Math.max(max, delta);
         if (settled[p] < 250 || settled[p + 1] < 250 || settled[p + 2] < 250) nonWhite++;
       }
-      return { mode, composed: first.composed, bad, max, nonWhite, total: 400 * 260, planned, after: scroll() };
+      return { mode, composed: first.composed, bad, max, arcBad, arcMax, nonWhite, total: 400 * 260, planned, after: scroll() };
     } finally { installed.uninstall(); }
   };
   window.__ready = true;

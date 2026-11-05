@@ -17,11 +17,14 @@ import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts,
 /** @typedef {import('../../contracts/types.js').ScrollPlan} ScrollPlan */
 
 /**
- * ScrollPlan.cover: the background the compositor's cover tile gives the scroller, its content hidden (scroll-compose.js vet). A port pixel of another colour there is
- * painted by something the pages would carry along (an element outside the scroller, or what shows through it).
+ * ScrollPlan.cover: the backgrounds the compositor's cover tiles give the scroller, its content hidden (scroll-compose.js vet), one tile each. A port pixel of another
+ * colour in either is painted by something the pages would carry along (an element outside the scroller, or what shows through it). One colour alone passes an overlay
+ * of that very colour (rgb(1, 254, 3) over the port: 24,000 of 104,000 pixels wrong in the first composed step), and so would any single colour, picked at random or
+ * not. Two colours whose every channel lies near opposite ends (at least 249 levels apart): an opaque overlay differs from one of them whatever its colour, and a
+ * translucent one passes both only at an alpha under 0.004 (alpha times 124 levels rounds to nothing), about one level of error over the content.
  */
-/** @type {[number, number, number]} */
-const COVER = [1, 254, 3];
+/** @type {Array<[number, number, number]>} */
+const COVERS = [[1, 254, 3], [254, 1, 252]];
 /** at most this many elements in the scroller are inspected (larger: no composition; the node budget's absolute limit is 20000) */
 const MAX_SCAN = 20000;
 /** elements inspected per step of a large scroller's scan at most (planSteps) */
@@ -355,7 +358,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   const lowPin = pinned.some((p) => zOf(win.getComputedStyle(p)) === 0);
   return {
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
-    ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVER,
+    ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVERS,
     pinnable: (el) => el.isConnected && pinnable(el, win.getComputedStyle(el)),
     clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, (outside ??= outsideOf(doc, drawable, s))),
     ...(lowPin ? { unlayered: (/** @type {Rect[]} */ rects) => unlayered(win, s, rects, layer, (inside ??= insideOf(s, pinned))) } : {}),
@@ -479,11 +482,33 @@ function painting(win, e, cs) {
 }
 
 /**
+ * `e` (outside the scroller `s`) paints nothing for an opacity of exactly 0 on it or on one of its ancestors below the first one it shares with the scroller: opacity
+ * applies to the element and its whole subtree as one group (CSS Color 4 section 11.2; a descendant cannot undo it, as it can visibility), its generated boxes, shadows
+ * and outline included. Any other opacity paints (0.02 of an opaque box shifts its pixels by 5 levels). A change of it back to a value above 0 is damage, checked
+ * again here. Not faded by an opacity of 0: a box of display: contents (it generates no box; its children paint), and, under it, an element in the top layer (a
+ * popover or modal dialog paints outside its ancestors). Memoised per check over the ancestors (`memo`).
+ * @param {Window} win @param {Element|null} e @param {Element} s @param {Map<Element, boolean>} memo @returns {boolean}
+ */
+function faded(win, e, s, memo) {
+  if (!e || e.contains(s)) return false;
+  let v = memo.get(e);
+  if (v === undefined) {
+    const cs = win.getComputedStyle(e);
+    // a box of display: contents has no box for its opacity to apply to; an element in the top layer is not painted inside its ancestors
+    memo.set(e, (v = (cs.display !== 'contents' && parseFloat(cs.opacity) === 0) || (!topLayer(e) && faded(win, e.parentElement, s, memo))));
+  }
+  return v;
+}
+
+/** @param {Element} e @returns {boolean} in the top layer (a modal dialog, an open popover, a fullscreen element; a selector the engine does not know: no) */
+const topLayer = (e) => { try { return e.matches(':modal, :popover-open, :fullscreen'); } catch { return false; } };
+
+/**
  * ScrollPlan.clear, beside the hit test: no element of the drawable outside the scroller (its ancestors aside) may paint over the damage inside the port. A hit test
  * sees only what is hit-testable at its points; a change there can also be a box with `pointer-events: none`, one between the points, or the shadow, outline,
  * overflowing text or generated box of an element beside the port (a damage rect holds the box of the element it comes from and the ink it paints). An element
  * whose box touches a damage rect is checked: whatever it paints inside its box where that box lies over the damaged part of the port, and its ink where that reaches
- * it. Frame css px are mapped to the viewport through the scroller's own box, as clearOver does.
+ * it; one of an effective opacity of 0 paints nothing (faded). Frame css px are mapped to the viewport through the scroller's own box, as clearOver does.
  * @param {Window} win @param {HTMLElement} s @param {Rect} port @param {Rect[]} rects @param {LiveLayer} layer @param {Element[]} outside
  * @returns {boolean}
  */
@@ -499,12 +524,15 @@ function quietOutside(win, s, port, rects, layer, outside) {
   const near = /** @type {Array<[Rect, Rect]>} */ (rects.map(view).map((r) => [r, intersectRect(r, pv)]).filter(([, p]) => p));
   if (!near.length) return true;
   if (outside.length > MAX_OUTSIDE) return false;
+  /** @type {Map<Element, boolean>} */
+  const memo = new Map();
   for (const e of outside) {
     if (!e.isConnected) continue;
     const b = e.getBoundingClientRect();
     if (!near.some(([r]) => meets(r, b, 0.5, 0.5))) continue;
     // a box inside a display:none subtree (or a display:contents one) has no rect of its own
     if (!e.getClientRects().length && !generated(win, e)) continue;
+    if (faded(win, e, s, memo)) continue;
     const g = painting(win, e, win.getComputedStyle(e));
     for (const [, p] of near) if ((g.self && meets(p, b)) || ((g.x || g.y) && meets(p, b, g.x * kx, g.y * ky))) return false;
   }

@@ -7,7 +7,8 @@
 // Hover through the effect (class `hover`), under the same CRT: the page gets a :hover rule for an element OUTSIDE the canvas (a menu chip), and a mouse sweep across the
 // drawn form must upload no new source (no rebuild: the rule cannot match inside the form); the same sweep with a rule that matches inside the form must upload (in-run
 // positive control). Then a finger (touch emulation, the page's touch-action none, as a plugin that claims its gesture) pans across the form with that rule present: a
-// finger moves no :hover (Mobile Safari), so again no upload. Mutants hover-scope-off and finger-hover-follows.
+// finger moves no :hover (Mobile Safari), so again no upload. Mutants hover-scope-off and finger-hover-follows. Then a :hover rule that counts only with :focus: the
+// mouse enters the form's card, the card gets the focus, the mouse leaves; the presented frame must equal a fresh tile (mutant hover-state-kept).
 // Positive control: the host created with `interposer:false` (clicks reach the DOM position): class `interposer` must go red.
 import { runGate, H, EFFECTS_BUNDLE, WATER_BUNDLE } from './lib/gate.mjs';
 import { openRef, rectsOf } from './lib/f1.mjs';
@@ -75,6 +76,48 @@ async function hoverThroughEffect(ctx, page, box) {
   return out;
 }
 
+/**
+ * A :hover rule that counts only together with :focus (the preview.24 audit): the mouse enters the drawn form card through the effect, the card gets the focus, the mouse leaves
+ * with the focus kept. The presented frame must then equal a fresh tile of the same state (a mutation that changes no pixel rebuilds the form). Preview.24 cached "the rule cannot
+ * match here" while the form had no focus and kept the hover look after the mouse left. Mutant hover-state-kept.
+ * @param {any} ctx @param {any} page
+ */
+async function hoverThenFocus(ctx, page) {
+  await ctx.focus(page);
+  await page.mouseMove(2, 2);
+  const card = await page.evaluate(`(() => {
+    const f = document.querySelector('#demo-form .form-card'); f.tabIndex = -1;
+    const s = document.createElement('style'); s.id = 'hv-focus'; s.textContent = '.form-card { outline: none !important } .form-card:hover:focus { background: rgb(255, 255, 0) !important }'; document.head.append(s);
+    const r = f.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  await H.sleep(600);
+  const filled = (img) => { let n = 0; for (let i = 0; i < img.data.length; i += 4) if (img.data[i] > 200 && img.data[i + 1] > 200 && img.data[i + 2] < 60) n++; return n; };
+  // the middle of the card's box: under the barrel it is drawn nearer the middle of the canvas, still over the card
+  await page.mouseMove(card.x, card.y);
+  await H.sleep(500);
+  const entered = filled((await compositorShot(page, '#hic-surface')).img);
+  await page.evaluate(`document.querySelector('#demo-form .form-card').focus()`);
+  await H.sleep(500);
+  const focused = filled((await compositorShot(page, '#hic-surface')).img);
+  await page.mouseMove(2, 2);
+  await H.sleep(600);
+  const left = (await compositorShot(page, '#hic-surface')).img;
+  await page.evaluate(`document.querySelector('#demo-form .form-card').classList.add('hv-fresh')`);
+  await H.sleep(600);
+  const fresh = (await compositorShot(page, '#hic-surface')).img;
+  let differ = 0, max = 0;
+  for (let i = 0; i < left.data.length; i += 4) {
+    const d = Math.max(Math.abs(left.data[i] - fresh.data[i]), Math.abs(left.data[i + 1] - fresh.data[i + 1]), Math.abs(left.data[i + 2] - fresh.data[i + 2]));
+    if (d > 8) differ++;
+    max = Math.max(max, d);
+  }
+  const state = await page.evaluate(`(() => { const f = document.querySelector('#demo-form .form-card'); const r = { hover: f.matches(':hover'), focus: document.activeElement === f }; f.blur(); f.removeAttribute('tabindex'); f.classList.remove('hv-fresh'); document.getElementById('hv-focus').remove(); return r; })()`);
+  const out = { entered, focused, leftFilled: filled(left), freshFilled: filled(fresh), differ, max, sameSize: left.width === fresh.width && left.height === fresh.height, state };
+  ctx.check('hover:focus: the rule paints the drawn card once it is hovered and focused, not while only hovered (positive control)', entered === 0 && focused > 1000, out, 'hover');
+  ctx.check('hover:focus: after the mouse leaves with the focus kept, the presented frame equals a fresh tile of the same state (no hover look left)', out.sameSize && !state.hover && state.focus && out.leftFilled === 0 && differ === 0, out, 'hover');
+  return out;
+}
+
 runGate('G-interposer-strong', async (ctx) => {
   const numbers = {};
   const ref = await openRef(ctx);
@@ -100,6 +143,7 @@ runGate('G-interposer-strong', async (ctx) => {
 
   // --- hover through the effect: a :hover rule outside the drawn form rebuilds nothing; one inside does (control); a finger pan hovers nothing -----------------------
   numbers.hover = await hoverThroughEffect(ctx, page, rects['#hic-surface']);
+  numbers.hoverFocus = await hoverThenFocus(ctx, page);
 
   // --- water at full intensity: the presented frame frozen (framecap=1), a strong drop below a field, measured and clicked in that frame -------------------------
   await setup(ctx, page, 'water', { intensity: 1 }, !ctx.control);

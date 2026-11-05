@@ -238,8 +238,9 @@ function cacheBytes(c, held) {
   for (const p of c.pins.values()) add(p.pad, p.w * p.h);
   if (c.bar) { add(c.bar.track.pad, area(c.bar.track.px)); add(c.bar.thumb.pad, area(c.bar.thumb.px)); }
   if (c.backdrop) add(c.backdrop.pad, area(c.backdrop.px));
-  // the cover checks' tiles, held until they are read (vet; a rounded scroller's backdrop is one of them, counted above)
-  if (!held) n += Math.min(c.vet, c.backdrop ? 1 : 2) * area(c.portPx);
+  // the cover checks' tiles, held until they are read (vet: one per cover colour, and the backdrop of a scroller that is not opaque; a rounded scroller's backdrop
+  // is one of them, counted above)
+  if (!held) n += Math.min(c.vet, (c.plan.cover?.length ?? 0) + (c.backdrop || c.plan.opaque ? 0 : 1)) * area(c.portPx);
   return n * 4;
 }
 
@@ -413,8 +414,8 @@ export function createScrollCompositor(deps) {
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
     // what the scroller needs to compose a step: two pages (one covers the port at its own offset only), its pinned elements, its bar and backdrop tiles
-    // the cover checks' tiles (vet) are held until they are read
-    let need = (AHEAD_PAGES + (plan.cover ? (plan.opaque || round ? 1 : 2) : 0)) * area(portPx) + (round ? area(padPx) : 0);
+    // the cover checks' tiles (vet: one per cover colour, and a backdrop) are held until they are read
+    let need = (AHEAD_PAGES + (plan.cover ? plan.cover.length + (plan.opaque || round ? 0 : 1) : 0)) * area(portPx) + (round ? area(padPx) : 0);
     if (plan.bar) need += 2 * area(snapPx(plan.bar.gutter, geo, grid));
     for (const p of plan.pinned) { const r = entry.record.layer?.frameRect(p); if (r) need += area(snapPx(r, geo, grid)); }
     if (!fits(entry, need * 4)) return refuse('budget');
@@ -424,12 +425,14 @@ export function createScrollCompositor(deps) {
       shown: null, queued: false, last: live, unverified: [], recheck: new Set(), relayer: [], vet: 0, memo: new Map(), early, used: now(),
     };
     if (plan.cover) {
-      // first of all: the port with the scroller's content hidden and its background in the cover colour shows only that colour (nothing paints over the scroller
-      // there); a scroller that is not opaque also shows, without its content, one colour through it (its own backdrop tile when it is rounded)
-      const want = plan.cover;
-      const cover = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { cover.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, want); } };
-      cache.vet = plan.opaque ? 1 : 2;
-      build(entry, cache, portPx, { el, top: live, hide: [], shape: 'cover', fill: `rgb(${want.join(',')})` }, cover);
+      // first of all: the port with the scroller's content hidden and its background in each cover colour shows only that colour (nothing paints over the scroller
+      // there: an overlay of one of the colours shows on the other); a scroller that is not opaque also shows, without its content, one colour through it (its own
+      // backdrop tile when it is rounded)
+      cache.vet = plan.cover.length + (plan.opaque ? 0 : 1);
+      for (const want of plan.cover) {
+        const cover = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { cover.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, want); } };
+        build(entry, cache, portPx, { el, top: live, hide: [], shape: 'cover', fill: `rgb(${want.join(',')})` }, cover);
+      }
       if (!plan.opaque && !round) {
         const under = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { under.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, null); } };
         build(entry, cache, portPx, { el, top: live, hide: [], shape: 'backdrop' }, under);
