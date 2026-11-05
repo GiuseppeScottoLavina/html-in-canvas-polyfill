@@ -1,4 +1,4 @@
-// Page curl (README.md): the page is a tessellated sheet folded over a cylinder (fold.js is the JavaScript twin of fold_point below), seen
+// Page curl (README.md): the page is a tessellated sheet folded over a cone or a cylinder (fold.js is the JavaScript twin of fold_point below), seen
 // by a camera straight above it, lit by one lamp at a finite distance (ambient, diffuse, a sheen that rises at grazing angles, light through
 // the thin paper), with a soft shadow that widens with the height of the paper above what it falls on; the paper has a lit relief, and
 // what the effect shades is dithered so that its gradients do not band.
@@ -28,6 +28,9 @@ struct Uniforms {
   light : vec4<f32>,       // xyz: towards the lamp
   lightK : vec4<f32>,      // xy: a point at height z casts its shadow at xy + lightK * z
   span : vec4<f32>,        // the page in the fold's frame: s from x to y (along n), w from z to w (along the axis)
+  cone : vec4<f32>,        // the cone: x apex (a + t x on the axis), y gs (g = gs t points from the apex to the page), z k = sine of its half angle (0: a cylinder), w its cosine
+  reach : vec4<f32>,       // the curled page from the apex: x r min, y r max, z its largest polar angle; w the held corner's height
+  extra : vec4<f32>,       // x the held corner's leaf y
 }
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -41,9 +44,35 @@ const ZMAX : f32 = 600.0;
 
 // ---- the fold (fold.js foldPoint / foldNormal) ---------------------------------------------------------------------------------------
 
+fn axis_t() -> vec2<f32> { return vec2<f32>(-u.n.y, u.n.x); }
+
+/**
+ * A curled point (s > 0) of the leaf on the cone (fold.js conePoint): how far it moves along n and along g, its height, and its angle b
+ * round the cone (PI on the flap). The apex's polar frame: rho along g, s along n. Written without the apex's large coordinates.
+ */
+fn cone_point(q : vec2<f32>, s : f32) -> vec4<f32> {
+  let k = u.cone.z;
+  let ca = u.cone.w;
+  let rho = u.cone.y * (dot(q - u.a, axis_t()) - u.cone.x);
+  let r = length(vec2<f32>(rho, s));
+  let th = atan2(s, rho);
+  if (th < PI * k) {
+    let b = th / k;
+    let dg = select(r - rho, s * s / (r + rho), rho > 0.0) - r * k * k * (1.0 - cos(b));
+    return vec4<f32>(r * k * sin(b) - s, dg, r * k * ca * (1.0 - cos(b)), b);
+  }
+  let tp = th - PI * k;
+  let r1 = r * cos(tp);
+  return vec4<f32>(-r * sin(tp) - s, 2.0 * r * sin(th - 0.5 * PI * k) * sin(0.5 * PI * k) - 2.0 * k * k * r1, 2.0 * k * ca * r1, PI);
+}
+
 fn fold_point(q : vec2<f32>) -> vec3<f32> {
   let s = dot(q - u.a, u.n);
   if (u.L <= 0.0 || s <= 0.0) { return vec3<f32>(q, 0.0); }
+  if (u.cone.z > 0.0) {
+    let c = cone_point(q, s);
+    return vec3<f32>(q + u.n * c.x + axis_t() * (u.cone.y * c.y), c.z);
+  }
   if (u.R > 0.0 && s < PI * u.R) {
     let phi = s / u.R;
     return vec3<f32>(q - u.n * (s - u.R * sin(phi)), u.R * (1.0 - cos(phi)));
@@ -51,13 +80,29 @@ fn fold_point(q : vec2<f32>) -> vec3<f32> {
   return vec3<f32>(q - u.n * (2.0 * s - PI * u.R), 2.0 * u.R);
 }
 
+/** how far round the roll a curled point is (0 .. PI; PI on the flap) */
+fn roll_angle(q : vec2<f32>, s : f32) -> f32 {
+  if (u.cone.z > 0.0) { return cone_point(q, s).w; }
+  if (u.R > 0.0) { return min(PI, s / u.R); }
+  return PI;
+}
+
+/** the roll's radius across the leaf point q (the cone narrows towards its apex) */
+fn local_radius(q : vec2<f32>) -> f32 {
+  if (u.cone.z > 0.0) { return u.cone.z * max(u.cone.y * (dot(q - u.a, axis_t()) - u.cone.x), 0.0); }
+  return u.R;
+}
+
 /** the normal of the side that faces up when the sheet lies flat (its front), in page space */
 fn up_normal(q : vec2<f32>) -> vec3<f32> {
   let s = dot(q - u.a, u.n);
   if (u.L <= 0.0 || s <= 0.0) { return vec3<f32>(0.0, 0.0, 1.0); }
-  var phi = PI;
-  if (u.R > 0.0) { phi = min(PI, s / u.R); }
-  return vec3<f32>(-u.n.x * sin(phi) * u.mirror, -u.n.y * sin(phi), cos(phi));
+  let b = roll_angle(q, s);
+  // on a cone of half angle asin(k): g k ca (1 - cos b) - n ca sin b + z (k^2 + ca^2 cos b); the cylinder is k = 0
+  let k = select(0.0, u.cone.z, u.cone.z > 0.0);
+  let ca = select(1.0, u.cone.w, u.cone.z > 0.0);
+  let v = u.n * (-ca * sin(b)) + axis_t() * (u.cone.y * k * ca * (1.0 - cos(b)));
+  return vec3<f32>(v.x * u.mirror, v.y, k * k + ca * ca * cos(b));
 }
 
 /** leaf space -> page space (css px, z up) */
@@ -74,20 +119,29 @@ fn to_clip(p : vec3<f32>) -> vec4<f32> {
 fn shadow_uv(p : vec3<f32>) -> vec2<f32> { return (p.xy + u.lightK.xy * p.z) / u.css; }
 
 /**
- * The sheet is drawn as a strip in the fold's own frame: rows of constant distance s from the axis (so the silhouette of the roll runs
- * along the rows and stays smooth), one row where the flat part starts, many across the roll (0 .. PI R), one where the flap ends; each
- * row spans the page along the axis. Parts of the strip outside the page are cut in the fragment shader. Returns leaf space.
+ * The sheet is drawn as a strip in the fold's own frame, so that the silhouette of the roll runs along its rows and stays smooth: one row
+ * where the flat part starts and one on the fold line, many across the roll, one where the flap ends; each row spans the page. On a
+ * cylinder the rows across the roll are lines of constant distance s from the axis; on a cone they are its straight lines, through the
+ * apex at polar angles 0 .. PI k (the flap is one wedge up to the curl's largest angle). Parts of the strip outside the page are cut in
+ * the fragment shader. Returns leaf space.
  */
 fn strip_point(vid : u32) -> vec2<f32> {
   let row = vid / 2u;
   let col = f32(vid % 2u);
+  let t = axis_t();
+  if (u.cone.z > 0.0 && row >= 2u) {
+    var th = u.reach.z;
+    if (row < u32(u.rows) + 2u) { th = PI * u.cone.z * f32(row - 2u) / max(u.rows - 1.0, 1.0); }
+    // the strip runs along +t in every row (the winding tells the front from the back)
+    let r = mix(u.reach.x, u.reach.y, select(1.0 - col, col, u.cone.y > 0.0));
+    return u.a + t * u.cone.x + (t * (u.cone.y * cos(th)) + u.n * sin(th)) * r;
+  }
   let last = u32(u.rows) + 1u;
   var s : f32;
   if (row == 0u) { s = min(u.span.x, 0.0) - 2.0; }
   else if (row >= last) { s = max(u.span.y, PI * u.R) + 2.0; }
   else { s = PI * u.R * f32(row - 1u) / max(u.rows - 1.0, 1.0); }
   let w = mix(u.span.z - 2.0, u.span.w + 2.0, col);
-  let t = vec2<f32>(-u.n.y, u.n.x);
   return u.a + u.n * s + t * w;
 }
 
@@ -171,7 +225,7 @@ const EXPOSURE : f32 = 0.85;
 const ROOM : vec3<f32> = vec3<f32>(0.95, 0.98, 1.04);
 const WARM : vec3<f32> = vec3<f32>(1.02, 1.0, 0.97);
 /**
- * How much the roll occludes the page beneath at q (0..1). The roll is a cylinder of radius R lying along the fold line, its axis R above
+ * How much the roll occludes the page beneath at q (0..1). The roll is a cylinder of radius R lying along the fold line (on a cone, R is its local radius), its axis R above
  * the page; from a point x px beyond the fold line it hides R^2 / (x^2 + R^2) of the dome's cosine-weighted light (exact for a long
  * cylinder). Measured here from 0.6 R, where the paper comes down to the page under the roll's edge, so it is dark right at that edge and
  * fades within about two radii: a larger (higher) roll occludes wider. Faded out where the roll ends at the page's edges.
@@ -179,10 +233,11 @@ const WARM : vec3<f32> = vec3<f32>(1.02, 1.0, 0.97);
 fn roll_ao(q : vec2<f32>) -> f32 {
   if (u.L <= 0.0 || u.R <= 0.0) { return 0.0; }
   let leaf = vec2<f32>(select(u.css.x - q.x, q.x, u.mirror > 0.0), q.y);
-  let x = max(dot(leaf - u.a, u.n) - 0.6 * u.R, 0.0);
+  let R = max(local_radius(leaf), 0.5);            // a cone rolls narrower towards its apex
+  let x = max(dot(leaf - u.a, u.n) - 0.6 * R, 0.0);
   let along = leaf - u.n * dot(leaf - u.a, u.n);   // the foot on the fold line; the roll at this place spans s = 0 .. PI R
-  let there = max(inside_page(along), inside_page(along + u.n * (PI * u.R)));
-  return u.R * u.R / (x * x + u.R * u.R) * smoothstep(-0.5 * u.R, 0.25 * u.R, there);
+  let there = max(inside_page(along), inside_page(along + u.n * (PI * R)));
+  return R * R / (x * x + R * R) * smoothstep(-0.5 * R, 0.25 * R, there);
 }
 
 // ---- full-screen passes ----------------------------------------------------------------------------------------------------------------
@@ -307,14 +362,15 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     // live content stays readable on the roll
     // (and exactly 1 where nothing shades it).
     var cav = 1.0;
+    var b = 0.0;
     if (curled) {
-      if (s <= 0.0) { cav = 1.0 - 0.9 * exp(s / (3.0 + 0.08 * u.R)); }
-      else { cav = 0.1 + 0.6 * smoothstep(0.0, 0.6 * PI, s / max(u.R, 1e-3)); }
+      if (s <= 0.0) { cav = 1.0 - 0.9 * exp(s / (3.0 + 0.08 * local_radius(v.local))); }
+      else { b = roll_angle(v.local, s); cav = 0.1 + 0.6 * smoothstep(0.0, 0.6 * PI, b); }
     }
     let lt = light2(v.page, nUp);
     let level = light2(vec3<f32>(v.page.xy, 0.0), vec3<f32>(0.0, 0.0, 1.0));
     let lit = (lt.x * sh.y + lt.y * sh.x) * cav / (level.x + level.y);
-    col = base * (0.5 + 0.5 * lit) + gloss(v.page, nUp, 0.12, 16.0) * smoothstep(0.0, max(0.25 * PI * u.R, 1e-3), s) * cav;
+    col = base * (0.5 + 0.5 * lit) + gloss(v.page, nUp, 0.12, 16.0) * smoothstep(0.0, 0.25 * PI, b) * cav;
   } else {
     // the back of the sheet: paper with its own relief, lit by its real normal across the roll (bright where it faces the lamp, a highlight
     // band where it mirrors it, darker towards the rolled edge, which sees only half the room), and the front's content showing through it,

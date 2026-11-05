@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
-import { ACTIONS, DEMO_RELEASE_MS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, demoHand, foldSpan, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
+import { ACTIONS, DEMO_RELEASE_MS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, demoHand, foldSpan, heldCorner, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 const W = 480;
@@ -71,6 +71,9 @@ test('fold: an isometry (lengths along the paper are kept) and the bound edge ne
 });
 
 // ------------------------------------------------------------------------------------------------ the mapper against a forward rendering
+/** the fold of a uniform block, from its documented layout (index.js UNIFORM_FLOATS): the cylinder [4..9] and the cone [36..39] @param {Float32Array} st */
+const coneOfState = (st) => ({ nx: st[4], ny: st[5], ax: st[6], ay: st[7], R: st[8], L: st[9], wA: st[36], gs: st[37], k: st[38], ca: st[39] });
+
 /**
  * Independent forward rendering (written from page-curl.wgsl's vertex stage, not from mapCurlPoint): every point of the sheet, 4 per css px
  * in each direction, is folded, projected and kept per pixel when it is the nearest to the eye. Returns, per pixel, which side is seen
@@ -78,7 +81,7 @@ test('fold: an isometry (lengths along the paper are kept) and the bound edge ne
  * @param {Float32Array} st
  */
 function splat(st) {
-  const f = { nx: st[4], ny: st[5], ax: st[6], ay: st[7], R: st[8], L: st[9] };
+  const f = coneOfState(st);
   const m = st[10], D = st[11];
   const z = new Float32Array(W * H).fill(-1);
   const kind = new Int8Array(W * H).fill(-1);
@@ -108,7 +111,7 @@ test('the mapper answers what the forward rendering shows: the page point on the
   for (const [key, x, y] of /** @type {[any, number, number][]} */ (cases)) {
     const st = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48), W, H);
     const { kind, sx, sy, z } = splat(st);
-    const f = { nx: st[4], ny: st[5], ax: st[6], ay: st[7], R: st[8], L: st[9] }, m = st[10];
+    const f = coneOfState(st), m = st[10];
     const p = [0, 0, 0], q = { x: 0, y: 0 };
     const counts = { flat: 0, front: 0, back: 0, under: 0, skipped: 0 };
     for (let j = 1; j < H - 1; j += 1) {
@@ -229,8 +232,8 @@ async function created(t, env, options = meta.defaults) {
 }
 /** the written uniform block of the last frame */
 const last = (/** @type {any} */ env) => /** @type {Float32Array} */ (env.writes.filter((/** @type {any} */ w) => w.length === UNIFORM_FLOATS).at(-1));
-/** where the held corner of a written state lies (page css px) */
-const cornerOf = (/** @type {Float32Array} */ s) => { const lx = s[2] - s[4] * s[9], ly = s[3] - s[5] * s[9]; return [s[10] > 0 ? lx : s[2] - lx, ly]; };
+/** where the held corner of a written state lies (page css px), and its height */
+const cornerOf = (/** @type {Float32Array} */ s) => { const [lx, ly, z] = heldCorner(s); return [s[10] > 0 ? lx : s[2] - lx, ly, z]; };
 
 test('the grab is the plugin\'s gesture: down/move/up/click are taken from the page, the pointer is captured; elsewhere nothing is taken', async (t) => {
   const env = fakeEnv();
@@ -268,8 +271,8 @@ test('the corner follows the pointer on a spring (weight, no jump) and settles e
   assert.ok(early[0] > 380, `16 ms after the move the corner has only started to follow: ${early}`);
   for (let now = 32; now <= 1500; now += 16) inst.render(env.frame(now));
   const s = last(env);
-  const [cx, cy] = cornerOf(s);
-  const q = project(cx, cy, 2 * s[8], W, H, s[11], { x: 0, y: 0 });
+  const [cx, cy, cz] = cornerOf(s);
+  const q = project(cx, cy, cz, W, H, s[11], { x: 0, y: 0 });
   assert.ok(Math.hypot(q.x - 200, q.y - 150) < 0.5, `settled: the corner is seen at ${q.x}, ${q.y}`);
 });
 
@@ -639,9 +642,10 @@ test('the action demo, through the effect handle: the page turns most of the way
   g.env.fire('pointerdown', W - 4, 4);
   g.env.fire('pointermove', 300, 60);
   for (let now = 516; now <= 3500; now += 16) g.h.inst.render(g.env.frame(now));
-  const s = last(g.env), D = s[11], k = D / (D - 2 * s[8]);
-  const cx = s[2] - s[4] * s[9], cy = -s[5] * s[9];   // the top-right corner, pulled (bound on the left)
-  const seen = [W / 2 + (cx - W / 2) * k, H / 2 + (cy - H / 2) * k];
+  const s = last(g.env);
+  const [cx, cy, cz] = cornerOf(s);   // the top-right corner, pulled (bound on the left)
+  const q = project(cx, cy, cz, W, H, s[11], { x: 0, y: 0 });
+  const seen = [q.x, q.y];
   assert.ok(Math.hypot(seen[0] - 300, seen[1] - 60) < 1, `the held corner is seen under the pointer, not where the demo would take it: ${seen}`);
   assert.notEqual(await Promise.race([g.h.handle.settled(), new Promise((r) => setTimeout(() => r('held'), 20))]), 'rest', 'held: not at rest');
   // reduced motion (as the host read it): nothing moves, it resolves at once
