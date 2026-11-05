@@ -133,10 +133,19 @@ export function createDropTable() {
     const kj = (j + 0.5) * DK;
     k[j] = kj;
     // h0(r) = -(1 - r^2/a^2) exp(-r^2/a^2): its Hankel transform is -(a^4 / 8) k^2 exp(-k^2 a^2 / 4) (a crater of depth 1, zero volume)
-    weight[j] = -(a ** 4 / 8) * kj * kj * Math.exp((-kj * kj * a * a) / 4) * kj * DK;
     const d = dispersion(kj);
     omega[j] = d.omega; gamma[j] = d.gamma;
+    // an impulse (the drop's momentum) of the shape h0: the surface starts flat and the crater opens, as at an impact; sin(omega t) / omega
+    weight[j] = (-(a ** 4 / 8) * kj * kj * Math.exp((-kj * kj * a * a) / 4) * kj * DK) / d.omega;
   }
+  // normalised so that a drop of depth 1 opens a crater 1 css px deep at its deepest (within the first 60 ms)
+  let deepest = 0;
+  for (let t = 0; t < 0.06; t += 0.0002) {
+    let h = 0;
+    for (let j = 0; j < n; j += 1) h += weight[j] * Math.sin(omega[j] * t) * Math.exp(-gamma[j] * t);
+    deepest = Math.max(deepest, -h);
+  }
+  for (let j = 0; j < n; j += 1) weight[j] /= deepest;
   const j0 = new Float64Array(TABLE_W * n), j1x = new Float64Array(TABLE_W * n);
   const b = new Float64Array(2);
   for (let i = 0; i < TABLE_W; i += 1) {
@@ -158,7 +167,7 @@ export function computeRow(tb) {
   if (row >= TABLE_ROWS) return;
   const t = row / ROWS_PER_S, n = K_COUNT;
   for (let j = 0; j < n; j += 1) {
-    C[j] = tb.weight[j] * Math.cos(tb.omega[j] * t) * Math.exp(-tb.gamma[j] * t);
+    C[j] = tb.weight[j] * Math.sin(tb.omega[j] * t) * Math.exp(-tb.gamma[j] * t);
     CK[j] = C[j] * tb.k[j] * tb.k[j];
   }
   const base = row * TABLE_W * 4;
