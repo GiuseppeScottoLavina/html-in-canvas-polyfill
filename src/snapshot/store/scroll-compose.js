@@ -99,10 +99,18 @@ export function snapPx(r, geo, grid) {
     const gx = g(r.x + geo.ink.left), gy = g(r.y + geo.ink.top);
     return { x: gx, y: gy, width: g(r.x + r.width + geo.ink.left) - gx, height: g(r.y + r.height + geo.ink.top) - gy };
   }
-  const x0 = Math.round((r.x + geo.ink.left) * s);
-  const y0 = Math.round((r.y + geo.ink.top) * s);
-  return { x: x0, y: y0, width: Math.round((r.x + r.width + geo.ink.left) * s) - x0, height: Math.round((r.y + r.height + geo.ink.top) * s) - y0 };
+  const x0 = edge((r.x + geo.ink.left) * s);
+  const y0 = edge((r.y + geo.ink.top) * s);
+  return { x: x0, y: y0, width: edge((r.x + r.width + geo.ink.left) * s) - x0, height: edge((r.y + r.height + geo.ink.top) * s) - y0 };
 }
+
+/**
+ * PURE. A surface coordinate snapped as the image snaps a box edge: put on its LayoutUnit grid (1/64 px) first, then to the nearest pixel, a half up. A live rect reads
+ * back in single precision, a hair off the grid: the content edge of a list column 400.4 css px wide at DPR 1.25 came out at 549.49999 surface px, where the engine
+ * has 549.5 and snaps it to 550, so the port of every page and composed frame was one device column narrower than the settled tile (that column kept older pixels).
+ * @param {number} v surface px @returns {number}
+ */
+const edge = (v) => Math.round(Math.round(v * 64) / 64);
 
 /** @param {Rect} r @param {Geometry} geo @param {number} [grid] see snapPx @returns {Rect} css rect of the drawable frame -> surface pixels, rounded out (to the grid) */
 const outPx = (r, geo, grid) => {
