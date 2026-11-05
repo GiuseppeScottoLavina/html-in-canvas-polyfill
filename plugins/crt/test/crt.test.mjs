@@ -125,6 +125,17 @@ test('presets: {preset} applies a named set, explicit options win over it, prese
   assert.equal(gpu.textures.length, 0, 'one pass, no extra textures');
 });
 
+test('presets at creation: {preset} given to create applies that set, and an explicit option next to it wins', async () => {
+  const monitor = await create({ preset: 'monitor' });
+  monitor.instance.render(monitor.frame());
+  let u = monitor.gpu.writes.at(-1).copy;
+  assert.ok(Math.abs(u[8] - presets.monitor.scanlines) < 1e-6 && Math.abs(u[13] - presets.monitor.mask) < 1e-6, `monitor scanlines and mask: ${u[8]}, ${u[13]}`);
+  const mixed = await create({ preset: 'monitor', glow: 0.2 });
+  mixed.instance.render(mixed.frame());
+  u = mixed.gpu.writes.at(-1).copy;
+  assert.ok(Math.abs(u[9] - 0.2) < 1e-6 && Math.abs(u[8] - presets.monitor.scanlines) < 1e-6, 'the explicit glow wins over the preset');
+});
+
 test('render writes the geometry the mapper reads; options are clamped to 0..1', async () => {
   const { instance, gpu, frame } = await create({ curvature: 7, scanlines: -2, glow: 0.3 });
   instance.render(frame());

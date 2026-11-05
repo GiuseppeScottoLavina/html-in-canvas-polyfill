@@ -408,7 +408,7 @@ export const plugin = Object.freeze({
     let shadow = 0.85;
     let hotZone = 64;
     let dogEar = 36;
-    let autoPeek = 5;
+    let autoPeek = 0;   // opt-in, as meta.defaults: a periodic peek is work at rest
     let under = parseColor(null, [0.82, 0.79, 0.735]);
     let paper = parseColor(null, [0.965, 0.95, 0.915]);
     /** @param {Readonly<Record<string, unknown>>|undefined} o */
