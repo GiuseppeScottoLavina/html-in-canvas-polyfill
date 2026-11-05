@@ -48,6 +48,16 @@ export const K_COUNT = Math.ceil(K_MAX / DK);
  * 0.3 s (only the strongest drops at full intensity still show a little then: they fade instead of stopping) */
 const FADE_FROM = 0.88 * TABLE_R;
 const FADE_ROWS = 0.3 * ROWS_PER_S;
+/**
+ * How far a drop's ripples reach at time t (css px): the crater, plus the fastest group speed of the wavenumbers in the sum (that of
+ * the largest, about 500 px/s, with a margin). Beyond it the integral holds only rounding noise, so a row is computed (and its Bessel
+ * terms are needed) only up to there: the rows of a young drop are cheap, and the first drop does not wait for the whole table.
+ * @param {number} t
+ */
+export function reach(t) {
+  const k = K_COUNT * DK, w = dispersion(k).omega, cg = (GRAVITY + 3 * TENSION * k * k) / (2 * w);
+  return 6 * DROP_A + 30 + 1.05 * cg * t;
+}
 /** the half floats store the profile times this power of two (exact): its values (at most 1) then use the normal range of a half float,
  * whose subnormals below 6e-5 would lose the faint tail of a ring (water.wgsl divides by it, data holds the profile itself) */
 export const TABLE_SCALE = 256;
@@ -75,11 +85,12 @@ function bessel(x, out) {
   const x0 = ax - 0.785398164;
   const p0 = 1 + y * (-0.1098628627e-2 + y * (0.2734510407e-4 + y * (-0.2073370639e-5 + y * 0.2093887211e-6)));
   const q0 = -0.1562499995e-1 + y * (0.1430488765e-3 + y * (-0.6911147651e-5 + y * (0.7621095161e-6 - y * 0.934935152e-7)));
-  out[0] = s * (Math.cos(x0) * p0 - z * Math.sin(x0) * q0);
-  const x1 = ax - 2.356194491;
+  const c = Math.cos(x0), sn = Math.sin(x0);
+  out[0] = s * (c * p0 - z * sn * q0);
+  // x1 = x0 - pi / 2: cos(x1) = sin(x0), sin(x1) = -cos(x0)
   const p1 = 1 + y * (0.183105e-2 + y * (-0.3516396496e-4 + y * (0.2457520174e-5 + y * -0.240337019e-6)));
   const q1 = 0.04687499995 + y * (-0.2002690873e-3 + y * (0.8449199096e-5 + y * (-0.88228987e-6 + y * 0.105787412e-6)));
-  out[1] = (s * (Math.cos(x1) * p1 - z * Math.sin(x1) * q1)) / ax;
+  out[1] = (s * (sn * p1 + z * c * q1)) / ax;
 }
 
 /** float32 -> IEEE half (round to nearest even) @param {number} v */
@@ -194,8 +205,9 @@ export function prepareTable(tb, deadline) {
 export function computeRow(tb) {
   const row = tb.rows;
   if (row >= TABLE_ROWS) return;
-  if (tb.bessel < TABLE_W) besselRadii(tb, TABLE_W);
   const t = row / ROWS_PER_S, n = K_COUNT;
+  const radii = Math.min(TABLE_W, Math.ceil(reach(t) / TABLE_DR));
+  if (tb.bessel < radii) besselRadii(tb, radii - tb.bessel);
   const left = (TABLE_ROWS - 1 - row) / FADE_ROWS, fade = left >= 1 ? 1 : left * left * (3 - 2 * left);
   for (let j = 0; j < n; j += 1) {
     C[j] = fade * tb.weight[j] * Math.sin(tb.omega[j] * t) * Math.exp(-tb.gamma[j] * t);
@@ -203,7 +215,7 @@ export function computeRow(tb) {
   }
   const base = row * TABLE_W * 4;
   let slope = 0, curv = 0;
-  for (let i = 0; i < TABLE_W; i += 1) {
+  for (let i = 0; i < radii; i += 1) {
     let h = 0, bsum = 0, qsum = 0;
     const o = i * n;
     for (let j = 0; j < n; j += 1) { const c0 = tb.j0[o + j]; h += C[j] * c0; bsum += CK[j] * c0; qsum += CK[j] * tb.j1x[o + j]; }

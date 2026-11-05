@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
+import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, dropDepth, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
 import { AMBIENT_WAVES, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, createDropTable, dropsAt, prepareTable } from '../drops.js';
@@ -499,7 +499,9 @@ test('the action drop, through the effect handle: a drop at the point at once, o
   const u = w.gpu.writes.at(-1), o = SOURCES_OFFSET;
   assert.ok(u[G.DROPS] >= 1);
   assert.deepEqual([u[o], u[o + 1]], [300, 75], 'the drop is at the point');
-  assert.ok(Math.abs(u[o + 3] - (DROP_DEPTH * 1.5) / 1.2) < 1e-5, `of the depth of strength 1.5 (${u[o + 3]})`);
+  assert.ok(Math.abs(u[o + 3] - dropDepth(1.5)) < 1e-5, `of the depth of strength 1.5 (${u[o + 3]})`);
+  assert.equal(dropDepth(1.2), DROP_DEPTH, 'the default strength is a tap\'s drop');
+  assert.ok(Math.abs(dropDepth(2) / DROP_DEPTH - (2 / 1.2) ** 2) < 1e-12 && dropDepth(5) === dropDepth(2) && dropDepth(0) === dropDepth(0.08), 'the square of the strength, clamped to 0.08 .. 2');
   let now = t0 + 10;
   for (; now < t0 + 600; now += 1000 / 120) w.inst.render(w.frame(now));
   await w.flush();

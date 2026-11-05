@@ -59,6 +59,9 @@ export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 /** a tap or a press: a drop whose crater is this deep (css px, drops.js); the action drop scales it by its strength / 1.2 */
 export const DROP_DEPTH = 4;
+/** The depth of the drop of the action at `strength` (0.08 to 2): it grows with the square of the strength, from a light drip to a heavy
+ * drop (2.8 times a tap's at 2); a tap's drop at the default 1.2. @param {number} strength */
+export const dropDepth = (strength) => DROP_DEPTH * (Math.min(2, Math.max(0.08, strength)) / 1.2) ** 2;
 /** the wake of a moving pointer: dents along its path, deeper when it moves faster (WAKE_DEPTH at WAKE_FAST css px per ms, at most twice that for a flick) */
 const WAKE_RADIUS = 28;
 const WAKE_DEPTH = 3;
@@ -276,7 +279,10 @@ export const plugin = Object.freeze({
       prefetch = null;
     };
     const fill = () => { prefetch = null; if (!prepareTable(table, performance.now() + 3)) idle(fill, 0); };
-    if (!reducedMotion && win.setTimeout) idle(fill, 400);
+    // the first rows now (a few ms, mostly the first run of the code): a drop right after the plugin is added (the gallery's demo on
+    // selection) then finds them, and the rest follows in idle time
+    if (!reducedMotion) { for (let i = 0; i < 3; i += 1) computeRow(table); }
+    if (!reducedMotion && win.setTimeout) idle(fill, 100);
 
     /** @type {Field|null} */ let field = null;
     /** @type {any} */ let fieldTexture = null;
@@ -561,7 +567,7 @@ export const plugin = Object.freeze({
         if (!still) {
           const f = currentField();
           const p = at ? toField(at.x, at.y) : { x: f.cssWidth / 2, y: f.cssHeight / 2 };
-          addDrop(p.x, p.y, DROP_DEPTH * Math.min(2, Math.max(0.08, strength)) / 1.2);
+          addDrop(p.x, p.y, dropDepth(strength));
         }
         return wait();
       },
