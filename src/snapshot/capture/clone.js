@@ -297,7 +297,9 @@ function cloneElement(ctx, src, known) {
   }
   // a rounded scroller: square corners (the compositor clips to the rounded port itself), or its backdrop (the content hidden)
   if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'square') appendInlineStyle(clone, 'border-radius:0!important');
-  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'backdrop') clone.setAttribute('data-hic-hide', '');
+  if (ctx.req.scroll?.el === src && (ctx.req.scroll.shape === 'backdrop' || ctx.req.scroll.shape === 'cover')) clone.setAttribute('data-hic-hide', '');
+  // the compositor's cover check: the scroller's background in one colour (anything else on its port is painted by something else)
+  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'cover') appendInlineStyle(clone, `background:${ctx.req.scroll.fill}!important`);
   if (ctx.animated?.has(src)) freezeAnimations(src, /** @type {HTMLElement} */ (clone));
   ctx.tokens.add(clone);
   if (!replaced && !LEAF_TAGS.has(ln)) cloneChildren(ctx, src, clone, cs);
@@ -641,7 +643,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
     shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el), scrollers: [],
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
-  if (req.scroll?.hide.length || req.scroll?.shape === 'backdrop') ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
+  if (req.scroll?.hide.length || req.scroll?.shape === 'backdrop' || req.scroll?.shape === 'cover') ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
   // the scroll compositor's classic-bar tiles: the track without its thumb, or the thumb alone on a transparent backdrop
   if (req.scroll?.bars === 'track') ctx.scroll.rules.push('[data-hic-bar=thumb]{visibility:hidden!important}');
   // (scoped to the clone root: a hidden svg / foreignObject would paint nothing at all)

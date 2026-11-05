@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="icon" href="data:,">
+<title>scroll covers: what paints over a composed list, and a sticky header that changes</title>
+<script>
+  // ?bundle=<core>  run(mode) installs the polyfill, plans the list (one scroll step of 1 px, its pages built), applies the mode's change, scrolls the list from 1 to
+  // 40 css px and compares the canvas in the paint that follows that step with the settled canvas half a second later. Modes:
+  //   plain         (control) nothing over the list: the step is composed
+  //   over          a sibling of the list with pointer-events: none paints over its port (the hit-test grid cannot see it): not composed
+  //   over-late     the same box, transparent while the list is planned, gets its background after: not composed
+  //   row-late      (control) a row of the list changes after the plan (a box with pointer-events: none rests beside the port): composed
+  //   head          (control) a sticky header that stays opaque, its text changed after the plan: composed
+  //   head-half     the sticky header turns opacity: 0.5 after the plan: not composed
+  var q = new URLSearchParams(location.search);
+  if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '" data-hic-manual></scr' + 'ipt>');
+</script>
+<style>
+  body { margin: 20px; }
+  canvas { display: block; width: 400px; height: 260px; }
+  .d { position: relative; width: 400px; height: 260px; background: white; font: 14px Arial, sans-serif; }
+  .list { height: 240px; overflow: auto; position: relative; scrollbar-width: none; background: white; }
+  .row { height: 30px; box-sizing: border-box; }
+  .row:nth-child(2n) { background: rgb(0, 255, 0); }
+  .row:nth-child(2n+1) { background: rgb(0, 0, 255); }
+  .box { position: absolute; left: 0; top: 60px; width: 400px; height: 30px; z-index: 5; pointer-events: none; background: rgb(255, 0, 255); }
+  .head { position: sticky; top: 0; z-index: 2; height: 30px; background: rgb(255, 0, 255); color: black; box-sizing: border-box; }
+</style></head>
+<body>
+<canvas id="c" content="drawable" width="400" height="260"><div class="d" drawable><div class="list"></div></div></canvas>
+<script>
+  const MODES = {
+    plain: {},
+    over: { box: '' },
+    'over-late': { box: 'background:transparent', after: (d) => { d.querySelector('.box').style.background = 'rgb(255, 0, 255)'; } },
+    'row-late': { box: 'top:242px;height:18px', after: (d) => { d.querySelectorAll('.row')[3].style.background = 'rgb(255, 128, 0)'; } },
+    head: { head: true, after: (d) => { d.querySelector('.head').textContent = 'HEADER 2'; } },
+    'head-half': { head: true, after: (d) => { d.querySelector('.head').style.opacity = '0.5'; } },
+  };
+  window.run = async (mode) => {
+    const m = MODES[mode];
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), d = document.querySelector('.d'), list = document.querySelector('.list');
+    list.innerHTML = (m.head ? '<div class="head">HEADER</div>' : '') + Array.from({ length: 120 }, (_, i) => '<div class="row">row ' + i + '</div>').join('');
+    if (m.box !== undefined) d.insertAdjacentHTML('beforeend', '<div class="box" style="' + m.box + '"></div>');
+    const installed = HicLivePolyfill.install({ maxDpr: 1 });
+    canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(d, 0, 0); };
+    canvas.requestPaint();
+    await installed.whenPainted(canvas);
+    const scroll = () => JSON.parse(JSON.stringify(installed.report().canvases[0].stats.snapshot.scroll));
+    try {
+      // the elements a mode changes are seen changed once first (the first change of an element damages the whole drawable, which plans the list again)
+      for (const el of d.querySelectorAll('.head, .box, .row:nth-child(4)')) el.dataset.seen = '1';
+      await wait(400);
+      list.scrollTop = 1;
+      for (let n = 0; n < 100; n++) { await wait(30); const s = scroll(); if (s.pages >= 2 || s.refusals > 0) { await wait(300); break; } }
+      const planned = scroll();
+      if (m.after) { m.after(d); await wait(500); }
+      const pixels = () => ctx.getImageData(0, 0, 400, 260).data;
+      const first = await new Promise((resolve, reject) => {
+        const c0 = scroll().composed;
+        const timer = setTimeout(() => reject(new Error('no paint after the scroll step')), 5000);
+        canvas.addEventListener('paint', () => { clearTimeout(timer); setTimeout(() => resolve({ composed: scroll().composed - c0, px: pixels() }), 0); }, { once: true });
+        list.scrollTop = 40;
+      });
+      await wait(500);
+      const settled = pixels();
+      let bad = 0, max = 0, nonWhite = 0;
+      for (let p = 0; p < settled.length; p += 4) {
+        let delta = 0;
+        for (let k = 0; k < 4; k++) delta = Math.max(delta, Math.abs(first.px[p + k] - settled[p + k]));
+        if (delta > 16) bad++;
+        max = Math.max(max, delta);
+        if (settled[p] < 250 || settled[p + 1] < 250 || settled[p + 2] < 250) nonWhite++;
+      }
+      return { mode, composed: first.composed, bad, max, nonWhite, total: 400 * 260, planned, after: scroll() };
+    } finally { installed.uninstall(); }
+  };
+  window.__ready = true;
+</script>
+</body></html>

@@ -63,6 +63,70 @@ test('a plain list with an opaque sticky header has a plan; the header is pinned
   assert.equal(plan.port.height, list.clientHeight);
 });
 
+test('ScrollPlan.pinnable: the pinned header meets the pin requirements while it is an opaque rectangle; translucent, with a shadow or no longer sticky it does not', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  await frames(2);
+  const list = m.layerEl.querySelector('.list');
+  const head = /** @type {HTMLElement} */ (list.querySelector('.head'));
+  const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+  assert.ok(plan?.pinnable, 'planned');
+  assert.equal(plan.pinnable(head), true, 'control: as planned');
+  head.firstElementChild.textContent = 'No.';
+  assert.equal(plan.pinnable(head), true, 'control: its text changed');
+  for (const [what, css] of [['opacity: 0.5', 'opacity:0.5'], ['a translucent background', 'background:rgba(45,68,112,0.5)'], ['a box shadow', 'box-shadow:0 2px 4px black'], ['a transform', 'transform:translateX(1px)'], ['position: static', 'position:static']]) {
+    head.style.cssText = css;
+    assert.equal(plan.pinnable(head), false, what);
+    head.style.cssText = '';
+  }
+  assert.equal(plan.pinnable(head), true, 'control: back as planned');
+});
+
+/** a list over 10 rows with a box outside it (pointer-events: none, transparent) over its port, and `n` empty spans outside it below the port */
+async function outsidePlan(n) {
+  const spans = Array.from({ length: n }, () => '<span></span>').join('');
+  const m = mount(`<div class="o-d" drawable><div class="o-l">${Array.from({ length: 40 }, (_, i) => `<div class="o-r">row ${i}</div>`).join('')}</div><div class="o-b"></div><div class="o-s">${spans}</div></div>`,
+    { css: '.o-d{position:relative;width:300px;height:260px;background:#fff;font:14px Arial}.o-l{height:200px;overflow:auto;background:#fff;scrollbar-width:none}.o-r{height:30px}.o-b{position:absolute;left:0;top:60px;width:300px;height:20px;pointer-events:none}.o-s{height:20px}', width: 320, height: 280 });
+  await frames(2);
+  const list = m.layerEl.querySelector('.o-l');
+  const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+  return { m, plan, list, box: /** @type {HTMLElement} */ (m.layerEl.querySelector('.o-b')), frame: m.layer.frameRect(list) };
+}
+
+test('ScrollPlan.clear: a change of a box outside the list that the hit test cannot see (pointer-events: none) and that paints over the port is not clear; a row of the list is', async () => {
+  const { plan, box, frame } = await outsidePlan(0);
+  assert.ok(plan?.clear, 'planned');
+  const boxRect = { x: frame.x, y: frame.y + 56, width: 300, height: 28 };
+  const rowRect = { x: frame.x, y: frame.y + 116, width: 300, height: 38 };
+  assert.equal(plan.clear([boxRect]), true, 'control: the box paints nothing yet');
+  box.style.background = 'rgb(255, 0, 255)';
+  assert.equal(plan.clear([rowRect]), true, 'control: a row elsewhere in the port');
+  assert.equal(plan.clear([boxRect]), false, 'the box, now with a background, over the port');
+  box.style.background = '';
+  box.style.boxShadow = '0 0 0 4px red';
+  assert.equal(plan.clear([boxRect]), false, 'a shadow');
+  box.style.boxShadow = '';
+  box.textContent = 'note';
+  assert.equal(plan.clear([boxRect]), false, 'text');
+  box.textContent = '';
+  box.classList.add('o-gen');
+  const st = document.createElement('style');
+  st.textContent = '.o-gen::after{content:""}';
+  document.head.append(st);
+  assert.equal(plan.clear([boxRect]), false, 'a generated box');
+  st.remove();
+  assert.equal(plan.clear([boxRect]), true, 'control: nothing again');
+});
+
+test('ScrollPlan.clear: with more than 1,000 elements outside the list a change inside the port is not checked one by one (about 1.2 us each, inside the frame): it is not clear', async () => {
+  const few = await outsidePlan(990);
+  const rowRect = { x: few.frame.x, y: few.frame.y + 116, width: 300, height: 38 };
+  assert.equal(few.plan?.clear?.([rowRect]), true, 'control: 993 outside');
+  few.m.layerEl.remove();
+  const many = await outsidePlan(1000);
+  assert.equal(many.plan?.clear?.([{ ...rowRect, x: many.frame.x, y: many.frame.y + 116 }]), false, '1,003 outside');
+  assert.equal(many.plan?.clear?.([{ x: many.frame.x, y: many.frame.y + 230, width: 300, height: 10 }]), true, 'a change below the port is not checked at all');
+});
+
 test('a list of fractional width (420.4 px, a grid track): the port is its padding box at layout size, the sticky header fits it, and pages compose the live capture', async () => {
   const m = mount(html, { css: css.replace('.d{width:420px', '.d{width:420.4px'), width: 440, height: 320 });
   const list = m.layerEl.querySelector('.list');
@@ -337,6 +401,17 @@ for (const [what, tag] of [['an image', 'img'], ['an inline SVG', 'svg'], ['a fo
 test('wholeRow: Gecko composes an offset only on a whole surface pixel (it renders a scroll offset at its exact value)', () => {
   assert.deepEqual([wholeRow(133, 1), wholeRow(133, 3), wholeRow(133.5, 2), wholeRow(400 / 3, 3)], [true, true, true, true]);
   assert.deepEqual([wholeRow(133.5, 1), wholeRow(133.2, 3), wholeRow(133.25, 2), wholeRow(0.4, 1)], [false, false, false, false]);
+});
+
+test('snapPx: an edge read back in single precision snaps as the engine snaps it, on its 1/64 px grid and a half up (DPR 1.25)', () => {
+  const geo = { scale: 1.25, ink: { left: 24, top: 24, right: 24, bottom: 24 } };
+  // a list column 400.4 css px wide at x 16 with 0.8 px borders (1 device px): its padding box ends at 415.6 css px, 549.5 surface px with the ink, which the
+  // engine snaps to 550; the rect reads back in single precision (Math.fround), 549.49999 surface px
+  const r = { x: 16.8, y: 16.8, width: Math.fround(400.4) - 1.6, height: Math.fround(400.4) - 1.6 };
+  assert.ok((r.x + r.width + 24) * 1.25 < 549.5, 'positive control: the plain product lands below the half (Math.round gives 549)');
+  assert.deepEqual(snapPx(r, geo), { x: 51, y: 51, width: 499, height: 499 }, 'the right and bottom edges at 550, as the settled tile has them');
+  assert.deepEqual(snapPx({ x: 16.8, y: 16.8, width: 398.39, height: 9.6 }, geo), { x: 51, y: 51, width: 498, height: 12 }, 'an edge truly below the half still rounds down');
+  assert.deepEqual(snapPx({ x: 10.4, y: 10.4, width: 60, height: 40.2 }, { scale: 3, ink: { left: 4, top: 4, right: 4, bottom: 4 } }), { x: 43, y: 43, width: 180, height: 121 }, 'edges off the half are unchanged');
 });
 
 test('snapPx / rowOf / covers on a css px grid: edges and offsets snap as WebKit renders them (DPR 3)', () => {

@@ -18,6 +18,9 @@
 //            equals the twin at the final offset. Hover: a frame is the pair (offset, row the live DOM had under :hover), and the twin's pointer is put on that row;
 //            the twin must then show that row hovered in its screenshot (the reference's own precondition, class twin: a resting OS pointer over the window was
 //            delivered to the twin at every clipped screenshot and took its hover away, 2026-10-22; the harness now parks the pointer and reports foreign input).
+//   covers   case covers (fixture scroll-covers.html): a composed step equals the settled canvas where a box with pointer-events: none paints over the list (from
+//            the start, or from a change after the plan) and where its sticky header turns translucent after the plan (scroll-compose.js vet, pinnable;
+//            scroll-pages.js quietOutside); controls: nothing over the list, a row that changes, a header that stays opaque are composed.
 // Positive control (sabotage stale + nosync + nocompose + halfpaint): only the first draw reaches the canvas, the live scroller is never synchronised, every
 // scroller under the pointer gets an empty position:fixed child (no plan for it), and every second paint event is dropped: every class must go red. With the
 // dropped paints every cadence check is red in every case (paint share 0.49-0.51, movement 0.67-0.68; 6 of 6 runs at DPR 2 and 1.25, Chrome 155, 2026-10-29).
@@ -288,6 +291,24 @@ runGate('G-scroll-cadence', async (ctx) => {
       await ctx.focus(page);
     } finally {
       await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  }
+  // case covers (fixture scroll-covers.html, no input): one scroll step of a planned list, read in the paint that follows it, against the settled canvas. Something
+  // outside the list that paints over its port without being hit-testable (a box with pointer-events: none: the planner's hit-test grid cannot see it), from the
+  // start or from a change after the plan, and a sticky header that turns translucent after the plan: before the fixes every page carried the box along (12,000 of
+  // 104,000 pixels wrong) and the header's opaque tile was drawn over pages without it (12,000 wrong, up to 128 levels; headless Chrome 156, 2026-11-05). Controls:
+  // nothing over the list, a row of the list that changes, a header that stays opaque: composed, and equal to the settled canvas
+  if (!only || only.includes('covers')) {
+    for (const [mode, composes] of /** @type {Array<[string, boolean]>} */ ([['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false]])) {
+      const u = new URL('/test/gates/fixtures/scroll-covers.html', ctx.srv.url);
+      u.searchParams.set('bundle', ctx.bundle);
+      await page.navigate(u.href);
+      await page.waitForFunction('window.__ready', { timeout: 15000 });
+      const r = await page.evaluate(`window.run(${JSON.stringify(mode)})`, { timeout: 30000 });
+      const n = { composed: r.composed, bad: r.bad, max: r.max, nonWhite: r.nonWhite, refusedBy: r.after.refusedBy, stale: r.after.stale, obstructed: r.after.obstructed };
+      numbers[`covers-${mode}`] = n;
+      ctx.check(`covers ${mode}: the canvas paint after the scroll step equals the settled canvas (no pixel more than 16 levels off)`, r.bad === 0 && r.nonWhite > 1000, n, 'pixel');
+      if (composes) ctx.check(`covers ${mode}: the step was composed (nothing paints over the list but the list)`, r.composed === 1, n, 'compose');
     }
   }
   const mean = shares.reduce((a, b) => a + b, 0) / Math.max(1, shares.length);
