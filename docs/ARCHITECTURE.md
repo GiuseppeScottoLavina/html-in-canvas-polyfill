@@ -479,6 +479,16 @@ Tick RUN(now), for each canvas record in reverse tree order:
     desktop: 35,000-165,000 pixels per frame). On Chromium composition is not refused there (WebKit and Gecko refuse a scale that is not a whole number, above): in headless Chrome at DPR 3 with 4x CPU throttling, the plain path instead of it fell from
     60 to 16-30 canvas updates per second under touch scrolls, with 84-119 of about 167 moves unpainted (0 composed); at 1x both kept 60 (test/bench/scroll-jank.mjs, a
     variant of the store that refuses). Refusing, or a desktop `maxDpr` of 3, is an open decision.
+    Measured again on 2026-11-05 (headless Chrome 156, `--force-device-scale-factor`; the last composed frame of each step against the tile that settles at the same offset,
+    24 scripted jumps and 4 wheel gestures per list): `maxDpr: 1.5` at DPR 2, 116-795 pixels per composed frame on the 300-row list (up to 140 levels) and 8,264-160,669 on
+    rows of fractional height; DPR 3 (raster 2.5), 180-2,576 and 13,674-272,826; the same lists at raster 3 (`maxDpr: 3`), 0 (one frame with one pixel off by 1 level).
+  - **Fractional device pixel ratios (Chromium).** Where the raster scale is the device pixel ratio, a fractional ratio is composed like a whole one: no refusal at
+    1.25, 1.5 or 1.75 (`refusedBy` empty, 25-26 of 28 steps composed, every wheel move painted in the headless wheel bench, as at 1 and 2; the scale refusal concerns
+    the WebKit grid and Gecko only). Same oracle, same build: at 1.25 and 1.5 every composed frame of the plain, long, fractional-width and fractional-row lists equals the
+    settled tile, as at 1 (at 2, 18-20 of 26 do, the rest one or two pixels off by 1 level). At 1.75 every composed frame of those lists differs from the settled tile by
+    24,000-26,600 pixels (up to 177 levels), but there the composed frame equals a rebuild of the whole drawable at the same offset, and the settled tile (a crop of
+    the scroller's damage) is what differs from it (about 90,000 pixels: glyphs a fraction of a pixel to the side); a viewBox crop alone does not do it (an image of the
+    same markup cropped at 1 to 28 px from its origin is pixel-equal at zoom 1 to 2). Open.
   - **Rounded scrollports.** Pages and pinned tiles are rendered with the scroller's corners square (`CaptureRequest.scroll.shape: 'square'`); a BACKDROP tile renders the port without
     the scroller's content ('backdrop': border, background and whatever lies behind the corners); the composition draws the backdrop in the corner squares and the pages inside the
     antialiased rounded clip of the inner border radii with `copy` (which lerps by the clip coverage): within 0.1 % of a live capture in the unit oracle. Not with a classic
