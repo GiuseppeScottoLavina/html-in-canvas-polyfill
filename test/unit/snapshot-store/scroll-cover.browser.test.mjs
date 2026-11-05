@@ -4,10 +4,9 @@
 //   - Something outside the list paints over its port (a box with pointer-events: none, one between the grid's points, the shadow or outline of a box below the
 //     port, a generated box of the drawable, what shows through a list without a background): every page carried it along with the list (24,000 pixels wrong
 //     before the fix). The plan is refused (refusedBy.cover); controls: no box, a hidden one, a transparent one.
-//   - A box of exactly a cover colour (opaque or at alpha 0.5): one colour alone passed it (0.1.0-preview.24); the check renders the port in two.
-//   - Such a box starts to paint after the plan (a background, a shadow, an opacity of 0 that becomes 1 or 0.02, on it or on a wrapper): the damage is checked
-//     against the elements outside the list, and the step falls back. Control: a row of the list changes, and the step is still composed; also under a box of
-//     opacity 0 (its own or a wrapper's), which paints nothing.
+//   - Such a box starts to paint after the plan (a background, a shadow): the damage is checked against the elements outside the list, and the step falls back.
+//     Control: a row of the list changes, and the step is still composed.
+//   (A box of a cover colour and boxes of opacity 0: scroll-cover-faded.browser.test.mjs, this file is near the runner's per-file limit.)
 //   - The sticky header turns translucent after the plan (12,000 pixels wrong before the fix, at most 128 levels): the plan is stale; controls: a header that stays
 //     opaque (its text changes) is composed, one translucent from the start is refused.
 import { test, assert } from '/test/unit/lib/t.js';
@@ -30,10 +29,6 @@ for (const [what, o] of /** @type {Array<[string, any]>} */ ([
   ['a visible child (pointer-events: none) of a hidden box', { extra: '<div class="cv-o" style="visibility:hidden;background:transparent"><div style="visibility:visible;pointer-events:none;height:30px;background:rgb(255,0,255)"></div></div>' }],
   ['a generated box of the drawable (::after, pointer-events: none)', { cls: 'cv-after' }],
   ['a gradient that shows through a list without a background', { cls: 'cv-grad' }],
-  // the cover check's first colour passes its own tile and shows on the second's (one colour alone: 24,000 pixels wrong over the three steps, 0.1.0-preview.24)
-  ['a box of exactly the first cover colour, rgb(1, 254, 3)', { extra: '<div class="cv-o" style="pointer-events:none;background:rgb(1,254,3)"></div>' }],
-  ['a box of the first cover colour at alpha 0.5', { extra: '<div class="cv-o" style="pointer-events:none;background:rgba(1,254,3,0.5)"></div>' }],
-  ['a box of exactly the second cover colour, rgb(254, 1, 252)', { extra: '<div class="cv-o" style="pointer-events:none;background:rgb(254,1,252)"></div>' }],
 ])) {
   test(`${what}: the plan is refused (refusedBy.cover), the step is not composed and shows what the settled canvas shows`, async (t) => {
     const r = await run(t, o);
@@ -75,27 +70,6 @@ test('control: after the plan, a row of the list changes (a box outside it with 
   assert.equal(r.bad, 0, `equals the settled canvas (${r.bad})`);
   assert.equal(r.after.obstructed, 0);
 });
-
-for (const [what, extra] of [['a box of opacity 0', '<div class="cv-o" style="pointer-events:none;opacity:0"></div>'], ['a box in a wrapper of opacity 0', '<div class="cv-w" style="position:absolute;left:0;top:0;opacity:0"><div class="cv-o" style="pointer-events:none"></div></div>']]) {
-  test(`after the plan, a row of the list under ${what} changes: the box paints nothing, the step is still composed`, async (t) => {
-    // the row under the box (60-90 css px of the port) at scrollTop 1; before the fix the change was an obstruction, and the cache was dropped (0 of 3 composed)
-    const r = await run(t, { extra, seen: '.cv-o, .cv-w, .cv-r:nth-child(3)', after: (h) => { /** @type {HTMLElement} */ (h.querySelectorAll('.cv-r')[2]).style.background = 'rgb(255,128,0)'; } });
-    assert.ok(r.composed >= 1, `composed (${r.composed} of 3 steps)`);
-    assert.equal(r.bad, 0, `equals the settled canvas (${r.bad})`);
-    assert.equal(r.after.obstructed, 0, 'no obstruction');
-  });
-}
-
-for (const [what, extra, sel, to] of [['a box of opacity 0', '<div class="cv-o" style="pointer-events:none;opacity:0"></div>', '.cv-o', '1'], ['a box of opacity 0', '<div class="cv-o" style="pointer-events:none;opacity:0"></div>', '.cv-o', '0.02'],
-  ['a wrapper of opacity 0', '<div class="cv-w" style="position:absolute;left:0;top:0;opacity:0"><div class="cv-o" style="pointer-events:none"></div></div>', '.cv-w', '1']]) {
-  test(`after the plan, ${what} over the port turns opacity ${to}: the step falls back to the plain path`, async (t) => {
-    const r = await run(t, { extra, seen: '.cv-o, .cv-w', after: (h) => { /** @type {HTMLElement} */ (h.querySelector(sel)).style.opacity = to; } });
-    assert.ok(r.planned.pages >= 2 && r.planned.refusals === 0, 'planned, pages built');
-    assert.equal(r.bad, 0, `no pixel differs from the settled canvas (${r.bad})`);
-    assert.equal(r.composed, 0, 'not composed');
-    assert.ok(r.after.obstructed >= 1, 'counted as an obstruction');
-  });
-}
 
 test('control: a sticky header that stays opaque is composed, also after its text changed', async (t) => {
   const r = await run(t, { head: true, after: (h) => { /** @type {HTMLElement} */ (h.querySelector('.cv-h')).textContent = 'HEADER 2'; } });
