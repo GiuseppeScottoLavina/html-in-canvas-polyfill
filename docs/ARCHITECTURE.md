@@ -393,13 +393,19 @@ Tick RUN(now), for each canvas record in reverse tree order:
     checked (`ScrollPlan.clear`) before the next composition: an element outside the scroller over the port would travel with the pages. The check is a hit test and, because a hit test
     sees neither `pointer-events: none` nor a box between its points nor ink outside a box, a pass over the drawable's elements outside the scroller (`quietOutside`): of the elements whose box the damage touches, one that paints
     inside its box where it lies over the damaged part of the port, or whose shadow, outline, overflowing content or generated box reaches that part (a filter, a border image or a
-    positioned generated box: anywhere), drops the plan
-    (`obstructed`; the scroller is then planned again after newer damage, at most once a second). That pass costs about 1.2 us per element outside the scroller, inside the
+    positioned generated box: anywhere), drops the plan; an element whose effective opacity is exactly 0 (its own or an ancestor's below the scroller's, which no
+    descendant can undo; not that of a box of `display: contents`, nor an ancestor's over an element in the top layer) paints nothing and is skipped, so a row that changes under an invisible overlay keeps the cache, and the overlay's change to any opacity
+    above 0 is damage that is checked again (`obstructed`; the scroller is then planned again after newer damage, at most once a second). That pass costs about 1.2 us per element outside the scroller, inside the
     frame of the step (headless Chrome 156: 1.1 ms per check with 10 such elements over 10,000 rows, most of it the hit test, 2.3 ms with 1,000, 7.5 ms with 5,000); with more
     than 1,000 a change inside the port drops the plan instead. A pinned element the damage reaches is checked against the pin requirements again (`ScrollPlan.pinnable`; a header that turned translucent was drawn from its opaque
     tile over pages that hide it): one that fails them drops the plan as stale, and the planner then refuses it. Before its first composition the port is checked in pixels
-    (`ScrollPlan.cover`, `vet`): a tile of the port with the scroller's content hidden and its background in a sentinel colour must show that colour on every pixel (rounded corners
-    excepted), and for a scroller that is not opaque, a tile with its content hidden must be one colour (what shows through it); otherwise the plan is refused (`refusedBy.cover`). The tiles are side builds like the pages, read back in bands of 262,144 pixels, one
+    (`ScrollPlan.cover`, `vet`): two tiles of the port with the scroller's content hidden and its background in a sentinel colour, rgb(1, 254, 3) and rgb(254, 1, 252),
+    must each show its colour on every pixel (rounded corners excepted), and for a scroller that is not opaque, a tile with its content hidden must be one colour (what
+    shows through it); otherwise the plan is refused (`refusedBy.cover`). One colour alone passed an overlay of exactly that colour (0.1.0-preview.24); every channel of
+    the two lies near opposite ends (249 levels apart at least), so an opaque overlay differs from one of them whatever its colour, and a translucent one passes both
+    only below an alpha of 0.004, about one level over the content. The tiles are side builds like the pages (the second colour: one side build more per plan, and one
+    port tile more in the plan's surface budget until it is read; a 400 x 240 list, headless Chrome 156, 6 runs: the first composition 43 ms after the first step at
+    DPR 2 as before, 42-60 ms at DPR 1 against 40-43, at most a frame later), read back in bands of 262,144 pixels, one
     post-frame job each (about 1 ms; a 2116 x 2000 px port read and tested at once took 15 ms). The planner's own steps are unchanged (10,000 rows, a 600 px port: 41-45 ms in
     16-17 steps of at most 3.4 ms, before and after).
     Measured before the fix (headless Chrome 156, a 400 x 240 port): a box with `pointer-events: none`, a 12 px box between the grid's points, a shadow or outline reaching in from below,

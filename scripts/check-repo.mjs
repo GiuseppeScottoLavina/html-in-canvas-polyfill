@@ -175,7 +175,12 @@ if (!docsOnly) {
   // was hidden under the header's tile while the list moved (11,981 of 104,000 pixels wrong)
   // 17275 -> 17285 (2026-11-05, measured 17,283): the neutral form of a :hover rule makes every other pseudo-class state-free (+13: css-rewrite.js anyState); a
   // `.b:hover:focus` kept its :focus, so a "cannot match" cached while the button had no focus outlived the focus and the hover look stayed after the mouse left
-  if (total > 17285) problems.push(`G-size: core is ${total} code lines (> 17285)`);
+  // 17275 -> 17285 (2026-11-05, measured 17,283): an element outside a list of effective opacity 0 paints nothing, and the cover check renders the port in two
+  // colours (+13: scroll-pages.js faded, its memo and topLayer 12, scroll-compose.js one cover tile per colour 1); before it, a row change under an invisible overlay dropped a
+  // valid cache (5 main tiles and 0 compositions per 4-step cycle instead of 2 and 5), and an overlay of exactly the one cover colour passed the check
+  // (16,061 of 104,000 pixels wrong in the first composed step)
+  // 17285 -> 17300 (2026-11-05, measured 17,296): the two streams above together (+13 each from 17,270)
+  if (total > 17300) problems.push(`G-size: core is ${total} code lines (> 17300)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
