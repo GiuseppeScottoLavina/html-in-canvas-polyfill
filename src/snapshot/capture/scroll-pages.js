@@ -6,6 +6,7 @@
  */
 
 import { currentEngine } from '../../util/engine.js';
+import { intersectRect } from '../../util/rect.js';
 import { parseColor } from './caret-overlay.js';
 import { engineSkins } from './engine-skins.js';
 import { WEBKIT_SYSTEM_INSET, WEBKIT_SYSTEM_MIN, webkitSystemKnob } from './webkit-bar-geometry.js';
@@ -15,6 +16,12 @@ import { chromiumBarLook, chromiumVerticalBar, parseScrollbarColor, scrollFacts,
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
 /** @typedef {import('../../contracts/types.js').ScrollPlan} ScrollPlan */
 
+/**
+ * ScrollPlan.cover: the background the compositor's cover tile gives the scroller, its content hidden (scroll-compose.js vet). A port pixel of another colour there is
+ * painted by something the pages would carry along (an element outside the scroller, or what shows through it).
+ */
+/** @type {[number, number, number]} */
+const COVER = [1, 254, 3];
 /** at most this many elements in the scroller are inspected (larger: no composition; the node budget's absolute limit is 20000) */
 const MAX_SCAN = 20000;
 /** elements inspected per step of a large scroller's scan at most (planSteps) */
@@ -102,6 +109,7 @@ export function innerRadii(cs, w, h) {
  * @param {Element} el @param {CSSStyleDeclaration} cs @returns {boolean}
  */
 function pinnable(el, cs) {
+  if (cs.position !== 'sticky') return false;
   const bg = parseColor(cs.backgroundColor);
   const h = /** @type {HTMLElement} */ (el);
   return !!bg && bg[3] >= 1 && cs.backgroundImage === 'none' && square(cs) && cs.boxShadow === 'none' && (cs.outlineStyle === 'none' || px(cs.outlineWidth) === 0)
@@ -295,9 +303,14 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     }
     bar = { gutter: { x: port.x + (f.cw ?? s.clientWidth), y: port.y, width: f.gv, height: s.clientHeight }, ...v };
   }
+  /** @type {Element[]|undefined} the drawable's elements outside the scroller, its ancestors left out: read at the first damage inside the port (an element added
+   * later is a first sighting, whole-drawable damage, which drops the plan) */
+  let outside;
   return {
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
-    ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, clear: (rects) => clearOver(doc, layer, s, port, rects),
+    ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVER,
+    pinnable: (el) => el.isConnected && pinnable(el, win.getComputedStyle(el)),
+    clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, (outside ??= outsideOf(doc, drawable, s))),
   };
 }
 
@@ -338,6 +351,90 @@ function webkitSystemBar(win, s, f) {
   const at = (/** @type {number} */ top) => webkitSystemKnob(lane, client, total, top, min);
   const k = at(0);
   return k ? { thumbX: WEBKIT_SYSTEM_INSET, thumbW: f.gv - 2 * WEBKIT_SYSTEM_INSET, thumbH: k.length, thumbY: (top) => WEBKIT_SYSTEM_INSET + (at(top)?.start ?? 0) } : null;
+}
+
+/**
+ * ScrollPlan.clear: at most this many elements outside the scroller are checked against a change inside the port (quietOutside), about 1.2 us each (headless Chrome
+ * 156, a getBoundingClientRect apiece: 1.2 ms over 1,000 elements, 6.4 ms over 5,000, inside the frame of the step); with more, such a change drops the plan
+ */
+const MAX_OUTSIDE = 1000;
+/** elements whose content box paints whatever their style says (replaced elements, form controls), or whose painting the computed style does not tell */
+const PAINTERS = /^(img|picture|svg|math|video|canvas|iframe|embed|object|input|textarea|select|button|meter|progress|hr|frame|fieldset)$/;
+
+/** @param {Document} doc @param {Element} drawable @param {Element} s @returns {Element[]} the elements of the drawable outside the scroller, its ancestors left out */
+function outsideOf(doc, drawable, s) {
+  /** @type {Element[]} */
+  const out = [];
+  if (s === drawable) return out;
+  // 1: SHOW_ELEMENT; the scroller's subtree is skipped (FILTER_REJECT, 2)
+  const w = doc.createTreeWalker(drawable, 1, { acceptNode: (n) => (n === s ? 2 : 1) });
+  for (let n = /** @type {Element|null} */ (w.nextNode()); n; n = /** @type {Element|null} */ (w.nextNode())) if (!n.contains(s)) out.push(n);
+  return out;
+}
+
+/** @param {Window} win @param {Element} e @returns {boolean} a ::before or ::after box */
+const generated = (win, e) => ['::before', '::after'].some((p) => !/^(none|normal)$/.test(win.getComputedStyle(e, p).content));
+
+/** @param {string} v a computed shadow list @returns {number} css px it may reach beyond the box: every length of it added up (offsets, blur and spread), twice */
+const shadowReach = (v) => (v === 'none' ? 0 : 2 * (v.match(/-?[\d.]+px/g) ?? []).reduce((a, n) => a + Math.abs(parseFloat(n)), 0));
+
+/** @param {CSSStyleDeclaration} cs @returns {number} css px its shadows and outline reach beyond the box; a filter or a border image: anywhere */
+const inkReach = (cs) => (cs.filter !== 'none' || (cs.backdropFilter ?? 'none') !== 'none' || (/** @type {any} */ (cs).borderImageSource ?? 'none') !== 'none' ? Infinity
+  : Math.max(shadowReach(cs.boxShadow), shadowReach(cs.textShadow), cs.outlineStyle === 'none' ? 0 : px(cs.outlineWidth) + Math.max(0, px(cs.outlineOffset))));
+
+/**
+ * What `e` (outside the scroller) may paint: `self` inside its border box (its descendants are judged on their own; unknown: yes), and how far beyond it, css px per
+ * side (`x`, `y`: ink, content that overflows a box that does not clip it, a generated box; one positioned out of the box: anywhere).
+ * @param {Window} win @param {Element} e @param {CSSStyleDeclaration} cs @returns {{self: boolean, x: number, y: number}}
+ */
+function painting(win, e, cs) {
+  const h = /** @type {HTMLElement} */ (e);
+  const shown = cs.visibility === 'visible';
+  let self = !!e.shadowRoot || e.localName.includes('-') || e.namespaceURI !== 'http://www.w3.org/1999/xhtml' || (shown && (PAINTERS.test(e.localName)
+    || (parseColor(cs.backgroundColor)?.[3] ?? 1) > 0 || cs.backgroundImage !== 'none' || cs.display === 'list-item'
+    || px(cs.borderTopWidth) + px(cs.borderRightWidth) + px(cs.borderBottomWidth) + px(cs.borderLeftWidth) > 0 || [...e.childNodes].some((n) => n.nodeType === 3 && /\S/.test(/** @type {Text} */ (n).data))));
+  let r = shown ? inkReach(cs) : cs.filter !== 'none' ? Infinity : 0;
+  for (const p of ['::before', '::after']) {
+    const pc = win.getComputedStyle(e, p);
+    if (/^(none|normal)$/.test(pc.content)) continue;
+    self = true;
+    r = Math.max(r, /^(absolute|fixed|sticky)$/.test(pc.position) ? Infinity : inkReach(pc));
+  }
+  // overflowing content is a child's (judged on its own) or text and generated boxes of this one (scrollWidth / scrollHeight reach right and down)
+  return { self, x: r + (cs.overflowX === 'visible' ? Math.max(0, h.scrollWidth - h.clientWidth) : 0), y: r + (cs.overflowY === 'visible' ? Math.max(0, h.scrollHeight - h.clientHeight) : 0) };
+}
+
+/**
+ * ScrollPlan.clear, beside the hit test: no element of the drawable outside the scroller (its ancestors aside) may paint over the damage inside the port. A hit test
+ * sees only what is hit-testable at its points; a change there can also be a box with `pointer-events: none`, one between the points, or the shadow, outline,
+ * overflowing text or generated box of an element beside the port (a damage rect holds the box of the element it comes from and the ink it paints). An element
+ * whose box touches a damage rect is checked: whatever it paints inside its box where that box lies over the damaged part of the port, and its ink where that reaches
+ * it. Frame css px are mapped to the viewport through the scroller's own box, as clearOver does.
+ * @param {Window} win @param {HTMLElement} s @param {Rect} port @param {Rect[]} rects @param {LiveLayer} layer @param {Element[]} outside
+ * @returns {boolean}
+ */
+function quietOutside(win, s, port, rects, layer, outside) {
+  const fr = layer.frameRect(s);
+  if (!fr || !(fr.width > 0) || !(fr.height > 0)) return false;
+  const vr = s.getBoundingClientRect();
+  const kx = vr.width / fr.width, ky = vr.height / fr.height;
+  const view = (/** @type {Rect} */ r) => ({ x: vr.left + (r.x - fr.x) * kx, y: vr.top + (r.y - fr.y) * ky, width: r.width * kx, height: r.height * ky });
+  const pv = view(port);
+  /** a box (grown by gx, gy) meets a rect: edges that only touch do not count, a box of no size inside it does */
+  const meets = (/** @type {Rect} */ a, /** @type {DOMRect} */ b, gx = 0, gy = 0) => b.left - gx < a.x + a.width && b.right + gx > a.x && b.top - gy < a.y + a.height && b.bottom + gy > a.y;
+  const near = /** @type {Array<[Rect, Rect]>} */ (rects.map(view).map((r) => [r, intersectRect(r, pv)]).filter(([, p]) => p));
+  if (!near.length) return true;
+  if (outside.length > MAX_OUTSIDE) return false;
+  for (const e of outside) {
+    if (!e.isConnected) continue;
+    const b = e.getBoundingClientRect();
+    if (!near.some(([r]) => meets(r, b, 0.5, 0.5))) continue;
+    // a box inside a display:none subtree (or a display:contents one) has no rect of its own
+    if (!e.getClientRects().length && !generated(win, e)) continue;
+    const g = painting(win, e, win.getComputedStyle(e));
+    for (const [, p] of near) if ((g.self && meets(p, b)) || ((g.x || g.y) && meets(p, b, g.x * kx, g.y * ky))) return false;
+  }
+  return true;
 }
 
 /**

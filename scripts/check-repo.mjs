@@ -160,7 +160,10 @@ if (!docsOnly) {
   // src/loader-iife.js 11, native-detect.js decideInstall +7 shared with install.js -3). The loader is its own bundle; the core bundle gains only decideInstall
   // 16955 -> 16970 (2026-11-05, measured 16,965): a finger focuses and activates the control an effect shows on a tap, when it lifts, not at the press
   // (+17: effects/interposer.js and effects/native-interposer.js, the tap state and a shared focusAt)
-  if (total > 16970) problems.push(`G-size: core is ${total} code lines (> 16970)`);
+  // 16970 -> 17075 (PLACEHOLDER) (2026-11-05, measured 17,056): the scroll compositor checks what a plan vouched for where it can change (+108: scroll-pages.js quietOutside,
+  // painting, inkReach, outsideOf, its bound and the pin check 55; scroll-compose.js vet in bands, vetPixels, the pin re-check, the refusal and hold helpers 52; clone.js
+  // the cover tile 1)
+  if (total > 17060) problems.push(`G-size: core is ${total} code lines (> 17060)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

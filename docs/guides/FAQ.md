@@ -111,6 +111,7 @@ Inner scrolling is drawn from cached pages of the scroller in each step's frame,
 - Firefox at a device pixel ratio other than 1, and in Firefox any scroller with rounded corners or with form controls, images, SVG or transforms inside ([PERFORMANCE.md](PERFORMANCE.md#1-summary));
 - Safari and Firefox at a raster scale that is not a whole number, such as a `maxDpr` of 1.5 or 2.5 ([PERFORMANCE.md](PERFORMANCE.md#5-tips));
 - a scroller that holds the focus or a selection, once the pages planned before are dropped (no new plan is made while either is inside it, and a plan still being made ends when either comes inside);
+- a scroller over whose port something else paints: an element outside it (also one with `pointer-events: none`, or its shadow, outline or generated box), or a background that is not one colour showing through a scroller without its own (`refusedBy.cover`); a sticky header that is not an opaque rectangle, also when it stops being one after the plan was made (`stats.snapshot.scroll.stale`);
 - a scroller whose content keeps changing while its plan is made: a change between two of the plan's steps that an installed plan would not survive makes the plan again once (`stats.snapshot.scroll.stale` counts these), and a second one refuses the scroller until it is planned again (after a newer change, at most once a second).
 
 The report counts each refusal by reason (`stats.snapshot.scroll.refusedBy`, [TROUBLESHOOTING.md](TROUBLESHOOTING.md#6-symptoms-without-an-error)).

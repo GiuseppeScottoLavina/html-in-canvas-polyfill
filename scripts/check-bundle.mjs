@@ -182,7 +182,11 @@ const LIMITS = {
   // 352 -> 352.25 KB, gzip 119.55 -> 119.65 KB (+195 / +84 bytes, 2026-11-04, measured 352,088 / 119,595): the caret patch is put back before a composed step only
   //   when it lies across the port's edge (store.js scrollStep, caret-patch.js meets); the save and put-back pair at every step ran a focused list at 94 updates a
   //   second instead of 118 on an iPad (Safari, 120 Hz)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 352.25 * KB, gzip: 119.65 * KB },
+  // 352.25 -> 356.5 KB, gzip 119.65 -> 121.25 KB (+4,129 / +1,482 bytes, 2026-11-05, measured 356,325 / 121,097): the scroll compositor checks what a plan vouched for
+  //   where it can change: the port in pixels before the first composition (scroll-compose.js vet, vetPixels; clone.js the cover tile), a change inside the port
+  //   against the elements outside the scroller (scroll-pages.js quietOutside, mayPaint), a changed pinned element against the pin requirements. Before, a box with
+  //   pointer-events: none over a list and a header turned translucent were composed wrong (12,000 of 104,000 pixels each)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 356.5 * KB, gzip: 121.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

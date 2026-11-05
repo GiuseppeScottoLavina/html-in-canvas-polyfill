@@ -10,7 +10,9 @@
  * inside the content box (a :hover row, a row updated by script) marks that part of every page captured before it DIRTY; damage that crosses the scroller's edge,
  * has no rect, or touches a pinned element drops the cache. A dirty part is never composed: the step falls back to the plain path, whose tile repairs the pages
  * (its pixels are copied into them), and a page that stays dirty where it is needed is rebuilt. Damage inside the visible port is checked for an obstruction (an
- * element outside the scroller over the port, which a page must not carry) before the next composition. Everything the plan cannot vouch for keeps the plain path.
+ * element outside the scroller over the port, which a page must not carry) before the next composition, and a pinned element the damage reaches against the pin
+ * requirements (a header that turned translucent). Before its first composition the port is checked in pixels (ScrollPlan.cover, vet): rendered without the scroller's
+ * content, nothing but the scroller's background may show there. Everything the plan cannot vouch for keeps the plain path.
  * Module: snapshot-store (src/snapshot/store/*).
  */
 
@@ -22,7 +24,7 @@ import { subtractRects } from './damage.js';
 /** @typedef {import('./pump.js').Entry} Entry */
 /** @typedef {import('./pump.js').Geometry} Geometry */
 /** @typedef {HTMLCanvasElement|OffscreenCanvas} Surface */
-/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop', memo?: Map<Element, import('../../contracts/types.js').TailMemo>}} PageRequest */
+/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'|'cover', fill?: string, memo?: Map<Element, import('../../contracts/types.js').TailMemo>}} PageRequest */
 
 /** pages kept per scroller (each one scrollport of surface pixels) */
 const MAX_PAGES = 4;
@@ -34,6 +36,8 @@ const REPLAN_MS = 1000;
 const MAX_MISSES = 2;
 /** damage rects inside a scroller kept while its plan is being made (more: the plan is made again) */
 const MAX_PENDING_RECTS = 16;
+/** pixels of a cover check read and tested per post-frame job (scroll-compose.js vet: about 1 ms each, headless Chrome 156) */
+const VET_PIXELS = 1 << 18;
 /** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
 const AHEAD_PAGES = 2;
 
@@ -67,7 +71,9 @@ const AHEAD_PAGES = 2;
  * @property {number|null} shown  scrollTop the surface's scrollport shows (null = not known to be one offset)
  * @property {boolean} queued  a composition was promised to the next commit
  * @property {number} last  previous live scrollTop seen (direction of the next page)
- * @property {Rect[]} unverified  damage rects inside the visible port (frame css) not yet checked for an obstruction
+ * @property {Rect[]} unverified  damage rects that reach into the visible port (frame css) not yet checked for an obstruction
+ * @property {Set<Element>} recheck  pinned elements changed since the last composition: checked against the pin requirements before the next (ScrollPlan.pinnable)
+ * @property {number} vet  checks of ScrollPlan.cover whose tile has not landed: no composition until they have, and passed
  * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
  * @property {boolean} early  planned ahead and not scrolled yet: its builds queued before a finger landed stop (yieldToInput)
  * @property {number} used  when it was planned or last served a step (shed: the least recently used give way first)
@@ -199,6 +205,20 @@ export function cornerSquares(portPx, round, s) {
   ].filter((r) => r.width > 1 && r.height > 1);
 }
 
+/**
+ * PURE. ScrollPlan.cover's test of a port's pixels (`data`: RGBA, `width` x `height`): every pixel is `want` (r, g, b and opaque, or r, g, b, a), or, with no
+ * `want`, every pixel is the same. The pixels inside `skip` (rects in the same pixels: the corner squares of a rounded port, where what lies behind the corner shows) are left out.
+ * @param {Uint8ClampedArray} data @param {number} width @param {number} height @param {number[]|null} want @param {Rect[]} skip @returns {boolean}
+ */
+export function vetPixels(data, width, height, want, skip) {
+  const px = new Uint32Array(data.buffer, data.byteOffset, width * height);
+  const out = (/** @type {number} */ i) => { const x = i % width, y = (i - x) / width; return skip.some((q) => x >= q.x && x < q.x + q.width && y >= q.y && y < q.y + q.height); };
+  let ref = want ? new Uint32Array(new Uint8ClampedArray(want.length === 4 ? want : [...want, 255]).buffer)[0] : undefined;
+  for (let i = 0; ref === undefined && i < px.length; i++) if (!out(i)) ref = px[i];
+  for (let i = 0; i < px.length; i++) if (px[i] !== ref && !out(i)) return false;
+  return true;
+}
+
 /** Bytes of a cache's pages and tiles: those decoded (`held`), or every one planned. @param {Cache} c @param {boolean} held @returns {number} */
 function cacheBytes(c, held) {
   let n = 0;
@@ -207,6 +227,8 @@ function cacheBytes(c, held) {
   for (const p of c.pins.values()) add(p.pad, p.w * p.h);
   if (c.bar) { add(c.bar.track.pad, area(c.bar.track.px)); add(c.bar.thumb.pad, area(c.bar.thumb.px)); }
   if (c.backdrop) add(c.backdrop.pad, area(c.backdrop.px));
+  // the cover checks' tiles, held until they are read (vet; a rounded scroller's backdrop is one of them, counted above)
+  if (!held) n += Math.min(c.vet, c.backdrop ? 1 : 2) * area(c.portPx);
   return n * 4;
 }
 
@@ -241,7 +263,7 @@ export function createScrollCompositor(deps) {
   /** diagnostics (SnapshotStats.scroll) */
   const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0, stale: 0 };
   /** `refusals` by reason (SnapshotStats.scroll.refusedBy): they add up to it */
-  const refusedBy = { plan: 0, focus: 0, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0 };
+  const refusedBy = { plan: 0, focus: 0, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0, cover: 0 };
   const room = deps.room ?? (() => Infinity);
 
   /** Does `bytes` more fit the surface budget? Counted and reported when not. @param {Entry} entry @param {number} bytes @returns {boolean} */
@@ -264,7 +286,7 @@ export function createScrollCompositor(deps) {
 
   /**
    * Build a crop and keep it as pixels in `slot.pad` if the cache is still the current one when it lands.
-   * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {{pad: Surface|null, seq?: number|null}} slot
+   * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {{pad: Surface|null, seq?: number|null, check?: (pad: Surface) => void}} slot
    */
   function build(entry, cache, px, scroll, slot) {
     const at = epoch;
@@ -281,6 +303,7 @@ export function createScrollCompositor(deps) {
           const pad = deps.canvas(px.width, px.height);
           /** @type {CanvasRenderingContext2D} */ (pad.getContext('2d')).drawImage(img, 0, 0, px.width, px.height);
           slot.pad = pad;
+          slot.check?.(pad);
         }
         img.src = '';
       }, () => drop(entry, cache)).finally(() => track(entry, -1));
@@ -314,19 +337,51 @@ export function createScrollCompositor(deps) {
     return no.seq === seq && placeOf(el) === no.place;
   }
 
+  /** No plan for `el` (planned again after newer damage or a move, at most every REPLAN_MS). @param {Entry} entry @param {Element} el @param {keyof typeof refusedBy} why @returns {null} */
+  function refusal(entry, el, why) {
+    counters.refusals++;
+    refusedBy[why]++;
+    hold(entry, el);
+    return null;
+  }
+
+  /** `el` is planned again only after newer damage or a move, at most every REPLAN_MS (as after a refusal). @param {Entry} entry @param {Element} el */
+  function hold(entry, el) {
+    let r = refused.get(entry);
+    if (!r) refused.set(entry, (r = new Map()));
+    r.set(el, { at: now(), seq, place: placeOf(el) });
+  }
+
+  /**
+   * ScrollPlan.cover, on a tile that landed: the port in it (at `at`, tile px; the corner squares of a rounded port left out) is every pixel `want` (r, g, b, opaque), or,
+   * with no `want`, every pixel the colour (and alpha) of its centre. Read in bands of VET_PIXELS, one post-frame job each (a 2116 x 2000 px port took 15 ms read and tested at
+   * once, headless Chrome 156). Passed: one check fewer before the first composition. Failed: something else paints on the port, so every page would carry it along
+   * (an element outside the scroller, or what shows through it): the plan is refused.
+   * @param {Entry} entry @param {Cache} c @param {Surface} pad @param {{x: number, y: number}} at @param {number[]|null} want @param {number} [y]  first row of the band
+   */
+  function vet(entry, c, pad, at, want, y = 0) {
+    if (mapOf(entry).get(c.el) !== c) return;
+    const R = c.portPx;
+    const h = Math.min(R.height - y, Math.max(1, Math.floor(VET_PIXELS / R.width)));
+    let ok = false;
+    try {
+      const ctx = /** @type {CanvasRenderingContext2D} */ (pad.getContext('2d'));
+      const ref = want ?? [...ctx.getImageData(at.x + (R.width >> 1), at.y + (R.height >> 1), 1, 1).data];
+      const d = ctx.getImageData(at.x, at.y + y, R.width, h).data;
+      ok = vetPixels(d, R.width, h, ref, c.corners.map((q) => ({ x: q.x - R.x, y: q.y - R.y - y, width: q.width, height: q.height })));
+      if (ok && y + h < R.height) { deps.schedule(entry, () => vet(entry, c, pad, at, ref, y + h)); return; }
+    } catch { /* not read back: not vouched for */ }
+    if (ok) { c.vet--; return; }
+    drop(entry, c);
+    refusal(entry, c.el, 'cover');
+  }
+
   /** @param {Entry} entry @param {Element} el @param {ScrollPlan|null} plan @param {boolean} early  see Cache.early @returns {Cache|null} */
   function install(entry, el, plan, early) {
     const m = mapOf(entry);
     m.delete(el);
     const geo = /** @type {Geometry} */ (entry.geo);
-    const refuse = (/** @type {keyof typeof refusedBy} */ why) => {
-      counters.refusals++;
-      refusedBy[why]++;
-      let r = refused.get(entry);
-      if (!r) refused.set(entry, (r = new Map()));
-      r.set(el, { at: now(), seq, place: placeOf(el) });
-      return null;
-    };
+    const refuse = (/** @type {keyof typeof refusedBy} */ why) => refusal(entry, el, why);
     if (!plan) return refuse(noPlan(el));
     refused.get(entry)?.delete(el);
     const grid = plan.grid;
@@ -346,15 +401,28 @@ export function createScrollCompositor(deps) {
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
     // what the scroller needs to compose a step: two pages (one covers the port at its own offset only), its pinned elements, its bar and backdrop tiles
-    let need = AHEAD_PAGES * area(portPx) + (round ? area(padPx) : 0);
+    // the cover checks' tiles (vet) are held until they are read
+    let need = (AHEAD_PAGES + (plan.cover ? (plan.opaque || round ? 1 : 2) : 0)) * area(portPx) + (round ? area(padPx) : 0);
     if (plan.bar) need += 2 * area(snapPx(plan.bar.gutter, geo, grid));
     for (const p of plan.pinned) { const r = entry.record.layer?.frameRect(p); if (r) need += area(snapPx(r, geo, grid)); }
     if (!fits(entry, need * 4)) return refuse('budget');
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [], memo: new Map(), early, used: now(),
+      shown: null, queued: false, last: live, unverified: [], recheck: new Set(), vet: 0, memo: new Map(), early, used: now(),
     };
+    if (plan.cover) {
+      // first of all: the port with the scroller's content hidden and its background in the cover colour shows only that colour (nothing paints over the scroller
+      // there); a scroller that is not opaque also shows, without its content, one colour through it (its own backdrop tile when it is rounded)
+      const want = plan.cover;
+      const cover = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { cover.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, want); } };
+      cache.vet = plan.opaque ? 1 : 2;
+      build(entry, cache, portPx, { el, top: live, hide: [], shape: 'cover', fill: `rgb(${want.join(',')})` }, cover);
+      if (!plan.opaque && !round) {
+        const under = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { under.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, null); } };
+        build(entry, cache, portPx, { el, top: live, hide: [], shape: 'backdrop' }, under);
+      }
+    }
     if (plan.bar) {
       const b = plan.bar;
       const trackPx = snapPx(b.gutter, geo, grid);
@@ -363,7 +431,11 @@ export function createScrollCompositor(deps) {
       build(entry, cache, trackPx, { el, top: live, hide: [], bars: 'track', shape }, cache.bar.track);
       build(entry, cache, thumbPx, { el, top: live, hide: [], bars: 'thumb', shape }, cache.bar.thumb);
     }
-    if (cache.backdrop) build(entry, cache, padPx, { el, top: live, hide: [], shape: 'backdrop' }, cache.backdrop);
+    if (cache.backdrop) {
+      const b = cache.backdrop;
+      if (plan.cover && !plan.opaque) Object.assign(b, { check: (/** @type {Surface} */ pad) => vet(entry, cache, pad, { x: portPx.x - padPx.x, y: portPx.y - padPx.y }, null) });
+      build(entry, cache, padPx, { el, top: live, hide: [], shape: 'backdrop' }, b);
+    }
     for (const p of plan.pinned) {
       const r = entry.record.layer?.frameRect(p);
       if (!r) return null;
@@ -425,6 +497,7 @@ export function createScrollCompositor(deps) {
    * @returns {Page[]|null}
    */
   function usable(c, top, count) {
+    if (c.vet) return null;
     for (const pin of c.pins.values()) if (!pin.pad) return null;
     if (c.bar && (!c.bar.track.pad || !c.bar.thumb.pad)) return null;
     if (c.backdrop && !c.backdrop.pad) return null;
@@ -453,16 +526,24 @@ export function createScrollCompositor(deps) {
   }
 
   /**
-   * Damage inside the visible port could be an element outside the scroller drawn over it (a page would carry it along); the plan's hit test says. A plan without
-   * one (unit tests) trusts the rects.
+   * Damage inside the visible port could be an element outside the scroller drawn over it (a page would carry it along); the plan's `clear` says. A pinned element
+   * that changed must still be a pin (ScrollPlan.pinnable: a header that turned translucent would be drawn from its tile over pages that hide what shows through it):
+   * else the plan is stale and dropped (the next scroll plans it again, and the planner refuses it). A plan without them (unit tests) trusts the change.
    * @param {Entry} entry @param {Cache} c @returns {boolean} no obstruction
    */
   function verified(entry, c) {
+    if (c.recheck.size) {
+      const lost = !!c.plan.pinnable && [...c.recheck].some((p) => !c.plan.pinnable?.(p));
+      c.recheck.clear();
+      if (lost) { counters.stale++; drop(entry, c); return false; }
+    }
     if (!c.unverified.length) return true;
     const rects = c.unverified.splice(0);
     if (!c.plan.clear || c.plan.clear(rects)) return true;
     counters.obstructed++;
     drop(entry, c);
+    // planned again at most every REPLAN_MS: a change that keeps coming (rows under a resting pointer) would otherwise plan it and build its pages at every step
+    hold(entry, c.el);
     return false;
   }
 
@@ -534,7 +615,11 @@ export function createScrollCompositor(deps) {
         set.delete(scroller);
         const c = install(entry, scroller, plan, early);
         // damage inside the port while the hit-test grid was being made: checked for an obstruction before the first composition, as after the install (verified)
-        if (c) for (const r of pending.rects) { const v = intersectRect(r, c.plan.port); if (v) c.unverified.push(v); }
+        // and a pinned element it reached against the pin requirements (the planner read them before it)
+        if (c) for (const r of pending.rects) {
+          if (meets(r, c.plan.port)) c.unverified.push(r);
+          for (const p of c.pins.keys()) { const pr = entry.record.layer?.frameRect(p); if (pr && meets(pr, r)) c.recheck.add(p); }
+        }
         if (c) prefetch(entry, c, topOf(scroller), early ? AHEAD_PAGES : MAX_PAGES);
       });
       step(null);
@@ -621,9 +706,7 @@ export function createScrollCompositor(deps) {
         if (c.plan.whole) {
           counters.dropped++;
           drop(entry, c);
-          let r = refused.get(entry);
-          if (!r) refused.set(entry, (r = new Map()));
-          r.set(c.el, { at: now(), seq: n, place: placeOf(c.el) });
+          hold(entry, c.el);
           continue;
         }
         // inside the content box: CONTENT pixels of the change, for every page that read the DOM before it (damage rects carry an ink margin; the part outside
@@ -632,12 +715,11 @@ export function createScrollCompositor(deps) {
         const px = outPx(content, c.geo, c.plan.grid);
         const d = { x: px.x, y: px.y - c.portPx.y + rowOf(top, c.geo.scale, c.plan.grid), width: px.width, height: px.height };
         for (const p of c.pages) if (p.seq !== null) { p.dirty.push(d); p.dirtySeq.push(n); }
-        const visible = intersectRect(rect, P);
-        if (visible) c.unverified.push(visible);
-        // a pinned element the change reaches is rendered again (no composition until its tile is back)
+        if (meets(rect, P)) c.unverified.push(rect);
+        // a pinned element the change reaches is rendered again (no composition until its tile is back), and checked against the pin requirements
         for (const [el, pin] of c.pins) {
           const r = entry.record.layer?.frameRect(el);
-          if (r && meets(r, rect)) { pin.pad = null; build(entry, c, snapPx(r, c.geo, c.plan.grid), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
+          if (r && meets(r, rect)) { c.recheck.add(el); pin.pad = null; build(entry, c, snapPx(r, c.geo, c.plan.grid), { el: c.el, top, hide: [], shape: c.backdrop ? 'square' : undefined }, pin); }
         }
         counters.dirtied++;
       }
