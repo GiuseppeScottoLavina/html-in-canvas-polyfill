@@ -399,7 +399,12 @@ Tick RUN(now), for each canvas record in reverse tree order:
     and a CSS transform scales it (`transform`, svg-builder.js): every box edge is snapped to whole css px in the image's layout coordinates (frame + ink) and a scroll offset is
     rendered at the nearest whole css px (a page asked at 133.333 shows 133; `scrollTop = 133.9` on a live WebKit scroller reads 133), then scaled. A WebKit plan carries
     `grid: 1` and the store snaps to it (`snapPx`, `rowOf`); without it the composed frames were one device pixel lower than the tile at DPR 3 and the port one device row
-    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused (stat `scroll.refusedBy.scale`; every refusal is counted by reason, `scroll-compose.js` `refusedBy`). A rounded
+    taller (Mobile Safari 26.4, `test/bench/scroll-jank-ios.mjs` oracle). A grid that is not a whole number of surface pixels (a reduced or fractional scale) is refused (stat `scroll.refusedBy.scale`; every refusal is counted by reason, `scroll-compose.js` `refusedBy`). Two ways around it at
+    `maxDpr: 1.5` were measured and neither is exact (desktop Safari 27.0.1 at DPR 2, the scroll-cadence list, 2026-11-05): composing only the offsets that are a whole
+    number of surface pixels (an even number of css px) fails because the settled tiles at offsets 2 css px apart are not a shift of each other: 1,800-17,900 canvas
+    pixels of the port differ after the 3 surface px shift (up to 125 levels; offsets 1 css px apart, the control, 98,000); snapping the scale down to 1 composes (20 of 24
+    jumps) but every composed frame differs from its settled tile by 3,700-4,500 canvas pixels (11 levels, at the rounded badges of the rows), where at scale 2 all 20
+    are pixel-equal. Scale 1 below a DPR of 2 is admitted today (its grid is one surface pixel) and composes with that difference. A rounded
     port on WebKit is drawn source-over the backdrop under the rounded clip, and only for a scroller with an opaque background: an accelerated WebKit canvas drawing with
     `copy` under an antialiased clip multiplies the source by the coverage and drops the destination (canvases of 200 px and more; a 60 px one blends like Skia), which left
     the curve semi-transparent; a classic bar's track tile meets the same curve on the bar's side and is drawn the same way. Classic bars on WebKit: an author-styled
