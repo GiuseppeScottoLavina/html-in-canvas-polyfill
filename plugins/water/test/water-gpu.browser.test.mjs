@@ -188,8 +188,8 @@ gpuTest('the caustics conserve the light: a drop gathers the sunlight on the pag
   assert.ok(max > 3 && min < 0.6, `it gathers into lines (max ${max}) and leaves troughs darker (min ${min})`);
 }, { timeout: 20000 });
 
-/** The centre of a drop's caustic rings (the centroid of |light - 1| within `r` css px of `at`), 250 ms after a tap there. @param {any} t @param {Record<string, unknown>} options */
-async function causticCentre(t, options, at, r = 100) {
+/** The centre of a drop's caustic rings (the centroid of |light - 1| over the whole canvas: the drop is the only disturbance), 250 ms after a tap at `at`. @param {any} t @param {Record<string, unknown>} options */
+async function causticCentre(t, options, at, r = Infinity) {
   const read = captureCaustics(t);
   const { rig } = await presentOnce(t, plugin, { intensity: 1, ...options }, { scene: /** @type {any} */ (greyScene) });
   const box = rig.canvas.getBoundingClientRect();

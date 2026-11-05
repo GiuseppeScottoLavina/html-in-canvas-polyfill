@@ -9,7 +9,10 @@ import { join } from 'node:path';
 import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('water gallery e2e');
-const g = await openGallery('water');
+// the uniform block the water writes (its drop sources), read where the page writes it
+const WATCH_UNIFORMS = `(() => { const q = GPUQueue.prototype; const wb = q.writeBuffer; window.__wg = null;
+  q.writeBuffer = function (buf, off, data, ...rest) { if (buf && buf.label === 'hic-water-effect-globals' && data) window.__wg = Array.from(data); return wb.call(this, buf, off, data, ...rest); }; })();`;
+const g = await openGallery('water', { initScript: WATCH_UNIFORMS });
 const { page } = g;
 console.log(`Chrome ${g.chrome}, plugin bundle ${g.bundle.bytes} bytes (minified)`);
 try {
@@ -51,6 +54,28 @@ try {
   await page.evaluate(`document.activeElement.blur()`);
   await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
   await idle(page, 400, 8000);
+
+  // where a trusted click's drop falls: exactly one new drop source, within 1 css px of the click (canvas content box, css px of the
+  // field); control: with the canvas's reported position moved by 6 px (a page that offsets it behind the plugin's back), the check fails
+  const aimAt = async (/** @type {number} */ fx, /** @type {number} */ fy) => {
+    await idle(page, 400, 8000);
+    const x = stage.x + stage.w * fx, y = stage.y + stage.h * fy;
+    await page.mouseMove(x, y); await page.mouseDown(x, y); await page.mouseUp(x, y);
+    await sleep(120);
+    return page.evaluate(`(() => { const s = window.__wg, c = document.getElementById('stage'), r = Element.prototype.getBoundingClientRect.call(c); const bl = c.clientLeft, bt = c.clientTop;
+      const cssW = s[2], cssH = s[3], young = [];
+      for (let q = 0; q < s[18]; q++) { const o = 20 + q * 8; if (s[o] < 0 || s[o] > cssW || s[o + 1] < 0 || s[o + 1] > cssH || s[o + 2] > 24) continue;
+        young.push([r.left + bl + s[o] * c.clientWidth / cssW - ${x}, r.top + bt + s[o + 1] * c.clientHeight / cssH - ${y}]); }
+      return young; })()`);
+  };
+  const aims = [];
+  for (const [fx, fy] of [[0.1, 0.12], [0.5, 0.5], [0.92, 0.85]]) aims.push(await aimAt(fx, fy));
+  const worst = Math.max(...aims.map((a) => (a.length === 1 ? Math.hypot(a[0][0], a[0][1]) : Infinity)));
+  c.check('a trusted click makes one drop, within 1 css px of the click (3 points over the stage)', worst < 1, { aims });
+  await page.evaluate(`(() => { const c = document.getElementById('stage'); const g = c.getBoundingClientRect.bind(c); c.getBoundingClientRect = () => { const r = g(); return new DOMRect(r.x + 6, r.y, r.width, r.height); }; return 0; })()`);
+  const off = await aimAt(0.5, 0.5);
+  await page.evaluate(`(delete document.getElementById('stage').getBoundingClientRect, 0)`);
+  c.check('control: a canvas position off by 6 px moves the drop off the click by more than 5 px (the check above can fail)', off.length === 1 && Math.hypot(off[0][0], off[0][1]) > 5, { off });
 
   // the frame cap bounds the effect frames while the water moves (the demo rains for about 1.6 s)
   await page.evaluate(`document.getElementById('stage').frameCap = 30`);
