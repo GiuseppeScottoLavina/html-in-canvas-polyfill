@@ -352,7 +352,7 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // ---- 2c. the module loader's payload (docs/BUNDLES.md, "What the loader costs and saves"): an app that imports only load() from dist/esm/loader.js, bundled and
   // minified by esbuild with code splitting. Its polyfill path imports install() and the GPU bundle (chunks/loader-core-*.js), not the package entry, whose other
   // exports a dynamic import keeps, and the engines (chunks/engines-*.js) only on Gecko / WebKit. Measured 2026-11-05 (gzip level 9, the sum over the files of each
-  // path): start 8,036 bytes; polyfill path on Chromium 130,637 (159,020 when it imported the package entry), on Gecko / WebKit 147,212. The ceilings are those plus a
+  // path), with the core of 0.1.0-preview.23: start 8,029 bytes; polyfill path on Chromium 132,220 (161,057 when it imported the package entry), on Gecko / WebKit 148,797. The ceilings are those plus a
   // small margin. Control: the same app with the loader importing the package entry carries the feature prose and the engines in its Chromium path.
   /** @param {any} [plugin] @returns {Promise<{dyn: string[], start: number, chromium: number|null, geckoWebkit: number|null, prose: number, engines: boolean, enginesSplit: boolean}>} */
   const loaderApp = async (plugin) => {

@@ -136,7 +136,7 @@ export const plugin = Object.freeze({
       const preset = typeof next.preset === 'string' ? /** @type {Record<string, number>|undefined} */ (/** @type {any} */ (presets)[next.preset]) : undefined;
       for (const key of KEYS) o[key] = unit(next[key] !== undefined ? next[key] : preset?.[key], o[key]);
     }
-    readOptions({ ...meta.defaults, ...(options ?? {}) });
+    readOptions(options ?? {});   // `o` starts at meta.defaults: spreading them here as well would hide a `preset` given to create
     /** @type {Array<(o: any) => void>} */
     const uiSyncs = [];
 

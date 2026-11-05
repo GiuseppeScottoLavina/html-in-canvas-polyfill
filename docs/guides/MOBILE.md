@@ -67,8 +67,11 @@ a whole scale on DPR 2 and DPR 3 devices. To save memory, `maxDpr: 2` on a DPR 3
   and counted toward `maxTotalSurfaceBytes`. A focused field above a list, with its caret showing, does not slow the list's composed scrolling in Safari: on the physical iPad
   Pro (iPadOS 27.2, DPR 2, 4 s of scripted scrolling) 117.6-117.7 canvas updates per second, against 93.5-94.2 with 0.1.0-preview.21.
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
-- **Effects.** The effect plugins re-target touch input like mouse input (unit-tested with touch pointer events), but neither simulator has a WebGPU adapter, so effects
-  with touch were not run.
+- **Effects.** The effects host re-targets touch input like mouse input (unit-tested with touch pointer events), except that a finger focuses and activates the control
+  the effect shows only on a tap, when it lifts within 10 css px of where it landed: dragging an effect's handle across a field does not focus it or raise the keyboard.
+  The example plugins claim a touch only on their own handle (the liquid glass, a page corner) and leave the page its scrolling everywhere else
+  ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md), section 15.1). Neither simulator has a WebGPU adapter; the plugin gallery was measured on a physical iPad Pro (Safari,
+  120 Hz) and runs under touch emulation in headless Chrome (`npm run test:gallery`).
 
 ## Pinch-zoom
 
@@ -95,7 +98,7 @@ right element (checked once by hand on the Android Emulator with a 2.2x pinch; n
   driver boots an iOS 26.4 simulator instead. Inside the simulator everything was in place: remote automation and the developer extras on (`com.apple.WebInspector` and
   `com.apple.mobilesafari`), the system Automation Mode on, Mobile Safari running and connected to the simulator's `webinspectord`. It needs a `safaridriver` that lists iOS 27
   simulators (a later Safari or macOS update).
-- WebGPU effect plugins with touch.
+- WebGPU effect plugins with touch on a phone (the plugin gallery was measured on a physical iPad Pro).
 
 ## Running the mobile gate
 

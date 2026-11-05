@@ -2,7 +2,7 @@
  * Module entry of the loader (`import { load } from '<package>/loader'`): decides exactly as install() would and imports the core only when the polyfill will run:
  * install() with the GPU bundle (./loader-core.js, not the package entry, whose other exports a dynamic import would keep), and the engines (./engines.js) on Gecko and
  * WebKit unless `engines: false`. With a bundler that keeps dynamic imports split, each is a separate chunk, so a browser that implements HTML-in-Canvas fetches only this
- * module. The native bridge (./native-bridge.js) is imported only for a native implementation it can bridge.
+ * module and the shared chunks it imports statically. The native bridge (./native-bridge.js) is imported only for a native implementation it can bridge.
  * The URL options (`core`, `engines`, `bridge` as a string) and `nonce` belong to the classic loader: here they are a TypeError (load() rejects).
  * Module: api-core (entry).
  */

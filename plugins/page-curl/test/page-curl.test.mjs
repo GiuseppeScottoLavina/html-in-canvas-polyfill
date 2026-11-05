@@ -364,6 +364,20 @@ test('the hint: top-right unless one corner is allowed; the label names it; the 
   assert.equal(peekAt(1500 + PEEK_MS / 2, 0), 0, 'autoPeek 0: never');
 });
 
+test('options left out take meta.defaults: created with {} the plugin sets no peek timer at rest (control: autoPeek 5 sets one)', async (t) => {
+  const live = (/** @type {any} */ env) => env.pending.filter((/** @type {any} */ p) => p.fn).length;
+  const plain = fakeEnv({ timers: true });
+  const inst = await created(t, plain, {});
+  inst.render(plain.frame(0));
+  inst.render(plain.frame(16));
+  assert.equal(live(plain), 0, 'the default autoPeek is 0: no timer, no work at rest');
+  const peeking = fakeEnv({ timers: true });
+  const control = await created(t, peeking, { autoPeek: 5 });
+  control.render(peeking.frame(0));
+  control.render(peeking.frame(16));
+  assert.equal(live(peeking), 1, 'autoPeek 5: one timer for the next peek');
+});
+
 test('at rest the top-right corner is a dog-ear: curled from the first frame, no frame requested, NO_TARGET on the dog-ear only', async (t) => {
   const env = fakeEnv();
   const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });

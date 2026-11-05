@@ -16,7 +16,7 @@
 | Chrome 154-155 behind `--enable-blink-features=CanvasDrawElement` (the earlier `layoutsubtree` draft) or a native build missing a name the bridge can build | `hic-live-native-bridge.iife.min.js` BEFORE `hic-live-polyfill.iife.min.js` | mode `native-bridged` instead of the native build used as found |
 | Chrome 157+ (complete native), Firefox 155+, Safari 27+ | Chrome: nothing extra; Firefox / Safari: `hic-live-engines.iife.min.js` with the core (row above) | complete native: mode `native` (the core does no snapshotting; the effects bundle runs over the native implementation); Firefox 155+ and Safari 27+: mode `polyfill`; older Firefox / Safari, web views and Firefox for Android: refused loudly (one `console.warn`, `window.__HIC__.error`). Phones and tablets: see [MOBILE.md](guides/MOBILE.md) |
 | `ElementImage` in a dedicated worker (draw it on the worker's OffscreenCanvas) | the core in the page; `hic-live-worker.iife.min.js` at the top of the worker (`importScripts`), or `import '.../worker'` in a module worker | in the worker: `ElementImage`, `drawElementImage` on OffscreenCanvas 2D, the OffscreenCanvas geometry methods |
-| download nothing where the browser implements the API (Chrome 157+), and the core (+ the engines bundle on Firefox / Safari) only where the polyfill runs | `hic-live-loader.iife.min.js` next to the other files, then `await HicLiveLoader.load()` before app code reads the API; bundlers: `import { load } from '.../loader'` | `{status, mode, installed, native}` ([API-CONTRACT section 2.4](API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)); on Chrome 157 the page downloads 17,465 bytes (6,328 gzipped) instead of the core's 352,196 (119,615) |
+| download nothing where the browser implements the API (Chrome 157+), and the core (+ the engines bundle on Firefox / Safari) only where the polyfill runs | `hic-live-loader.iife.min.js` next to the other files, then `await HicLiveLoader.load()` before app code reads the API; bundlers: `import { load } from '.../loader'` | `{status, mode, installed, native}` ([API-CONTRACT section 2.4](API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)); on Chrome 157 the page downloads 17,465 bytes (6,328 gzipped) instead of the core's 356,331 (121,112) |
 | a bundler (Vite, webpack, rollup...) | `import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill'`, optionally `@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects`, `.../plugins/water`, `.../native-bridge`; `.../worker` in a module worker | tree-shakeable ESM with shared chunks; each plugin is one self-contained module |
 
 All scripts are classic `<script src>` tags (no `type=module`, no `import`), make no network request when they load (the loader requests the bundles only when `load()` is called), and the minified twins are drop-in replacements for the readable files (the gates and the mutants run the readable ones, G-bundle loads both).
@@ -57,7 +57,7 @@ All scripts are classic `<script src>` tags (no `type=module`, no `import`), mak
 | `esm/index.js` (+ chunks) | exports `install`, `getInstalled`, `HicUnsupportedError`, `FEATURES`, `featureById`, `EVENTS`, `EXT`, `VERSION`; not minified (the consumer's bundler does it); carries the engines and GPU code (bundler users get every engine and the texture methods); the full `FEATURES` table is tree-shaken from an app that imports neither `FEATURES` nor `featureById` (below). Most of its code is in the shared chunks of `dist/esm/chunks/` (shared with the loader's modules; the size table measures each entry file alone), which are listed in `sideEffects` with the entries | nothing |
 | `esm/effects.js` | exports `installEffects(win)`, `createLateEffects`, `installEffectsGlobal`, `definePlugin`, `NO_TARGET`, `isNoTarget`; no side effect | the core, installed |
 | `plugins/<name>.esm.js` | the exports of `plugins/<name>/index.js` (`meta`, `plugin`, ...), WGSL inlined; no import | `effects.js` to use it |
-| `plugins/manifest.json` | name, title, description, `reducedMotion`, version, defaults, actions and file names of every plugin (read by `examples/plugins/`) | |
+| `plugins/manifest.json` | name, title, description, `reducedMotion`, `continuous` and `touch` (one-line texts, when the plugin declares them), version, defaults, actions and file names of every plugin (read by `examples/plugins/`) | |
 | `esm/native-bridge.js` | registers the bridge when imported (listed in `sideEffects`); exports `installNativeBridge` | import it before `install()` runs |
 
 Sizes of the last build. This block is rewritten by `npm run build` from `dist/sizes.json`; do not edit it by hand.
@@ -79,14 +79,14 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-worker.iife.min.js` | 9,098 | 3,646 |
 | `hic-live-loader.iife.js` | 30,428 | 9,110 |
 | `hic-live-loader.iife.min.js` | 17,465 | 6,328 |
-| `esm/index.js` | 39,273 | 13,662 |
+| `esm/index.js` | 39,273 | 13,661 |
 | `esm/effects.js` | 68,618 | 18,301 |
 | `esm/native-bridge.js` | 21,963 | 5,810 |
 | `esm/worker.js` | 6,977 | 2,402 |
 | `esm/loader.js` | 4,931 | 1,816 |
-| `plugins/crt.iife.js` | 17,270 | 6,184 |
-| `plugins/crt.iife.min.js` | 11,140 | 4,894 |
-| `plugins/crt.esm.js` | 15,972 | 5,935 |
+| `plugins/crt.iife.js` | 17,245 | 6,175 |
+| `plugins/crt.iife.min.js` | 11,121 | 4,886 |
+| `plugins/crt.esm.js` | 15,947 | 5,926 |
 | `plugins/disintegrate.iife.js` | 42,877 | 13,171 |
 | `plugins/disintegrate.iife.min.js` | 27,395 | 10,444 |
 | `plugins/disintegrate.esm.js` | 40,356 | 12,800 |
@@ -99,9 +99,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/liquid-glass.iife.js` | 33,612 | 10,795 |
 | `plugins/liquid-glass.iife.min.js` | 19,581 | 8,349 |
 | `plugins/liquid-glass.esm.js` | 31,406 | 10,467 |
-| `plugins/page-curl.iife.js` | 51,011 | 14,889 |
-| `plugins/page-curl.iife.min.js` | 30,479 | 11,689 |
-| `plugins/page-curl.esm.js` | 48,050 | 14,506 |
+| `plugins/page-curl.iife.js` | 51,011 | 14,887 |
+| `plugins/page-curl.iife.min.js` | 30,479 | 11,688 |
+| `plugins/page-curl.esm.js` | 48,050 | 14,504 |
 | `plugins/shatter.iife.js` | 60,775 | 17,466 |
 | `plugins/shatter.iife.min.js` | 35,755 | 13,490 |
 | `plugins/shatter.esm.js` | 57,629 | 16,988 |
@@ -136,11 +136,11 @@ The runtime reads a feature's status from `src/contracts/feature-status.js`, an 
 
 ### What the loader costs and saves (measured 2026-11-04)
 
-- Bytes on Chrome 157.0.8103.39 (native, Resource Timing, uncompressed server): a page with `hic-live-loader.iife.min.js` downloads 17,293 bytes of script (6,277 gzipped), with a plain tag of `hic-live-polyfill.iife.min.js` 351,362 (119,262 gzipped; the core of that build, 352,196 / 119,615 in the table above), which then steps aside. The module loader's static imports were 35,217 bytes unminified (four files of `dist/esm/`); an app that imports only `load`, bundled and minified by esbuild with code splitting, started with 20,103 bytes (7,749 gzipped, three files: the shared chunks carry whole modules such as the patch ledger). Since 2026-11-05 (Chrome Canary 159.0.8137.0, G-native-loader) the classic loader downloads 17,465 bytes (6,328 gzipped; +172 / +51 for the option check before the window's load is taken) and the module loader 35,667 (five files); the module loader's polyfill path is in the next item.
+- Bytes on Chrome 157.0.8103.39 (native, Resource Timing, uncompressed server): a page with `hic-live-loader.iife.min.js` downloads 17,293 bytes of script (6,277 gzipped), with a plain tag of `hic-live-polyfill.iife.min.js` 351,362 (119,262 gzipped; the core of that build was 352,196 bytes minified, 119,615 gzipped), which then steps aside. The module loader's static imports were 35,217 bytes unminified (four files of `dist/esm/`); an app that imports only `load`, bundled and minified by esbuild with code splitting, started with 20,103 bytes (7,749 gzipped, three files: the shared chunks carry whole modules such as the patch ledger). Since 2026-11-05 (Chrome Canary 159.0.8137.0, G-native-loader) the classic loader downloads 17,465 bytes (6,328 gzipped; +172 / +51 for the option check before the window's load is taken) and the module loader 35,667 (five files); the module loader's polyfill path is in the next item.
 - The decision takes 2.8 ms (`.min.js`) to 8.1 ms (the module loader, unbundled) from the module script to the settled result on that machine.
 - First paint on the polyfill path (headless Chrome 157, native disabled, the `.min.js` files, a canvas with one drawable; 15 runs each, alternating, same machine): directly 60.5 ms median from navigation start, through the loader 70.8 ms (+10.4 ms) from a local server; with 40 ms of emulated latency per request 123.9 against 169.3 ms (+45.4 ms): the loader adds one request in series before the core's.
-- The module loader's polyfill path (2026-11-05, gzip level 9, the sum over the files of each path, an app that imports only `load`, bundled and minified by esbuild 0.28 with code splitting; G-bundle holds these numbers to a ceiling): it imports `install()` and the GPU code from a private module (`chunks/loader-core-*.js`) rather than the package entry, because a bundler keeps every export of a module imported with `import()`, which carried the whole `FEATURES` table and the engines into that path. Start 8,029 bytes (7,749 when the loader imported the package entry; +280 for a fourth file, the user-agent parser now shared with the engines chunk); polyfill path on Chromium 132,220 (161,057 when the loader imported the package entry, -17.9 %), on Firefox and Safari, which also fetch the engines chunk, 148,797 (-7.6 %); with the core before the scroll compositor's cover and pin checks, 130,633 and 147,210 (159,020 before). Unbundled, as native modules from `dist/esm/` (unminified, the same sum): start 35,667 bytes (11,925 gzipped, five files), polyfill path on Chromium 680,374 (183,651 gzipped, twelve files; 785,539 / 215,664 before), with the engines 748,314 (204,345).
-- The consumer's bundler must keep the dynamic imports as separate chunks. Vite, webpack and rollup split `import()` by default; esbuild needs `splitting: true` (with `format: 'esm'`). Without splitting the core, the engines and the bridge land in the initial payload, so a browser with the native API downloads them all: the same app built by esbuild without splitting is one file of 419,687 bytes (149,135 gzipped; 456,648 / 162,117 when the loader imported the package entry), against a start of 8,029 gzipped with splitting.
+- The module loader's polyfill path (2026-11-05, gzip level 9, the sum over the files of each path, an app that imports only `load`, bundled and minified by esbuild 0.28 with code splitting; G-bundle holds these numbers to a ceiling): it imports `install()` and the GPU code from a private module (`chunks/loader-core-*.js`) rather than the package entry, because a bundler keeps every export of a module imported with `import()`, which carried the whole `FEATURES` table and the engines into that path. Start 8,029 bytes (7,749 when the loader imported the package entry; +280 for a fourth file, the user-agent parser now shared with the engines chunk); polyfill path on Chromium 132,220 (161,057 when the loader imported the package entry, -17.9 %), on Firefox and Safari, which also fetch the engines chunk, 148,797 (-7.6 %); with the core before the scroll compositor's cover and pin checks, 130,633 and 147,210 (159,020 before). Unbundled, as native modules from `dist/esm/` (unminified, the same sum): start 35,667 bytes (11,925 gzipped, five files), polyfill path on Chromium 687,426 (185,736 gzipped, twelve files; 793,885 / 219,727 when the loader imported the package entry), with the engines 755,366 (206,430); with the core before the cover and pin checks, 680,374 (183,651) and 748,314 (204,345).
+- The consumer's bundler must keep the dynamic imports as separate chunks. Vite, webpack and rollup split `import()` by default; esbuild needs `splitting: true` (with `format: 'esm'`). Without splitting the core, the engines and the bridge land in the initial payload, so a browser with the native API downloads them all: the same app built by esbuild without splitting is one file of 423,938 bytes (150,824 gzipped; 461,639 / 163,906 when the loader imported the package entry), against a start of 8,029 gzipped with splitting (with the core before the cover and pin checks, 419,687 / 149,135).
 - Size: 6,277 bytes gzipped against the 5 KB goal (6,328 since 2026-11-05). About 4,340 of them are `install()`'s decision (the probe, the browser gate and the decision table with their texts, about 3,310; the option validation, about 1,030), shared with the core rather than reimplemented; the script loading and the result about 1,935.
 
 ## The Chrome core, the engines bundle and the GPU bundle

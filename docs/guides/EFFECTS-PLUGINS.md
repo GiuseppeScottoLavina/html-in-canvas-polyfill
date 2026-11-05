@@ -171,7 +171,7 @@ The actions of the example plugins:
 | [`page-curl`](../../plugins/page-curl/README.md#actions) | `peek` (the dog-ear opens and closes once), `demo` | none | `'rest'` |
 | [`water`](../../plugins/water/README.md#actions) | `drop` (a ripple), `demo` | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2) | `'calm'` |
 | [`holo-card`](../../plugins/holo-card/README.md#actions) | `demo` (a tilt sweep) | none | `'rest'` |
-| [`liquid-glass`](../../plugins/liquid-glass/README.md#actions) | `demo` (a tour of the page) | none | `'free'` |
+| [`liquid-glass`](../../plugins/liquid-glass/README.md#actions) | `demo` (a tour of the page) | none | `'free'`, `'pinned'` |
 
 `crt` is there at rest and has no actions. A plugin whose look depends on an input or an event also has the action `demo`, a short showcase that the plugin gallery plays on selection (section 15.1).
 
@@ -401,7 +401,7 @@ const offMove = context.listen('touchmove', (event) => {
 **2. Demo: an action named `demo`.** A plugin whose look depends on an input or an event (a pointer, a submit, an error) declares an action `demo` (in `actions`, so it is also in `meta.actions` of the manifest) that shows the effect without that input:
 
 - `handle.trigger('demo')` plays a short showcase, at most about 4 s, and resolves with the state the plugin rests in; it ends at rest.
-- The plugin never starts it by itself: the page does (the gallery triggers it when the effect is selected, and not under reduced motion; `?demo=0` opens the gallery without it).
+- The plugin never starts it by itself: the page does (the gallery triggers it when the effect is selected, and not under reduced motion; `demo=0` in its URL, as in `?effect=water&demo=0`, opens it without the demo).
 - User input during the demo takes over at once: a press or a drag on the canvas, a submit, `setOptions`. A newer `trigger` supersedes it like any action.
 - With reduced motion (`info.reducedMotion`) it resolves at once with the state at rest, or shows a still that explains the effect.
 - The template plugin (`plugins/_template/`) has the smallest complete `demo`: its clock starts at the first frame that renders it, it requests frames only while it moves, a passive `pointerdown` or `setOptions` ends it, and its Node tests check all of that through the real handle.
@@ -555,7 +555,7 @@ The shared test kit of `plugins/_shared/` (test tooling, not shipped) covers the
 
 **Gallery end to end** (`plugins/<name>/test/gallery.e2e.mjs`, `npm run test:plugins`): the plugin in `examples/plugins/` with trusted input. `_shared/gallery-e2e.mjs` opens the gallery (with `&demo=0`, so a test starts from the plugin's own state; `openGallery(name, { demo: true })` lets the gallery play the demo), takes shots, drags, records; `actionChecks(page, check, steps, supersede)` clicks the gallery's button of each action and checks the state, that the frame changed and that the host goes idle, then from page script an unknown action, superseding and `settled()`.
 
-**The gallery check** (`scripts/check-gallery.mjs`, `npm run test:gallery`, headless Chrome) runs every plugin of the manifest, and the template plugin, through the rules of section 15.1 in the gallery, at 390 x 844 (a phone, touch emulation) and 1194 x 748 (an iPad in landscape): the stage is entirely in the first viewport and the form fits it without an inner scroll; the `demo` plays on selection, resolves within 6 s and not under reduced motion; once it settled, 2 s without any `effectframe` (unless the plugin declares `meta.continuous`); a vertical touch drag that starts on the stage away from a handle scrolls the page. Its positive controls must turn each of those checks red.
+**The gallery check** (`scripts/check-gallery.mjs`, `npm run test:gallery`, headless Chrome) runs every plugin of the manifest, and the template plugin, through the rules of section 15.1 in the gallery, at 390 x 844 (a phone, touch emulation) and 1194 x 748 (an iPad in landscape): the stage is entirely in the first viewport and the form fits it without an inner scroll; the `demo` plays on selection, resolves within 6 s and not under reduced motion; once it settled, 2 s without any `effectframe` (unless the plugin declares `meta.continuous`); a vertical touch drag that starts on the stage away from a handle scrolls the page; and, once, that the frame cap defaults to the display rate the page measured. Its positive controls must turn each of those checks red.
 
 How the plugin of section 16 is verified: `npm run test:examples` serves `test/examples-smoke/wobble-plugin/index.html` (a red bar 14 css px wide at x = 300 in the source) in headless Chrome and checks: the host and plugin start; the presented frame is not blank and the live layer has computed opacity 0; amplitude 24 differs from amplitude 0 in more than 400 pixels; and the mapper against the pixels. For the last check the frame is frozen (`framecap=1`), a compositor screenshot is taken, the left edge of the bar is found on 38 rows, and `mapper(edge)` must give x = 300 within 2 px. The control is the identity mapper (what a plugin without a mapper amounts to), which must be wrong by 8 px or more on the same pixels.
 
