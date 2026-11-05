@@ -1,7 +1,8 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>esm loader check</title>
-<!-- G-bundle (scripts/check-bundle.mjs): the module loader from dist/esm imports the package entry and installs (the harness disables the native API). -->
+<!-- G-bundle (scripts/check-bundle.mjs): the module loader from dist/esm imports its core module (chunks/loader-core-*.js, not the package entry and, on Chromium,
+     not the engines) once and installs (the harness disables the native API). -->
 <canvas id="c" content="drawable" width="200" height="100"><div drawable id="d" style="width:100px;height:40px">bundle check</div></canvas>
 <script type="module">
   const out = { bad: [] };
@@ -13,6 +14,13 @@
     const r = rs[0];
     if (!rs.every((x) => x === r)) out.bad.push('concurrent calls gave different results');
     if (r.status !== 'polyfill' || r.mode !== 'polyfill') out.bad.push('status ' + r.status + ': ' + r.reason);
+    const paths = () => performance.getEntriesByType('resource').map((e) => new URL(e.name).pathname);
+    const coreModule = paths().filter((p) => /^\/dist\/esm\/chunks\/loader-core-\w+\.js$/.test(p)).length;
+    if (coreModule !== 1) out.bad.push('the loader\'s core module was requested ' + coreModule + ' times');
+    if (paths().includes('/dist/esm/index.js')) out.bad.push('the loader imported the package entry');
+    if (paths().some((p) => /\/chunks\/engines-/.test(p)) || window[Symbol.for('hic.engine-skins')]) out.bad.push('Chromium: the loader imported the engines');
+    if (typeof window[Symbol.for('hic.gpu-patches')]?.installTexturePatches !== 'function') out.bad.push('the GPU bundle is not registered');
+    try { await load({ core: '/x.js' }); out.bad.push('a classic-only option did not reject'); } catch (e) { if (!(e instanceof TypeError)) out.bad.push('a classic-only option rejected with ' + e); }
     const core = await import('/dist/esm/index.js');
     if (core.getInstalled() !== r.installed) out.bad.push('result.installed is not the live install');
     await r.installed.whenPainted(document.getElementById('c'), 4000).catch((e) => out.bad.push('no first paint: ' + e.message));

@@ -4,12 +4,14 @@
  *
  * What each decision downloads: native and refused, nothing (installed null); native-bridged, the native bridge then the core, unless `bridge: false` (then it is
  * native, as install() is without the bridge); polyfill, the engines bundle on Gecko / WebKit unless `engines: false`, then the core with data-hic-manual. Then the
- * core's own install(options.install) runs and its mode is the status. One promise per window: concurrent and later calls share it. The promise never rejects: a
- * timeout, a load error or an invalid option settle it with status 'error', and a bundle that arrives after the loader settled never installs (the core never
- * auto-installs under data-hic-manual and the loader calls install() only while it has not settled).
+ * core's own install(options.install) runs and its mode is the status. One promise per window: concurrent and later calls share it. An invalid option (of the
+ * loader or of install()) rejects that call with install()'s TypeError, before anything is decided or downloaded, as install() throws it; the call does not take the
+ * window's load. Otherwise the promise never rejects: a timeout or a load error settles it with status 'error', and a bundle that arrives after the loader settled
+ * never installs (the core never auto-installs under data-hic-manual and the loader calls install() only while it has not settled).
  */
 
 import { decideInstall, probeNative } from './native-detect.js';
+import { resolveOptions } from './options.js';
 import { HicUnsupportedError } from '../contracts/errors.js';
 import { EXT } from '../contracts/events.js';
 
@@ -22,7 +24,7 @@ import { EXT } from '../contracts/events.js';
  * @typedef {Object} LoadOptions
  * @property {HicOptions} [install]  passed to install(); its `mode`, `forcePolyfill` and `window` drive the decision exactly as in install()
  * @property {string} [core]  classic loader only: URL of the classic core (default: hic-live-polyfill.iife.js, or .iife.min.js, beside the loader's own src)
- * @property {string|false} [engines]  classic loader only: URL of the engines bundle, loaded on Firefox and Safari (default beside the loader), or false. The module loader takes the engines from the package entry
+ * @property {string|false} [engines]  URL of the engines bundle, loaded on Firefox and Safari on the polyfill path (default beside the loader; the module loader imports them from the package and takes only false), or false: not loaded
  * @property {string|false} [bridge]  URL of the native bridge, loaded only for a native implementation it can bridge (default beside the loader; the module loader imports the /native-bridge entry), or false
  * @property {number} [timeout]  ms until the load settles with status 'error' (default 10000)
  * @property {string} [nonce]  classic loader only: the nonce of the <script> elements it creates (a CSP with a nonce source)
@@ -30,7 +32,7 @@ import { EXT } from '../contracts/events.js';
 
 /**
  * @typedef {Object} LoadResult  frozen
- * @property {'native'|'native-bridged'|'polyfill'|'refused'|'error'} status  the mode, or 'error' (a timeout, a load error, an invalid option, a throw of install())
+ * @property {'native'|'native-bridged'|'polyfill'|'refused'|'error'} status  the mode, or 'error' (no window, a timeout, a load error, a throw of install()); an invalid option rejects instead
  * @property {HicMode|null} mode  null on error
  * @property {HicInstalled|null} installed  what install() returned, or null when the core was not loaded (native, refused, error)
  * @property {NativeState|null} native  the probe of the window (null only without a window)
@@ -48,8 +50,11 @@ import { EXT } from '../contracts/events.js';
 const SLOT = Symbol.for('hic.loader');
 const KEYS = ['install', 'core', 'engines', 'bridge', 'timeout', 'nonce'];
 
-/** @param {LoadOptions} o */
-function checkOptions(o) {
+/**
+ * The options, checked as install() checks its own: the loader's, the fetcher's, then install()'s (resolveOptions, and the document as install() reads it).
+ * @param {LoadOptions|undefined} o @param {Fetcher} fetcher @throws TypeError
+ */
+function checkOptions(o, fetcher) {
   if (o === undefined) return;
   if (typeof o !== 'object' || o === null || Array.isArray(o)) throw new TypeError('load() options must be an object');
   for (const k of Object.keys(o)) if (!KEYS.includes(k)) throw new TypeError(`unknown load() option "${k}"`);
@@ -58,6 +63,10 @@ function checkOptions(o) {
   if (o.nonce !== undefined && typeof o.nonce !== 'string') throw new TypeError('load() option "nonce" must be a string');
   if (o.core !== undefined && typeof o.core !== 'string') throw new TypeError('load() option "core" must be a URL');
   for (const k of /** @type {const} */ (['engines', 'bridge'])) if (o[k] !== undefined && o[k] !== false && typeof o[k] !== 'string') throw new TypeError(`load() option "${k}" must be a URL or false`);
+  fetcher.check(o);
+  resolveOptions(o.install);
+  const doc = /** @type {any} */ (o.install)?.document;
+  if (doc != null && doc.nodeType !== 9) throw new TypeError('option "document" must be a Document');
 }
 
 /**
@@ -68,6 +77,7 @@ export function createLoad(fetcher) {
   return (options) => {
     const win = /** @type {any} */ (options?.install?.window ?? (typeof window === 'undefined' ? undefined : window));
     if (!win?.document) return Promise.resolve(Object.freeze({ status: 'error', mode: null, installed: null, native: null, reason: 'load() needs a browser window', error: new TypeError('load() needs a browser window') }));
+    try { checkOptions(options, fetcher); } catch (e) { return Promise.reject(e); } // as install() throws: the window's load is neither taken nor shared
     if (!win[SLOT]) Object.defineProperty(win, SLOT, { value: run(win, options, fetcher), configurable: true });
     return win[SLOT];
   };
@@ -89,8 +99,6 @@ function run(win, options, fetcher) {
     /** @param {any} error */
     const fail = (error) => finish('error', null, { reason: String(error?.message ?? error), error });
     try {
-      checkOptions(/** @type {LoadOptions} */ (options));
-      fetcher.check(options ?? {});
       let d;
       try { d = decideInstall(win, options?.install); } catch (e) { native = probeNative(win); throw e; }
       native = d.native;

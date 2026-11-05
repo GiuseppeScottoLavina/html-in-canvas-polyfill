@@ -10,7 +10,8 @@ import * as H from '../harness/index.mjs';
 const chrome = process.argv.find((a) => a.startsWith('--chrome='))?.slice(9) ?? 'canary';
 const control = !process.argv.includes('--no-control');
 const PAGE = '/test/fixtures/loader/native.html';
-const BUNDLES = /\/dist\/(hic-live-polyfill|hic-live-engines|hic-live-native-bridge)\.iife(\.min)?\.js$|\/dist\/esm\/(index|native-bridge)\.js$/;
+// the module loader's core module and engines are chunks of dist/esm (chunks/loader-core-<hash>.js, chunks/engines-<hash>.js); the package entry must never be imported
+const BUNDLES = /\/dist\/(hic-live-polyfill|hic-live-engines|hic-live-native-bridge)\.iife(\.min)?\.js$|\/dist\/esm\/(index|native-bridge)\.js$|\/dist\/esm\/chunks\/(loader-core|engines)-\w+\.js$/;
 const CASES = [['classic', 'script=/dist/hic-live-loader.iife.js'], ['classic min', 'script=/dist/hic-live-loader.iife.min.js'], ['module', 'module=/dist/esm/loader.js']];
 const MARKED = `(() => {
   const mark = Symbol.for('hic.patch');

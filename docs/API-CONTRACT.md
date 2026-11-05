@@ -128,7 +128,7 @@ defines `window.HicLiveLoader = {load, version}`. Module: `import { load } from 
 
 **The decision is install()'s.** The loader calls the same function as `install()` (`decideInstall` in `api/native-detect.js`: `resolveOptions`, `probeNative`,
 `browserGate`, `decideMode`), with `options.install` as `install()` would receive it. So `mode`, `forcePolyfill` and `window` act as in `install()`, and an
-invalid install option is the same `TypeError` (status `'error'`), also on a browser with the native API.
+invalid install option is the same `TypeError`, also on a browser with the native API: `load()` rejects with it, as `install()` throws it (see Settling).
 
 | decision | what the loader downloads | result |
 |---|---|---|
@@ -142,17 +142,25 @@ already on the page (the core global, the bridge or engines registration) is not
 
 **Options (`LoadOptions`):** `install` (the `HicOptions` for `install()`); `core` (URL of the classic core); `engines` (URL, or `false`); `bridge` (URL, or `false`);
 `timeout` (ms, default 10000); `nonce` (set on the `<script>` elements the loader creates). The classic loader's default URLs are the files beside its own `src`
-(read from `document.currentScript` when it runs), the `.min.js` ones when it is the `.min.js`. The module loader imports the package entry (`./index.js`, which
-carries the engines and GPU code) and `./native-bridge.js`; a bundler splits them into their own chunks. There `core`, `engines`, `bridge` as a URL and `nonce`
-are a `TypeError`; `bridge: false` and `engines: false` are accepted.
+(read from `document.currentScript` when it runs), the `.min.js` ones when it is the `.min.js`. The module loader imports modules of the package instead of URLs:
+on the polyfill path a private module with `install()` and the GPU code (`dist/esm/chunks/loader-core-*.js`; not the package entry, whose other exports a
+dynamic import would keep), the engines (`chunks/engines-*.js`) on Firefox and Safari unless `engines: false`, as the classic loader does, and
+`./native-bridge.js` for a bridgeable native. The `install()` it calls is the package entry's own (one install per window, `getInstalled()` agrees). There `core`,
+`engines`, `bridge` as a URL and `nonce` are a `TypeError`; `bridge: false` and `engines: false` apply. `engines: false` does not remove engines that the page
+already imported (the package entry imports them). A bundler must keep the dynamic imports as separate chunks (code splitting, the default of Vite, webpack and
+rollup for `import()`; esbuild needs `splitting: true`): without it everything lands in the initial payload ([BUNDLES.md](BUNDLES.md#what-the-loader-costs-and-saves-measured-2026-11-04)).
 
 **Result (`LoadResult`, frozen):** `{status, mode, installed, native, reason?, error?}`. `status` is `'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'`;
 `mode` is the `HicMode`, `null` on error; `installed` is the `HicInstalled` that `install()` returned, or `null` when the core was not loaded (never a stand-in);
-`native` is the `NativeState` of the probe (`null` only without a window).
+`native` is the `NativeState` of the probe (`null` only without a window: every result for a window carries the probe, also on error).
 
-**Settling.** Concurrent and repeated calls share one promise per window (one download, one install); the options of a later call are ignored. The promise never
-rejects: a timeout (`TimeoutError`), a load error (`NetworkError`: an HTTP error, a network error or a script blocked by a Content-Security-Policy), a core that
-loads without defining `HicLivePolyfill`, an invalid option or a throw of `install()` resolve `status: 'error'` with `error` and `reason`. A bundle that arrives
+**Settling.** An invalid option (of the loader, of the fetcher's entry, or of `install()`: a typo, a wrong type, a value out of range) rejects that call with a
+`TypeError` before anything is decided or downloaded, as `install()` throws it; the rejected call does not take the window's load, so a later valid call still
+loads. That holds over an existing install too (`install()` checks a repeated call's options). Without a window `load()` resolves `status: 'error'` with
+`native: null` (`install()` throws there; the loader is meant to be called unconditionally, also server-side). Concurrent and repeated valid calls share one
+promise per window (one download, one install); the options of a later call are checked, then ignored. Otherwise the promise never rejects: a timeout
+(`TimeoutError`), a load error (`NetworkError`: an HTTP error, a network error or a script blocked by a Content-Security-Policy), a core that loads without
+defining `HicLivePolyfill`, or a throw of `install()` resolve `status: 'error'` with `error` and `reason`. A bundle that arrives
 after the loader settled never installs: the core runs under `data-hic-manual` (no auto-install) and the loader calls `install()` only while it has not settled.
 To retry after an error, reload the page.
 
