@@ -23,7 +23,10 @@ import { isNoTarget } from './no-target.js';
 /** @typedef {import('../contracts/types.js').InputPoint} InputPoint */
 /** @typedef {import('./native-geometry.js').NativeGeometry} NativeGeometry */
 /** @typedef {(p: InputPoint) => {x: number, y: number}} Mapper */
-/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null}} Gesture */
+/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null, tap?: {x: number, y: number}|null}} Gesture */
+
+/** css px a finger may travel and still tap (interposer.js) */
+const TAP_SLOP = 10;
 
 const TYPES = /** @type {const} */ (['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'click']);
 
@@ -83,6 +86,7 @@ export function createNativeInterposer(env, canvas, source, chain, geometry) {
     const r = aim(e, g ? g.map : (p) => chain.map(p));
     counts.remapped += 1;
     if (g?.drag && !r.none) g.drag.move(e.clientX);
+    if (g?.tap && Math.hypot(e.clientX - g.tap.x, e.clientY - g.tap.y) > TAP_SLOP) g.tap = null;
     // hover and the cursor came from the hit test before this shift: recompute them when they show another element than the user sees
     if (!g && r.element !== nativeElement(e)) hover.poke();
   }
@@ -113,14 +117,21 @@ export function createNativeInterposer(env, canvas, source, chain, geometry) {
     e.preventDefault();
     // the layout of the poke also drops the engine's hit-test cache, so the caret lookup below sees the new geometry
     hover.poke();
-    if (intended) focusControl(doc, intended, { x: e.clientX, y: e.clientY });
-    else if (source.contains(doc.activeElement)) /** @type {HTMLElement} */ (doc.activeElement).blur();
+    // a finger moves the focus when it lifts without having travelled (interposer.js): a drag focuses nothing
+    const tap = e.pointerType === 'touch' && !range ? { x: e.clientX, y: e.clientY } : null;
+    if (!tap) focusAt(intended, e.clientX, e.clientY);
     const drag = range ? startRangeDrag(win, /** @type {HTMLInputElement} */ (intended)) : null;
     if (drag) {
       try { canvas.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
       drag.move(e.clientX);
     }
-    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag };
+    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag, tap };
+  }
+
+  /** @param {Element|null} intended @param {number} x @param {number} y */
+  function focusAt(intended, x, y) {
+    if (intended) focusControl(doc, intended, { x, y });
+    else if (source.contains(doc.activeElement)) /** @type {HTMLElement} */ (doc.activeElement).blur();
   }
 
   /** @param {PointerEvent} e */
@@ -135,6 +146,9 @@ export function createNativeInterposer(env, canvas, source, chain, geometry) {
       g.drag.end();
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* capture already released */ }
     }
+    // a finger: a tap (it did not travel) focuses, then activates; a drag does neither
+    if (g.tap !== undefined && e.pointerType === 'touch' && !g.drag && !g.tap) { swallowClick = true; return; }
+    if (g.tap) { hover.poke(); focusAt(g.control, g.tap.x, g.tap.y); }
     if (g.control && !g.drag && isActivatable(g.control) && controlOf(source, r.element) === g.control) activate(g.control);
     swallowClick = true;
   }

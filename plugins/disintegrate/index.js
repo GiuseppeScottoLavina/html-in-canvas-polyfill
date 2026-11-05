@@ -1,19 +1,24 @@
 /**
  * Disintegrate (effect plugin ABI v2): an EXAMPLE of the effects extension of html-in-canvas-polyfill, not part of the polyfill.
  * The CONTENT of the page turns to dust and blows away while the page itself stays: text, field borders and fills, buttons, icons, every
- * pixel that differs from the background around it. A diagonal sweep erodes it (porous first, then gone), each eroded pixel becomes a
- * grain of dust of its own LIVE colour, carried by the wind in swirls and streaks, some leaving as fragments that crumble on the way. Then
- * the dust flies back and settles into the letters and fields of the page as it is now. Nothing is frozen: a running counter, typed text
- * and a success line are what the dust shows and what re-forms. Shader: ./disintegrate.wgsl.
+ * pixel that differs from the background around it. An organic front sweeps across it (the content heats, goes porous, then is gone), and
+ * each eroded cell becomes a grain of dust of its own LIVE colour. A compute pass carries every grain through a three-dimensional curl-noise
+ * wind (coherent swirls), seen in perspective: grains that rise towards the viewer grow, cross the screen faster and go out of focus,
+ * grains that sink shrink and dim; some leave as flakes that crumble on the way, all are drawn as analytically antialiased, motion-blurred
+ * specks. Then the dust flies back and settles into the letters and fields of the page as it is now. Nothing is frozen: a running counter,
+ * typed text and a success line are what the dust shows and what re-forms. Shader: ./disintegrate.wgsl.
  *
  * A transition plugin: idle, it presents the source unchanged and its input mapper is the identity, so the form is fully usable. While
  * anything moves, is gone or fades, its mapper BLOCKS pointer input: it returns NO_TARGET (the effects ABI value for "no element here") for
  * every point, so the host swallows the press: nothing is focused or activated (../_lib/transition.js). Keyboard input is not mapped by the
  * host and still reaches the focused field.
  *
- * Actions (the effect handle: `handle.trigger('out' | 'in' | 'play')`, `handle.settled()`; states 'in' and 'out'), also run by the
- * "Turn to dust" button of mountUI and, with `onSubmit`, by the submit of the form inside the source; `handle.setOptions({ state })` sets
- * the end state declaratively. With prefers-reduced-motion the same actions crossfade the content.
+ * Actions (the effect handle: `handle.trigger('out' | 'in' | 'play' | 'demo')`, `handle.settled()`; states 'in' and 'out'), also run by
+ * the "Turn to dust" button of mountUI and, with `onSubmit`, by the submit of the form inside the source; `handle.setOptions({ state })`
+ * sets the end state declaratively. 'demo' is a play that the user can interrupt: a press, a key, a submit or setOptions during it
+ * re-forms the page at once.
+ * With prefers-reduced-motion the same actions crossfade the content, and 'demo' resolves at once.
+ * At rest (assembled or gone, nothing moving) the plugin is not `continuous` and requests no frame: the host renders nothing.
  */
 
 import { wgsl } from './wgsl.js';
@@ -29,13 +34,13 @@ export { NO_TARGET, blockedMapper, createTimeline, findInvalid, identityMapper, 
 export const meta = Object.freeze({
   name: 'disintegrate',
   title: 'Disintegrate',
-  description: 'The live content of the form turns to dust of its own colours and blows away while the page stays, then flies back into its new state. On Submit.',
+  description: 'The live content turns to dust of its own colours, swirling away in depth while the page stays, then flies back into its new state. On Submit.',
   defaults: Object.freeze({ onSubmit: 'valid', intro: true }),
-  reducedMotion: 'With reduced motion the same actions fade the content into the page and back; nothing moves.',
+  reducedMotion: 'With reduced motion the same actions fade the content into the page and back; nothing moves, and the demo is skipped.',
 });
 
 /** floats in the uniform block (disintegrate.wgsl `Uniforms`) */
-export const UNIFORM_FLOATS = 32;
+export const UNIFORM_FLOATS = 40;
 /** at most this many dust cells (a 4K canvas at 1.5 css px would be 3.7 million; the cells grow beyond) */
 export const MAX_GRAINS = 420000;
 /** g at which every pixel of content has eroded; every grain lives from its birth until g = LIFE (all is gone then, none sooner) */
@@ -43,14 +48,26 @@ export const SWEEP_END = 0.5;
 export const LIFE = 1;
 /** css px per texel of the background estimate */
 export const BG_CELL = 8;
-/** the pause between the way out and the way back of 'play': none, the last part of the way out is the pause (no content is left on the page
- *  and the dust still drifts), so no frame of the transition is a still one */
-export const HOLD_MS = 0;
+/** the empty beat of 'play' and 'demo': the dust has dissolved completely, the page shows without its content for this long, then it re-forms */
+export const HOLD_MS = 450;
+/** ms the way out of 'play' and 'demo' is longer than `duration`: the dust has time to drift away and fade out entirely before the beat */
+export const ROUND_EXIT_MS = 400;
 /** the clear colour of the host's passthrough: an assembled frame is then identical to the frame without the plugin */
 export const HOST_BACKDROP = Object.freeze([0.004, 0.018, 0.034]);
+/** the colour of the heat at the eroding front and of the grains that just left it (a warm ember) */
+export const GLOW_COLOUR = Object.freeze([1, 0.68, 0.4]);
+/** bytes of one grain record (cs_grains writes it, vs_dust reads it as two instance attributes) */
+export const GRAIN_BYTES = 24;
+/** compute workgroup size of cs_grains */
+export const WORKGROUP = 256;
+/** ms of the way back when a user takes over a demo (a press or a key re-forms the page at once) */
+export const TAKEOVER_MS = 450;
+/** ms of exposure of the motion blur (fixed, so that a frame looks the same at every frame cap) */
+export const SHUTTER_MS = 5;
 
-/** The actions of `handle.trigger`: out turns the content to dust and leaves it gone, in re-forms it, play does both. */
-export const ACTIONS = Object.freeze(/** @type {const} */ (['out', 'in', 'play']));
+/** The actions of `handle.trigger`: out turns the content to dust and leaves it gone, in re-forms it, play does both, demo is a play that
+ *  user input interrupts (the gallery runs it when the effect is picked). */
+export const ACTIONS = Object.freeze(/** @type {const} */ (['out', 'in', 'play', 'demo']));
 
 /** canvases where a device was lost: the plugin is created again on the new device without replaying its intro */
 const lostOn = new WeakSet();
@@ -89,13 +106,18 @@ export function readOptions(o) {
   return {
     duration: clampNumber(o.duration, 300, 8000, 1800),
     durationIn: clampNumber(o.durationIn, 300, 8000, 1200),
-    particleSize: clampNumber(o.particleSize, 1, 4, 1.5),
+    particleSize: clampNumber(o.particleSize, 1, 4, 1.25),
     wind: clampNumber(o.wind, 0, 2, 1),
     direction: clampNumber(o.direction, -180, 180, -28),
     sweep: clampNumber(o.sweep, -180, 180, 24),
     turbulence: clampNumber(o.turbulence, 0, 2, 1),
     fragments: clampNumber(o.fragments, 0, 1, 0.3),
     sensitivity: clampNumber(o.sensitivity, 0, 1, 0.5),
+    depth: clampNumber(o.depth, 0, 1, 0.7),
+    glow: clampNumber(o.glow, 0, 1, 0.65),
+    glowColor: parseColor(o.glowColor, GLOW_COLOUR),
+    focus: clampNumber(o.focus, 0, 2, 1),
+    density: clampNumber(o.density, 0.05, 1, 1),
     backdrop: parseColor(o.backdrop, HOST_BACKDROP),
     onSubmit: submit === 'valid' || submit === 'always' ? submit : 'off',
     invalidSelector: typeof o.invalidSelector === 'string' && o.invalidSelector ? o.invalidSelector : DEFAULT_INVALID_SELECTOR,
@@ -115,10 +137,10 @@ export function readOptions(o) {
  * @param {{width: number, height: number, cssWidth: number, cssHeight: number}} frame
  * @param {ReturnType<typeof readOptions>} s
  * @param {number} g  the dissolve amount
- * @param {{cell: number, cols: number}} grid  the dust grid
+ * @param {{cell: number, cols: number, count?: number}} grid  the dust grid
  * @param {number} fade  1: the source; < 1: the reduced-motion crossfade (share of content still shown)
  * @param {number} [time]  seconds (a function of g)
- * @param {boolean} [turning]  the dust turns back at g = 1 (play): it does not fade there
+ * @param {boolean} [turning]  the dust does not fade out towards g = 1 (the plugin always lets it fade: a play's dust leaves entirely before its return)
  */
 export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = false) {
   const sw = sweepOf(s.sweep, frame.cssWidth, frame.cssHeight);
@@ -127,13 +149,15 @@ export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = 
   data[4] = g; data[5] = fade; data[6] = grid.cell; data[7] = grid.cols;
   data[8] = sw.x; data[9] = sw.y; data[10] = sw.min; data[11] = sw.span;
   data[12] = Math.cos(wind); data[13] = Math.sin(wind);
-  data[14] = 0.32 * Math.max(frame.cssWidth, frame.cssHeight) * s.wind; data[15] = s.turbulence;
+  data[14] = 0.27 * Math.max(frame.cssWidth, frame.cssHeight) * s.wind; data[15] = s.turbulence;
   data[16] = time; data[17] = s.seed; data[18] = SWEEP_END; data[19] = LIFE;
   data[20] = s.fragments; data[21] = BG_CELL;
   // the colour distance from the background where content starts and where it is full content (sensitivity 0.5: 0.05 .. 0.14)
   data[22] = 0.09 - 0.08 * s.sensitivity; data[23] = data[22] + 0.09;
   data[24] = s.backdrop[0]; data[25] = s.backdrop[1]; data[26] = s.backdrop[2]; data[27] = 1;
-  data[28] = turning ? 0 : 1; data[29] = 0; data[30] = 0; data[31] = 0;
+  data[28] = turning ? 0 : 1; data[29] = s.depth; data[30] = s.glow; data[31] = 1.8 * Math.max(frame.cssWidth, frame.cssHeight);
+  data[32] = s.glowColor[0]; data[33] = s.glowColor[1]; data[34] = s.glowColor[2]; data[35] = s.focus;
+  data[36] = grid.count ?? 0; data[37] = SHUTTER_MS / s.duration; data[38] = s.density; data[39] = 0;
 }
 
 /** CSS of the plugin UI (mountUI) */
@@ -146,7 +170,7 @@ const UI_CSS = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:
 export const plugin = Object.freeze({
   type: 'disintegrate',
   apiVersion: /** @type {const} */ (2),
-  version: 4,
+  version: 5,
   // every pass that touches the destination only writes it as a same-format colour attachment (the dust's blending never samples it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   actions: ACTIONS,
@@ -154,38 +178,50 @@ export const plugin = Object.freeze({
     const { device, format, canvas, source } = context;
     const module = device.createShaderModule({ code: await wgsl('disintegrate.wgsl') });
     const g = /** @type {any} */ (globalThis);
-    const S = g.GPUShaderStage, TU = g.GPUTextureUsage;
+    const S = g.GPUShaderStage, TU = g.GPUTextureUsage, BU = g.GPUBufferUsage;
+    const all = S.VERTEX | S.FRAGMENT | S.COMPUTE;
     const layout = device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: S.VERTEX | S.FRAGMENT, sampler: { type: 'filtering' } },
-        { binding: 2, visibility: S.VERTEX | S.FRAGMENT, texture: { sampleType: 'float' } },   // the live page (the dust reads its pixel)
-        { binding: 3, visibility: S.VERTEX | S.FRAGMENT, texture: { sampleType: 'float' } },   // the background estimate
+        { binding: 0, visibility: all, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: all, sampler: { type: 'filtering' } },
+        { binding: 2, visibility: all, texture: { sampleType: 'float' } },   // the live page (the dust reads its pixel)
+        { binding: 3, visibility: all, texture: { sampleType: 'float' } },   // the background estimate
       ],
     });
+    // the grain records: written by the compute pass, read by the dust pass as its instance vertex buffer
+    const grainLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: S.COMPUTE, buffer: { type: 'storage' } }] });
     const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+    // premultiplied: the grain's colour times its coverage over the page, plus the light it emits (heat, glints)
     const blend = {
-      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
       alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' },
     };
-    /** @param {string} vs @param {string} fs @param {string} target @param {any} [withBlend] @param {string} [topology] */
-    const pipeline = (vs, fs, target, withBlend, topology = 'triangle-list') => device.createRenderPipeline({
+    /** @param {string} vs @param {string} fs @param {string} target @param {any} [withBlend] @param {string} [topology] @param {any[]} [buffers] */
+    const pipeline = (vs, fs, target, withBlend, topology = 'triangle-list', buffers = []) => device.createRenderPipeline({
       layout: pipelineLayout,
-      vertex: { module, entryPoint: vs },
+      vertex: { module, entryPoint: vs, buffers },
       fragment: { module, entryPoint: fs, targets: [{ format: target, ...(withBlend ? { blend: withBlend } : {}) }] },
       primitive: { topology },
     });
     const full = pipeline('vs_full', 'fs_full', format);
     const base = pipeline('vs_full', 'fs_base', format);
-    const dust = pipeline('vs_dust', 'fs_dust', format, blend, 'triangle-strip');
+    const dust = pipeline('vs_dust', 'fs_dust', format, blend, 'triangle-strip', [{
+      arrayStride: GRAIN_BYTES, stepMode: 'instance',
+      attributes: [{ shaderLocation: 0, offset: 0, format: 'uint32x4' }, { shaderLocation: 1, offset: 16, format: 'uint32x2' }],
+    }]);
+    const grainsPipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layout, grainLayout] }),
+      compute: { module, entryPoint: 'cs_grains' },
+    });
     const down = pipeline('vs_full', 'fs_down', 'rgba8unorm');
     const estimate = pipeline('vs_full', 'fs_bg', 'rgba8unorm');
-    const uniforms = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: g.GPUBufferUsage.UNIFORM | g.GPUBufferUsage.COPY_DST });
+    const uniforms = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: BU.UNIFORM | BU.COPY_DST });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const data = new Float32Array(UNIFORM_FLOATS);
-    // the render pass descriptors are reused: a frame writes their fields, it allocates nothing of its own
+    // the pass descriptors are reused: a frame writes their fields, it allocates nothing of its own
     const attachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
     const passDescriptor = { colorAttachments: [attachment], timestampWrites: /** @type {any} */ (undefined) };
+    const computeDescriptor = { timestampWrites: /** @type {any} */ (undefined) };
     const bgAttachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
     const bgPass = { colorAttachments: [bgAttachment] };
 
@@ -211,6 +247,15 @@ export const plugin = Object.freeze({
       }
       return gs;
     }
+    // the grain records of the current dust grid, made at the first frame that draws dust (none while the page has never moved)
+    /** @type {{count: number, buffer: any, group: any}|null} */ let records = null;
+    function recordsFor(/** @type {number} */ count) {
+      if (records && records.count === count) return records;
+      records?.buffer.destroy?.();
+      const buffer = device.createBuffer({ size: Math.max(1, count) * GRAIN_BYTES, usage: BU.STORAGE | BU.VERTEX });
+      records = { count, buffer, group: device.createBindGroup({ layout: grainLayout, entries: [{ binding: 0, resource: { buffer } }] }) };
+      return records;
+    }
 
     const win = /** @type {any} */ (canvas.ownerDocument.defaultView);
     const media = win?.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
@@ -225,71 +270,95 @@ export const plugin = Object.freeze({
     const gridOf = [1, 1, s.particleSize];
     let assembledFrame = true;           // what the LAST rendered frame showed: its mapper is fixed by it
     let optionsSerial = 0, estimated = -1, estimatedAt = -Infinity;
-    /** a 'play' runs out and back: the dust turns at g = 1 at full strength (it fades only when a transition ends gone, or starts from it) */
-    let turning = false;
-    /** the play in progress: its promise, and whether its way back has started */
-    /** @type {{resolve: (done: boolean) => void, back: boolean, start: number}|null} */ let playing = null;
+    /** the play in progress: its promise, whether its way back has started, and whether it is a demo (user input interrupts it); a play
+     *  runs out (the dust drifts away and fades out entirely), shows the empty page for HOLD_MS, then re-forms */
+    /** @type {{resolve: (done: boolean) => void, back: boolean, start: number, demo: boolean, leg: number}|null} */ let playing = null;
+    const roundOut = () => s.duration + ROUND_EXIT_MS;
 
     /** the end state: 'out' (dissolved, gone) or 'in' (assembled) */
     const resting = () => (timeline.phase === 'gone' ? 'out' : 'in');
     const inMotion = () => timeline.animating || playing !== null;
     /** @type {((state: string|null) => void)[]} */ const waiters = [];
 
-    /** @param {'out'|'in'|'play'} action @param {boolean} [reduced]  prefers-reduced-motion as the host read it */
+    /** @param {'out'|'in'|'play'|'demo'} action @param {boolean} [reduced]  prefers-reduced-motion as the host read it */
     function request(action, reduced) {
       if (destroyed) return Promise.resolve(false);
-      crossfade = s.reducedMotion ?? reduced ?? !!media?.matches;
-      // a play turns at g = 1 at full strength; an 'out' fades the dust as it ends gone, an 'in' from gone fades it in
-      turning = action === 'play';
+      const calm = s.reducedMotion ?? reduced ?? !!media?.matches;
+      // reduced motion: the demo is skipped (it only shows what the effect does); the page stays as it is
+      if (action === 'demo' && calm) return Promise.resolve(true);
+      crossfade = calm;
+      const round = action === 'play' || action === 'demo';
       // the way out and the way back have their own lengths (the timeline takes the length of a run when the run starts), so a play is
-      // run here as an 'out' followed at once by an 'in'
-      timeline.setDuration(action === 'in' ? s.durationIn : s.duration);
+      // run here as an 'out', the empty beat, then an 'in'
+      timeline.setDuration(action === 'in' ? s.durationIn : round ? roundOut() : s.duration);
       if (playing) { const p = playing; playing = null; p.resolve(false); }   // a new request supersedes a play
-      const run = timeline.request(action === 'play' ? 'out' : action);
+      const run = timeline.request(round ? 'out' : /** @type {'out'|'in'} */ (action));
       context.requestRender();
-      if (action !== 'play') return run;
+      if (!round) return run;
       /** @type {(done: boolean) => void} */ let resolve = () => {};
       const done = new Promise((r) => { resolve = /** @type {(done: boolean) => void} */ (r); });
-      const play = { resolve, back: false, start: NaN };
+      const play = { resolve, back: false, start: NaN, demo: action === 'demo', leg: 0 };
       playing = play;
-      run.then((ok) => { if (!ok && playing === play) { playing = null; resolve(false); } });
+      run.then((ok) => { if (!ok && playing === play && !play.back) { playing = null; resolve(false); } });
       return done;
+    }
+    /** the way back of a play: from where the dust is now, at `ms` for a full run; the play's promise follows it */
+    function goBack(/** @type {NonNullable<typeof playing>} */ play, /** @type {number} */ ms) {
+      play.back = true;
+      const leg = ++play.leg;   // a faster way back (a user taking over) replaces this one without ending the play
+      timeline.setDuration(ms);
+      timeline.request('in').then((ok) => { if (play.leg !== leg) return; if (playing === play) playing = null; play.resolve(ok); });
     }
     if (timeline.phase === 'gone' && s.state === 'in') request('in');   // the intro: re-form from dust once the first snapshot is there
 
     const onSubmit = () => {
+      if (playing?.demo) { takeOver(); return; }   // a submit during the demo: the user takes over (the page re-forms at once)
       if (s.onSubmit === 'off' || !timeline.assembled) return;
       if (s.onSubmit === 'valid' && findInvalid(source, s.invalidSelector)) return;
       context.trigger('play');   // through the host, like handle.trigger: it supersedes a pending trigger of the page
     };
+    // a demo gives way to the user at once: a press (mouse, pen, finger), a key, a submit or new options re-form the page fast, from where
+    // the dust is
+    function takeOver() {
+      const play = playing;
+      if (!play || !play.demo || play.back && timeline.phase !== 'in' || destroyed) return;
+      goBack(play, TAKEOVER_MS);
+      context.requestRender();
+    }
     source.addEventListener('submit', onSubmit);
+    // passive: the plugin never claims a gesture (it has no handle to grab); the page keeps its scrolling and the form its input
+    context.listen('pointerdown', takeOver, { passive: true });
+    context.listen('keydown', takeOver);
     device.lost?.then?.(() => { if (!destroyed) lostOn.add(canvas); });
 
     return {
       spatial: true,                      // pixels move: the host requires a mapper (identity when assembled, blocking otherwise)
-      get continuous() { return timeline.animating; },
+      // (also during the empty beat of a play: nothing moves, but its clock runs)
+      get continuous() { return timeline.animating || (playing !== null && !playing.back); },
       setOptions(next) {
         s = readOptions(next ?? {});
         optionsSerial += 1;
-        if (s.state !== stateOption) { stateOption = s.state; request(s.state); }
+        if (s.state !== stateOption) { stateOption = s.state; request(s.state); } else takeOver();
         context.requestRender();
       },
       runAction(action, _options, info) {
-        return request(/** @type {'out'|'in'|'play'} */ (action), info.reducedMotion).then((done) => (done ? resting() : null));
+        return request(/** @type {'out'|'in'|'play'|'demo'} */ (action), info.reducedMotion).then((done) => (done ? resting() : null));
       },
       settled() { return inMotion() ? new Promise((resolve) => { waiters.push(resolve); }) : resting(); },
       render(/** @type {EffectRenderFrame} */ frame) {
         // the clock of a play's way out starts at its first ready frame (as the timeline's does)
         if (playing && !playing.back && Number.isNaN(playing.start) && frame.sourceReady) playing.start = frame.now;
         let amount = frame.sourceReady ? timeline.advance(frame.now) : timeline.g;
-        // a play: the way back starts the instant the way out ended (not at this later frame: the same at any frame cap), at its own length
+        // a play: the way back starts HOLD_MS after the way out ended (computed from the play's own clock, not from this frame: the same at
+        // any frame cap), at its own length
         if (playing && !playing.back && timeline.phase === 'gone') {
           const play = playing;
-          play.back = true;
-          timeline.setDuration(s.durationIn);
-          timeline.request('in').then((ok) => { if (playing === play) playing = null; play.resolve(ok); });
-          timeline.advance(Math.min(frame.now, play.start + s.duration));
-          amount = timeline.advance(frame.now);
+          const backAt = play.start + roundOut() + HOLD_MS;
+          if (frame.now >= backAt) {
+            goBack(play, s.durationIn);
+            timeline.advance(backAt);
+            amount = timeline.advance(frame.now);
+          }
         }
         if (playing && playing.back && timeline.assembled) playing = null;   // the play ended in this frame (its promise follows the timeline's)
         assembledFrame = timeline.assembled;
@@ -298,10 +367,9 @@ export const plugin = Object.freeze({
           grid = dustGrid(frame.cssWidth, frame.cssHeight, s.particleSize);
         }
         const fade = assembledFrame ? 1 : crossfade ? Math.min(0.999, 1 - amount) : 1;
-        fillUniforms(data, frame, s, amount, grid, fade, (amount * s.duration) / 1000, turning);
+        fillUniforms(data, frame, s, amount, grid, fade, (amount * s.duration) / 1000);
         device.queue.writeBuffer(uniforms, 0, data);
         attachment.clearValue.r = s.backdrop[0]; attachment.clearValue.g = s.backdrop[1]; attachment.clearValue.b = s.backdrop[2];
-        passDescriptor.timestampWrites = frame.profiling?.timestampWrites?.('disintegrate');
         const t = estimateFor(frame.cssWidth, frame.cssHeight);
         // the live page: every frame samples the source as it is now (a counter, typed text keep changing on the dust)
         const gs = groupsFor(t, frame.sourceView);
@@ -320,6 +388,20 @@ export const plugin = Object.freeze({
           p2.setPipeline(estimate); p2.setBindGroup(0, gs.estimate); p2.draw(3); p2.end();
           bgAttachment.view = null;
         }
+        const withDust = moving && !crossfade && amount > 0 && amount < 1;   // at g = 1 every grain has dissolved: the empty page
+        // a measurement harness may ask for timestamps: from the start of the grains' compute pass to the end of the frame's render pass
+        const stamps = frame.profiling?.timestampWrites?.('disintegrate');
+        computeDescriptor.timestampWrites = stamps && withDust ? { querySet: stamps.querySet, beginningOfPassWriteIndex: stamps.beginningOfPassWriteIndex } : undefined;
+        passDescriptor.timestampWrites = stamps && withDust ? { querySet: stamps.querySet, endOfPassWriteIndex: stamps.endOfPassWriteIndex } : stamps;
+        // the records exist from the first frame of a transition on (also at g = 0), so that no frame of it creates a GPU object
+        const rec = moving && !crossfade ? recordsFor(grid.count) : null;
+        if (rec && withDust) {
+          // one thread per dust cell: the grains in flight now, each where the flow has carried it
+          const cp = frame.encoder.beginComputePass(computeDescriptor);
+          cp.setPipeline(grainsPipeline); cp.setBindGroup(0, gs.frame); cp.setBindGroup(1, rec.group);
+          cp.dispatchWorkgroups(Math.ceil(grid.count / WORKGROUP));
+          cp.end();
+        }
         attachment.view = frame.destinationView;
         const pass = frame.encoder.beginRenderPass(passDescriptor);
         if (frame.sourceReady) {
@@ -327,7 +409,7 @@ export const plugin = Object.freeze({
           if (assembledFrame) { pass.setPipeline(full); pass.draw(3); }
           else {
             pass.setPipeline(base); pass.draw(3);
-            if (!crossfade && amount > 0) { pass.setPipeline(dust); pass.draw(4, grid.count); }
+            if (rec && withDust) { pass.setPipeline(dust); pass.setVertexBuffer(0, rec.buffer); pass.draw(4, grid.count); }
           }
         }
         pass.end();
@@ -389,6 +471,7 @@ export const plugin = Object.freeze({
         source.removeEventListener('submit', onSubmit);
         uniforms.destroy?.();
         est?.down.destroy?.(); est?.bg.destroy?.();
+        records?.buffer.destroy?.();
       },
     };
   },

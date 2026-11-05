@@ -28,10 +28,12 @@ export const NATIVE = process.env.HIC_E2E_NATIVE === '1';
 /**
  * Open the gallery with this plugin selected, in a new headless Chrome. `window.__e2e` counts the presented effect frames (`frames`), the
  * time of the last one (`last`, performance.now()) and the effecterror events (`errors`). `initScript` runs before any script of the page.
+ * The gallery plays a plugin's `demo` action when it is selected; `demo: false` (the default here) opens it with `&demo=0`, so a test
+ * starts from the plugin's own state and triggers the demo itself when it checks it.
  * @param {string} name
- * @param {{reducedMotion?: boolean, width?: number, height?: number, initScript?: string}} [o]
+ * @param {{reducedMotion?: boolean, width?: number, height?: number, initScript?: string, demo?: boolean}} [o]
  */
-export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '' } = {}) {
+export async function openGallery(name, { reducedMotion = false, width = 1200, height = 980, initScript = '', demo = false } = {}) {
   const bundle = builtBundle(name);
   const server = await startServer();
   const browser = await launchChrome({ name: `${name}-e2e`, windowSize: [width, height + 100], dpr: 1, extraArgs: ['--headless=new', '--hide-scrollbars'], ...(NATIVE ? { chrome: process.env.HIC_E2E_CHROME || 'canary', nativeDrawElement: true } : {}) });
@@ -42,7 +44,7 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     if (reducedMotion) await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     if (initScript) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: initScript });
-    await page.navigate(`${server.url}/examples/plugins/?effect=${name}`);
+    await page.navigate(`${server.url}/examples/plugins/?effect=${name}${demo ? '' : '&demo=0'}`);
     await page.waitForFunction(`!!(window.__gallery && window.__gallery.ready && window.__gallery.active === ${JSON.stringify(name)})`, { timeout: 20000 });
     const mode = await page.evaluate('window.__HIC__ && window.__HIC__.installed && window.__HIC__.installed.mode');
     if (NATIVE && mode !== 'native') throw new Error(`HIC_E2E_NATIVE=1: the gallery runs in mode ${mode}, not over the native implementation`);
@@ -53,7 +55,7 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
       c.addEventListener('effecterror', (e) => { window.__e2e.errors.push(String(e.detail && e.detail.error)); });
     })()`);
     await sleep(500);
-    // the picker above grows with the manifest: scroll once it is laid out, so that the whole canvas is in the viewport
+    // the canvas is the first thing under the gallery's bar and chips; scroll once it is laid out, so that the whole canvas is in the viewport
     await page.evaluate(`document.getElementById('stage').scrollIntoView({ block: 'start' })`);
     await sleep(200);
     return { page, browser, server, bundle, close, chrome: browser.version?.Browser, mode };
@@ -61,6 +63,28 @@ export async function openGallery(name, { reducedMotion = false, width = 1200, h
     await close();
     throw error;
   }
+}
+
+/**
+ * Room for the page to scroll, for a touch check whose premise is "a drag on the stage scrolls the PAGE" (or must not): the gallery puts the
+ * stage at the top, and its page can be barely taller than the viewport. Adds `px` of empty page above the gallery and below it (outside
+ * the drawn form; the stage keeps its size, the gallery sizes it from the height of its own bar) and scrolls so that the stage stays where
+ * it was in the viewport. Idempotent. Returns how far the page can then scroll up and down, in CSS px.
+ * @param {any} page @param {number} [px]
+ * @returns {Promise<{up: number, down: number}>}
+ */
+export function scrollRoom(page, px = 800) {
+  return page.evaluate(`(() => {
+    const stage = document.getElementById('stage');
+    if (!document.getElementById('e2e-room-above')) {
+      const top0 = stage.getBoundingClientRect().top;
+      const room = (id) => Object.assign(document.createElement('div'), { id, style: 'height: ${px}px' });
+      document.body.prepend(room('e2e-room-above'));
+      document.body.append(room('e2e-room-below'));
+      scrollTo(0, scrollY + stage.getBoundingClientRect().top - top0);
+    }
+    return { up: Math.round(scrollY), down: Math.round(document.documentElement.scrollHeight - innerHeight - scrollY) };
+  })()`);
 }
 
 /** viewport rectangle of an element @param {any} page @param {string} selector */
@@ -94,11 +118,17 @@ export async function framesDuring(page, ms) {
   return (await page.evaluate('window.__e2e.frames')) - a;
 }
 
-/** Wait until no effect frame was presented for `quietMs` (the host went idle); false after `timeoutMs`. @param {any} page */
+/**
+ * Wait until no effect frame was presented for `quietMs` (the host went idle); false after `timeoutMs`. The quiet time counts from the call
+ * at the earliest: a frame that the caller's last input causes (a pointer move: hover) is presented a few ms after it, so a host whose
+ * last frame was long ago is not idle at once.
+ * @param {any} page
+ */
 export async function idle(page, quietMs = 400, timeoutMs = 10000) {
   const t = Date.now();
+  const since = await page.evaluate('performance.now()');
   for (;;) {
-    if (await page.evaluate(`performance.now() - window.__e2e.last > ${quietMs}`)) return true;
+    if (await page.evaluate(`performance.now() - Math.max(window.__e2e.last, ${since}) > ${quietMs}`)) return true;
     if (Date.now() - t > timeoutMs) return false;
     await sleep(50);
   }

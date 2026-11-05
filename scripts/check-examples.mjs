@@ -299,7 +299,7 @@ const SCENARIOS = {
     const kind = pathOk === 'effect' ? 'gpu' : '2d';
     const first = await genericChecks(run, { canvas: '#stage', kind, ready: `!!document.getElementById('status').dataset.path` });
     if (!first || opts.generic) return;
-    if (pathOk === 'effect') await sleep(3600); // the water plugin starts two ripples (3.2 s lifetime): wait until they are gone so the pointer map is near the identity
+    if (pathOk === 'effect') await sleep(3600); // ripples from the page load (if any) settle, so the pointer map is near the identity
     await run.step('interact', 'click + type in the name field reaches the live input', async () => {
       const c = await centerOf(page, 'input[name=name]');
       await page.click(c.x, c.y); await sleep(200);
@@ -319,7 +319,14 @@ const SCENARIOS = {
     if (pathOk === 'effect') {
       await run.step('interact', 'the effect renders at about the cap (15 and 30 fps, page-side count of effectframe, +-30 %)', async () => {
         await page.evaluate(`window.__ef = 0; document.getElementById('stage').addEventListener('effectframe', () => { window.__ef += 1; })`);
-        const rate = async (seconds) => { await page.evaluate('window.__ef = 0'); await sleep(seconds * 1000); return (await page.evaluate('window.__ef')) / seconds; };
+        // the pointer stirs the water during the count (still water renders nothing: the plugin requests frames only while its surface moves)
+        const stage = await centerOf(page, '#stage');
+        const rate = async (seconds) => {
+          await page.evaluate('window.__ef = 0');
+          const t0 = Date.now();
+          for (let i = 0; Date.now() - t0 < seconds * 1000; i += 1) { await page.mouseMove(stage.x + 160 * Math.sin(i / 3), stage.y + 60 * Math.cos(i / 4)); await sleep(30); }
+          return (await page.evaluate('window.__ef')) / ((Date.now() - t0) / 1000);
+        };
         await page.evaluate(`document.getElementById('cap').focus()`); await page.key('Home'); await sleep(300);
         const r15 = await rate(2);
         await page.key('ArrowRight'); await sleep(300);
@@ -369,14 +376,14 @@ const SCENARIOS = {
       await page.click(c.x, c.y);
       return H.until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
     };
-    await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title and description', async () => {
-      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, disabled: b.disabled }))`);
-      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.text.includes(p.description)));
+    await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title (its description as the chip\'s tooltip)', async () => {
+      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, tip: b.title, disabled: b.disabled }))`);
+      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.tip === p.description));
       return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name) };
     });
     if (mode === 'effect') {
       for (const p of manifest) {
-        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form, the presented pixels change against "Effect off", and the panel shows its title, version and reduced-motion behaviour`, async () => {
+        await run.step('interact', `selecting ${p.name} (trusted click) applies it: its controls mount in the form, the presented pixels change against "Effect off", and the panel shows its title, version, description and reduced-motion behaviour`, async () => {
           if (!(await pick('off'))) return { ok: false, reason: 'off not selected' };
           await sleep(600);
           const off = await canvasImage(page, '#stage', 'gpu');
@@ -385,7 +392,7 @@ const SCENARIOS = {
           const on = await canvasImage(page, '#stage', 'gpu');
           const controls = await page.evaluate(`document.getElementById('effect-controls').children.length`);
           const about = await page.evaluate(`document.getElementById('about').textContent`);
-          const described = about.includes(p.title) && about.includes(`v${p.version}`) && (!p.reducedMotion || about.includes(p.reducedMotion));
+          const described = about.includes(p.title) && about.includes(`v${p.version}`) && about.includes(p.description) && (!p.reducedMotion || about.includes(p.reducedMotion));
           const cmp = H.compareImages(on, off);
           run.shots[`effect-${p.name}`] = on;
           return { ok: !!selected && controls > 0 && described && cmp.countOver16 > 300 && H.pixelStats(on).nonBlank, controls, described, changedPixels: cmp.countOver16 };
@@ -909,7 +916,8 @@ function guidePluginProblem() {
 // ------------------------------------------------------------------------------------------------------------------------------------
 async function runExample(browser, server, name, opts = {}) {
   const scenarios = opts.smoke ? SMOKE : SCENARIOS;
-  const path = opts.url ?? (opts.smoke ? `test/examples-smoke/${name}/` : `examples/${name}/`);
+  // the gallery opens with ?demo=0: these checks compare each plugin with "Effect off"; its demo on selection is checked by scripts/check-gallery.mjs
+  const path = opts.url ?? (opts.smoke ? `test/examples-smoke/${name}/` : `examples/${name}/${name === 'plugins' ? '?demo=0' : ''}`);
   const page = await browser.newPage({ reuseFirst: false });
   const run = new Run(page, name, server.url); run.fast = !!opts.generic; // a control only needs to see red: short waits
   try {

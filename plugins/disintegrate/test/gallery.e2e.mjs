@@ -6,7 +6,7 @@
 // and is shown by the re-formed page.
 //   npm run build && node plugins/disintegrate/test/gallery.e2e.mjs [--record]     (--record also writes media/disintegrate.webp)
 import { runTransitionGalleryE2E } from '../../_shared/transition-e2e.mjs';
-import { actionChecks, clickOn, compareImages, framesDuring, idle, rectOf, shot, sleep } from '../../_shared/gallery-e2e.mjs';
+import { actionChecks, actionResult, clickAction, clickOn, compareImages, framesDuring, idle, rectOf, shot, sleep } from '../../_shared/gallery-e2e.mjs';
 
 /** the live counter of the plugin's controls, on (trusted click on its checkbox) @param {any} page */
 async function counterOn(page) {
@@ -38,7 +38,31 @@ await runTransitionGalleryE2E({
       { action: 'out', state: 'out', midMs: 450, minChanged: 3000 },
       { action: 'in', state: 'in', midMs: 450, minChanged: 3000 },
       { action: 'play', state: 'in', midMs: 450, minChanged: 3000 },
+      { action: 'demo', state: 'in', midMs: 450, minChanged: 3000 },
     ], { older: 'out', newer: 'in', state: 'in' });
+
+    // zero work at rest: after the demo, no effect frame at all (the plugin is not continuous and asks for none)
+    await clickAction(page, 'demo');
+    await actionResult(page);
+    await idle(page);
+    const rest = await framesDuring(page, 2000);
+    c.check('after the demo the effect settles: 0 effect frames in 2 s', rest === 0, { framesIn2s: rest });
+    // the demo gives way to the user: a trusted press on the canvas 500 ms into it re-forms the page at once (the press itself is
+    // swallowed, as during any transition); the control is the same demo left alone, which takes its full 3 s
+    const demoLength = async (/** @type {boolean} */ press) => {
+      await clickAction(page, 'demo');
+      const t0 = Date.now();
+      await sleep(500);
+      if (press) { const st = await rectOf(page, '#stage'); await page.click(st.x + st.w * 0.25, st.y + st.h * 0.6); }
+      const r = await actionResult(page);
+      return { ms: Date.now() - t0, state: r && r.state };
+    };
+    const alone = await demoLength(false);
+    await idle(page);
+    const pressed = await demoLength(true);
+    c.check('a press during the demo takes over: the page re-forms within a second, the demo left alone takes about 3 s; both resolve \'in\'',
+      pressed.state === 'in' && alone.state === 'in' && pressed.ms < 1300 && alone.ms > 2600, { pressed, alone });
+    await idle(page);
 
     // live content: the counter runs, the form burns, text is typed into the name field WHILE it burns
     await counterOn(page);

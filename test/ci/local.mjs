@@ -18,6 +18,7 @@ const stages = [
   ['wpt', 'G-wpt-subset: the official WPT tests (Canary as the native oracle)', [node, 'test/wpt/gate.mjs']],
   ['field', 'G-field-test: the field test page with a tab capture', [node, 'scripts/check-field-test.mjs']],
   ['plugins', 'plugin gallery e2e (continuous WebGPU effects)', [node, 'scripts/check-plugins-e2e.mjs']],
+  ['gallery', 'G-gallery: every plugin in the gallery at a phone and an iPad size (stage in view, touch scroll, demo, zero work at rest)', [node, 'scripts/check-gallery.mjs']],
   ['webgpu-examples', 'the WebGPU examples: effect-plugin, plugins, the wobble-plugin smoke page', [node, 'scripts/check-examples.mjs', '--only=effect-plugin,plugins,smoke:wobble-plugin']],
   ['native-effects', 'the effects over Chrome Canary\'s own implementation', [node, 'test/native-effects/run.mjs', '--require-canary']],
   ['firefox-scroll', 'G-xbrowser\'s scroll scenario on Firefox', [node, 'test/xbrowser/run.mjs', '--engine=firefox', '--only=scroll']],

@@ -158,7 +158,9 @@ if (!docsOnly) {
   // scrollStep, caret-patch.js meets, scroll-compose.js step's composed callback)
   // 16830 -> 16955 (2026-11-04, measured 16,948): the loader, which downloads the core only where the polyfill runs (+122: src/api/loader.js 93, src/loader.js 14,
   // src/loader-iife.js 11, native-detect.js decideInstall +7 shared with install.js -3). The loader is its own bundle; the core bundle gains only decideInstall
-  if (total > 16955) problems.push(`G-size: core is ${total} code lines (> 16955)`);
+  // 16955 -> 16970 (2026-11-05, measured 16,965): a finger focuses and activates the control an effect shows on a tap, when it lifts, not at the press
+  // (+17: effects/interposer.js and effects/native-interposer.js, the tap state and a shared focusAt)
+  if (total > 16970) problems.push(`G-size: core is ${total} code lines (> 16970)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

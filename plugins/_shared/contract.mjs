@@ -116,6 +116,11 @@ export async function checkPluginFolder(dir) {
     if (typeof meta.description !== 'string' || !meta.description.trim() || meta.description.length > 160) at('meta.description must be one line (<= 160 characters)');
     if (meta.defaults !== undefined && (meta.defaults === null || typeof meta.defaults !== 'object')) at('meta.defaults must be an object when present');
     if (meta.reducedMotion !== undefined && (typeof meta.reducedMotion !== 'string' || !meta.reducedMotion.trim() || meta.reducedMotion.length > 160)) at('meta.reducedMotion must be one line (<= 160 characters) when present');
+    // contract 3 (docs/guides/EFFECTS-PLUGINS.md 15.1): a plugin that renders at rest by design says so, and what keeps running; contract 1: the touch hint
+    for (const key of ['continuous', 'touch']) {
+      const v = meta[key];
+      if (v !== undefined && (typeof v !== 'string' || !v.trim() || v.length > 160 || /\n/.test(v))) at(`meta.${key} must be one line (<= 160 characters) when present`);
+    }
     if (!Object.isFrozen(meta)) at('meta must be frozen');
   }
   if (!plugin || typeof plugin !== 'object') { at('index.js must export `plugin` (the effect plugin definition)'); return problems; }

@@ -2,10 +2,12 @@
  * The geometry and the physics of the shards, without GPU or DOM. PURE: Node tests exercise it directly.
  *
  *   spiderweb      the crack pattern: jagged spokes from the impact point and broken rings around it, every cell clipped to the canvas
- *   buildShards    every cell as a triangle fan for the vertex buffer, and the per-shard parameters (crack offset, fall) for the uniform block
+ *   buildShards    every cell as a triangle fan for the vertex buffer, its edge walls (the thickness of the glass), and the per-shard
+ *                  parameters (crack offset, fall) for the uniform block
  *   crackedLayout  the data of one crack pattern that the input mapper of the cracked pane reads (made once per crack, never per frame)
  *   crackedSource  the mapper of the cracked pane: the exact inverse of the per-shard offsets and of the refraction along the cracks
  *   shardPoint     the JavaScript twin of vs_shard in shatter.wgsl: where a point of a shard is at physics time t
+ *   fallTime       the physics time a frame of the fall shows: real time on the way out, eased into place on the way back
  * Everything here runs once per crack (when it starts), except crackedSource, which runs per pointer event.
  */
 
@@ -14,10 +16,15 @@ export const MAX_SHARDS = 160;
 /** vertices per cell at most: a merged cell that would have more is kept as its separate cells (checked by the tests) */
 export const MAX_POLY = 20;
 /** floats per vertex: home x, y (css px) | shard * 2 + border flag | edge factor (1 at the fan centre, 0 on the outer edge) | inward normal
- *  x, y of the outer edge | distance from the fan centre to that edge (css px) | unused */
+ *  x, y of the outer edge | distance from the fan centre to that edge (css px) | kind of that edge (0 a crack, 1 the canvas border, 2 a
+ *  seam inside a cell cut into ears) */
 export const VERTEX_FLOATS = 8;
 /** a fan has one triangle per edge; a cell cut into ears has 3 per ear (MAX_POLY - 2 ears) */
 export const MAX_VERTICES = MAX_SHARDS * (MAX_POLY - 2) * 3 * 3;
+/** the walls: one quad (two triangles) per edge of a cell. Floats per wall vertex, VERTEX_FLOATS like a face vertex: x, y (css px, an end
+ *  of the edge) | shard * 2 + face (0 the front face, 1 the back face) | kind (0 a crack, 1 the canvas border) | outward normal x, y of the
+ *  edge | css px along the edge from its start | edge length (css px) */
+export const MAX_WALL_VERTICES = MAX_SHARDS * MAX_POLY * 6;
 /** floats per shard: centre x, y, crack offset x, y | velocity x, y, z (css px/s), start (s) | spin axis x, y, z, spin (rad/s) | tilt x, y,
  *  distance from the impact (css px), random */
 export const SHARD_FLOATS = 16;
@@ -26,11 +33,11 @@ export const BEVEL = 7;
 /** the share of the fall timeline in which the cracks spread (way out) or close again (way back); no shard moves before it ends */
 export const HEAL = 0.1;
 /** physics seconds one way of the fall plays (g = 1 is SPAN seconds after the second impact) */
-export const SPAN = 1.7;
+export const SPAN = 1.2;   // the part of a fall in which shards are on the canvas (2026-11-04: 1.7 s left the pane empty for ~1.4 s of a play)
 /** css px per second at which the shards start to fall away from the impact point */
 export const FALL_WAVE = 2600;
-/** seconds between the ghost copies of a falling shard (the motion blur) */
-export const GHOST_DT = 0.012;
+/** css px: the thickness of the glass (the walls of a falling shard) */
+export const THICKNESS = 5;
 
 /** Deterministic random numbers in [0, 1). @param {number} seed */
 export function mulberry32(seed) {
@@ -203,25 +210,39 @@ export function spiderweb(impact, w, h, spokes, rand) {
  * @param {number} seed
  * @param {Float32Array} vertices  MAX_VERTICES * VERTEX_FLOATS
  * @param {Float32Array} shards  MAX_SHARDS * SHARD_FLOATS
+ * @param {Float32Array|null} [walls]  MAX_WALL_VERTICES * VERTEX_FLOATS: the edge walls (none written when null)
  */
-export function buildShards(impact, w, h, spokes, seed, vertices, shards) {
+export function buildShards(impact, w, h, spokes, seed, vertices, shards, walls = null) {
   const rand = mulberry32(seed);
   const cells = spiderweb(impact, w, h, spokes, rand);
   const eps = 1e-3 * Math.max(w, h);
   const onBorder = (/** @type {number[]} */ a, /** @type {number[]} */ b) =>
     (Math.abs(a[0]) < eps && Math.abs(b[0]) < eps) || (Math.abs(a[0] - w) < eps && Math.abs(b[0] - w) < eps)
     || (Math.abs(a[1]) < eps && Math.abs(b[1]) < eps) || (Math.abs(a[1] - h) < eps && Math.abs(b[1] - h) < eps);
-  let v = 0, count = 0;
+  let v = 0, count = 0, wv = 0;
+  /** the wall of the cell edge a -> b (the cell is counter-clockwise in y-down px: the outward normal is (ey, -ex)) @param {number} id @param {number[]} a @param {number[]} b */
+  const wall = (id, a, b) => {
+    if (!walls) return;
+    const ex = b[0] - a[0], ey = b[1] - a[1], len = Math.hypot(ex, ey) || 1;
+    const nx = ey / len, ny = -ex / len, kind = onBorder(a, b) ? 1 : 0;
+    for (const [p, face, along] of [[a, 0, 0], [b, 0, len], [b, 1, len], [a, 0, 0], [b, 1, len], [a, 1, 0]]) {
+      const q = /** @type {number[]} */ (p);
+      walls[wv++] = q[0]; walls[wv++] = q[1]; walls[wv++] = id * 2 + /** @type {number} */ (face); walls[wv++] = kind;
+      walls[wv++] = nx; walls[wv++] = ny; walls[wv++] = /** @type {number} */ (along); walls[wv++] = len;
+    }
+  };
   /** one fan triangle: centre (edge factor 1), and the outer edge a -> b @param {number} id @param {{x: number, y: number}} c @param {number[]} a @param {number[]} b @param {boolean} crack */
   const emit = (id, c, a, b, crack) => {
-    const info = id * 2 + (crack && !onBorder(a, b) ? 0 : 1);   // flag 1: no crack along this edge (the canvas border, or a seam inside a cell)
+    const border = onBorder(a, b);
+    const info = id * 2 + (crack && !border ? 0 : 1);   // flag 1: no crack along this edge (the canvas border, or a seam inside a cell)
+    const kind = !crack ? 2 : border ? 1 : 0;          // 0 a crack, 1 the canvas border (both edges of the falling shard), 2 a seam
     const ex = b[0] - a[0], ey = b[1] - a[1], len = Math.hypot(ex, ey) || 1;
     let nx = -ey / len, ny = ex / len;                                 // a normal of the edge, turned towards the fan centre
     if (nx * (c.x - a[0]) + ny * (c.y - a[1]) < 0) { nx = -nx; ny = -ny; }
     const hgt = nx * (c.x - a[0]) + ny * (c.y - a[1]);
     for (const [x, y, e] of [[c.x, c.y, 1], [a[0], a[1], 0], [b[0], b[1], 0]]) {
       vertices[v++] = x; vertices[v++] = y; vertices[v++] = info; vertices[v++] = e;
-      vertices[v++] = nx; vertices[v++] = ny; vertices[v++] = hgt; vertices[v++] = 0;
+      vertices[v++] = nx; vertices[v++] = ny; vertices[v++] = hgt; vertices[v++] = kind;
     }
   };
   for (const cell of cells) {
@@ -239,6 +260,7 @@ export function buildShards(impact, w, h, spokes, seed, vertices, shards) {
         emit(id, e, poly[i], poly[j], edge(i, j)); emit(id, e, poly[j], poly[l], edge(j, l)); emit(id, e, poly[l], poly[i], edge(l, i));
       }
     }
+    for (let k = 0; k < poly.length; k += 1) wall(id, poly[k], poly[(k + 1) % poly.length]);
     const centre = polygonCentroid(poly);
     const dx = centre.x - impact.x, dy = centre.y - impact.y;
     const dist = Math.hypot(dx, dy);
@@ -265,7 +287,7 @@ export function buildShards(impact, w, h, spokes, seed, vertices, shards) {
     shards[s + 12] = (rand() - 0.5) * 0.22; shards[s + 13] = (rand() - 0.5) * 0.22;
     shards[s + 14] = dist; shards[s + 15] = rand();
   }
-  return { vertexCount: v / VERTEX_FLOATS, shardCount: count };
+  return { vertexCount: v / VERTEX_FLOATS, shardCount: count, wallCount: wv / VERTEX_FLOATS };
 }
 
 /**
@@ -356,4 +378,21 @@ export function shardPoint(shards, id, home, t, o) {
   const z = Math.min(r[2] + shards[s + 6] * tau, 0.8 * o.focal);
   const scale = o.focal / (o.focal - z);
   return { x: o.width / 2 + (x - o.width / 2) * scale, y: o.height / 2 + (y - o.height / 2) * scale };
+}
+
+/**
+ * The physics time (s) a frame of the fall shows, for the fall amount g (0 in the pane, 1 gone). A run starts from (g0, t0), the amount and
+ * the time of the frame before it, so a reversal midway is continuous. Way out (dir > 0): real time, from t0 to `end` at g = 1. Way back
+ * (dir < 0): the shards fly home and slow down as they arrive (the time eases to HEAL * SPAN, the moment before any shard fell, when g reaches
+ * HEAL), then the cracks close (the last HEAL of g) with every shard home. PURE.
+ * @param {number} dir  1 out, -1 in @param {number} g @param {number} g0 @param {number} t0 @param {number} [end]  physics s at g = 1
+ */
+export function fallTime(dir, g, g0, t0, end = SPAN) {
+  if (dir > 0) return g0 >= 1 ? end : t0 + ((end - t0) * (g - g0)) / (1 - g0);
+  if (g >= g0) return t0;   // the first frame of the way back: exactly where the run before it stopped
+  const ta = HEAL * SPAN;
+  if (t0 <= ta || g0 <= HEAL) return g0 > 0 ? (t0 * Math.max(0, g)) / g0 : 0;
+  if (g <= HEAL) return (ta * Math.max(0, g)) / HEAL;
+  const y = (g - HEAL) / (g0 - HEAL);
+  return ta + (t0 - ta) * y * y;
 }

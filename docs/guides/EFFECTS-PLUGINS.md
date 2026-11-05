@@ -165,13 +165,15 @@ The actions of the example plugins:
 
 | plugin | actions | options | states |
 |---|---|---|---|
-| [`disintegrate`](../../plugins/disintegrate/README.md#actions) | `out` (to dust, stays gone), `in` (re-forms), `play` (both) | none | `'in'`, `'out'` |
-| [`shatter`](../../plugins/shatter/README.md#actions) | `impact` (cracks an intact pane, breaks a cracked one), `crack`, `out`, `in`, `play` | `point: {x, y}` (canvas CSS px) | `'intact'`, `'cracked'`, `'gone'` |
-| [`glitch`](../../plugins/glitch/README.md#actions) | `burst` | none | `'idle'` |
-| [`page-curl`](../../plugins/page-curl/README.md#actions) | `peek` (the dog-ear opens and closes once) | none | `'rest'` |
-| [`water`](../../plugins/water/README.md#actions) | `drop` (a ripple) | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2) | `'calm'` |
+| [`disintegrate`](../../plugins/disintegrate/README.md#actions) | `out` (to dust, stays gone), `in` (re-forms), `play` (both), `demo` | none | `'in'`, `'out'` |
+| [`shatter`](../../plugins/shatter/README.md#actions) | `impact` (cracks an intact pane, breaks a cracked one), `crack`, `out`, `in`, `play`, `demo` | `point: {x, y}` (canvas CSS px) | `'intact'`, `'cracked'`, `'gone'` |
+| [`glitch`](../../plugins/glitch/README.md#actions) | `burst`, `demo` | none | `'idle'` |
+| [`page-curl`](../../plugins/page-curl/README.md#actions) | `peek` (the dog-ear opens and closes once), `demo` | none | `'rest'` |
+| [`water`](../../plugins/water/README.md#actions) | `drop` (a ripple), `demo` | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2) | `'calm'` |
+| [`holo-card`](../../plugins/holo-card/README.md#actions) | `demo` (a tilt sweep) | none | `'rest'` |
+| [`liquid-glass`](../../plugins/liquid-glass/README.md#actions) | `demo` (a tour of the page) | none | `'free'` |
 
-`crt`, `holo-card` and `liquid-glass` follow the pointer and have no actions.
+`crt` is there at rest and has no actions. A plugin whose look depends on an input or an event also has the action `demo`, a short showcase that the plugin gallery plays on selection (section 15.1).
 
 ### 6. Reduced motion
 
@@ -369,6 +371,58 @@ Your own triggers (a submit listener, a button of `mountUI`) should call `contex
 
 States are short lowercase words that describe what the plugin shows at rest, documented in the plugin's README.
 
+#### 15.1 Touch, `demo` and zero work at rest
+
+Three rules every interactive plugin of this repository follows, and that the plugin gallery checks (`scripts/check-gallery.mjs`). They are about the page around the effect: a finger must still scroll it, a visitor must see what the effect does without guessing, and a page at rest must cost nothing.
+
+**1. Touch: claim a gesture only when it starts on your own handle.** On a phone or a tablet a finger that moves scrolls the page; the browser decides that at `touchstart`, before any `pointermove`. A plugin with something to grab (a lens, a page corner, a shard) claims the gesture only when the touch starts on it, and everywhere else leaves the page its scrolling and the form its interaction:
+
+```js
+// in create(): the handle is where the current frame draws it, in canvas CSS px (the coordinates of the input mapper)
+let mine = false;   // the current touch started on the handle
+const offStart = context.listen('touchstart', (event) => {
+  const touch = event.touches[0];
+  const box = context.canvas.getBoundingClientRect();
+  mine = event.touches.length === 1 && onHandle(touch.clientX - box.left, touch.clientY - box.top);
+}, { passive: true });
+const offMove = context.listen('touchmove', (event) => {
+  if (mine && event.cancelable) event.preventDefault();   // the first move decides: this gesture is the plugin's, not a scroll
+}, { passive: false });
+```
+
+- `context.listen` adds the listeners on the canvas and on its live layer, where touches land. `preventDefault()` in the first `touchmove` of a touch that started on the handle keeps the browser from scrolling (and from sending `pointercancel`); the pointer events of that gesture then follow, and the plugin's pointer listeners do the rest, as for a mouse.
+- Claim at the first `touchmove`, not at `touchstart`: a prevented `touchstart` also cancels the tap, so a tap on a field seen through the handle (a lens) would no longer focus it. A handle that has nothing to tap through, such as a page corner, may claim at `touchstart`.
+- The effects host focuses and activates a control for a finger only on a tap (a touch that lifts within 10 css px of where it landed), as a page without effects does: dragging a handle across a field does not focus it.
+- `preventDefault()` in `pointerdown` does not stop a scroll, and `touch-action: none` on the canvas would block scrolling over the whole canvas: use neither.
+- A whole-surface effect (ripples, a tilt that follows the finger) does not block scrolling at all: it listens passively (`{ passive: true }`), reacts to taps and to the pointer events the browser delivers, and accepts the `pointercancel` that comes when the page scrolls.
+- Mouse and pen keep their own behaviour.
+- `meta.touch` (optional, one line) is the hint the gallery shows on a touch screen: "Drag the lens with a finger."
+
+**2. Demo: an action named `demo`.** A plugin whose look depends on an input or an event (a pointer, a submit, an error) declares an action `demo` (in `actions`, so it is also in `meta.actions` of the manifest) that shows the effect without that input:
+
+- `handle.trigger('demo')` plays a short showcase, at most about 4 s, and resolves with the state the plugin rests in; it ends at rest.
+- The plugin never starts it by itself: the page does (the gallery triggers it when the effect is selected, and not under reduced motion; `?demo=0` opens the gallery without it).
+- User input during the demo takes over at once: a press or a drag on the canvas, a submit, `setOptions`. A newer `trigger` supersedes it like any action.
+- With reduced motion (`info.reducedMotion`) it resolves at once with the state at rest, or shows a still that explains the effect.
+- The template plugin (`plugins/_template/`) has the smallest complete `demo`: its clock starts at the first frame that renders it, it requests frames only while it moves, a passive `pointerdown` or `setOptions` ends it, and its Node tests check all of that through the real handle.
+
+**3. Zero work at rest.** Once the plugin has settled and nothing changes, the host presents no frame: no `effectframe` event, no animation frame loop for the canvas.
+
+- Be `continuous` only while something moves (a getter, or a property you set), or not at all and call `context.requestRender()` for each frame you need. The host is idle when nothing asks for a frame and the source did not change.
+- Measure it, on your own page:
+
+  ```js
+  let frames = 0;
+  canvas.addEventListener('effectframe', () => { frames += 1; });
+  await handle.settled();          // a plugin with actions; otherwise wait until its motion ends
+  frames = 0;
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  console.log(frames);             // 0
+  ```
+
+- A plugin that renders at rest by design (the CRT's flicker, a holographic card's idle sway, an ambient glitch) declares it in `meta.continuous`, one line that says what keeps running (`'The flicker and the rolling bar run at rest; with reduced motion they stop.'`), and keeps that work cheap. The gallery check accepts frames at rest only from such a plugin.
+- The host already renders nothing for a canvas out of view or a hidden document (section 2), continuous plugins included.
+
 ### 16. A complete plugin: horizontal wobble
 
 A complete ABI v2 plugin as one classic script, with an input mapper and one action. It is the file that the smoke test of `npm run test:examples` runs (`test/examples-smoke/wobble-plugin/wobble-plugin.js`; the test checks that this block and the file are the same). Load order in the page: core, effects bundle, this file (section 9).
@@ -499,7 +553,9 @@ The shared test kit of `plugins/_shared/` (test tooling, not shipped) covers the
 - `runActionOnGpu(t, plugin, options, action, actionOptions)`: triggers an action through the handle and presents frames on the frame clock until it resolves; returns the state, the largest change against the first frame and the worst agreement of a frame's mapper with its pixels during the action (input must follow the pixels while an action plays too).
 - `presentOnce`, `agreement`, `changedPixels`, `markerScene`, `spyMappers`, `lossSpy`, `until`, and `gpuTest` (skipped, never passed, where Chrome has no WebGPU adapter).
 
-**Gallery end to end** (`plugins/<name>/test/gallery.e2e.mjs`, `npm run test:plugins`): the plugin in `examples/plugins/` with trusted input. `_shared/gallery-e2e.mjs` opens the gallery, takes shots, drags, records; `actionChecks(page, check, steps, supersede)` clicks the gallery's button of each action and checks the state, that the frame changed and that the host goes idle, then from page script an unknown action, superseding and `settled()`.
+**Gallery end to end** (`plugins/<name>/test/gallery.e2e.mjs`, `npm run test:plugins`): the plugin in `examples/plugins/` with trusted input. `_shared/gallery-e2e.mjs` opens the gallery (with `&demo=0`, so a test starts from the plugin's own state; `openGallery(name, { demo: true })` lets the gallery play the demo), takes shots, drags, records; `actionChecks(page, check, steps, supersede)` clicks the gallery's button of each action and checks the state, that the frame changed and that the host goes idle, then from page script an unknown action, superseding and `settled()`.
+
+**The gallery check** (`scripts/check-gallery.mjs`, `npm run test:gallery`, headless Chrome) runs every plugin of the manifest, and the template plugin, through the rules of section 15.1 in the gallery, at 390 x 844 (a phone, touch emulation) and 1194 x 748 (an iPad in landscape): the stage is entirely in the first viewport and the form fits it without an inner scroll; the `demo` plays on selection, resolves within 6 s and not under reduced motion; once it settled, 2 s without any `effectframe` (unless the plugin declares `meta.continuous`); a vertical touch drag that starts on the stage away from a handle scrolls the page. Its positive controls must turn each of those checks red.
 
 How the plugin of section 16 is verified: `npm run test:examples` serves `test/examples-smoke/wobble-plugin/index.html` (a red bar 14 css px wide at x = 300 in the source) in headless Chrome and checks: the host and plugin start; the presented frame is not blank and the live layer has computed opacity 0; amplitude 24 differs from amplitude 0 in more than 400 pixels; and the mapper against the pixels. For the last check the frame is frozen (`framecap=1`), a compositor screenshot is taken, the left edge of the bar is found on 38 rows, and `mapper(edge)` must give x = 300 within 2 px. The control is the identity mapper (what a plugin without a mapper amounts to), which must be wrong by 8 px or more on the same pixels.
 
@@ -514,6 +570,9 @@ The smoke test also runs its action: `handle.trigger('pulse')` resolves `'calm'`
 - The mapper formula is the shader formula (test it against pixels with `checkMapperAgainstGpu`, also during your actions with `runActionOnGpu`).
 - Declared `actions` have `runAction` and `settled`; both resolve after the frame that shows the end state; your own triggers go through `context.trigger` / `ui.trigger`; `destroy` resolves your waiters with `null`.
 - `meta.reducedMotion` says what the plugin does under `prefers-reduced-motion: reduce`, and the actions honour `info.reducedMotion`.
+- Touch: a gesture is claimed (`preventDefault()` in its first `touchmove`, or in `touchstart` for a handle with nothing to tap through) only for a touch that starts on your handle; a whole-surface effect never blocks scrolling (section 15.1).
+- A plugin whose look depends on input has a `demo` action of at most about 4 s that ends at rest and gives way to user input.
+- At rest, 3 s after it settled, the canvas presents 0 effect frames, unless `meta.continuous` says what runs by design.
 - You did not call `getContext` on the canvas.
 - A 2D fallback exists for browsers without WebGPU, and for a native implementation without the members the host needs (`createHost` rejects there, see the top of this guide).
 - You measured the cost on your own page: `docs/guides/PERFORMANCE.md` says which numbers exist and which do not.

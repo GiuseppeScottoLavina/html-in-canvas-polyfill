@@ -9,7 +9,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pixelStats } from '../../../test/harness/index.mjs';
-import { ROOT, actionChecks, checklist, clickOn, compareImages, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, checklist, clickOn, compareImages, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('shatter gallery e2e');
 const g = await openGallery('shatter', { width: 1100, height: 1000 });
@@ -106,7 +106,26 @@ try {
     { action: 'in', state: 'intact', midMs: 1200, minChanged: 0.15 * area },
     { action: 'impact', state: 'cracked', midMs: 120, minChanged: 2000 },
     { action: 'impact', state: 'intact', midMs: 350, minChanged: 0.15 * area },
+    // the showcase: a strike cracks the pane at the Submit button, a second breaks it, the shards stop in the air and fly back
+    { action: 'demo', state: 'intact', midMs: 300, minChanged: 2000 },
   ], { older: 'crack', newer: 'in', state: 'intact' });
+
+  // ---- the demo: it ends at rest and then costs nothing; the user takes over at once ---------------------------------------------------
+  await idle(page);
+  const restBefore = (await shot(page)).img;
+  const demoMs = await page.evaluate(`(async () => { const t = performance.now(); const s = await window.__gallery.handle.trigger('demo'); return [s, performance.now() - t]; })()`);
+  c.check('the demo resolves intact in about 4 s at most', demoMs[0] === 'intact' && demoMs[1] < 4200, { state: demoMs[0], ms: Math.round(demoMs[1]) });
+  await sleep(200);
+  const restFrames = await framesDuring(page, 3000);
+  const restDiff = compareImages((await shot(page)).img, restBefore).countOver16;
+  c.check('after the demo: no effect frame in 3 s (zero work at rest), and the form as before', restFrames === 0 && restDiff < 0.01 * area, { frames: restFrames, changedPixels: restDiff });
+  const takeover = page.evaluate(`window.__gallery.handle.trigger('demo')`);
+  await sleep(350);
+  await clickOn(page, '#name');
+  c.check('a trusted click during the demo takes over: the demo resolves null (superseded)', (await takeover) === null);
+  c.check('and the pane comes back into place at once (the cracks close), then the host goes idle', (await rest()) === 'intact' && await idle(page));
+  await clickOn(page, '#message'); await sleep(150);
+  c.check('the form is the user\'s again: a click focuses the field drawn there', (await active()) === 'message');
 
   // what scripts/check-examples.mjs asks of every plugin of the gallery: picked after "Effect off", its controls mount and the presented
   // pixels 900 ms later differ from "Effect off" (here: the intro), and the frame is not blank

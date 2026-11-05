@@ -3,7 +3,7 @@
 //   - the presented frame is not blank; intensity 0 equals the plain surface; a ripple distorts it (displacement, not a repaint)
 //   - typing reaches the live field and changes the presented pixels
 //   - idle clicks 2 px inside the inner edge of controls activate exactly that control and no other
-//   - THE INTERPOSER, deterministically: while four stacked ripples displace the form, the presented frame is FROZEN (framecap=1, one presented frame for ~1 s), the visual position of
+//   - THE INTERPOSER, deterministically: the presented frame is FROZEN (framecap=1, one presented frame for ~1 s) and a strong drop below a field displaces its edge in it, the visual position of
 //     the visual top/bottom edge of a field (flat unique marker colour) is measured in a screenshot of that frame; a trusted click 3 css px INSIDE the visual edge must focus that field (and not a neighbour).
 //     Only trials where the NATIVE hit test would give the other answer count. >= 10 such trials are required and >= 80 % must be correct.
 //     Positive control: the same run with `interposer:false` must fail that assertion (class 'interposer').
@@ -50,32 +50,42 @@ function visualEdges(img, c, x, dpr) {
 }
 
 /**
- * Deterministic interposer trials (see the header). Each attempt stacks four ripples, FREEZES the presented frame, measures the visual top/bottom edge of a field at one column
+ * Deterministic interposer trials (see the header). Each attempt FREEZES the presented frame, lets a strong drop fall below a field, measures the visual top/bottom edge of a field at one column
  * from its marker colour, and clicks 3 css px INSIDE a visual edge where the native hit test (twin) would not reach the field: that field, and no neighbour, must be focused.
  */
 async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
   const targets = ['#name', '#email', '#project'];
-  const out = { attempts: 0, discriminating: 0, correct: 0, notDiscriminating: 0, noMark: 0, trials: [] };
+  const out = { attempts: 0, discriminating: 0, correct: 0, notDiscriminating: 0, noMark: 0, frameChanged: 0, trials: [] };
   const surface = '#hic-surface';
   const frozen = (on) => page.evaluate(`document.querySelector(${JSON.stringify(surface)}).${on ? "setAttribute('framecap', 1)" : "removeAttribute('framecap')"}`);
   await page.evaluate(`(() => { const s = document.createElement('style'); s.id = '__marks'; s.textContent = ${JSON.stringify(MARK_CSS)}; document.head.appendChild(s); })()`);
   await H.sleep(1200); // the snapshot picks the marker colours up
+  // page-side clocks: when each effect frame was presented, when the last pointerdown arrived (a click is judged against the frame presented at its pointerdown)
+  await page.evaluate(`(() => { window.__efT = []; document.querySelector(${JSON.stringify(surface)}).addEventListener('effectframe', () => window.__efT.push(performance.now()));
+    document.addEventListener('pointerdown', () => { window.__downT = performance.now(); }, true); return true; })()`);
   for (let t = 0; t < TRIAL_ATTEMPTS && out.discriminating < MIN_TRIALS + 6; t++) {
     const sel = targets[t % targets.length];
     const r = rects[sel];
     const cx = r.x + r.width * (0.3 + 0.4 * ((t % 5) / 4));
-    const cyDrop = r.y + r.height - 12 - 64 * (t % 2 ? 1 : -0.8);
+    // the drop falls 40 css px below the field (the water plugin's action, strength 2): its crown pushes the field's visual bottom edge down, over what lies
+    // below the field (above a field is its own label, which a click focuses natively too)
+    const cyDrop = r.y + r.height + 40;
     out.attempts++;
     await page.evaluate('document.activeElement && document.activeElement.blur()');
-    for (let k = 0; k < 4; k++) { await drop(page, cx, cyDrop); await H.sleep(26); } // the four ripple slots stack on one spot (and replace the previous trial's)
-    await H.sleep(250 + 25 * (t % 4));
-    // FREEZE: framecap=1 keeps the frame presented now for ~1 s, so the screenshot and the clicks judge the SAME displacement (the mapper of that presented frame)
-    await page.evaluate(`document.querySelector(${JSON.stringify(surface)}).setAttribute('framecap', 1); new Promise((r) => document.querySelector(${JSON.stringify(surface)}).addEventListener('effectframe', r, { once: true }))`);
+    // FREEZE first: framecap=1 keeps every presented frame for ~1 s, so the screenshot and the clicks judge the SAME displacement (the mapper of that frame). The water
+    // simulates its surface (its ripples travel on and settle), so it is stirred after the freeze, and the frame judged is the first one presented 0.5 s or more after the
+    // drop: the water advances at most 167 ms of its time per frame, so that frame shows the drop at a fixed age (~170 ms), when the crown has pushed the field's bottom edge
+    // down by ~12 px as one piece. The frame right after the drop (age 0) shows the crater magnifying a thin sliver of the field far below it instead.
+    const frame = await page.evaluate(`(() => { const c = document.querySelector(${JSON.stringify(surface)}); c.setAttribute('framecap', 1);
+      const t = performance.now();
+      const shown = new Promise((r) => { const on = () => { if (performance.now() - t >= 500) { c.removeEventListener('effectframe', on); r(); } }; c.addEventListener('effectframe', on); });
+      window.__water.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cyDrop - origin.y} }, strength: 2 }).catch(() => {});
+      return shown.then(() => ({ shownT: window.__efT[window.__efT.length - 1], waitMs: Math.round(performance.now() - t) })); })()`);
     const shot = (await compositorShot(page, surface)).img;
     const e = visualEdges(shot, MARKS[sel], cx - origin.x, dpr);
     if (!e) { out.noMark++; out.trials.push({ sel, skipped: 'marker not found' }); await frozen(false); continue; }
     const dTop = e.top - (r.y - origin.y), dBot = e.bottom - (r.y + r.height - origin.y);
-    const rec = { sel, dTop: Math.round(dTop * 10) / 10, dBot: Math.round(dBot * 10) / 10 };
+    const rec = { sel, dTop: Math.round(dTop * 10) / 10, dBot: Math.round(dBot * 10) / 10, waitMs: frame.waitMs };
     // candidate clicks 3 css px inside each VISUAL edge (an 'outside' click is not asserted: the field's label wraps it, and clicking a label focuses its field by design). The NATIVE answer is read from the plain-DOM twin (same window, same layout, document.elementFromPoint, label
     // controls resolved): a candidate counts only when the native hit test would give the other answer, so label-wrapped fields cannot make the interposer look better than it is.
     const cands = [{ kind: 'inside', y: origin.y + e.top + 3 }, { kind: 'inside', y: origin.y + e.bottom - 3 }];
@@ -88,6 +98,9 @@ async function interposerTrials(ctx, page, ref, rects, dpr, origin) {
       await page.click(cx, sub.y);
       await H.sleep(120);
       const active = await page.evaluate('document.activeElement && document.activeElement.id');
+      // the frame cap of 1 keeps a frame for ~1 s only: a click whose pointerdown came after a newer frame was presented is not a trial of the measured frame
+      const late = await page.evaluate(`window.__efT.some((t) => t > ${frame.shownT} && t < window.__downT)`);
+      if (late) { out.frameChanged++; out.trials.push({ ...rec, kind: sub.kind, skipped: 'a newer frame was presented before the click' }); break; }
       const focused = active === sel.slice(1);
       const ok = sub.expectFocus ? focused : !focused;
       out.discriminating++;
@@ -179,7 +192,8 @@ runGate('G-f1-form-effect', async (ctx) => {
   ctx.check('no effecterror', numbers.errors.length === 0, numbers.errors, 'content');
 
   // --- FPS cap from an independent clock --------------------------------------------------------------------------------------------------------------
-  await page.evaluate('window.__water.setOptions({ intensity: 0.28 })');
+  // the water's ambient swell: continuous by declaration (still water renders nothing, so it could not show a cap)
+  await page.evaluate('window.__water.setOptions({ intensity: 0.28, ambient: 0.5 })');
   const raf = await page.measureRaf({ frames: 90 });
   numbers.rafHz = Math.round(raf.hz);
   const caps = ctx.control ? [30, 60] : [30, 60, 120].filter((n) => n <= raf.hz + 8);

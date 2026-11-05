@@ -1,6 +1,9 @@
 /**
  * PLUGIN TEMPLATE (plugins/README.md): the smallest complete spatial effect plugin. It shifts the picture right by `offset` CSS pixels,
- * and has one action: `handle.trigger('shift', { offset })` moves the picture and resolves 'still' once a frame shows it.
+ * and has two actions: `handle.trigger('shift', { offset })` moves the picture and resolves 'still' once a frame shows it, and
+ * `handle.trigger('demo')` plays a short showcase (the picture swings out and back) and resolves 'still' when it ends at rest.
+ * It does no work at rest: it is not `continuous` and asks for frames only while the demo moves (docs/guides/EFFECTS-PLUGINS.md,
+ * "Touch, demo and zero work at rest"). It has no handle a finger could grab, so it claims no touch gesture.
  * Copy this folder to plugins/<name>/, rename `meta.name` and `plugin.type` to <name>, and replace the shader, the mapper and the action
  * (or drop `actions`, `runAction` and `settled` when the plugin has nothing to trigger).
  *
@@ -20,12 +23,24 @@ export const meta = Object.freeze({
   title: 'Offset (template)',
   description: 'Shifts the picture sideways; the smallest complete spatial plugin, with an input mapper.',
   defaults: Object.freeze({ offset: 24 }),
-  reducedMotion: 'Nothing moves on its own: the picture is shifted, not animated.',
+  reducedMotion: 'Nothing moves on its own: the picture is shifted, not animated, and the demo resolves at once.',
 });
 
 /** floats in the uniform block: resolution (2), css_width, offset_px */
 const UNIFORM_FLOATS = 4;
 const MAX_OFFSET = 200;
+/** the demo: the picture swings DEMO_SWING CSS px further and back, in DEMO_MS (at most ~4 s, contract 2) */
+export const DEMO_MS = 1600;
+export const DEMO_SWING = 48;
+
+/**
+ * The offset the demo shows `elapsed` ms after its first frame: out and back with zero velocity at both ends (raised cosine). PURE.
+ * @param {number} base  the offset at rest @param {number} elapsed
+ */
+export function demoOffset(base, elapsed) {
+  const t = Math.min(1, Math.max(0, elapsed / DEMO_MS));
+  return Math.min(MAX_OFFSET, base + DEMO_SWING * (1 - Math.cos(2 * Math.PI * t)) / 2);
+}
 
 /** @param {unknown} v */
 const clampOffset = (v) => Math.min(MAX_OFFSET, Math.max(0, Number(v) || 0));
@@ -47,7 +62,7 @@ export const plugin = Object.freeze({
   // the pass only writes its destination as a same-format colour attachment (it never samples or reads it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   // the names handle.trigger accepts; the host checks them, so runAction only sees these
-  actions: Object.freeze(['shift']),
+  actions: Object.freeze(['shift', 'demo']),
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('offset.wgsl'), label: 'template-plugin' });
@@ -65,16 +80,35 @@ export const plugin = Object.freeze({
     let offset = clampOffset(options?.offset ?? meta.defaults.offset);
     let rendered = offset;              // the offset of the last rendered frame, frozen into its mapper
     /** @type {((state: string|null) => void)[]} */ const waiters = [];   // settled() calls waiting for the next frame
-    const settled = () => (rendered === offset ? 'still' : new Promise((resolve) => { waiters.push(resolve); }));
+    /** the demo in progress: its clock starts at the first frame that renders it (the same length at every frame cap) */
+    let demo = /** @type {{start: number|null, resolve: (state: string|null) => void}|null} */ (null);
+    const settled = () => (rendered === offset && !demo ? 'still' : new Promise((resolve) => { waiters.push(resolve); }));
+    /** End the demo where it is: user input takes over at once (contract 2); the next frame shows the state at rest. */
+    const stopDemo = () => {
+      if (!demo) return;
+      const { resolve } = demo;
+      demo = null;
+      context.requestRender();
+      Promise.resolve(settled()).then(resolve);
+    };
+    // a press on the picture takes over from the demo; passive, so it never blocks the page's scrolling (contract 1)
+    const offPointer = context.listen('pointerdown', stopDemo, { passive: true });
 
     return {
       spatial: true,       // pixels move: the host requires captureInputMapper
       setOptions(next) {
+        stopDemo();
         if (next?.offset !== undefined) offset = clampOffset(next.offset);
         context.requestRender();   // not `continuous`: the host renders only when the source changed or on request
       },
-      // the action 'shift': resolve with the state the plugin rests in once a frame shows it (the host handles validation and superseding)
-      runAction(_action, actionOptions) {
+      // the actions: resolve with the state the plugin rests in once a frame shows it (the host handles validation and superseding: a
+      // newer trigger resolves the older one with null, so a demo still running simply ends)
+      runAction(action, actionOptions, info) {
+        stopDemo();
+        if (action === 'demo') {
+          if (info?.reducedMotion) return settled();   // nothing moves: it resolves at once with the state at rest
+          return new Promise((resolve) => { demo = { start: null, resolve }; context.requestRender(); });
+        }
         if (actionOptions.offset !== undefined) offset = clampOffset(actionOptions.offset);
         context.requestRender();
         return settled();
@@ -82,8 +116,15 @@ export const plugin = Object.freeze({
       // resolves once nothing moves: here, once the frame with the current offset was rendered
       settled,
       render(frame) {
-        rendered = offset;
-        data[0] = frame.width; data[1] = frame.height; data[2] = frame.cssWidth; data[3] = offset;
+        let ended = null;
+        if (demo) {
+          if (demo.start === null) demo.start = frame.now;
+          const elapsed = frame.now - demo.start;
+          rendered = demoOffset(offset, elapsed);
+          if (elapsed < DEMO_MS) context.requestRender();   // one more frame while it moves; none once it ends (zero work at rest)
+          else { ended = demo.resolve; demo = null; rendered = offset; }
+        } else rendered = offset;
+        data[0] = frame.width; data[1] = frame.height; data[2] = frame.cssWidth; data[3] = rendered;
         device.queue.writeBuffer(uniforms, 0, data);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
@@ -98,7 +139,8 @@ export const plugin = Object.freeze({
         });
         if (frame.sourceReady) { pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); }
         pass.end();
-        for (const resolve of waiters.splice(0)) resolve('still');
+        if (ended) ended('still');
+        if (!demo && rendered === offset) for (const resolve of waiters.splice(0)) resolve('still');
       },
       // called each time a frame is PRESENTED: freeze what that frame used, a later render must not change this mapper
       captureInputMapper() {
@@ -118,6 +160,8 @@ export const plugin = Object.freeze({
         return () => { range.removeEventListener('input', onInput); label.remove(); };
       },
       destroy() {
+        offPointer();
+        if (demo) { demo.resolve(null); demo = null; }
         for (const resolve of waiters.splice(0)) resolve(null);   // removed before its frame: null
         uniforms.destroy?.();
       },

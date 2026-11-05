@@ -228,3 +228,34 @@ test('a press on a control released where a mapper returns NO_TARGET activates n
   s.fire('click', 20, 20);
   assert.deepEqual(s.clicks, []);
 });
+
+test('a finger: a tap focuses and activates the mapped control when it lifts, not when it lands; a drag (a scroll, a plugin moving a lens) focuses and activates nothing', (t) => {
+  const s = setup(t, shiftRight);
+  const touch = { pointerType: 'touch' };
+  // tap: down and up at the same place
+  s.fire('pointerdown', 20, 20, touch);
+  assert.notEqual(document.activeElement, s.el('b'), 'not focused while the finger is down');
+  s.fire('pointerup', 20, 20, touch);
+  s.fire('click', 20, 20);
+  assert.deepEqual(s.clicks, ['b'], 'the tap activated B, the native click on A was swallowed');
+  assert.equal(document.activeElement, s.el('b'), 'and focused it');
+  s.el('b').blur();
+  // drag: the finger travels 40 px before it lifts
+  s.fire('pointerdown', 20, 20, touch);
+  s.fire('pointermove', 40, 30, touch);
+  s.fire('pointermove', 60, 20, touch);
+  s.fire('pointerup', 60, 20, touch);
+  s.fire('click', 60, 20);
+  assert.deepEqual(s.clicks, ['b'], 'no activation after a drag, and its native click swallowed');
+  assert.notEqual(document.activeElement, s.el('b'), 'no focus after a drag');
+  // a small wobble (under the slop) is still a tap
+  s.fire('pointerdown', 20, 20, touch);
+  s.fire('pointermove', 24, 23, touch);
+  s.fire('pointerup', 24, 23, touch);
+  assert.equal(document.activeElement, s.el('b'), 'a 5 px wobble still taps');
+  // control: a mouse press focuses at once, as before
+  s.el('b').blur();
+  s.fire('pointerdown', 20, 20);
+  assert.equal(document.activeElement, s.el('b'), 'a mouse press focuses on pointerdown (control)');
+  s.fire('pointerup', 20, 20);
+});

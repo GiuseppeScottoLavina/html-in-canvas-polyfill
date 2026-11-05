@@ -61,7 +61,10 @@ gpuTest('GPU time per frame at 2200x1240, 120 Hz steps through a whole play', as
     if (births) await device.queue.onSubmittedWorkDone();   // the frames before it are done: what follows is this frame's own work
     const w0 = performance.now();
     device.queue.submit([real.finish()]);
-    if (!querySet || births) await device.queue.onSubmittedWorkDone();
+    // one frame in flight at a time, as the host paces them (a frame every 8.33 ms): with hundreds of frames queued at once, the
+    // beginning-of-pass timestamp of a frame without a compute pass (the empty beat of a play) is written while the frames before it
+    // still run, and the queue's backlog reads as its own GPU time (13 ms measured for a 0.5 ms pass)
+    await device.queue.onSubmittedWorkDone();
     wall.push(performance.now() - w0);
     if (births) birthWall.push(performance.now() - w0);
     index += 1;

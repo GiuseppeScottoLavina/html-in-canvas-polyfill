@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Gallery click-through of the glitch plugin in headless Chrome with trusted input (CDP), on examples/plugins/?effect=glitch:
-// the ambient mode animates within the frame cap and keeps the form usable, a Submit with an invalid email (the gallery's own
+// the ambient mode renders only while its events play and keeps the form usable, a burst renders within the frame cap, a Submit with an invalid email (the gallery's own
 // validation, unchanged) plays a burst, the Burst button of the plugin's controls plays one, burst mode at rest presents no frame, the
-// action burst from the gallery's button (handle.trigger),
+// actions burst and demo from the gallery's buttons (handle.trigger),
 // and prefers-reduced-motion. `--record` also writes media/glitch.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
@@ -26,13 +26,23 @@ async function main() {
     const st = await page.evaluate(`({ controls: !!document.querySelector('#effect-controls .hic-glitch-ui'), mode: window.__gallery.mode })`);
     check('the gallery runs the effect and mounts the plugin controls inside the drawn form', st.mode === 'effect' && st.controls, st);
 
-    const fps = {};
-    for (const cap of [120, 60, 30]) {
+    await page.evaluate(`document.getElementById('stage').frameCap = 120`);
+    await page.mouseMove(5, 5);
+    await page.evaluate('window.__gallery.handle.settled()');   // a gallery that plays the demo on selection: after it
+    await sleep(300);
+    const ambientFps = (await framesDuring(page, 4200)) / 4.2;
+    check('ambient renders only while an event plays: a few effect frames per second at cap 120, never none (it rendered every frame before)', ambientFps >= 1 && ambientFps <= 15, { framesPerSecond: ambientFps });
+    const burstFrames = {};
+    for (const cap of [120, 15]) {
       await page.evaluate(`document.getElementById('stage').frameCap = ${cap}`);
       await sleep(300);
-      fps[cap] = await framesDuring(page, 1000);
+      const n0 = await page.evaluate('window.__e2e.frames');
+      await page.evaluate(`window.__gallery.handle.trigger('burst')`);
+      burstFrames[cap] = (await page.evaluate('window.__e2e.frames')) - n0;
+      await sleep(300);
     }
-    check('ambient animates by itself within the frame cap (effect frames per second at caps 120 / 60 / 30)', fps[30] >= 20 && fps[30] <= 33 && fps[60] >= 40 && fps[120] >= fps[60] - 3, fps);
+    check('a burst renders at its pattern and grain steps, within the frame cap (frames of one burst at caps 120 / 15)',
+      burstFrames[120] >= 12 && burstFrames[120] <= 40 && burstFrames[15] <= Math.ceil((BURST_MS / 1000) * 15) + 3 && burstFrames[15] < burstFrames[120], burstFrames);
     await page.evaluate(`document.getElementById('stage').frameCap = 120`);
 
     await clickOn(page, '#name');
@@ -72,7 +82,11 @@ async function main() {
     const rest = await framesDuring(page, 1000);
     check('burst mode at rest presents no effect frame (nothing moves, nothing is focused)', rest <= 2, { framesPerSecond: rest });
     // the action of the effect handle, as a page uses it (the gallery's button calls handle.trigger('burst'))
-    await actionChecks(page, check, [{ action: 'burst', state: 'idle', midMs: 90, minChanged: 0.03 * area }], { older: 'burst', newer: 'burst', state: 'idle' });
+    await actionChecks(page, check, [
+      { action: 'burst', state: 'idle', midMs: 90, minChanged: 0.03 * area },
+      // 840 ms: early in the full burst of the demo (it starts at 820 ms), before its first clean pattern (135 ms into it)
+      { action: 'demo', state: 'idle', midMs: 840, minChanged: 0.03 * area },
+    ], { older: 'demo', newer: 'burst', state: 'idle' });
     const errors = await page.evaluate('window.__e2e.errors');
     check('no effecterror', errors.length === 0, errors);
 
@@ -81,13 +95,13 @@ async function main() {
       await page.mouseMove(c.cx, c.cy);
       await sleep(400);
       const stop = await startRecording(page);
-      await sleep(1600);                                   // ambient (a micro-glitch about every 1.7 s)
+      await sleep(1600);                                   // ambient (an event about every 1.4 s)
       await clickOn(page, '#submit');                      // the gallery's validation error: a burst
-      await sleep(1300);
-      await clickOn(page, '#effect-controls .hic-glitch-ui button');   // the Burst button
-      await sleep(1300);
+      await sleep(900);
+      await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sequence (resolves when it ends)
+      await sleep(300);
       const frames = await stop();
-      const bytes = writeWebp(frames, join(ROOT, 'plugins/glitch/media/glitch.webp'), { x: c.x, y: c.y, w: c.w, h: c.h });
+      const bytes = writeWebp(frames, join(ROOT, 'plugins/glitch/media/glitch.webp'), { x: c.x, y: c.y, w: c.w, h: c.h }, { width: 600, fps: 20, quality: 50 });
       check('recording: media/glitch.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
     }
   } finally {

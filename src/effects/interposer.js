@@ -19,7 +19,10 @@ import { isNoTarget } from './no-target.js';
 /** @typedef {import('../contracts/types.js').InputPoint} InputPoint */
 /** @typedef {(p: InputPoint) => {x: number, y: number}} Mapper */
 /** @typedef {{left: number, top: number, sx: number, sy: number, width: number, height: number}} LayerFrame */
-/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null}} Gesture */
+/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null, tap?: {x: number, y: number, point: {x: number, y: number}}|null}} Gesture */
+
+/** css px a finger may travel and still tap: beyond it the press is a drag (a scroll, or a plugin's own gesture) and focuses or activates nothing */
+const TAP_SLOP = 10;
 
 const TYPES = /** @type {const} */ (['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'click']);
 
@@ -108,6 +111,7 @@ export function createInterposer(env, record, chain, tracker) {
     const { point, element } = resolve(e, g ? g.map : (p) => chain.map(p));
     follow(element, !point);
     if (g?.drag && point) g.drag.move(point.x);
+    if (g?.tap && Math.hypot(e.clientX - g.tap.x, e.clientY - g.tap.y) > TAP_SLOP) g.tap = null;
     counts.remapped += 1;
   }
 
@@ -137,15 +141,23 @@ export function createInterposer(env, record, chain, tracker) {
     }
     counts.remapped += 1;
     e.preventDefault();
-    const doc = layerEl.ownerDocument;
-    if (intended) focusControl(doc, intended, point);
-    else if (layerEl.contains(doc.activeElement)) /** @type {HTMLElement} */ (doc.activeElement).blur();
+    // a finger moves the focus when it lifts without having travelled, as on a page without effects: a press that becomes a scroll or a plugin's
+    // drag (a lens moved across a field) focuses nothing, and on a phone it would raise the keyboard (a range is dragged from the press)
+    const tap = e.pointerType === 'touch' && !range ? { x: e.clientX, y: e.clientY, point } : null;
+    if (!tap) focusAt(intended, point);
     const drag = range ? startRangeDrag(win, /** @type {HTMLInputElement} */ (intended)) : null;
     if (drag) {
       try { layerEl.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
       drag.move(point.x);
     }
-    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag };
+    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag, tap };
+  }
+
+  /** @param {Element|null} intended @param {{x: number, y: number}} point */
+  function focusAt(intended, point) {
+    const doc = layerEl.ownerDocument;
+    if (intended) focusControl(doc, intended, point);
+    else if (layerEl.contains(doc.activeElement)) /** @type {HTMLElement} */ (doc.activeElement).blur();
   }
 
   /** @param {PointerEvent} e */
@@ -160,6 +172,10 @@ export function createInterposer(env, record, chain, tracker) {
       g.drag.end();
       try { layerEl.releasePointerCapture(e.pointerId); } catch { /* capture already released */ }
     }
+    // a finger: a tap (it did not travel) focuses, then activates; a drag does neither
+    const touch = g.tap !== undefined && e.pointerType === 'touch' && !g.drag;
+    if (touch && !g.tap) { swallowClick = true; return; }
+    if (g.tap) focusAt(g.control, g.tap.point);
     // Click semantics: the release must land on the control the press started on.
     if (g.control && !g.drag && isActivatable(g.control) && controlOf(layerEl, element) === g.control) activate(g.control);
     swallowClick = true;
