@@ -117,6 +117,36 @@ test('ScrollPlan.clear: a change of a box outside the list that the hit test can
   assert.equal(plan.clear([boxRect]), true, 'control: nothing again');
 });
 
+test('ScrollPlan.clear: an opaque box outside the list of opacity 0, on itself or on an ancestor, paints nothing (clear); any opacity above 0 paints (not clear)', async () => {
+  const { m, plan, box, frame } = await outsidePlan(0);
+  assert.ok(plan?.clear, 'planned');
+  assert.deepEqual(plan.cover, [[1, 254, 3], [254, 1, 252]], 'two cover colours, every channel at opposite ends');
+  const boxRect = { x: frame.x, y: frame.y + 56, width: 300, height: 28 };
+  box.style.background = 'rgb(255, 0, 255)';
+  box.style.boxShadow = '0 0 0 4px red';
+  box.textContent = 'note';
+  assert.equal(plan.clear([boxRect]), false, 'control: opaque, with a shadow and text');
+  box.style.opacity = '0';
+  assert.equal(plan.clear([boxRect]), true, 'opacity: 0');
+  box.style.opacity = '0.02';
+  assert.equal(plan.clear([boxRect]), false, 'opacity: 0.02');
+  box.style.opacity = '1';
+  assert.equal(plan.clear([boxRect]), false, 'back to opacity: 1');
+  // the box inside a wrapper (no size of its own) of opacity 0: what the box paints is faded with it; a wrapper of opacity 0.5 does not hide it
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;opacity:0';
+  box.before(wrap);
+  wrap.append(box);
+  assert.equal(plan.clear([boxRect]), true, 'an ancestor of opacity 0');
+  wrap.style.opacity = '0.5';
+  assert.equal(plan.clear([boxRect]), false, 'an ancestor of opacity 0.5');
+  // opacity 0 on an ancestor of the list does not count as hiding what lies outside the list (it hides the list too)
+  wrap.style.opacity = '';
+  m.layerEl.firstElementChild.style.opacity = '0';
+  assert.equal(plan.clear([boxRect]), false, 'the drawable itself at opacity 0 (an ancestor of the list): not faded on its own');
+  m.layerEl.remove();
+});
+
 test('ScrollPlan.clear: with more than 1,000 elements outside the list a change inside the port is not checked one by one (about 1.2 us each, inside the frame): it is not clear', async () => {
   const few = await outsidePlan(990);
   const rowRect = { x: few.frame.x, y: few.frame.y + 116, width: 300, height: 38 };
