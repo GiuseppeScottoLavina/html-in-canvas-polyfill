@@ -122,8 +122,8 @@ fn light_grid(css : vec2<f32>) -> vec2<f32> {
 }
 
 // ---- the caustics --------------------------------------------------------------------------------------------------------------------
-// the mesh: a vertex every MESH_PX css px, over the canvas and a margin around it (the light comes in obliquely: rays that meet the
-// water beyond an edge land inside), one triangle strip per row (index.js causticMesh draws the same counts)
+// the mesh: a vertex every MESH_PX css px, over the canvas and a margin around it (the refracted light leans with the slope: rays that
+// meet the water beyond an edge can land inside), one triangle strip per row (index.js causticMesh draws the same counts)
 const MESH_PX : f32 = 2.0;
 const IOR : f32 = 1.333;
 // the light that draws the caustics comes from straight above, as the viewer looks: a drop's caustic rings are centred on the drop (an

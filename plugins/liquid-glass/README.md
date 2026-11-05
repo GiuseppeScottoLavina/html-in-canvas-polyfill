@@ -94,7 +94,7 @@ GPU time, measured on 2026-11-04 (Apple M1 Max, headless Chrome, 2200 x 1240 tar
 
 | file | |
 |---|---|
-| `index.js` | `meta`, `plugin`, `GLASS`, `mapLensPoint`, `lensSurface`, `bendThrough`, `sdSquircle`, `writeLensGeometry`, `demoStops`, `tourPoint`, `UNIFORM_FLOATS` |
+| `index.js` | `meta`, `plugin`, `GLASS`, `SPRINGS`, `mapLensPoint`, `lensSurface`, `bendThrough`, `sdSquircle`, `writeLensGeometry`, `demoStops`, `tourPoint`, `UNIFORM_FLOATS` |
 | `liquid-glass.wgsl` | the shader; inlined into the built bundles |
 | `wgsl.js` | loads the shader when the plugin runs from source; the build replaces it |
 | `media/liquid-glass.webp` | the recording above |

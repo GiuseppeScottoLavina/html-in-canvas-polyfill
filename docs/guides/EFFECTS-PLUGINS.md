@@ -98,7 +98,7 @@ const water = await host.addPlugin(HicLivePlugins.water.plugin, { intensity: 0.3
 const dust = await host.addPlugin(HicLivePlugins.disintegrate.plugin, { onSubmit: 'off' });
 ```
 
-`addPlugin(definition, options)` validates the definition (`TypeError` naming the first problem), creates the plugin on the host's device and resolves with its **handle**. Plugins run in the order they were added: the first reads the drawn source, each next one reads the previous one's output. Each plugin's options are documented in its README (`plugins/<name>/README.md`); `meta.defaults` of a plugin bundle are the options the gallery uses. `addPlugin` rejects when the plugin's `create` fails (the error of the plugin) or when the host was destroyed (`InvalidStateError`).
+`addPlugin(definition, options)` validates the definition (`TypeError` naming the first problem), creates the plugin on the host's device and resolves with its **handle**. Plugins run in the order they were added: the first reads the drawn source, each next one reads the previous one's output. Each plugin's options are documented in its README (`plugins/<name>/README.md`); `meta.defaults` of a plugin bundle are the options the gallery uses (a link to the gallery can set others: `&opt.<plugin>.<option>=<value>`, [its README](../../examples/plugins/README.md)). `addPlugin` rejects when the plugin's `create` fails (the error of the plugin) or when the host was destroyed (`InvalidStateError`).
 
 The handle:
 
@@ -169,7 +169,7 @@ The actions of the example plugins:
 | [`shatter`](../../plugins/shatter/README.md#actions) | `impact` (cracks an intact pane, breaks a cracked one), `crack`, `out`, `in`, `play`, `demo` | `point: {x, y}` (canvas CSS px) | `'intact'`, `'cracked'`, `'gone'` |
 | [`glitch`](../../plugins/glitch/README.md#actions) | `burst`, `demo` | none | `'idle'` |
 | [`page-curl`](../../plugins/page-curl/README.md#actions) | `peek` (the dog-ear opens and closes once), `demo` | none | `'rest'` |
-| [`water`](../../plugins/water/README.md#actions) | `drop` (a ripple), `demo` | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2) | `'calm'` |
+| [`water`](../../plugins/water/README.md#actions) | `drop` (a pebble; with `swell: true` one broad swell), `demo` | `point: {x, y}` (canvas CSS px), `strength` (0.08 to 2), `swell` | `'calm'` |
 | [`holo-card`](../../plugins/holo-card/README.md#actions) | `demo` (a tilt sweep) | none | `'rest'` |
 | [`liquid-glass`](../../plugins/liquid-glass/README.md#actions) | `demo` (a tour of the page) | none | `'free'`, `'pinned'` |
 
@@ -392,7 +392,7 @@ const offMove = context.listen('touchmove', (event) => {
 
 - `context.listen` adds the listeners on the canvas and on its live layer, where touches land. `preventDefault()` in the first `touchmove` of a touch that started on the handle keeps the browser from scrolling (and from sending `pointercancel`); the pointer events of that gesture then follow, and the plugin's pointer listeners do the rest, as for a mouse.
 - Claim at the first `touchmove`, not at `touchstart`: a prevented `touchstart` also cancels the tap, so a tap on a field seen through the handle (a lens) would no longer focus it. A handle that has nothing to tap through, such as a page corner, may claim at `touchstart`.
-- The effects host focuses and activates a control for a finger only on a tap (a touch that lifts within 10 css px of where it landed), as a page without effects does: dragging a handle across a field does not focus it.
+- The effects host focuses and activates a control for a finger only on a tap (a touch that lifts within 10 css px of where it landed), as a page without effects does: dragging a handle across a field does not focus it. A finger moves no `:hover` through the effect either: a press or a drag hovers nothing, and a tap leaves the element drawn where it landed hovered until the next tap.
 - `preventDefault()` in `pointerdown` does not stop a scroll, and `touch-action: none` on the canvas would block scrolling over the whole canvas: use neither.
 - A whole-surface effect (ripples, a tilt that follows the finger) does not block scrolling at all: it listens passively (`{ passive: true }`), reacts to taps and to the pointer events the browser delivers, and accepts the `pointercancel` that comes when the page scrolls.
 - Mouse and pen keep their own behaviour.

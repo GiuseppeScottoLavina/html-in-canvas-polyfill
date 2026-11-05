@@ -20,8 +20,8 @@ export const MAX_CELLS = 65536;
 export const MIN_CELL_PX = 3;
 /** speed of the ripples, CSS px per second */
 export const WAVE_SPEED_PX_S = 270;
-/** velocity damping per step, and the viscosity (damps short ripples faster than long waves, as in real water): a strong drop is flat
- * again (below the thresholds of `quiet`) about 1.5 s later, the rain of the action demo about 2 s after its last drop */
+/** velocity damping per step, and the viscosity (damps short ripples faster than long waves, as in real water): a tap's pebble is flat
+ * again (below the thresholds of `quiet`) about 3 s later at the default intensity, the rain of the action demo about 2 s after its last drop */
 export const DAMPING = 0.985;
 export const VISCOSITY = 0.06;
 /** css px of displacement per unit slope at intensity 1 (the refraction through the water onto the page below) */
