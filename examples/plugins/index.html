@@ -216,6 +216,9 @@
   showMotion();
   // ?demo=0: no showcase on selection (a still link; the page's tests use it so that the state they check is the plugin's own)
   const autoDemo = new URL(location.href).searchParams.get('demo') !== '0';
+  // ?opt.<name>=<value>: an option for the selected plugin over its defaults, to compare variants by link (e.g. &opt.drops=exact); numbers and true / false as such
+  const urlOptions = Object.fromEntries([...new URL(location.href).searchParams].filter(([k]) => k.startsWith('opt.'))
+    .map(([k, v]) => [k.slice(4), v === 'true' ? true : v === 'false' ? false : v !== '' && Number.isFinite(Number(v)) ? Number(v) : v]));
 
   // the stage fills the first viewport under the bar and the chips: --chrome is their height (a ResizeObserver: no work while nothing changes)
   const top = $('top');
@@ -478,7 +481,7 @@
     try {
       const entry = await loadPlugin(p);
       if (mine !== serial) return;                                              // another choice was made meanwhile
-      const handle = await host.addPlugin(entry.plugin, { ...p.defaults });
+      const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions });
       if (mine !== serial) { handle.remove(); return; }
       current = state.handle = handle;
       handle.mountUI($('effect-controls'));                                     // the plugin's own controls, as HTML inside the drawn form
