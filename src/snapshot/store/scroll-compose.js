@@ -74,6 +74,7 @@ const AHEAD_PAGES = 2;
  * @property {number} last  previous live scrollTop seen (direction of the next page)
  * @property {Rect[]} unverified  damage rects that reach into the visible port (frame css) not yet checked for an obstruction
  * @property {Set<Element>} recheck  pinned elements changed since the last composition: checked against the pin requirements before the next (ScrollPlan.pinnable)
+ * @property {Rect[]} relayer  changes inside the content since the last composition, for a pin of z-index auto or 0: checked before the next (ScrollPlan.unlayered)
  * @property {number} vet  checks of ScrollPlan.cover whose tile has not landed: no composition until they have, and passed
  * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
  * @property {boolean} early  planned ahead and not scrolled yet: its builds queued before a finger landed stop (yieldToInput)
@@ -420,7 +421,7 @@ export function createScrollCompositor(deps) {
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [], recheck: new Set(), vet: 0, memo: new Map(), early, used: now(),
+      shown: null, queued: false, last: live, unverified: [], recheck: new Set(), relayer: [], vet: 0, memo: new Map(), early, used: now(),
     };
     if (plan.cover) {
       // first of all: the port with the scroller's content hidden and its background in the cover colour shows only that colour (nothing paints over the scroller
@@ -548,6 +549,8 @@ export function createScrollCompositor(deps) {
       c.recheck.clear();
       if (lost) { counters.stale++; drop(entry, c); return false; }
     }
+    // a pin of z-index auto or 0 lies under a later row that now has a layer of its own (a :hover transform): its tile would hide that row
+    if (c.relayer.length && !c.plan.unlayered?.(c.relayer.splice(0))) { counters.stale++; drop(entry, c); return false; }
     if (!c.unverified.length) return true;
     const rects = c.unverified.splice(0);
     if (!c.plan.clear || c.plan.clear(rects)) return true;
@@ -629,6 +632,7 @@ export function createScrollCompositor(deps) {
         // and a pinned element it reached against the pin requirements (the planner read them before it)
         if (c) for (const r of pending.rects) {
           if (meets(r, c.plan.port)) c.unverified.push(r);
+          if (c.plan.unlayered) c.relayer.push(r);
           for (const p of c.pins.keys()) { const pr = entry.record.layer?.frameRect(p); if (pr && meets(pr, r)) c.recheck.add(p); }
         }
         if (c) prefetch(entry, c, topOf(scroller), early ? AHEAD_PAGES : MAX_PAGES);
@@ -727,6 +731,7 @@ export function createScrollCompositor(deps) {
         const d = { x: px.x, y: px.y - c.portPx.y + rowOf(top, c.geo.scale, c.plan.grid), width: px.width, height: px.height };
         for (const p of c.pages) if (p.seq !== null) { p.dirty.push(d); p.dirtySeq.push(n); }
         if (meets(rect, P)) c.unverified.push(rect);
+        if (c.plan.unlayered) c.relayer.push(rect);
         // a pinned element the change reaches is rendered again (no composition until its tile is back), and checked against the pin requirements
         for (const [el, pin] of c.pins) {
           const r = entry.record.layer?.frameRect(el);
