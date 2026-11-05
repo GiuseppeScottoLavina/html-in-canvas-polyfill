@@ -241,7 +241,7 @@ gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submi
   const t0 = performance.now();
   rig.tick(t0);
   const first = rig.snap();
-  assert.ok(first.data[(60 * W + 100) * 4 + 1] < 150 && meanLuma(first) > 0.6 * meanLuma(ref), 'the intro starts with the content gone (the light button at 100, 60 shows the page), the page there');
+  assert.ok(first.data[(60 * W + 100) * 4 + 1] < 150 && meanLuma(first) > 0.6 * meanLuma(ref), 'the intro starts with the content gone (the light button at 100, 60 shows the page), its dust in the air, the page there');
   for (let now = t0 + 50; now <= t0 + DURATION + 100; now += 50) rig.tick(now);
   assert.equal(diff(rig.snap(), ref).max, 0, 'the intro ends on the source');
   const form = /** @type {HTMLFormElement} */ (rig.layerEl.querySelector('#f'));
@@ -260,6 +260,41 @@ gpuTest('intro and submit wiring: the intro reassembles from dust; a valid submi
   assert.ok(diff(rig.snap(), ref).over > 2000, 'valid submit: the content turns to dust');
 });
 
+
+gpuTest('first appearance: the intro\'s first frame already shows its dust (not the empty page), and a demo asked for at once (the gallery\'s order) starts from the page itself', async (t) => {
+  const ref = await reference(t);
+  // the empty page: the content gone, no grain left (the end of an 'out')
+  const out = await start(t, { intro: false });
+  const t0 = performance.now();
+  out.rig.tick(t0);
+  out.handle.trigger('out');
+  out.rig.tick(t0 + 10);
+  out.rig.tick(t0 + 10 + DURATION + 50);
+  const empty = out.rig.snap();
+  out.host.destroy(); out.rig.root.remove();
+  assert.ok(diff(empty, ref).over > 2000, 'control: the empty page differs from the page');
+  // the intro (gone at create): its first ready frame
+  const intro = await start(t, { intro: true });
+  intro.rig.tick(performance.now());
+  const first = intro.rig.snap();
+  const dust = diff(first, empty);
+  console.error(`disintegrate first appearance: intro's first frame vs the empty page ${dust.over} px`);
+  assert.ok(dust.over > 400, `the intro's first frame shows dust in view: ${dust.over} px differ from the empty page`);
+  assert.ok(meanLuma(first) > 0.6 * meanLuma(ref), 'and the page under it');
+  intro.host.destroy(); intro.rig.root.remove();
+  // intro: true, then a demo right after addPlugin (what the gallery does on selection)
+  const demo = await start(t, { intro: true });
+  const done = demo.handle.trigger('demo');
+  const t1 = performance.now();
+  demo.rig.tick(t1);
+  const d0 = diff(demo.rig.snap(), ref), dE = diff(demo.rig.snap(), empty);
+  console.error(`disintegrate first appearance: demo's first frame vs the page ${d0.over} px, vs the empty page ${dE.over} px`);
+  assert.ok(d0.over < 0.1 * dE.over, `the demo's first frame is the page (${d0.over} px differ from it, ${dE.over} from the empty page)`);
+  for (let now = t1 + 50; now <= t1 + 3 * DURATION + ROUND_EXIT_MS + HOLD_MS; now += 50) demo.rig.tick(now);
+  demo.rig.tick(t1 + 3.2 * DURATION + ROUND_EXIT_MS + HOLD_MS);
+  assert.equal(await done, 'in', 'then the whole demo: out, the beat, back');
+  assert.equal(diff(demo.rig.snap(), ref).max, 0, 'and it ends on the source');
+});
 
 gpuTest('the diagonal sweep: early on the content at the top left has started to erode, the far corner is untouched', async (t) => {
   const ref = await reference(t);

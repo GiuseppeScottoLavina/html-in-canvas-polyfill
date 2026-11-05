@@ -87,9 +87,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/crt.iife.js` | 17,245 | 6,175 |
 | `plugins/crt.iife.min.js` | 11,121 | 4,886 |
 | `plugins/crt.esm.js` | 15,947 | 5,926 |
-| `plugins/disintegrate.iife.js` | 42,877 | 13,171 |
-| `plugins/disintegrate.iife.min.js` | 27,395 | 10,444 |
-| `plugins/disintegrate.esm.js` | 40,356 | 12,800 |
+| `plugins/disintegrate.iife.js` | 43,372 | 13,279 |
+| `plugins/disintegrate.iife.min.js` | 27,576 | 10,518 |
+| `plugins/disintegrate.esm.js` | 40,809 | 12,905 |
 | `plugins/glitch.iife.js` | 28,953 | 9,199 |
 | `plugins/glitch.iife.min.js` | 15,785 | 6,927 |
 | `plugins/glitch.esm.js` | 26,726 | 8,885 |
@@ -99,9 +99,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/liquid-glass.iife.js` | 33,612 | 10,795 |
 | `plugins/liquid-glass.iife.min.js` | 19,581 | 8,349 |
 | `plugins/liquid-glass.esm.js` | 31,406 | 10,467 |
-| `plugins/page-curl.iife.js` | 51,011 | 14,887 |
-| `plugins/page-curl.iife.min.js` | 30,479 | 11,688 |
-| `plugins/page-curl.esm.js` | 48,050 | 14,504 |
+| `plugins/page-curl.iife.js` | 62,481 | 18,082 |
+| `plugins/page-curl.iife.min.js` | 36,778 | 14,344 |
+| `plugins/page-curl.esm.js` | 58,947 | 17,669 |
 | `plugins/shatter.iife.js` | 60,775 | 17,466 |
 | `plugins/shatter.iife.min.js` | 35,755 | 13,490 |
 | `plugins/shatter.esm.js` | 57,629 | 16,988 |

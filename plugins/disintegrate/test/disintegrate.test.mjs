@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { readFileSync } from 'node:fs';
-import { ACTIONS, BG_CELL, GLOW_COLOUR, GRAIN_BYTES, HOLD_MS, LIFE, ROUND_EXIT_MS, MAX_GRAINS, NO_TARGET, SHUTTER_MS, SWEEP_END, TAKEOVER_MS, UNIFORM_FLOATS, WORKGROUP, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf } from '../index.js';
+import { ACTIONS, BG_CELL, GLOW_COLOUR, GRAIN_BYTES, HOLD_MS, INTRO_FROM, LIFE, ROUND_EXIT_MS, MAX_GRAINS, NO_TARGET, SHUTTER_MS, SWEEP_END, TAKEOVER_MS, UNIFORM_FLOATS, WORKGROUP, blockedMapper, bgSize, createTimeline, dustGrid, fillUniforms, identityMapper, meta, parseColor, plugin, readOptions, sweepOf } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { findInvalid, sourcePointOnCanvas } from '../../_lib/transition.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
@@ -441,6 +441,79 @@ test('demo: user input takes over at once: a press, a key, a submit or new optio
   run(beat, t2, t2 + TAKEOVER_MS + 20);
   await flush();
   assert.equal(sb, 'in', 'a press during the beat re-forms the page at once');
+});
+
+test('first appearance: the intro\'s first ready frame already shows the dust in view (g = INTRO_FROM) and re-forms at the speed of any way back', async () => {
+  assert.ok(INTRO_FROM > SWEEP_END && INTRO_FROM < LIFE, 'the intro starts with the content gone and its dust in the air');
+  const it = await instance({ intro: true, durationIn: 1000 });
+  const grid = dustGrid(400, 200, 1.25);
+  it.inst.render({ ...it.frame(0), sourceReady: false });
+  assert.equal(it.gpu.writes.at(-1)[4], 1, 'no snapshot yet: the clock waits');
+  it.inst.render(it.frame(100));
+  assert.ok(Math.abs(it.gpu.writes.at(-1)[4] - INTRO_FROM) < 1e-6, `its first ready frame is at g = INTRO_FROM, not 1 (an empty page): ${it.gpu.writes.at(-1)[4]}`);
+  assert.deepEqual(it.gpu.draws.at(-1), [4, grid.count], 'and it draws the dust');
+  assert.ok(it.gpu.dispatches.length === 1, 'computed in that frame');
+  it.inst.render(it.frame(100 + INTRO_FROM * 1000 * 0.5));
+  assert.ok(Math.abs(it.gpu.writes.at(-1)[4] - INTRO_FROM * 0.5) < 1e-6, 'the speed of a way back: durationIn for a full one');
+  it.inst.render(it.frame(100 + INTRO_FROM * 1000 - 5));
+  assert.equal(it.inst.captureInputMapper(it.frame(0)), blockedMapper);
+  it.inst.render(it.frame(100 + INTRO_FROM * 1000 + 1));
+  assert.equal(it.inst.captureInputMapper(it.frame(0)), identityMapper, 'assembled after INTRO_FROM x durationIn');
+  // reduced motion: the intro is the crossfade, from the start
+  const calm = await instance({ intro: true, durationIn: 1000, reducedMotion: true });
+  calm.inst.render(calm.frame(100));
+  assert.equal(calm.gpu.writes.at(-1)[4], 1, 'the crossfade starts with the content faded out');
+  assert.equal(calm.gpu.dispatches.length, 0, 'no grain');
+});
+
+test('first appearance: a demo asked for before the intro showed anything (the gallery\'s order) starts from the page itself, then plays out and back', async () => {
+  const it = await instance({ intro: true, duration: 1000, durationIn: 800 });
+  let state = /** @type {any} */ ('pending');
+  it.handle.trigger('demo').then((v) => { state = v; });
+  it.inst.render(it.frame(100));
+  assert.equal(it.gpu.writes.at(-1)[4], 0, 'its first frame is the page (g = 0), the way out starting; not the empty page waiting for a way out');
+  it.inst.render(it.frame(100 + (1000 + ROUND_EXIT_MS) * 0.5));
+  assert.ok(Math.abs(it.gpu.writes.at(-1)[4] - 0.5) < 1e-6, 'the way out of a play, at its usual length');
+  run(it, 108 + (1000 + ROUND_EXIT_MS) * 0.5, 100 + 1000 + ROUND_EXIT_MS + HOLD_MS + 800 + 20);
+  await flush();
+  assert.equal(state, 'in', 'out (1000 + ROUND_EXIT_MS), the beat (HOLD_MS), back (800): the usual demo');
+  // once the intro has rendered, a demo is an ordinary one from where the dust is (reversing is continuous)
+  const late = await instance({ intro: true, duration: 1000, durationIn: 1000 });
+  late.inst.render(late.frame(100));
+  late.inst.render(late.frame(200));
+  const g = late.gpu.writes.at(-1)[4];
+  late.handle.trigger('demo');
+  late.inst.render(late.frame(208));
+  assert.ok(Math.abs(late.gpu.writes.at(-1)[4] - g) < 0.01, `no jump: ${g} then ${late.gpu.writes.at(-1)[4]}`);
+});
+
+test('a play from a page already gone (after \'out\') goes straight to the beat: its way out has nothing left to take out', async () => {
+  const it = await instance({ duration: 1000, durationIn: 400 });
+  it.inst.render(it.frame(0));
+  it.handle.trigger('out');
+  run(it, 10, 1030);
+  assert.equal(it.inst.continuous, false, 'gone, at rest');
+  let state = /** @type {any} */ ('pending');
+  it.handle.trigger('play').then((v) => { state = v; });
+  it.inst.render(it.frame(2000));                          // the play's clock starts here
+  it.inst.render(it.frame(2000 + HOLD_MS - 10));
+  assert.equal(it.gpu.writes.at(-1)[4], 1, 'the beat: the page without its content');
+  it.inst.render(it.frame(2000 + HOLD_MS + 200));
+  assert.ok(Math.abs(it.gpu.writes.at(-1)[4] - 0.5) < 1e-6, `back HOLD_MS after it started, not after a whole way out (${1000 + ROUND_EXIT_MS} ms) more`);
+  it.inst.render(it.frame(2000 + HOLD_MS + 401));
+  await flush();
+  assert.equal(state, 'in');
+  // and from half way out: the rest of the way out, then the beat
+  const mid = await instance({ duration: 1000, durationIn: 400 });
+  mid.inst.render(mid.frame(0));
+  mid.handle.trigger('out');
+  run(mid, 10, 510);
+  const g0 = mid.gpu.writes.at(-1)[4];
+  mid.handle.trigger('play');
+  mid.inst.render(mid.frame(600));
+  const outLeft = (1000 + ROUND_EXIT_MS) * (1 - g0);
+  mid.inst.render(mid.frame(600 + outLeft + HOLD_MS + 200));
+  assert.ok(Math.abs(mid.gpu.writes.at(-1)[4] - 0.5) < 0.02, `from g = ${g0.toFixed(2)}: back after the rest of the way out and the beat (${mid.gpu.writes.at(-1)[4]})`);
 });
 
 test('play (not a demo) ignores user input; a press at rest does nothing; reduced motion: the demo resolves at once and nothing moves', async () => {

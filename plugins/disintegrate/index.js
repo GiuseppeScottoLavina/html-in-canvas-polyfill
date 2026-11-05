@@ -60,6 +60,11 @@ export const GLOW_COLOUR = Object.freeze([1, 0.68, 0.4]);
 export const GRAIN_BYTES = 24;
 /** compute workgroup size of cs_grains */
 export const WORKGROUP = 256;
+/** where the intro starts on its way back (g): from g = 1 down to here the dust of a way back is faded out or still outside the canvas (every
+ *  grain fades in over the last third of its flight), so the intro skips that stretch and its first frame already shows the dust in view and
+ *  moving, at the speed of every way back (measured on the gallery form: at g = 0.95 the dust covers 0.25 % of the background, at 0.85 about
+ *  7.5 %, 80 % of its peak) */
+export const INTRO_FROM = 0.85;
 /** ms of the way back when a user takes over a demo (a press or a key re-forms the page at once) */
 export const TAKEOVER_MS = 450;
 /** ms of exposure of the motion blur (fixed, so that a frame looks the same at every frame cap) */
@@ -170,7 +175,7 @@ const UI_CSS = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:
 export const plugin = Object.freeze({
   type: 'disintegrate',
   apiVersion: /** @type {const} */ (2),
-  version: 5,
+  version: 6,
   // every pass that touches the destination only writes it as a same-format colour attachment (the dust's blending never samples it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   actions: ACTIONS,
@@ -271,8 +276,11 @@ export const plugin = Object.freeze({
     let assembledFrame = true;           // what the LAST rendered frame showed: its mapper is fixed by it
     let optionsSerial = 0, estimated = -1, estimatedAt = -Infinity;
     /** the play in progress: its promise, whether its way back has started, and whether it is a demo (user input interrupts it); a play
-     *  runs out (the dust drifts away and fades out entirely), shows the empty page for HOLD_MS, then re-forms */
-    /** @type {{resolve: (done: boolean) => void, back: boolean, start: number, demo: boolean, leg: number}|null} */ let playing = null;
+     *  runs out (the dust drifts away and fades out entirely), shows the empty page for HOLD_MS, then re-forms. `from`: g when it started
+     *  (its way out is the rest of a full one: a play from a page already gone goes straight to the beat) */
+    /** @type {{resolve: (done: boolean) => void, back: boolean, start: number, demo: boolean, leg: number, from: number}|null} */ let playing = null;
+    /** the intro was asked for and has rendered no frame yet: nothing of the page has been shown */
+    let introPending = false;
     const roundOut = () => s.duration + ROUND_EXIT_MS;
 
     /** the end state: 'out' (dissolved, gone) or 'in' (assembled) */
@@ -288,6 +296,10 @@ export const plugin = Object.freeze({
       if (action === 'demo' && calm) return Promise.resolve(true);
       crossfade = calm;
       const round = action === 'play' || action === 'demo';
+      // a round trip asked for before the intro showed anything (the gallery plays the demo as soon as the effect is added): it starts from
+      // the page itself, not from an empty page that would first have to wait for a way out with nothing to take out
+      if (round && introPending) timeline.jump('in');
+      introPending = false;
       // the way out and the way back have their own lengths (the timeline takes the length of a run when the run starts), so a play is
       // run here as an 'out', the empty beat, then an 'in'
       timeline.setDuration(action === 'in' ? s.durationIn : round ? roundOut() : s.duration);
@@ -297,7 +309,7 @@ export const plugin = Object.freeze({
       if (!round) return run;
       /** @type {(done: boolean) => void} */ let resolve = () => {};
       const done = new Promise((r) => { resolve = /** @type {(done: boolean) => void} */ (r); });
-      const play = { resolve, back: false, start: NaN, demo: action === 'demo', leg: 0 };
+      const play = { resolve, back: false, start: NaN, demo: action === 'demo', leg: 0, from: timeline.g };
       playing = play;
       run.then((ok) => { if (!ok && playing === play && !play.back) { playing = null; resolve(false); } });
       return done;
@@ -309,7 +321,8 @@ export const plugin = Object.freeze({
       timeline.setDuration(ms);
       timeline.request('in').then((ok) => { if (play.leg !== leg) return; if (playing === play) playing = null; play.resolve(ok); });
     }
-    if (timeline.phase === 'gone' && s.state === 'in') request('in');   // the intro: re-form from dust once the first snapshot is there
+    // the intro: re-form from dust once the first snapshot is there, from INTRO_FROM (its first frame shows the dust, see render)
+    if (timeline.phase === 'gone' && s.state === 'in') { request('in'); introPending = true; }
 
     const onSubmit = () => {
       if (playing?.demo) { takeOver(); return; }   // a submit during the demo: the user takes over (the page re-forms at once)
@@ -346,14 +359,20 @@ export const plugin = Object.freeze({
       },
       settled() { return inMotion() ? new Promise((resolve) => { waiters.push(resolve); }) : resting(); },
       render(/** @type {EffectRenderFrame} */ frame) {
+        // the intro's clock starts at its first ready frame, as if it had started (1 - INTRO_FROM) of a way back earlier: the same path at the
+        // same speed as any way back, without the stretch where its dust is not in view yet (the reduced-motion crossfade starts at 0)
+        if (introPending && frame.sourceReady) {
+          introPending = false;
+          if (!crossfade && timeline.phase === 'in' && timeline.g === 1) timeline.advance(frame.now - (1 - INTRO_FROM) * s.durationIn);
+        }
         // the clock of a play's way out starts at its first ready frame (as the timeline's does)
         if (playing && !playing.back && Number.isNaN(playing.start) && frame.sourceReady) playing.start = frame.now;
         let amount = frame.sourceReady ? timeline.advance(frame.now) : timeline.g;
         // a play: the way back starts HOLD_MS after the way out ended (computed from the play's own clock, not from this frame: the same at
-        // any frame cap), at its own length
+        // any frame cap; the way out was the rest of a full one from where the play started), at its own length
         if (playing && !playing.back && timeline.phase === 'gone') {
           const play = playing;
-          const backAt = play.start + roundOut() + HOLD_MS;
+          const backAt = play.start + roundOut() * (1 - play.from) + HOLD_MS;
           if (frame.now >= backAt) {
             goBack(play, s.durationIn);
             timeline.advance(backAt);

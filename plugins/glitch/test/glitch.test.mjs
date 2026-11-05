@@ -451,23 +451,31 @@ test('ambient asks for a frame only when its picture changes next (one timer, no
 
 test('typing in the page holds the ambient events off; a key press or a press during the demo ends it (resolves null) and the page is clean', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
+  // one clock for the frames and for the plugin's own timing (performance.now: the typing hold, its timers), as in a browser, where a frame's time is
+  // performance.now. With the real clock under frames 3 s ahead of it, the hold a key press opened ended before the frame that checks it, and that frame
+  // showed an ambient event or not by where the process's real time fell in the event cycle (1 failure on a CI runner)
+  let clock = performance.now();
+  t.mock.method(performance, 'now', () => clock);
   const env = fakeEnv();
   const inst = await created(t, env, { mode: 'ambient', intensity: 1 });
-  inst.render(env.frame(performance.now()));
+  inst.render(env.frame(clock));
   env.source.dispatchEvent(new Event('keydown'));
-  const typedAt = performance.now();
+  const typedAt = clock;
   for (let now = typedAt; now < typedAt + TYPING_HOLD_MS - 20; now += 10) {
+    clock = now;
     inst.render(env.frame(now));
     assert.equal(env.writes.at(-1)[8], 0, 'no ambient block while the user types');
   }
   let state = 'pending';
   Promise.resolve(inst.runAction('demo', {}, { reducedMotion: false })).then((v) => { state = v; });
   const t0 = typedAt + 3000;
+  clock = t0;
   inst.render(env.frame(t0));
   assert.ok(env.writes.at(-1)[8] > 0, 'the demo plays');
   env.source.dispatchEvent(new Event('keydown'));
   await flush();
   assert.equal(state, null, 'the user took over: the demo resolves null');
+  clock = t0 + 20;
   inst.render(env.frame(t0 + 20));
   assert.equal(env.writes.at(-1)[8], 0, 'and the next frame is the page');
   inst.destroy();
