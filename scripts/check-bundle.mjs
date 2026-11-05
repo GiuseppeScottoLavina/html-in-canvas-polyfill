@@ -194,7 +194,9 @@ const LIMITS = {
   //   mappedTarget, the tap outside the canvas)
   // 360.75 -> 361.75 KB, gzip 123 -> 123.25 KB (+863 / +247 bytes, 2026-11-05, measured 361,508 / 123,063): ScrollPlan.unlayered, the check of a change inside
   //   a list whose pinned header has no z-index (a row that gets a layer of its own after the plan made the composed steps hide it under the header's tile)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 361.75 * KB, gzip: 123.25 * KB },
+  // 361.75 -> 362.25 KB (+463 / +86 bytes, 2026-11-05, measured 361,971 / 123,149): the neutral form of a :hover rule makes every other pseudo-class state-free
+  //   (css-rewrite.js anyState; a `.b:hover:focus` kept its :focus, and the hover look stayed on the canvas after the mouse left the focused button)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 362.25 * KB, gzip: 123.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -390,7 +392,8 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // chromium 132.75 -> 134.25 KB, geckoWebkit 149.25 -> 150.75 KB (2026-11-05, measured 133,996 / 150,573): the core it loads grew by the scoped :hover rules and the
   // finger's press and tap (+1,347 bytes gzipped in the core alone)
   // chromium 134.25 -> 134.5 KB, geckoWebkit 150.75 -> 151 KB (2026-11-05, measured 134,325 / 150,902): the core it loads grew by ScrollPlan.unlayered (+247 gzip)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 134.5 * KB, geckoWebkit: 151 * KB };
+  // geckoWebkit 151 -> 151.25 KB (2026-11-05, measured 134,493 / 151,070): the core it loads grew by the state-free neutral :hover forms (+168 gzip)
+  const LOADER_APP = { start: 8.1 * KB, chromium: 134.5 * KB, geckoWebkit: 151.25 * KB };
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';

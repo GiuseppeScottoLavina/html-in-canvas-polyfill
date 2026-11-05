@@ -17,7 +17,7 @@ function setup(t, css = '.btn:hover{color:red}.btn:active{color:blue}') {
   t.cleanup(() => { tracker.dispose(); style.remove(); });
   const $ = id => rig.layerEl.querySelector('#' + id);
   const fire = (el, type, init = {}) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, ...init }));
-  return { ...rig, tracker, changes, $, fire };
+  return { ...rig, tracker, changes, $, fire, style };
 }
 
 test('hover chain: pointerover builds target + ancestors inside the layer; pointerout to outside clears it; snapshot is immutable per state', async t => {
@@ -152,6 +152,55 @@ test('a "no match" is asked again after a mutation of the canvas subtree: an ele
   s.sink.clear();
   s.fire(s.$('b1'), 'pointerover');
   assert.ok(s.sink.causes().includes('hover'), 'a "yes" is kept (at worst one rebuild too many)');
+});
+
+test('a :hover that counts only together with another state is repainted when the hover ends with that state kept, in both orders (:focus, :focus-visible, :focus-within, :active)', async t => {
+  const leave = (s, el) => s.fire(el, 'pointerout', { relatedTarget: document.body });
+  // negative control: with a :hover rule only for an element outside the drawable, the same states repaint nothing on hover (each case removes its stylesheet)
+  const outside = document.createElement('nav');
+  outside.innerHTML = '<button class="chip">chip</button>';
+  document.body.append(outside);
+  t.cleanup(() => outside.remove());
+  const c = setup(t, 'nav .chip:hover:focus{color:red} nav:focus-within .chip:hover{color:red}');
+  c.fire(c.$('b1'), 'pointerover');
+  c.$('b1').focus();
+  c.sink.clear();
+  leave(c, c.$('b1'));
+  c.fire(c.$('b2'), 'pointerover');
+  assert.ok(!c.sink.causes().includes('hover'), 'a :hover:focus rule for the page\'s own menu still counts for no hover in the drawn form');
+  c.$('b1').blur();
+  c.tracker.dispose();
+  c.style.remove();
+  const cases = [
+    ['.btn:hover:focus{background:red}', (s) => s.$('b1').focus(), (s) => s.$('b1').blur()],
+    ['.btn:hover:focus-visible{background:red}', (s) => s.$('b1').focus(), (s) => s.$('b1').blur()],
+    ['.card:focus-within .btn:hover{background:red}', (s) => s.$('b2').focus(), (s) => s.$('b2').blur()],
+    ['.btn:hover:active{background:red}', (s) => s.fire(s.$('b1'), 'pointerdown'), () => document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))],
+  ];
+  for (const [css, on, off] of cases) {
+    // the auditor's order: the mouse enters first (the rule cannot match yet: nothing to repaint), the state comes on, the mouse leaves with the state kept
+    const a = setup(t, css);
+    a.fire(a.$('b1'), 'pointerover');
+    on(a);
+    a.sink.clear();
+    leave(a, a.$('b1'));
+    assert.ok(a.sink.causes().includes('hover'), `${css}: hover then state, the hover that ends with the state kept is repainted`);
+    off(a);
+    a.tracker.dispose();
+    a.style.remove();
+    // the other order: the state first, then the hover comes and goes
+    const b = setup(t, css);
+    on(b);
+    b.sink.clear();
+    b.fire(b.$('b1'), 'pointerover');
+    assert.ok(b.sink.causes().includes('hover'), `${css}: state then hover, the hover is repainted`);
+    b.sink.clear();
+    leave(b, b.$('b1'));
+    assert.ok(b.sink.causes().includes('hover'), `${css}: state then hover, the hover that ends is repainted`);
+    off(b);
+    b.tracker.dispose();
+    b.style.remove();
+  }
 });
 
 test('setMappedPress activates the mapped element without hovering it; mappedTarget reports the mapped hover; a finger tap outside the canvas ends a mapped hover', async t => {

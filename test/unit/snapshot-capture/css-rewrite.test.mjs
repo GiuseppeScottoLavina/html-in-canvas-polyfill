@@ -126,6 +126,17 @@ test('hoverScope: each :hover selector made neutral (:is(*) for :hover, pseudo-e
   }
 });
 
+test('hoverScope: every other pseudo-class is made state-free too (a :hover that counts only with :focus, :active, :checked... must not be filtered by a state that changes without a mutation)', () => {
+  assert.deepEqual(hoverScope('.btn:hover:focus{background:red}'), ['.btn:is(*):is(*)'], 'the auditor\'s rule: a "no" while the button had no focus outlived the focus');
+  assert.deepEqual(hoverScope('.wrap:focus-within .btn:hover, li:hover:focus-visible, a:active:hover{color:red}'), ['.wrap:is(*) .btn:is(*)', 'li:is(*):is(*)', 'a:is(*):is(*)']);
+  assert.deepEqual(hoverScope('input:hover:checked, :root .x:hover:placeholder-shown, :target .y:hover, details:open .z:hover, a:hover:lang(en){color:red}'),
+    ['input:is(*):is(*)', ':is(*) .x:is(*):is(*)', ':is(*) .y:is(*)', 'details:is(*) .z:is(*)', 'a:is(*):is(*)']);
+  assert.deepEqual(hoverScope('.a:not(:focus):hover, .b:hover:is(.c, :checked){color:red}'), ['.a:is(*):is(*)', '.b:is(*):is(*)'], 'a functional pseudo-class with a state inside goes whole');
+  assert.deepEqual(hoverScope('#picker button:not(.on):hover, :where(.dark) li:hover:is(.x, [t=":y"]){color:red}'), ['#picker button:not(.on):is(*)', ':where(.dark) li:is(*):is(.x, [t=":y"])'],
+    'a :not() / :is() / :where() of plain tokens is kept (precision: the gallery\'s picker rule still matches nothing in the drawn form)');
+  assert.deepEqual(hoverScope('.x\\:focus:hover, .s::-webkit-scrollbar-thumb:hover:window-inactive{color:red}'), ['.x\\:focus:is(*)', '.s:is(*):is(*)'], 'an escaped colon is not a pseudo-class');
+});
+
 test('selectorTokens: the tokens the subject and its ancestors must carry (pseudo-class arguments, attributes and namespaced types add none)', () => {
   assert.deepEqual(selectorTokens('#picker button:is(*)'), { subject: ['t:button'], context: ['#picker'] });
   assert.deepEqual(selectorTokens('body:is(*) .x'), { subject: ['.x'], context: ['t:body'] });

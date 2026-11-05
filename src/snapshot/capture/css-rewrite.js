@@ -295,9 +295,31 @@ const HOVER_ALL = /(?<![\\:]):hover(?![\w-])/g;
 const PSEUDO_ELEMENT = /::[\w-]+(?:\([^()]*\))?|:(?:before|after|first-line|first-letter)(?![\w-])/gi;
 
 /**
- * PURE. The :hover rules of `css` as NEUTRAL selectors: each complex selector that has :hover, with every :hover replaced by `:is(*)` and its pseudo-elements dropped,
- * so that it matches every element the rule styles in some hover state. The interaction tracker counts a hover change in a drawn source only when one of them matches
- * the drawable or an element inside it; the ancestors outside it are part of the match (`body:hover .x` gives `body:is(*) .x`, which counts for an `.x` inside).
+ * PURE. `sel` with every pseudo-class replaced by `:is(*)`, except a :not() / :is() / :where() of plain tokens (types, classes, ids, attributes), so that it matches in
+ * every state of the element and of the page (:focus, :focus-within, :focus-visible, :active, :checked, :placeholder-shown, :target, :open...): a "no match" then stays
+ * true until the DOM changes. A neutral form that kept the state (`.b:hover:focus` as `.b:is(*):focus`) answered "no" while the button had no focus, and that cached
+ * answer outlived the focus: the hover that ended later was not repainted.
+ * @param {string} sel @returns {string}
+ */
+function anyState(sel) {
+  // strings, escapes and attribute selectors hold no pseudo-class: masked at the same length, so that the matches index `sel`
+  const mask = sel.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\\./g, (m) => '_'.repeat(m.length)).replace(/\[[^\]]*\]/g, (m) => '_'.repeat(m.length));
+  let out = '';
+  let from = 0;
+  for (const m of mask.matchAll(/(?<!:):([\w-]+)(\()?/g)) {
+    if (m.index < from) continue;
+    const end = m[2] ? skipParens(mask, m.index + m[0].length - 1) : m.index + m[0].length;
+    const plain = m[2] && /^(?:not|is|where)$/i.test(m[1]) && !mask.slice(m.index, end).slice(m[0].length).includes(':');
+    out += sel.slice(from, m.index) + (plain ? sel.slice(m.index, end) : ':is(*)');
+    from = end;
+  }
+  return out + sel.slice(from);
+}
+
+/**
+ * PURE. The :hover rules of `css` as NEUTRAL selectors: each complex selector that has :hover, with every :hover replaced by `:is(*)`, every other pseudo-class made
+ * state-free (anyState) and its pseudo-elements dropped, so that it matches every element the rule styles in some hover state and in any other state. The interaction
+ * tracker counts a hover change in a drawn source only when one of them matches the drawable or an element inside it; the ancestors outside it are part of the match (`body:hover .x` gives `body:is(*) .x`, which counts for an `.x` inside).
  * null when some :hover rule cannot be scoped that way, and then every hover change counts (the conservative answer): a :hover inside a functional pseudo-class
  * (`:not(:hover)`, `:is(a:hover, b)`, `:has(:hover)`), a sibling combinator, a structural pseudo-class (it depends on siblings outside the subtree, which no observer
  * watches), `:host`, `:scope`, `::slotted`, `::part`, a :hover rule with nested rules or nested in one, a :hover rule in `@scope`, or :hover in an unknown at-rule.
@@ -316,7 +338,7 @@ export function hoverScope(css) {
     for (let prev = ''; prev !== top;) { prev = top; top = top.replace(/\([^()]*\)/g, '()'); }
     // a :hover inside an argument (`:not(:hover)`) cannot be replaced by "any state"
     if ((top.match(HOVER_ALL) ?? []).length !== (bare.match(HOVER_ALL) ?? []).length) return false;
-    const n = mapUnprotected(sel, (chunk) => chunk.replace(HOVER_ALL, ':is(*)').replace(PSEUDO_ELEMENT, '')).trim();
+    const n = anyState(mapUnprotected(sel, (chunk) => chunk.replace(HOVER_ALL, ':is(*)').replace(PSEUDO_ELEMENT, '')).trim());
     if (n) out.push(n);
     return !!n;
   };
