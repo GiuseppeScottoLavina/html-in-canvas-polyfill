@@ -3,8 +3,10 @@
 // to a drop, tabulated per radius and age) are added per pixel at device resolution; the surface lights the page below it:
 //   - refraction: the page is sampled where the refracted view ray meets it (displacement = slope x depth), exactly as mapWaterPoint()
 //     in index.js computes it for the input mapper;
-//   - caustics: the light refracted by the same surface focuses on the page (the inverse Jacobian of that displacement, at a deeper light
-//     depth): it brightens the page where it lands, and a web of the focused light scattered in the water shows over dark content too;
+//   - caustics, computed as light is: a mesh of the water surface (vs_caustics) refracts the sunlight by Snell's law onto the page, which
+//     lies `caustic` css px below; each triangle adds the ratio of its area on the surface to its area on the page (fs_caustics), so
+//     the light is conserved: it gathers into sharp lines under the ripples and leaves the troughs darker, and still water gives exactly 1;
+//     the page is lit by it (and the light scattered in the water along the brightest lines shows over dark content too);
 //   - Fresnel reflection (Schlick, water F0 = 0.02) of an environment (a sky, a soft window light, a small sun) seen from a viewer above
 //     the middle of the canvas: still water shows a faint reflection, and ripples break it up and make the sun glint;
 //   - absorption: a little more blue-green where the water is deeper (in the troughs);
@@ -24,9 +26,9 @@ struct Globals {
   field_active : f32,       // 0: the field is flat (nothing to read)
   form_ready : f32,
   refract : f32,            // css px of displacement per unit slope (the refraction depth x intensity)
-  caustic : f32,            // the same for the light (the caustic depth x intensity)
+  caustic : f32,            // css px: how deep the page lies under the water for the sunlight (the caustics)
   drops : f32,              // sources in use (drops and their mirror images in the walls)
-  pad1 : f32,
+  caustics_on : f32,        // 1: the caustic texture of this frame is valid (the surface moves); 0: the light is uniform (1)
   // per source: x, y (css px), row of the table (age x rows a second), depth (css px); the ring: inner, outer radius (css px), 0, 0
   sources : array<vec4<f32>, 192>,
 }
@@ -37,13 +39,17 @@ struct Globals {
 @group(0) @binding(3) var height_field : texture_2d<f32>;
 // the profile of a drop of unit depth (drops.js): h, dh/dr, d2h/dr2, (dh/dr)/r; x: r (TABLE_DR css px per texel), y: the age (fs_drops)
 @group(0) @binding(4) var drop_table : texture_2d<f32>;
-// the drops, evaluated once per css pixel by fs_drops: slope x, slope y, height; Hessian xx, yy, xy (fs)
+// the drops, evaluated once per css pixel by fs_drops: slope x, slope y, height (fs, vs_caustics)
 @group(0) @binding(5) var drops_a : texture_2d<f32>;
-@group(0) @binding(6) var drops_b : texture_2d<f32>;
+// the light on the page, one texel per css px (fs_caustics; 1 under still water)
+@group(0) @binding(6) var caustic_texture : texture_2d<f32>;
 
 const PAD : f32 = 2.0;
 const TABLE_DR : f32 = 1.0;
 const TABLE_SCALE : f32 = 256.0;   // drops.js TABLE_SCALE
+// the share of the page's light that comes from the sun (the rest from the sky), and how much of the focused light the water scatters
+const SUN_SHARE : f32 = 0.7;
+const SCATTER : f32 = 0.012;
 
 struct VertexOut {
   @builtin(position) position : vec4<f32>,
@@ -144,23 +150,78 @@ fn drop_grid(css : vec2<f32>) -> vec2<f32> {
   return max(ceil(css - vec2<f32>(0.01)), vec2<f32>(1.0));
 }
 
-struct DropsOut {
-  @location(0) a : vec4<f32>,
-  @location(1) b : vec4<f32>,
-}
-
 // the drops pass: the drops at the centre of each texel of the drop grid (css px), for the picture to sample bilinearly
 @fragment
-fn fs_drops(@builtin(position) position : vec4<f32>) -> DropsOut {
+fn fs_drops(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let css = max(globals.css, vec2<f32>(1.0));
   var h = 0.0;
   var slope = vec2<f32>(0.0);
   var hess = vec3<f32>(0.0);
   drops(position.xy * css / drop_grid(css), &h, &slope, &hess);
-  var out : DropsOut;
-  out.a = vec4<f32>(slope, h, 0.0);
-  out.b = vec4<f32>(hess, 0.0);
+  return vec4<f32>(slope, h, 0.0);
+}
+
+// ---- the caustics --------------------------------------------------------------------------------------------------------------------
+// the mesh: a vertex every MESH_PX css px, over the canvas and a margin around it (the light comes in obliquely: rays that meet the
+// water beyond an edge land inside), one triangle strip per row (index.js causticMesh draws the same counts)
+const MESH_PX : f32 = 2.0;
+const IOR : f32 = 1.333;
+// the light that draws the caustics comes from the window of environment(), up and to the left
+const LIGHT_DIR : vec3<f32> = vec3<f32>(-0.20, -0.19, 0.96);
+
+fn caustic_margin() -> f32 {
+  return ceil(0.36 * globals.caustic + 24.0);
+}
+
+// the slope of the whole surface (wakes, drops, swell) at p css px, flat beyond the edges of the canvas; tilted by the intensity as the
+// picture's normals are
+fn surface_slope(p : vec2<f32>) -> vec2<f32> {
+  let css = max(globals.css, vec2<f32>(1.0));
+  var slope = vec2<f32>(0.0);
+  let inside = all(p >= vec2<f32>(0.0)) && all(p <= css);
+  if (inside) {
+    let uv = p / css;
+    if (globals.field_active > 0.5) { slope = slope + surface_at(uv).grad * globals.inv_cell; }
+    if (globals.drops > 0.5) { slope = slope + textureSampleLevel(drops_a, form_sampler, uv, 0.0).xy; }
+  }
+  if (globals.ambient > 0.0) {
+    var aslope = vec2<f32>(0.0);
+    var ahess = vec3<f32>(0.0);
+    ambient(p, globals.time, globals.ambient, &aslope, &ahess);
+    slope = slope + aslope;
+  }
+  return slope * clamp(globals.intensity, 0.0, 1.0);
+}
+
+struct CausticOut {
+  @builtin(position) position : vec4<f32>,
+  @location(0) surface : vec2<f32>,   // where the ray met the water, css px
+}
+
+@vertex
+fn vs_caustics(@builtin(vertex_index) index : u32, @builtin(instance_index) row : u32) -> CausticOut {
+  let css = max(globals.css, vec2<f32>(1.0));
+  let m = caustic_margin();
+  let p = vec2<f32>(-m + f32(index / 2u) * MESH_PX, -m + f32(row + (index & 1u)) * MESH_PX);
+  let s = surface_slope(p);
+  let n = normalize(vec3<f32>(-s.x, -s.y, 1.0));
+  let r = refract(-normalize(LIGHT_DIR), n, 1.0 / IOR);
+  let q = p + globals.caustic * r.xy / max(-r.z, 0.05);
+  var out : CausticOut;
+  out.position = vec4<f32>(q.x / css.x * 2.0 - 1.0, 1.0 - q.y / css.y * 2.0, 0.0, 1.0);
+  out.surface = p;
   return out;
+}
+
+// each fragment of a triangle receives the light that fell on its area of the surface: (surface area) / (page area), per texel
+@fragment
+fn fs_caustics(in : CausticOut) -> @location(0) vec4<f32> {
+  let css = max(globals.css, vec2<f32>(1.0));
+  let texel = css / drop_grid(css);
+  let a = dpdx(in.surface);
+  let b = dpdy(in.surface);
+  let ratio = abs(a.x * b.y - a.y * b.x) / (texel.x * texel.y);
+  return vec4<f32>(min(ratio, 64.0), 0.0, 0.0, 1.0);
 }
 
 // a rounded rectangle of directions around `centre` (half sizes in radians, roughly), with a soft edge
@@ -203,21 +264,17 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   var h = 0.0;
   var disp = vec2<f32>(0.0);          // css px
   var slope = vec2<f32>(0.0);         // of the surface, per css px
-  var hess = vec3<f32>(0.0);          // per css px^2
   if (globals.field_active > 0.5) {
     let s = surface_at(uv);
     h = s.h;
     disp = globals.k * s.grad;
     slope = s.grad * globals.inv_cell;
-    hess = s.hess * vec3<f32>(globals.inv_cell.x * globals.inv_cell.x, globals.inv_cell.y * globals.inv_cell.y, globals.inv_cell.x * globals.inv_cell.y);
   }
   if (globals.drops > 0.5) {
     let da = textureSampleLevel(drops_a, form_sampler, uv, 0.0);
-    let db = textureSampleLevel(drops_b, form_sampler, uv, 0.0);
     h = h + da.z;
     disp = disp + globals.refract * da.xy;
     slope = slope + da.xy;
-    hess = hess + db.xyz;
   }
   if (globals.ambient > 0.0) {
     var aslope = vec2<f32>(0.0);
@@ -225,7 +282,6 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
     ambient(uv * css, globals.time, globals.ambient, &aslope, &ahess);
     disp = disp + globals.refract * aslope;
     slope = slope + aslope;
-    hess = hess + ahess;
   }
   let displaced_uv = clamp(uv + disp / css, vec2<f32>(0.001), vec2<f32>(0.999));
 
@@ -239,19 +295,17 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
 
   let light = clamp(globals.light, 0.0, 1.0) * smoothstep(0.0, 0.35, intensity);
 
-  // caustics: the light through the same surface lands at p + caustic x slope; its density there is 1 / det(I + caustic x Hessian)
-  let jxx = 1.0 + globals.caustic * hess.x;
-  let jyy = 1.0 + globals.caustic * hess.y;
-  let jxy = globals.caustic * hess.z;
-  // the density, softly compressed (no hard edge where the light folds): -0.6 .. 1.8, 0 on still water
-  let density = 1.0 / max(abs(jxx * jyy - jxy * jxy), 0.05) - 1.0;
-  let focus = select(-0.6 * tanh(-density / 0.6), 1.8 * tanh(density / 1.8), density > 0.0);
+  // the sunlight on the page where the view ray meets it (fs_caustics): 1 under still water
+  var sunlight = 1.0;
+  if (globals.caustics_on > 0.5) { sunlight = textureSampleLevel(caustic_texture, form_sampler, displaced_uv, 0.0).r; }
+  // the page is lit by the sky (the rest) and the sun (SUN_SHARE): the colours are sRGB-encoded, so the light is applied to their
+  // linear values (a power of 1/2.2 of the factor)
+  let lit = max(1.0 - SUN_SHARE * light + SUN_SHARE * light * min(sunlight, 24.0), 0.0);
 
   // absorption: about 9 % of red over the depth of the water at intensity 1, more in a trough (h < 0)
   let depth = 1.0 - clamp(h * 0.05, -0.5, 0.5);
   let transmit = exp(-vec3<f32>(0.090, 0.030, 0.014) * intensity * depth);
-  // the focused light brightens the page where it lands (and the defocused light darkens it a little)
-  var color = below * transmit * (vec3<f32>(1.0) + 0.24 * light * focus * vec3<f32>(1.0, 0.98, 0.93));
+  var color = below * transmit * pow(lit, 1.0 / 2.2) * mix(vec3<f32>(1.0), vec3<f32>(1.0, 0.985, 0.95), step(1.0, lit));
 
   // Fresnel reflection of the environment, seen from above the middle of the canvas
   let eye = vec3<f32>(0.5 * css, 1.45 * max(css.x, css.y));
@@ -260,10 +314,9 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let n = normalize(vec3<f32>(-tilt.x, -tilt.y, 1.0));
   let fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
   let reflected = fresnel * environment(reflect(-view, n));
-  // the caustic web: the focused light scattered by the water itself, so that it shows over dark content too; sharpened (the
-  // brightest where the light folds), a cool white
-  let web = pow(max(focus, 0.0), 1.8);
-  let added = (reflected + vec3<f32>(0.42, 0.78, 1.0) * (0.05 * web)) * light;
+  // the focused sunlight scattered by the water along its brightest lines, so that they show over dark content too
+  let scatter = SCATTER * max(min(sunlight, 24.0) - 1.0, 0.0);
+  let added = (reflected + vec3<f32>(0.55, 0.82, 1.0) * scatter) * light;
   // light that the water adds, compressed with a soft knee: at most 0.38 of the range per channel, so it never hides what lies below
   color = color + 0.38 * (vec3<f32>(1.0) - exp(-added / 0.38));
 

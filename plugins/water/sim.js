@@ -26,8 +26,11 @@ export const DAMPING = 0.985;
 export const VISCOSITY = 0.06;
 /** css px of displacement per unit slope at intensity 1 (the refraction through the water onto the page below) */
 export const REFRACT_PX = 40;
-/** the same for the light: the caustics focus as if the page lay this deep */
-export const CAUSTIC_PX = 60;
+/** the light: the page lies this deep under the water for the sunlight (water.wgsl refracts it there by Snell's law: the caustics) */
+export const CAUSTIC_DEPTH_PX = 240;
+/** how far the light's focus moves per unit of the surface's curvature at that depth (the light bends by about 1 - 1/1.333 of the
+ * surface's tilt): what quiet() weighs the curvature with */
+export const CAUSTIC_PX = CAUSTIC_DEPTH_PX * (1 - 1 / 1.333);
 
 /**
  * @typedef {Object} Field

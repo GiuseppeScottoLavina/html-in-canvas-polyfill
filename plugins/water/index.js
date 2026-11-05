@@ -27,7 +27,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
-import { CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
+import { CAUSTIC_DEPTH_PX, CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
 import { MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropGrid, dropsSlope, prepareTable } from './drops.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -50,7 +50,7 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['drop', 'demo']));
 
 /** Offsets in the uniform block (water.wgsl Globals), in floats. The mapper state is this block followed by the padded height field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, DROPS: 18 });
+export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, DROPS: 18, CAUSTICS: 19 });
 export const GLOBALS_LENGTH = 20;
 /** the uniform block: the globals, then MAX_SOURCES drop sources (drops.js SOURCE_FLOATS each); the mapper state appends the field */
 export const SOURCES_OFFSET = GLOBALS_LENGTH;
@@ -181,6 +181,15 @@ function mountIntensityUi(root, ui, bind) {
   };
 }
 
+/** The caustic mesh (water.wgsl vs_caustics): a vertex every MESH_PX css px over the canvas and a margin, one strip per row.
+ * @param {number} cssW @param {number} cssH @param {number} depth  CAUSTIC_DEPTH_PX */
+export function causticMesh(cssW, cssH, depth) {
+  const margin = Math.ceil(0.36 * depth + 24);
+  return { margin, columns: Math.ceil((Math.fround(cssW) + 2 * margin) / MESH_PX), rows: Math.ceil((Math.fround(cssH) + 2 * margin) / MESH_PX) };
+}
+/** css px between the vertices of the caustic mesh (water.wgsl MESH_PX) */
+export const MESH_PX = 2;
+
 /** @param {any} device @param {string} code @param {string} format */
 function createPipeline(device, code, format) {
   const module = device.createShaderModule({ code, label: 'hic-water-effect-shader' });
@@ -193,7 +202,7 @@ function createPipeline(device, code, format) {
       { binding: 2, visibility: stage, texture: { sampleType: 'float' } },
       // the height field is read with textureLoad only: r32float needs no filtering (it is not filterable without an optional feature)
       { binding: 3, visibility: stage, texture: { sampleType: 'unfilterable-float' } },
-      // the drops of this frame, one texel per css px (rgba16float, filtered)
+      // the drops of this frame and the sunlight on the page, one texel per css px (rgba16float, r16float, filtered)
       { binding: 5, visibility: stage, texture: { sampleType: 'float' } },
       { binding: 6, visibility: stage, texture: { sampleType: 'float' } },
     ],
@@ -218,10 +227,31 @@ function createPipeline(device, code, format) {
     label: 'hic-water-effect-drops-pipeline',
     layout: device.createPipelineLayout({ label: 'hic-water-effect-drops-pipeline-layout', bindGroupLayouts: [dropsLayout] }),
     vertex: { module, entryPoint: 'vs' },
-    fragment: { module, entryPoint: 'fs_drops', targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }] },
+    fragment: { module, entryPoint: 'fs_drops', targets: [{ format: 'rgba16float' }] },
     primitive: { topology: 'triangle-list' },
   });
-  return { pipeline, layout, dropsPipeline, dropsLayout };
+  // the caustics pass: the surface (the field, the drops) in the vertex stage, the light added up per texel of the page
+  const both = stage | (/** @type {any} */ (globalThis).GPUShaderStage?.VERTEX ?? 1);
+  const causticLayout = device.createBindGroupLayout({
+    label: 'hic-water-effect-caustic-layout',
+    entries: [
+      { binding: 0, visibility: both, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: both, sampler: { type: 'filtering' } },
+      { binding: 3, visibility: both, texture: { sampleType: 'unfilterable-float' } },
+      { binding: 5, visibility: both, texture: { sampleType: 'float' } },
+    ],
+  });
+  const add = { srcFactor: 'one', dstFactor: 'one', operation: 'add' };
+  const causticPipeline = device.createRenderPipeline({
+    label: 'hic-water-effect-caustic-pipeline',
+    layout: device.createPipelineLayout({ label: 'hic-water-effect-caustic-pipeline-layout', bindGroupLayouts: [causticLayout] }),
+    vertex: { module, entryPoint: 'vs_caustics' },
+    fragment: { module, entryPoint: 'fs_caustics', targets: [{ format: 'r16float', blend: { color: add, alpha: add } }] },
+    primitive: { topology: 'triangle-strip' },
+    // 4 samples a texel: a focused triangle thinner than a texel still lands its light (a single sample would draw the lines dotted)
+    multisample: { count: 4 },
+  });
+  return { pipeline, layout, dropsPipeline, dropsLayout, causticPipeline, causticLayout };
 }
 
 /** @type {EffectPluginDefinition} */
@@ -236,7 +266,7 @@ export const plugin = Object.freeze({
     const shader = initialOptions?.shader;
     const code = typeof shader === 'string' && shader !== '' ? shader : await wgsl('water.wgsl');
     const { device, format } = context;
-    const { pipeline, layout, dropsPipeline, dropsLayout } = createPipeline(device, code, format);
+    const { pipeline, layout, dropsPipeline, dropsLayout, causticPipeline, causticLayout } = createPipeline(device, code, format);
     const gpu = /** @type {any} */ (globalThis);
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
@@ -246,18 +276,22 @@ export const plugin = Object.freeze({
     let uploadedRows = 0;
     const tableTexture = device.createTexture({ label: 'hic-water-effect-drop-table', size: { width: TABLE_W, height: TABLE_ROWS }, format: 'rgba16float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
     const tableView = tableTexture.createView();
-    /** the drop textures (drops.js dropGrid of the field's css size); 1 x 1 until a drop falls */
-    let dropTargets = { w: 0, h: 0, a: /** @type {any} */ (null), b: /** @type {any} */ (null), viewA: /** @type {any} */ (null), viewB: /** @type {any} */ (null) };
+    /** the drop texture and the caustic texture (drops.js dropGrid of the field's css size: one texel per css px); 1 x 1 until the water moves */
+    let dropTargets = { w: 0, h: 0, a: /** @type {any} */ (null), b: /** @type {any} */ (null), ms: /** @type {any} */ (null), viewA: /** @type {any} */ (null), viewB: /** @type {any} */ (null), viewMs: /** @type {any} */ (null) };
     /** @param {number} w @param {number} h */
     const ensureDropTargets = (w, h) => {
       if (dropTargets.w === w && dropTargets.h === h) return;
       dropTargets.a?.destroy?.(); dropTargets.b?.destroy?.();
-      const make = (/** @type {string} */ label) => device.createTexture({ label, size: { width: w, height: h }, format: 'rgba16float', usage: textureUsage.TEXTURE_BINDING | textureUsage.RENDER_ATTACHMENT });
-      const a = make('hic-water-effect-drops-a'), b = make('hic-water-effect-drops-b');
-      dropTargets = { w, h, a, b, viewA: a.createView(), viewB: b.createView() };
+      const make = (/** @type {string} */ label, /** @type {string} */ fmt) => device.createTexture({ label, size: { width: w, height: h }, format: fmt, usage: textureUsage.TEXTURE_BINDING | textureUsage.RENDER_ATTACHMENT });
+      const a = make('hic-water-effect-drops', 'rgba16float'), b = make('hic-water-effect-caustics', 'r16float');
+      dropTargets.ms?.destroy?.();
+      const ms = device.createTexture({ label: 'hic-water-effect-caustics-ms', size: { width: w, height: h }, format: 'r16float', sampleCount: 4, usage: textureUsage.RENDER_ATTACHMENT });
+      dropTargets = { w, h, a, b, ms, viewA: a.createView(), viewB: b.createView(), viewMs: ms.createView() };
       bindGroups = new WeakMap();
+      causticBindGroup = null;
     };
     /** @type {any} */ let dropsBindGroup = null;
+    /** @type {any} */ let causticBindGroup = null;
 
     const sampler = device.createSampler({ label: 'hic-water-effect-sampler', magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const globals = new Float32Array(UNIFORM_LENGTH);
@@ -327,6 +361,7 @@ export const plugin = Object.freeze({
       fieldTexture?.destroy?.();
       fieldTexture = device.createTexture({ label: 'hic-water-effect-height-field', size: { width: f.pw, height: f.ph }, format: 'r32float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
       fieldView = fieldTexture.createView();
+      causticBindGroup = null;
       fieldLive = false;
       bindGroups = new WeakMap();
       mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_LENGTH + f.pw * f.ph));
@@ -598,10 +633,13 @@ export const plugin = Object.freeze({
         globals[G.ACTIVE] = active;
         globals[G.READY] = frame.sourceReady ? 1 : 0;
         globals[G.REFRACT] = refract;
-        globals[G.CAUSTIC] = CAUSTIC_PX * intensity;
+        globals[G.CAUSTIC] = CAUSTIC_DEPTH_PX;
+        // the light moves only while the surface does; still water lights the page uniformly (1) and needs no pass
+        const caustics = (active > 0 || globals[G.DROPS] > 0 || ambient > 0) && light > 0 && intensity > 0;
+        globals[G.CAUSTICS] = caustics ? 1 : 0;
         if (waiters.length && calm()) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
-        if (globals[G.DROPS] > 0) {
+        if (globals[G.DROPS] > 0 || caustics) {
           const g = dropGrid(f.cssWidth, f.cssHeight);
           ensureDropTargets(g.w, g.h);
         } else if (!dropTargets.a) ensureDropTargets(1, 1);
@@ -626,12 +664,20 @@ export const plugin = Object.freeze({
             entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: sampler }, { binding: 4, resource: tableView }],
           });
           const dp = frame.encoder.beginRenderPass({
-            colorAttachments: [
-              { view: dropTargets.viewA, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
-              { view: dropTargets.viewB, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
-            ],
+            colorAttachments: [{ view: dropTargets.viewA, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
           });
           dp.setPipeline(dropsPipeline); dp.setBindGroup(0, dropsBindGroup); dp.draw(3); dp.end();
+        }
+        if (caustics) {
+          causticBindGroup ??= device.createBindGroup({
+            label: 'hic-water-effect-caustic-bind-group', layout: causticLayout,
+            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: sampler }, { binding: 3, resource: fieldView }, { binding: 5, resource: dropTargets.viewA }],
+          });
+          const mesh = causticMesh(f.cssWidth, f.cssHeight, CAUSTIC_DEPTH_PX);
+          const cp = frame.encoder.beginRenderPass({
+            colorAttachments: [{ view: dropTargets.viewMs, resolveTarget: dropTargets.viewB, loadOp: 'clear', storeOp: 'discard', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+          });
+          cp.setPipeline(causticPipeline); cp.setBindGroup(0, causticBindGroup); cp.draw(2 * (mesh.columns + 1), mesh.rows); cp.end();
         }
         const timestampWrites = frame.profiling?.timestampWrites('water');
         const pass = frame.encoder.beginRenderPass({
@@ -666,7 +712,7 @@ export const plugin = Object.freeze({
         uniformBuffer.destroy?.();
         fieldTexture?.destroy?.();
         tableTexture.destroy?.();
-        dropTargets.a?.destroy?.(); dropTargets.b?.destroy?.();
+        dropTargets.a?.destroy?.(); dropTargets.b?.destroy?.(); dropTargets.ms?.destroy?.();
       },
     };
   },
