@@ -63,6 +63,18 @@ export const AMBIENT_PX = 2.6;
 const CLEAR_COLOR = { r: 0.004, g: 0.018, b: 0.034, a: 1 };
 /** a tap or a press: a drop whose crater is this deep (css px, drops.js); the action drop scales it by its strength / 1.2 */
 export const DROP_DEPTH = 4;
+/**
+ * The drops of `drops: 'pond'` (the default): a pebble on the wake field, as the wakes are made, so that a tap speaks the wakes'
+ * language (their waves, their caustics, their constant cost). A smooth crater of POND_RADIUS css px and POND_DEPTH css px at a tap's
+ * strength, then the water that rushes back: a rebound in the middle (the jet of a drop, the 'plop') and a smaller second dip. Each
+ * impulse rings out as a ring that the wave equation carries outwards: a few separated rings, about 2.5 s. [ms after the impact,
+ * radius (share of POND_RADIUS), height (share of POND_DEPTH; negative: a dip)]
+ */
+export const POND_RADIUS = 18;
+export const POND_DEPTH = 9;
+export const POND_IMPULSES = Object.freeze(Array.from({ length: 4 }, (_, k) => Object.freeze([k * 90, Math.max(0.45, 1 - 0.18 * k), (k % 2 ? 1 : -1) * 0.65 ** k])));
+/** the kinds of drop (option `drops`) */
+export const DROP_KINDS = Object.freeze(['pond', 'exact']);
 /** The depth of the drop of the action at `strength` (0.08 to 2), in proportion: a tap's drop at the default 1.2. @param {number} strength */
 export const dropDepth = (strength) => (DROP_DEPTH * Math.min(2, Math.max(0.08, strength))) / 1.2;
 /** the swell of the action drop with `swell: true`: a crater with a crown this wide and deep (css px) on the wake field */
@@ -314,6 +326,10 @@ export const plugin = Object.freeze({
     let intensity = clamp01(initialOptions?.intensity, DEFAULT_INTENSITY);
     let light = clamp01(initialOptions?.light, 1);
     let ambient = reducedMotion ? 0 : clamp01(initialOptions?.ambient, 0);
+    /** 'pond' (impulses on the wake field) or 'exact' (drops.js: the analytic response of capillary-gravity water) */
+    let dropKind = DROP_KINDS.includes(/** @type {any} */ (initialOptions?.drops)) ? /** @type {string} */ (initialOptions?.drops) : 'pond';
+    /** impulses of pond drops still to come, on the simulation clock @type {{t: number, x: number, y: number, r: number, a: number}[]} */
+    let impulses = [];
     /** the table of the drops is filled in idle time, in slices of a few ms, starting a moment after create (about 90 ms of work in all,
      * once): the first drop then finds it ready. A drop that comes earlier computes the rows it needs at once. */
     /** @type {{idle: boolean, id: number}|null} */ let prefetch = null;
@@ -391,7 +407,11 @@ export const plugin = Object.freeze({
     /** A drop at (x, y) css px of the field, born at `born` ms. @param {number} x @param {number} y @param {number} depth @param {number} [born] */
     function addDrop(x, y, depth, born = performance.now()) {
       currentField();
-      drops.push({ x, y, born, depth });
+      if (dropKind === 'pond') {
+        const k = depth / DROP_DEPTH;
+        for (const [dt, r, a] of POND_IMPULSES) impulses.push({ t: born + dt, x, y, r: r * POND_RADIUS, a: a * POND_DEPTH * k });
+        impulses.sort((p, q) => p.t - q.t);
+      } else drops.push({ x, y, born, depth });
       wake();
     }
 
@@ -403,7 +423,7 @@ export const plugin = Object.freeze({
       resolve?.(null);
     }
 
-    const calm = () => !awake && !rain.length && !drops.length;
+    const calm = () => !awake && !rain.length && !drops.length && !impulses.length;
     /** @returns {'calm'|Promise<string|null>} */
     const wait = () => (calm() ? 'calm' : new Promise((resolve) => { waiters.push(resolve); }));
 
@@ -515,11 +535,17 @@ export const plugin = Object.freeze({
         simClock += skipped; n = MAX_STEPS_PER_FRAME;
         for (const d of drops) d.born += skipped;
         for (const d of rain) d.t += skipped;
+        for (const p of impulses) p.t += skipped;
       }
       for (let i = 0; i < n && awake; i += 1) {
         while (rain.length && rain[0].t <= simClock) {
           const d = /** @type {RainDrop} */ (rain.shift());
-          drops.push({ x: d.x * f.cssWidth, y: d.y * f.cssHeight, born: d.t, depth: d.depth });
+          addDrop(d.x * f.cssWidth, d.y * f.cssHeight, d.depth, d.t);
+        }
+        while (impulses.length && impulses[0].t <= simClock) {
+          const p = /** @type {{t: number, x: number, y: number, r: number, a: number}} */ (impulses.shift());
+          stamp(f, p.x, p.y, p.r, p.a);
+          fieldLive = true;
         }
         if (fieldLive) { step(f); dirty = true; }
         simClock += STEP_MS;
@@ -527,7 +553,7 @@ export const plugin = Object.freeze({
         if (sinceCheck >= 4) {
           sinceCheck = 0;
           if (fieldLive && quiet(f, intensity)) { clear(f); fieldLive = false; }
-          if (!fieldLive && !rain.length && !drops.length) awake = false;
+          if (!fieldLive && !rain.length && !drops.length && !impulses.length) awake = false;
         }
       }
     }
@@ -607,6 +633,7 @@ export const plugin = Object.freeze({
         intensity = clamp01(next?.intensity, intensity);
         light = clamp01(next?.light, light);
         if (!reducedMotion) ambient = clamp01(next?.ambient, ambient);
+        if (DROP_KINDS.includes(/** @type {any} */ (next?.drops))) dropKind = /** @type {string} */ (next?.drops);
         syncUi();
       },
       runAction(action, options, info) {
@@ -731,6 +758,7 @@ export const plugin = Object.freeze({
       destroy() {
         rain = [];
         drops = [];
+        impulses = [];
         cancelIdle();
         const demo = demoTakeover;
         demoTakeover = null;
