@@ -116,6 +116,60 @@ test('the :hover usage comes from capture\'s CssBundle and follows its styleshee
   assert.equal(rig.sink.causes().includes('hover'), true);
 });
 
+test('a :hover rule counts only where it can match: one for an element outside the drawable publishes no damage, one inside does (positive control), and so does an ancestor hover outside it', async t => {
+  const outside = document.createElement('nav');
+  outside.innerHTML = '<button class="chip">chip</button>';
+  document.body.append(outside);
+  t.cleanup(() => outside.remove());
+  const hover = (s) => { s.sink.clear(); s.fire(s.$('b1'), 'pointerover'); s.fire(s.$('b2'), 'pointerover'); s.fire(s.$('b2'), 'pointerout', { relatedTarget: document.body }); return s.sink.causes().filter((c) => c === 'hover').length; };
+  const chip = setup(t, 'nav .chip:hover{color:red}');
+  assert.equal(hover(chip), 0, 'the page\'s own menu has a :hover rule; the drawn form has nothing it can match: no rebuild while the pointer crosses it');
+  assert.equal(chip.changes.filter((c) => c.kind === 'hover').length, 3, 'the hover chain itself still follows (listeners, the snapshot)');
+  chip.tracker.dispose();
+  const inside = setup(t, 'nav .chip:hover{color:red} .card:hover .btn{color:blue}');
+  assert.ok(hover(inside) > 0, 'a rule that matches inside the drawable counts (positive control)');
+  inside.tracker.dispose();
+  const ancestor = setup(t, 'body:hover .btn{color:blue}');
+  assert.ok(hover(ancestor) > 0, 'an ancestor hover outside the drawable (body:hover .btn) counts for the .btn inside');
+  ancestor.tracker.dispose();
+  const negated = setup(t, 'nav .chip:not(:hover){color:red}');
+  assert.ok(hover(negated) > 0, 'a :hover the neutral form cannot stand for (inside :not) makes every hover change count');
+});
+
+test('a "no match" is asked again after a mutation of the canvas subtree: an element given a class a :hover rule matches is then repainted on hover', async t => {
+  const s = setup(t, '.later:hover{color:red}');
+  s.fire(s.$('b1'), 'pointerover');
+  s.fire(s.$('b1'), 'pointerout', { relatedTarget: document.body });
+  assert.ok(!s.sink.causes().includes('hover'), 'no .later in the drawable yet');
+  s.$('b2').classList.add('later');
+  s.bus.emit('damage', { record: s.record, drawable: s.$('d'), rect: null, cause: 'mutation', t: performance.now() });
+  s.sink.clear();
+  s.fire(s.$('b2'), 'pointerover');
+  assert.ok(s.sink.causes().includes('hover'), 'the match is asked again after the mutation');
+  s.fire(s.$('b2'), 'pointerout', { relatedTarget: document.body });
+  s.$('b2').classList.remove('later');
+  s.$('b1').classList.add('later');
+  s.sink.clear();
+  s.fire(s.$('b1'), 'pointerover');
+  assert.ok(s.sink.causes().includes('hover'), 'a "yes" is kept (at worst one rebuild too many)');
+});
+
+test('setMappedPress activates the mapped element without hovering it; mappedTarget reports the mapped hover; a finger tap outside the canvas ends a mapped hover', async t => {
+  const s = setup(t);
+  s.fire(s.$('b1'), 'pointerdown', { pointerType: 'touch' });
+  s.tracker.setMappedPress(s.record, s.$('b2'));
+  assert.equal(s.tracker.snapshot().active.has(s.$('b2')), true, 'the press activates b2');
+  assert.equal(s.tracker.snapshot().hover.size, 0, 'and hovers nothing');
+  s.fire(document.body, 'pointerup', { pointerType: 'touch' });
+  s.tracker.setMappedPress(s.record, s.$('b1'));
+  assert.equal(s.tracker.snapshot().active.size, 0, 'no press in progress: nothing to activate');
+  s.tracker.setMappedTarget(s.record, s.$('b2'));
+  assert.equal(s.tracker.mappedTarget(s.record), s.$('b2'));
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+  assert.equal(s.tracker.snapshot().hover.size, 0, 'a tap outside the canvas ends the hover the effect set');
+  assert.equal(s.tracker.mappedTarget(s.record), null);
+});
+
 test('without a capture every pseudo-class counts as used, and a throwing capture is reported and treated the same', async t => {
   const rig = createRig({ html: PAGE });
   const b = rig.layerEl.querySelector('#b1');

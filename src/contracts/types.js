@@ -515,6 +515,8 @@ export {};
  * @typedef {Object} InteractionTracker  Owner: schedule (observers/interaction-tracker.js). One per install.
  * @property {() => InteractionSnapshot} snapshot
  * @property {(record: CanvasRecord, target: Element|null) => void} setMappedTarget  effects: hover/active follow the element under the MAPPED pointer instead of the native hit (null = native again)
+ * @property {(record: CanvasRecord, target: Element|null) => void} [setMappedPress]  effects: the press in progress activates the mapped element; the hover is left alone (a finger: a press does not hover, a tap does)
+ * @property {(record: CanvasRecord) => Element|null} [mappedTarget]  the element set by setMappedTarget, null when the native target is followed (a tap outside the canvas clears it)
  * @property {(cb: (change: {record: CanvasRecord, kind: 'hover'|'active'|'focus'|'caret', elements: Element[]}) => void) => () => void} onChange
  */
 
@@ -522,7 +524,7 @@ export {};
  * @typedef {Object} CssBundle  Flattened stylesheet text for one capture (snapshot/css-collector.js). Cached by `key`.
  * @property {string} css
  * @property {string} key       changes whenever css would change (viewport, dpr, stylesheet set/version, color-scheme)
- * @property {{hover:boolean, active:boolean, focus:boolean, focusVisible:boolean, focusWithin:boolean, hoverLayout?:boolean}} pseudo  which interaction pseudo-classes appear in any rule (skip damage for the others); `hoverLayout`: a :hover rule sets a property that is not paint-only (absent = assume it does)
+ * @property {{hover:boolean, active:boolean, focus:boolean, focusVisible:boolean, focusWithin:boolean, hoverLayout?:boolean, hoverScope?:{sel: string, subject: string[], context: string[]}[]|null}} pseudo  which interaction pseudo-classes appear in any rule (skip damage for the others); `hoverLayout`: a :hover rule sets a property that is not paint-only (absent = assume it does); `hoverScope`: the :hover rules as neutral selectors with the tokens they need (css-rewrite.js hoverScope, selectorTokens): a hover change counts for a drawable only where one matches in it (null or absent = every hover change counts)
  * @property {string[]} pendingUrls  url()s still being fetched (result.complete will be false)
  */
 
@@ -543,6 +545,8 @@ export {};
  * @typedef {Object} TrackerControl  The InteractionTracker plus its lifecycle (schedule/observers/interaction-tracker.js)
  * @property {() => InteractionSnapshot} snapshot
  * @property {(record: CanvasRecord, target: Element|null) => void} setMappedTarget
+ * @property {(record: CanvasRecord, target: Element|null) => void} setMappedPress
+ * @property {(record: CanvasRecord) => Element|null} mappedTarget
  * @property {(cb: (change: {record: CanvasRecord, kind: 'hover'|'active'|'focus'|'caret', elements: Element[]}) => void) => () => void} onChange
  * @property {(record: CanvasRecord) => void} attach  called on CANVAS_MOUNTED by startObservers
  * @property {(record: CanvasRecord) => void} detach  called on CANVAS_UNMOUNTING
