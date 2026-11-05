@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
-import { ACTIONS, DEMO_RELEASE_MS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, demoHand, foldSpan, heldCorner, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
+import { ACTIONS, DEMO_RELEASE_MS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, demoHand, foldOf, foldSpan, heldCorner, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 const W = 480;
@@ -106,10 +106,15 @@ function splat(st) {
   return { kind, sx, sy, z };
 }
 
-test('the mapper answers what the forward rendering shows: the page point on the flat page and on the front of the roll, NO_TARGET on the back and beneath (every pixel, 8 poses)', () => {
-  const cases = [['br', 300, 200], ['br', 200, 250], ['br', 60, 300], ['tr', 260, 120], ['bl', 260, 150], ['tl', 120, 200], ['br', 455, 300], ['tr', 420, 40]];
+test('the mapper answers what the forward rendering shows: the page point on the flat page and on the front of the roll, NO_TARGET on the back and beneath (every pixel, 10 poses, cones and a cylinder)', () => {
+  // bl 260,150 is a cylinder (the held corner's foot in the middle of the fold); the last two: a nearly cylindrical cone (its apex over
+  // 100,000 px away) and a fold line that runs past the apex across the page
+  const cases = [['br', 300, 200], ['br', 200, 250], ['br', 60, 300], ['tr', 260, 120], ['bl', 260, 150], ['tl', 120, 200], ['br', 455, 300], ['tr', 420, 40], ['tr', 240, 160], ['tr', 450, 20]];
+  let cones = 0, farApex = 0;
   for (const [key, x, y] of /** @type {[any, number, number][]} */ (cases)) {
     const st = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48), W, H);
+    if (st[38] > 0) cones += 1;
+    if (st[38] > 0 && Math.abs(st[36]) > 10000) farApex += 1;
     const { kind, sx, sy, z } = splat(st);
     const f = coneOfState(st), m = st[10];
     const p = [0, 0, 0], q = { x: 0, y: 0 };
@@ -141,6 +146,83 @@ test('the mapper answers what the forward rendering shows: the page point on the
     }
     assert.ok(counts.back > 20 && counts.flat > 10000, `${key} ${x},${y}: ${JSON.stringify(counts)}`);
   }
+  assert.ok(cones === cases.length - 1 && farApex >= 1, `all poses but one roll on a cone (${cones} of ${cases.length}), one nearly a cylinder (${farApex})`);
+});
+
+test('the cone: an isometry with the surface\'s own normal; the roll narrows away from the held corner; the held corner lands under the pointer (control: taper 1 is the cylinder)', () => {
+  const p = [0, 0, 0], q = [0, 0, 0], a = [0, 0, 0], b = [0, 0, 0], n = [0, 0, 0];
+  const length = (/** @type {any} */ f, /** @type {number[]} */ from, /** @type {number[]} */ to) => {
+    let L = 0;
+    foldPoint(from[0], from[1], f, p);
+    for (let i = 1; i <= 4000; i += 1) {
+      const t = i / 4000;
+      foldPoint(from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, f, q);
+      L += Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]); p[0] = q[0]; p[1] = q[1]; p[2] = q[2];
+    }
+    return L;
+  };
+  // a page turn by the top-right corner (pulled across, a little down) and a pull of the bottom-right corner up the page
+  for (const [key, x, y] of /** @type {[any, number, number][]} */ ([['tr', 200, 40], ['br', 350, 120], ['tr', 260, 120]])) {
+    const st = poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48);
+    const f = foldOf(st);
+    assert.ok(f.k > 0.01, `${key} ${x},${y}: a cone (k ${f.k})`);
+    for (const [from, to] of [[[0, 0], [W, 0]], [[W, 0], [W, H]], [[0, H], [W, H]], [[0, 0], [W, H]], [[0, H], [W, 0]]]) {
+      const want = Math.hypot(to[0] - from[0], to[1] - from[1]);
+      assert.ok(Math.abs(length(f, from, to) - want) < 0.08, `${key} ${x},${y}: edge ${from}-${to} ${length(f, from, to)} vs ${want}`);
+    }
+    // the normal is the cross product of the surface's own tangents (finite differences), everywhere on the sheet
+    for (let i = 0; i < 400; i += 1) {
+      const X = ((i * 37) % 97) / 97 * W, Y = ((i * 61) % 89) / 89 * H;
+      foldPoint(X, Y, f, p); foldPoint(X + 0.01, Y, f, a); foldPoint(X, Y + 0.01, f, b);
+      const u = [a[0] - p[0], a[1] - p[1], a[2] - p[2]], v = [b[0] - p[0], b[1] - p[1], b[2] - p[2]];
+      const c = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      foldNormal(X, Y, f, n);
+      const dot = (c[0] * n[0] + c[1] * n[1] + c[2] * n[2]) / Math.hypot(...c);
+      assert.ok(dot > 0.9999, `${key} ${x},${y}: normal at ${X.toFixed(1)},${Y.toFixed(1)} off by ${dot}`);
+    }
+    // seen from the camera, the held corner lies where it is put
+    const [cx, cy] = heldCorner(st);
+    assert.ok(Math.hypot((st[10] > 0 ? cx : W - cx) - x, cy - y) < 0.01, `${key} ${x},${y}: the corner lands at ${cx},${cy}`);
+  }
+  // the roll's radius along the fold line (where it crosses the page): wide by the held corner, narrower towards the far end
+  const radii = (/** @type {Float32Array} */ st) => {
+    const f = foldOf(st), out = [];
+    for (const [x0, y0, x1, y1] of [[0, 0, W, 0], [W, 0, W, H], [W, H, 0, H], [0, H, 0, 0]]) {
+      const s0 = (x0 - f.ax) * f.nx + (y0 - f.ay) * f.ny, s1 = (x1 - f.ax) * f.nx + (y1 - f.ay) * f.ny;
+      if ((s0 > 0) === (s1 > 0)) continue;
+      const t = s0 / (s0 - s1), x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      out.push(f.k > 0 ? f.k * f.gs * (-(x - f.ax) * f.ny + (y - f.ay) * f.nx - f.wA) : f.R);
+    }
+    return out;
+  };
+  const turn = radii(poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'tr', 200, 40, 48));
+  assert.ok(turn.length === 2 && Math.max(...turn) > 1.8 * Math.min(...turn), `a page turn rolls wide at the top and tight at the bottom: ${turn}`);
+  const cylinder = poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'tr', 200, 40, 48, 1);
+  const flat = radii(cylinder);
+  assert.ok(cylinder[38] === 0 && Math.abs(flat[0] - flat[1]) < 1e-6, `control: taper 1 is the cylinder of foldFor: ${flat}`);
+  // the corner lands where it is put over the reachable poses (a constrained pull lands where the bound sheet allows)
+  let worst = 0;
+  for (let i = 0; i < 3000; i += 1) {
+    const key = /** @type {any} */ (['tl', 'tr', 'bl', 'br'][i % 4]), x = ((i * 7919) % 4801) / 10, y = ((i * 104729) % 3203) / 10;
+    const st = poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48);
+    if (!(st[9] > 0)) continue;
+    const want = constrainCorner({ x: st[10] > 0 ? x : W - x, y }, st[44] > 0 ? 'bottom' : 'top', W, H, { x: 0, y: 0 });
+    const [cx, cy] = heldCorner(st);
+    worst = Math.max(worst, Math.hypot(cx - want.x, cy - want.y));
+  }
+  assert.ok(worst < 0.25, `the held corner is at most ${worst} px from where it is put`);
+});
+
+test('control: the mapper of the cylinder of the same pose disagrees with the cone it is shown on', () => {
+  const st = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'tr', 200, 40, 48), W, H);
+  const cyl = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, 'tr', 200, 40, 48, 1), W, H);
+  const { kind } = splat(st);
+  let wrong = 0;
+  for (let j = 0; j < H; j += 2) for (let i = 0; i < W; i += 2) {
+    const k = kind[j * W + i];
+    if (k === 1 || k === -1 || k === 2) { const got = isNoTarget(mapCurlPoint(cyl, { x: i + 0.5, y: j + 0.5, width: W, height: H })); if (got !== (k !== 1)) wrong += 1; }
+  }
+  assert.ok(wrong > 100, `the cylinder's mapper is wrong on ${wrong} sampled pixels of the cone`);
 });
 
 test('released (no pull): the mapper is the identity everywhere, including the hot zones; it scales from the presented size', () => {

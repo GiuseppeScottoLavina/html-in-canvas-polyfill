@@ -339,6 +339,13 @@ fn ring(uv : vec2<f32>, r : f32) -> f32 {
                + luma(front_color(uv + vec2<f32>(0.0, d.y))) + luma(front_color(uv - vec2<f32>(0.0, d.y))));
 }
 
+/** the same on the diagonals */
+fn diag(uv : vec2<f32>, r : f32) -> f32 {
+  let d = 0.7071 * r / u.css;
+  return 0.25 * (luma(front_color(uv + d)) + luma(front_color(uv - d))
+               + luma(front_color(uv + vec2<f32>(d.x, -d.y))) + luma(front_color(uv - vec2<f32>(d.x, -d.y))));
+}
+
 @fragment
 fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) vec4<f32> {
   // the strip is wider than the page: cut it at the page's edges, antialiased (alpha to coverage)
@@ -379,10 +386,12 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     // soft and mirrored as on real paper: whatever stands out from its surroundings on the front (text, borders, controls) darkens the paper
     // (only what stands out in the page's own polarity: light ink on a dark page, dark ink on a light one, so the shifted samples of the
     // surroundings never print ghosts of their own). The show-through follows the light: plain in the light, it fades in the shade.
-    let fine = 0.45 * luma(base) + 0.55 * ring(src_uv, 1.0);
+    // the fibres scatter the light that comes through: the print is seen diffused (a 9-tap blur of about 1 css px) and with a soft response,
+    // never as a crisp, thresholded copy of the front
+    let fine = 0.3 * luma(base) + 0.4 * ring(src_uv, 0.9) + 0.3 * diag(src_uv, 1.3);
     let wide = 0.5 * ring(src_uv, 6.0) + 0.5 * ring(src_uv, 11.0);
     let polarity = select(-1.0, 1.0, wide < 0.45);
-    let mark = smoothstep(0.05, 0.32, polarity * (fine - wide)) * smoothstep(0.08, 0.35, abs(dot(nUp, to_eye(v.page))));
+    let mark = smoothstep(0.0, 0.5, polarity * (fine - wide)) * smoothstep(0.08, 0.35, abs(dot(nUp, to_eye(v.page))));
     let nb = bumped(-nUp, v.local + 911.0);
     let lt = light2(v.page, nb);
     let light = (lt.x * sh.y * ROOM + lt.y * sh.x * WARM) * EXPOSURE;
