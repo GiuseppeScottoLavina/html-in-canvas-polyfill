@@ -1,14 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
+import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
 import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, createDropTable, dropsAt, prepareTable } from '../drops.js';
-
-/** a complete drop table (deterministic: the plugin computes the very same rows) */
-const TABLE = createDropTable();
-prepareTable(TABLE, Infinity);
 
 contractTest(import.meta.url);
 
@@ -28,8 +23,8 @@ function oracle(state, point) {
   let dx = 0, dy = 0;
   if (state[G.ACTIVE] > 0.5) {
     const e = 1e-4, gx = u * gw - 0.5 + PAD, gy = v * gh - 0.5 + PAD;
-    const hx = (oracleHeight(state, UNIFORM_LENGTH, pw, gx + e, gy) - oracleHeight(state, UNIFORM_LENGTH, pw, gx - e, gy)) / (2 * e);
-    const hy = (oracleHeight(state, UNIFORM_LENGTH, pw, gx, gy + e) - oracleHeight(state, UNIFORM_LENGTH, pw, gx, gy - e)) / (2 * e);
+    const hx = (oracleHeight(state, GLOBALS_LENGTH, pw, gx + e, gy) - oracleHeight(state, GLOBALS_LENGTH, pw, gx - e, gy)) / (2 * e);
+    const hy = (oracleHeight(state, GLOBALS_LENGTH, pw, gx, gy + e) - oracleHeight(state, GLOBALS_LENGTH, pw, gx, gy - e)) / (2 * e);
     // per cell -> per css px, times the refraction at this intensity
     dx = state[G.REFRACT] * hx * (gw / cssW);
     dy = state[G.REFRACT] * hy * (gh / cssH);
@@ -50,12 +45,12 @@ function stateOf(cssW, cssH, { intensity = 1, ambient = 0, time = 1.7, seed = 1,
   for (let i = 0; i < 6; i += 1) stamp(f, rnd() * cssW, rnd() * cssH, 6 + 14 * rnd(), -2 - 6 * rnd());
   for (let i = 0; i < steps; i += 1) step(f);
   mirror(f);
-  const state = new Float32Array(UNIFORM_LENGTH + f.pw * f.ph);
+  const state = new Float32Array(GLOBALS_LENGTH + f.pw * f.ph);
   const refract = REFRACT_PX * intensity;
   state[G.CSS] = cssW; state[G.CSS + 1] = cssH; state[G.K] = refract / f.cellX; state[G.K + 1] = refract / f.cellY;
   state[G.INV_CELL] = 1 / f.cellX; state[G.INV_CELL + 1] = 1 / f.cellY; state[G.GRID] = f.gw; state[G.GRID + 1] = f.gh;
   state[G.TIME] = time; state[G.INTENSITY] = intensity; state[G.AMBIENT] = ambient; state[G.ACTIVE] = 1; state[G.REFRACT] = refract;
-  state.set(f.h, UNIFORM_LENGTH);
+  state.set(f.h, GLOBALS_LENGTH);
   return { state, field: f };
 }
 
@@ -94,10 +89,10 @@ test('a dent is a diverging lens: points beside it map further out (the page loo
   const f = createField(400, 400);
   stamp(f, 200, 200, 20, -6);
   mirror(f);
-  const state = new Float32Array(UNIFORM_LENGTH + f.pw * f.ph);
+  const state = new Float32Array(GLOBALS_LENGTH + f.pw * f.ph);
   state[G.CSS] = 400; state[G.CSS + 1] = 400; state[G.GRID] = f.gw; state[G.GRID + 1] = f.gh;
   state[G.K] = REFRACT_PX / f.cellX; state[G.K + 1] = REFRACT_PX / f.cellY; state[G.ACTIVE] = 1;
-  state.set(f.h, UNIFORM_LENGTH);
+  state.set(f.h, GLOBALS_LENGTH);
   const right = mapWaterPoint(state, { x: 210, y: 200, width: 400, height: 400 });
   const above = mapWaterPoint(state, { x: 200, y: 190, width: 400, height: 400 });
   assert.ok(right.x > 212 && Math.abs(right.y - 200) < 0.01, `right of the dent: ${JSON.stringify(right)}`);
@@ -237,8 +232,8 @@ test('at rest nothing works: not continuous, settled at once, the field is never
   assert.equal(w.renders(), 0, 'it never asked for a frame');
 });
 
-test('a pointerdown makes a drop: continuous, a drop source in the uniform block (not in the field), the table rows it needs uploaded; it comes back to rest by itself, then continuous is false again; the listeners are passive', async () => {
-  const w = await createWater({ intensity: 1, drops: 'exact' });
+test('a pointerdown drops a pebble: continuous, its impulses go into the field (uploaded); it comes back to rest by itself, then continuous is false again and nothing is uploaded; the listeners are passive', async () => {
+  const w = await createWater({ intensity: 1 });
   for (const type of ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'touchend', 'touchcancel']) assert.equal(w.listenOptions[type]?.passive, true, `${type} is passive: a finger keeps scrolling`);
   w.listeners.pointerdown({ clientX: 200, clientY: 150 });
   assert.equal(w.instance.continuous, false, 'not a PointerEvent: ignored');
@@ -249,37 +244,17 @@ test('a pointerdown makes a drop: continuous, a drop source in the uniform block
   let settledState = 'pending';
   w.instance.settled().then((s) => { settledState = s; });
   w.instance.render(w.frame(t0 + 100));
-  const u = w.gpu.writes.at(-1);
-  assert.equal(u.length, UNIFORM_LENGTH);
-  assert.equal(u[G.DROPS], 1, 'one source: the drop (no wall is within its reach yet)');
-  const o = SOURCES_OFFSET;
-  assert.deepEqual([u[o], u[o + 1], u[o + 3]], [200, 150, DROP_DEPTH], 'at the point, of the drop depth');
-  assert.ok(Math.abs(u[o + 2] - 0.1 * ROWS_PER_S) < 0.5, `its age, in rows of the table (${u[o + 2]})`);
-  assert.ok(u[o + 4] < u[o + 5], 'its ring');
-  assert.equal(u[G.ACTIVE], 0, 'the field is not touched: no upload of it');
-  assert.equal(w.gpu.textures.length, 0);
-  assert.ok(w.gpu.tables.length >= 1 && w.gpu.tables[0].size.height >= 13, 'the rows of the table up to its age are uploaded');
+  assert.equal(w.gpu.writes.at(-1).length, GLOBALS_LENGTH);
+  assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1, 'the field holds the pebble');
+  assert.ok(w.gpu.textures.at(-1).data.some((v) => Math.abs(v) > 1), 'the pebble is in the uploaded field');
   const end = w.run(t0 + 110, 6000, () => !w.instance.continuous);
   await new Promise((r) => setImmediate(r));
-  assert.ok(end - t0 < 2400, `at rest ${Math.round(end - t0)} ms after the drop (intensity 1)`);
+  assert.ok(end - t0 < 4500, `at rest ${Math.round(end - t0)} ms after the tap (intensity 1, a small canvas: the walls reflect)`);
   assert.equal(settledState, 'calm');
-  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 0, 'the last frame shows a flat surface');
-  const writes = w.gpu.writes.length, tables = w.gpu.tables.length;
+  assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 0, 'the last frame shows a flat surface');
+  const uploads = w.gpu.textures.length;
   w.instance.render(w.frame(end + 100));
-  assert.equal(w.gpu.tables.length, tables, 'no upload at rest');
-  assert.equal(w.gpu.writes.length, writes + 1);
-});
-
-test('one pointerdown is one drop, also when it reaches both of the plugin\'s listen targets (the layer inside the canvas); control: two pointerdowns are two drops', async () => {
-  const w = await createWater({ intensity: 1, drops: 'exact' });
-  const e = new w.win.PointerEvent({ clientX: 200, clientY: 150, buttons: 0, pointerType: 'mouse', timeStamp: performance.now() });
-  w.listeners.pointerdown(e);
-  w.listeners.pointerdown(e);   // the same event, at its second target
-  w.instance.render(w.frame(performance.now() + 20));
-  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 1, 'one drop');
-  w.pointer('pointerdown', 120, 100);
-  w.instance.render(w.frame(performance.now() + 40));
-  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 2, 'control: another pointerdown is another drop');
+  assert.equal(w.gpu.textures.length, uploads, 'no upload at rest');
 });
 
 /** the field of the last upload: heights of the interior cells, and their centres in css px @param {any} w */
@@ -304,12 +279,11 @@ function crestsAlong(w, x0, y0) {
   return ringsOf(prof);
 }
 
-test('drops: \'pond\' (the default): a tap is a pebble on the wake field, centred on the tap (within 0.5 css px), ringing out as several separated rings that live about 2 s; controls: a wake dent of the same size makes fewer rings; another point moves the centre', async () => {
+test('a tap is a pebble on the wake field, centred on the tap (within 0.5 css px), ringing out as several separated rings that live about 2 s; controls: a wake dent of the same size makes fewer rings; another point moves the centre', async () => {
   const w = await createWater({ intensity: 0.5 });
   const t0 = performance.now();
   w.pointer('pointerdown', 180, 140);
   w.instance.render(w.frame(t0 + 60));
-  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 0, 'no analytic source');
   assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1, 'the field holds it');
   const centre = () => { const f = lastField(w); let m = 0, sx = 0, sy = 0; for (let j = 0; j < f.gh; j += 1) for (let i = 0; i < f.gw; i += 1) { const a = Math.abs(f.at(i, j)); m += a; sx += a * (i + 0.5) * f.cx; sy += a * (j + 0.5) * f.cy; } return [sx / m, sy / m]; };
   const [x, y] = centre();
@@ -336,7 +310,7 @@ test('drops: \'pond\' (the default): a tap is a pebble on the wake field, centre
   assert.ok(Math.abs(sx / m - 186) < 0.5 && Math.abs(sx / m - 180) > 5, 'control: a tap 6 px away is centred 6 px away');
 });
 
-test('drops: \'pond\': one pointerdown is one pebble, also when it reaches both listen targets; control: two pointerdowns stir twice as deep', async () => {
+test('one pointerdown is one pebble, also when it reaches both listen targets; control: two pointerdowns stir twice as deep', async () => {
   const depthAfter = async (/** @type {number} */ n, /** @type {boolean} */ same) => {
     const w = await createWater({ intensity: 1 });
     const e = new w.win.PointerEvent({ clientX: 200, clientY: 150, buttons: 0, pointerType: 'mouse', timeStamp: performance.now() });
@@ -349,80 +323,54 @@ test('drops: \'pond\': one pointerdown is one pebble, also when it reaches both 
   assert.ok(twice > 1.8 * once, `control: two events, twice as deep (${twice.toFixed(3)})`);
 });
 
-test('a long gap between frames (a frame cap of 1, a pause) is skipped by the drops as by the field: a drop is shown at most 167 ms older per frame; the rain skips it too', async () => {
-  const w = await createWater({ intensity: 1, drops: 'exact' });
+test('a long gap between frames (a frame cap of 1, a pause) is skipped by the pebbles as by the field: after a 1 s gap a pebble shows at most 167 ms of water; control: frames all along show a full second', async () => {
+  /** how far from the tap the field moves, css px @param {any} w */
+  const reach = (w) => { const t = w.gpu.textures.at(-1); const pw = t.size.width, gw = pw - 2 * PAD, cx = W / gw; let max = 0, r = 0;
+    for (const v of t.data) max = Math.max(max, Math.abs(v));
+    const j = Math.floor(t.size.height / 2); for (let i = PAD; i < pw - PAD; i += 1) if (Math.abs(t.data[j * pw + i]) > 0.01 * max) r = Math.max(r, Math.abs((i - PAD + 0.5) * cx - 200)); return r; };
+  const gap = await createWater({ intensity: 1 });
   const t0 = performance.now();
-  w.pointer('pointerdown', 200, 150);
-  w.instance.render(w.frame(t0 + 1000));
-  const row = w.gpu.writes.at(-1)[SOURCES_OFFSET + 2];
-  assert.ok(row > 0.15 * ROWS_PER_S && row <= (1000 / 6 / 1000) * ROWS_PER_S + 1.5, `after a 1 s gap the drop is ${((row / ROWS_PER_S) * 1000).toFixed(0)} ms old (at most 167 ms of water time per frame)`);
-  w.instance.render(w.frame(t0 + 1000 + 1000 / 120));
-  assert.ok(Math.abs(w.gpu.writes.at(-1)[SOURCES_OFFSET + 2] - row - 1) < 0.05, 'then it ages one row per frame of 120 Hz');
-  // the rain: the drops due within a skipped gap fall later, one by one, not all at once
-  const r = await createWater({ intensity: 1, drops: 'exact' });
+  gap.pointer('pointerdown', 200, 150);
+  gap.instance.render(gap.frame(t0 + 1000));
+  const near = reach(gap);
+  const all = await createWater({ intensity: 1 });
   const t1 = performance.now();
-  r.instance.runAction('demo', {}, { reducedMotion: false });
-  r.instance.render(r.frame(t1 + 1200));
-  assert.ok(r.gpu.writes.at(-1)[G.DROPS] <= 6, `after a 1.2 s gap only the rain of the first 167 ms has fallen (${r.gpu.writes.at(-1)[G.DROPS]} sources)`);
+  all.pointer('pointerdown', 200, 150);
+  all.run(t1, 1000);
+  const far = reach(all);
+  assert.ok(near < 120 && far > near + 40, `after a 1 s gap the rings reach ${near.toFixed(0)} px; with frames all along ${far.toFixed(0)} px`);
 });
 
-test('a burst of taps costs a bounded frame: beyond 20 drops the oldest fade out over 150 ms, at most 64 sources; control: 20 taps fade none', async () => {
-  const burst = async (n) => {
-    const w = await createWater({ intensity: 1, drops: 'exact' });
-    const t0 = performance.now();
-    for (let i = 0; i < n; i += 1) w.pointer('pointerdown', 20 + (360 * i) / n, 40 + (220 * i) / n);
-    w.instance.render(w.frame(t0 + 10));
-    const at10 = w.gpu.writes.at(-1);
-    // the drops themselves (their mirror images in the walls lie outside the canvas): how many, and how many at full depth
-    const drops = () => { const u = w.gpu.writes.at(-1); let all = 0, full = 0; for (let s = 0; s < u[G.DROPS]; s += 1) { const o = SOURCES_OFFSET + s * SOURCE_FLOATS; if (u[o] < 0 || u[o] > W || u[o + 1] < 0 || u[o + 1] > H) continue; all += 1; if (u[o + 3] === DROP_DEPTH) full += 1; } return { all, full }; };
-    const first = drops();
-    w.instance.render(w.frame(t0 + 90));
-    const mid = drops();
-    w.run(t0 + 100, 120);
-    return { sources: at10[G.DROPS], first, mid, later: drops() };
-  };
-  const many = await burst(30), few = await burst(20);
-  assert.ok(many.sources <= 64, `at most 64 sources (${many.sources})`);
-  assert.ok(many.first.all === 30 && many.mid.all === 30 && many.mid.full === 20, `30 drops, of which the 10 oldest fade (${JSON.stringify(many)})`);
-  assert.ok(many.later.all === 20 && many.later.full === 20, `200 ms later the faded ones are gone (${JSON.stringify(many.later)})`);
-  assert.ok(few.mid.full === 20 && few.later.all === 20, `control: 20 taps fade none (${JSON.stringify(few)})`);
-});
-
-test('the mapper evaluates the very uniform block, field and drop table that were submitted for the frame', async () => {
-  const w = await createWater({ intensity: 1, drops: 'exact' });
+test('the mapper evaluates the very uniform block and field that were submitted for the frame', async () => {
+  const w = await createWater({ intensity: 1 });
   const t0 = performance.now();
   w.pointer('pointerdown', 150, 120);
   w.pointer('pointerdown', 260, 160);
-  // and a wake (the field) across them
+  // and a wake across them
   for (let i = 0; i <= 6; i += 1) w.pointer('pointermove', 100 + 30 * i, 140, { timeStamp: t0 + 10 * i });
   w.instance.render(w.frame(t0 + 120));
   const field = w.gpu.created.find((t) => t.d.format === 'r32float').d.size;
-  const submitted = new Float32Array(UNIFORM_LENGTH + field.width * field.height);
+  const submitted = new Float32Array(GLOBALS_LENGTH + field.width * field.height);
   submitted.set(w.gpu.writes.at(-1));
-  submitted.set(w.gpu.textures.at(-1).data, UNIFORM_LENGTH);
+  submitted.set(w.gpu.textures.at(-1).data, GLOBALS_LENGTH);
   assert.equal(submitted[G.ACTIVE], 1, 'the field is in use');
-  assert.equal(submitted[G.DROPS], 2, 'and two drops');
   const mapper = w.instance.captureInputMapper();
-  let moved = 0, byDrops = 0;
-  const fieldOnly = new Float32Array(submitted);
-  fieldOnly[G.DROPS] = 0;
+  let moved = 0;
   for (let x = 100; x <= 320; x += 10) {
     for (let y = 80; y <= 220; y += 10) {
       const pt = { x, y, width: W, height: H };
-      assert.deepEqual(mapper(pt), mapWaterPoint(submitted, pt, TABLE.data));
+      assert.deepEqual(mapper(pt), mapWaterPoint(submitted, pt));
       if (Math.hypot(mapper(pt).x - x, mapper(pt).y - y) > 0.3) moved += 1;
-      const f = mapWaterPoint(fieldOnly, pt, TABLE.data);
-      if (Math.hypot(mapper(pt).x - f.x, mapper(pt).y - f.y) > 0.3) byDrops += 1;
     }
   }
-  assert.ok(moved > 10 && byDrops > 10, `the wake and the drops displace (${moved} probes; ${byDrops} by the drops)`);
+  assert.ok(moved > 10, `the pebbles and the wake displace (${moved} probes)`);
   assert.equal(submitted[G.RES], W * 2);
   assert.equal(submitted[G.CSS], W);
   assert.equal(submitted[G.INTENSITY], 1);
 });
 
 test('mapper states survive the whole mapper-chain ring (3 presented frames) and a gesture snapshot survives forever', async () => {
-  const w = await createWater({ intensity: 1, drops: 'exact' });
+  const w = await createWater({ intensity: 1 });
   const t0 = performance.now();
   w.pointer('pointerdown', 200, 150);
   const probe = { x: 214, y: 150, width: W, height: H };
@@ -588,8 +536,8 @@ async function handleOf({ reducedMotion = false, options = {} } = {}) {
   return { ...h, gpu, frame, flush };
 }
 
-test('the action drop, through the effect handle: a drop at the point at once, of the depth its strength asks; it resolves \'calm\' at rest; bad options reject; reduced motion starts none', async () => {
-  const w = await handleOf({ options: { drops: 'exact' } });
+test('the action drop, through the effect handle: a pebble at the point at once, as deep as its strength asks; it resolves \'calm\' at rest; bad options reject; reduced motion starts none', async () => {
+  const w = await handleOf();
   assert.deepEqual([...w.handle.actions], ['drop', 'demo']);
   assert.equal(await w.handle.settled(), 'calm', 'calm at once: nothing moves after creation');
   await assert.rejects(w.handle.trigger('drop', { point: { x: 'left' } }), /water: `point`/);
@@ -598,45 +546,49 @@ test('the action drop, through the effect handle: a drop at the point at once, o
   let state = 'pending';
   w.handle.trigger('drop', { point: { x: 300, y: 75 }, strength: 1.5 }).then((v) => { state = v; });
   w.inst.render(w.frame(t0 + 10));
-  const u = w.gpu.writes.at(-1), o = SOURCES_OFFSET;
-  assert.ok(u[G.DROPS] >= 1);
-  assert.deepEqual([u[o], u[o + 1]], [300, 75], 'the drop is at the point');
-  assert.ok(Math.abs(u[o + 3] - dropDepth(1.5)) < 1e-5, `of the depth of strength 1.5 (${u[o + 3]})`);
-  assert.equal(dropDepth(1.2), DROP_DEPTH, 'the default strength is a tap\'s drop');
+  const f = w.gpu.textures.at(-1);
+  const pw = f.size.width, ph = f.size.height, cx = W / (pw - 2 * PAD), cy = H / (ph - 2 * PAD);
+  let sum = 0, sx = 0, sy = 0, deepest = 0;
+  for (let j = PAD; j < ph - PAD; j += 1) for (let i = PAD; i < pw - PAD; i += 1) { const v = f.data[j * pw + i], a = Math.abs(v); sum += a; sx += a * (i - PAD + 0.5) * cx; sy += a * (j - PAD + 0.5) * cy; deepest = Math.min(deepest, v); }
+  assert.ok(Math.abs(sx / sum - 300) < 0.5 && Math.abs(sy / sum - 75) < 0.5, `the pebble is centred on the point (${(sx / sum).toFixed(2)}, ${(sy / sum).toFixed(2)})`);
+  const half = await handleOf();
+  half.handle.trigger('drop', { point: { x: 300, y: 75 }, strength: 0.75 });
+  half.inst.render(half.frame(performance.now() + 10));
+  const halfDeepest = Math.min(...half.gpu.textures.at(-1).data);
+  half.handle.remove();
+  assert.ok(Math.abs(deepest / halfDeepest - 2) < 0.01 && -deepest > 0.5 * POND_DEPTH, `as deep as the strength asks: ${(-deepest).toFixed(2)} css px at 1.5, ${(-halfDeepest).toFixed(2)} at 0.75`);
+  assert.equal(dropDepth(1.2), DROP_DEPTH, 'the default strength is a tap\'s');
   assert.ok(Math.abs(dropDepth(2) / DROP_DEPTH - 2 / 1.2) < 1e-12 && dropDepth(5) === dropDepth(2) && dropDepth(0) === dropDepth(0.08), 'in proportion to the strength, clamped to 0.08 .. 2');
   let now = t0 + 10;
   for (; now < t0 + 600; now += 1000 / 120) w.inst.render(w.frame(now));
   await w.flush();
   assert.equal(state, 'pending', 'still moving after 0.6 s');
-  for (; now < t0 + 6000 && state === 'pending'; now += 1000 / 120) { w.inst.render(w.frame(now)); await w.flush(); }
+  for (; now < t0 + 8000 && state === 'pending'; now += 1000 / 120) { w.inst.render(w.frame(now)); await w.flush(); }
   assert.equal(state, 'calm');
-  assert.ok(now - t0 < 2400, `calm ${Math.round(now - t0)} ms after the drop`);
   const pending = w.handle.trigger('drop');
   w.handle.remove();
   assert.equal(await pending, null, 'removed: null');
   const still = await handleOf({ reducedMotion: true });
   assert.equal(await still.handle.trigger('drop', { point: { x: 10, y: 10 } }), 'calm', 'reduced motion (as the host read it): no ripple, calm at once');
   still.inst.render(still.frame(t0 + 100));
-  assert.equal(still.gpu.textures.length + still.gpu.tables.length, 0, 'nothing to upload: the surface stayed flat');
-  assert.equal(still.gpu.writes.at(-1)[G.DROPS], 0);
+  assert.equal(still.gpu.textures.length, 0, 'nothing to upload: the surface stayed flat');
   still.handle.remove();
 });
 
-test('the action drop with swell: true raises one broad ring on the wake field (no drop source), which travels as one piece; control: without it, a drop source and a flat field', async () => {
+test('the action drop with swell: true raises one broad ring with a crown on the wake field; control: a pebble starts as a dip', async () => {
   const w = await handleOf();
   const t0 = performance.now();
   w.handle.trigger('drop', { point: { x: 200, y: 150 }, strength: 2, swell: true });
   w.inst.render(w.frame(t0 + 10));
   assert.equal(w.gpu.writes.at(-1)[G.ACTIVE], 1, 'the field holds it');
-  assert.equal(w.gpu.writes.at(-1)[G.DROPS], 0, 'no drop source');
-  const f = w.gpu.textures.at(-1);
-  assert.ok(Math.max(...f.data) > 5, `a crown of more than 5 css px (${Math.max(...f.data).toFixed(2)})`);
+  const crown = Math.max(...w.gpu.textures.at(-1).data);
+  assert.ok(crown > 5, `a crown of more than 5 css px (${crown.toFixed(2)})`);
   w.handle.remove();
-  const c = await handleOf({ options: { drops: 'exact' } });
+  const c = await handleOf();
   c.handle.trigger('drop', { point: { x: 200, y: 150 }, strength: 2 });
   c.inst.render(c.frame(t0 + 10));
-  assert.equal(c.gpu.writes.at(-1)[G.ACTIVE], 0, 'control: a drop leaves the field flat');
-  assert.ok(c.gpu.writes.at(-1)[G.DROPS] >= 1);
+  const pebble = Math.max(...c.gpu.textures.at(-1).data);
+  assert.ok(pebble < 0.5, `control: a pebble starts as a crater, with no crown (${pebble.toFixed(2)})`);
   c.handle.remove();
 });
 
