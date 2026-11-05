@@ -164,7 +164,10 @@ if (!docsOnly) {
   // painting, inkReach, outsideOf, its bound and the pin check 55; scroll-compose.js vet in bands, vetPixels, the pin re-check, the refusal and hold helpers 52; clone.js
   // the cover tile 1); a scrollport edge read back in single precision snapped on the engine's grid (+1: scroll-compose.js snapPx); the module loader's lean
   // polyfill path and its option checks (+6: src/loader-core.js, src/api/loader.js)
-  if (total > 17085) problems.push(`G-size: core is ${total} code lines (> 17085)`);
+  // 17085 -> 17110 (2026-11-05, measured 17,106): a sticky element without a z-index is pinned where nothing else of the scroller paints over it, and a flex item's
+  // z-index counts (+26: scroll-pages.js zOf, ownLayer, the flex / grid and display: contents boxes, scrollRefusal; the refusal's reason from the planner through
+  // capture.js, store.js and scroll-compose.js noPlan)
+  if (total > 17110) problems.push(`G-size: core is ${total} code lines (> 17110)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

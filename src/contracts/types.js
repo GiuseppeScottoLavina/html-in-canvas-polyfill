@@ -418,7 +418,7 @@ export {};
  * @property {number} dropped  results discarded as stale
  * @property {number} redamaged  dropped results whose uncovered rect was re-marked as damage (ADR-B)
  * @property {number} surfaceRestores  retained surfaces re-rastered after a 2D context loss (ADR-B)
- * @property {{plans: number, refusals: number, refusedBy: {plan: number, focus: number, selection: number, scale: number, shape: number, budget: number, pinned: number, cover: number}, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number, budget: number, stale: number}} [scroll]  scroll compositor counters (scroll-compose.js): `refusedBy` the refusals by reason (they add up to `refusals`; docs/guides/TROUBLESHOOTING.md section 6), `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile, `budget` pages, plans and caches refused or dropped for options.maxTotalSurfaceBytes, `stale` plans made in steps that a change between two steps outdated (made again, or refused the second time), and plans dropped because a pinned element no longer met the pin requirements after a change (planned again)
+ * @property {{plans: number, refusals: number, refusedBy: {plan: number, focus: number, selection: number, scale: number, shape: number, budget: number, pinned: number, sticky: number, cover: number}, pages: number, pins: number, failed: number, composed: number, fallbacks: number, dropped: number, droppedGeometry: number, kept: number, dirtied: number, patched: number, dirtyMisses: number, obstructed: number, budget: number, stale: number}} [scroll]  scroll compositor counters (scroll-compose.js): `refusedBy` the refusals by reason (they add up to `refusals`; docs/guides/TROUBLESHOOTING.md section 6), `kept` damage elsewhere in the drawable that left the pages valid, `dirtied` damage inside a scroller's content, `patched` page parts repaired from a tile, `budget` pages, plans and caches refused or dropped for options.maxTotalSurfaceBytes, `stale` plans made in steps that a change between two steps outdated (made again, or refused the second time), and plans dropped because a pinned element no longer met the pin requirements after a change (planned again)
  */
 
 /**
@@ -536,6 +536,7 @@ export {};
  * @property {(control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null} [textOverlay]  plans the optimistic text overlay (Capture.textOverlay); absent = no overlay
  * @property {(control: Element, frame: Rect) => {rect: Rect, color: string}|null} [caretOf]  measures the caret of a focused text control (Capture.caretOf); absent = the caret comes with the next tile
  * @property {(scroller: Element, drawable: Element, layer: LiveLayer) => ScrollPlan|null|Iterator<void, ScrollPlan|null, void>} [scrollPlan]  plans the scroll compositor (Capture.scrollPlan: the steps of the plan, one post-frame task each); absent = every scroll step is built
+ * @property {(scroller: Element) => 'sticky'|null} [scrollRefusal]  why the last plan of a scroller was refused, when the planner can name it (Capture.scrollRefusal; read on a refusal only)
  */
 
 /**
@@ -549,7 +550,7 @@ export {};
  */
 
 /**
- * @typedef {CaptureFn & {resources: ResourceCache, invalidateStyles: () => void, cssBundle: (record: CanvasRecord, resources: ResourceCache) => CssBundle, textOverlay?: (control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null, scrollPlan?: (scroller: Element, drawable: Element, layer: LiveLayer) => Iterator<void, ScrollPlan|null, void>, caretOf?: (control: Element, frame: Rect) => {rect: Rect, color: string}|null}} Capture
+ * @typedef {CaptureFn & {resources: ResourceCache, invalidateStyles: () => void, cssBundle: (record: CanvasRecord, resources: ResourceCache) => CssBundle, textOverlay?: (control: Element, drawable: Element, frame: Rect, epoch: number) => TextOverlayPlan|null, scrollPlan?: (scroller: Element, drawable: Element, layer: LiveLayer) => Iterator<void, ScrollPlan|null, void>, scrollRefusal?: (scroller: Element) => 'sticky'|null, caretOf?: (control: Element, frame: Rect) => {rect: Rect, color: string}|null}} Capture
  *   What createCapture returns: the CaptureFn plus its resource cache (hand it to the store), a stylesheet-epoch invalidator and the cached CssBundle (the tracker reads `.pseudo`).
  */
 

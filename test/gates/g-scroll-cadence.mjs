@@ -20,7 +20,8 @@
 //            delivered to the twin at every clipped screenshot and took its hover away, 2026-10-22; the harness now parks the pointer and reports foreign input).
 //   covers   case covers (fixture scroll-covers.html): a composed step equals the settled canvas where a box with pointer-events: none paints over the list (from
 //            the start, or from a change after the plan) and where its sticky header turns translucent after the plan (scroll-compose.js vet, pinnable;
-//            scroll-pages.js quietOutside); controls: nothing over the list, a row that changes, a header that stays opaque are composed.
+//            scroll-pages.js quietOutside); controls: nothing over the list, a row that changes, a header that stays opaque are composed. A sticky header without
+//            a z-index is composed, and not under a row painted above it (position: relative, opacity 0.9).
 // Positive control (sabotage stale + nosync + nocompose + halfpaint): only the first draw reaches the canvas, the live scroller is never synchronised, every
 // scroller under the pointer gets an empty position:fixed child (no plan for it), and every second paint event is dropped: every class must go red. With the
 // dropped paints every cadence check is red in every case (paint share 0.49-0.51, movement 0.67-0.68; 6 of 6 runs at DPR 2 and 1.25, Chrome 155, 2026-10-29).
@@ -297,9 +298,11 @@ runGate('G-scroll-cadence', async (ctx) => {
   // outside the list that paints over its port without being hit-testable (a box with pointer-events: none: the planner's hit-test grid cannot see it), from the
   // start or from a change after the plan, and a sticky header that turns translucent after the plan: before the fixes every page carried the box along (12,000 of
   // 104,000 pixels wrong) and the header's opaque tile was drawn over pages without it (12,000 wrong, up to 128 levels; headless Chrome 156, 2026-11-05). Controls:
-  // nothing over the list, a row of the list that changes, a header that stays opaque: composed, and equal to the settled canvas
+  // nothing over the list, a row of the list that changes, a header that stays opaque: composed, and equal to the settled canvas. A sticky header without a z-index
+  // is composed where nothing else of the list paints in its layer, and refused (refusedBy.sticky) under a first row of position: relative or of opacity 0.9, which
+  // the engine paints over it (scroll-pages.js ownLayer)
   if (!only || only.includes('covers')) {
-    for (const [mode, composes] of /** @type {Array<[string, boolean]>} */ ([['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false]])) {
+    for (const [mode, composes] of /** @type {Array<[string, boolean]>} */ ([['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false], ['head-auto', true], ['head-auto-row', false], ['head-auto-layer', false]])) {
       const u = new URL('/test/gates/fixtures/scroll-covers.html', ctx.srv.url);
       u.searchParams.set('bundle', ctx.bundle);
       await page.navigate(u.href);

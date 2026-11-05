@@ -508,6 +508,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       const layer = entries.get(drawable)?.record.layer;
       return layer && extras.scrollPlan ? extras.scrollPlan(scroller, drawable, layer) : null;
     },
+    why: (scroller) => extras.scrollRefusal?.(scroller) ?? null,
     capture(entry, rectCss, geo, scroll) {
       try {
         const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });

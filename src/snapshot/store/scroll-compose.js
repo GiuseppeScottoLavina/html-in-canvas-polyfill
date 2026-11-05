@@ -83,6 +83,7 @@ const AHEAD_PAGES = 2;
 /**
  * @typedef {Object} ComposeDeps
  * @property {(scroller: Element, drawable: Element) => ScrollPlan|null|Iterator<void, ScrollPlan|null, void>} plan  a plan, or the steps that produce it (one post-frame task each)
+ * @property {(scroller: Element) => 'sticky'|null} [why]  the planner's reason for its last refusal of a scroller, when it names one
  * @property {(entry: Entry, rectCss: Rect, geo: Geometry, scroll: PageRequest) => string|null} capture  data: URL of a crop, null on failure
  * @property {(url: string) => Promise<HTMLImageElement>} decode
  * @property {(w: number, h: number) => Surface} canvas
@@ -243,13 +244,14 @@ function cacheBytes(c, held) {
 
 /**
  * Why the planner had no plan for `el`, as far as the compositor can tell after the fact: focus or a non-collapsed selection inside the scroller (two of the rules
- * of scroll-pages.js planSteps; another rule may also have refused it), else 'plan' (its other rules). Read on a refusal only, never per step.
- * @param {Element} el @returns {'focus'|'selection'|'plan'}
+ * of scroll-pages.js planSteps; another rule may also have refused it), else 'sticky' when the planner names a sticky element it cannot pin, else 'plan' (its other
+ * rules). Read on a refusal only, never per step.
+ * @param {Element} el @param {ComposeDeps['why']} why @returns {'focus'|'selection'|'sticky'|'plan'}
  */
-function noPlan(el) {
+function noPlan(el, why) {
   // the focused element of the scroller's own tree (inside a shadow root, the document's is its host)
   const doc = el.ownerDocument, active = /** @type {Document|ShadowRoot|undefined} */ (el.getRootNode?.())?.activeElement ?? doc?.activeElement, sel = doc?.getSelection();
-  return active && active !== el && el.contains(active) ? 'focus' : sel?.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).intersectsNode(el) ? 'selection' : 'plan';
+  return active && active !== el && el.contains(active) ? 'focus' : sel?.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).intersectsNode(el) ? 'selection' : why?.(el) ?? 'plan';
 }
 
 /** @param {ComposeDeps} deps */
@@ -272,7 +274,7 @@ export function createScrollCompositor(deps) {
   /** diagnostics (SnapshotStats.scroll) */
   const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0, stale: 0 };
   /** `refusals` by reason (SnapshotStats.scroll.refusedBy): they add up to it */
-  const refusedBy = { plan: 0, focus: 0, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0, cover: 0 };
+  const refusedBy = { plan: 0, focus: 0, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0, sticky: 0, cover: 0 };
   const room = deps.room ?? (() => Infinity);
 
   /** Does `bytes` more fit the surface budget? Counted and reported when not. @param {Entry} entry @param {number} bytes @returns {boolean} */
@@ -391,7 +393,7 @@ export function createScrollCompositor(deps) {
     m.delete(el);
     const geo = /** @type {Geometry} */ (entry.geo);
     const refuse = (/** @type {keyof typeof refusedBy} */ why) => refusal(entry, el, why);
-    if (!plan) return refuse(noPlan(el));
+    if (!plan) return refuse(noPlan(el, deps.why));
     refused.get(entry)?.delete(el);
     const grid = plan.grid;
     // a grid that is not a whole number of surface pixels (WebKit with a reduced or fractional scale) cannot be shifted by whole pixels

@@ -138,7 +138,7 @@ function wire(env, services, hooks, ledger, made, dispose) {
   const capture = services.createCapture(env);
   const tracker = services.createInteractionTracker(env, capture);
   const resources = capture.resources;
-  const store = (made.store = services.createSnapshotStore(env, capture, { resources, interaction: tracker, textOverlay: capture.textOverlay, scrollPlan: capture.scrollPlan, caretOf: capture.caretOf }));
+  const store = (made.store = services.createSnapshotStore(env, capture, { resources, interaction: tracker, textOverlay: capture.textOverlay, scrollPlan: capture.scrollPlan, scrollRefusal: capture.scrollRefusal, caretOf: capture.caretOf }));
   env.store = store;
   const scheduler = (made.scheduler = services.createScheduler(env, store, hooks));
   env.scheduler = scheduler;

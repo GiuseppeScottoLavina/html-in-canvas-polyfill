@@ -104,8 +104,32 @@ export function innerRadii(cs, w, h) {
   return Object.values(r).some((c) => c.x > 0 && c.y > 0) ? r : null;
 }
 
+/** scrollers whose last plan was refused for a sticky element it cannot pin (Capture.scrollRefusal: the store names the refusal `sticky`) */
+const unpinnable = new WeakSet();
+
+/** Why the last plan of `scroller` was refused, when it was for a sticky element (read on a refusal only). @param {Element} scroller @returns {'sticky'|null} */
+export function scrollRefusal(scroller) {
+  return unpinnable.has(scroller) ? 'sticky' : null;
+}
+
+/** an element's stacking order among the positioned boxes of its stacking context: z-index auto paints with z-index 0 @param {CSSStyleDeclaration} cs */
+const zOf = (cs) => (cs.zIndex === 'auto' ? 0 : Number(cs.zIndex));
+
 /**
- * A sticky element the compositor can draw from one tile at its live position: an opaque rectangle with nothing outside its border box.
+ * A stacking context without a z-index of its own: painted with the positioned boxes of z-index auto and 0, in tree order (CSS 2 appendix E), so above an earlier
+ * sticky element of z-index auto or 0. Conservative: every property that may make one counts.
+ * @param {CSSStyleDeclaration} cs
+ */
+function ownLayer(cs) {
+  const c = /** @type {any} */ (cs);
+  return cs.opacity !== '1' || cs.transform !== 'none' || (c.translate ?? 'none') !== 'none' || (c.rotate ?? 'none') !== 'none' || (c.scale ?? 'none') !== 'none'
+    || cs.perspective !== 'none' || !plainEffects(cs) || cs.isolation === 'isolate' || (c.willChange ?? 'auto') !== 'auto' || /paint|layout|strict|content/.test(c.contain ?? 'none')
+    || (c.containerType ?? 'normal') !== 'normal' || (c.viewTransitionName ?? 'none') !== 'none';
+}
+
+/**
+ * A sticky element the compositor can draw from one tile at its live position: an opaque rectangle with nothing outside its border box, painted above the scroller's
+ * in-flow content (z-index auto or not negative; what else may paint above it is checked by planSteps).
  * @param {Element} el @param {CSSStyleDeclaration} cs @returns {boolean}
  */
 function pinnable(el, cs) {
@@ -113,7 +137,7 @@ function pinnable(el, cs) {
   const bg = parseColor(cs.backgroundColor);
   const h = /** @type {HTMLElement} */ (el);
   return !!bg && bg[3] >= 1 && cs.backgroundImage === 'none' && square(cs) && cs.boxShadow === 'none' && (cs.outlineStyle === 'none' || px(cs.outlineWidth) === 0)
-    && (cs.opacity === '1' || cs.opacity === '') && cs.transform === 'none' && plainEffects(cs) && cs.zIndex !== 'auto' && Number(cs.zIndex) > 0
+    && (cs.opacity === '1' || cs.opacity === '') && cs.transform === 'none' && plainEffects(cs) && zOf(cs) >= 0
     && h.scrollWidth <= h.clientWidth + 1 && h.scrollHeight <= h.clientHeight + 1;
 }
 
@@ -197,6 +221,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   // pixels (Firefox 157, 30 rows of 13 px text: 420 css px in the image at every ratio, 408 / 420 / 405 live at 1.25 / 1.5 / 2; 30 rows with a 1 px border: 630 in the
   // image, 624 / 620 live at 1.25 / 1.5). The port, the pinned elements and the spacers of pruned rows come from the live layout, so only a 1x page composes
   if (gecko && win.devicePixelRatio !== 1) return null;
+  unpinnable.delete(scroller);
   const s = /** @type {HTMLElement} */ (scroller);
   const cs = win.getComputedStyle(s);
   // the bar gutters from whole-pixel sizes: offsetWidth and clientWidth are rounded each on its own, so a fractional layout (a 400.4 px track at DPR 1.25: 400 and 399)
@@ -250,6 +275,11 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   /** @type {Element[]} */
   const pinned = [];
   let otherZ = -Infinity;
+  // a stacking context without a z-index outside the pinned elements: painted above a pinned element of z-index auto or 0 when it comes later in tree order
+  let layered = false;
+  /** flex and grid containers (the scroller among them), and boxes of display: contents (their children are items of the box around them) */
+  /** @type {Set<Element>} */
+  const boxes = new Set(/flex|grid/.test(cs.display) ? [s] : []), through = new Set();
   const count = all.length;
   const clock = win.performance ?? Date, now = () => clock.now();
   // between two steps: the subtree's size, the scroller's place in the viewport and the viewport's size are those the plan read, and nothing inside it took the focus
@@ -274,16 +304,30 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     const ecs = win.getComputedStyle(el);
     if (gecko && (GECKO_UNVERIFIED.has(el.localName) || !clipInvariant(ecs) || !['::before', '::after', '::first-letter'].every((p) => clipInvariant(win.getComputedStyle(el, p))))) return null;
     const pos = ecs.position;
-    if (pos === 'static') continue;
+    if (/flex|grid/.test(ecs.display)) boxes.add(el);
+    else if (ecs.display === 'contents') through.add(el);
+    // inside a pinned element: drawn with it, from its tile (it has nothing outside its border box), so its stacking order does not matter
+    const inPin = pinned.some((p) => p.contains(el));
+    if (pos === 'static') {
+      if (inPin) continue;
+      // a z-index applies without a position to a flex or grid item (CSS Flexbox 4.3, Grid 9.4)
+      let box = el.parentElement;
+      while (box && through.has(box)) box = box.parentElement;
+      if (ecs.zIndex !== 'auto' && box && boxes.has(box)) otherZ = Math.max(otherZ, Number(ecs.zIndex));
+      else if (ownLayer(ecs)) layered = true;
+      continue;
+    }
     if (pos === 'fixed' || (pos === 'absolute' && cs.position === 'static')) return null;
     if (pos === 'sticky') {
-      if (!pinnable(el, ecs) || pinned.some((p) => p.contains(el) || el.contains(p))) return null;
+      if (inPin || !pinnable(el, ecs)) { unpinnable.add(s); return null; }
       pinned.push(el);
       continue;
     }
-    otherZ = Math.max(otherZ, ecs.zIndex === 'auto' ? 0 : Number(ecs.zIndex));
+    if (!inPin) otherZ = Math.max(otherZ, zOf(ecs));
   }
-  if (pinned.some((p) => Number(win.getComputedStyle(p).zIndex) <= otherZ)) return null;
+  // every pinned element paints above everything else of the scroller (a pinned element of z-index auto or 0 is painted under a later positioned box of z-index
+  // auto / 0 or stacking context of its own: a header without a z-index over a row with opacity or position: relative)
+  if (pinned.some((p) => { const z = zOf(win.getComputedStyle(p)); return z <= otherZ || (z === 0 && layered); })) { unpinnable.add(s); return null; }
   if (!(yield* portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round, now, t0, still))) return null;
   let bar = null;
   if (gutterX > 0.5) {
