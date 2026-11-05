@@ -81,7 +81,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 | `out` | the content turns to dust and stays gone | `'out'` |
 | `in` | the content re-forms, from where it is (a reversal midway is continuous) | `'in'` |
 | `play` | out (2.2 s: `duration` + 400 ms, so the dust leaves entirely), the empty page for 0.45 s, then in (`durationIn`): 3.85 s with the defaults. From a page part way out or already gone, only the rest of the way out, then the beat | `'in'` |
-| `demo` | a play (3.85 s) that gives way to the user: a press (mouse, pen or finger) or a key during it re-forms the page at once (450 ms for a full way back, from where the dust is, also during the empty beat). With reduced motion it does nothing and resolves at once. The plugin never starts it: the integrator does (the gallery, when the effect is picked) | `'in'` (the state it rests in) |
+| `demo` | a play (3.85 s) that gives way to the user: a press (mouse, pen or finger) or a key during it re-forms the page at once (450 ms for a full way back, from where the dust is, also during the empty beat). With reduced motion it does nothing and resolves at once. The plugin never starts it: the page does (the gallery, when the effect is picked) | `'in'` (the state it rests in) |
 
 `handle.settled()` resolves with `'in'` or `'out'` once nothing moves. A newer action, a submit (`onSubmit`), the "Turn to dust" button or `setOptions({ state })` supersede a pending trigger (it resolves `null`). The action's clock starts at the first frame that renders it, so its length is the same at every frame cap.
 

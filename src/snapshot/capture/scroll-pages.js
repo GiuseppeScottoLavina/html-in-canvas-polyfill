@@ -213,6 +213,7 @@ export function planScrollPages(doc, layer, scroller, drawable) {
  * @returns {Generator<void, ScrollPlan|null, void>}
  */
 export function* planSteps(doc, layer, scroller, drawable, engine = currentEngine().engine) {
+  unpinnable.delete(scroller);
   const win = doc.defaultView;
   const grid = composeGrid(engine);
   if (!win || grid === undefined || layer.nearestDrawable(scroller) !== drawable && scroller !== drawable) return null;
@@ -221,7 +222,6 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   // pixels (Firefox 157, 30 rows of 13 px text: 420 css px in the image at every ratio, 408 / 420 / 405 live at 1.25 / 1.5 / 2; 30 rows with a 1 px border: 630 in the
   // image, 624 / 620 live at 1.25 / 1.5). The port, the pinned elements and the spacers of pruned rows come from the live layout, so only a 1x page composes
   if (gecko && win.devicePixelRatio !== 1) return null;
-  unpinnable.delete(scroller);
   const s = /** @type {HTMLElement} */ (scroller);
   const cs = win.getComputedStyle(s);
   // the bar gutters from whole-pixel sizes: offsetWidth and clientWidth are rounded each on its own, so a fractional layout (a 400.4 px track at DPR 1.25: 400 and 399)
@@ -350,11 +350,15 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   /** @type {Element[]|undefined} the drawable's elements outside the scroller, its ancestors left out: read at the first damage inside the port (an element added
    * later is a first sighting, whole-drawable damage, which drops the plan) */
   let outside;
+  /** @type {Element[]|undefined} the scroller's elements outside its pinned elements: read at the first change inside its content, for a pin of z-index auto or 0 */
+  let inside;
+  const lowPin = pinned.some((p) => zOf(win.getComputedStyle(p)) === 0);
   return {
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
     ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVER,
     pinnable: (el) => el.isConnected && pinnable(el, win.getComputedStyle(el)),
     clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, (outside ??= outsideOf(doc, drawable, s))),
+    ...(lowPin ? { unlayered: (/** @type {Rect[]} */ rects) => unlayered(win, s, rects, layer, (inside ??= insideOf(s, pinned))) } : {}),
   };
 }
 
@@ -414,6 +418,32 @@ function outsideOf(doc, drawable, s) {
   const w = doc.createTreeWalker(drawable, 1, { acceptNode: (n) => (n === s ? 2 : 1) });
   for (let n = /** @type {Element|null} */ (w.nextNode()); n; n = /** @type {Element|null} */ (w.nextNode())) if (!n.contains(s)) out.push(n);
   return out;
+}
+
+/** the scroller's descendants outside its pinned elements @param {HTMLElement} s @param {Element[]} pinned @returns {Element[]} */
+const insideOf = (s, pinned) => [...s.getElementsByTagName('*')].filter((e) => !pinned.some((p) => p.contains(e)));
+
+/**
+ * ScrollPlan.unlayered, for a pinned element of z-index auto or 0, which CSS paints under a later box of its layer: no element of the scroller whose box meets a
+ * change inside its content (frame css px, also outside the port: a row scrolls under the pin later) now has a stacking context of its own, a position or a
+ * z-index (a row that gets opacity or a transform on :hover). A change of position or z-index alone damages the whole drawable and drops the plan anyway. Beyond
+ * MAX_OUTSIDE elements a change is not checked one by one: not unlayered.
+ * @param {Window} win @param {HTMLElement} s @param {Rect[]} rects @param {LiveLayer} layer @param {Element[]} inside @returns {boolean}
+ */
+function unlayered(win, s, rects, layer, inside) {
+  const fr = layer.frameRect(s);
+  if (!fr || !(fr.width > 0) || !(fr.height > 0) || inside.length > MAX_OUTSIDE) return false;
+  const vr = s.getBoundingClientRect();
+  const kx = vr.width / fr.width, ky = vr.height / fr.height;
+  const vs = rects.map((r) => ({ x: vr.left + (r.x - fr.x) * kx, y: vr.top + (r.y - fr.y) * ky, width: r.width * kx, height: r.height * ky }));
+  for (const e of inside) {
+    if (!e.isConnected) continue;
+    const b = e.getBoundingClientRect();
+    if (!vs.some((r) => b.left < r.x + r.width && b.right > r.x && b.top < r.y + r.height && b.bottom > r.y)) continue;
+    const ecs = win.getComputedStyle(e);
+    if (ecs.position !== 'static' || ecs.zIndex !== 'auto' || ownLayer(ecs)) return false;
+  }
+  return true;
 }
 
 /** @param {Window} win @param {Element} e @returns {boolean} a ::before or ::after box */

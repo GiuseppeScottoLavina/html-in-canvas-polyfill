@@ -69,6 +69,7 @@ a whole scale on DPR 2 and DPR 3 devices. To save memory, `maxDpr: 2` on a DPR 3
 - **Rotation.** The canvas, its backing store and the hit testing follow the new size.
 - **Effects.** The effects host re-targets touch input like mouse input (unit-tested with touch pointer events), except that a finger focuses and activates the control
   the effect shows only on a tap, when it lifts within 10 css px of where it landed: dragging an effect's handle across a field does not focus it or raise the keyboard.
+  A finger hovers through an effect as without one: a press or a drag moves no `:hover`, and a tap leaves the element drawn where it landed under `:hover` until the next tap.
   The example plugins claim a touch only on their own handle (the liquid glass, a page corner) and leave the page its scrolling everywhere else
   ([EFFECTS-PLUGINS.md](EFFECTS-PLUGINS.md), section 15.1). Neither simulator has a WebGPU adapter; the plugin gallery was measured on a physical iPad Pro (Safari,
   120 Hz) and runs under touch emulation in headless Chrome (`npm run test:gallery`).

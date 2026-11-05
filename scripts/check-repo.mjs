@@ -170,7 +170,10 @@ if (!docsOnly) {
   // 17110 -> 17250 (2026-11-05, measured 17,248): a :hover rule counts for a drawn source only where it can match, and a finger moves no :hover through an effect
   // (+142: css-rewrite.js hoverScope and selectorTokens 70, interaction-tracker.js hoverCounts with its token filter, setMappedPress, mappedTarget and the tap outside
   // 57, interposer.js the finger path 11, css-collector.js the tokens of the bundle 4)
-  if (total > 17250) problems.push(`G-size: core is ${total} code lines (> 17250)`);
+  // 17250 -> 17275 (2026-11-05, measured 17,270): a change inside the content of a list whose pinned header has no z-index is checked for a new layer of its own
+  // (+22: scroll-pages.js unlayered, insideOf; scroll-compose.js the relayer list and its check); before it, a row that got opacity or a transform after the plan
+  // was hidden under the header's tile while the list moved (11,981 of 104,000 pixels wrong)
+  if (total > 17275) problems.push(`G-size: core is ${total} code lines (> 17275)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

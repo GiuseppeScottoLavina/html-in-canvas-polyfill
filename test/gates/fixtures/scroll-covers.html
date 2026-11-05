@@ -13,6 +13,7 @@
   //   head-auto     (control) a sticky header without a z-index, nothing else of the list in its layer: composed
   //   head-auto-row a sticky header without a z-index and a first row of position: relative, which the engine paints over it where it scrolls under: not composed
   //   head-auto-layer  the same with a first row of opacity 0.9 (a stacking context of its own, painted with the header's layer): not composed
+  //   head-auto-late   a sticky header without a z-index whose first row gets opacity 0.9 after the plan (a :hover transition, say): the plan is stale, not composed
   var q = new URLSearchParams(location.search);
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '" data-hic-manual></scr' + 'ipt>');
 </script>
@@ -40,6 +41,7 @@
     'head-auto': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; } },
     'head-auto-row': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; d.querySelector('.row').style.position = 'relative'; } },
     'head-auto-layer': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; d.querySelector('.row').style.opacity = '0.9'; } },
+    'head-auto-late': { head: true, before: (d) => { d.querySelector('.head').style.zIndex = 'auto'; }, after: (d) => { d.querySelector('.row').style.opacity = '0.9'; } },
   };
   window.run = async (mode) => {
     const m = MODES[mode];
@@ -55,7 +57,7 @@
     const scroll = () => JSON.parse(JSON.stringify(installed.report().canvases[0].stats.snapshot.scroll));
     try {
       // the elements a mode changes are seen changed once first (the first change of an element damages the whole drawable, which plans the list again)
-      for (const el of d.querySelectorAll('.head, .box, .row:nth-child(4)')) el.dataset.seen = '1';
+      for (const el of [...d.querySelectorAll('.head, .box, .row:nth-child(4)'), d.querySelector('.row')]) if (el) el.dataset.seen = '1';
       await wait(400);
       list.scrollTop = 1;
       for (let n = 0; n < 100; n++) { await wait(30); const s = scroll(); if (s.pages >= 2 || s.refusals > 0) { await wait(300); break; } }

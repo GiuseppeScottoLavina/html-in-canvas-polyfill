@@ -54,8 +54,10 @@ function hasCaret(env, el) {
 
 /**
  * pointerover/out (hover chain), pointerdown/up + keyboard activation (active chain), focusin/out + modality (focus-visible), caret blink timer (530 ms, only while a text control is focused; a blink publishes 'caret' damage that the store
- * serves from the caret patch, never from a tile build). onChange listeners receive the changed elements; damage is published only when a rule depends on the pseudo-class (hover, active; focus always, the ring is a pixel change).
+ * serves from the caret patch, never from a tile build). onChange listeners receive the changed elements; damage is published only when a rule depends on the pseudo-class (hover, active; focus always, the ring is a pixel change),
+ * and a hover change only for a drawable where a :hover rule can match (hoverCounts).
  * setMappedTarget(record, el): while an effect displaces the pixels, hover/active chains follow the element under the MAPPED pointer, not the native hit (cursor is set by the interposer from the same element).
+ * setMappedPress(record, el): a finger's press activates the mapped element and leaves the hover alone (a finger hovers only by a tap, as natively; a tap outside the canvas ends a mapped hover).
  * Damage rects come from the rect memory (damage-rect.js): hover/active may reach outside the box (menus, tooltips), so they use the reach union; focus and caret stay in the control.
  * The tracker has no wheel/touch listener and no pointermove listener.
  * Which pseudo-classes the author CSS uses comes from capture's cached CssBundle (it builds one now when it has none; the next capture reuses it); without a capture every one counts.

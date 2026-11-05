@@ -14,7 +14,7 @@
  * Zero work at rest: the instance is `continuous` only while the surface moves; once it is flat (below what a pixel shows) the field is
  * cleared and the host stops rendering. The option `ambient` (a gentle swell) makes it continuous on purpose.
  *
- * Actions: 'drop' (a drop at `point`) and 'demo' (a short rain, then calm) resolve 'calm' once the surface is still. User input during the
+ * Actions: 'drop' (a pebble at `point`; with `swell: true` one broad swell) and 'demo' (a short rain, then calm) resolve 'calm' once the surface is still. User input during the
  * demo (the pointer, setOptions) stops the rain at once and resolves the demo with null. With reduced motion both resolve 'calm' at once and nothing moves.
  *
  * `plugin` is a plain, frozen definition that `host.addPlugin` validates (docs/guides/EFFECTS-PLUGINS.md).
