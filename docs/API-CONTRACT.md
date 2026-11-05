@@ -475,7 +475,9 @@ Interposer (`options.interposer`, default true): capture-phase listeners on the 
 pointer through the gesture mapper and, because live elements sit where the source pixels are drawn, finds the intended element with the
 layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `pointerdown`, if the mapped element's control differs from
 the native hit control it prevents the native handling and re-implements the activation: focus, button/link/checkbox/radio/label click
-on `pointerup`, `input[type=range]` value + `input`/`change` events during the gesture, text caret placement. Not re-targeted: select
+on `pointerup`, `input[type=range]` value + `input`/`change` events during the gesture, text caret placement. For a finger (`pointerType` `touch`) the focus
+and the click wait for `pointerup` and happen only on a tap, a touch that lifts within 10 CSS px of where it landed, as on a page without effects: a touch that
+travels (a scroll, a plugin's drag across a field) focuses and activates nothing; a range is dragged from the press. Mouse and pen focus at `pointerdown`. Not re-targeted: select
 popups, drag selection, contenteditable (row `interposer-retarget`). Validated against GPU pixels, not against the mapper itself
 (gates G-f1-form-effect and G-interposer-strong; G-native-interposer over a native implementation). In the native modes the interposer works on the browser's own hit testing instead (section 7.6).
 

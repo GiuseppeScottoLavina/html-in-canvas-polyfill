@@ -243,7 +243,7 @@ That is the floor of a userland approach: a snapshot has to be cloned, serialise
    on 2026-10-15, see the optimization log). Keep frequently updated drawables small (`docs/guides/PERFORMANCE.md`).
 2. **Click to focus pixel** (p50 14.6 vs 6.8 ms, p95 15.4 vs 7.7 ms): the caret appears at once, but an author `:focus` style needs a new snapshot, built inside
    the input task.
-3. **First paint** (new tab: explainer 58.3 vs 31.6 ms, F1 91.1 vs 66.1 ms) and **startup** (342 KB minified core in the build measured, 352 KB today; 10.6 ms parse + compile + install, the first
+3. **First paint** (new tab: explainer 58.3 vs 31.6 ms, F1 91.1 vs 66.1 ms) and **startup** (342 KB minified core in the build measured, 356 KB today; 10.6 ms parse + compile + install, the first
    `paint` event 19.1 ms after script start): the core waits for 342 KB to be fetched and parsed (V8 compile 8.0 ms in the trace of the bundle scenario, 6.4 ms on 2026-10-15), the
    canvas's styles are resolved when its layer is mounted, and the first snapshot needs a clone, a serialisation and a decode.
 4. **Memory** (F1: renderer RSS 203 vs 136 MB, GPU RSS 192 vs 128 MB): retained surfaces at DPR 2 and caches.
