@@ -1,5 +1,5 @@
 # dependencies and build output (dist/ is built by `npm run build`, by `npm pack` through prepack, and in CI)
-node_modules/
+node_modules
 dist/
 _site/
 *.tgz
