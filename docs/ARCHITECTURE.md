@@ -394,7 +394,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     sees neither `pointer-events: none` nor a box between its points nor ink outside a box, a pass over the drawable's elements outside the scroller (`quietOutside`): of the elements whose box the damage touches, one that paints
     inside its box where it lies over the damaged part of the port, or whose shadow, outline, overflowing content or generated box reaches that part (a filter, a border image or a
     positioned generated box: anywhere), drops the plan; an element whose effective opacity is exactly 0 (its own or an ancestor's below the scroller's, which no
-    descendant can undo) paints nothing and is skipped, so a row that changes under an invisible overlay keeps the cache, and the overlay's change to any opacity
+    descendant can undo; not that of a box of `display: contents`, nor an ancestor's over an element in the top layer) paints nothing and is skipped, so a row that changes under an invisible overlay keeps the cache, and the overlay's change to any opacity
     above 0 is damage that is checked again (`obstructed`; the scroller is then planned again after newer damage, at most once a second). That pass costs about 1.2 us per element outside the scroller, inside the
     frame of the step (headless Chrome 156: 1.1 ms per check with 10 such elements over 10,000 rows, most of it the hit test, 2.3 ms with 1,000, 7.5 ms with 5,000); with more
     than 1,000 a change inside the port drops the plan instead. A pinned element the damage reaches is checked against the pin requirements again (`ScrollPlan.pinnable`; a header that turned translucent was drawn from its opaque
