@@ -66,7 +66,7 @@ const FOLLOW = springOf(SPRINGS.mouse);
 const DRAG = springOf(SPRINGS.finger);
 /**
  * The jelly stretch follows the velocity on an underdamped spring: it wobbles once when the lens stops. Its stiffness keeps the ratio it had to the mouse spring's
- * (420 to 260, the look the owner approved): a jelly slower than the lens it follows rebounds at full stretch when the lens stops.
+ * (420 to 260, the ratio of the earlier springs): a jelly slower than the lens it follows rebounds at full stretch when the lens stops.
  */
 const JELLY_K = (420 / 260) * SPRINGS.mouse.stiffness;
 const JELLY = { k: JELLY_K, c: 2 * 0.32 * Math.sqrt(JELLY_K), gain: 1 / 2600, max: 0.24 };
