@@ -193,8 +193,13 @@ export function causticMesh(cssW, cssH, depth) {
 /** css px between the vertices of the caustic mesh (water.wgsl MESH_PX) */
 export const MESH_PX = 2;
 
-/** @param {any} device @param {string} code @param {string} format */
-function createPipeline(device, code, format) {
+/**
+ * The pipelines, compiled asynchronously where the device can (createRenderPipelineAsync: WebKit compiled the caustic pipeline at its
+ * first draw otherwise, a 70 ms stall at the first tap on the iPad).
+ * @param {any} device @param {string} code @param {string} format
+ */
+async function createPipeline(device, code, format) {
+  const make = (/** @type {any} */ d) => (device.createRenderPipelineAsync ? device.createRenderPipelineAsync(d) : device.createRenderPipeline(d));
   const module = device.createShaderModule({ code, label: 'hic-water-effect-shader' });
   const stage = /** @type {any} */ (globalThis).GPUShaderStage?.FRAGMENT ?? 2;
   const layout = device.createBindGroupLayout({
@@ -210,7 +215,7 @@ function createPipeline(device, code, format) {
       { binding: 6, visibility: stage, texture: { sampleType: 'float' } },
     ],
   });
-  const pipeline = device.createRenderPipeline({
+  const pipeline = make({
     label: 'hic-water-effect-pipeline',
     layout: device.createPipelineLayout({ label: 'hic-water-effect-pipeline-layout', bindGroupLayouts: [layout] }),
     vertex: { module, entryPoint: 'vs' },
@@ -226,7 +231,7 @@ function createPipeline(device, code, format) {
       { binding: 4, visibility: stage, texture: { sampleType: 'float' } },
     ],
   });
-  const dropsPipeline = device.createRenderPipeline({
+  const dropsPipeline = make({
     label: 'hic-water-effect-drops-pipeline',
     layout: device.createPipelineLayout({ label: 'hic-water-effect-drops-pipeline-layout', bindGroupLayouts: [dropsLayout] }),
     vertex: { module, entryPoint: 'vs' },
@@ -245,7 +250,7 @@ function createPipeline(device, code, format) {
     ],
   });
   const add = { srcFactor: 'one', dstFactor: 'one', operation: 'add' };
-  const causticPipeline = device.createRenderPipeline({
+  const causticPipeline = make({
     label: 'hic-water-effect-caustic-pipeline',
     layout: device.createPipelineLayout({ label: 'hic-water-effect-caustic-pipeline-layout', bindGroupLayouts: [causticLayout] }),
     vertex: { module, entryPoint: 'vs_caustics' },
@@ -254,7 +259,8 @@ function createPipeline(device, code, format) {
     // 4 samples a texel: a focused triangle thinner than a texel still lands its light (a single sample would draw the lines dotted)
     multisample: { count: 4 },
   });
-  return { pipeline, layout, dropsPipeline, dropsLayout, causticPipeline, causticLayout };
+  const [p0, p1, p2] = await Promise.all([pipeline, dropsPipeline, causticPipeline]);
+  return { pipeline: p0, layout, dropsPipeline: p1, dropsLayout, causticPipeline: p2, causticLayout };
 }
 
 /** @type {EffectPluginDefinition} */
@@ -269,7 +275,7 @@ export const plugin = Object.freeze({
     const shader = initialOptions?.shader;
     const code = typeof shader === 'string' && shader !== '' ? shader : await wgsl('water.wgsl');
     const { device, format } = context;
-    const { pipeline, layout, dropsPipeline, dropsLayout, causticPipeline, causticLayout } = createPipeline(device, code, format);
+    const { pipeline, layout, dropsPipeline, dropsLayout, causticPipeline, causticLayout } = await createPipeline(device, code, format);
     const gpu = /** @type {any} */ (globalThis);
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
@@ -658,10 +664,8 @@ export const plugin = Object.freeze({
         globals[G.CAUSTICS] = caustics ? 1 : 0;
         if (waiters.length && calm()) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
-        if (globals[G.DROPS] > 0 || caustics) {
-          const g = dropGrid(f.cssWidth, f.cssHeight);
-          ensureDropTargets(g.w, g.h);
-        } else if (!dropTargets.a) ensureDropTargets(1, 1);
+        // the drop and caustic textures follow the field's size from the first frame on, so that a first tap allocates nothing
+        { const g = dropGrid(f.cssWidth, f.cssHeight); ensureDropTargets(g.w, g.h); }
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
           bindGroup = device.createBindGroup({
