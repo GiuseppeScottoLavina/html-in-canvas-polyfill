@@ -7,6 +7,7 @@ import { createDamageBatch, getRectMemory } from './damage-rect.js';
 import { noteCaretEvent, selectionApiMissing } from '../../util/caret-index.js';
 import { currentEngine } from '../../util/engine.js';
 import { WINDOW_STATE_SELECTOR, notePress, themedStateChange } from '../../util/native-states.js';
+import { BUS } from '../../contracts/events.js';
 
 /** @typedef {import('../../contracts/types.js').CanvasRecord} CanvasRecord */
 /** @typedef {import('../../contracts/types.js').CssBundle} CssBundle */
@@ -75,6 +76,70 @@ export function createInteractionTracker(env, capture) {
       return ALL_PSEUDO;
     }
   }
+  /**
+   * Does a hover change of `el` count for its drawable: some :hover rule, made neutral (CssBundle.pseudo.hoverScope), matches the drawable or an element inside it?
+   * A page whose only :hover rules style elements outside the drawn source (the page's own menu) then rebuilds nothing while the pointer crosses the source.
+   * The neutral selectors are first filtered by the tokens they need (css-rewrite.js selectorTokens, computed with the bundle: the subject's in the subtree, the others in the subtree or the
+   * ancestors), so only the few that can match go to querySelector. Cached per bundle (a stylesheet change makes a new one) and drawable; a "no" is asked again after
+   * a mutation of the canvas's subtree or of an ancestor's attributes (BUS.DAMAGE 'mutation'), a "yes" is kept (at worst a rebuild too many).
+   * Conservative: no scope, an invalid neutral selector or a source in a shadow root count.
+   * @param {CanvasRecord} record @param {CssBundle['pseudo']} usage @param {Element} el
+   */
+  function hoverCounts(record, usage, el) {
+    const scope = scopeOf(usage);
+    if (scope === null) return true;
+    if (!scope.length) return false;
+    const drawable = record.layer?.nearestDrawable(el);
+    if (!drawable || record.root !== env.document) return true;
+    let known = matched.get(usage);
+    if (!known) matched.set(usage, (known = new WeakMap()));
+    const serial = domSerial.get(record) ?? 0;
+    const hit = known.get(drawable);
+    if (hit && (hit.value || hit.serial === serial)) return hit.value;
+    const inside = tokensOf([drawable, ...drawable.querySelectorAll('*')]);
+    /** @type {Element[]} */ const up = [];
+    for (let a = drawable.parentElement; a; a = a.parentElement) up.push(a);
+    const around = tokensOf(up);
+    const list = scope.filter((e) => e.subject.every((t) => inside.has(t)) && e.context.every((t) => inside.has(t) || around.has(t))).map((e) => e.sel).join(',');
+    let value = true;
+    try { value = !!list && (drawable.matches(list) || drawable.querySelector(list) !== null); } catch { /* counts */ }
+    known.set(drawable, { serial, value });
+    return value;
+  }
+  /** @param {Iterable<Element>} els @returns {Set<string>} their tokens as selectorTokens writes them */
+  function tokensOf(els) {
+    const out = new Set();
+    for (const e of els) {
+      out.add('t:' + e.localName.toLowerCase());
+      if (e.id) out.add('#' + e.id);
+      for (const c of e.classList) out.add('.' + c);
+    }
+    return out;
+  }
+  /** @type {WeakMap<object, {sel: string, subject: string[], context: string[]}[]|null>} per CssBundle.pseudo: its neutral :hover selectors and their tokens; null: every hover change counts */
+  const scopes = new WeakMap();
+  /** @param {CssBundle['pseudo']} usage */
+  function scopeOf(usage) {
+    if (scopes.has(usage)) return scopes.get(usage) ?? null;
+    const scope = usage.hoverScope;
+    let out = /** @type {{sel: string, subject: string[], context: string[]}[]|null} */ (null);
+    if (Array.isArray(scope)) {
+      // a neutral form the engine refuses makes every hover change count (one invalid member would also make a joined list throw)
+      const probe = env.document.createDocumentFragment();
+      out = [];
+      for (const e of scope) {
+        try { probe.querySelector(e.sel); } catch { out = null; break; }
+        out.push(e);
+      }
+    }
+    scopes.set(usage, out);
+    return out;
+  }
+  /** @type {WeakMap<object, WeakMap<Element, {serial: number, value: boolean}>>} */
+  const matched = new WeakMap();
+  /** @type {WeakMap<CanvasRecord, number>} mutations seen per canvas (they can add an element a :hover rule matches) */
+  const domSerial = new WeakMap();
+  const offDamage = env.bus.on(BUS.DAMAGE, (/** @type {{record: CanvasRecord, cause: string}} */ d) => { if (d.cause === 'mutation') domSerial.set(d.record, (domSerial.get(d.record) ?? 0) + 1); });
   /** @type {Map<CanvasRecord, () => void>} */
   const attached = new Map();
   /** @type {Map<CanvasRecord, ReadonlySet<Element>>} */
@@ -156,12 +221,14 @@ export function createInteractionTracker(env, capture) {
     else chains.delete(record);
     changed(record, kind, diff);
     const usage = pseudoUsage(record);
+    // a :hover rule counts only for the drawables where it can match (hoverCounts)
+    const used = !usage[kind] ? [] : kind === 'hover' ? diff.filter((el) => hoverCounts(record, usage, el)) : diff;
     // :hover rules that only paint cannot move a sibling: the hovered elements' own reach is the damage, also the first time one is hovered (rows that pass under a still pointer while a list scrolls)
-    if (usage[kind]) publish(record, kind, [], kind === 'hover' && usage.hoverLayout === false ? [] : diff, kind === 'hover' && usage.hoverLayout === false ? diff : []);
-    else {
+    if (used.length) publish(record, kind, [], kind === 'hover' && usage.hoverLayout === false ? [] : used, kind === 'hover' && usage.hoverLayout === false ? used : []);
+    if (used.length < diff.length) {
       // the widget theme's own hover / pressed look (Gecko, WebKit pressed buttons) needs no author rule to change the pixels
       const engine = currentEngine().engine;
-      const own = diff.filter((el) => themedStateChange(el, kind, engine));
+      const own = diff.filter((el) => !used.includes(el) && themedStateChange(el, kind, engine));
       if (own.length) publish(record, kind, own, []);
     }
   }
@@ -294,6 +361,8 @@ export function createInteractionTracker(env, capture) {
         if (!inside && !hover.get(record)?.size) continue;
         nativeTarget.set(record, inside ? t : null);
         if (!mapped.has(record)) setHover(record, inside ? t : null);
+        // an effect's interposer sets the hover of a tap inside the canvas itself (the element drawn there); a tap elsewhere ends it as it ends a native one
+        else if (!inside) { mapped.delete(record); setHover(record, null); }
       }
     }
   };
@@ -370,6 +439,7 @@ export function createInteractionTracker(env, capture) {
     detach,
 
     dispose() {
+      offDamage();
       for (const record of [...attached.keys()]) detach(record);
       stopBlink();
       listeners.clear();
@@ -400,6 +470,12 @@ export function createInteractionTracker(env, capture) {
         setActive(record, target);
       }
     },
+
+    setMappedPress(record, target) {
+      if (pressed.has(record)) setActive(record, target);
+    },
+
+    mappedTarget: (record) => mapped.get(record) ?? null,
 
     onChange(cb) {
       listeners.add(cb);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hoverChangesLayout, parseRules, serializeRules, splitSelectorList, mapSelectors, rewriteViewportUnits, rewriteRootSelectors, rewriteInteractionPseudos, detectPseudos,
+  hoverChangesLayout, hoverScope, selectorTokens, parseRules, serializeRules, splitSelectorList, mapSelectors, rewriteViewportUnits, rewriteRootSelectors, rewriteInteractionPseudos, detectPseudos,
   dropUnclonableSelectors, rewriteCanvasSelectors, rewriteHostSelectors, rewriteLinkPseudos,
 } from '../../../src/snapshot/capture/css-rewrite.js';
 
@@ -111,4 +111,26 @@ test('hoverChangesLayout: only paint properties under :hover are paint-only; a b
   assert.equal(hoverChangesLayout('li{&:hover{width:10px}}'), true, 'a nested :hover rule');
   assert.equal(hoverChangesLayout('li:hover{& b{margin:2px}}'), true, 'a rule nested in a :hover rule');
   assert.equal(hoverChangesLayout('li{&:hover{color:red}}'), false);
+});
+
+test('hoverScope: each :hover selector made neutral (:is(*) for :hover, pseudo-elements dropped); null where a neutral form cannot stand for the rule', () => {
+  assert.deepEqual(hoverScope('#picker button:hover{border-color:red} a{color:red}'), ['#picker button:is(*)']);
+  assert.deepEqual(hoverScope('body:hover .x, .y{color:red} .z:hover::before{content:"a:hover"}'), ['body:is(*) .x', '.z:is(*)']);
+  assert.deepEqual(hoverScope('@media (min-width: 1px) { .a:hover > .b {color:red} } @layer l { :hover {color:red} }'), ['.a:is(*) > .b', ':is(*)']);
+  assert.deepEqual(hoverScope('.a[title="x + y ~ :hover"]:hover{color:red} .b\\:hover{color:red}'), ['.a[title="x + y ~ :hover"]:is(*)'], 'strings, attributes and escapes are not syntax');
+  assert.deepEqual(hoverScope('a{color:red} .x:focus{color:red}'), [], 'no :hover rule');
+  for (const css of ['.a:not(:hover){color:red}', '.a:is(:hover, .b) c{color:red}', '.a:has(:hover){color:red}', '.a:hover + .b{color:red}', '.a:hover ~ .b{color:red}',
+    'li:nth-child(2):hover{color:red}', 'li:first-child:hover{color:red}', ':host(:hover){color:red}', '.a:hover{color:red; & .b{color:blue}}', '.a{& .b:hover{color:red}}',
+    '@scope (.card) { .b:hover{color:red} }', '@font-feature-values X { .a:hover {} }']) {
+    assert.equal(hoverScope(css), null, css);
+  }
+});
+
+test('selectorTokens: the tokens the subject and its ancestors must carry (pseudo-class arguments, attributes and namespaced types add none)', () => {
+  assert.deepEqual(selectorTokens('#picker button:is(*)'), { subject: ['t:button'], context: ['#picker'] });
+  assert.deepEqual(selectorTokens('body:is(*) .x'), { subject: ['.x'], context: ['t:body'] });
+  assert.deepEqual(selectorTokens('DIV.Foo#bar[data-x="a b"]:not(.y) > span.z'), { subject: ['t:span', '.z'], context: ['t:div', '.Foo', '#bar'] });
+  assert.deepEqual(selectorTokens(':is(*)'), { subject: [], context: [] });
+  assert.deepEqual(selectorTokens('svg|rect.q'), { subject: ['.q'], context: [] });
+  assert.deepEqual(selectorTokens('.a\\:b .c'), { subject: ['.c'], context: ['.a:b'] });
 });

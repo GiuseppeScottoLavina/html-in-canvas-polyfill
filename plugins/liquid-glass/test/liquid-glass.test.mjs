@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { fakeGpu } from '../../_shared/fake-gpu.mjs';
-import { GLASS, UNIFORM_FLOATS, demoStops, lensSurface, mapLensPoint, meta, plugin, sdSquircle, writeLensGeometry } from '../index.js';
+import { GLASS, SPRINGS, UNIFORM_FLOATS, demoStops, lensSurface, mapLensPoint, meta, plugin, sdSquircle, writeLensGeometry } from '../index.js';
 
 contractTest(import.meta.url);
 
@@ -238,6 +238,18 @@ test('the lens follows the pointer on a spring: it overshoots a little, stretche
   assert.ok(stretched, 'stretched along x while it moved');
   assert.deepEqual([...u.slice(8, 11)], [1, 0, 1], 'and round again at rest');
   assert.equal(instance.continuous, false, 'at rest: the host may sleep');
+});
+
+test('the springs: one per pointer kind, stiffer than the 260 / 900 of preview.23 with the same damping ratios; a fast mouse stays within 70 ms of the pointer', async () => {
+  assert.ok(Object.isFrozen(SPRINGS) && Object.isFrozen(SPRINGS.mouse) && Object.isFrozen(SPRINGS.finger));
+  assert.deepEqual(SPRINGS, { mouse: { stiffness: 600, damping: 0.74 }, finger: { stiffness: 1300, damping: 0.9 } });
+  // a pointer moving at 1,200 px/s along x: in the steady chase the glass trails by the ramp lag of its spring, 2 zeta / sqrt(k) (60 ms here; 92 ms at k 260)
+  const { instance, listeners, frame, last } = await create({ x: 0.1, y: 0.5 });
+  instance.render(frame());
+  let x = 80;
+  for (let k = 0; k < 60; k += 1) { x += 10; listeners.pointermove({ clientX: x, clientY: 250, pointerType: 'mouse' }); instance.render(frame()); }
+  const lagMs = ((x - last()[4]) / 1200) * 1000;
+  assert.ok(lagMs > 50 && lagMs < 70, `${lagMs.toFixed(1)} ms behind the pointer`);
 });
 
 test('zero work at rest: once settled, nothing asks for a frame and every later frame is identical', async () => {

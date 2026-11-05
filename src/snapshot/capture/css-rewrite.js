@@ -285,6 +285,107 @@ export function detectPseudos(css) {
   const hover = has('hover');
   return { hover, active: has('active'), focus: has('focus'), focusVisible: has('focus-visible'), focusWithin: has('focus-within'), hoverLayout: hover && hoverChangesLayout(css) };
 }
+
+/** a sibling combinator or nesting (`&`): the match depends on elements beside the path, or on a parent rule */
+const UNSCOPED_COMBINATOR = /[+~&]/;
+/** structural, scoping and shadow pseudos: the match depends on the tree outside the drawn subtree, which nothing observes, or on a scope */
+const UNSCOPED_PSEUDO = /:(?:has|nth-[\w-]+|first-child|last-child|only-child|first-of-type|last-of-type|only-of-type|empty|host|host-context|scope)(?![\w-])|::(?:slotted|part)\b/i;
+const HOVER_ALL = /(?<![\\:]):hover(?![\w-])/g;
+/** pseudo-elements, dropped from the neutral form (querySelector matches elements) */
+const PSEUDO_ELEMENT = /::[\w-]+(?:\([^()]*\))?|:(?:before|after|first-line|first-letter)(?![\w-])/gi;
+
+/**
+ * PURE. The :hover rules of `css` as NEUTRAL selectors: each complex selector that has :hover, with every :hover replaced by `:is(*)` and its pseudo-elements dropped,
+ * so that it matches every element the rule styles in some hover state. The interaction tracker counts a hover change in a drawn source only when one of them matches
+ * the drawable or an element inside it; the ancestors outside it are part of the match (`body:hover .x` gives `body:is(*) .x`, which counts for an `.x` inside).
+ * null when some :hover rule cannot be scoped that way, and then every hover change counts (the conservative answer): a :hover inside a functional pseudo-class
+ * (`:not(:hover)`, `:is(a:hover, b)`, `:has(:hover)`), a sibling combinator, a structural pseudo-class (it depends on siblings outside the subtree, which no observer
+ * watches), `:host`, `:scope`, `::slotted`, `::part`, a :hover rule with nested rules or nested in one, a :hover rule in `@scope`, or :hover in an unknown at-rule.
+ * @param {string} css
+ * @returns {string[]|null}
+ */
+export function hoverScope(css) {
+  /** @type {string[]} */
+  const out = [];
+  /** @param {string} sel @returns {boolean} the selector could be made neutral (pushed to `out`) */
+  const neutral = (sel) => {
+    // strings, escapes and attribute selectors cannot hold a combinator or a pseudo-class
+    const bare = sel.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '""').replace(/\\./g, '_').replace(/\[[^\]]*\]/g, '[]');
+    if (UNSCOPED_COMBINATOR.test(bare) || UNSCOPED_PSEUDO.test(bare)) return false;
+    let top = bare;
+    for (let prev = ''; prev !== top;) { prev = top; top = top.replace(/\([^()]*\)/g, '()'); }
+    // a :hover inside an argument (`:not(:hover)`) cannot be replaced by "any state"
+    if ((top.match(HOVER_ALL) ?? []).length !== (bare.match(HOVER_ALL) ?? []).length) return false;
+    const n = mapUnprotected(sel, (chunk) => chunk.replace(HOVER_ALL, ':is(*)').replace(PSEUDO_ELEMENT, '')).trim();
+    if (n) out.push(n);
+    return !!n;
+  };
+  /** @param {RuleNode[]} nodes @param {boolean} nested @param {boolean} scoped @returns {boolean} false: some :hover rule cannot be scoped */
+  const walk = (nodes, nested, scoped) => nodes.every((r) => {
+    if (r.k === 'group') return walk(/** @type {RuleNode[]} */ (r.kids), nested, scoped || atName(r.pre) === 'scope');
+    if (r.k === 'opaque') return !HOVER.test(r.pre) && !HOVER.test(r.body);
+    if (r.k !== 'style') return true;
+    const kids = r.body.includes('{') ? parseRules(r.body).filter((d) => d.k !== 'stmt') : [];
+    if (HOVER.test(r.pre)) {
+      if (nested || scoped || kids.length) return false;
+      if (!splitSelectorList(r.pre.trim()).every((sel) => !HOVER.test(sel) || neutral(sel))) return false;
+    }
+    return walk(kids, true, scoped);
+  });
+  return walk(parseRules(css), false, false) ? [...new Set(out)] : null;
+}
+const IDENT_RE = /^(?:[\w-]|[^\x00-\x7f]|\\(?:[0-9a-fA-F]{1,6}\s?|[^\n]))+/;
+/** @param {string} ident @returns {string} CSS identifier with its escapes resolved */
+const unescapeIdent = (ident) => (ident.includes('\\') ? ident.replace(/\\([0-9a-fA-F]{1,6})\s?|\\([^\n])/g, (_m, hex, ch) => (hex ? String.fromCodePoint(Math.min(parseInt(hex, 16), 0x10ffff) || 0xfffd) : ch)) : ident);
+
+/**
+ * PURE. The tokens an element must carry for a selector WITHOUT sibling combinators to match it: `subject` for the rightmost compound (the element itself), `context` for
+ * the compounds left of it (its ancestors). Tokens are `t:<tag>` (lower case), `.<class>` and `#<id>`; arguments of pseudo-classes, attribute selectors and namespaced
+ * types add no token (a necessary condition only: a selector whose tokens are all present may still not match).
+ * @param {string} sel
+ * @returns {{subject: string[], context: string[]}}
+ */
+export function selectorTokens(sel) {
+  /** @type {string[][]} */
+  const compounds = [[]];
+  const s = sel.trim();
+  let i = 0;
+  let atStart = true;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '>') {
+      while (i < s.length && /[\s>]/.test(s[i])) i++;
+      compounds.push([]);
+      atStart = true;
+      continue;
+    }
+    const cur = compounds[compounds.length - 1];
+    if (c === '.' || c === '#') {
+      const m = IDENT_RE.exec(s.slice(i + 1));
+      if (m) cur.push(c + unescapeIdent(m[0]));
+      i += 1 + (m ? m[0].length : 0);
+    } else if (c === '[') {
+      let depth = 0;
+      for (; i < s.length; i++) { if (s[i] === '"' || s[i] === "'") i = skipString(s, i) - 1; else if (s[i] === '[') depth++; else if (s[i] === ']' && --depth === 0) { i++; break; } }
+    } else if (c === ':') {
+      i += s[i + 1] === ':' ? 2 : 1;
+      const m = IDENT_RE.exec(s.slice(i));
+      i += m ? m[0].length : 0;
+      if (s[i] === '(') i = skipParens(s, i);
+    } else if (c === '*') i++;
+    else if (atStart) {
+      const m = IDENT_RE.exec(s.slice(i));
+      if (!m) { i++; continue; }
+      if (s[i + m[0].length] !== '|') cur.push('t:' + unescapeIdent(m[0]).toLowerCase());
+      i += m[0].length;
+    } else i++;
+    if (c === '|') { cur.length = 0; }
+    atStart = false;
+  }
+  const subject = compounds.pop() ?? [];
+  return { subject, context: [...new Set(compounds.flat())] };
+}
+
 /** properties that change only how a box paints, never its size or position nor anyone else's */
 const PAINT_ONLY = /^(?:color|background(?:-[a-z-]+)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?-color|outline(?:-[a-z]+)?|box-shadow|text-shadow|text-decoration(?:-[a-z]+)?|text-emphasis-color|opacity|visibility|cursor|fill(?:-opacity)?|stroke(?:-[a-z]+)?|caret-color|accent-color|column-rule-color|-webkit-text-(?:fill|stroke)-color|transition(?:-[a-z]+)?)$/;
 const HOVER = /(?<![\\:]):hover(?![\w-])/;
