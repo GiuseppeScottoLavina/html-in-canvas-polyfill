@@ -28,13 +28,13 @@ import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
 import { CAUSTIC_DEPTH_PX, CAUSTIC_PX, MAX_STEPS_PER_FRAME, PAD, QUIET_FOCUS, QUIET_SHIFT_PX, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt } from './sim.js';
-import { MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropGrid, dropsSlope, prepareTable } from './drops.js';
+import { DROP_FADE_MS, MAX_DROPS, MAX_SOURCES, ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, TABLE_W, computeRow, createDropTable, dropGrid, dropsSlope, prepareTable } from './drops.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
 /** @typedef {import('./sim.js').Field} Field */
 /** @typedef {{t: number, x: number, y: number, depth: number}} RainDrop  t: ms; x, y: 0..1 of the canvas; depth: css px */
-/** @typedef {{x: number, y: number, born: number, depth: number}} Drop  css px of the field; born: ms (performance.now() time base) */
+/** @typedef {{x: number, y: number, born: number, depth: number, fading?: number}} Drop  css px of the field; born, fading (when it began to fade): ms (performance.now() time base) */
 
 /** What the plugin gallery and the build read (plugins/README.md). */
 export const meta = Object.freeze({
@@ -541,9 +541,20 @@ export const plugin = Object.freeze({
         device.queue.writeTexture({ texture: tableTexture, origin: { x: 0, y: uploadedRows } }, table.half, { offset: uploadedRows * TABLE_W * 8, bytesPerRow: TABLE_W * 8, rowsPerImage: rows }, { width: TABLE_W, height: rows });
         uploadedRows = table.rows;
       }
+      // a burst: beyond MAX_DROPS the oldest drops fade out (they are the weakest: a drop's ring loses most of its height in its first
+      // second), so that the cost of a frame is bounded whatever the number of taps
+      for (let i = 0; i < drops.length - MAX_DROPS; i += 1) drops[i].fading ??= now;
+      /** the depth of a drop now, with its fade @param {Drop} d */
+      const depthOf = (d) => {
+        if (d.fading === undefined) return d.depth;
+        const s = Math.min(1, Math.max(0, (now - d.fading) / DROP_FADE_MS));
+        return d.depth * (1 - s * s * (3 - 2 * s));
+      };
       drops = drops.filter((d) => {
         const r0 = Math.floor(Math.max(0, ((now - d.born) / 1000) * ROWS_PER_S));
-        return r0 < 2 * ROWS_PER_S / 10 || d.depth * table.slope[r0] > slopeLimit || d.depth * table.curv[r0] > curvLimit;
+        const depth = depthOf(d);
+        if (d.fading !== undefined && depth <= 0) return false;
+        return r0 < 2 * ROWS_PER_S / 10 || depth * table.slope[r0] > slopeLimit || depth * table.curv[r0] > curvLimit;
       });
       const W = f.cssWidth, H = f.cssHeight;
       let n = 0;
@@ -558,13 +569,14 @@ export const plugin = Object.freeze({
         const row = Math.max(0, ((now - d.born) / 1000) * ROWS_PER_S);
         const r0 = Math.floor(row), r1 = Math.min(TABLE_ROWS - 1, r0 + 1);
         const inner = Math.min(table.inner[r0], table.inner[r1]), outer = Math.max(table.outer[r0], table.outer[r1]);
-        put(d.x, d.y, row, d.depth, inner, outer);
+        const depth = depthOf(d);
+        put(d.x, d.y, row, depth, inner, outer);
         for (const ix of [-1, 0, 1]) {
           for (const iy of [-1, 0, 1]) {
             if (!ix && !iy) continue;
             const x = ix < 0 ? -d.x : ix > 0 ? 2 * W - d.x : d.x, y = iy < 0 ? -d.y : iy > 0 ? 2 * H - d.y : d.y;
             const gap = Math.hypot(Math.max(0, -x, x - W), Math.max(0, -y, y - H));
-            if (gap < outer) images.push([x, y, row, d.depth, inner, outer]);
+            if (gap < outer) images.push([x, y, row, depth, inner, outer]);
           }
         }
       }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, dropDepth, GLOBALS_LENGTH, SOURCES_OFFSET, UNIFORM_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
-import { AMBIENT_WAVES, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
+import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { ROWS_PER_S, SOURCE_FLOATS, TABLE_ROWS, createDropTable, dropsAt, prepareTable } from '../drops.js';
 
@@ -287,6 +287,28 @@ test('a long gap between frames (a frame cap of 1, a pause) is skipped by the dr
   assert.ok(r.gpu.writes.at(-1)[G.DROPS] <= 6, `after a 1.2 s gap only the rain of the first 167 ms has fallen (${r.gpu.writes.at(-1)[G.DROPS]} sources)`);
 });
 
+test('a burst of taps costs a bounded frame: beyond 20 drops the oldest fade out over 150 ms, at most 64 sources; control: 20 taps fade none', async () => {
+  const burst = async (n) => {
+    const w = await createWater({ intensity: 1 });
+    const t0 = performance.now();
+    for (let i = 0; i < n; i += 1) w.pointer('pointerdown', 20 + (360 * i) / n, 40 + (220 * i) / n);
+    w.instance.render(w.frame(t0 + 10));
+    const at10 = w.gpu.writes.at(-1);
+    // the drops themselves (their mirror images in the walls lie outside the canvas): how many, and how many at full depth
+    const drops = () => { const u = w.gpu.writes.at(-1); let all = 0, full = 0; for (let s = 0; s < u[G.DROPS]; s += 1) { const o = SOURCES_OFFSET + s * SOURCE_FLOATS; if (u[o] < 0 || u[o] > W || u[o + 1] < 0 || u[o + 1] > H) continue; all += 1; if (u[o + 3] === DROP_DEPTH) full += 1; } return { all, full }; };
+    const first = drops();
+    w.instance.render(w.frame(t0 + 90));
+    const mid = drops();
+    w.run(t0 + 100, 120);
+    return { sources: at10[G.DROPS], first, mid, later: drops() };
+  };
+  const many = await burst(30), few = await burst(20);
+  assert.ok(many.sources <= 64, `at most 64 sources (${many.sources})`);
+  assert.ok(many.first.all === 30 && many.mid.all === 30 && many.mid.full === 20, `30 drops, of which the 10 oldest fade (${JSON.stringify(many)})`);
+  assert.ok(many.later.all === 20 && many.later.full === 20, `200 ms later the faded ones are gone (${JSON.stringify(many.later)})`);
+  assert.ok(few.mid.full === 20 && few.later.all === 20, `control: 20 taps fade none (${JSON.stringify(few)})`);
+});
+
 test('the mapper evaluates the very uniform block, field and drop table that were submitted for the frame', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();
@@ -405,7 +427,7 @@ test('intensity, light and ambient from options and setOptions reach the uniform
   assert.equal(w.gpu.writes.at(-1)[G.INTENSITY], 1);
   assert.equal(w.gpu.writes.at(-1)[G.LIGHT], 0);
   assert.equal(w.gpu.writes.at(-1)[G.REFRACT], REFRACT_PX);
-  assert.equal(w.gpu.writes.at(-1)[G.CAUSTIC], CAUSTIC_PX);
+  assert.equal(w.gpu.writes.at(-1)[G.CAUSTIC], CAUSTIC_DEPTH_PX, 'the depth of the page for the light');
   w.instance.setOptions({ intensity: 0.25, light: 0.5 });
   w.instance.render(w.frame(performance.now()));
   assert.equal(w.gpu.writes.at(-1)[G.INTENSITY], 0.25);
@@ -426,15 +448,16 @@ test('a resize by a fraction of a cell keeps the ripples; another grid starts fl
   const t0 = performance.now();
   for (let i = 0; i <= 6; i += 1) w.pointer('pointermove', 120 + 30 * i, 150, { timeStamp: t0 + 10 * i });
   w.instance.render(w.frame(t0 + 20));
-  const texturesBefore = w.gpu.created.length;
-  const fieldTexture = w.gpu.created.find((t) => t.d.format === 'r32float');
+  const fields = () => w.gpu.created.filter((t) => t.d.format === 'r32float');
+  const texturesBefore = fields().length;
+  const fieldTexture = fields()[0];
   w.instance.render({ ...w.frame(t0 + 40), cssWidth: W + 0.3 });
-  assert.equal(w.gpu.created.length, texturesBefore, 'the same grid');
+  assert.equal(fields().length, texturesBefore, 'the same grid');
   assert.ok(w.gpu.textures.at(-1).data.some((v) => v < -0.3), 'the ripple is still there');
   w.instance.render({ ...w.frame(t0 + 60), cssWidth: W * 2, width: W * 4 });
-  assert.equal(w.gpu.created.length, texturesBefore + 1, 'a new grid, a new texture');
+  assert.equal(fields().length, texturesBefore + 1, 'a new grid, a new texture');
   assert.ok(fieldTexture.destroyed, 'the old texture is destroyed');
-  assert.equal(w.gpu.created.at(-1).d.format, 'r32float', 'the new one is the field');
+  assert.ok(!fields().at(-1).destroyed, 'the new one is the field');
 });
 
 test('prefers-reduced-motion: still water; no ripple from the pointer, not continuous, the mapper is the identity; control: without it the pointer stirs', async () => {

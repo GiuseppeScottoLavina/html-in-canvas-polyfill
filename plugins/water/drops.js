@@ -262,7 +262,10 @@ export function profileAt(data, r, row, out) {
 /** floats per source in the uniform block: x, y (css px), row, depth (css px); inner, outer (css px), 0, 0 */
 export const SOURCE_FLOATS = 8;
 /** sources the shader evaluates at most (drops and their mirror images in the walls) */
-export const MAX_SOURCES = 96;
+export const MAX_SOURCES = 64;
+/** drops that ring at once: beyond, the oldest fades out over DROP_FADE_MS (a burst of taps costs no more than this many drops) */
+export const MAX_DROPS = 20;
+export const DROP_FADE_MS = 150;
 
 const P = new Float64Array(4);
 /**

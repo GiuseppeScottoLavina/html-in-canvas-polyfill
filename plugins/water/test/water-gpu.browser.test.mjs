@@ -137,3 +137,39 @@ gpuTest('the action demo: rain changes the picture, every checked frame agrees w
   assert.ok(r.worst && r.worst.wrong <= 5, `input follows the pixels while it rains: ${r.worst?.wrong} px disagree`);
   assert.ok(changedPixels(r.last, r.first) <= 2, 'it ends at rest: the last frame is the still picture');
 }, { timeout: 20000 });   // about 150 frames on the frame clock, and the mapper of every 6th judged on 150,000 pixels (each through up to 96 drop sources)
+
+gpuTest('the caustics conserve the light: a drop gathers the sunlight on the page into lines more than 3 times as bright and leaves troughs darker, while the light on the canvas stays 1 on average (within 3 %)', async (t) => {
+  // the caustic texture of the plugin, made readable (COPY_SRC) where the plugin creates it
+  const proto = /** @type {any} */ (globalThis).GPUDevice.prototype;
+  const original = proto.createTexture;
+  /** @type {{tex: any, dev: any, w: number, h: number}|null} */ let caustic = null;
+  proto.createTexture = function (/** @type {any} */ d) {
+    if (d?.label !== 'hic-water-effect-caustics') return original.call(this, d);
+    const tex = original.call(this, { ...d, usage: d.usage | GPUTextureUsage.COPY_SRC });
+    caustic = { tex, dev: this, w: d.size.width, h: d.size.height };
+    return tex;
+  };
+  t.cleanup(() => { proto.createTexture = original; });
+  const grey = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#7f7f7f'; ctx.fillRect(0, 0, 480, 320); } };
+  const { rig, handle } = await presentOnce(t, plugin, { intensity: 1 }, { scene: /** @type {any} */ (grey) });
+  let now = performance.now() + 100;
+  handle.trigger('drop', { point: { x: 240, y: 160 }, strength: 2 });
+  for (let i = 0; i < 30; i += 1) { rig.tick(now); now += 1000 / 120; }
+  assert.ok(caustic, 'the plugin made its caustic texture');
+  const c = /** @type {{tex: any, dev: any, w: number, h: number}} */ (caustic);
+  const bytesPerRow = Math.ceil((c.w * 2) / 256) * 256;
+  const buf = c.dev.createBuffer({ size: bytesPerRow * c.h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc = c.dev.createCommandEncoder();
+  enc.copyTextureToBuffer({ texture: c.tex }, { buffer: buf, bytesPerRow }, { width: c.w, height: c.h });
+  c.dev.queue.submit([enc.finish()]);
+  await buf.mapAsync(GPUMapMode.READ);
+  const half = new Uint16Array(buf.getMappedRange().slice(0));
+  buf.unmap();
+  const f16 = (/** @type {number} */ h) => { const e = (h >> 10) & 31, m = h & 1023, s = h & 0x8000 ? -1 : 1; return e === 0 ? s * m * 2 ** -24 : s * (1 + m / 1024) * 2 ** (e - 15); };
+  let sum = 0, max = 0, min = Infinity, n = 0;
+  for (let y = 0; y < c.h; y += 1) for (let x = 0; x < c.w; x += 1) { const v = f16(half[(y * bytesPerRow) / 2 + x]); sum += v; max = Math.max(max, v); min = Math.min(min, v); n += 1; }
+  const mean = sum / n;
+  console.error(`water caustics: ${c.w} x ${c.h} texels, mean ${mean.toFixed(4)}, min ${min.toFixed(3)}, max ${max.toFixed(2)}`);
+  assert.ok(Math.abs(mean - 1) < 0.03, `the light is conserved: mean ${mean}`);
+  assert.ok(max > 3 && min < 0.6, `it gathers into lines (max ${max}) and leaves troughs darker (min ${min})`);
+}, { timeout: 20000 });

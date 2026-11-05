@@ -30,7 +30,7 @@ struct Globals {
   drops : f32,              // sources in use (drops and their mirror images in the walls)
   caustics_on : f32,        // 1: the caustic texture of this frame is valid (the surface moves); 0: the light is uniform (1)
   // per source: x, y (css px), row of the table (age x rows a second), depth (css px); the ring: inner, outer radius (css px), 0, 0
-  sources : array<vec4<f32>, 192>,
+  sources : array<vec4<f32>, 128>,
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -49,7 +49,7 @@ const TABLE_DR : f32 = 1.0;
 const TABLE_SCALE : f32 = 256.0;   // drops.js TABLE_SCALE
 // the share of the page's light that comes from the sun (the rest from the sky), and how much of the focused light the water scatters
 const SUN_SHARE : f32 = 0.7;
-const SCATTER : f32 = 0.012;
+const SCATTER : f32 = 0.06;
 
 struct VertexOut {
   @builtin(position) position : vec4<f32>,
@@ -297,7 +297,14 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
 
   // the sunlight on the page where the view ray meets it (fs_caustics): 1 under still water
   var sunlight = 1.0;
-  if (globals.caustics_on > 0.5) { sunlight = textureSampleLevel(caustic_texture, form_sampler, displaced_uv, 0.0).r; }
+  if (globals.caustics_on > 0.5) {
+    // four bilinear samples half a texel apart (a 3 x 3 tent): the lines stay sharp, the sparkle of the thinnest triangles goes
+    let t = 0.5 / max(vec2<f32>(textureDimensions(caustic_texture)), vec2<f32>(1.0));
+    sunlight = 0.25 * (textureSampleLevel(caustic_texture, form_sampler, displaced_uv + vec2<f32>(-t.x, -t.y), 0.0).r
+      + textureSampleLevel(caustic_texture, form_sampler, displaced_uv + vec2<f32>(t.x, -t.y), 0.0).r
+      + textureSampleLevel(caustic_texture, form_sampler, displaced_uv + vec2<f32>(-t.x, t.y), 0.0).r
+      + textureSampleLevel(caustic_texture, form_sampler, displaced_uv + vec2<f32>(t.x, t.y), 0.0).r);
+  }
   // the page is lit by the sky (the rest) and the sun (SUN_SHARE): the colours are sRGB-encoded, so the light is applied to their
   // linear values (a power of 1/2.2 of the factor)
   let lit = max(1.0 - SUN_SHARE * light + SUN_SHARE * light * min(sunlight, 24.0), 0.0);
