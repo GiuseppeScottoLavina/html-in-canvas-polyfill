@@ -63,6 +63,70 @@ test('a plain list with an opaque sticky header has a plan; the header is pinned
   assert.equal(plan.port.height, list.clientHeight);
 });
 
+test('ScrollPlan.pinnable: the pinned header meets the pin requirements while it is an opaque rectangle; translucent, with a shadow or no longer sticky it does not', async () => {
+  const m = mount(html, { css, width: 440, height: 320 });
+  await frames(2);
+  const list = m.layerEl.querySelector('.list');
+  const head = /** @type {HTMLElement} */ (list.querySelector('.head'));
+  const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+  assert.ok(plan?.pinnable, 'planned');
+  assert.equal(plan.pinnable(head), true, 'control: as planned');
+  head.firstElementChild.textContent = 'No.';
+  assert.equal(plan.pinnable(head), true, 'control: its text changed');
+  for (const [what, css] of [['opacity: 0.5', 'opacity:0.5'], ['a translucent background', 'background:rgba(45,68,112,0.5)'], ['a box shadow', 'box-shadow:0 2px 4px black'], ['a transform', 'transform:translateX(1px)'], ['position: static', 'position:static']]) {
+    head.style.cssText = css;
+    assert.equal(plan.pinnable(head), false, what);
+    head.style.cssText = '';
+  }
+  assert.equal(plan.pinnable(head), true, 'control: back as planned');
+});
+
+/** a list over 10 rows with a box outside it (pointer-events: none, transparent) over its port, and `n` empty spans outside it below the port */
+async function outsidePlan(n) {
+  const spans = Array.from({ length: n }, () => '<span></span>').join('');
+  const m = mount(`<div class="o-d" drawable><div class="o-l">${Array.from({ length: 40 }, (_, i) => `<div class="o-r">row ${i}</div>`).join('')}</div><div class="o-b"></div><div class="o-s">${spans}</div></div>`,
+    { css: '.o-d{position:relative;width:300px;height:260px;background:#fff;font:14px Arial}.o-l{height:200px;overflow:auto;background:#fff;scrollbar-width:none}.o-r{height:30px}.o-b{position:absolute;left:0;top:60px;width:300px;height:20px;pointer-events:none}.o-s{height:20px}', width: 320, height: 280 });
+  await frames(2);
+  const list = m.layerEl.querySelector('.o-l');
+  const plan = planScrollPages(document, m.layer, list, m.layerEl.firstElementChild);
+  return { m, plan, list, box: /** @type {HTMLElement} */ (m.layerEl.querySelector('.o-b')), frame: m.layer.frameRect(list) };
+}
+
+test('ScrollPlan.clear: a change of a box outside the list that the hit test cannot see (pointer-events: none) and that paints over the port is not clear; a row of the list is', async () => {
+  const { plan, box, frame } = await outsidePlan(0);
+  assert.ok(plan?.clear, 'planned');
+  const boxRect = { x: frame.x, y: frame.y + 56, width: 300, height: 28 };
+  const rowRect = { x: frame.x, y: frame.y + 116, width: 300, height: 38 };
+  assert.equal(plan.clear([boxRect]), true, 'control: the box paints nothing yet');
+  box.style.background = 'rgb(255, 0, 255)';
+  assert.equal(plan.clear([rowRect]), true, 'control: a row elsewhere in the port');
+  assert.equal(plan.clear([boxRect]), false, 'the box, now with a background, over the port');
+  box.style.background = '';
+  box.style.boxShadow = '0 0 0 4px red';
+  assert.equal(plan.clear([boxRect]), false, 'a shadow');
+  box.style.boxShadow = '';
+  box.textContent = 'note';
+  assert.equal(plan.clear([boxRect]), false, 'text');
+  box.textContent = '';
+  box.classList.add('o-gen');
+  const st = document.createElement('style');
+  st.textContent = '.o-gen::after{content:""}';
+  document.head.append(st);
+  assert.equal(plan.clear([boxRect]), false, 'a generated box');
+  st.remove();
+  assert.equal(plan.clear([boxRect]), true, 'control: nothing again');
+});
+
+test('ScrollPlan.clear: with more than 1,000 elements outside the list a change inside the port is not checked one by one (about 1.2 us each, inside the frame): it is not clear', async () => {
+  const few = await outsidePlan(990);
+  const rowRect = { x: few.frame.x, y: few.frame.y + 116, width: 300, height: 38 };
+  assert.equal(few.plan?.clear?.([rowRect]), true, 'control: 993 outside');
+  few.m.layerEl.remove();
+  const many = await outsidePlan(1000);
+  assert.equal(many.plan?.clear?.([{ ...rowRect, x: many.frame.x, y: many.frame.y + 116 }]), false, '1,003 outside');
+  assert.equal(many.plan?.clear?.([{ x: many.frame.x, y: many.frame.y + 230, width: 300, height: 10 }]), true, 'a change below the port is not checked at all');
+});
+
 test('a list of fractional width (420.4 px, a grid track): the port is its padding box at layout size, the sticky header fits it, and pages compose the live capture', async () => {
   const m = mount(html, { css: css.replace('.d{width:420px', '.d{width:420.4px'), width: 440, height: 320 });
   const list = m.layerEl.querySelector('.list');
