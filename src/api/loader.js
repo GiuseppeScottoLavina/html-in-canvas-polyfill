@@ -25,7 +25,7 @@ import { EXT } from '../contracts/events.js';
  * @property {HicOptions} [install]  passed to install(); its `mode`, `forcePolyfill` and `window` drive the decision exactly as in install()
  * @property {string} [core]  classic loader only: URL of the classic core (default: hic-live-polyfill.iife.js, or .iife.min.js, beside the loader's own src)
  * @property {string|false} [engines]  URL of the engines bundle, loaded on Firefox and Safari on the polyfill path (default beside the loader; the module loader imports them from the package and takes only false), or false: not loaded
- * @property {string|false} [bridge]  URL of the native bridge, loaded only for a native implementation it can bridge (default beside the loader; the module loader imports the /native-bridge entry), or false
+ * @property {string|false} [bridge]  URL of the native bridge, loaded only for a native implementation it can bridge (default beside the loader; the module loader imports the /native-bridge entry and takes only false), or false
  * @property {number} [timeout]  ms until the load settles with status 'error' (default 10000)
  * @property {string} [nonce]  classic loader only: the nonce of the <script> elements it creates (a CSP with a nonce source)
  */
