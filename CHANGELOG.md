@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Scroll compositor: a sticky header without a z-index (or of z-index 0) is composed. Before, a sticky element had to have a positive z-index to be pinned, so a plain `position: sticky; top: 0` header with an opaque background refused the whole plan, and every scroll step of its list was a snapshot. Measured on an iPad Pro (Safari, 120 Hz), a 300-row list with such a header scrolled for 4 s, preview.23 against this change, alternated: 0 composed steps, 76 to 94 canvas updates a second and 16.7 to 16.8 ms between paints at p95, against 464 to 466 composed steps, 116 a second and 9.1 to 9.2 ms (with the field above the list focused: 71 to 83 against 111 a second). A header of z-index `auto` or 0 is pinned only where nothing else of the list paints over it, as CSS paints a later positioned box of z-index `auto` / 0 or a box with a stacking context of its own (`opacity` below 1, a `transform`, a filter, ...) above it: a row of `position: relative` or of opacity 0.9 still refuses the plan. Browser tests compare each composed step with the settled canvas; G-scroll-cadence's covers case has three new modes, and the mutant `scroll-sticky-layer-off` shows that the stacking check is needed.
+- Scroll compositor: a refusal for a sticky element is counted as `stats.snapshot.scroll.refusedBy.sticky` (before, as `plan`), and TROUBLESHOOTING section 6 lists what a sticky element needs. The core bundle grows to 357,212 bytes minified, 121,469 gzipped (+881 / +357) and to 17,106 code lines (+26).
+
+### Fixed
+
+- Scroll compositor: a flex or grid item with a z-index above a sticky header's (a row of a `display: flex` list with `z-index: 5` and no position) was hidden under the header's tile while the list moved, until the settled tile put it back (11,981 of 104,000 pixels wrong in the test). CSS applies a z-index to a flex or grid item without a position, and the planner now counts it.
+
 ## [0.1.0-preview.23] - 2026-11-05
 
 The scroll compositor no longer shows wrong pixels in two cases an outside review found: a sticky header that turned translucent after the list was planned, and content over a list that hit-testing cannot see (`pointer-events: none`, shadows, pseudo-elements, small boxes); it now checks the port in pixels before it composes. On Chromium at 125 % display scaling the last column of a scrolled list is right. The module loader carries 17.9 % less to Chromium on the polyfill path. The effect plugins have new lighting and materials, work with a finger on touch screens, play a short demo and do no work at rest.

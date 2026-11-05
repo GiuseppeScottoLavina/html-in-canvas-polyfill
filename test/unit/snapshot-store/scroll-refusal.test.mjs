@@ -135,5 +135,5 @@ test('a refusal is counted by reason: focus inside a scroller in a shadow root i
   Object.assign(r.scroller, { ownerDocument: { activeElement: host, getSelection: () => null }, getRootNode: () => shadow, contains: (n) => n === field });
   r.c.prepare(r.entry, r.scroller);
   r.pump();
-  assert.deepEqual(r.c.stats().refusedBy, { plan: 0, focus: 1, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0, cover: 0 });
+  assert.deepEqual(r.c.stats().refusedBy, { plan: 0, focus: 1, selection: 0, scale: 0, shape: 0, budget: 0, pinned: 0, sticky: 0, cover: 0 });
 });
