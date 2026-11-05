@@ -34,3 +34,19 @@ test('the file limit with a page that answers, the cleanup phase, and a hang bef
   assert.ok(!ft.some((x) => /outside the page/.test(x)), 'a page that was answering is not a delay outside the page');
   assert.match(describeHang({ ...base, test: null, sinceMs: null })[0], /before any test started$/);
 });
+
+test('expect-fail: each prefix needs its own kind of report; a timeout- file that failed to load is not a detected timeout (Windows CI, 2026-11-05)', async () => {
+  const { expectFailMet } = await import('../lib/hang.mjs');
+  const r = (o) => ({ tests: [], pageErrors: [], loadError: null, hung: false, hang: null, ...o });
+  assert.equal(expectFailMet('timeout', r({ tests: [{ status: 'timeout' }] }), 5000), true);
+  assert.equal(expectFailMet('timeout', r({ loadError: 'timeout waiting for Page.loadEventFired' }), 5000), false);
+  assert.equal(expectFailMet('loaderror', r({ loadError: 'x' }), 5000), true);
+  assert.equal(expectFailMet('fail', r({ tests: [{ status: 'running' }] }), 5000), false, 'a test still running is not a detected failure');
+  assert.equal(expectFailMet('hung', r({ hung: true, hang: { ...base, answeredAfterMs: null } }), 5000), true);
+  assert.equal(expectFailMet('hung', r({ hung: true, hang: base }), 5000), false, 'a page that answered again is a stall, not a hang for good');
+  assert.equal(expectFailMet('hung', r({ hung: true, hang: { ...base, test: null, answeredAfterMs: null } }), 5000), false, 'the test must be named');
+  assert.equal(expectFailMet('stall', r({ hung: true, hang: base }), 5000), true);
+  assert.equal(expectFailMet('stall', r({ hung: true, hang: { ...base, longTasks: [{ ms: 4000, test: 'weird markup' }] } }), 5000), false, 'a task shorter than a test timeout');
+  assert.equal(expectFailMet('stall', r({ hung: true, hang: { ...base, longTasks: [{ ms: 6300, test: 'other' }] } }), 5000), false, 'a task of another test');
+  assert.equal(expectFailMet('nope', r({}), 5000), undefined);
+});
