@@ -24,6 +24,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- Gate harness: the load snapshot that every gate stores with its result listed the processes with `ps -r` and read the load with `sysctl`, which exist only on macOS, so a gate run on Linux stopped at its setup (`unsupported SysV option`). It now sorts with `--sort=-pcpu` and reads the load from the OS off macOS, in the same format.
 - Native bridge: on Chrome 154 with the flag (measured on Chrome for Testing 154.0.8037.92), `drawElementImageToTexture` exists natively but takes the earlier destination dictionary, so every call with the current one failed. On a legacy build such a call is now made again with the destination mapped, and later calls are mapped at once.
 - Native bridge: `drawElementImageToTexture` without a `size`, mapped to the earlier `copyElementImageToTexture`, threw a `TypeError`; it now copies the natural size, as the native call does.
 - Native bridge: a `texElementSubImage2D` built over `texElementImage2D` now uses the three-argument form `(target, internalformat, element)` of the Chrome 154 and 155 builds (both have `texElementSubImage2D` natively, so this applies only to a build without it).

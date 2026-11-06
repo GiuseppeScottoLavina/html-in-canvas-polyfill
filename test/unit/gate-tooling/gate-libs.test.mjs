@@ -10,6 +10,7 @@ import { diffIdentity } from '../../gates/lib/identity.mjs';
 import { buildMutant } from '../../gates/mutants/build.mjs';
 import { MUTANTS } from '../../gates/mutants/mutants.mjs';
 import { SCENARIOS } from '../../xbrowser/scenarios.mjs';
+import { psArgs, loadAverage, loadSnapshot } from '../../harness/lib/load.mjs';
 
 test('edgePoints: 4 points 2 px inside and 4 points 3 px outside the middle of each side', () => {
   const p = edgePoints({ x: 100, y: 50, width: 80, height: 30 });
@@ -58,4 +59,20 @@ test('mutant definitions: unique names, edit pairs, existing gate files, no dupl
     if (m.args !== undefined) assert.ok(Array.isArray(m.args) && m.args.every((a) => typeof a === 'string' && a.startsWith('--')), `${m.name}: args are gate flags`);
   }
   assert.ok(MUTANTS.length >= 30);
+});
+
+test('load snapshot: ps sorts by CPU with the flag of each platform (BSD -r on macOS, procps --sort on Linux, which rejects -r)', () => {
+  assert.deepEqual(psArgs('darwin'), ['-Ao', 'pid=,ppid=,pcpu=,args=', '-r']);
+  assert.deepEqual(psArgs('linux'), ['-Ao', 'pid=,ppid=,pcpu=,args=', '--sort=-pcpu']);
+  assert.ok(!psArgs('linux').includes('-r'), 'procps ps fails with "unsupported SysV option" on -r');
+});
+
+test('load snapshot: the load average has the sysctl format on every platform, and a snapshot of this machine is taken', () => {
+  assert.match(loadAverage('linux'), /^\{ \d+\.\d{2} \d+\.\d{2} \d+\.\d{2} \}$/);
+  if (process.platform === 'darwin') assert.match(loadAverage(), /^\{ [\d.]+ [\d.]+ [\d.]+ \}$/);
+  if (process.platform !== 'win32') {
+    const s = loadSnapshot({ ownPids: [process.pid] });
+    assert.ok(s.top.length > 0, 'ps listed processes');
+    assert.equal(typeof s.highLoad, 'boolean');
+  }
 });

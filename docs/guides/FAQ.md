@@ -139,7 +139,7 @@ It is a preview of a proposed standard (`0.1.0-preview.27` on npm; a new preview
 
 What is tested:
 
-- 744 unit tests in Node and 1,091 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 746 unit tests in Node and 1,091 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 17 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence, the accessibility tree), each with a positive control;
 - a gate that runs mode `native-bridged` end to end over the earlier draft of Chrome 154 and 155 (G-bridged-translation);
 - a mutation suite of 93 seeded bugs, every one of which must be caught;
