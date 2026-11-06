@@ -514,7 +514,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
         const req = requestOf(env, entry.record, entry.el, rectCss, 0, { geo, lastNodes: entry.lastNodes, resources: pumpDeps.resources, interaction: pumpDeps.interaction(entry.record) });
         const result = capture({ ...req, scroll });
         // a 'limited' entry (node-budget: a large scroller) describes a page that renders like the tiles do
-        return (result.unsupported ?? []).some((u) => featureStatus(u.feature) !== 'limited') || !result.complete ? null : result.url;
+        return (result.unsupported ?? []).some((u) => featureStatus(u.feature) !== 'limited') || !result.complete ? null : result.urls ?? result.url;
       } catch (err) {
         env.reporter.caught(err, 'snapshot-store:scroll-page');
         return null;
@@ -522,7 +522,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     },
     decode: (url) => pumpDeps.decode(url),
     canvas: makeCanvas,
-    schedule: (entry, run) => { side.push({ entry, run }); },
+    schedule: (entry, run, first) => { if (first) side.unshift({ entry, run }); else side.push({ entry, run }); },
     room: () => freeBytes(),
     over: (entry) => overBudget(entry, 'scroll'),
   });

@@ -121,10 +121,18 @@ export function createCapture(env) {
     const crop = (req.rect && intersectRect(req.rect, full)) || full;
     const cropRel = { x: crop.x - f.x, y: crop.y - f.y, width: crop.width, height: crop.height };
     const { url, bytes } = buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale);
+    // the compositor's cover tiles (ScrollPlan.cover): the same clone with each further fill as the scroller's background colour, set in place of the first (the
+    // fill's other longhands, and whatever was declared after it, stay as they are): the tile a capture of its own with that fill makes, without its clone
+    const urls = [url];
+    const fills = req.scroll?.shape === 'cover' ? req.scroll.fills ?? [] : [];
+    for (let i = 1; i < fills.length && clone.cover; i++) {
+      clone.cover.style.setProperty('background-color', fills[i], 'important');
+      urls.push(buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale).url);
+    }
     const t4 = env.now();
     const { widthPx, heightPx } = cropPixels(cropRel, req.scale);
     return {
-      url, cropCss: crop, widthPx, heightPx, nodes: clone.nodes, complete: clone.complete && bundle.pendingUrls.length === 0 && !filters.pending && !feImages.pending, unsupported: finish(req, [...entries, ...clone.unsupported]),
+      url, ...(fills.length ? { urls } : {}), cropCss: crop, widthPx, heightPx, nodes: clone.nodes, complete: clone.complete && bundle.pendingUrls.length === 0 && !filters.pending && !feImages.pending, unsupported: finish(req, [...entries, ...clone.unsupported]),
       layoutOffset: clone.layoutOffset, caret: clone.caret, scrollers: clone.scrollers, timings: { cloneMs: t2 - t1, cssMs: t1 - t0, shakeMs: t3 - t2, svgMs: t4 - t3, bytes },
     };
   }

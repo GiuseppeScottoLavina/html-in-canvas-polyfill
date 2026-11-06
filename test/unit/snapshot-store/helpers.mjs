@@ -112,7 +112,7 @@ export async function makeRig(t, cfg = {}) {
   });
 
   const calls = /** @type {any[]} */ ([]);
-  /** Per-call overrides, consumed in order: {color, complete, caret, unsupported, url, layoutOffset, scrollers}. */
+  /** Per-call overrides, consumed in order: {color, complete, caret, unsupported, url, layoutOffset, scrollers}. A cover request (scroll.fills) consumes one per fill (CaptureResult.urls). */
   const script = /** @type {any[]} */ ([]);
   const rig = {
     env, record, reports, calls, script, bus, BUS, options, INK, scale, color: 'red', decodes: 0, deferDecode: false, decodeBusyMs: 0,
@@ -136,8 +136,11 @@ export async function makeRig(t, cfg = {}) {
     const crop = req.rect ?? { x: -req.ink.left, y: -req.ink.top, width: size.width + req.ink.left + req.ink.right, height: size.height + req.ink.top + req.ink.bottom };
     const widthPx = Math.ceil(crop.width * req.scale - 1e-6);
     const heightPx = Math.ceil(crop.height * req.scale - 1e-6);
+    const url = o.url ?? solidUrl(widthPx, heightPx, o.color ?? rig.color);
+    // a cover request: one tile per fill from this one capture, the next ones scripted by the next entries
+    const more = req.scroll?.shape === 'cover' ? (req.scroll.fills ?? []).slice(1).map(() => script.shift() ?? {}) : null;
     return {
-      url: o.url ?? solidUrl(widthPx, heightPx, o.color ?? rig.color), cropCss: crop, widthPx, heightPx, nodes: 10, complete: o.complete ?? true,
+      url, ...(more ? { urls: [url, ...more.map((m) => m.url ?? solidUrl(widthPx, heightPx, m.color ?? rig.color))] } : {}), cropCss: crop, widthPx, heightPx, nodes: 10, complete: o.complete ?? true,
       unsupported: o.unsupported ?? [], layoutOffset: o.layoutOffset ?? { x: 1, y: 2 }, caret: o.caret ?? null, scrollers: o.scrollers ?? [],
       timings: { cloneMs: 0.1, cssMs: 0, shakeMs: 0, svgMs: 0, bytes: 1 },
     };

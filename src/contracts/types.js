@@ -490,7 +490,7 @@ export {};
  * @property {boolean} prune          budget.soft exceeded: only clone what intersects `rect` (+ ancestor skeleton + spacers)
  * @property {InteractionSnapshot} interaction  hover/active chains, focus, caret phase at request time (the clone mirrors them as classes)
  * @property {Element} [hideText]     this field is cloned with transparent text: the backdrop tile of the optimistic text overlay
- * @property {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'|'cover', fill?: string, memo?: Map<Element, TailMemo>}} [scroll]  a PAGE of the scroll compositor: the scroller `el` is rendered at scrollTop `top` instead of its live offset, the `hide` elements (pinned sticky descendants) invisible; `bars`: only the classic bar's track (thumb hidden) or only its thumb (everything else invisible); `shape` (a rounded scroller): 'square' renders `el` with square corners (the compositor clips to the rounded port), 'backdrop' renders it without its content (what lies under that clip); 'cover' (any scroller, ScrollPlan.cover) without its content and with the background `fill`; `memo` (owned by the compositor, emptied by every change it is told of): what the walk measured of the layout for the pages of this scroller (TailMemo)
+ * @property {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'|'cover', fills?: string[], memo?: Map<Element, TailMemo>}} [scroll]  a PAGE of the scroll compositor: the scroller `el` is rendered at scrollTop `top` instead of its live offset, the `hide` elements (pinned sticky descendants) invisible; `bars`: only the classic bar's track (thumb hidden) or only its thumb (everything else invisible); `shape` (a rounded scroller): 'square' renders `el` with square corners (the compositor clips to the rounded port), 'backdrop' renders it without its content (what lies under that clip); 'cover' (any scroller, ScrollPlan.cover) without its content and with each background of `fills` in turn, one tile each from one clone (CaptureResult.urls); `memo` (owned by the compositor, emptied by every change it is told of): what the walk measured of the layout for the pages of this scroller (TailMemo)
  */
 
 /**
@@ -606,6 +606,7 @@ export {};
 /**
  * @typedef {Object} CaptureResult
  * @property {string} url             data:image/svg+xml URL (never blob:)
+ * @property {string[]} [urls]        a cover request (scroll shape 'cover'): one tile per fill, in order (the first is `url`); fewer when the scroller was not cloned
  * @property {Rect} cropCss           the css-px rectangle (border-box frame, may extend into ink) that `url` depicts
  * @property {number} widthPx         intrinsic raster width in surface px
  * @property {number} heightPx

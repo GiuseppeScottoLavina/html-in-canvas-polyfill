@@ -25,7 +25,7 @@ import { subtractRects } from './damage.js';
 /** @typedef {import('./pump.js').Entry} Entry */
 /** @typedef {import('./pump.js').Geometry} Geometry */
 /** @typedef {HTMLCanvasElement|OffscreenCanvas} Surface */
-/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'|'cover', fill?: string, memo?: Map<Element, import('../../contracts/types.js').TailMemo>}} PageRequest */
+/** @typedef {{el: Element, top: number, hide: Element[], bars?: 'track'|'thumb', shape?: 'square'|'backdrop'|'cover', fills?: string[], memo?: Map<Element, import('../../contracts/types.js').TailMemo>}} PageRequest */
 
 /** pages kept per scroller (each one scrollport of surface pixels) */
 const MAX_PAGES = 4;
@@ -37,7 +37,7 @@ const REPLAN_MS = 1000;
 const MAX_MISSES = 2;
 /** damage rects inside a scroller kept while its plan is being made (more: the plan is made again) */
 const MAX_PENDING_RECTS = 16;
-/** pixels of a cover check read and tested per post-frame job (scroll-compose.js vet: about 1 ms each, headless Chrome 156) */
+/** pixels of the cover checks read and tested per post-frame job (scroll-compose.js vet: about 1 ms each, headless Chrome 156): one band, of one tile or across them */
 const VET_PIXELS = 1 << 18;
 /** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
 const AHEAD_PAGES = 2;
@@ -75,20 +75,32 @@ const AHEAD_PAGES = 2;
  * @property {Rect[]} unverified  damage rects that reach into the visible port (frame css) not yet checked for an obstruction
  * @property {Set<Element>} recheck  pinned elements changed since the last composition: checked against the pin requirements before the next (ScrollPlan.pinnable)
  * @property {Rect[]} relayer  changes inside the content since the last composition, for a pin of z-index auto or 0: checked before the next (ScrollPlan.unlayered)
- * @property {number} vet  checks of ScrollPlan.cover whose tile has not landed: no composition until they have, and passed
+ * @property {number} vet  checks of ScrollPlan.cover not passed yet (their tile building, or read in part): no composition until they have
+ * @property {Check[]} checks  the cover checks whose tile landed and whose first band was read, in the order their tiles landed: the next post-frame job reads on
+ * @property {boolean} vetting  a post-frame job reads the next band of `checks`
  * @property {Map<Element, import('../../contracts/types.js').TailMemo>} memo  layout the page builds measured once (CaptureRequest.scroll.memo); emptied by every change of the content
  * @property {boolean} early  planned ahead and not scrolled yet: its builds queued before a finger landed stop (yieldToInput)
  * @property {number} used  when it was planned or last served a step (shed: the least recently used give way first)
+ */
+
+/** @typedef {{pad: Surface|null, seq?: number|null, check?: (pad: Surface) => void}} Slot  where a side build keeps its tile (a page, a pinned element, a bar, a backdrop), or what checks it */
+
+/**
+ * @typedef {Object} Check  a cover check under way (vet)
+ * @property {Surface} pad  its tile
+ * @property {{x: number, y: number}} at  the port in the tile (tile px)
+ * @property {number[]|null} want  r, g, b of the cover colour, or null: the colour (and alpha) of the port's centre (read with the first band)
+ * @property {number} y  the next row of the port to read
  */
 
 /**
  * @typedef {Object} ComposeDeps
  * @property {(scroller: Element, drawable: Element) => ScrollPlan|null|Iterator<void, ScrollPlan|null, void>} plan  a plan, or the steps that produce it (one post-frame task each)
  * @property {(scroller: Element) => 'sticky'|null} [why]  the planner's reason for its last refusal of a scroller, when it names one
- * @property {(entry: Entry, rectCss: Rect, geo: Geometry, scroll: PageRequest) => string|null} capture  data: URL of a crop, null on failure
+ * @property {(entry: Entry, rectCss: Rect, geo: Geometry, scroll: PageRequest) => string|string[]|null} capture  data: URL of a crop (of a cover request, one per fill), null on failure
  * @property {(url: string) => Promise<HTMLImageElement>} decode
  * @property {(w: number, h: number) => Surface} canvas
- * @property {(entry: Entry, run: () => void) => void} schedule  queue a side build for the post-frame pump
+ * @property {(entry: Entry, run: () => void, first?: boolean) => void} schedule  queue a side build for the post-frame pump (`first`: before those already queued)
  * @property {() => number} [now]
  * @property {() => number} [room]  bytes of options.maxTotalSurfaceBytes still free (every retained surface and every planned page or tile counted)
  * @property {(entry: Entry) => void} [over]  a page or a scroller's tiles did not fit `room` (reported once)
@@ -241,6 +253,8 @@ function cacheBytes(c, held) {
   // the cover checks' tiles, held until they are read (vet: one per cover colour, and the backdrop of a scroller that is not opaque; a rounded scroller's backdrop
   // is one of them, counted above)
   if (!held) n += Math.min(c.vet, (c.plan.cover?.length ?? 0) + (c.backdrop || c.plan.opaque ? 0 : 1)) * area(c.portPx);
+  // (decoded: those whose bands wait to be read)
+  else for (const k of c.checks) if (k.pad !== c.backdrop?.pad) n += k.pad.width * k.pad.height;
   return n * 4;
 }
 
@@ -298,28 +312,35 @@ export function createScrollCompositor(deps) {
   const track = (entry, d) => inFlight.set(entry, (inFlight.get(entry) ?? 0) + d);
 
   /**
-   * Build a crop and keep it as pixels in `slot.pad` if the cache is still the current one when it lands.
-   * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {{pad: Surface|null, seq?: number|null, check?: (pad: Surface) => void}} slot
+   * Build a crop and keep it as pixels in `slot.pad` if the cache is still the current one when it lands. A cover request (`scroll.fills`) builds one tile per fill,
+   * one slot each, from one capture; their decodes run side by side.
+   * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {Slot|Slot[]} slot
    */
   function build(entry, cache, px, scroll, slot) {
     const at = epoch;
+    const slots = Array.isArray(slot) ? slot : [slot];
     deps.schedule(entry, () => {
       if (mapOf(entry).get(cache.el) !== cache) return;
       if (cache.early && at !== epoch) { ahead.delete(cache.el); drop(entry, cache); return; }
-      if ('seq' in slot) slot.seq = seq;
-      const url = deps.capture(entry, toCss(px, cache.geo), cache.geo, scroll);
-      if (!url) { counters.failed++; drop(entry, cache); return; }
-      if ('seq' in slot) counters.pages++; else counters.pins++;
-      track(entry, 1);
-      deps.decode(url).then((img) => {
-        if (mapOf(entry).get(cache.el) === cache) {
-          const pad = deps.canvas(px.width, px.height);
-          /** @type {CanvasRenderingContext2D} */ (pad.getContext('2d')).drawImage(img, 0, 0, px.width, px.height);
-          slot.pad = pad;
-          slot.check?.(pad);
-        }
-        img.src = '';
-      }, () => drop(entry, cache)).finally(() => track(entry, -1));
+      if ('seq' in slots[0]) slots[0].seq = seq;
+      const got = deps.capture(entry, toCss(px, cache.geo), cache.geo, scroll);
+      if (!got) { counters.failed++; drop(entry, cache); return; }
+      const urls = Array.isArray(got) ? got : [got];
+      // fewer tiles than fills (the scroller was not cloned): not vouched for
+      if (urls.length < slots.length) { drop(entry, cache); refusal(entry, cache.el, 'cover'); return; }
+      if ('seq' in slots[0]) counters.pages++; else counters.pins += slots.length;
+      slots.forEach((s, i) => {
+        track(entry, 1);
+        deps.decode(urls[i]).then((img) => {
+          if (mapOf(entry).get(cache.el) === cache) {
+            const pad = deps.canvas(px.width, px.height);
+            /** @type {CanvasRenderingContext2D} */ (pad.getContext('2d')).drawImage(img, 0, 0, px.width, px.height);
+            s.pad = pad;
+            s.check?.(pad);
+          }
+          img.src = '';
+        }, () => drop(entry, cache)).finally(() => track(entry, -1));
+      });
     });
   }
 
@@ -367,26 +388,38 @@ export function createScrollCompositor(deps) {
 
   /**
    * ScrollPlan.cover, on a tile that landed: the port in it (at `at`, tile px; the corner squares of a rounded port left out) is every pixel `want` (r, g, b, opaque), or,
-   * with no `want`, every pixel the colour (and alpha) of its centre. Read in bands of VET_PIXELS, one post-frame job each (a 2116 x 2000 px port took 15 ms read and tested at
-   * once, headless Chrome 156). Passed: one check fewer before the first composition. Failed: something else paints on the port, so every page would carry it along
-   * (an element outside the scroller, or what shows through it): the plan is refused.
-   * @param {Entry} entry @param {Cache} c @param {Surface} pad @param {{x: number, y: number}} at @param {number[]|null} want @param {number} [y]  first row of the band
+   * with no `want`, every pixel the colour (and alpha) of its centre. Read in bands of VET_PIXELS (a 2116 x 2000 px port took 15 ms read and tested at once, headless
+   * Chrome 156): the first band of a tile when it lands, then one band per post-frame job, ahead of the other side builds (no page is composed before every check
+   * passed). A job's band goes on into the next tile's rows when one tile's rest is shorter: the second cover colour costs its pixels, not a job per partial band
+   * (about one 60 Hz frame each in Safari on an iPad, where the pump runs one side job per frame while the scroller still takes the plain path). Passed: one check
+   * fewer before the first composition. Failed: something else paints on the port, so every page would carry it along (an element outside the scroller, or what
+   * shows through it): the plan is refused.
+   * @param {Entry} entry @param {Cache} c @param {Check} [landed]  a tile that just landed: its first band (the others wait in `c.checks`)
    */
-  function vet(entry, c, pad, at, want, y = 0) {
+  function vet(entry, c, landed) {
     if (mapOf(entry).get(c.el) !== c) return;
     const R = c.portPx;
-    const h = Math.min(R.height - y, Math.max(1, Math.floor(VET_PIXELS / R.width)));
-    let ok = false;
-    try {
-      const ctx = /** @type {CanvasRenderingContext2D} */ (pad.getContext('2d'));
-      const ref = want ?? [...ctx.getImageData(at.x + (R.width >> 1), at.y + (R.height >> 1), 1, 1).data];
-      const d = ctx.getImageData(at.x, at.y + y, R.width, h).data;
-      ok = vetPixels(d, R.width, h, ref, c.corners.map((q) => ({ x: q.x - R.x, y: q.y - R.y - y, width: q.width, height: q.height })));
-      if (ok && y + h < R.height) { deps.schedule(entry, () => vet(entry, c, pad, at, ref, y + h)); return; }
-    } catch { /* not read back: not vouched for */ }
-    if (ok) { c.vet--; return; }
-    drop(entry, c);
-    refusal(entry, c.el, 'cover');
+    const list = landed ? [landed] : c.checks;
+    let left = VET_PIXELS;
+    while (list.length && (left === VET_PIXELS || left >= R.width)) {
+      const k = list[0];
+      const h = Math.min(R.height - k.y, Math.max(1, Math.floor(left / R.width)));
+      let ok = false;
+      try {
+        const ctx = /** @type {CanvasRenderingContext2D} */ (k.pad.getContext('2d'));
+        k.want ??= [...ctx.getImageData(k.at.x + (R.width >> 1), k.at.y + (R.height >> 1), 1, 1).data];
+        const d = ctx.getImageData(k.at.x, k.at.y + k.y, R.width, h).data;
+        ok = vetPixels(d, R.width, h, k.want, c.corners.map((q) => ({ x: q.x - R.x, y: q.y - R.y - k.y, width: q.width, height: q.height })));
+      } catch { /* not read back: not vouched for */ }
+      if (!ok) { drop(entry, c); refusal(entry, c.el, 'cover'); return; }
+      k.y += h;
+      left -= h * R.width;
+      if (k.y >= R.height) { list.shift(); c.vet--; }
+    }
+    if (landed && landed.y < R.height) c.checks.push(landed);
+    if (!c.checks.length || c.vetting) return;
+    c.vetting = true;
+    deps.schedule(entry, () => { c.vetting = false; vet(entry, c); }, true);
   }
 
   /** @param {Entry} entry @param {Element} el @param {ScrollPlan|null} plan @param {boolean} early  see Cache.early @returns {Cache|null} */
@@ -422,21 +455,18 @@ export function createScrollCompositor(deps) {
     /** @type {Cache} */
     const cache = {
       el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
-      shown: null, queued: false, last: live, unverified: [], recheck: new Set(), relayer: [], vet: 0, memo: new Map(), early, used: now(),
+      shown: null, queued: false, last: live, unverified: [], recheck: new Set(), relayer: [], vet: 0, checks: [], vetting: false, memo: new Map(), early, used: now(),
     };
     if (plan.cover) {
       // first of all: the port with the scroller's content hidden and its background in each cover colour shows only that colour (nothing paints over the scroller
       // there: an overlay of one of the colours shows on the other); a scroller that is not opaque also shows, without its content, one colour through it (its own
       // backdrop tile when it is rounded)
+      // (the cover tiles from one capture, decoded side by side: a capture each cost a post-frame job, about one 60 Hz frame in Safari on an iPad, before the first composition)
       cache.vet = plan.cover.length + (plan.opaque ? 0 : 1);
-      for (const want of plan.cover) {
-        const cover = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { cover.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, want); } };
-        build(entry, cache, portPx, { el, top: live, hide: [], shape: 'cover', fill: `rgb(${want.join(',')})` }, cover);
-      }
-      if (!plan.opaque && !round) {
-        const under = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { under.pad = null; vet(entry, cache, pad, { x: 0, y: 0 }, null); } };
-        build(entry, cache, portPx, { el, top: live, hide: [], shape: 'backdrop' }, under);
-      }
+      /** @param {number[]|null} want @returns {Slot} the tile of one check, not kept once it is read */
+      const tile = (want) => { const t = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { t.pad = null; vet(entry, cache, { pad, at: { x: 0, y: 0 }, want, y: 0 }); } }; return t; };
+      build(entry, cache, portPx, { el, top: live, hide: [], shape: 'cover', fills: plan.cover.map((want) => `rgb(${want.join(',')})`) }, plan.cover.map(tile));
+      if (!plan.opaque && !round) build(entry, cache, portPx, { el, top: live, hide: [], shape: 'backdrop' }, tile(null));
     }
     if (plan.bar) {
       const b = plan.bar;
@@ -448,7 +478,7 @@ export function createScrollCompositor(deps) {
     }
     if (cache.backdrop) {
       const b = cache.backdrop;
-      if (plan.cover && !plan.opaque) Object.assign(b, { check: (/** @type {Surface} */ pad) => vet(entry, cache, pad, { x: portPx.x - padPx.x, y: portPx.y - padPx.y }, null) });
+      if (plan.cover && !plan.opaque) Object.assign(b, { check: (/** @type {Surface} */ pad) => vet(entry, cache, { pad, at: { x: portPx.x - padPx.x, y: portPx.y - padPx.y }, want: null, y: 0 }) });
       build(entry, cache, padPx, { el, top: live, hide: [], shape: 'backdrop' }, b);
     }
     for (const p of plan.pinned) {
