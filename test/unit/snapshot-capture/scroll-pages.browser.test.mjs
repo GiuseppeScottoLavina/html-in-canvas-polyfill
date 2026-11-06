@@ -160,6 +160,61 @@ test('ScrollPlan.clear: an opaque box outside the list of opacity 0, on itself o
   m.layerEl.remove();
 });
 
+/**
+ * The list of outsidePlan (40 rows of blue and navy) with a box outside it of `box` css over its port, inside a wrapper of `wrap` css when given; `.o-pb` boxes have
+ * a ::before of the first cover colour blended by saturation (the box itself without a stacking context, so the ::before blends with the list)
+ */
+function blendPlan(box, wrap) {
+  const b = `<div class="o-b${/o-pb/.test(box) ? ' o-pb' : ''}" style="${box.replace('o-pb', '')}"></div>`;
+  const m = mount(`<div class="o-d" drawable><div class="o-l">${Array.from({ length: 40 }, (_, i) => `<div class="o-r">row ${i}</div>`).join('')}</div>${wrap === undefined ? b : `<div class="o-w" style="${wrap}">${b}</div>`}</div>`, {
+    css: '.o-d{position:relative;width:300px;height:260px;background:#fff;font:14px Arial}.o-l{height:200px;overflow:auto;background:#fff;scrollbar-width:none}.o-r{height:30px;background:rgb(30,40,60)}.o-r:nth-child(2n){background:rgb(0,0,255)}'
+      + '.o-b{position:absolute;left:0;top:60px;width:300px;height:20px;z-index:5;pointer-events:none}.o-w{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}'
+      + '.o-pb{z-index:auto}.o-pb::before{content:"";position:absolute;inset:0;background:rgb(1,254,3);mix-blend-mode:saturation}',
+    width: 320, height: 280,
+  });
+  const list = m.layerEl.querySelector('.o-l');
+  return { m, list, box: /** @type {HTMLElement} */ (m.layerEl.querySelector('.o-b')), plan: () => planScrollPages(document, m.layer, list, m.layerEl.firstElementChild) };
+}
+
+test('admission: a box outside the list that blends with it (mix-blend-mode on itself, on a wrapper, on its ::before) and paints over the port gets no plan; the cover check cannot see every blend', async () => {
+  const fill = 'background:rgb(1,254,3);';
+  for (const [what, box, wrap, planned] of /** @type {Array<[string, string, string|undefined, boolean]>} */ ([
+    ['control: a normal box of the first cover colour (the cover check refuses it)', fill, undefined, true],
+    ['saturation', `${fill}mix-blend-mode:saturation`, undefined, false],
+    ['multiply', `${fill}mix-blend-mode:multiply`, undefined, false],
+    ['difference', `${fill}mix-blend-mode:difference`, undefined, false],
+    ['luminosity', `${fill}mix-blend-mode:luminosity`, undefined, false],
+    ['a transparent wrapper of its size (it paints nothing itself) of mix-blend-mode: saturation', `${fill}top:0`, 'mix-blend-mode:saturation;top:60px;width:300px;height:20px', false],
+    ['a ::before of mix-blend-mode: saturation', 'o-pb', undefined, false],
+    ['half over the port (top 190 px of a 200 px port)', `${fill}mix-blend-mode:saturation;top:190px`, undefined, false],
+    ['control: below the port', `${fill}mix-blend-mode:saturation;top:205px`, undefined, true],
+    ['control: opacity 0', `${fill}mix-blend-mode:saturation;opacity:0`, undefined, true],
+    ['control: visibility hidden', `${fill}mix-blend-mode:saturation;visibility:hidden`, undefined, true],
+    ['control: nothing to paint', 'mix-blend-mode:saturation', undefined, true],
+    ['control: a blended wrapper of opacity 0', `${fill}top:0`, 'mix-blend-mode:saturation;opacity:0;top:60px;width:300px;height:20px', true],
+    ['control: a normal wrapper', `${fill}top:0`, 'top:60px;width:300px;height:20px', true],
+  ])) {
+    const { m, plan } = blendPlan(box, wrap);
+    await frames(2);
+    assert.equal(!!plan(), planned, what);
+    m.layerEl.remove();
+  }
+});
+
+test('ScrollPlan.clear: a box outside the list that blends may paint over no part of the port, not only over the damage; a normal one is judged where the damage is', async () => {
+  for (const [blend, clear] of [['normal', true], ['saturation', false]]) {
+    const { m, list, box, plan: planOf } = blendPlan(`mix-blend-mode:${blend}`);
+    await frames(2);
+    const plan = planOf();
+    assert.ok(plan?.clear, `${blend}: planned (the box paints nothing)`);
+    box.textContent = 'note';
+    // a change just below the box (its edge touches it), inside the port
+    const frame = m.layer.frameRect(list);
+    assert.equal(plan.clear([{ x: frame.x, y: frame.y + 80.25, width: 300, height: 20 }]), clear, `${blend}: the box paints text beside the change`);
+    m.layerEl.remove();
+  }
+});
+
 test('ScrollPlan.clear: with more than 1,000 elements outside the list a change inside the port is not checked one by one (about 1.2 us each, inside the frame): it is not clear', async () => {
   const few = await outsidePlan(990);
   const rowRect = { x: few.frame.x, y: few.frame.y + 116, width: 300, height: 38 };
