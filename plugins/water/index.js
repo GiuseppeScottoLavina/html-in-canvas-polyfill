@@ -264,16 +264,42 @@ export const plugin = Object.freeze({
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
     const uniformBuffer = device.createBuffer({ label: 'hic-water-effect-globals', size: GLOBALS_LENGTH * 4, usage: bufferUsage.UNIFORM | bufferUsage.COPY_DST });
-    /** the caustic texture (lightGrid of the field's css size) and its 4x multisampled target; they follow the field from the first frame */
+    /**
+     * The caustic texture (lightGrid of the field's css size) and its 4x multisampled target, held only while caustics can show (`lit()`):
+     * from the first frame on, so that a first tap allocates nothing, and made at once when an option change turns them on. While they
+     * cannot show (light 0, intensity 0, reduced motion) the picture binds a 1 x 1 texture that it never samples.
+     */
     let lightTargets = { w: 0, h: 0, tex: /** @type {any} */ (null), ms: /** @type {any} */ (null), view: /** @type {any} */ (null), viewMs: /** @type {any} */ (null) };
     /** @param {number} w @param {number} h */
     const ensureLightTargets = (w, h) => {
       if (lightTargets.w === w && lightTargets.h === h) return;
-      lightTargets.tex?.destroy?.(); lightTargets.ms?.destroy?.();
+      releaseLightTargets();
       const tex = device.createTexture({ label: 'hic-water-effect-caustics', size: { width: w, height: h }, format: 'r16float', usage: textureUsage.TEXTURE_BINDING | textureUsage.RENDER_ATTACHMENT });
       const ms = device.createTexture({ label: 'hic-water-effect-caustics-ms', size: { width: w, height: h }, format: 'r16float', sampleCount: 4, usage: textureUsage.RENDER_ATTACHMENT });
       lightTargets = { w, h, tex, ms, view: tex.createView(), viewMs: ms.createView() };
       bindGroups = new WeakMap();
+    };
+    const releaseLightTargets = () => {
+      if (!lightTargets.tex) return;
+      lightTargets.tex.destroy?.(); lightTargets.ms.destroy?.();
+      lightTargets = { w: 0, h: 0, tex: null, ms: null, view: null, viewMs: null };
+      bindGroups = new WeakMap();
+    };
+    /** binding 4 while there is no caustic texture (never sampled then: caustics_on is 0) @type {{tex: any, view: any}|null} */
+    let unlit = null;
+    const lightView = () => {
+      if (lightTargets.view) return lightTargets.view;
+      if (!unlit) {
+        const tex = device.createTexture({ label: 'hic-water-effect-caustics-none', size: { width: 1, height: 1 }, format: 'r16float', usage: textureUsage.TEXTURE_BINDING });
+        unlit = { tex, view: tex.createView() };
+      }
+      return unlit.view;
+    };
+    /** Hold the caustic textures exactly while caustics can show, at the size of the field `f`. @param {Field} f */
+    const fitLight = (f) => {
+      if (!lit()) { releaseLightTargets(); return; }
+      const g = lightGrid(f.cssWidth, f.cssHeight);
+      ensureLightTargets(g.w, g.h);
     };
     /** @type {any} */ let causticBindGroup = null;
 
@@ -289,6 +315,8 @@ export const plugin = Object.freeze({
     let intensity = clamp01(initialOptions?.intensity, DEFAULT_INTENSITY);
     let light = clamp01(initialOptions?.light, 1);
     let ambient = reducedMotion ? 0 : clamp01(initialOptions?.ambient, 0);
+    /** caustics can show: some light on water that can move (reduced motion keeps it still and the swell off) */
+    const lit = () => !reducedMotion && light > 0 && intensity > 0;
     /** impulses of pebbles still to come, on the simulation clock @type {Impulse[]} */
     let impulses = [];
 
@@ -525,6 +553,8 @@ export const plugin = Object.freeze({
         intensity = clamp01(next?.intensity, intensity);
         light = clamp01(next?.light, light);
         if (!reducedMotion) ambient = clamp01(next?.ambient, ambient);
+        // the caustic textures follow at once: made before the next tap when the light comes on, released when it goes off
+        if (field) fitLight(field);
         syncUi();
       },
       runAction(action, options, info) {
@@ -586,7 +616,7 @@ export const plugin = Object.freeze({
         if (waiters.length && calm()) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         // the caustic textures follow the field's size from the first frame on, so that a first tap allocates nothing
-        { const g = lightGrid(f.cssWidth, f.cssHeight); ensureLightTargets(g.w, g.h); }
+        fitLight(f);
         let bindGroup = bindGroups.get(frame.sourceView);
         if (!bindGroup) {
           bindGroup = device.createBindGroup({
@@ -596,7 +626,7 @@ export const plugin = Object.freeze({
               { binding: 1, resource: sampler },
               { binding: 2, resource: frame.sourceView },
               { binding: 3, resource: fieldView },
-              { binding: 4, resource: lightTargets.view },
+              { binding: 4, resource: lightView() },
             ],
           });
           bindGroups.set(frame.sourceView, bindGroup);
@@ -642,7 +672,8 @@ export const plugin = Object.freeze({
         for (const resolve of waiters.splice(0)) resolve(null);
         uniformBuffer.destroy?.();
         fieldTexture?.destroy?.();
-        lightTargets.tex?.destroy?.(); lightTargets.ms?.destroy?.();
+        releaseLightTargets();
+        unlit?.tex.destroy?.();
       },
     };
   },

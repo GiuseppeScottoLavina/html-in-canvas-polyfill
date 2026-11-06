@@ -153,7 +153,7 @@ function captureCaustics(t) {
     return tex;
   };
   t.cleanup(() => { proto.createTexture = original; });
-  return async () => {
+  const read = async () => {
     const c = /** @type {{tex: any, dev: any, w: number, h: number}} */ (caustic);
     if (!c) throw new Error('the plugin made no caustic texture');
     const bytesPerRow = Math.ceil((c.w * 2) / 256) * 256;
@@ -169,6 +169,9 @@ function captureCaustics(t) {
     for (let y = 0; y < c.h; y += 1) for (let x = 0; x < c.w; x += 1) v[y * c.w + x] = f16(half[(y * bytesPerRow) / 2 + x]);
     return { w: c.w, h: c.h, v };
   };
+  /** the plugin has made its caustic texture */
+  read.made = () => caustic !== null;
+  return read;
 }
 
 const greyScene = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#7f7f7f'; ctx.fillRect(0, 0, 480, 320); } };
@@ -220,4 +223,22 @@ gpuTest('a tap\'s caustic rings are centred on the tap (within 1 css px); contro
   const offK = Math.hypot(k.x - at.x, k.y - at.y);
   console.error(`water caustic centre, control (oblique light): ${offK.toFixed(2)} px off`);
   assert.ok(offK > 10, `control: an oblique light shifts the rings (${offK.toFixed(2)} px), so the check can fail`);
+}, { timeout: 20000 });
+
+gpuTest('with light 0 no caustic texture is made; the light turned on by setOptions makes it at once, and the next drop gathers the light into lines that conserve it (control: the same check that finds the texture after the option change)', async (t) => {
+  const read = captureCaustics(t);
+  const { rig, handle } = await presentOnce(t, plugin, { intensity: 1, light: 0 }, { scene: /** @type {any} */ (greyScene) });
+  let now = performance.now() + 100;
+  for (let i = 0; i < 4; i += 1) { rig.tick(now); now += 1000 / 120; }
+  assert.ok(!read.made(), 'light 0: no caustic texture after the first frames');
+  handle.setOptions({ light: 1 });
+  assert.ok(read.made(), 'control: setOptions turning the light on made it at once, before the next frame');
+  handle.trigger('drop', { point: { x: 240, y: 160 }, strength: 2 });
+  for (let i = 0; i < 30; i += 1) { rig.tick(now); now += 1000 / 120; }
+  const c = await read();
+  let sum = 0, max = 0;
+  for (const x of c.v) { sum += x; max = Math.max(max, x); }
+  const mean = sum / c.v.length;
+  console.error(`water caustics after the light came on: ${c.w} x ${c.h}, mean ${mean.toFixed(4)}, max ${max.toFixed(2)}`);
+  assert.ok(Math.abs(mean - 1) < 0.03 && max > 3, `the caustics work after the late allocation: mean ${mean}, max ${max}`);
 }, { timeout: 20000 });

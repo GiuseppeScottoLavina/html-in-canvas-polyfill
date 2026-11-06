@@ -504,6 +504,43 @@ test('intensity, light and ambient from options and setOptions reach the uniform
   assert.equal(rm.instance.continuous, false, 'reduced motion: no swell');
 });
 
+test('the caustic textures are held only while caustics can show: none with light 0, intensity 0 or reduced motion (binding 4 is then 1 x 1); an option change that turns them on makes them at once, so the next tap allocates nothing; turning them off releases them; control: the defaults make them at the first frame', async () => {
+  const caustic = (w) => w.gpu.created.filter((t) => /^hic-water-effect-caustics(-ms)?$/.test(t.d.label));
+  const live = (w) => caustic(w).filter((t) => !t.destroyed);
+  const bytes = (w) => live(w).reduce((n, t) => n + t.d.size.width * t.d.size.height * 2 * (t.d.sampleCount ?? 1), 0);
+  const control = await createWater();
+  control.instance.render(control.frame(performance.now()));
+  assert.equal(live(control).length, 2, 'control: the defaults hold the caustic texture and its multisampled target from the first frame');
+  assert.equal(bytes(control), W * H * 2 * 5);
+  for (const [name, options, reduced] of [['light 0', { light: 0 }, false], ['intensity 0', { intensity: 0 }, false], ['reduced motion', {}, true], ['reduced motion and the swell', { ambient: 1 }, true]]) {
+    const w = await createWater(options, { reduced });
+    w.instance.render(w.frame(performance.now()));
+    w.instance.render(w.frame(performance.now() + 20));
+    assert.equal(caustic(w).length, 0, `${name}: no caustic texture is made`);
+    const none = w.gpu.created.filter((t) => t.d.label === 'hic-water-effect-caustics-none');
+    assert.equal(none.length, 1, `${name}: one 1 x 1 texture stands in for it`);
+    assert.deepEqual([none[0].d.size.width, none[0].d.size.height], [1, 1]);
+  }
+  const w = await createWater({ light: 0 });
+  w.instance.render(w.frame(performance.now()));
+  w.instance.setOptions({ light: 0.8 });
+  assert.equal(live(w).length, 2, 'the light comes on: the textures are made at once, before the next frame');
+  assert.equal(bytes(w), W * H * 2 * 5);
+  const made = w.gpu.created.length;
+  const t0 = performance.now();
+  w.pointer('pointerdown', 200, 150);
+  w.run(t0, 200);
+  assert.equal(w.gpu.created.length, made, 'the first tap after that allocates nothing');
+  w.instance.setOptions({ intensity: 0 });
+  assert.equal(live(w).length, 0, 'intensity 0: released at once');
+  w.instance.render(w.frame(t0 + 220));
+  assert.equal(live(w).length, 0);
+  w.instance.setOptions({ intensity: 0.5 });
+  assert.equal(live(w).length, 2, 'and made again when it comes back');
+  w.instance.destroy();
+  assert.ok(w.gpu.created.every((t) => t.destroyed), 'destroy releases every texture, the 1 x 1 one included');
+});
+
 test('a resize by a fraction of a cell keeps the ripples; another grid starts flat with a new texture', async () => {
   const w = await createWater({ intensity: 1 });
   const t0 = performance.now();
