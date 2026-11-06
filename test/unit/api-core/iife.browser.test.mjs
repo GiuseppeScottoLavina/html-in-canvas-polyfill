@@ -3,10 +3,14 @@ import { test, assert, sleep } from '/test/unit/lib/t.js';
 /** load src/iife.js as a module script in a fresh iframe, after an optional inline setup script; resolves with the frame window once __HIC__ exists */
 async function loadEntry(/** @type {any} */ t, setup = '') {
   const frame = document.createElement('iframe');
+  const base = location.origin;
+  // the frame's load event follows its module script: src/iife.js is an unbundled module graph, and a cold Windows runner took longer than the old 2 s poll to run
+  // it (CI, 2026-11-06: no warning yet after 2,060 ms)
+  const loaded = new Promise((r) => frame.addEventListener('load', r, { once: true }));
+  frame.srcdoc = `<!doctype html><body><script>window.__warnings=[];window.__errors=[];const w=console.warn,e=console.error;console.warn=(...a)=>{__warnings.push(a.map(String).join(' '));};console.error=(...a)=>{__errors.push(a.map(String).join(' '));};addEventListener('error',ev=>__errors.push('uncaught '+ev.message));${setup}</script><base href="${base}/"><script type="module" src="${base}/src/iife.js"></script></body>`;
   document.body.append(frame);
   t.cleanup(() => frame.remove());
-  const base = location.origin;
-  frame.srcdoc = `<!doctype html><body><script>window.__warnings=[];window.__errors=[];const w=console.warn,e=console.error;console.warn=(...a)=>{__warnings.push(a.map(String).join(' '));};console.error=(...a)=>{__errors.push(a.map(String).join(' '));};addEventListener('error',ev=>__errors.push('uncaught '+ev.message));${setup}</script><base href="${base}/"><script type="module" src="${base}/src/iife.js"></script></body>`;
+  await loaded;
   const w = /** @type {any} */ (frame.contentWindow);
   for (let i = 0; i < 100 && !(w.__HIC__ || w.__errors?.length); i++) await sleep(20);
   return w;
