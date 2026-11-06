@@ -403,7 +403,16 @@ Tick RUN(now), for each canvas record in reverse tree order:
     must each show its colour on every pixel (rounded corners excepted), and for a scroller that is not opaque, a tile with its content hidden must be one colour (what
     shows through it); otherwise the plan is refused (`refusedBy.cover`). One colour alone passed an overlay of exactly that colour (0.1.0-preview.24); every channel of
     the two lies near opposite ends (249 levels apart at least), so an opaque overlay differs from one of them whatever its colour, and a translucent one passes both
-    only below an alpha of 0.004, about one level over the content. The tiles are side builds like the pages (the second colour: one side build more per plan, and one
+    only below an alpha of 0.004, about one level over the content. No set of colours proves a blend: an element outside the scroller composited with what lies
+    under it can leave a uniform colour as it is and still change the content (an overlay of rgb(1, 254, 3) with `mix-blend-mode: saturation` keeps both cover
+    colours, whose saturation is its own, and changed 15,878 of 104,000 pixels by up to 72 levels in the first composed step up to 0.1.0-preview.25; Chrome 156 and
+    iPad Safari 27.2). So the planner refuses (`refusedBy.plan`) a plan where an element outside the scroller (its ancestors aside) paints over the port with a
+    `mix-blend-mode` other than normal on itself, on an ancestor below the one it shares with the scroller, or on its `::before` / `::after` (`unblended`); one of
+    opacity 0, of `visibility: hidden` or with nothing to paint does not count, and a later change beside such an element drops the plan when it paints over any part
+    of the port (`ScrollPlan.clear`). The scan reads every element outside the scroller once per plan, in the plan's steps (headless Chrome 156: 2.1 ms with 1,000
+    such elements, 9.4 ms with 5,000, 36 ms with 19,000; more than 20,000 refuse the plan). An outside `backdrop-filter` needs no refusal: the snapshot does not
+    paint it (a blur over the port composes equal to the settled tile). Each check of the elements outside reads an element's computed style once (`outsideCheck`),
+    never across checks. The tiles are side builds like the pages (the second colour: one side build more per plan, and one
     port tile more in the plan's surface budget until it is read; a 400 x 240 list, headless Chrome 156, 6 runs: the first composition 43 ms after the first step at
     DPR 2 as before, 42-60 ms at DPR 1 against 40-43, at most a frame later), read back in bands of 262,144 pixels, one
     post-frame job each (about 1 ms; a 2116 x 2000 px port read and tested at once took 15 ms). The planner's own steps are unchanged (10,000 rows, a 600 px port: 41-45 ms in

@@ -314,7 +314,9 @@ runGate('G-scroll-cadence', async (ctx) => {
     /** @type {Array<[string, boolean|0]>} */
     const modes = [['plain', true], ['over', false], ['over-late', false], ['row-late', true], ['head', true], ['head-half', false], ['head-auto', true], ['head-auto-row', false],
       ['head-auto-layer', false], ['head-auto-late', false], ['sentinel', 0], ['sentinel-alpha', 0], ['sentinel-near', 0], ['sentinel-second', 0], ['round', true],
-      ['sentinel-round', 0], ['hidden-row', true], ['hidden-parent-row', true], ['hidden-shown', 0], ['hidden-faint', 0], ['hidden-parent-shown', 0]];
+      ['sentinel-round', 0], ['hidden-row', true], ['hidden-parent-row', true], ['hidden-shown', 0], ['hidden-faint', 0], ['hidden-parent-shown', 0],
+      ['blend-none', true], ['blend-saturation', 0], ['blend-multiply', 0], ['blend-difference', 0], ['blend-luminosity', 0], ['blend-parent', 0], ['blend-pseudo', 0],
+      ['blend-partial', 0], ['blend-off', true], ['blend-hidden', true], ['blend-invisible', true], ['blend-transparent', true], ['blend-late', 0], ['backdrop-blur', true]];
     const pick = process.argv.find((a) => a.startsWith('--covers='))?.slice(9).split(',');
     for (const [mode, composes] of modes.filter(([m]) => !pick || pick.includes(m))) {
       const u = new URL('/test/gates/fixtures/scroll-covers.html', ctx.srv.url);
@@ -322,7 +324,7 @@ runGate('G-scroll-cadence', async (ctx) => {
       await page.navigate(u.href);
       await page.waitForFunction('window.__ready', { timeout: 15000 });
       const r = await page.evaluate(`window.run(${JSON.stringify(mode)})`, { timeout: 30000 });
-      const n = { composed: r.composed, bad: r.bad, max: r.max, ...(r.arcMax ? { arcBad: r.arcBad, arcMax: r.arcMax } : {}), nonWhite: r.nonWhite, refusedBy: r.after.refusedBy, stale: r.after.stale, obstructed: r.after.obstructed };
+      const n = { composed: r.composed, bad: r.bad, max: r.max, ...(r.arcMax ? { arcBad: r.arcBad, arcMax: r.arcMax } : {}), nonWhite: r.nonWhite, under: r.under, refusedBy: r.after.refusedBy, stale: r.after.stale, obstructed: r.after.obstructed };
       numbers[`covers-${mode}`] = n;
       ctx.check(`covers ${mode}: the canvas paint after the scroll step equals the settled canvas (no pixel more than 16 levels off${mode.includes('round') ? ', outside the rounded corners' : ''})`, r.bad === 0 && r.nonWhite > 1000, n, 'pixel');
       if (composes) ctx.check(`covers ${mode}: the step was composed (nothing paints over the list but the list)`, r.composed === 1, n, 'compose');

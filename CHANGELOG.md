@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Scroll compositor: an element outside a list that blends with it (`mix-blend-mode` other than `normal`) and paints over its port passed the cover check and travelled with the list in the first composed step. A box of rgb(1, 254, 3) in `saturation` leaves both cover colours as they are (their saturation, 253, is its own) and changes every less saturated row: 15,878 of 104,000 pixels wrong, up to 72 levels (headless Chrome 156; 15,914, up to 68, on an iPad Pro, Safari 27.2, at a raster scale of 1), in 0.1.0-preview.24 and preview.25 alike. No set of colours tells a blend apart for every mode, so the planner now refuses such a plan: a blend mode on the element, on an ancestor below the one it shares with the list, or on its `::before` / `::after`, over any part of the port (half over it included); a change beside such an element after the plan drops the plan when it paints over any part of the port. Still composed: no overlay, a blended one of opacity 0, of `visibility: hidden`, with nothing to paint or below the port, and a transparent box with `backdrop-filter` (the snapshot paints none). The planner reads every element outside the list once per plan, in its steps of at most 3 ms (headless Chrome 156: 2.1 ms with 1,000 such elements, 9.4 ms with 5,000, 36 ms with 19,000). G-scroll-cadence covers 14 cases more (8 refused, 6 composed controls); mutants scroll-blend-off, scroll-blend-ancestor, scroll-blend-pseudo.
+- Scroll compositor: a check of the elements outside a list read an element's computed style twice (for its opacity, then for what it paints); one check now reads it once (1 read and 2 of its generated boxes, was 2 and 2), and never keeps it for the next check.
+- The core bundle grows to 363,117 bytes minified, 123,587 gzipped (+715 / +289 bytes) and to 17,320 code lines (+24); the other bundles are unchanged.
+
 ## [0.1.0-preview.25] - 2026-11-05
 
 Fixes for an outside review of 0.1.0-preview.24. A `:hover` rule that matches only together with another state (`.btn:hover:focus`) no longer stays painted on the canvas after the mouse leaves (a regression of 0.1.0-preview.24). In the scroll compositor an invisible (`opacity: 0`) element outside a list no longer stops it composing, and the check for content painted over a list can no longer be fooled by its own colour. The unit runner names what a hung test was doing and no longer reports a hung test as passed.
