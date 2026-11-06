@@ -32,7 +32,10 @@ import { CAUSTIC_DEPTH_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambien
 /** @typedef {{t: number, x: number, y: number, depth: number}} RainDrop  t: ms; x, y: 0..1 of the canvas; depth: css px */
 /** @typedef {{t: number, x: number, y: number, r: number, a: number}} Impulse  a stamp due at t ms (the simulation clock), css px of the field */
 
-/** What the plugin gallery and the build read (plugins/README.md). */
+/**
+ * What the plugin gallery and the build read (plugins/README.md).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'water',
   title: 'Water',
@@ -291,7 +294,11 @@ async function createPipeline(device, code, format) {
   return { pipeline: p0, layout, causticPipeline: p1, causticLayout };
 }
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'water',
   apiVersion: 2,

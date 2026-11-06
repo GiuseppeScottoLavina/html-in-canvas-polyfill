@@ -30,7 +30,10 @@ import { injectStyle } from '../_lib/ui.js';
 
 export { NO_TARGET, blockedMapper, createTimeline, findInvalid, identityMapper, parseColor } from '../_lib/transition.js';
 
-/** What the plugin gallery and the build read (plugins/README.md). */
+/**
+ * What the plugin gallery and the build read (plugins/README.md).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'disintegrate',
   title: 'Disintegrate',
@@ -171,7 +174,11 @@ const UI_CSS = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:
     + `.hic-dis-live{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin-top:4px}.hic-dis-live label{display:flex;align-items:center;gap:6px}.hic-dis-live input{width:15px;height:15px}`
     + `.hic-dis-counter{font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:#ffd7a8}.hic-dis-counter[hidden]{display:none}`;
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'disintegrate',
   apiVersion: /** @type {const} */ (2),

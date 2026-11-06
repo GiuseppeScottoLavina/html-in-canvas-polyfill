@@ -29,7 +29,10 @@ export const presets = Object.freeze({
   monitor: Object.freeze({ curvature: 0.3, scanlines: 0.35, mask: 0.25, glow: 0.3, warmth: 0.1, flicker: 0, misconvergence: 0.15 }),
 });
 
-/** What the plugin gallery and the build read (plugins/README.md). */
+/**
+ * What the plugin gallery and the build read (plugins/README.md).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'crt',
   title: 'CRT monitor',
@@ -110,7 +113,11 @@ export function presetOf(o) {
   return '';
 }
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'crt',
   apiVersion: /** @type {const} */ (2),

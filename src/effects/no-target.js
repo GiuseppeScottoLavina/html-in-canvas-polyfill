@@ -11,10 +11,19 @@
 /** The brand of NO_TARGET (Symbol.for: the same symbol in every bundle and realm). */
 const NO_TARGET_KEY = Symbol.for('html-in-canvas-polyfill.effects.no-target');
 
-/** @type {Readonly<{x: number, y: number}>} */
+/**
+ * What an input mapper returns where the presented pixel shows no element of the source.
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {Readonly<{x: number, y: number}>}
+ */
 export const NO_TARGET = Object.freeze({ x: -1e5, y: -1e5, [NO_TARGET_KEY]: true });
 
-/** @param {unknown} point @returns {boolean} true when `point` is NO_TARGET (or a copy of it from another bundle) */
+/**
+ * Whether `point` is NO_TARGET (or a copy of it from another bundle).
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @param {unknown} point
+ * @returns {boolean}
+ */
 export function isNoTarget(point) {
   return !!point && typeof point === 'object' && /** @type {any} */ (point)[NO_TARGET_KEY] === true;
 }

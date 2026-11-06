@@ -29,7 +29,10 @@ import { actionPoint } from '../_lib/action.js';
 export { NO_TARGET, blockedMapper, createTimeline, identityMapper } from '../_lib/transition.js';
 export { actionPoint } from '../_lib/action.js';
 
-/** What the plugin gallery and the build read (plugins/README.md). */
+/**
+ * What the plugin gallery and the build read (plugins/README.md).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'shatter',
   title: 'Shatter',
@@ -136,7 +139,11 @@ function smoothstep(a, b, x) {
 const UI_CSS = `.hic-shatter-ui{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
     + `.hic-shatter-ui label{display:grid}.hic-shatter-ui input{width:100%;margin:0;accent-color:#bfe9ff}.hic-shatter-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#06202c;background:#bfe9ff}`;
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'shatter',
   apiVersion: /** @type {const} */ (2),

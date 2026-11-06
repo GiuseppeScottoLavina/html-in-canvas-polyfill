@@ -33,7 +33,10 @@ import { injectStyle } from '../_lib/ui.js';
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
 
-/** What the plugin gallery and the build read (plugins/README.md). */
+/**
+ * What the plugin gallery and the build read (plugins/README.md).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'page-curl',
   title: 'Page curl',
@@ -445,7 +448,11 @@ const DRAGGING = 1;
 const RELEASING = 2;
 const DEMO = 3;
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'page-curl',
   apiVersion: /** @type {const} */ (2),

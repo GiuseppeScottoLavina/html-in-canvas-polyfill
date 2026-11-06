@@ -107,6 +107,7 @@
     "docs/COMPARISON.md",
     "docs/DESIGN-DECISIONS.md",
     "docs/SUPPORT-MATRIX.md",
+    "docs/STABILITY.md",
     "docs/guides",
     "examples/index.html",
     "examples/serve.mjs",

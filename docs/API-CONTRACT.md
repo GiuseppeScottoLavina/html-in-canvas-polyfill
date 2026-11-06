@@ -1,7 +1,7 @@
 # API contract
 
 What this polyfill implements of the WICG / WHATWG *HTML-in-Canvas* API, how each part behaves (timing, exceptions), what is
-out of scope and how it fails, and the two extensions (frame cap, effect plugins).
+out of scope and how it fails, and the two experimental extensions (frame cap, effect plugins).
 
 Sources: the WICG explainer (https://github.com/WICG/html-in-canvas), the Chromium IDL, the HTML Standard pull request
 (whatwg/html#11588) and the WPT tests, re-checked on 2026-10-14 against explainer commit `8aaaf5d6` (2026-10-09), pull request head `4cfec766`
@@ -14,7 +14,7 @@ a secondary member (section 2); sections 2.2 and 2.3 list the changes between th
 Conventions: "grid px" = canvas bitmap pixels (`canvas.width/height`); "css px" = layout pixels. The names of the typedefs
 (`CanvasRecord`, `SnapshotVersion`, ...) are in `src/contracts/types.js`. Feature ids (`tree-identity`, ...) are the rows of
 `src/contracts/features.js` and `docs/SUPPORT-MATRIX.md`. The public API is what this document describes, reached through the entry
-points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/` are internal and may change in any release.
+points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/` are internal and may change in any release. Which part of it is stable, experimental or unqualified, and the versioning policy: [STABILITY.md](STABILITY.md).
 
 ## 1. Scope
 
@@ -27,7 +27,7 @@ points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/`
 | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `ElementGeometryUpdateEvent` | a managed canvas in a closed shadow root created before install (`adoptRoot` hook) |
 | WebGL and WebGL2 `texElementSubImage2D` (+ legacy `texElementImage2D`); WebGPU `GPUQueue.drawElementImageToTexture` (+ legacy `copyElementImageToTexture`) | zero-copy texture paths |
 | canvases in open shadow roots (limited), nested `<canvas content=drawable>` managed independently (limited); same-origin frames inside a drawable (drawn); top-layer content inside a drawable (left out, as natively); `drawable` on an outermost `<svg>` | |
-| Extensions of this library, not of the standard (section 7): `framecap` / `frameCap`; `HTMLInCanvasEffects` (effect host, plugin ABI v2, input remap); example plugins in `plugins/` | any other CSS/DOM breadth work for its own sake |
+| Experimental extensions of this library, not of the standard (section 7): `framecap` / `frameCap`; `HTMLInCanvasEffects` (effect host, plugin ABI v2, input remap); example plugins in `plugins/` | any other CSS/DOM breadth work for its own sake |
 
 Interfaces defined by the polyfill only when the platform lacks them: `window.ElementImage`, `window.CanvasPaintEvent`,
 `window.ElementGeometryUpdateEvent`. They are ordinary classes (`instanceof` works; `Symbol.toStringTag` set); they are NOT
@@ -36,7 +36,7 @@ Interfaces defined by the polyfill only when the platform lacks them: `window.El
 ## 2. Feature detection and the native-first policy
 
 `install(options?)` is synchronous and idempotent per window (a second call returns the first `HicInstalled`). `HicInstalled` (`src/contracts/types.js`) is
-`{version, mode, native, options, report(), canvases(), whenPainted(canvas, timeoutMs = 5000), adopt(canvas), adoptRoot(root), uninstall()}`. `whenPainted` resolves
+`{version, mode, native, options, report(), canvases(), whenPainted(canvas, timeoutMs = 5000), adopt(canvas), adoptRoot(root), uninstall()}`; `options`, `report()`, `canvases()`, `adopt` and `adoptRoot` are experimental. `whenPainted` resolves
 at once when the canvas has already fired `paint`, else at its first `paint`, and rejects with a `TimeoutError` `DOMException` after `timeoutMs`. An invalid option
 (unknown name, wrong type, value out of range) throws `TypeError`.
 
@@ -140,7 +140,7 @@ invalid install option is the same `TypeError`, also on a browser with the nativ
 A window that already has an install (the core loaded by its own tag, or `install()` called) gets that `HicInstalled` back and nothing is downloaded; a bundle
 already on the page (the core global, the bridge or engines registration) is not downloaded again.
 
-**Options (`LoadOptions`):** `install` (the `HicOptions` for `install()`); `core` (URL of the classic core); `engines` (URL, or `false`); `bridge` (URL, or `false`);
+**Options (`LoadOptions`, experimental):** `install` (the `HicOptions` for `install()`); `core` (URL of the classic core); `engines` (URL, or `false`); `bridge` (URL, or `false`);
 `timeout` (ms, default 10000); `nonce` (set on the `<script>` elements the loader creates). The classic loader's default URLs are the files beside its own `src`
 (read from `document.currentScript` when it runs), the `.min.js` ones when it is the `.min.js`. The module loader imports modules of the package instead of URLs:
 on the polyfill path a private module with `install()` and the GPU code (`dist/esm/chunks/loader-core-*.js`; not the package entry, whose other exports a
@@ -232,7 +232,7 @@ a repaint keep the default width 100 after the DOM grew to 150). The capture pin
   `'width' in elementImage` is false, as natively. Its size is `canvas.getElementImageDefaultSize(elementImage)` (4.4.1).
 - `close()`: idempotent; detaches (`[[Detached]]`), unpins the version. Later use throws `InvalidStateError` (section 6).
 - A never-closed `ElementImage` is released by a `FinalizationRegistry`; the bytes stay pinned until then (stat `pinnedSurfaces`) and count toward `options.maxTotalSurfaceBytes`. While pinned surfaces hold the budget, a new snapshot is rasterised at a reduced scale or refused (the drawable keeps its last picture and is built again once an image is closed or another drawable is removed), and a caret blink that would copy a pinned surface is skipped; each is reported (`surface-size`). Native has no such budget: `close()` the images you no longer need.
-- Extension `toImageBitmap(): Promise<ImageBitmap>`: a transferable copy of the pinned surface (full source rect), for workers.
+- Extension (experimental) `toImageBitmap(): Promise<ImageBitmap>`: a transferable copy of the pinned surface (full source rect), for workers.
 
 #### 4.4.1 `getElementImageDefaultSize(element | ElementImage)` -> `{width, height}`
 On `HTMLCanvasElement` and on a main-thread `OffscreenCanvas` transferred from one (spec "get the element image default size"). Resolves the
@@ -364,7 +364,7 @@ After mounting, the first snapshot is committed one or more frames later (async 
 
 ## 7. Extensions
 
-The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal and native implementations do not provide them. They run while the polyfill provides the API (mode `polyfill`) and over a native implementation the installed polyfill stepped aside for (modes `native` and `native-bridged`) that has the members section 7.6 lists; section 7.6 says what differs there.
+The frame cap and the effects host are extensions of this library. They are not part of the HTML-in-Canvas proposal and native implementations do not provide them. They are **experimental**, like every member this section describes: they may change in any minor release, with a CHANGELOG entry, and they are not expected to enter the specification ([STABILITY.md](STABILITY.md)). They run while the polyfill provides the API (mode `polyfill`) and over a native implementation the installed polyfill stepped aside for (modes `native` and `native-bridged`) that has the members section 7.6 lists; section 7.6 says what differs there.
 
 ### 7.1 Frame cap
 - Attribute `framecap` on the canvas: a non-negative integer, `0..240` (`EXT.FRAME_CAP_MAX`). Missing/invalid -> `options.defaultFrameCap`
@@ -597,6 +597,6 @@ Limited rows that change observable layout or structure: `tree-identity` (parent
 `container-queries`, `shadow-canvas`, `nested-canvas`, `export-resolution`, `context-loss`, `print-find`.
 
 ## 10. Options (`HicOptions`)
-Typedef with defaults: `contracts/types.js` (`HicOptions`, `ResolvedOptions`). Options include `coherentPaint` (true), `coherenceMaxWaitMs` (50), `paintGateMaxWaitMs` (400), `parentFacade` (true), `stackingAudit` ('report'), `maxTotalSurfaceBytes` (512 MiB), `selectorBridge` ('both': selectors that name the canvas as an ancestor are emulated for the layer in `querySelector[All]` / `matches` / `closest` (`'queries'`) and in the page's style sheets (`'css'`); `'off'` disables both; row `selector-bridge`). On a phone or tablet (the browser gate's `mobile`), options the page did not set default to `maxDpr` 3, `maxSurfacePixels` 16,777,216 and `maxTotalSurfaceBytes` 256 MiB (128 MiB when `navigator.deviceMemory <= 2`): `options.js` `MOBILE_BUDGETS`, rationale and the unverified status in `docs/guides/MOBILE.md`. `window` / `document` options allow installing into
+Typedef with defaults: `contracts/types.js` (`HicOptions`, `ResolvedOptions`). `mode` and `onUnsupportedBrowser` are stable; every other option is experimental ([STABILITY.md](STABILITY.md)). Options include `coherentPaint` (true), `coherenceMaxWaitMs` (50), `paintGateMaxWaitMs` (400), `parentFacade` (true), `stackingAudit` ('report'), `maxTotalSurfaceBytes` (512 MiB), `selectorBridge` ('both': selectors that name the canvas as an ancestor are emulated for the layer in `querySelector[All]` / `matches` / `closest` (`'queries'`) and in the page's style sheets (`'css'`); `'off'` disables both; row `selector-bridge`). On a phone or tablet (the browser gate's `mobile`), options the page did not set default to `maxDpr` 3, `maxSurfacePixels` 16,777,216 and `maxTotalSurfaceBytes` 256 MiB (128 MiB when `navigator.deviceMemory <= 2`): `options.js` `MOBILE_BUDGETS`, rationale and the unverified status in `docs/guides/MOBILE.md`. `window` / `document` options allow installing into
 another realm (tests). `autoDiscover:false` disables the document-wide canvas scan and the document MutationObserver; canvases are then managed only through
 `installed.adopt(canvas)`.

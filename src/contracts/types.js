@@ -26,27 +26,27 @@ export {};
  * @property {'auto'|'polyfill'|'native-only'} [mode]  'auto' (default): native-first, a usable native implementation is never refused. 'native-only': never run the renderer.
  *   'polyfill': run the polyfill where there is no native implementation; over a usable one it steps aside like 'auto' (one warning).
  * @property {'throw'|'warn'} [onUnsupportedBrowser]   default 'throw' (loud). 'warn' only logs and installs nothing.
- * @property {'placeholder'|'abort'} [onUnsupportedContent]  default 'placeholder' (hatched box + report + console.error once).
+ * @property {'placeholder'|'abort'} [onUnsupportedContent]  `@experimental` (a switch of polyfill-only behaviour). default 'placeholder' (hatched box + report + console.error once).
  *           'abort' drops the commit, fires no paint and dispatches 'hicunsupported'.
- * @property {boolean} [legacyNames]     accept layoutsubtree / layoutSubtree / copyElementImageToTexture aliases (default true)
- * @property {number}  [defaultFrameCap] fps cap for canvases without a framecap attribute; 0 = uncapped (default 0)
- * @property {number}  [maxDpr]          upper bound for surface raster scale (default 2.5)
- * @property {number}  [maxSnapshotFps]  upper bound for snapshot build starts per canvas, independent of framecap; 0 = none (default 60). Not applied to the in-frame re-raster of a resize / DPR change (the framecap is)
- * @property {number}  [maxSurfacePixels] pixel budget of ONE drawable surface; above it the raster scale is reduced and the drawable reported (default 33554432)
- * @property {number}  [interactionFloorFps] fps floor for input-driven damage even under a lower framecap; 0 = strict cap (default 0)
- * @property {number}  [inkMargin]       css px of ink overflow kept around each border box (default 24)
- * @property {boolean} [coherentPaint]   hold a paint until the builds of one canvas that started from the same damage epoch have landed, so all drawables show one DOM state (default true)
- * @property {number}  [coherenceMaxWaitMs] upper bound of that hold (default 50)
- * @property {number}  [paintGateMaxWaitMs] upper bound of the first-paint gate: paint fires only when every eligible drawable with a CSS box has a committed version (or a placeholder); after this wait it fires anyway and a report entry is made (default 400)
- * @property {boolean} [parentFacade]    own-property facade on the PARENT of a managed canvas that hides the layer from children/childNodes/childElementCount/firstElementChild/lastElementChild/lastChild/nextElementSibling of the canvas (default true)
- * @property {'report'|'off'} [stackingAudit] detect page content that natively paints above the canvas but is covered by the layer's drawn drawables (default 'report')
- * @property {number}  [maxTotalSurfaceBytes] total bytes of the retained surfaces of an install: drawable surfaces, surfaces that ElementImages not yet closed keep alive, the scroll compositor's pages and tiles, and the backdrops of the text overlay. What does not fit is degraded and reported (`surface-size`): a new surface is rasterised at a reduced scale or refused (the drawable keeps its last picture), a caret blink or text overlay that would copy a pinned surface is skipped, fewer scroll pages are kept. Polyfill only: native has no such limit (default 536870912)
- * @property {Partial<NodeBudget>} [nodeBudget]
- * @property {'off'|'queries'|'css'|'both'} [selectorBridge] canvas-ancestor selector emulation (default 'both')
- * @property {boolean} [forcePolyfill]   test only: run the polyfill over any native implementation (usable or broken) instead of stepping aside or refusing
- * @property {boolean} [autoDiscover]    observe the document for canvases (default true)
- * @property {Window}  [window]          default globalThis.window
- * @property {Document} [document]       default window.document
+ * @property {boolean} [legacyNames]  `@experimental` (names of earlier drafts, which Chrome 157 does not have). accept layoutsubtree / layoutSubtree / copyElementImageToTexture aliases (default true)
+ * @property {number}  [defaultFrameCap]  `@experimental` (the frame cap, an extension of this library: API-CONTRACT 7.1). fps cap for canvases without a framecap attribute; 0 = uncapped (default 0)
+ * @property {number}  [maxDpr]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). upper bound for surface raster scale (default 2.5)
+ * @property {number}  [maxSnapshotFps]  `@experimental` (a build-rate knob of the polyfill's renderer, beside the frame cap). upper bound for snapshot build starts per canvas, independent of framecap; 0 = none (default 60). Not applied to the in-frame re-raster of a resize / DPR change (the framecap is)
+ * @property {number}  [maxSurfacePixels]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). pixel budget of ONE drawable surface; above it the raster scale is reduced and the drawable reported (default 33554432)
+ * @property {number}  [interactionFloorFps]  `@experimental` (the frame cap, an extension of this library: API-CONTRACT 7.1). fps floor for input-driven damage even under a lower framecap; 0 = strict cap (default 0)
+ * @property {number}  [inkMargin]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). css px of ink overflow kept around each border box (default 24)
+ * @property {boolean} [coherentPaint]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). hold a paint until the builds of one canvas that started from the same damage epoch have landed, so all drawables show one DOM state (default true)
+ * @property {number}  [coherenceMaxWaitMs]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). upper bound of that hold (default 50)
+ * @property {number}  [paintGateMaxWaitMs]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). upper bound of the first-paint gate: paint fires only when every eligible drawable with a CSS box has a committed version (or a placeholder); after this wait it fires anyway and a report entry is made (default 400)
+ * @property {boolean} [parentFacade]  `@experimental` (a switch of polyfill-only behaviour). own-property facade on the PARENT of a managed canvas that hides the layer from children/childNodes/childElementCount/firstElementChild/lastElementChild/lastChild/nextElementSibling of the canvas (default true)
+ * @property {'report'|'off'} [stackingAudit]  `@experimental` (a switch of polyfill-only behaviour). detect page content that natively paints above the canvas but is covered by the layer's drawn drawables (default 'report')
+ * @property {number}  [maxTotalSurfaceBytes]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements). total bytes of the retained surfaces of an install: drawable surfaces, surfaces that ElementImages not yet closed keep alive, the scroll compositor's pages and tiles, and the backdrops of the text overlay. What does not fit is degraded and reported (`surface-size`): a new surface is rasterised at a reduced scale or refused (the drawable keeps its last picture), a caret blink or text overlay that would copy a pinned surface is skipped, fewer scroll pages are kept. Polyfill only: native has no such limit (default 536870912)
+ * @property {Partial<NodeBudget>} [nodeBudget]  `@experimental` (a budget or timing of the polyfill's renderer: native has none, and the default follows measurements)
+ * @property {'off'|'queries'|'css'|'both'} [selectorBridge]  `@experimental` (a switch of polyfill-only behaviour). canvas-ancestor selector emulation (default 'both')
+ * @property {boolean} [forcePolyfill]  `@experimental` (a test hook). test only: run the polyfill over any native implementation (usable or broken) instead of stepping aside or refusing
+ * @property {boolean} [autoDiscover]  `@experimental` (a switch of polyfill-only behaviour). observe the document for canvases (default true)
+ * @property {Window}  [window]  `@experimental` (another realm, for tests). default globalThis.window
+ * @property {Document} [document]  `@experimental` (another realm, for tests). default window.document
  */
 
 /**
@@ -96,6 +96,7 @@ export {};
 /** @typedef {'native'|'native-bridged'|'polyfill'|'refused'} HicMode */
 
 /**
+ * @experimental the polyfill's report entries and the detail of hicunsupported (API-CONTRACT 7.5)
  * @typedef {Object} UnsupportedEntry  One loud refusal. Also the detail of the 'hicunsupported' CustomEvent.
  * @property {string} feature   id from contracts/features.js (e.g. 'iframe', 'shadow-dom', 'cross-origin-resource')
  * @property {string} message   human readable, includes the offending URL/selector when there is one
@@ -106,6 +107,7 @@ export {};
  */
 
 /**
+ * @experimental a diagnostic format: its fields follow the implementation
  * @typedef {Object} HicReport  installed.report(): plain JSON-able object, safe to attach to bug reports.
  * @property {string} version
  * @property {HicMode} mode
@@ -123,12 +125,12 @@ export {};
  * @property {string} version
  * @property {HicMode} mode
  * @property {NativeState} native
- * @property {Readonly<ResolvedOptions>} options
- * @property {() => HicReport} report
- * @property {() => HTMLCanvasElement[]} canvases   managed canvases in tree order
+ * @property {Readonly<ResolvedOptions>} options  `@experimental` (the resolved options; most options are experimental)
+ * @property {() => HicReport} report  `@experimental` (a diagnostic format: its fields follow the implementation)
+ * @property {() => HTMLCanvasElement[]} canvases  `@experimental` (a hook of the polyfill: native has no managed canvases). managed canvases in tree order
  * @property {(canvas: HTMLCanvasElement, timeoutMs?: number) => Promise<void>} whenPainted  resolves at once when canvas has already fired paint, else at its first paint event; rejects with a TimeoutError DOMException after timeoutMs (default 5000)
- * @property {(canvas: HTMLCanvasElement) => void} adopt  manage a canvas now (needed only with autoDiscover:false); no-op when content is not drawable/legacy
- * @property {(root: ShadowRoot) => void} adoptRoot  explicit hook for a shadow root the install could not observe (closed root created before install, or autoDiscover:false); idempotent
+ * @property {(canvas: HTMLCanvasElement) => void} adopt  `@experimental` (a hook of the polyfill: native has no managed canvases). manage a canvas now (needed only with autoDiscover:false); no-op when content is not drawable/legacy
+ * @property {(root: ShadowRoot) => void} adoptRoot  `@experimental` (a hook of the polyfill: native has no managed canvases). explicit hook for a shadow root the install could not observe (closed root created before install, or autoDiscover:false); idempotent
  * @property {() => void} uninstall  idempotent; restores DOM, prototypes, listeners
  */
 
@@ -648,6 +650,7 @@ export {};
 
 // ---------------------------------------------------------------------------------------------- effects (module: gpu-effects)
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} InputPoint  canvas-relative css px of the PRESENTED pixel, plus the presented size
  * @property {number} x
  * @property {number} y
@@ -655,11 +658,13 @@ export {};
  * @property {number} height
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {((p: InputPoint) => {x:number, y:number}) & {captureGestureSnapshot?: () => InputMapper}} InputMapper
  *   output -> source map for exactly the pixels of one presentation. Pure. Returns NO_TARGET (effects/no-target.js) where the presented
  *   pixel shows no element of the source. See API-CONTRACT 7.4.
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectViewport
  * @property {number} width
  * @property {number} height  backing pixels
@@ -668,6 +673,7 @@ export {};
  * @property {number} dpr
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectPresentationFrame
  * @property {number} now
  * @property {number} delta
@@ -676,11 +682,13 @@ export {};
  * @property {number|null} sourceVersion  SnapshotVersion.id sampled by sourceTexture, null before the first source upload
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {EffectViewport & EffectPresentationFrame & {sourceReady:boolean, encoder:any, sourceTexture:any, sourceView:any, destinationTexture:any, destinationView:any, profiling?:any}} EffectRenderFrame
  *   `profiling` is never set by the host: a measurement harness that renders a plugin directly may pass
  *   `{timestampWrites(label) -> GPURenderPassTimestampWrites}`, which the example plugins add to their own passes
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectPluginContext
  * @property {2} apiVersion
  * @property {HTMLCanvasElement} canvas
@@ -695,14 +703,17 @@ export {};
  *   actions through the host, exactly as EffectHandle.trigger (a submit handler of the plugin uses it); a failure is reported as effecterror (phase 'action')
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {string|null} EffectActionState  the state a plugin rests in after an action (a name the plugin documents, such as 'in', 'out',
  *   'cracked'); null when the action did not complete (superseded by a newer action, plugin removed, disabled or failed, GPU device lost)
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectActionInfo  what the host hands to EffectPluginInstance.runAction with each action
  * @property {boolean} reducedMotion  prefers-reduced-motion: reduce, read when the action was triggered
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectPluginUIContext
  * @property {HTMLCanvasElement} canvas
  * @property {() => Readonly<Record<string, unknown>>} getOptions
@@ -712,6 +723,7 @@ export {};
  *   own buttons; a failure is reported as effecterror (phase 'action')
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectPluginInstance
  * @property {boolean} [spatial]     true: output pixels are displaced; the host then REQUIRES captureInputMapper
  * @property {boolean} [continuous]  true: needs a render every capped frame even without source changes
@@ -728,6 +740,7 @@ export {};
  * @property {() => void} [destroy]
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectPluginDefinition  ABI v2 (API-CONTRACT 7.2)
  * @property {string} type
  * @property {2} apiVersion
@@ -757,6 +770,7 @@ export {};
  */
 
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectsApi  What window.HTMLInCanvasEffects exposes (effects/index.js).
  * @property {2} version
  * @property {(def: EffectPluginDefinition) => EffectPluginDefinition} definePlugin  validates and freezes a definition
@@ -767,12 +781,14 @@ export {};
  */
 
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectHostOptions
  * @property {number} [maxDpr]
  * @property {'low-power'|'high-performance'} [powerPreference]
  * @property {boolean} [interposer]  remap pointer input through spatial plugins (default true)
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectHandle
  * @property {string} id
  * @property {string} type
@@ -787,6 +803,7 @@ export {};
  * @property {() => void} remove
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectHostStats
  * @property {number} frames  presented frames
  * @property {number} fps  presentation rate over the last frames
@@ -801,6 +818,7 @@ export {};
  * @property {number} passedThrough
  */
 /**
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @typedef {Object} EffectHost
  * @property {number} pluginCount
  * @property {(def: EffectPluginDefinition, options?: Record<string, unknown>) => Promise<EffectHandle>} addPlugin

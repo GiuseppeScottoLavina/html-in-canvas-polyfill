@@ -35,7 +35,10 @@ export const BUS = /* @__PURE__ */ Object.freeze({
   MEMORY_FREED: 'surface:freed',
 });
 
-/** Public DOM events (the first two are the standard ones). */
+/**
+ * Public DOM events (the first two are the standard ones).
+ * @experimental the names of the polyfill's own events, an extension of this library (API-CONTRACT 7.5, docs/STABILITY.md)
+ */
 export const EVENTS = /* @__PURE__ */ Object.freeze({
   PAINT: 'paint',
   ELEMENT_GEOMETRY_UPDATE: 'elementgeometryupdate',
@@ -76,7 +79,10 @@ export const MARK = /* @__PURE__ */ Object.freeze({
   PATCH_SYMBOL: Symbol.for('hic.patch'),
 });
 
-/** Attribute / property names of the extensions. */
+/**
+ * Attribute / property names of the extensions.
+ * @experimental the names of the extensions of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const EXT = /* @__PURE__ */ Object.freeze({
   FRAME_CAP_ATTR: 'framecap',
   FRAME_CAP_PROP: 'frameCap',
