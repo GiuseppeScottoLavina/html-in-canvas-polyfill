@@ -46,8 +46,8 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['drop', 'demo']));
 
 /** Offsets in the uniform block (water.wgsl Globals), in floats. The mapper state is this block followed by the padded height field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, CAUSTICS: 18 });
-export const GLOBALS_LENGTH = 20;
+export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, CAUSTICS: 18, BOX: 20 });
+export const GLOBALS_LENGTH = 24;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
 const DEFAULT_INTENSITY = 0.5;
@@ -357,7 +357,11 @@ export const plugin = Object.freeze({
       fieldTexture?.destroy?.();
       fieldTexture = device.createTexture({ label: 'hic-water-effect-height-field', size: { width: f.pw, height: f.ph }, format: 'r32float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });
       fieldView = fieldTexture.createView();
-      causticBindGroup = null;
+      // made with the field, so that a first tap creates nothing
+      causticBindGroup = device.createBindGroup({
+        label: 'hic-water-effect-caustic-bind-group', layout: causticLayout,
+        entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: sampler }, { binding: 3, resource: fieldView }],
+      });
       fieldLive = false;
       bindGroups = new WeakMap();
       mapperStates = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(GLOBALS_LENGTH + f.pw * f.ph));
@@ -610,6 +614,8 @@ export const plugin = Object.freeze({
         globals[G.READY] = frame.sourceReady ? 1 : 0;
         globals[G.REFRACT] = refract;
         globals[G.CAUSTIC] = CAUSTIC_DEPTH_PX;
+        // the cells of the field that may be non-zero (sim.js box): the shader skips the B-spline elsewhere, where it would read only zeros
+        globals[G.BOX] = f.box[0]; globals[G.BOX + 1] = f.box[1]; globals[G.BOX + 2] = f.box[2]; globals[G.BOX + 3] = f.box[3];
         // the light moves only while the surface does; still water lights the page uniformly (1) and needs no pass
         const caustics = (active > 0 || ambient > 0) && light > 0 && intensity > 0;
         globals[G.CAUSTICS] = caustics ? 1 : 0;
@@ -632,10 +638,6 @@ export const plugin = Object.freeze({
           bindGroups.set(frame.sourceView, bindGroup);
         }
         if (caustics) {
-          causticBindGroup ??= device.createBindGroup({
-            label: 'hic-water-effect-caustic-bind-group', layout: causticLayout,
-            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: sampler }, { binding: 3, resource: fieldView }],
-          });
           const mesh = causticMesh(f.cssWidth, f.cssHeight, CAUSTIC_DEPTH_PX);
           const cp = frame.encoder.beginRenderPass({
             colorAttachments: [{ view: lightTargets.viewMs, resolveTarget: lightTargets.view, loadOp: 'clear', storeOp: 'discard', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],

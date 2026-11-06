@@ -28,6 +28,7 @@ struct Globals {
   caustic : f32,            // css px: how deep the page lies under the water for the sunlight (the caustics)
   caustics_on : f32,        // 1: the caustic texture of this frame is valid (the surface moves); 0: the light is uniform (1)
   pad0 : f32,
+  live_box : vec4<f32>,     // the cells of the height field that may be non-zero (padded grid, x0 y0 x1 y1 inclusive); 0 everywhere else
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -79,12 +80,17 @@ fn surface_at(uv : vec2<f32>) -> Surface {
   s.h = 0.0; s.grad = vec2<f32>(0.0); s.hess = vec3<f32>(0.0);
   let g = uv * globals.grid - vec2<f32>(0.5) + vec2<f32>(PAD);
   let base = floor(g);
+  let size = vec2<i32>(textureDimensions(height_field));
+  let b = vec2<i32>(base) - vec2<i32>(1);
+  // the 4 x 4 cells (clamped as the loads below) all lie where the field is exactly 0: the surface is flat here, the loops would add zeros
+  let lo = clamp(b, vec2<i32>(0), size - vec2<i32>(1));
+  let hi = clamp(b + vec2<i32>(3), vec2<i32>(0), size - vec2<i32>(1));
+  let live = vec4<i32>(globals.live_box);
+  if (any(hi < live.xy) || any(lo > live.zw)) { return s; }
   let f = g - base;
   let wx = bs_w(f.x); let wy = bs_w(f.y);
   let dx = bs_d(f.x); let dy = bs_d(f.y);
   let ddx = bs_dd(f.x); let ddy = bs_dd(f.y);
-  let size = vec2<i32>(textureDimensions(height_field));
-  let b = vec2<i32>(base) - vec2<i32>(1);
   for (var j = 0; j < 4; j = j + 1) {
     let yy = clamp(b.y + j, 0, size.y - 1);
     var row = vec4<f32>(0.0);

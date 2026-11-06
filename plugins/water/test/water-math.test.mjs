@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
-import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
+import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, DAMPING, PAD, VISCOSITY, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 contractTest(import.meta.url);
@@ -145,6 +145,53 @@ test('the simulation is stable for every cell size it uses (noise stays bounded 
   }
 });
 
+/** The step as it was before the field kept its box: every interior cell, every step (the oracle of the bounded step). */
+function fullStep(f) {
+  const { h, v, lap, pw, gw, gh, c2 } = f;
+  for (let y = PAD; y < PAD + gh; y += 1) for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) {
+    const l = (4 * (h[i - 1] + h[i + 1] + h[i - pw] + h[i + pw]) + h[i - pw - 1] + h[i - pw + 1] + h[i + pw - 1] + h[i + pw + 1] - 20 * h[i]) / 6;
+    v[i] = (v[i] + c2 * l + VISCOSITY * (l - lap[i])) * DAMPING;
+    lap[i] = l;
+  }
+  for (let y = PAD; y < PAD + gh; y += 1) for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) h[i] += v[i];
+  mirror(f);
+}
+
+test('the step and the check for a still surface work only where the field can be non-zero (its box), with bit-identical results: pebbles in the middle, at a wall and in a corner, against the full step; the box grows by one cell a step and covers every non-zero cell; control: a box one cell too small changes the field', () => {
+  const same = (a, b) => a.h.every((x, i) => Object.is(x, b.h[i]) || (x === 0 && b.h[i] === 0)) && a.v.every((x, i) => x === b.v[i]) && a.lap.every((x, i) => x === b.lap[i]);
+  for (const [x, y] of [[200, 150], [3, 140], [396, 297]]) {
+    const f = createField(400, 300), g = createField(400, 300);
+    clear(f); clear(g);
+    assert.ok(f.box[0] > f.box[2], 'a cleared field is flat: its box is empty');
+    stamp(f, x, y, 22, -12); stamp(g, x, y, 22, -12);
+    const width0 = f.box[2] - f.box[0];
+    for (let k = 0; k < 90; k += 1) {
+      if (k === 40) { stamp(f, 120, 90, 14, 5); stamp(g, 120, 90, 14, 5); }
+      step(f); fullStep(g);
+      assert.equal(quiet(f, 0.5), quiet(g, 0.5));
+    }
+    assert.ok(same(f, g), `the bounded step equals the full step bit for bit (pebble at ${x}, ${y})`);
+    for (let j = 0; j < f.ph; j += 1) for (let i = 0; i < f.pw; i += 1) {
+      const k = j * f.pw + i;
+      if (f.h[k] !== 0 || f.v[k] !== 0 || f.lap[k] !== 0) assert.ok(i >= f.box[0] && i <= f.box[2] && j >= f.box[1] && j <= f.box[3], `cell ${i}, ${j} is non-zero outside the box`);
+    }
+    if (x === 200) assert.ok(f.box[2] - f.box[0] <= width0 + 2 * 90 && f.box[2] - f.box[0] > width0, 'the box grows by at most one cell on each side a step');
+  }
+  // the box starts small: a pebble from rest steps a small region, not the grid
+  const f = createField(1100, 640);
+  clear(f);
+  stamp(f, 550, 320, 22, -12);
+  step(f);
+  const cells = (f.box[2] - f.box[0] + 1) * (f.box[3] - f.box[1] + 1);
+  assert.ok(cells < 0.03 * f.pw * f.ph, `one pebble from rest: ${cells} of ${f.pw * f.ph} cells`);
+  // control: a box one cell too small is not enough (the step's reach is one cell)
+  const a = createField(400, 300), b = createField(400, 300);
+  clear(a); clear(b);
+  stamp(a, 200, 150, 22, -12); stamp(b, 200, 150, 22, -12);
+  for (let k = 0; k < 5; k += 1) { a.box[0] += 1; a.box[2] -= 1; step(a); fullStep(b); }
+  assert.ok(!same(a, b), 'control: a box that misses one cell gives another field');
+});
+
 test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px is not quiet, one of 0.02 px is; NaN resets to flat', () => {
   const f = createField(400, 400);
   // a raised cosine of radius r and height a has a largest slope of a * pi / (2 r): this one moves the page by 0.2 px at intensity 1
@@ -156,7 +203,8 @@ test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px 
   stamp(f, 200, 200, 40, a / 10);
   mirror(f);
   assert.equal(quiet(f), true);
-  f.h[(PAD + 3) * f.pw + PAD + 3] = NaN;
+  // a NaN can only come from the cells the step computes, the ones that may be non-zero (f.box): one in the middle of the pebble
+  f.h[(PAD + 66) * f.pw + PAD + 66] = NaN;
   assert.equal(quiet(f), true);
   assert.ok(f.h.every((v) => v === 0), 'a broken field is reset rather than run forever');
   assert.ok(CAUSTIC_PX > REFRACT_PX, 'the light focuses deeper than the view refracts');

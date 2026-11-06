@@ -242,3 +242,77 @@ gpuTest('with light 0 no caustic texture is made; the light turned on by setOpti
   console.error(`water caustics after the light came on: ${c.w} x ${c.h}, mean ${mean.toFixed(4)}, max ${max.toFixed(2)}`);
   assert.ok(Math.abs(mean - 1) < 0.03 && max > 3, `the caustics work after the late allocation: mean ${mean}, max ${max}`);
 }, { timeout: 20000 });
+
+/** Pixels that differ at all between two frames, and the largest channel difference. @param {ImageData} a @param {ImageData} b */
+function exactDiff(a, b) {
+  let n = 0, max = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    const d = Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i + 1] - b.data[i + 1]), Math.abs(a.data[i + 2] - b.data[i + 2]));
+    if (d > 0) n += 1;
+    max = Math.max(max, d);
+  }
+  return { n, max };
+}
+
+/**
+ * Frames of the plugin alone at exact times (no host, no real-time clock): its own device, an offscreen source and destination, a drop at
+ * `at` (css px) by the action, then render(frame) at `times` ms after it; the read-back pixels of each frame (rgba8).
+ * @param {Record<string, unknown>} options @param {{x: number, y: number}} at @param {number[]} times
+ */
+async function framesAt(options, at, times) {
+  const W = 480, H = 320, dev = await (await navigator.gpu.requestAdapter()).requestDevice();
+  const U = GPUTextureUsage;
+  const src = dev.createTexture({ size: [W, H], format: 'rgba8unorm', usage: U.TEXTURE_BINDING | U.COPY_DST });
+  const px = new Uint8Array(W * H * 4);
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) { const k = (y * W + x) * 4; px[k] = (x * 5) & 255; px[k + 1] = (y * 3) & 255; px[k + 2] = ((x ^ y) * 7) & 255; px[k + 3] = 255; }
+  dev.queue.writeTexture({ texture: src }, px, { bytesPerRow: W * 4 }, [W, H]);
+  const dst = dev.createTexture({ size: [W, H], format: 'rgba8unorm', usage: U.RENDER_ATTACHMENT | U.COPY_SRC });
+  const canvas = { clientWidth: W, clientHeight: H, clientLeft: 0, clientTop: 0, ownerDocument: document, getBoundingClientRect: () => ({ left: 0, top: 0, width: W, height: H }) };
+  const inst = /** @type {any} */ (await plugin.create(/** @type {any} */ ({ apiVersion: 2, device: dev, format: 'rgba8unorm', canvas, requestRender() {}, listen: () => () => {}, viewport: () => ({}) }), /** @type {any} */ (options)));
+  const frame = (/** @type {any} */ encoder, /** @type {number} */ now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, dpr: 1, sourceReady: true, encoder, sourceTexture: src, sourceView: src.createView(), destinationTexture: dst, destinationView: dst.createView() });
+  inst.runAction('drop', { point: at }, { reducedMotion: false });
+  // the drop's clock starts at the action (performance.now()); its first frame aligns the steps to the frame times, the later ones follow exactly
+  const t0 = performance.now() + 4.2;
+  const out = [];
+  for (const dt of times) {
+    const e = dev.createCommandEncoder();
+    inst.render(frame(e, t0 + dt));
+    const row = Math.ceil((W * 4) / 256) * 256;
+    const buf = dev.createBuffer({ size: row * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    e.copyTextureToBuffer({ texture: dst }, { buffer: buf, bytesPerRow: row }, [W, H]);
+    dev.queue.submit([e.finish()]);
+    await buf.mapAsync(GPUMapMode.READ);
+    const mapped = new Uint8Array(buf.getMappedRange());
+    const data = new Uint8Array(W * H * 4);
+    for (let y = 0; y < H; y += 1) data.set(mapped.subarray(y * row, y * row + W * 4), y * W * 4);
+    buf.unmap();
+    out.push({ data });
+  }
+  inst.destroy();
+  dev.destroy();
+  return out;
+}
+
+gpuTest('the shader skips the B-spline where the field is exactly flat (outside its box) and changes no pixel: a pebble in a corner, frames at exact times from the first until the rings cover the canvas, against the same shader without the skip (light 0: the refraction alone, whose frames are reproducible; the caustics add up overlapping triangles, whose order of blending this GPU may vary); control: a box of one cell changes thousands of pixels', async () => {
+  const code = await (await fetch('/plugins/water/water.wgsl')).text();
+  const skip = '  if (any(hi < live.xy) || any(lo > live.zw)) { return s; }';
+  assert.ok(code.includes(skip), 'the shader has the skip');
+  const noSkip = code.replace(skip, '');
+  const shortBox = code.replace('let live = vec4<i32>(globals.live_box);', 'let live = vec4<i32>(globals.live_box.xyxy);');
+  assert.notEqual(shortBox, code, 'the control changes the box');
+  // a corner: the box takes in the ghost cells of two walls
+  const at = { x: 14, y: 12 }, times = [75, 117, 450, 1200];
+  const shipped = await framesAt({ intensity: 1, light: 0, shader: code }, at, times);
+  const plain = await framesAt({ intensity: 1, light: 0, shader: noSkip }, at, times);
+  const again = await framesAt({ intensity: 1, light: 0, shader: code }, at, times);
+  const short = await framesAt({ intensity: 1, light: 0, shader: shortBox }, at, times);
+  const diffs = shipped.map((img, k) => exactDiff(/** @type {any} */ (img), /** @type {any} */ (plain[k])));
+  const repeat = shipped.map((img, k) => exactDiff(/** @type {any} */ (img), /** @type {any} */ (again[k])));
+  const control = shipped.map((img, k) => exactDiff(/** @type {any} */ (img), /** @type {any} */ (short[k])));
+  console.error(`water box skip: differing pixels per frame ${diffs.map((d) => `${d.n} (max ${d.max})`).join(', ')} of ${480 * 320}; the same shader twice ${repeat.map((d) => d.n).join(', ')}; control (a box of one cell) ${control.map((d) => d.n).join(', ')}`);
+  assert.ok(repeat.every((d) => d.n === 0), 'the frames are reproducible');
+  const motion = [1, 2, 3].map((k) => exactDiff(/** @type {any} */ (shipped[0]), /** @type {any} */ (shipped[k])).n);
+  assert.ok(motion.every((n) => n > 2000), `the rings move: ${motion} pixels change after the first frame`);
+  assert.ok(diffs.every((d) => d.n === 0), `the skip changes no pixel: ${JSON.stringify(diffs)}`);
+  assert.ok(control.every((d) => d.n > 500), `control: a box of one cell changes pixels: ${JSON.stringify(control)}`);
+}, { timeout: 30000 });
