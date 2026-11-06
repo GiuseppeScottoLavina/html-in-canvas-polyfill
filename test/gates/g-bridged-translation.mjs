@@ -60,7 +60,9 @@ runGate('G-bridged-translation', async (ctx) => {
   const url = (/** @type {Record<string, string>} */ q) => `${ctx.srv.url}${PAGE}?${new URLSearchParams({ bundle: bundles, ...q })}`;
   const page = await ctx.page();
   const ev = (/** @type {string} */ js) => page.evaluate(js);
-  const painted = () => H.until(() => ev('!!(window.__b && __b.results.stdPainted && __b.results.legReturn !== undefined && __b.results.gl && __b.results.gl2)'), 6000);
+  const painted = () => H.until(() => ev('!!(window.__b && __b.results.stdPainted && __b.results.legReturn !== undefined && __b.results.gl && __b.results.gl2 && __paints.gpu)'), 6000);
+  // a GPU copy needs the element's paint record: the first paint of its canvas after the canvas became drawable
+  const gpuPainted = (/** @type {Page} */ p) => H.until(() => p.evaluate('!!(window.__paints && __paints.gpu)'), 6000);
   /** in-page: a GPU variant's pixels judged by the oracle, without moving the texture to Node */
   const gpuCase = (/** @type {string} */ variant) => ev(`__b.paintGpu(${JSON.stringify(variant)}).then((r) => ({ error: r.error, noAdapter: !!r.noAdapter, oracle: r.pixels ? __b.quadCheck(r.pixels, 128, 80, ${GPU[variant].join(', ')}, true) : null }))`);
   const glCase = (/** @type {string} */ id) => ev(`(() => { const r = __b.results.${id}; return { error: r.error, glError: r.glError, boundAfter: r.boundAfter, oracle: r.pixels ? __b.quadCheck(r.pixels, 128, 80, 20, 10, 100, 60, 0, 0, true) : null }; })()`);
@@ -173,6 +175,7 @@ runGate('G-bridged-translation', async (ctx) => {
   const syn = await ctx.page();
   await syn.navigate(url({ delete: SYNTHETIC.join(',') }));
   await H.until(() => syn.evaluate('!!(window.__b && __b.results.gl2)'), 6000);
+  await gpuPainted(syn);
   const gap = await syn.evaluate(`(() => { const m = __b.mode(); const c = document.getElementById('std'); let calls = 0, got = null;
     const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'onelementgeometryupdate');
     try { c.onelementgeometryupdate = (e) => { calls++; got = e; }; const e = new ElementGeometryUpdateEvent('elementgeometryupdate'); c.dispatchEvent(e); got = got === e; } catch (err) { got = 'threw ' + err.message; }
@@ -192,19 +195,18 @@ runGate('G-bridged-translation', async (ctx) => {
     if (r.noAdapter && allowNoGpu) continue;
     ctx.check(`synthetic shape: drawElementImageToTexture built over the native copyElementImageToTexture, ${v}: exact pixels at the asked place`, gap.gpuBuilt && !r.error && r.oracle?.ok, r, 'gapfill');
   }
-  // the earlier name for a legacy caller (option legacyNames), built over the current one: only where the native current name takes the current dictionary
+  // the earlier name for a legacy caller (option legacyNames), built over the current one
   const leg = await ctx.page();
   await leg.navigate(`${ctx.srv.url}${PAGE}?${new URLSearchParams({ bundle: bundles, manual: '1', delete: 'GPUQueue.copyElementImageToTexture' })}`);
   const legMode = await leg.evaluate(`(() => { const m = __b.install({ legacyNames: true }); __b.start(); return m; })()`);
-  const nativeDict = await leg.evaluate(`(async () => { if (!navigator.gpu) return 'no-gpu'; const a = await navigator.gpu.requestAdapter(); if (!a) return 'no-gpu'; const d = await a.requestDevice();
-    const t = d.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: GPUTextureUsage.COPY_DST });
-    try { __native.gpuDraw.call(d.queue, { source: document.getElementById('gputile') }, { texture: t }); return 'current'; } catch (e) { return e instanceof TypeError ? 'legacy' : 'current'; } })()`);
-  numbers.nativeGpuDictionary = nativeDict;
-  if (nativeDict === 'current') {
-    const r = await leg.evaluate(`__b.paintGpu('legacy').then((r) => ({ error: r.error, oracle: r.pixels ? __b.quadCheck(r.pixels, 128, 80, 20, 10, 100, 60, 0, 0, true) : null, built: GPUQueue.prototype.copyElementImageToTexture !== __native.gpuCopy }))`);
-    numbers.gapfill_gpu_legacyCaller = { mode: legMode, ...r };
-    ctx.check('synthetic shape (copyElementImageToTexture deleted, legacyNames): the earlier call is built over the native drawElementImageToTexture with exact pixels', legMode === 'native-bridged' && r.built && !r.error && r.oracle?.ok, numbers.gapfill_gpu_legacyCaller, 'gapfill');
-  } else numbers.gapfill_gpu_legacyCaller = `not run: the native drawElementImageToTexture of this build takes ${nativeDict === 'no-gpu' ? 'no call (no WebGPU adapter)' : 'the earlier dictionary, so the earlier call is already native'}`;
+  await gpuPainted(leg);
+  const lr = await leg.evaluate(`__b.paintGpu('legacy').then((r) => ({ error: r.error, noAdapter: !!r.noAdapter, oracle: r.pixels ? __b.quadCheck(r.pixels, 128, 80, 20, 10, 100, 60, 0, 0, true) : null,
+    built: !!window.GPUQueue && typeof GPUQueue.prototype.copyElementImageToTexture === 'function' && GPUQueue.prototype.copyElementImageToTexture !== __native.gpuCopy }))`);
+  numbers.gapfill_gpu_legacyCaller = { mode: legMode, ...lr };
+  if (!(lr.noAdapter && allowNoGpu)) {
+    ctx.check('synthetic shape (copyElementImageToTexture deleted, option legacyNames): the earlier call is built over the native drawElementImageToTexture, exact pixels at the asked place',
+      legMode === 'native-bridged' && lr.built && !lr.error && lr.oracle?.ok, numbers.gapfill_gpu_legacyCaller, 'gapfill');
+  }
 
   const errs = [page, manual, syn, leg].flatMap((p) => p.errors({ includeWarnings: false })).filter((e) => !/legacy native implementation can only draw DIRECT children/.test(String(e?.text ?? e)));
   ctx.check('no uncaught exception and no console error on the pages, but the expected report of the non-direct draw', errs.length === 0, errs.slice(0, 4), 'mode');

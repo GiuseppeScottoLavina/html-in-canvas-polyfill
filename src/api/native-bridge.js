@@ -39,7 +39,8 @@ function defined(o) {
  */
 export function toLegacyGpuArgs(source, destination) {
   const { texture, size, ...rest } = destination;
-  const { width, height } = extentSize(size);
+  // no `size`: the earlier call takes no width/height either and copies the natural size (measured on Chrome 154.0.8037.92 and 155.0.8059.79)
+  const { width, height } = size === undefined ? { width: undefined, height: undefined } : extentSize(size);
   return [
     defined({ source: source.source, sx: source.sourceX, sy: source.sourceY, swidth: source.sourceWidth, sheight: source.sourceHeight }),
     defined({ destination: defined({ texture, ...rest }), width, height }),
@@ -167,11 +168,39 @@ function fillGaps(env, native, ledger) {
   } else if (gaps.has('GPUQueue.drawElementImageToTexture')) {
     env.reporter.unsupported({ feature: 'webgpu-draw-element', message: 'GPUQueue.drawElementImageToTexture is missing from this native build and has no legacy name to be built from' });
   }
+  if (queue && present.has('GPUQueue.drawElementImageToTexture')) wrapEarlierGpuDictionary(queue, ledger);
   if (queue && env.options.legacyNames && present.has('GPUQueue.drawElementImageToTexture') && !present.has('GPUQueue.copyElementImageToTexture')) {
     ledger.define(queue, 'copyElementImageToTexture', { value: /** @this {any} */ function copyElementImageToTexture(/** @type {any} */ source, /** @type {any} */ target) {
       return this.drawElementImageToTexture(...fromLegacyGpuArgs(source, target));
     }, writable: true, configurable: true, enumerable: true });
   }
+}
+
+/**
+ * A native drawElementImageToTexture that still takes the EARLIER destination dictionary ({destination: {texture, origin}, width, height}) with the CURRENT
+ * source one ({source, sourceX, sourceY, sourceWidth, sourceHeight}): Chrome 154.0.8037.92 with the flag (measured 2026-11-06: the earlier sx/sy/swidth/sheight
+ * are ignored there; 155.0.8059.79 takes the current destination). A call with the current destination fails its WebIDL conversion there with a TypeError,
+ * which is thrown before anything is copied; that call is made again with the destination mapped and, when that one succeeds, every later current call is
+ * mapped at once. Calls in the earlier shape, and every error of a call that is not a dictionary mismatch, reach the native method unchanged.
+ * @param {any} queue  GPUQueue.prototype
+ * @param {PatchLedger} ledger
+ */
+function wrapEarlierGpuDictionary(queue, ledger) {
+  let earlier = false;
+  /** @param {any} d */
+  const current = (d) => !!d && typeof d === 'object' && 'texture' in d && !('destination' in d);
+  ledger.wrap(queue, 'drawElementImageToTexture', (orig) => /** @this {any} */ function (/** @type {any} */ source, /** @type {any} */ destination) {
+    if (!current(destination)) return orig.call(this, source, destination);
+    if (earlier) return orig.call(this, source, toLegacyGpuArgs(source, destination)[1]);
+    try { return orig.call(this, source, destination); } catch (err) {
+      if (/** @type {any} */ (err)?.name !== 'TypeError') throw err;
+      /** @type {unknown} */
+      let result;
+      try { result = orig.call(this, source, toLegacyGpuArgs(source, destination)[1]); } catch { throw err; }
+      earlier = true;
+      return result;
+    }
+  });
 }
 
 /**
@@ -189,6 +218,9 @@ function nativeDefaultSize(canvas, source, owner = source?.parentElement) {
   try { return { width: image.width, height: image.height }; } finally { image.close(); }
 }
 
+/** GL_RGBA8 (WebGL1 has no constant for it) */
+const RGBA8 = 0x8058;
+
 /**
  * texElementSubImage2D over the legacy texElementImage2D: upload into a scratch texture, copy the rectangle into the bound target at the offset, restore the GL state.
  * The natural-size rule of API-CONTRACT 5.3 applies (config.width/height, else the native default size); scaling between source and destination rectangles is not available this way.
@@ -200,6 +232,10 @@ function nativeDefaultSize(canvas, source, owner = source?.parentElement) {
 function fillTexSubImage(env, cls, hasLegacyUpload, ledger) {
   const proto = /** @type {any} */ (env.window)[cls]?.prototype;
   if (!proto) return;
+  // the earlier upload's arguments: (target, internalformat, element) on Chrome 154.0.8037.92 and 155.0.8059.79 with the flag (measured 2026-11-06: internalformat one of
+  // RGBA8, SRGB8_ALPHA8, RGBA16F, RGBA32F; their WebGL1 context refuses every one, so there the built method throws that native error), else the
+  // texImage2D-like (target, level, internalformat, format, type, element)
+  const shortUpload = proto.texElementImage2D?.length === 3;
   if (!hasLegacyUpload) {
     env.reporter.unsupported({ feature: 'webgl-tex-element', path: cls, message: `${cls}.texElementSubImage2D is missing from this native build and has no texElementImage2D to be built from` });
     return;
@@ -220,7 +256,8 @@ function fillTexSubImage(env, cls, hasLegacyUpload, ledger) {
       const framebuffer = gl.createFramebuffer();
       try {
         gl.bindTexture(gl.TEXTURE_2D, scratch);
-        gl.texElementImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+        if (shortUpload) gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA8 ?? RGBA8, element);
+        else gl.texElementImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
         gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, scratch, 0);
         gl.bindTexture(gl.TEXTURE_2D, previousTexture);
