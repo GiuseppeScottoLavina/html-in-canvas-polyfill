@@ -831,6 +831,8 @@ export function createScrollCompositor(deps) {
 
     /** @param {Entry} entry */
     forget(entry) {
+      // a build still decoding holds its cache until the decode settles (up to the decode timeout): the pixels it keeps are let go now
+      for (const c of caches.get(entry)?.values() ?? []) Object.assign(c, { pages: [], pins: new Map(), bar: null, backdrop: null, checks: [] });
       caches.delete(entry);
       refused.delete(entry);
       planning.delete(entry);

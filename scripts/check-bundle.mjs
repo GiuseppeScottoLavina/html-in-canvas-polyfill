@@ -203,7 +203,10 @@ const LIMITS = {
   //   blends with it over its port (scroll-pages.js unblended; an overlay in mix-blend-mode: saturation passed both cover colours), one style read per outside
   //   check; the cover tiles of a plan from one capture and their checks read ahead of the pages (scroll-compose.js build, vet; capture.js the further fills),
   //   since the second cover colour cost three post-frame jobs more before the first composition (+46 ms on an iPad, 0.1.0-preview.25)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 364 * KB, gzip: 124 * KB },
+  // 364 -> 364.25 KB (+175 / +53 bytes, gzip 123,972 under its ceiling, 2026-11-06, measured 364,105): dispose and the removal of a drawable drop its queued side
+  //   builds, and the scroll pages and tiles a decode still in flight reaches are let go at once (store.js dropEntry and dispose, scroll-compose.js forget); a
+  //   store kept through a kept HicInstalled reported needsPump() true for good and kept 2 internal 600 x 500 surfaces reachable after an uninstall
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 364.25 * KB, gzip: 124 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

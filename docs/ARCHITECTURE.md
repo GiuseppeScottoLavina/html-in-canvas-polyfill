@@ -93,7 +93,7 @@ registry) -> `compose` (root scope, store, capture, scheduler, observers, effect
 a ledger with the original descriptor: the standard surface, `attachShadow`, the fullscreen/popover guard, the worker `postMessage` guard, the synchronous mount hooks) -> `registry.scan(document)` and every open shadow root
 (existing canvases) -> start the per-scope MutationObservers (dynamic canvases) -> return `HicInstalled`. A native build with only ADDITIVE names missing is gap-filled when the native bridge is loaded (ADR-N). Patching happens BEFORE the scan so an app script that runs right after sees the final API.
 `uninstall()` (idempotent): for each record `unmount` (children restored to the canvas in original order, layer + facade + attributes
-removed) -> stop the selector bridge and observers -> dispose effects, scheduler (cancels rAF) and `store.dispose()` (surfaces released) -> restore descriptors from the ledger
+removed) -> stop the selector bridge and observers -> dispose effects, scheduler (cancels rAF) and `store.dispose()` (surfaces released; the queued side builds are dropped, and the scroll pages and tiles a decode still in flight would reach are let go at once, so a store kept alive through a kept `HicInstalled` holds no surface and needs no pump; a decode that settles later publishes nothing; a drawable removed from the drawables drops its side builds the same way) -> restore descriptors from the ledger
 in reverse order -> `bus.clear()`. Postcondition: serialised DOM and prototype descriptors equal their pre-install state (browser unit test `G-lifecycle` in `test/unit/api-core/install.browser.test.mjs`; the full G-lifecycle gate row is planned).
 
 ### 4.2 Dynamic canvases (registry, `canvas-registry.js`)
