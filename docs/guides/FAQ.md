@@ -138,7 +138,7 @@ It is a preview of a proposed standard (`0.1.0-preview.25` on npm; a new preview
 
 What is tested:
 
-- 706 unit tests in Node and 1,069 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 711 unit tests in Node and 1,083 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 16 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence), each with a positive control;
 - a mutation suite of 77 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
