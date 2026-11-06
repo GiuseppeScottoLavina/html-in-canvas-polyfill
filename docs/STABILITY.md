@@ -1,0 +1,119 @@
+# Stability
+
+What the package promises, row by row: every public API, option, export, bundle and platform, with its status and the evidence behind it.
+
+**Applies from:** `1.0.0-rc.1`. The current releases are `0.1.0` previews, to which no compatibility promise applies.
+
+Status words:
+
+- **stable**: covered by Semantic Versioning (section 2). An incompatible change of a stable row needs a new major version.
+- **experimental**: may change or be removed in any minor release, with a CHANGELOG entry. Never part of the HTML-in-Canvas specification.
+- **unqualified**: the polyfill is expected to run there, but no device or browser of that kind has run the suites. Nothing is promised until one has.
+
+The stable perimeter is the standard HTML-in-Canvas API as Chrome 157 ships it natively, implemented by the polyfill; the native-first decision and its modes; the script tags, the package exports and the bundle names; and the way unsupported cases fail loudly. It holds on the qualified platforms of the table. Anything this table does not name is internal and may change in any release: the modules under `src/`, the chunks under `dist/esm/chunks/`, the declarations under `dist/types/` that no entry exports, the `data-hic-*` attributes and the `<hic-layer>` element. The type declarations mark every experimental export and member `@experimental`.
+
+## 1. The table
+
+`Type`: `a`, `b` in the surface column means the members `a` and `b` of `Type`. "API-CONTRACT n" is a section of [API-CONTRACT.md](API-CONTRACT.md); the gates are described in [TEST-PLAN.md](TEST-PLAN.md).
+
+| area | surface | promise | status | evidence |
+|---|---|---|---|---|
+| standard API | `content`, `drawable`, `canvas.content` | A `<canvas content="drawable">` lays out its children as live HTML and `drawable` marks the elements that may be drawn, as API-CONTRACT 3 describes, within the deviations of API-CONTRACT 9.3. | stable | [CONFORMANCE.md](CONFORMANCE.md) (WPT, 248 files); gates G-explainer, G-f1-form, G-dom-identity |
+| standard API | `paint`, `onpaint`, `CanvasPaintEvent`, `changedElements`, `requestPaint` | `paint` fires once the drawables have a picture, at most once per frame per canvas, in reverse tree order, as API-CONTRACT 4.1 and 4.2 describe; the picture lags the DOM by one frame or more (`paint-timing`). | stable | CONFORMANCE.md; `test/unit/api-surface/events.browser.test.mjs`; gates G-regress-paint, G-regress-paint-rate |
+| standard API | `drawElementImage` | The four overloads on `CanvasRenderingContext2D` and on a main-thread `OffscreenCanvasRenderingContext2D`, with the defaults, geometry update and exceptions of API-CONTRACT 5.1. | stable | CONFORMANCE.md; `test/unit/api-surface/context2d.browser.test.mjs`, `draw-math.test.mjs`; gates G-explainer, G-f1-form, G-pixel-dpr |
+| standard API | `captureElementImage`, `ElementImage`, `close`, `getElementImageDefaultSize` | An immutable snapshot that keeps its pixels until closed; its default size in grid px of the current bitmap, on the canvas and its OffscreenCanvas (API-CONTRACT 4.3 to 4.4.1). | stable | CONFORMANCE.md; `test/unit/api-surface/canvas-patch.browser.test.mjs` |
+| standard API | `updateElementGeometry`, `clearElementGeometry`, `getElementTransform`, `elementgeometryupdate`, `onelementgeometryupdate`, `ElementGeometryUpdateEvent` | Input lands where the element is drawn; transforms are stored and returned as API-CONTRACT 4.5 to 4.8 describe. Exact only without a transformed or clipping ancestor between the drawable and the canvas (`nested-geometry`). | stable | CONFORMANCE.md; `test/unit/api-surface/geometry.browser.test.mjs`; gates G-f1-form (hit), G-regress-pagescroll |
+| standard API | `texElementSubImage2D`, `drawElementImageToTexture` | WebGL, WebGL2 and WebGPU uploads with the natural-size rule of API-CONTRACT 5.3 and 5.4; one GPU copy per call, never zero-copy. | stable | CONFORMANCE.md; `test/unit/api-surface/texture-patch.browser.test.mjs`, `texture-math.test.mjs` |
+| standard API | `OffscreenCanvas` in a dedicated worker | An `ElementImage` posted to a dedicated worker that loads the worker bundle arrives as an `ElementImage` and draws there (API-CONTRACT 5.2). | stable | CONFORMANCE.md (the offscreen worker tests); `test/unit/api-surface/worker.browser.test.mjs` |
+| standard API | `InvalidStateError`, `TypeError` | The exceptions of API-CONTRACT 6; where the specification text and the WPT disagree, the polyfill follows the WPT, which is what Chrome does (6.3). | stable | CONFORMANCE.md (`error-conditions`); `test/unit/api-surface/validate.test.mjs`, `guards.browser.test.mjs` |
+| standard API | `layoutsubtree`, `layoutSubtree`, `texElementImage2D`, `copyElementImageToTexture` | Names of earlier drafts, kept as aliases with one deprecation warning; Chrome 157 has none of them. | experimental | row `layoutsubtree-legacy` of [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md); `test/unit/api-surface/canvas-patch.browser.test.mjs` |
+| standard API | `toImageBitmap` | `ElementImage.toImageBitmap()`, a transferable copy of the snapshot: an extension of this library (API-CONTRACT 4.4). | experimental | `test/unit/api-surface/guards.browser.test.mjs` |
+| native-first | `native` | A usable native implementation (kind `complete`, `partial` or `legacy`) is used as found: nothing of the standard surface is patched, `install()` never throws there (API-CONTRACT 2). | stable | Chrome for Testing 157.0.8103.39, 2026-11-04 (SUPPORT-MATRIX.md, Browsers); gate G-native-loader; `test/unit/api-core/native-detect.test.mjs`, `install.browser.test.mjs` |
+| native-first | `native-bridged` | With the native-bridge bundle loaded first, a legacy or nearly complete native build gets only the names its public API can express; its renderer is never replaced (API-CONTRACT 2.1). | stable | `test/unit/api-core/native-bridge.browser.test.mjs` (the measured shapes of Chrome 154, 155 and Safari Technology Preview 254); G-xbrowser on Safari Technology Preview with its internal feature. No gate runs it end to end on Chrome 154 (G-bridged-translation is planned) |
+| native-first | `polyfill` | Where no native implementation exists and the browser gate admits the browser, the polyfill implements the standard API. | stable | every gate of TEST-PLAN.md 2.8, G-xbrowser, G-mobile |
+| native-first | `refused` | A browser outside the gate, or a native build without its core, is refused with `HicUnsupportedError` (`browser`, `partial-native`); the classic script logs one `console.warn` instead of throwing. | stable | `test/unit/api-core/install.browser.test.mjs`, `iife.browser.test.mjs`; G-mobile refusal (Safari on iOS 18, Chrome for Android 124) |
+| entry point | `install` | `install()` and `install({mode, onUnsupportedBrowser})`: synchronous, idempotent per window, throws `HicUnsupportedError` on refusal and `TypeError` for an invalid option (API-CONTRACT 2). | stable | `test/unit/api-core/install.browser.test.mjs`, `options.test.mjs` |
+| entry point | `HicInstalled`: `version`, `mode`, `native`, `whenPainted`, `uninstall` | What `install()` returns: its mode and native kind (`native.kind`), the first `paint` of a canvas, and an uninstall that restores every patched descriptor, listener and child; a reinstall manages the canvases again. | stable | gates G-dom-identity (two rounds), G-listeners; `test/unit/api-core/reinstall.browser.test.mjs` |
+| entry point | `getInstalled` | The window's `HicInstalled`, or `null`. | stable | `test/unit/api-core/install.browser.test.mjs` |
+| entry point | `load` | `load()` without options makes `install()`'s decision, downloads the core only where the polyfill runs, and resolves once (API-CONTRACT 2.4). | stable | `test/unit/api-core/loader.browser.test.mjs`, `loader-esm.browser.test.mjs`; G-bundle's loader checks (timeout, 404, CSP); gate G-native-loader on Chrome 157 |
+| entry point | `LoadResult`: `status`, `mode`, `installed`, `native`, `reason`, `error` | A frozen result whose `status` is `native`, `native-bridged`, `polyfill`, `refused` or `error`. | stable | the same tests and gates as `load` |
+| option | `HicOptions`: `mode`, `onUnsupportedBrowser` | The native-first modes (`auto`, `polyfill`, `native-only`) and the choice between a thrown refusal and one warning. | stable | `test/unit/api-core/options.test.mjs`, `install.browser.test.mjs` |
+| option | `HicOptions`: `defaultFrameCap`, `interactionFloorFps`, `maxSnapshotFps` | Frame-cap and build-rate knobs of the polyfill's renderer (API-CONTRACT 7.1). | experimental | `test/unit/schedule/frame-cap.test.mjs`; gate G-f1-form-effect |
+| option | `HicOptions`: `maxDpr`, `maxSurfacePixels`, `maxTotalSurfaceBytes`, `nodeBudget`, `inkMargin`, `coherentPaint`, `coherenceMaxWaitMs`, `paintGateMaxWaitMs` | Budgets and timings of the polyfill's renderer; their defaults follow measurements and native has none. | experimental | `test/unit/api-core/options.test.mjs`, `budget-recovery.browser.test.mjs` |
+| option | `HicOptions`: `parentFacade`, `stackingAudit`, `selectorBridge`, `onUnsupportedContent`, `legacyNames`, `autoDiscover`, `forcePolyfill`, `window`, `document` | Switches of polyfill-only behaviour, earlier-draft names and test hooks (`forcePolyfill`, another realm). | experimental | `test/unit/api-core/options.test.mjs` |
+| option | `HicInstalled`: `options`, `report`, `canvases`, `adopt`, `adoptRoot` | The resolved options, the diagnostic `report()` (its fields follow the implementation) and hooks for canvases the install does not discover. | experimental | `test/unit/api-core/install.browser.test.mjs`, `registry.browser.test.mjs` |
+| option | `LoadOptions`: `install`, `core`, `engines`, `bridge`, `timeout`, `nonce` | The loader's options (API-CONTRACT 2.4). | experimental | `test/unit/api-core/loader.browser.test.mjs` |
+| export | `.`, `VERSION`, `HicUnsupportedError` | The package entry (`@giuseppe-scotto-lavina/html-in-canvas-polyfill`): `install`, `getInstalled`, `HicUnsupportedError` and `VERSION` (equal to the package version). | stable | G-bundle (the ESM entry and its tree-shaking); `scripts/build.mjs` checks `VERSION` |
+| export | `FEATURES`, `featureById` | The feature table of SUPPORT-MATRIX.md: its rows, statuses and wording follow each release's measurements. | experimental | gate G-doc-sync |
+| export | `EVENTS`, `EXT` | Names of the polyfill's events and extension attributes (API-CONTRACT 7.5). | experimental | `test/unit/api-surface/events.browser.test.mjs` |
+| export | `./effects`, `definePlugin`, `NO_TARGET`, `isNoTarget`, `createLateEffects`, `installEffectsGlobal`, `installEffects` | The effects entry (API-CONTRACT 7.2 to 7.4). | experimental | `test/unit/gpu-effects/plugin-abi.test.mjs`, `effect-plugins.test.mjs` |
+| export | `./native-bridge`, `./worker` | Importing the entry installs the native bridge (before `install()`) or the worker scope (at the top of a dedicated worker). | stable | `test/unit/api-core/native-bridge.browser.test.mjs`, `test/unit/api-surface/worker.browser.test.mjs` |
+| export | `installNativeBridge`, `installWorkerScope` | The functions those entries call themselves when imported; a page does not need them. | experimental | the same tests |
+| export | `./loader` | The module loader: `load`, `LoadResult` and `VERSION` as above. | stable | `test/unit/api-core/loader-esm.browser.test.mjs`, `loader-esm-engines.browser.test.mjs` |
+| export | `./iife`, `./iife/min`, `./iife/native-bridge`, `./iife/native-bridge/min`, `./iife/engines`, `./iife/engines/min`, `./iife/gpu`, `./iife/gpu/min`, `./iife/worker`, `./iife/worker/min`, `./iife/loader`, `./iife/loader/min`, `./package.json` | Paths of the classic bundles below and of the package manifest. | stable | G-bundle (every classic bundle parses as a classic script) |
+| export | `./iife/effects`, `./iife/effects/min`, `./plugins/manifest.json`, `./plugins/*`, `./plugins/*/iife`, `./plugins/*/iife/min` | Paths of the effects bundle and the example plugins. | experimental | G-plugins-e2e, G-gallery |
+| export | `plugins/crt`, `plugins/disintegrate`, `plugins/glitch`, `plugins/holo-card`, `plugins/liquid-glass`, `plugins/page-curl`, `plugins/shatter`, `plugins/water` | The example plugins, with every export of each entry; they are examples of the effects extension, not part of the polyfill. | experimental | each plugin's tests; G-plugins-e2e |
+| bundle | `hic-live-polyfill.iife.js`, `data-hic-manual`, `HicLivePolyfill` | The classic core (and its `.min.js`): installs while its `<script>` runs unless the tag has `data-hic-manual`; `window.HicLivePolyfill` has `install`, `getInstalled`, `version`, `HicUnsupportedError` (its `FEATURES` and `featureById` are experimental, as above); a refusal is one `console.warn`, never a throw. | stable | `test/unit/api-core/iife.browser.test.mjs`; G-bundle |
+| bundle | `hic-live-engines.iife.js` | The Gecko and WebKit painters, for Firefox and Safari, in any order with the core. | stable | G-xbrowser |
+| bundle | `hic-live-gpu.iife.js` | The WebGL and WebGPU texture methods, before or after the core. | stable | G-bundle; `test/unit/api-surface/texture-patch.browser.test.mjs` |
+| bundle | `hic-live-native-bridge.iife.js` | The native bridge, loaded before the core. | stable | `test/unit/api-core/native-bridge.browser.test.mjs` |
+| bundle | `hic-live-worker.iife.js` | The worker scope, loaded at the top of a dedicated worker. | stable | `test/unit/api-surface/worker.browser.test.mjs`; CONFORMANCE.md (the offscreen worker tests) |
+| bundle | `hic-live-loader.iife.js`, `HicLiveLoader` | The classic loader: `window.HicLiveLoader` has `load` and `version`. | stable | `test/unit/api-core/loader.browser.test.mjs`; gate G-native-loader |
+| bundle | `hic-live-effects.iife.js`, `HicLivePlugins` | The effects bundle and the classic plugins (`window.HicLivePlugins.<name>`). | experimental | G-plugins-e2e, G-gallery |
+| loud failure | `HicUnsupportedError` | Every refusal is a `HicUnsupportedError` (a `DOMException` named `NotSupportedError`, code 9, with `feature`, `hint` and `path`); its `feature` is an id of the refusal table (API-CONTRACT 9.2). A call the polyfill cannot honour throws it. | stable | gate G-unsupported; `test/unit/api-core/install.browser.test.mjs` |
+| loud failure | unsupported content | Content the polyfill cannot capture never stalls and never blanks the rest: a hatched placeholder (or the box the browser itself draws), one `console.error` per feature and path, a report entry (API-CONTRACT 9.1). | stable | gate G-unsupported (classes `report`, `log`) |
+| extension | `framecap`, `frameCap` | The frame cap (API-CONTRACT 7.1). | experimental | gate G-f1-form-effect (class `cap`); `test/unit/schedule/frame-cap.test.mjs` |
+| extension | `HTMLInCanvasEffects`, `EffectPluginDefinition` | The effect plugin ABI v2 (API-CONTRACT 7.2). | experimental | `test/unit/gpu-effects/plugin-abi.test.mjs` |
+| extension | `createHost`, `EffectHost`, `effectframe`, `effecterror` | The effect host (API-CONTRACT 7.3). | experimental | `test/unit/gpu-effects/host.browser.test.mjs`; gate G-f1-form-effect |
+| extension | `EffectHandle`, `trigger`, `settled` | Plugin actions (API-CONTRACT 7.3.1). | experimental | `test/unit/gpu-effects/effect-plugins.test.mjs` |
+| extension | `captureInputMapper`, `interposer` | The input mapper and the interposer (API-CONTRACT 7.4). | experimental | gates G-f1-form-effect, G-interposer-strong |
+| extension | `hicunsupported`, `__HIC__` | The polyfill's events and the classic debug handle `window.__HIC__` (API-CONTRACT 7.5). | experimental | `test/unit/api-core/iife.browser.test.mjs`; gate G-unsupported (class `event`) |
+| extension | `hic-hover-sync` | The extensions over a native implementation (API-CONTRACT 7.6). | experimental | gates G-native-effects, G-native-interposer on Chrome 157.0.8103.39 and Canary 159.0.8137.0, 2026-11-04 |
+| platform | Chrome desktop 154 to 156, and 157 with its native feature switched off | The polyfill runs (mode `polyfill`). | stable | the browser gates on macOS (154, 155, headed); CI on Linux and Windows (headless) and macOS (headed, 11 of the 16 gates) with 156 and 157 |
+| platform | Chrome desktop 157 and later | The browser's own implementation runs (mode `native`). | stable | Chrome for Testing 157.0.8103.39, 2026-11-04: probe `ok`, mode `native`, G-native-loader |
+| platform | Chrome desktop 130 to 153 | Admitted by the browser gate; never run. | unqualified | SUPPORT-MATRIX.md, Browsers |
+| platform | Chrome 154 and 155 with the `CanvasDrawElement` flag | Used as found with one warning, or bridged with the native-bridge bundle. A flag build is not a shipped configuration. | unqualified | `test/unit/api-core/native-bridge.browser.test.mjs`; 155.0.8059.40 measured 2026-10-14 (kind `legacy`) |
+| platform | Edge, Opera, Brave and other desktop Chromium browsers | Same engine as Chrome; never run. | unqualified | SUPPORT-MATRIX.md, Browsers |
+| platform | Firefox 155 and later, desktop | The polyfill runs (row `engine-gecko`). | stable | G-xbrowser on Firefox 155.0.1, 157.0.1 (macOS) and 159.0 (macOS CI, 2026-11-04) |
+| platform | Safari 27 and later, desktop | The polyfill runs (row `engine-webkit`). | stable | G-xbrowser on Safari 27.0.1 (macOS), 11 scenarios |
+| platform | Safari Technology Preview with its HTML-in-Canvas internal feature | A WebKit debug feature, bridged as a legacy native build. | unqualified | G-xbrowser (optional engine) |
+| platform | Chrome for Android 130 and later | The polyfill runs with phone budgets; a build with a native implementation runs it natively. | stable | G-mobile on a physical Pixel 7 Pro (Android 17) and Huawei Mate 10 Pro (Android 10), both Chrome 156, 2026-10-30; the Android Emulator (Chromium 158), 2026-10-16 ([MOBILE.md](guides/MOBILE.md)) |
+| platform | Safari on iPadOS 26 and later | The polyfill runs with phone budgets and the iOS control look. | stable | G-mobile on a physical iPad Pro 11-inch (iPadOS 27.2, Safari 27.2), 2026-10-30; the iOS Simulator (iPad Air, iPadOS 26.4) |
+| platform | Safari on the iPhone (iOS 26 and later) | Expected as on the iPad; no physical iPhone on iOS 26 or later has run the suites, and the iPad does not stand in for it. | unqualified | the iOS Simulator only (iPhone 17, iOS 26.4), 2026-10-16 and 2026-10-27 |
+| platform | Chrome, Firefox and Edge on iOS | WebKit, admitted by the required features alone; never run. | unqualified | unit tests on their published user agents |
+| platform | refused browsers | Firefox before 155, Safari before 27, Chrome before 130, Safari on iOS before 26, Android WebView, in-app web views on iOS and Firefox for Android are refused with the reason named. | stable | G-mobile refusal (Safari on iOS 18 on a physical device, Chrome for Android 124); unit tests on the other user agents |
+| platform | screen readers | The live elements stay in the accessibility tree (`a11y-tree-link`); no real screen reader has been run. | unqualified | [FAQ](guides/FAQ.md#is-it-accessible) |
+
+## 2. Versioning
+
+From `1.0.0` the package follows [Semantic Versioning](https://semver.org/) for the **stable** rows only. Experimental rows may change in any minor release; each change has a CHANGELOG entry under Changed or Removed that names the row. Unqualified rows carry no promise; qualifying one is a minor release.
+
+**The reference for the standard API** is what the web-platform-tests for HTML-in-Canvas assert and what Chrome's native implementation does. The polyfill follows a change of the specification once the WPT and a Chrome release agree on it; until then it keeps the behaviour of the released Chrome. API-CONTRACT 2.2 and 2.3 record each WPT revision it follows and what changed:
+
+| change | version |
+|---|---|
+| a correction that brings a stable row closer to the WPT and to Chrome (a fixed exception type, an event that now fires, a pixel that now matches) | patch |
+| the specification adds a member, an overload, an event or an option; the polyfill adds a qualified platform, a bundle, an export or a feature row | minor |
+| the specification renames a member and the old name can be kept | minor: the new name is added and the old one is deprecated |
+| the specification removes or renames a member and the WPT asserts that the old one is gone, or it changes a behaviour that a conforming page can observe (an exception type, when an event fires); the polyfill drops a qualified platform, raises the minimum version of one, or removes or renames a stable export, bundle or global | major; specification changes are gathered into one major where their timing allows |
+| a change of size, timing or performance that changes no promise | patch or minor, with the numbers in the CHANGELOG |
+
+**Deprecation.** A deprecated stable member keeps working until the next major. It logs one `console.warn` per page that names the replacement, carries `@deprecated` in the type declarations, and is listed under Deprecated in the CHANGELOG of the release that deprecates it. Removing it is a major. When the WPT asserts that a removed name is absent, as it did for `ElementImage.width` and `height`, no alias is kept, because an alias would let a page pass on the polyfill and fail natively; that removal is a major.
+
+**Native-first.** A native implementation is never refused for a secondary member. A new shape of a native build that the decision handles (a name missing, renamed or added) is a minor at most; refusing a usable native implementation would be a major.
+
+**Older lines.** Within a major line only the newest minor gets fixes. When a new major is released, the previous line gets security fixes and fixes for stable rows that break on a qualified platform for six months. Releases before `1.0.0` get no fixes.
+
+**Release channels.** `next` carries release candidates and previews, `latest` the newest release that has been checked.
+
+## 3. Known gaps against the native implementation
+
+On the WPT revision of 2026-10-28, 40 subtests pass natively and fail with the polyfill. Each has a written reason in [CONFORMANCE.md, "Native passes, polyfill fails"](CONFORMANCE.md#native-passes-polyfill-fails-subtest-level), and no polyfill bug is open:
+
+- **Paint timing (21):** the picture is taken after the DOM change and decoded asynchronously, so `paint` fires one frame or more later than natively and some invalidations across frames are not seen in the same frame (`paint-timing`, `paint-dom-write-timing`).
+- **Backdrop filters (7):** a `backdrop-filter` of a descendant of a drawable is not drawn, which also fails the two privacy tests of what such a filter may read (`backdrop-isolation`).
+- **Nested geometry (5):** `getBoundingClientRect()` after `updateElementGeometry` does not reflect the canvas transform of a nested or inline drawable, or the one a descendant inherits (`nested-geometry`, `inline-drawable-geometry`).
+- **A canvas inside a drawable (3):** a nested canvas drawn with `object-fit`, under a filter or scaled is drawn from the bitmap of its last snapshot (`drawable-canvas-element`).
+- **Selections (2), layout (1), colour (1):** two privacy reftests of how a selection is painted, a `display` change between flex and contents, and the pixel values read back after a draw (`caret-selection`, `children-layout`, `color-space`).
+
+The other deviations, which no WPT test measures, are listed in API-CONTRACT 9.3 and in the Deviations table of SUPPORT-MATRIX.md.
