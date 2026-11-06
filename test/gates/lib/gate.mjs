@@ -2,7 +2,7 @@
 //
 // Gates over a native implementation (test/native-effects/) pass `chrome: 'canary', nativeDrawElement: true`.
 //
-//   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--wait-quiet=SECONDS] [--watchdog-min=10]
+//   node test/gates/<gate>.mjs [--control-only] [--no-control] [--dpr=1|2] [--chrome=stable|canary] [--bundle-file=/abs/core.js] [--effects-file=/abs/effects.js] [--water-file=/abs/water.js] [--bridge-file=/abs/bridge.js] [--wait-quiet=SECONDS] [--watchdog-min=10]
 //   --wait-quiet waits (up to SECONDS) for the shared machine to be quiet before the run (TEST-PLAN rule 6); a run whose machine load stays above the threshold is labelled so.
 //   --watchdog-min: a gate still running after that many minutes (default 10) reports itself (FAIL naming the CDP calls it waits for; NOT USABLE behind a locked screen) and exits.
 //
@@ -17,8 +17,8 @@
 // `degraded` lists reasons a result must be read with care (focus via a CDP click, machine load above threshold, no control run); `countsForThresholds` is true
 // only for a clean, real-focus run without high machine load. A high-load PASS stays reportable but never decides a threshold.
 //
-// `--bundle-file` serves another core bundle (a mutant, see test/gates/mutants) under the normal bundle URL; `--effects-file` / `--water-file` do the same for the optional
-// effects and water bundles (docs/BUNDLES.md). Bundles are snapshotted at start, so a concurrent rebuild of dist/ cannot change a run in flight.
+// `--bundle-file` serves another core bundle (a mutant, see test/gates/mutants) under the normal bundle URL; `--effects-file` / `--water-file` / `--bridge-file` do the same for the optional
+// effects, water and native-bridge bundles (docs/BUNDLES.md). Bundles are snapshotted at start, so a concurrent rebuild of dist/ cannot change a run in flight.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -31,6 +31,7 @@ export const BUNDLE = '/dist/hic-live-polyfill.iife.js';
 export const CONTROL_BUNDLE = '/dist/hic-live-polyfill.control.iife.js';
 export const EFFECTS_BUNDLE = '/dist/hic-live-effects.iife.js';
 export const WATER_BUNDLE = '/dist/plugins/water.iife.js';
+export const BRIDGE_BUNDLE = '/dist/hic-live-native-bridge.iife.js';
 /** `bundle=` value of a fixture URL that also loads the optional effects bundle and the water example plugin (plugins/water), after the core `bundle`. */
 export const withEffects = (bundle) => `${bundle},${EFFECTS_BUNDLE},${WATER_BUNDLE}`;
 export const RESULTS = resolve(ROOT, '.scratch/results');
@@ -85,7 +86,7 @@ function prepareBundles(id, bundleFile, kinds, optional = {}) {
   const files = { [BUNDLE]: real };
   const tmp = [real];
   const extra = {};
-  for (const [url, name, file] of [[EFFECTS_BUNDLE, 'effects', optional.effects], [WATER_BUNDLE, 'water', optional.water]]) {
+  for (const [url, name, file] of [[EFFECTS_BUNDLE, 'effects', optional.effects], [WATER_BUNDLE, 'water', optional.water], [BRIDGE_BUNDLE, 'bridge', optional.bridge]]) {
     const copy = resolve(dir, `${id}-${process.pid}.${name}.iife.js`);
     copyFileSync(file, copy);
     files[url] = copy;
@@ -167,7 +168,8 @@ export function gateRunOutcome(r) {
 }
 
 /** The single entry of a gate script. */
-export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawElement = false, windowSize, scrollbars, controlClasses = [], controlSabotage = [] } = {}) {
+/** `headless`: the gate needs no display (no real focus, no timing), so it runs as it does on a machine without one (the Linux CI job). */
+export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawElement = false, windowSize, scrollbars, controlClasses = [], controlSabotage = [], headless = false } = {}) {
   const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
   const has = (k) => process.argv.includes(`--${k}`);
   // A gate without a DPR of its own runs at the display's: 2 on the Retina screens the thresholds were set on. HIC_GATE_DPR gives such gates that ratio on a display
@@ -178,9 +180,10 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
   const t0 = Date.now();
   const bundles = prepareBundles(id, arg('bundle-file') ?? resolve(ROOT, 'dist/hic-live-polyfill.iife.js'), controlSabotage, {
     effects: arg('effects-file') ?? resolve(ROOT, 'dist/hic-live-effects.iife.js'), water: arg('water-file') ?? resolve(ROOT, 'dist/plugins/water.iife.js'),
+    bridge: arg('bridge-file') ?? resolve(ROOT, 'dist/hic-live-native-bridge.iife.js'),
   });
   const srv = await H.startServer({ files: bundles.files });
-  const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, nativeDrawElement, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}) });
+  const browser = await H.launchChrome({ name: `gate-${id}`, chrome: channel, nativeDrawElement, ...(useDpr ? { dpr: useDpr } : {}), ...(windowSize ? { windowSize } : {}), ...(scrollbars ? { scrollbars } : {}), ...(headless ? { extraArgs: ['--headless=new'] } : {}) });
   const result = { gate: id, verdict: 'FAIL', pass: false, usable: true, degraded: [], countsForThresholds: false, numbers: {}, control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, assertions: [], failed: [], load: null, chrome: null, dpr: useDpr ?? null, rafHz: null, focus: {}, screenLocked: screenLocked(), highLoad: false, bundle: bundles.info, noControl: !phases.includes('control'), startedAt: new Date().toISOString(), pointerPark: browser.pointerPark ?? null, foreignPointer: [] };
   const outcomes = {};
   const emit = () => {

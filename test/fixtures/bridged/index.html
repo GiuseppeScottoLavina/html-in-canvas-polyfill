@@ -1,0 +1,200 @@
+<!doctype html>
+<!-- G-bridged-translation (test/gates/g-bridged-translation.mjs): a page written for the CURRENT HTML-in-Canvas API (content="drawable", the one-argument
+     getElementTransform, getElementImageDefaultSize, texElementSubImage2D, drawElementImageToTexture), run on a native build of the earlier layoutsubtree draft.
+     ?bundle=a.js,b.js   classic scripts loaded in that order (the native bridge, then the core);
+     ?manual=1           the core gets data-hic-manual and the gate calls window.__b.install(options) itself;
+     ?delete=a,b         native members deleted BEFORE any bundle loads (a synthetic shape on the real build): HTMLCanvasElement.onelementgeometryupdate,
+                         ElementGeometryUpdateEvent, WebGLRenderingContext.texElementSubImage2D, WebGL2RenderingContext.texElementSubImage2D,
+                         GPUQueue.drawElementImageToTexture, GPUQueue.copyElementImageToTexture.
+     Every drawn element is a grid of four solid quadrants (red, green, blue, yellow), so the pixel oracle knows each drawn pixel exactly.
+     Hooks installed before the bundles count what the polyfill's own renderer would do (2D drawImage of a raster, an image loaded from an SVG or blob URL)
+     and remember the native functions. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>native bridge translation</title>
+<style>
+  body { margin: 0; font: 12px sans-serif; }
+  canvas { display: block; margin: 0 0 8px 0; }
+  .q { display: grid; grid-template-columns: 50px 50px; grid-template-rows: 30px 30px; width: 100px; height: 60px; margin: 0; padding: 0; border: 0; }
+  .q > i { display: block; }
+  .q > i:nth-child(1) { background: rgb(255, 0, 0); }
+  .q > i:nth-child(2) { background: rgb(0, 255, 0); }
+  .q > i:nth-child(3) { background: rgb(0, 0, 255); }
+  .q > i:nth-child(4) { background: rgb(255, 255, 0); }
+  #field { display: block; box-sizing: border-box; width: 80px; height: 20px; margin: 0; padding: 0 2px; border: 1px solid #000; font: 12px sans-serif; }
+  #wrap { display: block; width: 20px; height: 20px; margin: 0; }
+  #deep { display: block; width: 20px; height: 20px; background: rgb(255, 0, 255); }
+  #pin { display: block; width: 40px; height: 20px; background: rgb(255, 128, 0); }
+  #gone { display: none; }
+</style>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var owners = { HTMLCanvasElement: HTMLCanvasElement.prototype, WebGLRenderingContext: WebGLRenderingContext.prototype, WebGL2RenderingContext: WebGL2RenderingContext.prototype,
+      GPUQueue: window.GPUQueue && GPUQueue.prototype };
+    window.__deleted = [];
+    for (var name of (q.get('delete') || '').split(',').filter(Boolean)) {
+      var dot = name.indexOf('.');
+      var owner = dot < 0 ? (name === 'ElementGeometryUpdateEvent' ? window : HTMLCanvasElement.prototype) : owners[name.slice(0, dot)];
+      var key = dot < 0 ? name : name.slice(dot + 1);
+      if (owner && Object.prototype.hasOwnProperty.call(owner, key) && delete owner[key]) window.__deleted.push(name);
+    }
+    // what the polyfill's own renderer would do: drawImage of a raster into a 2D context, an image from an SVG / blob URL (the snapshot path)
+    var hooks = window.__hooks = { drawImage: 0, svgImages: 0 };
+    var drawImage = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function () { hooks.drawImage++; return drawImage.apply(this, arguments); };
+    var src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+    Object.defineProperty(HTMLImageElement.prototype, 'src', { configurable: true, enumerable: true, get: src.get,
+      set: function (v) { if (/^(data:image\/svg|blob:)/.test(String(v))) hooks.svgImages++; return src.set.call(this, v); } });
+    window.__native = { draw: CanvasRenderingContext2D.prototype.drawElementImage, texSub: WebGLRenderingContext.prototype.texElementSubImage2D, texSub2: WebGL2RenderingContext.prototype.texElementSubImage2D,
+      gpuDraw: window.GPUQueue && GPUQueue.prototype.drawElementImageToTexture, gpuCopy: window.GPUQueue && GPUQueue.prototype.copyElementImageToTexture };
+    window.__paints = {};
+    addEventListener('paint', function (e) { window.__paints[e.target.id] = (window.__paints[e.target.id] || 0) + 1; }, true);
+    var manual = q.get('manual') === '1';
+    for (var s of (q.get('bundle') || '').split(',').filter(Boolean)) {
+      document.write('<script ' + (manual && /hic-live-polyfill/.test(s) ? 'data-hic-manual ' : '') + 'src="' + s + '"><\/script>');
+    }
+  })();
+</script>
+</head>
+<body>
+<!-- the standard caller: the children are laid out from the canvas origin at x 0: #tile y 0-60, #field y 60-80, #wrap/#deep y 80-100, #pin y 100-120 -->
+<canvas id="std" content="drawable" width="240" height="160" style="width: 240px; height: 160px;">
+  <div id="tile" class="q"><i></i><i></i><i></i><i></i></div>
+  <input id="field" value="">
+  <div id="wrap"><div id="deep"></div></div>
+  <div id="pin"></div>
+  <div id="gone"><div id="ghost"></div></div>
+</canvas>
+<!-- a legacy caller: layoutsubtree written by the page, no content attribute -->
+<canvas id="leg" layoutsubtree width="120" height="80" style="width: 120px; height: 80px;">
+  <div id="ltile" class="q"><i></i><i></i><i></i><i></i></div>
+</canvas>
+<canvas id="gl" content="drawable" width="128" height="80" style="width: 128px; height: 80px;"><div id="gltile" class="q"><i></i><i></i><i></i><i></i></div></canvas>
+<canvas id="gl2" content="drawable" width="128" height="80" style="width: 128px; height: 80px;"><div id="gl2tile" class="q"><i></i><i></i><i></i><i></i></div></canvas>
+<canvas id="gpu" content="drawable" width="128" height="80" style="width: 128px; height: 80px;"><div id="gputile" class="q"><i></i><i></i><i></i><i></i></div></canvas>
+<script>
+  // where the standard caller draws each element (grid px = css px: the canvas grid equals its css size)
+  var AT = { tile: [130, 10], field: [130, 80], pin: [130, 125] };
+  // #pin: drawn at AT.pin until the gate moves it; a moved draw with preserveElementGeometry keeps the geometry of the previous one
+  var PIN = { at: AT.pin, preserve: false };
+  var $ = function (id) { return document.getElementById(id); };
+  var B = window.__b = { results: {}, errors: [] };
+  window.addEventListener('error', function (e) { B.errors.push(String(e.message)); });
+
+  function paintStd() {
+    var c = $('std'); var ctx = c.getContext('2d');
+    ctx.reset();
+    B.results.stdReturn = ctx.drawElementImage($('tile'), AT.tile[0], AT.tile[1]);
+    ctx.drawElementImage($('field'), AT.field[0], AT.field[1]);
+    if (PIN.preserve) ctx.drawElementImage($('pin'), PIN.at[0], PIN.at[1], { preserveElementGeometry: true });
+    else ctx.drawElementImage($('pin'), PIN.at[0], PIN.at[1]);
+    B.results.stdPainted = (B.results.stdPainted || 0) + 1;
+  }
+  function paintLeg() {
+    var ctx = $('leg').getContext('2d');
+    ctx.reset();
+    B.results.legReturn = ctx.drawElementImage($('ltile'), 10, 10);
+  }
+  // WebGL / WebGL2: the element uploaded at (20, 10) into a 128 x 80 texture of zeros, read back through a framebuffer
+  function paintGl(id, kind) {
+    var c = $(id); var gl = c.getContext(kind, { preserveDrawingBuffer: true });
+    var r = B.results[id] = { kind: kind, error: null };
+    try {
+      if (typeof gl.texElementSubImage2D !== 'function') throw new Error('no texElementSubImage2D');
+      var tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 80, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texElementSubImage2D(gl.TEXTURE_2D, 0, 20, 10, $(id + 'tile'));
+      r.glError = gl.getError();
+      r.boundAfter = gl.getParameter(gl.TEXTURE_BINDING_2D) === tex;
+      var fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      var px = new Uint8Array(128 * 80 * 4);
+      gl.readPixels(0, 0, 128, 80, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      r.pixels = Array.from(px);
+    } catch (e) { r.error = String(e && e.message || e); }
+  }
+  // WebGPU: the element copied to (20, 10) of a 128 x 80 texture, read back with copyTextureToBuffer, for one call shape:
+  //   sized    drawElementImageToTexture({source}, {texture, origin, size: [100, 60]})
+  //   unsized  drawElementImageToTexture({source}, {texture, origin})                       (the default size: the element's natural size)
+  //   rect     drawElementImageToTexture({source, sourceX: 50, sourceY: 30, sourceWidth: 50, sourceHeight: 30}, {texture, origin, size: [50, 30]})
+  //   legacy   copyElementImageToTexture({source}, {destination: {texture, origin}, width: 100, height: 60})   (the earlier draft's call)
+  async function paintGpu(variant) {
+    var r = { variant: variant, error: null };
+    try {
+      if (!navigator.gpu) { r.noAdapter = true; throw new Error('no navigator.gpu'); }
+      if (!B.device) {
+        var adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) { r.noAdapter = true; throw new Error('no WebGPU adapter'); }
+        B.device = await adapter.requestDevice();
+        $('gpu').getContext('webgpu').configure({ device: B.device, format: navigator.gpu.getPreferredCanvasFormat(), alphaMode: 'premultiplied' });
+      }
+      var device = B.device;
+      var texture = device.createTexture({ size: [128, 80], format: 'rgba8unorm', usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+      var el = $('gputile');
+      if (variant === 'legacy') device.queue.copyElementImageToTexture({ source: el }, { destination: { texture: texture, origin: [20, 10] }, width: 100, height: 60 });
+      else if (variant === 'unsized') device.queue.drawElementImageToTexture({ source: el }, { texture: texture, origin: [20, 10] });
+      else if (variant === 'rect') device.queue.drawElementImageToTexture({ source: el, sourceX: 50, sourceY: 30, sourceWidth: 50, sourceHeight: 30 }, { texture: texture, origin: [20, 10], size: [50, 30] });
+      else device.queue.drawElementImageToTexture({ source: el }, { texture: texture, origin: [20, 10], size: [100, 60] });
+      var buffer = device.createBuffer({ size: 512 * 80, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      var enc = device.createCommandEncoder();
+      enc.copyTextureToBuffer({ texture: texture }, { buffer: buffer, bytesPerRow: 512 }, [128, 80]);
+      device.queue.submit([enc.finish()]);
+      await buffer.mapAsync(GPUMapMode.READ);
+      r.pixels = Array.from(new Uint8Array(buffer.getMappedRange()));
+      buffer.unmap();
+    } catch (e) { r.error = String(e && e.message || e); }
+    return r;
+  }
+  // The pixel oracle: in the destination rect (dx, dy, w, h) each pixel must be the quadrant colour of the element at source (sx + x - dx, sy + y - dy), within 2
+  // levels per channel; outside it (when `zeroOutside`) every pixel must be transparent. The 1 px seams of the quadrants and of the rect are not judged.
+  var QUAD = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 0, 255]];
+  B.quadCheck = function (px, W, H, dx, dy, w, h, sx, sy, zeroOutside) {
+    var out = { inside: 0, badInside: 0, outside: 0, badOutside: 0, firstBad: null };
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      var i = 4 * (y * W + x); var p = [px[i], px[i + 1], px[i + 2], px[i + 3]];
+      var inX = x >= dx && x < dx + w, inY = y >= dy && y < dy + h;
+      if (inX && inY) {
+        var u = sx + x - dx, v = sy + y - dy;
+        if (x === dx || y === dy || x === dx + w - 1 || y === dy + h - 1 || Math.abs(u + 0.5 - 50) < 1 || Math.abs(v + 0.5 - 30) < 1) continue;
+        var e = QUAD[(v < 30 ? 0 : 2) + (u < 50 ? 0 : 1)];
+        out.inside++;
+        if (p.some(function (c, k) { return Math.abs(c - e[k]) > 2; })) { out.badInside++; out.firstBad = out.firstBad || { x: x, y: y, got: p.join(), want: e.join() }; }
+      } else if (zeroOutside && !(x >= dx - 1 && x <= dx + w && y >= dy - 1 && y <= dy + h)) {
+        out.outside++;
+        if (p[3] !== 0) { out.badOutside++; out.firstBad = out.firstBad || { x: x, y: y, got: p.join(), want: 'transparent' }; }
+      }
+    }
+    out.ok = out.inside > 0 && out.badInside === 0 && out.badOutside === 0;
+    return out;
+  };
+  // the one-argument getElementTransform of the current API (the legacy native build needs two arguments: the bridge answers the one-argument form)
+  B.transform = function (canvasId, id) { try { var t = $(canvasId).getElementTransform($(id)); return t ? [t.a, t.b, t.c, t.d, t.e, t.f] : null; } catch (e) { return 'threw ' + e.message; } };
+  B.canvasPixels = function (id) { var c = $(id); return Array.from(c.getContext('2d').getImageData(0, 0, c.width, c.height).data); };
+  B.movePin = function (x, y, preserve) { PIN.at = [x, y]; PIN.preserve = preserve; $('std').requestPaint(); };
+  B.install = function (options) {
+    try { B.installed = HicLivePolyfill.install(options || {}); return B.installed.mode; } catch (e) { return 'threw: ' + e.message; }
+  };
+  B.start = function () {
+    $('std').onpaint = paintStd;
+    $('leg').onpaint = paintLeg;
+    $('gl').onpaint = function () { paintGl('gl', 'webgl'); };
+    $('gl2').onpaint = function () { paintGl('gl2', 'webgl2'); };
+    for (var id of ['std', 'leg', 'gl', 'gl2']) if (typeof $(id).requestPaint === 'function') $(id).requestPaint();
+  };
+  B.paintGpu = paintGpu;
+  B.mode = function () {
+    var inst = (window.HicLivePolyfill && HicLivePolyfill.getInstalled && HicLivePolyfill.getInstalled()) || B.installed || null;
+    if (!inst) return { mode: window.__HIC__ && window.__HIC__.error ? 'error: ' + window.__HIC__.error.message : 'not installed' };
+    var rep = inst.report();
+    return { mode: inst.mode, kind: inst.native && inst.native.kind, gaps: inst.native && inst.native.gaps, deviations: rep.deviations.map(function (d) { return d.id; }),
+      unsupported: (rep.unsupported || []).map(function (u) { return u.feature + ': ' + u.message; }), errors: rep.errors.length };
+  };
+  if (new URLSearchParams(location.search).get('manual') !== '1') B.start();
+</script>
+</body>
+</html>

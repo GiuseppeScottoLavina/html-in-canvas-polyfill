@@ -3,7 +3,7 @@
 //
 //   name         unique id
 //   proves       what a catch proves (docs/TEST-PLAN.md section 2.8 repeats it)
-//   bundle       'core' (default: dist/hic-live-polyfill.iife.js), 'effects' (dist/hic-live-effects.iife.js) or 'engines' (dist/hic-live-engines.iife.js, G-xbrowser only): the bundle the edits apply to
+//   bundle       'core' (default: dist/hic-live-polyfill.iife.js), 'effects' (dist/hic-live-effects.iife.js), 'engines' (dist/hic-live-engines.iife.js, G-xbrowser only) or 'bridge' (dist/hic-live-native-bridge.iife.js, G-bridged-translation): the bundle the edits apply to
 //   edits        [[anchor, replacement], ...]; every anchor must occur EXACTLY ONCE in that bundle (else ANCHOR DRIFT: the bundle was rebuilt, fix the anchor), or 'EMPTY'
 //   gates        gate file stems to run (one headed Chrome at a time); `xbrowser-<scenario>` runs that G-xbrowser scenario on Safari and Firefox instead (headed, local only:
 //                test/xbrowser/run.mjs --only=<scenario> --no-control; HIC_MUTANT_ENGINES overrides the engines)
@@ -13,7 +13,7 @@ export const DRAW = 'Reflect.apply(drawImage, ctx, [raster.source, raster.sx, ra
 const BUILD_PREAMBLE = '    const ledger = createPatchLedger(win);';
 const LISTENER_HOOK = (body) => [[BUILD_PREAMBLE, `${BUILD_PREAMBLE}\n    ${body}`]];
 
-/** @type {{name:string, bundle?:'core'|'effects'|'engines', proves:string, edits:Array<[string,string]>|'EMPTY', gates:string[], expect?:'any'|'all', pendingFix?:string}[]} */
+/** @type {{name:string, bundle?:'core'|'effects'|'engines'|'bridge', proves:string, edits:Array<[string,string]>|'EMPTY', gates:string[], expect?:'any'|'all', pendingFix?:string}[]} */
 export const MUTANTS = [
   // ---- renderer / pixels ------------------------------------------------------------------------------------------------------------------
   { name: 'paint-nothing', proves: 'the canvas surface check: a renderer that draws nothing', edits: [[DRAW, 'void 0;']], gates: ['g-explainer', 'g-f1-form', 'g-scroll-inner', 'g-resize-drag'], expect: 'all' },
