@@ -20,16 +20,21 @@
 // Control (must turn every class red): the same pages WITHOUT the bridge bundle (mode native, used as found), and the renderer page installed with
 // `forcePolyfill` (the polyfill replaces the native renderer).
 //
-//   node test/gates/g-bridged-translation.mjs [--chrome=<path of a Chrome for Testing 154 or 155>] [--allow-no-webgpu] [--no-control] [--bridge-file=<copy>] [--bundle-file=<copy>]
-// The browser: --chrome, else HIC_BRIDGED_CHROME, else Chrome for Testing 155.0.8059.79 in the @puppeteer/browsers cache (~/.cache/puppeteer:
-// `npx @puppeteer/browsers install chrome@155.0.8059.79 --path ~/.cache/puppeteer`). Headless (no display needed). --allow-no-webgpu: a browser without a
-// WebGPU adapter (the Linux CI runner) records the gpu checks as not run instead of failing them; the class is then not required to turn red.
+//   node test/gates/g-bridged-translation.mjs [--chrome=<path> | --build=154|155] [--allow-no-webgpu] [--no-control] [--bridge-file=<copy>] [--bundle-file=<copy>]
+// The browser: --chrome; else --build, Chrome for Testing 154.0.8037.92 or 155.0.8059.79 in the @puppeteer/browsers cache layout under HIC_BROWSERS_CACHE
+// (a list of roots separated like PATH) or ~/.cache/puppeteer ( `npx @puppeteer/browsers install chrome@155.0.8059.79 --path ~/.cache/puppeteer`); else HIC_BRIDGED_CHROME; else build 155.
+// The two builds differ where the bridge matters (measured 2026-11-06): 154 lacks onelementgeometryupdate and ElementGeometryUpdateEvent, and its
+// drawElementImageToTexture takes the earlier destination dictionary; 155 has both names and the current dictionary. Headless (no display needed).
+// --allow-no-webgpu: a browser without a WebGPU adapter (the Linux CI runner) records the gpu checks as not run instead of failing them; the class is then
+// not required to turn red.
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { delimiter, resolve } from 'node:path';
 import { runGate, H, BRIDGE_BUNDLE } from './lib/gate.mjs';
 
-export const PINNED = '155.0.8059.79';
+/** the measured builds of the earlier draft, by major */
+export const BUILDS = { 154: '154.0.8037.92', 155: '155.0.8059.79' };
+export const PINNED = BUILDS[155];
 /** The executable of a Chrome for Testing build in the @puppeteer/browsers cache layout. @param {string} version @param {string} [root] */
 export function cachedChrome(version, root = resolve(homedir(), '.cache/puppeteer'), platform = process.platform, arch = process.arch) {
   if (platform === 'darwin') {
@@ -42,9 +47,15 @@ export function cachedChrome(version, root = resolve(homedir(), '.cache/puppetee
 
 const arg = (/** @type {string} */ k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const allowNoGpu = process.argv.includes('--allow-no-webgpu');
-const chrome = arg('chrome') ?? process.env.HIC_BRIDGED_CHROME ?? cachedChrome(PINNED);
+const build = arg('build');
+if (build && !BUILDS[build]) { console.error(`--build must be one of ${Object.keys(BUILDS).join(', ')}`); process.exit(2); }
+// the cache roots, in order: HIC_BROWSERS_CACHE (a list separated like PATH), then ~/.cache/puppeteer; the first that holds the build wins
+const roots = [...(process.env.HIC_BROWSERS_CACHE ?? '').split(delimiter).filter(Boolean), resolve(homedir(), '.cache/puppeteer')];
+const fromCache = (/** @type {string} */ version) => roots.map((r) => cachedChrome(version, r)).find((p) => existsSync(p)) ?? cachedChrome(version, roots[roots.length - 1]);
+const chrome = arg('chrome') ?? (build ? fromCache(BUILDS[build]) : process.env.HIC_BRIDGED_CHROME ?? fromCache(PINNED));
 if (!arg('chrome') && !existsSync(chrome)) {
-  console.error(`G-bridged-translation needs a native build of the earlier draft: ${chrome} is missing. Fetch it with\n  npx @puppeteer/browsers install chrome@${PINNED} --path ~/.cache/puppeteer\nor pass --chrome=<path> (Chrome for Testing 154 or 155).`);
+  const version = BUILDS[build ?? 155];
+  console.error(`G-bridged-translation needs a native build of the earlier draft: ${chrome} is missing. Fetch it with\n  npx @puppeteer/browsers install chrome@${version} --path ~/.cache/puppeteer\nor pass --chrome=<path> (Chrome for Testing 154 or 155).`);
 }
 
 const PAGE = '/test/fixtures/bridged/index.html';

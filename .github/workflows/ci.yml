@@ -107,6 +107,29 @@ jobs:
         # known gap that starts to pass.
         run: node test/platform/run.mjs --allow-known
 
+      # G-bridged-translation needs a native build of the earlier HTML-in-Canvas draft (behind --enable-blink-features=CanvasDrawElement), not the stable
+      # Chrome above: Chrome for Testing 154 and 155, the two measured shapes (test/gates/g-bridged-translation.mjs). Headless; this runner offers no WebGPU
+      # adapter, so the WebGPU checks are recorded as not run here and run locally on macOS.
+      - name: Install Chrome for Testing 155 (the earlier draft behind its flag)
+        id: chrome155
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: 155.0.8059.79
+
+      - name: Install Chrome for Testing 154 (the earlier draft behind its flag)
+        id: chrome154
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: 154.0.8037.92
+
+      - name: G-bridged-translation (mode native-bridged end to end, real + control, on Chrome for Testing 155 and 154)
+        env:
+          CHROME_155: ${{ steps.chrome155.outputs.chrome-path }}
+          CHROME_154: ${{ steps.chrome154.outputs.chrome-path }}
+        run: |
+          node test/gates/g-bridged-translation.mjs --chrome="${CHROME_155}" --allow-no-webgpu
+          node test/gates/g-bridged-translation.mjs --chrome="${CHROME_154}" --allow-no-webgpu
+
       - name: Package contents
         run: npm pack --dry-run
 

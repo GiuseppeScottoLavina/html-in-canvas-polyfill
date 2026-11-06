@@ -58,19 +58,21 @@ if (has('check-anchors')) {
 
 const passArgs = ['--no-control', ...(arg('wait-quiet') ? [`--wait-quiet=${arg('wait-quiet')}`] : [])];
 /** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'|'engines'|'bridge'} [which] which of the bundles `file` replaces */
-function runGate(gate, file, which = 'core') {
+/** @param {string[]} [args] extra gate arguments of the mutant (`args`, e.g. the browser build a check needs) */
+function runGate(gate, file, which = 'core', args = []) {
   // `xbrowser-<scenario>`: that G-xbrowser scenario on Safari and Firefox (it prints the same result line as a gate)
   const xb = /^xbrowser-(.+)$/.exec(gate);
   const cmd = xb ? [resolve(root, 'test/xbrowser/run.mjs'), `--engine=${process.env.HIC_MUTANT_ENGINES ?? 'safari,firefox'}`, `--only=${xb[1]}`, '--no-control'] : [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs];
-  return gateRunOutcome(spawnSync(process.execPath, [...cmd, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
+  return gateRunOutcome(spawnSync(process.execPath, [...cmd, ...args, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
 }
 const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 
 const baselines = new Map();
-const baseline = (gate) => {
+const baseline = (gate, args = []) => {
   if (has('no-baseline')) return { failed: new Set(), usable: true };
-  if (!baselines.has(gate)) { const r = runGate(gate, basePath); baselines.set(gate, r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict }); }
-  return baselines.get(gate);
+  const key = [gate, ...args].join(' ');
+  if (!baselines.has(key)) { const r = runGate(gate, basePath, 'core', args); baselines.set(key, r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict }); }
+  return baselines.get(key);
 };
 
 const repeat = Math.max(1, Math.floor(+(arg('repeat') ?? 1)) || 1);
@@ -82,8 +84,8 @@ for (const m of selected.flatMap((x) => Array.from({ length: repeat }, () => x))
   writeFileSync(file, b.text);
   const perGate = {};
   for (const gate of m.gates) {
-    const base = baseline(gate);
-    const res = runGate(gate, file, m.bundle ?? 'core');
+    const base = baseline(gate, m.args);
+    const res = runGate(gate, file, m.bundle ?? 'core', m.args);
     if (res.notRun) { perGate[gate] = { caught: false, usable: false, detail: res.notRun }; continue; }
     const newly = [...failedOf(res)].filter((n) => !base.failed.has(n));
     perGate[gate] = { caught: newly.length > 0, usable: res.usable, newlyRed: newly.slice(0, 4), baselineRed: base.failed.size, highLoad: res.highLoad, focus: res.focus?.mode };

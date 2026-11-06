@@ -50,9 +50,12 @@ test('mutant definitions: unique names, edit pairs, existing gate files, no dupl
     assert.ok(m.proves.length > 10 && m.gates.length > 0, m.name);
     for (const g of m.gates) assert.ok(g.startsWith('xbrowser-') ? g.slice(9) in SCENARIOS : existsSync(resolve(here, '../../gates', g + '.mjs')), `${m.name}: gate ${g} does not exist`);
     if (m.edits !== 'EMPTY') for (const e of m.edits) assert.ok(Array.isArray(e) && e.length === 2 && e[0].length > 5, m.name);
-    assert.ok([undefined, 'core', 'effects', 'engines'].includes(m.bundle), `${m.name}: unknown bundle ${m.bundle}`);
+    assert.ok([undefined, 'core', 'effects', 'engines', 'bridge'].includes(m.bundle), `${m.name}: unknown bundle ${m.bundle}`);
     // only G-xbrowser pages load the engines bundle: a Chrome gate would serve the clean one and never see the edit
     if (m.bundle === 'engines') assert.ok(m.gates.every((g) => g.startsWith('xbrowser-')), `${m.name}: an engines mutant runs G-xbrowser scenarios only`);
+    // only G-bridged-translation loads the native bridge
+    if (m.bundle === 'bridge') assert.ok(m.gates.every((g) => g === 'g-bridged-translation'), `${m.name}: a bridge mutant runs G-bridged-translation only`);
+    if (m.args !== undefined) assert.ok(Array.isArray(m.args) && m.args.every((a) => typeof a === 'string' && a.startsWith('--')), `${m.name}: args are gate flags`);
   }
   assert.ok(MUTANTS.length >= 30);
 });

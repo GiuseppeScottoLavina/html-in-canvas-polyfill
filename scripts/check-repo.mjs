@@ -189,7 +189,10 @@ if (!docsOnly) {
   // instead of 1 and 0, 0.1.0-preview.26)
   // 17360 -> 17363 (2026-11-06, measured 17,363 with both): dispose drops the queued side builds (+3: store.js dropEntry and dispose)
   // 17363 -> 17366 (2026-11-06, measured 17,366): the event bridge keeps each canvas listener's passive flag (+3: src/live/event-bridge.js)
-  if (total > 17366) problems.push(`G-size: core is ${total} code lines (> 17366)`);
+  // 17366 -> 17385 (2026-11-06, measured 17,385): the native bridge on the measured Chrome 154 and 155 builds (+19: src/api/native-bridge.js
+  // wrapEarlierGpuDictionary 16, the unsized mapping 1, the three-argument upload 2); before it, G-bridged-translation failed 5 checks on Chrome 154 (every
+  // standard drawElementImageToTexture call) and 2 on 155 (a synthetic shape: the unsized mapping threw, the built texElementSubImage2D threw)
+  if (total > 17385) problems.push(`G-size: core is ${total} code lines (> 17385)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
