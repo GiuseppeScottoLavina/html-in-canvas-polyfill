@@ -3,12 +3,14 @@
 //   document.fonts and every media query list + a registration tracker; see lib/listeners.mjs). Listeners are attributed to the polyfill by their script URL.
 //   After uninstall: zero listeners, zero active observers, zero intervals, no rAF callback fires.
 // Positive control: scripts named like the bundle register a document wheel listener, a wheel listener on an element inside a shadow root, a visualViewport wheel listener and a
-// non-passive window scroll listener (class 'forbidden'), and after uninstall a listener, a ResizeObserver and an interval (class 'leftover'): each must be seen.
+// non-passive window scroll listener (class 'forbidden'); with the effect host on, a non-passive touchstart from a script named like a plugin bundle and a passive touchmove
+// from one named like the core (class 'forbidden': a plugin may register passive touch listeners only); and after uninstall a listener, a ResizeObserver and an interval (class 'leftover'): each must be seen.
 import { runGate, H } from './lib/gate.mjs';
 import { openAuditPage, checkListenerState, checkClean } from './lib/listeners.mjs';
 import { setupEffect } from './lib/effect.mjs';
 
 const CONTROL_URL = '//# sourceURL=http://127.0.0.1/dist/hic-live-polyfill.control.js';
+const PLUGIN_CONTROL_URL = '//# sourceURL=http://127.0.0.1/dist/plugins/control.iife.js';
 
 async function exercise(page) {
   const r = await page.evaluate(`document.getElementById('name').getBoundingClientRect().toJSON()`);
@@ -39,6 +41,11 @@ runGate('G-listeners', async (ctx) => {
   await ctx.focus(page);
   await setupEffect(ctx, page, { interposer: true });
   await exercise(page);
+  if (ctx.control) {
+    // a plugin's touch listener that is not passive, and a passive one of the core: both still forbidden with the effect host on
+    await page.evaluate(`document.querySelector('canvas').addEventListener('touchstart', () => {}, { passive: false })\n${PLUGIN_CONTROL_URL}`);
+    await page.evaluate(`document.body.addEventListener('touchmove', () => {}, { passive: true })\n${CONTROL_URL}`);
+  }
   await checkListenerState(ctx, { page, urls, label: 'effect host on', effectHost: true, numbers });
 
   // --- C: install -> exercise -> uninstall: nothing may be left ------------------------------------------------------------------------------

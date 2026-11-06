@@ -9,6 +9,8 @@ import { H } from './gate.mjs';
 
 /** Script names that count as the polyfill: the core bundle, the optional effects bundle and the plugin bundles (dist/plugins/, docs/BUNDLES.md), so the effect host's listeners stay audited. */
 const MARK = /hic-live-(polyfill|effects)|\/dist\/plugins\//;
+/** The plugin bundles alone: a plugin's own touch listeners, registered through context.listen, may be passive ones (water's: a finger keeps scrolling the page). */
+const PLUGIN = /\/dist\/plugins\//;
 
 export const TRACKER_SRC = `(() => {
   if (window.__trk) return;
@@ -18,7 +20,7 @@ export const TRACKER_SRC = `(() => {
   EventTarget.prototype.addEventListener = function (type, fn, opts) {
     if (fn && mine()) {
       const o = typeof opts === 'object' && opts ? opts : { capture: !!opts };
-      T.listeners.push({ target: this, type, fn, capture: !!o.capture, passive: o.passive === true, once: !!o.once, removed: false, tag: this === window ? 'window' : this === document ? 'document' : (this.localName || this.constructor.name) });
+      T.listeners.push({ target: this, type, fn, capture: !!o.capture, passive: o.passive === true, once: !!o.once, removed: false, plugin: ${PLUGIN}.test(new Error().stack || ''), tag: this === window ? 'window' : this === document ? 'document' : (this.localName || this.constructor.name) });
       T.targets.add(this);
     }
     return add.call(this, type, fn, opts);
@@ -43,11 +45,12 @@ export const TRACKER_SRC = `(() => {
 })()`;
 
 export const TYPES_FORBIDDEN_ALWAYS = new Set(['wheel', 'mousewheel', 'DOMMouseScroll', 'touchstart', 'touchmove', 'touchend', 'touchcancel']);
+const TOUCH = new Set(['touchstart', 'touchmove', 'touchend', 'touchcancel']);
 
 /** Tracker state as plain data. `live` = attributed listeners that were not removed (once-listeners excluded: they remove themselves). */
 export function readTracker(page) {
   return page.evaluate(`(() => { const T = window.__trk; if (!T) return null;
-    const live = T.listeners.filter((l) => !l.removed && !l.once).map((l) => ({ tag: l.tag, type: l.type, capture: l.capture, passive: l.passive }));
+    const live = T.listeners.filter((l) => !l.removed && !l.once).map((l) => ({ tag: l.tag, type: l.type, capture: l.capture, passive: l.passive, plugin: l.plugin }));
     return { live, total: T.listeners.length, observers: T.observers.filter((o) => o.active).map((o) => o.name), observersTotal: T.observers.length, intervals: [...T.intervals.values()], raf: { ...T.raf } }; })()`);
 }
 
@@ -92,10 +95,14 @@ export async function checkListenerState(ctx, { page, urls, label, effectHost = 
   for (const f of poly) byType[keyOf(f)] = (byType[keyOf(f)] ?? 0) + 1;
   numbers[label] = { debuggerPolyfillListeners: poly.length, trackerLive: tr.live.length, byType, observers: tr.observers, intervals: tr.intervals };
   ctx.check(`${label}: the audit sees polyfill listeners (not vacuous: debugger ${poly.length}, tracker ${tr.live.length})`, poly.length > 0 && tr.live.length > 0, { scripts: [...new Set(a.found.map((f) => f.url))].slice(0, 5) }, 'audit');
-  const badType = (f) => TYPES_FORBIDDEN_ALWAYS.has(f.type) || (f.type === 'pointermove' && !effectHost) || (f.type === 'scroll' && !f.passive);
+  // With the effect host on, a plugin's passive touch listener is allowed: in the debugger's view only where the listener function itself is
+  // in a plugin bundle, in the tracker's only where a plugin's code registered it. Every non-passive one, and every touch listener of the core
+  // or of the effects bundle, stays forbidden.
+  const pluginTouch = (/** @type {any} */ f, /** @type {boolean} */ fromPlugin) => effectHost && TOUCH.has(f.type) && f.passive === true && fromPlugin;
+  const badType = (f) => (TYPES_FORBIDDEN_ALWAYS.has(f.type) && !pluginTouch(f, PLUGIN.test(f.url))) || (f.type === 'pointermove' && !effectHost) || (f.type === 'scroll' && !f.passive);
   const bad = poly.filter(badType);
-  ctx.check(`${label}: the polyfill registers no wheel / touch / non-passive scroll${effectHost ? '' : ' / pointermove'} listener (debugger view, all targets incl. shadow roots, visualViewport, screen, fonts, media queries)`, bad.length === 0, bad.slice(0, 5), 'forbidden');
-  const badT = tr.live.filter((l) => TYPES_FORBIDDEN_ALWAYS.has(l.type) || (l.type === 'pointermove' && !effectHost) || (l.type === 'scroll' && !l.passive));
+  ctx.check(`${label}: the polyfill registers no wheel / touch${effectHost ? ' (but a plugin\'s passive one)' : ''} / non-passive scroll${effectHost ? '' : ' / pointermove'} listener (debugger view, all targets incl. shadow roots, visualViewport, screen, fonts, media queries)`, bad.length === 0, bad.slice(0, 5), 'forbidden');
+  const badT = tr.live.filter((l) => (TYPES_FORBIDDEN_ALWAYS.has(l.type) && !pluginTouch(l, l.plugin)) || (l.type === 'pointermove' && !effectHost) || (l.type === 'scroll' && !l.passive));
   ctx.check(`${label}: ... and the registration tracker agrees (no forbidden listener was ever added and left)`, badT.length === 0, badT.slice(0, 5), 'forbidden');
   return { tracker: tr, poly, byType };
 }
