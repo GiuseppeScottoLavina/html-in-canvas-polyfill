@@ -353,6 +353,8 @@ export const plugin = Object.freeze({
       const grid = gridOf(cssWidth, cssHeight);
       if (field && field.gw === grid.gw && field.gh === grid.gh) { setSize(field, cssWidth, cssHeight); return field; }
       const f = createField(cssWidth, cssHeight);
+      // flat: its box is empty (a new field counts as written everywhere), so a first pebble steps its own region, not the grid
+      clear(f);
       field = f;
       fieldTexture?.destroy?.();
       fieldTexture = device.createTexture({ label: 'hic-water-effect-height-field', size: { width: f.pw, height: f.ph }, format: 'r32float', usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST });

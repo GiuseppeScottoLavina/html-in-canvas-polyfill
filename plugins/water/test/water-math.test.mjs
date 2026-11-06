@@ -192,6 +192,21 @@ test('the step and the check for a still surface work only where the field can b
   assert.ok(!same(a, b), 'control: a box that misses one cell gives another field');
 });
 
+test('the plugin\'s first pebble steps its own region: the box in the uniform block covers the pebble and a cell a step around it, not the grid; it grows with the rings', async () => {
+  const w = await createWater({ intensity: 1 });
+  const t0 = performance.now();
+  w.pointer('pointerdown', 300, 200);
+  w.instance.render(w.frame(t0 + 20));
+  const g = w.gpu.writes.at(-1);
+  const box = [g[G.BOX], g[G.BOX + 1], g[G.BOX + 2], g[G.BOX + 3]];
+  const pw = g[G.GRID] + 2 * PAD, ph = g[G.GRID + 1] + 2 * PAD;
+  const share = ((box[2] - box[0] + 1) * (box[3] - box[1] + 1)) / (pw * ph);
+  assert.ok(g[G.ACTIVE] === 1 && share > 0 && share < 0.08, `the first frame's box ${box} is ${(share * 100).toFixed(1)} % of the grid`);
+  w.run(t0 + 30, 600);
+  const later = w.gpu.writes.at(-1);
+  assert.ok(later[G.BOX + 2] - later[G.BOX] > box[2] - box[0], 'it grows with the rings');
+});
+
 test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px is not quiet, one of 0.02 px is; NaN resets to flat', () => {
   const f = createField(400, 400);
   // a raised cosine of radius r and height a has a largest slope of a * pi / (2 r): this one moves the page by 0.2 px at intensity 1
