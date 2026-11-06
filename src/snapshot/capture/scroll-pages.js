@@ -593,10 +593,55 @@ function* unblended(win, s, port, k, outside, now, t0, still) {
     if (i && i % SCAN_CLOCK === 0 && now() - t0 > STEP_MS) { yield; if (!still()) return false; t0 = now(); }
     const e = outside[i];
     if (!c.blended(e) && !generated(c.style, e).some((p) => blending(c.style(e, p)))) continue;
-    const g = paints(c, e);
-    if (g && over(g, e.getBoundingClientRect(), port, k, k)) return false;
+    const g = paints(c, e), b = e.getBoundingClientRect();
+    if (g && over(g, b, port, k, k) && !clippedAway(c, e, g, b, s, k)) return false;
   }
   return true;
+}
+
+/** @param {CSSStyleDeclaration} cs @returns {boolean} drawn away from its laid-out box (a transform, a motion path) or through a filter */
+const moves = (cs) => { const c = /** @type {any} */ (cs); return cs.transform !== 'none' || cs.filter !== 'none' || ['translate', 'rotate', 'scale', 'offsetPath'].some((p) => (c[p] ?? 'none') !== 'none'); };
+
+/**
+ * An element whose overflow clips what it contains to its padding box, and that box has no area, so nothing inside it paints wherever it lies or scrolls: an HTML
+ * block, flex or grid container (no replaced element, form control or details) of overflow hidden or clip on both axes, no overflow-clip-margin, not drawn away.
+ * @param {CSSStyleDeclaration} cs @param {Element} a @param {number} k css px to viewport px
+ */
+function emptyClip(cs, a, k) {
+  if (!/^(hidden|clip)$/.test(cs.overflowX) || !/^(hidden|clip)$/.test(cs.overflowY) || !/^(block|inline-block|flow-root|flex|inline-flex|grid|inline-grid|list-item)$/.test(cs.display)
+    || a.namespaceURI !== 'http://www.w3.org/1999/xhtml' || PAINTERS.test(a.localName) || a.localName === 'details' || moves(cs)
+    || !/^((content|padding)-box )?0px$/.test((/** @type {any} */ (cs)).overflowClipMargin ?? '0px')) return null;
+  const r = a.getBoundingClientRect();
+  return r.width - (px(cs.borderLeftWidth) + px(cs.borderRightWidth)) * k < 1e-3 || r.height - (px(cs.borderTopWidth) + px(cs.borderBottomWidth)) * k < 1e-3 ? r : null;
+}
+
+/**
+ * unblended: `e` (outside the scroller `s`, `g` what it paints, `b` its viewport rect) paints nothing because an ancestor below the first one it shares with `s` clips
+ * it whole (emptyClip): a wrapper of no size with overflow: hidden keeps a blended overlay out of sight, and the cover check sees nothing of it. Proven only when
+ * - `e` paints nothing beyond its border box (no ink, overflowing content or generated box out of it), which lies right of and below the clipper's corner: a later
+ *   change of the clipper is damage over its reach, its box grown right and down to its scrollable overflow (damage-rect.js), so over `e`, and ScrollPlan.clear
+ *   then refuses `e` wherever it shows (the clipper grows or turns overflow: visible);
+ * - from `e` up to the clipper nothing escapes its clip: no element in the top layer, of position: fixed, drawn away (moves) or a shadow host's child (laid out in
+ *   its shadow tree), and an absolute element's containing block (at most its nearest positioned ancestor) is the clipper or lies inside it.
+ * Anything else (a clip-path, contain: paint, a clipper with area) is not proven: false.
+ * @param {ReturnType<typeof outsideCheck>} c @param {Element} e @param {ReturnType<typeof painting>} g @param {DOMRect} b @param {Element} s @param {number} k
+ */
+function clippedAway(c, e, g, b, s, k) {
+  if (g.x || g.y) return false;
+  // an absolute element on the way whose containing block is not reached yet
+  let open = false;
+  for (let x = e; ;) {
+    const cs = c.style(x);
+    if (topLayer(x) || cs.position === 'fixed' || moves(cs)) return false;
+    open ||= cs.position === 'absolute';
+    const a = x.parentElement;
+    if (!a || a.contains(s) || a.shadowRoot) return false;
+    const as = c.style(a), positioned = as.position !== 'static' && as.display !== 'contents';
+    const r = !open || positioned ? emptyClip(as, a, k) : null;
+    if (r) return b.left >= r.left - 1e-3 && b.top >= r.top - 1e-3;
+    if (positioned) open = false;
+    x = a;
+  }
 }
 
 /**

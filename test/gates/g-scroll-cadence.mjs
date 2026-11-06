@@ -23,7 +23,9 @@
 //            scroll-pages.js quietOutside); controls: nothing over the list, a row that changes, a header that stays opaque are composed. A sticky header without
 //            a z-index is composed, and not under a row painted above it (position: relative, opacity 0.9). A box of exactly a cover colour (opaque, at alpha 0.5,
 //            over a rounded list) is not composed; a box of opacity 0 (its own or a wrapper's) over a row that changes leaves the step composed, and is not
-//            composed once it turns visible (opacity 1, 0.02). `--covers=<mode,...>` runs some modes only.
+//            composed once it turns visible (opacity 1, 0.02). A blended box inside a wrapper of 0 x 0 with overflow hidden or clip is composed (clip-*), and
+//            not once part of it can show: a wrapper with an area, a fixed box, a box whose containing block lies above the wrapper, a wrapper that grows or
+//            turns overflow: visible after the plan. `--covers=<mode,...>` runs some modes only.
 // Positive control (sabotage stale + nosync + nocompose + halfpaint): only the first draw reaches the canvas, the live scroller is never synchronised, every
 // scroller under the pointer gets an empty position:fixed child (no plan for it), and every second paint event is dropped: every class must go red. With the
 // dropped paints every cadence check is red in every case (paint share 0.49-0.51, movement 0.67-0.68; 6 of 6 runs at DPR 2 and 1.25, Chrome 155, 2026-10-29).
@@ -308,6 +310,9 @@ runGate('G-scroll-cadence', async (ctx) => {
   // 2026-11-05). A box of opacity 0 over the port made every change of a row under it an obstruction, which dropped a valid cache (0 steps composed instead of 1;
   // ScrollPlan.clear, scroll-pages.js faded); its change to opacity 1 or 0.02, on itself or a wrapper, must still drop it. A rounded list's corner squares are
   // compared apart (arcBad, arcMax: the compositor's clip antialiases the arc, 48 pixels up to 80 levels at DPR 1, as before the fix)
+  // A blended box clipped whole by a wrapper of 0 x 0 (position: absolute; overflow: hidden) paints nothing, and 0.1.0-preview.26 refused its plan (0 composed
+  // steps, refusedBy.plan 1; headless Chrome 156, 2026-11-06): composed now (scroll-pages.js clippedAway), and still refused where it can show (clip-partial,
+  // clip-fixed, clip-abs-above, clip-escape at admission; clip-grow, clip-shown by ScrollPlan.clear after the plan)
   if (!only || only.includes('covers')) {
     // composes: true = the step must be composed; false = it must equal the settled canvas; 0 = also not composed (a composition could not be exact, or its error
     // is under the pixel tolerance: opacity 0.02)
@@ -316,7 +321,9 @@ runGate('G-scroll-cadence', async (ctx) => {
       ['head-auto-layer', false], ['head-auto-late', false], ['sentinel', 0], ['sentinel-alpha', 0], ['sentinel-near', 0], ['sentinel-second', 0], ['round', true],
       ['sentinel-round', 0], ['hidden-row', true], ['hidden-parent-row', true], ['hidden-shown', 0], ['hidden-faint', 0], ['hidden-parent-shown', 0],
       ['blend-none', true], ['blend-saturation', 0], ['blend-multiply', 0], ['blend-difference', 0], ['blend-luminosity', 0], ['blend-parent', 0], ['blend-pseudo', 0],
-      ['blend-partial', 0], ['blend-off', true], ['blend-hidden', true], ['blend-invisible', true], ['blend-transparent', true], ['blend-late', 0], ['backdrop-blur', true]];
+      ['blend-partial', 0], ['blend-off', true], ['blend-hidden', true], ['blend-invisible', true], ['blend-transparent', true], ['blend-late', 0], ['backdrop-blur', true],
+      ['clip-blend', true], ['clip-blend-clip', true], ['clip-normal', true], ['clip-partial', 0], ['clip-grow', 0], ['clip-shown', 0], ['clip-fixed', 0], ['clip-abs-above', 0],
+      ['clip-escape', 0]];
     const pick = process.argv.find((a) => a.startsWith('--covers='))?.slice(9).split(',');
     for (const [mode, composes] of modes.filter(([m]) => !pick || pick.includes(m))) {
       const u = new URL('/test/gates/fixtures/scroll-covers.html', ctx.srv.url);

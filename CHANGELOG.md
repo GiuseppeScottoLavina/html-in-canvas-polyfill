@@ -4,9 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Scroll compositor: an element outside a list that blends with it (`mix-blend-mode`) and is clipped whole by an ancestor of no area no longer refuses the plan. A wrapper of 0 x 0 with `overflow: hidden` or `clip` around a blended overlay whose border box meets the port paints nothing, yet 0.1.0-preview.26 refused the plan: 0 compositions and 1 tile for the first scroll step instead of 1 and 0, as in 0.1.0-preview.25 (headless Chrome 156 and an iPad Pro, Safari 27.2; the pixels were right, the work was not needed). Only provable clipping counts: the clipper is an HTML block, flex or grid container with `overflow` hidden or clip on both axes, no `overflow-clip-margin` and no transform, whose padding box has no area; the element paints nothing beyond its border box and lies right of and below the clipper's corner; and between them nothing escapes the clip (no element in the top layer, of `position: fixed`, transformed, filtered or slotted, and an absolute element's containing block is the clipper or inside it). Still refused: a clipper with an area (part of the overlay shows), a fixed overlay inside the wrapper, an absolute one whose containing block lies above it, `clip-path` and `contain: paint`; a wrapper that grows or turns `overflow: visible` after the plan drops it before a composed step. G-scroll-cadence covers 9 cases more (6 refused, 3 composed); mutants scroll-clip-fixed, scroll-clip-containing-block, scroll-clip-area.
+- The core bundle grows to 365,024 bytes minified, 124,268 gzipped (+1,094 / +349 bytes) and to 17,360 code lines (+24).
+
 ### Fixed
 
 - Snapshot store: `uninstall()` (and a drawable removed from the drawables) left the scroll compositor's queued side builds in place: the plan, the cover tiles with their bands still to read and the pages. They are run only by a pump, which a disposed store never gets, so a store still reached through a kept `HicInstalled` reported `needsPump()` true for good and held surfaces it no longer counted: in headless Chrome 156 with the minified bundle, an uninstall right after the first band of a cover tile of a 600 x 500 list kept 2 of its internal 600 x 500 surfaces reachable after garbage collection (2.4 MB of pixels; 3 of them in another run, and 1 in 0.1.0-preview.25), and none now. Dispose and removal now drop those builds, and the pages and tiles that a decode still in flight would reach are let go at once instead of when it settles; a decode that settles later still publishes nothing, on the old install or on a new one. A normal uninstall after the side work completed already released everything. The core grows by 175 bytes minified (+53 gzipped) and 3 code lines (17,339).
+- Docs: the frameworks guide said the pinned Svelte 5.57.3 had not been run; the macOS CI job of 0.1.0-preview.26 ran it with React 19.3.1, Vue 3.5.44 and Lit 3.3.3 on headless Chrome 157.0.8103.39 (37 scenario runs, 202 checks, 22 controls, development builds only). The README, the FAQ and the test plan counted 77 seeded bugs (80 now).
 
 ## [0.1.0-preview.26] - 2026-11-06
 

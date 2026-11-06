@@ -37,6 +37,18 @@
   //   blend-hidden / blend-invisible / blend-transparent  (controls) the blended box of opacity: 0, of visibility: hidden, with no background: composed
   //   blend-late    the blended box transparent while the list is planned, of the first cover colour after: not composed
   //   backdrop-blur (control) a transparent box with backdrop-filter: blur(6px) over the port, which the snapshot does not paint: composed
+  // A blended box clipped by a wrapper of no size (position: absolute; width: 0; height: 0) outside the list paints nothing (scroll-pages.js clippedAway):
+  //   clip-blend    (control) the box of the first cover colour in saturation inside a wrapper of overflow: hidden: composed
+  //   clip-blend-clip  (control) the same with overflow: clip: composed
+  //   clip-normal   (control) a normal magenta box in that wrapper: composed
+  //   clip-partial  the wrapper 400 x 75 css px: 15 px of the blended box show over the port: not composed
+  //   clip-grow     the wrapper grows to 400 x 100 after the plan: not composed
+  //   clip-shown    the wrapper turns overflow: visible after the plan: not composed
+  //   clip-fixed    the blended box is position: fixed (it escapes the wrapper's clip, at its static place over the port): not composed
+  //   clip-abs-above   the wrapper is not positioned (in flow, pulled up to the drawable's corner): the box's containing block is the drawable, above the
+  //                 wrapper, and it escapes the clip: not composed
+  // (the wrappers have pointer-events: none: the hit-test grid does not see them, so only the clip check tells these modes apart)
+  //   clip-escape   the blended box turns position: fixed after the plan: not composed
   var q = new URLSearchParams(location.search);
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '" data-hic-manual></scr' + 'ipt>');
 </script>
@@ -59,6 +71,9 @@
 <body>
 <canvas id="c" content="drawable" width="400" height="260"><div class="d" drawable><div class="list"></div></div></canvas>
 <script>
+  const CLIP_BLEND = 'background:rgb(1, 254, 3);mix-blend-mode:saturation';
+  // fixed at its static place (the wrapper's corner, 60 css px down by its margin): over the port, whatever its containing block
+  const CLIP_FIXED = 'position:fixed;left:auto;top:auto;margin-top:60px';
   const MODES = {
     plain: {},
     over: { box: '' },
@@ -95,6 +110,15 @@
     'blend-transparent': { navy: true, box: 'background:transparent;mix-blend-mode:saturation' },
     'blend-late': { navy: true, box: 'background:transparent;mix-blend-mode:saturation', after: (d) => { d.querySelector('.box').style.background = 'rgb(1, 254, 3)'; } },
     'backdrop-blur': { navy: true, box: 'background:transparent;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)' },
+    'clip-blend': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:hidden' },
+    'clip-blend-clip': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:clip' },
+    'clip-normal': { navy: true, box: '', wrap: 'opacity:1;pointer-events:none;overflow:hidden' },
+    'clip-partial': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:hidden;width:400px;height:75px' },
+    'clip-grow': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:hidden', after: (d) => { Object.assign(d.querySelector('.wrap').style, { width: '400px', height: '100px' }); } },
+    'clip-shown': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:hidden', after: (d) => { d.querySelector('.wrap').style.overflow = 'visible'; } },
+    'clip-fixed': { navy: true, box: CLIP_BLEND + ';' + CLIP_FIXED, wrap: 'opacity:1;pointer-events:none;overflow:hidden' },
+    'clip-abs-above': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:hidden;position:static;margin-top:-240px' },
+    'clip-escape': { navy: true, box: CLIP_BLEND, wrap: 'opacity:1;pointer-events:none;overflow:hidden', after: (d) => { d.querySelector('.box').style.cssText += ';' + CLIP_FIXED; } },
   };
   window.run = async (mode) => {
     const m = MODES[mode];
@@ -140,7 +164,10 @@
       }
       // the settled canvas under the box's place (row 2, navy in the blend modes): the snapshot paints the blend there
       const under = Array.from(settled.slice((75 * 400 + 100) * 4, (75 * 400 + 100) * 4 + 4));
-      return { mode, composed: first.composed, bad, max, arcBad, arcMax, nonWhite, under, total: 400 * 260, planned, after: scroll() };
+      // FNV-1a of the settled canvas: equal for two modes whose settled canvases are equal (a clipped overlay against none)
+      let hash = 0x811c9dc5;
+      for (let p = 0; p < settled.length; p++) hash = Math.imul(hash ^ settled[p], 16777619) >>> 0;
+      return { mode, composed: first.composed, bad, max, arcBad, arcMax, nonWhite, under, hash, total: 400 * 260, planned, after: scroll() };
     } finally { installed.uninstall(); }
   };
   window.__ready = true;
