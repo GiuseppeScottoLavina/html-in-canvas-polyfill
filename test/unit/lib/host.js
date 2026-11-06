@@ -65,8 +65,9 @@ if (!U.loadError) {
   if (!registry.length) U.loadError = 'test file registered no tests';
   for (const def of registry) {
     if (!selected(def.name)) continue;
-    // 'running' until the test ends: a page that stops answering mid-test is never read as a pass
-    const rec = { name: def.name, status: 'running', ms: 0, error: '', console: /** @type {any[]} */ ([]) };
+    // 'running' until the test ends, its cleanup and the task after it included: a page that stops answering, or a cleanup that never ends, is never read as
+    // a pass. The body's own result is published as soon as the body ends (`body`), apart from the test's.
+    const rec = { name: def.name, status: 'running', body: /** @type {string|null} */ (null), ms: 0, error: '', console: /** @type {any[]} */ ([]) };
     U.tests.push(rec);
     if (def.skip) { rec.status = 'skip'; continue; }
     U.current = def.name; consoleBuf = []; uncaught = [];
@@ -74,21 +75,23 @@ if (!U.loadError) {
     starts.push({ name: def.name, t0 });
     progress({ ev: 'start', name: def.name });
     const ctx = beginTest();
+    let status = 'pass';
     try {
       await withTimeout(Promise.resolve().then(() => def.fn(ctx)), def.timeout ?? defaultTimeout);
-      rec.status = 'pass';
     } catch (e) {
       const err = /** @type {any} */ (e);
-      rec.status = err?.isTimeout ? 'timeout' : 'fail';
+      status = err?.isTimeout ? 'timeout' : 'fail';
       rec.error = String(err?.stack ?? err);
     }
-    progress({ ev: 'phase', phase: 'cleanup' });
-    try { await endTest(); } catch (e) { if (rec.status === 'pass') { rec.status = 'fail'; rec.error = 'cleanup failed: ' + String(/** @type {any} */ (e)?.stack ?? e); } }
-    progress({ ev: 'phase', phase: 'settle' });
+    rec.body = status;
+    progress({ ev: 'phase', phase: 'cleanup', body: status });
+    try { await endTest(); } catch (e) { if (status === 'pass') { status = 'fail'; rec.error = 'cleanup failed: ' + String(/** @type {any} */ (e)?.stack ?? e); } }
+    progress({ ev: 'phase', phase: 'settle', body: rec.body });
     await new Promise(r => setTimeout(r, 0)); // let queued uncaught errors/rejections surface
-    if (uncaught.length && rec.status === 'pass') { rec.status = 'fail'; rec.error = 'uncaught error during test:\n' + uncaught.join('\n'); }
+    if (uncaught.length && status === 'pass') { status = 'fail'; rec.error = 'uncaught error during test:\n' + uncaught.join('\n'); }
     rec.ms = Math.round(performance.now() - t0);
     rec.console = consoleBuf;
+    rec.status = status;
   }
 }
 U.current = null;

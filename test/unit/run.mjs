@@ -4,7 +4,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { startServer, launchChrome, sleep, PROJECT_ROOT } from '../harness/index.mjs';
-import { describeHang, expectFailMet } from './lib/hang.mjs';
+import { describeHang, describeHungTest, expectFailMet, markHung } from './lib/hang.mjs';
 
 const UNIT_DIR = resolve(PROJECT_ROOT, 'test/unit');
 const { values: opt, positionals } = parseArgs({
@@ -53,13 +53,13 @@ async function runFile(browser, srv, file) {
   const page = await browser.newPage({ reuseFirst: false });
   const res = { rel, tests: [], loadError: null, pageErrors: [], hung: false, /** @type {import('./lib/hang.mjs').HangInfo|null} */ hang: null, /** @type {number[]} */ stalls: [] };
   /** what the page last said through the binding; `at` is the runner's clock when that test started */
-  const prog = { test: /** @type {string|null} */ (null), phase: /** @type {string|null} */ (null), at: 0, /** @type {{ms:number, test:string|null}[]} */ longTasks: [] };
+  const prog = { test: /** @type {string|null} */ (null), phase: /** @type {string|null} */ (null), body: /** @type {string|null} */ (null), at: 0, /** @type {{ms:number, test:string|null}[]} */ longTasks: [] };
   page.on('Runtime.bindingCalled', (/** @type {any} */ p) => {
     if (p.name !== PROGRESS_BINDING) return;
     let m; try { m = JSON.parse(p.payload); } catch { return; }
-    if (m.ev === 'start') Object.assign(prog, { test: String(m.name), phase: 'test', at: Date.now() });
-    else if (m.ev === 'phase') prog.phase = String(m.phase);
-    else if (m.ev === 'done') Object.assign(prog, { test: null, phase: null });
+    if (m.ev === 'start') Object.assign(prog, { test: String(m.name), phase: 'test', body: null, at: Date.now() });
+    else if (m.ev === 'phase') Object.assign(prog, { phase: String(m.phase), body: m.body == null ? null : String(m.body) });
+    else if (m.ev === 'done') Object.assign(prog, { test: null, phase: null, body: null });
     else if (m.ev === 'longtask' && prog.longTasks.length < 20) prog.longTasks.push({ ms: Number(m.ms), test: m.test ?? null });
   });
   try {
@@ -97,6 +97,8 @@ async function runFile(browser, srv, file) {
     const u = snap ? JSON.parse(snap) : null;
     if (u) { res.tests = u.tests; res.loadError ??= u.loadError; if (res.hang) res.hang.test ??= u.current; }
     else if (!res.loadError && !res.hung) res.loadError = 'host page did not initialise';
+    // the test the hang names is reported as hung, never as the pass the page may have published after the runner gave up on it
+    res.tests = markHung(res.tests, res.hang);
     // CDP exceptions also cover module-load failures and uncaught errors outside any test.
     res.pageErrors = page.exceptions.map(e => trimStack(e.text ?? ''));
     res.consoleOutside = page.console.filter(c => c.type === 'error').length;
@@ -111,7 +113,7 @@ async function runFile(browser, srv, file) {
  */
 async function diagnoseHang(browser, page, prog, reason, silentMs) {
   const at = Date.now();
-  const test = prog.test, phase = prog.phase, sinceMs = prog.test ? at - prog.at : null;
+  const test = prog.test, phase = prog.phase, body = prog.body, sinceMs = prog.test ? at - prog.at : null;
   const browserMs = await browser.conn.send('Target.getTargets', {}, undefined, 2000).then(() => Date.now() - at, () => null);
   let answeredAfterMs = null;
   while (Date.now() - at < HANG_GRACE_MS) {
@@ -120,7 +122,7 @@ async function diagnoseHang(browser, page, prog, reason, silentMs) {
   }
   // a long task is reported by an observer callback queued after the task; give it the time to run
   if (answeredAfterMs != null) await sleep(300);
-  return { reason, silentMs, fileTimeoutMs: Number(opt['file-timeout']), test, phase, sinceMs, browserMs, answeredAfterMs, graceMs: HANG_GRACE_MS, longTasks: [...prog.longTasks] };
+  return { reason, silentMs, fileTimeoutMs: Number(opt['file-timeout']), test, phase, body, sinceMs, browserMs, answeredAfterMs, graceMs: HANG_GRACE_MS, longTasks: [...prog.longTasks] };
 }
 
 function report(r) {
@@ -129,6 +131,8 @@ function report(r) {
   for (const t of r.tests) {
     // a test still running when the page stopped answering: never "ok", and printed even with --quiet
     if (t.status === 'running') { console.log(`  RUN  ${t.name} (had not finished when the runner gave up on the page)`); continue; }
+    // the test a hang names: never "ok", even when the page published a pass after the runner gave up on it; printed even with --quiet
+    if (t.status === 'hung') { console.log(`  HUNG ${describeHungTest(t)}`); continue; }
     const tag = { pass: 'ok  ', fail: 'FAIL', timeout: 'TIME', skip: 'skip' }[t.status];
     say(`  ${tag} ${t.name}${t.status === 'skip' ? '' : ` (${t.ms} ms)`}`);
     if (t.error) console.log(indent(trimStack(t.error)));
@@ -143,10 +147,11 @@ function report(r) {
 const count = (/** @type {any[]} */ rs, /** @type {string} */ s) => rs.reduce((n, r) => n + r.tests.filter((/** @type {any} */ t) => t.status === s).length, 0);
 const problem = (/** @type {any} */ r) => r.tests.some((/** @type {any} */ t) => t.status === 'fail' || t.status === 'timeout') || r.loadError || r.hung || r.pageErrors.length > 0;
 
-/** --expect-fail: the file name prefix says what the runner must detect (lib/hang.mjs expectFailMet). */
+/** --expect-fail: the file name prefix says what the runner must detect, and a second word test/cleanup/settle the phase of the hang (lib/hang.mjs expectFailMet). */
 function expectationMet(/** @type {any} */ r) {
-  const hit = expectFailMet(r.rel.split('/').pop().split('-')[0], r, Number(opt.timeout));
-  if (hit === undefined) throw new Error(`expect-fail file needs a fail-/timeout-/pageerror-/loaderror-/hung-/stall- prefix: ${r.rel}`);
+  const [kind, second] = r.rel.split('/').pop().split('.')[0].split('-');
+  const hit = expectFailMet(kind, r, Number(opt.timeout), ['test', 'cleanup', 'settle'].includes(second) ? second : null);
+  if (hit === undefined) throw new Error(`expect-fail file needs a fail-/timeout-/pageerror-/loaderror-/hung-/stall-/wait- prefix: ${r.rel}`);
   return hit;
 }
 
@@ -181,7 +186,7 @@ if (opt['expect-fail']) {
 } else {
   ok = failedFiles.length === 0 && total > 0;
   if (total === 0) console.log('no tests ran (check --filter)');
-  console.log(`unit: ${count(results, 'pass')} passed, ${count(results, 'fail')} failed, ${count(results, 'timeout')} timed out, ${count(results, 'skip')} skipped in ${results.length} files` +
+  console.log(`unit: ${count(results, 'pass')} passed, ${count(results, 'fail')} failed, ${count(results, 'timeout')} timed out, ${count(results, 'hung')} hung, ${count(results, 'skip')} skipped in ${results.length} files` +
     `, ${results.reduce((n, r) => n + r.pageErrors.length, 0)} page errors (${((Date.now() - t0) / 1000).toFixed(1)} s) - ${ok ? 'OK' : 'FAILED'}`);
 }
 process.exit(ok ? 0 : 1);
