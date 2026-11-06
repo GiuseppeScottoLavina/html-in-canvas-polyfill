@@ -140,7 +140,7 @@ What is tested:
 
 - 706 unit tests in Node and 1,069 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 16 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence), each with a positive control;
-- a mutation suite of 69 seeded bugs, every one of which must be caught;
+- a mutation suite of 74 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
 CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 74 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
@@ -152,7 +152,7 @@ With an AI coding assistant. The code, tests and documentation were written with
 Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
 - changes reach `main` through pull requests (every change since 2026-10-22), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 11 of the 16 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
-- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 65 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 74 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
 - the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;
 - the behaviour was checked on physical devices, not only in simulators.
