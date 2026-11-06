@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Snapshot store: `uninstall()` (and a drawable removed from the drawables) left the scroll compositor's queued side builds in place: the plan, the cover tiles with their bands still to read and the pages. They are run only by a pump, which a disposed store never gets, so a store still reached through a kept `HicInstalled` reported `needsPump()` true for good and held surfaces it no longer counted: in headless Chrome 156 with the minified bundle, an uninstall right after the first band of a cover tile of a 600 x 500 list kept 2 of its internal 600 x 500 surfaces reachable after garbage collection (2.4 MB of pixels; 3 of them in another run, and 1 in 0.1.0-preview.25), and none now. Dispose and removal now drop those builds, and the pages and tiles that a decode still in flight would reach are let go at once instead of when it settles; a decode that settles later still publishes nothing, on the old install or on a new one. A normal uninstall after the side work completed already released everything. The core grows by 175 bytes minified (+53 gzipped) and 3 code lines (17,339).
+
 ## [0.1.0-preview.26] - 2026-11-06
 
 Fixes for an outside review of 0.1.0-preview.25, and a review of the water plugin. In the scroll compositor an element outside a list that blends with it (`mix-blend-mode`) and paints over its port no longer passes the cover check: the plan is refused. The second cover colour of 0.1.0-preview.25 no longer delays the first composed step: both cover tiles come from one capture, and on an iPad the first composed paint is back to the time of 0.1.0-preview.24. The unit runner publishes a pass only once a test's cleanup has ended. A partial G-gallery run reads as a diagnostic, never as the gate. Water steps only the region of its surface that can move and makes its caustic textures only while caustics can show; its frames are unchanged.
