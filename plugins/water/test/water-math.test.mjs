@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, LIGHT_GRACE_MS, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
-import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, DAMPING, PAD, VISCOSITY, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
+import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, LIGHT_GRACE_MS, LIGHT_INSET_PX, MESH_PX, POND_DEPTH, causticMesh, causticRegion, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
+import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, DAMPING, PAD, VISCOSITY, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, slopeBound, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 contractTest(import.meta.url);
@@ -223,6 +223,94 @@ test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px 
   assert.equal(quiet(f), true);
   assert.ok(f.h.every((v) => v === 0), 'a broken field is reset rather than run forever');
   assert.ok(CAUSTIC_PX > REFRACT_PX, 'the light focuses deeper than the view refracts');
+});
+
+/**
+ * Where water.wgsl's caustic mesh puts each vertex (vs_caustics, in f64): the slope of the B-spline at p (css px, flat outside the canvas),
+ * tilted by the intensity, and the light refracted by it from straight above, `depth` css px down. @param {any} f @param {number} intensity
+ */
+function causticVertices(f, intensity, mesh) {
+  const out = [];
+  for (let row = 0; row <= mesh.rows; row += 1) for (let col = 0; col <= mesh.columns; col += 1) {
+    const px = -mesh.margin + col * MESH_PX, py = -mesh.margin + row * MESH_PX;
+    let sx = 0, sy = 0;
+    if (px >= 0 && py >= 0 && px <= f.cssWidth && py <= f.cssHeight) {
+      const s = surfaceAt(f.h, 0, f.pw, f.ph, (px / f.cssWidth) * f.gw - 0.5 + PAD, (py / f.cssHeight) * f.gh - 0.5 + PAD);
+      sx = (s.hx / f.cellX) * intensity; sy = (s.hy / f.cellY) * intensity;
+    }
+    const nl = Math.hypot(sx, sy, 1), nx = -sx / nl, ny = -sy / nl, nz = 1 / nl;
+    const eta = 1 / 1.333, d = -nz, k = 1 - eta * eta * (1 - d * d), a = eta * d + Math.sqrt(k);
+    const rx = -a * nx, ry = -a * ny, rz = -eta - a * nz;
+    out.push({ col, row, px, py, flat: sx === 0 && sy === 0, qx: px + (CAUSTIC_DEPTH_PX * rx) / Math.max(-rz, 0.05), qy: py + (CAUSTIC_DEPTH_PX * ry) / Math.max(-rz, 0.05) });
+  }
+  return out;
+}
+
+test('causticRegion: every vertex of the caustic mesh outside the region it draws is exactly flat (a rim of flat vertices inside it too), and all the light of the moving surface lands inside the box the picture reads, 2 px inside its edge (random pebbles, wakes, a wall, a corner; intensity 1 and 0.4); the region is smaller than the mesh for a pebble and the whole mesh with the swell; control: the region of a lower intensity (less spill) lets light land outside the box', () => {
+  const W0 = 400, H0 = 300;
+  const mesh = causticMesh(W0, H0, CAUSTIC_DEPTH_PX);
+  let rnd = 0x1234567;
+  const r = () => { rnd = (rnd * 1103515245 + 12345) >>> 0; return rnd / 4294967296; };
+  const cases = [];
+  for (const [name, pebbles, steps] of [['a pebble', [[200, 150]], 0], ['a pebble after 0.2 s', [[120, 90]], 24], ['a wall', [[4, 150]], 10], ['a corner', [[396, 296]], 40], ['random pebbles', Array.from({ length: 3 }, () => [20 + 360 * r(), 20 + 260 * r()]), 30], ['a wake', [[150, 140], [170, 142], [190, 145], [210, 150]], 6]]) {
+    const f = createField(W0, H0);
+    clear(f);
+    for (const [x, y] of pebbles) stamp(f, x, y, 22, -12);
+    mirror(f);
+    for (let k = 0; k < steps; k += 1) step(f);
+    cases.push({ name, f });
+  }
+  let smaller = 0, outsideControl = 0;
+  for (const { name, f } of cases) for (const intensity of [1, 0.4]) {
+    const slope = slopeBound(f);
+    const reg = causticRegion(f, intensity, 0, mesh, slope);
+    const verts = causticVertices(f, intensity, mesh);
+    const moving = verts.filter((v) => !v.flat);
+    assert.ok(moving.length > 0, `${name}: the surface moves`);
+    for (const v of verts) {
+      const inside = v.col > reg.c0 && v.col < reg.c1 && v.row > reg.r0 && v.row < reg.r1;
+      if (!v.flat) assert.ok(inside, `${name} at ${intensity}: a moving vertex (${v.px}, ${v.py}) lies inside the drawn region, off its rim`);
+      if (v.flat) assert.ok(v.qx === v.px && v.qy === v.py, 'a flat vertex is not refracted');
+    }
+    const [x0, y0, x1, y1] = reg.light;
+    for (const v of moving) assert.ok(v.qx >= x0 + 2 && v.qx <= x1 - 2 && v.qy >= y0 + 2 && v.qy <= y1 - 2, `${name} at ${intensity}: the light of (${v.px}, ${v.py}) lands at (${v.qx.toFixed(1)}, ${v.qy.toFixed(1)}), inside the box ${reg.light.map((n) => n.toFixed(1))}`);
+    const maxSpill = Math.max(...moving.map((v) => Math.hypot(v.qx - v.px, v.qy - v.py)));
+    assert.ok(maxSpill <= reg.spill, `${name}: the spill bound ${reg.spill.toFixed(2)} holds (${maxSpill.toFixed(2)} px)`);
+    assert.equal(x0, -mesh.margin + reg.c0 * MESH_PX + LIGHT_INSET_PX);
+    if ((reg.c1 - reg.c0) * (reg.r1 - reg.r0) < mesh.columns * mesh.rows) smaller += 1;
+    assert.ok(maxSpill > reg.spill * 0.5, `${name}: the bound is not loose by more than half (${maxSpill.toFixed(2)} of ${reg.spill.toFixed(2)} px)`);
+    // the control: the region of the same box with no slope (no spill allowed for) lets the light of the moving surface land outside the box
+    if (intensity === 1) {
+      const low = causticRegion(f, intensity, 0, mesh, { dx: 0, dy: 0 });
+      const [a0, b0, a1, b1] = low.light;
+      if (moving.some((v) => v.qx < a0 + 2 || v.qx > a1 - 2 || v.qy < b0 + 2 || v.qy > b1 - 2)) outsideControl += 1;
+    }
+  }
+  assert.ok(smaller >= 4, `a pebble draws less than the whole mesh (${smaller} of ${cases.length * 2})`);
+  assert.ok(outsideControl >= 3, `control: without the spill, light lands outside the box (${outsideControl} of ${cases.length})`);
+  const swellRegion = causticRegion(cases[0].f, 1, 0.5, mesh, slopeBound(cases[0].f));
+  assert.deepEqual([swellRegion.c0, swellRegion.c1, swellRegion.r0, swellRegion.r1], [0, mesh.columns, 0, mesh.rows], 'the swell: the whole mesh');
+  const flat = createField(W0, H0);
+  clear(flat);
+  assert.deepEqual(slopeBound(flat), { dx: 0, dy: 0 });
+});
+
+test('slopeBound bounds the B-spline gradient everywhere (random fields, 4000 random points, the clamp at the border included); control: half of it does not', () => {
+  const f = createField(160, 120);
+  clear(f);
+  let rnd = 99;
+  const r = () => { rnd = (rnd * 1103515245 + 12345) >>> 0; return rnd / 4294967296; };
+  for (let k = 0; k < 5; k += 1) stamp(f, 160 * r(), 120 * r(), 6 + 20 * r(), (r() - 0.5) * 30);
+  mirror(f);
+  for (let k = 0; k < 7; k += 1) step(f);
+  const { dx, dy } = slopeBound(f);
+  let maxX = 0, maxY = 0;
+  for (let k = 0; k < 4000; k += 1) {
+    const s = surfaceAt(f.h, 0, f.pw, f.ph, -1 + (f.pw + 1) * r(), -1 + (f.ph + 1) * r());
+    maxX = Math.max(maxX, Math.abs(s.hx)); maxY = Math.max(maxY, Math.abs(s.hy));
+  }
+  assert.ok(maxX <= dx + 1e-9 && maxY <= dy + 1e-9, `the gradient ${maxX.toFixed(4)}, ${maxY.toFixed(4)} within the bound ${dx.toFixed(4)}, ${dy.toFixed(4)}`);
+  assert.ok(maxX > dx / 2 && maxY > dy / 2, 'control: the bound is not loose by half');
 });
 
 test('the plugin definition: ABI v2, spatial, direct canvas attachment, the actions drop and demo', () => {
