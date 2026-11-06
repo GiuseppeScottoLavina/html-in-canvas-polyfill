@@ -184,7 +184,12 @@ if (!docsOnly) {
   // outside reads each computed style once (scroll-pages.js unblended, outsideCheck); the cover tiles of a plan from one capture, their checks read ahead of the
   // pages, a band across tiles (scroll-compose.js, capture.js, clone.js). Before them, an overlay in mix-blend-mode: saturation passed both cover colours, and the
   // second cover colour cost three post-frame jobs more before the first composition (+46 ms on an iPad, 0.1.0-preview.25)
-  if (total > 17340) problems.push(`G-size: core is ${total} code lines (> 17340)`);
+  // 17340 -> 17360 (2026-11-06, measured 17,360): a blended element outside a list clipped whole by an ancestor of no area composes (+24: scroll-pages.js
+  // clippedAway, emptyClip, moves); before it a wrapper of 0 x 0 with overflow: hidden around a blended overlay refused the plan (0 compositions and 1 tile per step
+  // instead of 1 and 0, 0.1.0-preview.26)
+  // 17360 -> 17363 (2026-11-06, measured 17,363 with both): dispose drops the queued side builds (+3: store.js dropEntry and dispose)
+  // 17363 -> 17366 (2026-11-06, measured 17,366): the event bridge keeps each canvas listener's passive flag (+3: src/live/event-bridge.js)
+  if (total > 17366) problems.push(`G-size: core is ${total} code lines (> 17366)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

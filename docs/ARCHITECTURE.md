@@ -93,7 +93,7 @@ registry) -> `compose` (root scope, store, capture, scheduler, observers, effect
 a ledger with the original descriptor: the standard surface, `attachShadow`, the fullscreen/popover guard, the worker `postMessage` guard, the synchronous mount hooks) -> `registry.scan(document)` and every open shadow root
 (existing canvases) -> start the per-scope MutationObservers (dynamic canvases) -> return `HicInstalled`. A native build with only ADDITIVE names missing is gap-filled when the native bridge is loaded (ADR-N). Patching happens BEFORE the scan so an app script that runs right after sees the final API.
 `uninstall()` (idempotent): for each record `unmount` (children restored to the canvas in original order, layer + facade + attributes
-removed) -> stop the selector bridge and observers -> dispose effects, scheduler (cancels rAF) and `store.dispose()` (surfaces released) -> restore descriptors from the ledger
+removed) -> stop the selector bridge and observers -> dispose effects, scheduler (cancels rAF) and `store.dispose()` (surfaces released; the queued side builds are dropped, and the scroll pages and tiles a decode still in flight would reach are let go at once, so a store kept alive through a kept `HicInstalled` holds no surface and needs no pump; a decode that settles later publishes nothing; a drawable removed from the drawables drops its side builds the same way) -> restore descriptors from the ledger
 in reverse order -> `bus.clear()`. Postcondition: serialised DOM and prototype descriptors equal their pre-install state (browser unit test `G-lifecycle` in `test/unit/api-core/install.browser.test.mjs`; the full G-lifecycle gate row is planned).
 
 ### 4.2 Dynamic canvases (registry, `canvas-registry.js`)
@@ -409,7 +409,13 @@ Tick RUN(now), for each canvas record in reverse tree order:
     iPad Safari 27.2). So the planner refuses (`refusedBy.plan`) a plan where an element outside the scroller (its ancestors aside) paints over the port with a
     `mix-blend-mode` other than normal on itself, on an ancestor below the one it shares with the scroller, or on its `::before` / `::after` (`unblended`); one of
     opacity 0, of `visibility: hidden` or with nothing to paint does not count, and a later change beside such an element drops the plan when it paints over any part
-    of the port (`ScrollPlan.clear`). The scan reads every element outside the scroller once per plan, in the plan's steps (headless Chrome 156: 2.1 ms with 1,000
+    of the port (`ScrollPlan.clear`). Nor does one clipped whole (`clippedAway`, `emptyClip`): an ancestor below the shared one, an HTML block, flex or grid container
+    with `overflow` hidden or clip on both axes, no `overflow-clip-margin` and no transform, whose padding box has no area (a wrapper of 0 x 0 that keeps a blended
+    overlay out of sight; 0.1.0-preview.26 refused it). Only provable cases count: the element paints nothing beyond its border box, which lies right of and below the
+    clipper's corner (a later change of the clipper is damage over its box grown right and down to its scrollable overflow, so over the element, and `ScrollPlan.clear`
+    then refuses it once part of it shows), and between it and the clipper nothing escapes the clip: no element in the top layer, of `position: fixed`, transformed,
+    filtered or slotted into a shadow tree, and an absolute element's containing block is the clipper or lies inside it. A clipper with an area, `clip-path` and
+    `contain: paint` are not proven and still refuse. The scan reads every element outside the scroller once per plan, in the plan's steps (headless Chrome 156: 2.1 ms with 1,000
     such elements, 9.4 ms with 5,000, 36 ms with 19,000; more than 20,000 refuse the plan). An outside `backdrop-filter` needs no refusal: the snapshot does not
     paint it (a blur over the port composes equal to the settled tile). Each check of the elements outside reads an element's computed style once (`outsideCheck`),
     never across checks. The tiles are side builds like the pages, each counted in the plan's surface budget until it is read.

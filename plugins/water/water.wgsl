@@ -29,6 +29,9 @@ struct Globals {
   caustics_on : f32,        // 1: the caustic texture of this frame is valid (the surface moves); 0: the light is uniform (1)
   pad0 : f32,
   live_box : vec4<f32>,     // the cells of the height field that may be non-zero (padded grid, x0 y0 x1 y1 inclusive); 0 everywhere else
+  light_box : vec4<f32>,    // css px (x0 y0 x1 y1) where the caustic texture holds the light (index.js causticRegion); still water's 1 elsewhere
+  mesh_from : vec2<f32>,    // the first column and row of the caustic mesh that the pass draws (whole numbers)
+  pad1 : vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -170,7 +173,9 @@ struct CausticOut {
 fn vs_caustics(@builtin(vertex_index) index : u32, @builtin(instance_index) row : u32) -> CausticOut {
   let css = max(globals.css, vec2<f32>(1.0));
   let m = caustic_margin();
-  let p = vec2<f32>(-m + f32(index / 2u) * MESH_PX, -m + f32(row + (index & 1u)) * MESH_PX);
+  // the column and row of the whole mesh (the pass draws a part of it from mesh_from): the very vertex the whole pass draws there
+  let origin = vec2<u32>(globals.mesh_from);
+  let p = vec2<f32>(-m + f32(origin.x + index / 2u) * MESH_PX, -m + f32(origin.y + row + (index & 1u)) * MESH_PX);
   let s = surface_slope(p);
   let n = normalize(vec3<f32>(-s.x, -s.y, 1.0));
   let r = refract(-normalize(LIGHT_DIR), n, 1.0 / IOR);
@@ -259,7 +264,8 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
 
   // the sunlight on the page where the view ray meets it (fs_caustics): 1 under still water
   var sunlight = 1.0;
-  if (globals.caustics_on > 0.5) {
+  let light_at = displaced_uv * css;
+  if (globals.caustics_on > 0.5 && all(light_at >= globals.light_box.xy) && all(light_at <= globals.light_box.zw)) {
     // four bilinear samples half a texel apart (a 3 x 3 tent): the lines stay sharp, the sparkle of the thinnest triangles goes
     let t = 0.5 / max(vec2<f32>(textureDimensions(caustic_texture)), vec2<f32>(1.0));
     sunlight = 0.25 * (textureSampleLevel(caustic_texture, form_sampler, displaced_uv + vec2<f32>(-t.x, -t.y), 0.0).r

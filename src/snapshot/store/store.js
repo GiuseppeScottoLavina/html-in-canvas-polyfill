@@ -233,6 +233,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
   function dropEntry(entry, announce) {
     entry.incarnation++;
     entries.delete(entry.el);
+    // its side builds go now, not at the next pump (runSide would skip them): queued, they held its scroll pages and cover tiles, and a disposed store is never pumped
+    for (let i = side.length; i--;) if (side[i].entry === entry) side.splice(i, 1);
     damage.forget(entry.el);
     pendingChanged.delete(entry.el);
     if (entry.version && announce) pendingRemoved.set(entry.el, entry.record);
@@ -1197,6 +1199,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
       for (const off of offs) off();
       for (const l of landed.splice(0, landed.length)) releaseImage(l.image);
       for (const entry of [...entries.values()]) dropEntry(entry, false);
+      side.length = 0;
       pendingChanged.clear();
       pendingRemoved.clear();
       jobs.clear();

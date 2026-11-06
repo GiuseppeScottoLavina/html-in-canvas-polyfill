@@ -537,3 +537,41 @@ test('isFresh: false while damage waits for a build or a build is decoding, true
   rig.hide(a);
   assert.equal(rig.store.isFresh(rig.record), true, 'a drawable without a box cannot be snapshotted and must not hold a requested paint');
 });
+
+test('uninstall between the bands of the cover tiles of a list: the store an app still reaches through its HicInstalled needs no pump, and a second uninstall is a no-op', async (t) => {
+  const { inst } = await import('../api-core/_real.mjs');
+  const { EXT } = await import('/src/contracts/events.js');
+  const host = document.createElement('div');
+  host.innerHTML = '<canvas content="drawable" width="620" height="520" style="display:block;width:620px;height:520px"><div drawable style="width:620px;height:520px;background:white">'
+    + `<div style="width:600px;height:500px;overflow:auto;position:relative;background:white;scrollbar-width:none">${'<div style="height:30px">row</div>'.repeat(80)}</div></div></canvas>`;
+  document.body.append(host);
+  t.cleanup(() => host.remove());
+  const i = inst(t, { maxDpr: 1, inkMargin: 0, maxSnapshotFps: 0 });
+  const store = /** @type {any} */ (i)[EXT.EFFECTS_SEAM_KEY].deps.store;
+  const canvas = /** @type {HTMLCanvasElement} */ (host.querySelector('canvas'));
+  const drawable = /** @type {Element} */ (canvas.firstElementChild);
+  const ctx = /** @type {any} */ (canvas.getContext('2d'));
+  canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(drawable, 0, 0); };
+  canvas.requestPaint();
+  await i.whenPainted(canvas);
+  // the first band of a cover tile is read in a post-frame job: uninstall in the microtask after it, while the next band and the pages are still queued
+  const proto = OffscreenCanvasRenderingContext2D.prototype, read = proto.getImageData;
+  /** @type {{needsPump: boolean}|null} */ let stopped = null;
+  t.cleanup(() => { proto.getImageData = read; });
+  proto.getImageData = function (/** @type {any[]} */ ...args) {
+    const data = read.apply(this, /** @type {any} */ (args));
+    if (!stopped && this.canvas.width === 600 && this.canvas.height === 500 && args[2] === 600) { stopped = { needsPump: store.needsPump() }; queueMicrotask(() => i.uninstall()); }
+    return data;
+  };
+  /** @type {HTMLElement} */ (drawable.firstElementChild).scrollTop = 1;
+  await until(() => stopped, 5000, 'the first band of a cover tile');
+  await sleep(0);
+  assert.equal(stopped?.needsPump, true, 'control: side work was queued when the band was read');
+  assert.equal(store.needsPump(), false, 'nothing waits for a pump that never comes');
+  assert.equal(store.stats().scrollSurfaceBytes, 0);
+  const scroll = JSON.stringify(store.stats().scroll);
+  i.uninstall();
+  await sleep(300);
+  assert.equal(store.needsPump(), false);
+  assert.equal(JSON.stringify(store.stats().scroll), scroll, 'nothing more is built or decoded after the uninstall');
+});

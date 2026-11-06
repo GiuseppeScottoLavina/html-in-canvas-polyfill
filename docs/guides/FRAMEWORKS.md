@@ -1,6 +1,6 @@
 # Using it with React, Vue, Svelte and Lit
 
-This page separates what was **run** from what was only **designed**. Verified means: a real app built with that framework, loaded after `dist/hic-live-polyfill.iife.js`, driven with trusted input in headless Chrome 155.0.8059.85 at DPR 1 by `npm run test:frameworks` (`test/frameworks/run.mjs`), with positive controls that turn red. Versions of the last recorded run: React 19.3.1, Vue 3.5.44, Svelte 5.57.2, Lit 3.3.3, all as development builds (`test/frameworks/package.json` has pinned Svelte 5.57.3 since 2026-11-01; that version has not been run yet). The last recorded run is named in section 7.
+This page separates what was **run** from what was only **designed**. Verified means: a real app built with that framework, loaded after `dist/hic-live-polyfill.iife.js`, driven with trusted input in headless Chrome at DPR 1 by `npm run test:frameworks` (`test/frameworks/run.mjs`), with positive controls that turn red. Versions of the last recorded run (the macOS CI job "headless apps" of 0.1.0-preview.26, headless Chrome 157.0.8103.39): React 19.3.1, Vue 3.5.44, Svelte 5.57.3, Lit 3.3.3, all as development builds; production builds are not tested (section 6). The last recorded runs are named in section 7.
 
 The four apps are in `examples/frameworks/{react,vue,svelte,lit}/`, each with a README. They draw the same picture: a controlled input, a keyed list with Add / Remove first / Reverse buttons and clickable rows, a conditional second drawable (a badge drawn at (340, 300) while it is laid out at the origin), and a component that re-renders every 500 ms.
 
@@ -153,7 +153,7 @@ render() {
 
 ## 6. Not verified
 
-- DPR 2 or fractional DPR, headed Chrome, a real display refresh rate, other Chromium browsers: only headless Chrome at DPR 1 ran (154 until 2026-10-09, 155 since).
+- DPR 2 or fractional DPR, headed Chrome, a real display refresh rate, other Chromium browsers: only headless Chrome at DPR 1 ran (154 until 2026-10-09, 155 until 2026-10-26, 157 in CI since).
 - Production builds (React, Vue and Svelte ran as development builds, Lit in dev mode), and performance of any kind: no timing was measured.
 - Vue, Svelte and Lit server rendering and hydration; React Server Components and streaming SSR.
 - A framework that MOVES the canvas (a keyed reorder of the list that contains the canvas), portals into a canvas, a framework-rendered drawable nested inside another drawable, text nodes as direct canvas children, toggling `content` from a framework.
@@ -168,6 +168,6 @@ npm run build
 npm run test:frameworks                      # [--only=react,vue] [--no-control]; headless Chrome; .scratch/results/frameworks-<ts>.json + PNGs
 ```
 
-Last recorded run: 2026-10-26, headless Chrome 155.0.8059.85, DPR 1, with the versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s (the run of 2026-10-22 gave the same counts). Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
+Last recorded run: 2026-11-06, the macOS CI job "headless apps" on the commit of 0.1.0-preview.26 (`npm ci` in `test/frameworks`, then `node test/frameworks/run.mjs`), headless Chrome 157.0.8103.39, DPR 1, with the versions above, development builds: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 33 s, with the same results for the two KNOWN hydration probes of section 4 as the local run that follows. Last recorded local run: 2026-10-26, headless Chrome 155.0.8059.85, DPR 1, with Svelte 5.57.2 and the other versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s (the run of 2026-10-22 gave the same counts). Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
 
 If something breaks in your app, run `__HIC__.installed.report()` and note which facade or selector was involved; a minimal repro in the style of `examples/frameworks/` is the most useful bug report.

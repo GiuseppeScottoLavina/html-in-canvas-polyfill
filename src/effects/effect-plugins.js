@@ -74,13 +74,17 @@ export function createPluginSet(env, canvas, source, io) {
       requestRender: io.requestRender,
       trigger: (action, options) => ownTrigger(slot, action, options),
       viewport: io.viewport,
-      // Pointer events land on the live layer (a sibling of the canvas), not on the canvas, so listen on both.
+      // Pointer events land on the live layer (a sibling of the canvas), not on the canvas, so listen on both. On the canvas through
+      // EventTarget's own methods: the canvas's own addEventListener (live/event-bridge.js) would add a forwarding listener on the layer,
+      // which delivered every event of the layer a second time and was not passive (a touch listener there blocks scrolling).
       listen(type, listener, options) {
         const layer = env.registry.get(canvas)?.layer?.element ?? null;
-        const targets = layer ? [canvas, layer] : [canvas];
-        for (const t of targets) t.addEventListener(type, listener, options);
+        const own = /** @type {any} */ (canvas.ownerDocument?.defaultView)?.EventTarget?.prototype ?? canvas;
+        own.addEventListener.call(canvas, type, listener, options);
+        layer?.addEventListener(type, listener, options);
         const remove = () => {
-          for (const t of targets) t.removeEventListener(type, listener, options);
+          own.removeEventListener.call(canvas, type, listener, options);
+          layer?.removeEventListener(type, listener, options);
           slot.removers.delete(remove);
         };
         slot.removers.add(remove);
