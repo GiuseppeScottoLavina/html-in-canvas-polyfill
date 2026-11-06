@@ -125,6 +125,27 @@ test('listen registers on the canvas AND the layer, and removal on remove() undo
   assert.equal(set.count, 0);
 });
 
+test('listen registers on the canvas with EventTarget\'s own method, not the canvas\'s own addEventListener (the event bridge, which would forward the layer\'s events a second time through a listener of its own on the layer); control: the canvas\'s own method is what a plain call reaches', async () => {
+  const calls = [];
+  const proto = { addEventListener(t, l, o) { calls.push(['native', this, t, o]); }, removeEventListener(t, l, o) { calls.push(['native-remove', this, t, o]); } };
+  const canvas = { ownerDocument: { defaultView: { EventTarget: { prototype: proto } } }, addEventListener: (t) => calls.push(['bridge', t]), removeEventListener: (t) => calls.push(['bridge-remove', t]) };
+  const layerCalls = [];
+  const layer = { element: { addEventListener: (t, l, o) => layerCalls.push(['add', t, o]), removeEventListener: (t) => layerCalls.push(['remove', t]) } };
+  const io = { gpu: () => ({ adapter: 'a', device: 'd', format: 'bgra8unorm' }), viewport: () => ({ width: 10, height: 10, cssWidth: 10, cssHeight: 10, dpr: 1 }), requestRender() {}, reducedMotion: () => false, reportError() {}, onWait() {} };
+  const set = createPluginSet({ registry: { get: () => ({ layer }) } }, canvas, {}, io);
+  let remove = null;
+  const h = await set.add(definePlugin({ type: 'listener', apiVersion: 2, version: 1, create(ctx) { remove = ctx.listen('touchstart', () => {}, { passive: true }); return { render() {} }; } }));
+  assert.deepEqual(calls.map((c) => c[0]), ['native'], 'the canvas listener goes through EventTarget.prototype.addEventListener');
+  assert.equal(calls[0][1], canvas);
+  assert.deepEqual(calls[0][3], { passive: true });
+  assert.deepEqual(layerCalls, [['add', 'touchstart', { passive: true }]], 'and the layer gets the plugin\'s own listener, as passive as the plugin asked');
+  remove();
+  assert.deepEqual(calls.map((c) => c[0]), ['native', 'native-remove']);
+  canvas.addEventListener('x');
+  assert.equal(calls.at(-1)[0], 'bridge', 'control: a plain call on the canvas reaches its own method');
+  h.remove();
+});
+
 test('mountUI: mounts now, returns a disposer, remove() disposes mounted UI, destroy() runs once', async () => {
   const { set } = rig();
   const log = [];

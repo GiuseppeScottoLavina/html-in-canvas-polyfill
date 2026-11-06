@@ -188,7 +188,8 @@ if (!docsOnly) {
   // clippedAway, emptyClip, moves); before it a wrapper of 0 x 0 with overflow: hidden around a blended overlay refused the plan (0 compositions and 1 tile per step
   // instead of 1 and 0, 0.1.0-preview.26)
   // 17360 -> 17363 (2026-11-06, measured 17,363 with both): dispose drops the queued side builds (+3: store.js dropEntry and dispose)
-  if (total > 17363) problems.push(`G-size: core is ${total} code lines (> 17363)`);
+  // 17363 -> 17366 (2026-11-06, measured 17,366): the event bridge keeps each canvas listener's passive flag (+3: src/live/event-bridge.js)
+  if (total > 17366) problems.push(`G-size: core is ${total} code lines (> 17366)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

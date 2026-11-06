@@ -304,7 +304,7 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 | `adapter`, `device`, `format` | the host's WebGPU adapter and device (a new one after a device loss: `create` runs again) and the canvas format |
 | `requestRender()` | asks for a frame (the host renders only when the source changed, on request, or every frame for a `continuous` instance) |
 | `viewport()` | `{width, height, cssWidth, cssHeight, dpr}` of the canvas now |
-| `listen(type, listener, options)` | adds a listener on the canvas AND on its live layer (pointer events land on the layer); removed when the plugin is removed |
+| `listen(type, listener, options)` | adds a listener on the canvas AND on its live layer (pointer events land on the layer), with the options as given (a passive listener stays passive on both); an event reaches it once; removed when the plugin is removed |
 | `trigger(action, options?)` | runs one of the plugin's own actions through the host, exactly as `handle.trigger` (section 15) |
 
 ### 13. The instance

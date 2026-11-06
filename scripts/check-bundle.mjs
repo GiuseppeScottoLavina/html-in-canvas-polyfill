@@ -208,7 +208,10 @@ const LIMITS = {
   //   store kept through a kept HicInstalled reported needsPump() true for good and kept 2 internal 600 x 500 surfaces reachable after an uninstall
   // 364 -> 365.25 KB, gzip 124 -> 124.5 KB (+1,094 / +349 bytes, 2026-11-06, measured 365,024 / 124,268): a blended element outside a list clipped whole by an
   //   ancestor of no area composes (scroll-pages.js clippedAway, emptyClip, moves; 0.1.0-preview.26 refused the plan)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 365.25 * KB, gzip: 124.5 * KB },
+  // 364 -> 364.25 KB (+212 / +60 bytes, 2026-11-06, measured 364,142 / 123,979): the event bridge keeps each canvas listener's passive flag and its forwarder on
+  //   the layer is passive exactly when every listener it serves is (a passive touch listener on the canvas became a non-passive one on the layer)
+  // 365.25 -> 365.5 KB (2026-11-06, measured 365,411 / 124,382 with all three changes: the clipped overlay, the side builds dropped at dispose, the event bridge)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 365.5 * KB, gzip: 124.5 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -413,7 +416,8 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // chromium 135.5 -> 135.75 KB, geckoWebkit 152 -> 152.25 KB (2026-11-06, measured 135,648 / 152,225): the core it loads grew by the clip recognition outside a
   //   list (scroll-pages.js clippedAway, +349 gzip)
   // geckoWebkit 152.25 -> 152.5 KB (2026-11-06, measured 135,696 / 152,273 with both): the core it loads grew by the side builds dropped at dispose too (+53 gzip)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 135.75 * KB, geckoWebkit: 152.5 * KB };
+  // chromium 135.75 -> 136 KB (2026-11-06, measured 135,760 / 152,337 with the event bridge's passive forwarder too)
+  const LOADER_APP = { start: 8.1 * KB, chromium: 136 * KB, geckoWebkit: 152.5 * KB };
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';
