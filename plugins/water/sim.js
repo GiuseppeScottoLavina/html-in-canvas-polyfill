@@ -226,6 +226,28 @@ export function quiet(f, intensity = 1) {
 }
 
 /**
+ * The largest difference between neighbouring cells of the field, across (dx) and down (dy), css px: a bound on the B-spline's gradient
+ * (per cell) anywhere, since its derivative is a quadratic B-spline of these differences (non-negative weights that sum to 1). Over the
+ * box and the zero cells around it, ghost cells included; 0 for a flat field. @param {Field} f @returns {{dx: number, dy: number}}
+ */
+export function slopeBound(f) {
+  const { h, pw, ph, box } = f;
+  let dx = 0, dy = 0;
+  if (box[0] > box[2]) return { dx, dy };
+  const x0 = Math.max(0, box[0] - 1), x1 = Math.min(pw - 1, box[2] + 1);
+  const y0 = Math.max(0, box[1] - 1), y1 = Math.min(ph - 1, box[3] + 1);
+  for (let y = y0; y <= y1; y += 1) {
+    const row = y * pw;
+    for (let x = x0; x <= x1; x += 1) {
+      const c = h[row + x];
+      if (x < x1) { const d = h[row + x + 1] - c; if (d > dx) dx = d; else if (-d > dx) dx = -d; }
+      if (y < y1) { const d = h[row + pw + x] - c; if (d > dy) dy = d; else if (-d > dy) dy = -d; }
+    }
+  }
+  return { dx, dy };
+}
+
+/**
  * Cubic B-spline weights at fraction t, and their first and second derivatives. The same polynomials as bspline() in water.wgsl.
  * @param {number} t @param {Float64Array} w @param {Float64Array} d @param {Float64Array} [dd]
  */

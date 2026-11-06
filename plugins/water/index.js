@@ -24,7 +24,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { actionPoint } from '../_lib/action.js';
-import { CAUSTIC_DEPTH_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, stamp, step, surfaceAt, swell } from './sim.js';
+import { CAUSTIC_DEPTH_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, slopeBound, stamp, step, surfaceAt, swell } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -46,8 +46,8 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['drop', 'demo']));
 
 /** Offsets in the uniform block (water.wgsl Globals), in floats. The mapper state is this block followed by the padded height field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, CAUSTICS: 18, BOX: 20 });
-export const GLOBALS_LENGTH = 24;
+export const G = Object.freeze({ RES: 0, CSS: 2, K: 4, INV_CELL: 6, GRID: 8, TIME: 10, INTENSITY: 11, LIGHT: 12, AMBIENT: 13, ACTIVE: 14, READY: 15, REFRACT: 16, CAUSTIC: 17, CAUSTICS: 18, BOX: 20, LIGHT_BOX: 24, MESH_FROM: 28 });
+export const GLOBALS_LENGTH = 32;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
 const DEFAULT_INTENSITY = 0.5;
@@ -80,8 +80,16 @@ const WAKE_FAST = 0.8;
 /** a finger that scrolls the page stirs one spot: each touch move adds at most this share of a wake dent there */
 const SCROLL_STIR = 0.22;
 const DEMO_SEED = 0x5eed;
+/**
+ * ms that the caustic textures outlive caustics turned off by an option (light or intensity 0): a slider dragged through 0 turns them off
+ * and on again within this, and each crossing would otherwise free and make 7 MB (at 1100 x 640 css px) again. Then they are released.
+ */
+export const LIGHT_GRACE_MS = 2000;
 
 let uiSerial = 0;
+const NO_SLOPE = Object.freeze({ dx: 0, dy: 0 });
+/** no caustic texture is read (the caustics are off) */
+const NO_LIGHT = Object.freeze([0, 0, -1, -1]);
 
 /** @param {unknown} v @param {number} fallback */
 function clamp01(v, fallback) {
@@ -190,6 +198,42 @@ export function causticMesh(cssW, cssH, depth) {
 }
 /** css px between the vertices of the caustic mesh (water.wgsl MESH_PX) */
 export const MESH_PX = 2;
+/** the index of refraction of water (water.wgsl IOR) */
+const IOR = 1.333;
+/** css px: the picture reads the caustic texture only this far inside the drawn region (its four taps and their bilinear texels) */
+export const LIGHT_INSET_PX = 3;
+
+/**
+ * The part of the caustic mesh that can differ from still water, and what the picture may read of it (water.wgsl fs). Outside the cells
+ * that may be non-zero (the field's box) and the B-spline's reach around them, the surface is exactly flat: its triangles are not refracted
+ * and add exactly their own area there, what still water gives. The light of the moving part lands at most `spill` css px from where it
+ * met the water: the depth times the tilt of a ray refracted by the steepest slope, which the largest difference between neighbouring cells
+ * bounds (sim.js slopeBound). So the columns c0..c1 and rows r0..r1 of the mesh cover the moving part, its spill and a flat rim; the
+ * texture holds the full pass's light inside them, and `light` (css px, inset by LIGHT_INSET_PX) is where the picture reads it; outside it
+ * the full pass would give 1, the light of still water. With the swell the whole surface moves: the whole mesh. PURE.
+ * @param {Field} f @param {number} intensity @param {number} ambient @param {{margin: number, columns: number, rows: number}} mesh
+ * @param {{dx: number, dy: number}} slope  slopeBound(f)
+ */
+export function causticRegion(f, intensity, ambient, mesh, slope) {
+  const { margin: m, columns, rows } = mesh;
+  const all = { c0: 0, c1: columns, r0: 0, r1: rows, light: [-1e9, -1e9, 1e9, 1e9], spill: Infinity };
+  const b = f.box;
+  if (ambient > 0 || b[0] > b[2]) return all;
+  // the slope of the surface (per css px, tilted by the intensity as the shader's is), 1 % above the bound for the shader's rounding
+  const k = Math.min(1, Math.max(0, intensity));
+  const sigma = k * Math.hypot(slope.dx / f.cellX, slope.dy / f.cellY) * 1.01 + 1e-6;
+  const ti = Math.atan(sigma);
+  const spill = CAUSTIC_DEPTH_PX * Math.tan(ti - Math.asin(Math.sin(ti) / IOR)) + 2;
+  // the vertices whose 4 x 4 cells reach into the box (water.wgsl surface_at; a cell of slack each side), then the spill, a mesh step, the inset and a pixel
+  const reach = spill + MESH_PX + LIGHT_INSET_PX + 1;
+  const x0 = (b[0] - 3.5 - PAD) * f.cellX - reach, x1 = (b[2] + 3.5 - PAD) * f.cellX + reach;
+  const y0 = (b[1] - 3.5 - PAD) * f.cellY - reach, y1 = (b[3] + 3.5 - PAD) * f.cellY + reach;
+  const clampTo = (/** @type {number} */ v, /** @type {number} */ n) => Math.min(n, Math.max(0, v));
+  const c0 = clampTo(Math.floor((x0 + m) / MESH_PX), columns), c1 = clampTo(Math.ceil((x1 + m) / MESH_PX), columns);
+  const r0 = clampTo(Math.floor((y0 + m) / MESH_PX), rows), r1 = clampTo(Math.ceil((y1 + m) / MESH_PX), rows);
+  const at = (/** @type {number} */ i) => -m + i * MESH_PX;
+  return { c0, c1, r0, r1, light: [at(c0) + LIGHT_INSET_PX, at(r0) + LIGHT_INSET_PX, at(c1) - LIGHT_INSET_PX, at(r1) - LIGHT_INSET_PX], spill };
+}
 /** The caustic texture of a canvas of css size (w, h): one texel per css px (water.wgsl light_grid). @param {number} w @param {number} h */
 export function lightGrid(w, h) {
   return { w: Math.max(1, Math.ceil(Math.fround(w) - 0.01)), h: Math.max(1, Math.ceil(Math.fround(h) - 0.01)) };
@@ -267,7 +311,8 @@ export const plugin = Object.freeze({
     /**
      * The caustic texture (lightGrid of the field's css size) and its 4x multisampled target, held only while caustics can show (`lit()`):
      * from the first frame on, so that a first tap allocates nothing, and made at once when an option change turns them on. While they
-     * cannot show (light 0, intensity 0, reduced motion) the picture binds a 1 x 1 texture that it never samples.
+     * cannot show (light 0, intensity 0, reduced motion) the picture binds a 1 x 1 texture that it never samples. An option change that
+     * turns them off keeps them for LIGHT_GRACE_MS (a slider dragged through 0 crosses it again within that), then releases them.
      */
     let lightTargets = { w: 0, h: 0, tex: /** @type {any} */ (null), ms: /** @type {any} */ (null), view: /** @type {any} */ (null), viewMs: /** @type {any} */ (null) };
     /** @param {number} w @param {number} h */
@@ -295,9 +340,19 @@ export const plugin = Object.freeze({
       }
       return unlit.view;
     };
-    /** Hold the caustic textures exactly while caustics can show, at the size of the field `f`. @param {Field} f */
+    /** the release of the caustic textures, pending since caustics turned off @type {ReturnType<typeof setTimeout>|null} */
+    let lightRelease = null;
+    const cancelLightRelease = () => { if (lightRelease !== null) { clearTimeout(lightRelease); lightRelease = null; } };
+    /**
+     * Hold the caustic textures while caustics can show, at the size of the field `f`. When they cannot, textures already made stay for
+     * LIGHT_GRACE_MS, unused, and are then released (one timer, no frame). @param {Field} f
+     */
     const fitLight = (f) => {
-      if (!lit()) { releaseLightTargets(); return; }
+      if (!lit()) {
+        if (lightTargets.tex && lightRelease === null) lightRelease = setTimeout(() => { lightRelease = null; if (!lit()) releaseLightTargets(); }, LIGHT_GRACE_MS);
+        return;
+      }
+      cancelLightRelease();
       const g = lightGrid(f.cssWidth, f.cssHeight);
       ensureLightTargets(g.w, g.h);
     };
@@ -559,7 +614,8 @@ export const plugin = Object.freeze({
         intensity = clamp01(next?.intensity, intensity);
         light = clamp01(next?.light, light);
         if (!reducedMotion) ambient = clamp01(next?.ambient, ambient);
-        // the caustic textures follow at once: made before the next tap when the light comes on, released when it goes off
+        // the caustic textures follow at once: made before the next tap when the light comes on; when it goes off they are released
+        // LIGHT_GRACE_MS later (fitLight)
         if (field) fitLight(field);
         syncUi();
       },
@@ -621,6 +677,12 @@ export const plugin = Object.freeze({
         // the light moves only while the surface does; still water lights the page uniformly (1) and needs no pass
         const caustics = (active > 0 || ambient > 0) && light > 0 && intensity > 0;
         globals[G.CAUSTICS] = caustics ? 1 : 0;
+        const mesh = causticMesh(f.cssWidth, f.cssHeight, CAUSTIC_DEPTH_PX);
+        // the pass draws only the part of the mesh that can differ from still water (causticRegion)
+        const region = caustics ? causticRegion(f, intensity, ambient, mesh, ambient > 0 ? NO_SLOPE : slopeBound(f)) : null;
+        const lightBox = region ? region.light : NO_LIGHT;
+        globals[G.LIGHT_BOX] = lightBox[0]; globals[G.LIGHT_BOX + 1] = lightBox[1]; globals[G.LIGHT_BOX + 2] = lightBox[2]; globals[G.LIGHT_BOX + 3] = lightBox[3];
+        globals[G.MESH_FROM] = region ? region.c0 : 0; globals[G.MESH_FROM + 1] = region ? region.r0 : 0;
         if (waiters.length && calm()) for (const resolve of waiters.splice(0)) resolve('calm');
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         // the caustic textures follow the field's size from the first frame on, so that a first tap allocates nothing
@@ -639,12 +701,15 @@ export const plugin = Object.freeze({
           });
           bindGroups.set(frame.sourceView, bindGroup);
         }
-        if (caustics) {
-          const mesh = causticMesh(f.cssWidth, f.cssHeight, CAUSTIC_DEPTH_PX);
+        if (region) {
           const cp = frame.encoder.beginRenderPass({
             colorAttachments: [{ view: lightTargets.viewMs, resolveTarget: lightTargets.view, loadOp: 'clear', storeOp: 'discard', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
           });
-          cp.setPipeline(causticPipeline); cp.setBindGroup(0, causticBindGroup); cp.draw(2 * (mesh.columns + 1), mesh.rows); cp.end();
+          cp.setPipeline(causticPipeline); cp.setBindGroup(0, causticBindGroup);
+          // strips (rows) r0 .. r1 - 1, their vertices from column c0 to c1 (the shader adds MESH_FROM): the very triangles of the whole mesh
+          // there, in the same order
+          if (region.r1 > region.r0 && region.c1 > region.c0) cp.draw(2 * (region.c1 - region.c0 + 1), region.r1 - region.r0);
+          cp.end();
         }
         const timestampWrites = frame.profiling?.timestampWrites('water');
         const pass = frame.encoder.beginRenderPass({
@@ -676,6 +741,7 @@ export const plugin = Object.freeze({
         for (const resolve of waiters.splice(0)) resolve(null);
         uniformBuffer.destroy?.();
         fieldTexture?.destroy?.();
+        cancelLightRelease();
         releaseLightTargets();
         unlit?.tex.destroy?.();
       },
