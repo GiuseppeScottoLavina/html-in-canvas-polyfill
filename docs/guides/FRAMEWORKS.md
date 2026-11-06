@@ -1,10 +1,12 @@
 # Using it with React, Vue, Svelte and Lit
 
-This page separates what was **run** from what was only **designed**. Verified means: a real app built with that framework, loaded after `dist/hic-live-polyfill.iife.js`, driven with trusted input in headless Chrome at DPR 1 by `npm run test:frameworks` (`test/frameworks/run.mjs`), with positive controls that turn red. Versions of the last recorded run (the macOS CI job "headless apps" of 0.1.0-preview.26, headless Chrome 157.0.8103.39): React 19.3.1, Vue 3.5.44, Svelte 5.57.3, Lit 3.3.3, all as development builds; production builds are not tested (section 6). The last recorded runs are named in section 7.
+This page separates what was **run** from what was only **designed**. Verified means: a real app built with that framework, loaded after `dist/hic-live-polyfill.iife.js`, driven with trusted input in headless Chrome at DPR 1 by `npm run test:frameworks` (`test/frameworks/run.mjs`), with positive controls that turn red. Versions of the last recorded run (the macOS CI job "headless apps" of 0.1.0-preview.26, headless Chrome 157.0.8103.39): React 19.3.1, Vue 3.5.44, Svelte 5.57.3, Lit 3.3.3, all as development builds. Every scenario and control now also runs against a production build of the same four apps (section 1.1); that run was recorded locally on 2026-11-06 with headless Chrome 156.0.8078.76 and React 19.3.0, Vue 3.5.44, Svelte 5.57.2, Lit 3.3.3. The last recorded runs are named in section 7.
 
 The four apps are in `examples/frameworks/{react,vue,svelte,lit}/`, each with a README. They draw the same picture: a controlled input, a keyed list with Add / Remove first / Reverse buttons and clickable rows, a conditional second drawable (a badge drawn at (340, 300) while it is laid out at the origin), and a component that re-renders every 500 ms.
 
 ## 1. What was verified
+
+Every row ran twice, against a development build and a production build of the same app, with the same results unless a cell says otherwise.
 
 | scenario (what the check asserts) | React 19 | Vue 3 | Svelte 5 | Lit 3 (shadow DOM) |
 |---|---|---|---|---|
@@ -18,9 +20,28 @@ The four apps are in `examples/frameworks/{react,vue,svelte,lit}/`, each with a 
 | **uninstall** while the timer runs: children return to the canvas, no layer is left, the app keeps re-rendering without errors; `install()` again: the canvas shows the CURRENT state and a drawn row is clickable | pass | pass | pass | pass |
 | **hydration**: `hydrateRoot` over `react-dom/server` markup keeps the server node, oracle and typing pass, no hydration error | pass, with `suppressHydrationWarning` on the canvas (section 4) | not run | not run | not applicable |
 | **doc-snippets**: the code blocks of section 5, extracted from this file and run as written: non-blank canvas, a click focuses the drawn input, typing changes the canvas | pass | pass | pass | pass |
-| **no error**: every scenario fails on any console error, exception or failed request (where a `removeChild` / `insertBefore` `NotFoundError`, a Vue patch error, a Svelte anchor error or a Lit part error would appear) | none | none | none | none (only Lit's own "dev mode" warning) |
+| **no error**: every scenario fails on any console error, exception or failed request (where a `removeChild` / `insertBefore` `NotFoundError`, a Vue patch error, a Svelte anchor error or a Lit part error would appear) | none | none | none | none (only Lit's own "dev mode" warning, in the development build) |
+| **build-mode**: the build is the mode it claims, read from the page at run time (section 1.1) | pass | pass | pass | pass |
 
-Positive controls, all red as required: without the polyfill (its URL answers 404) the oracle, the typing, the list hit-test and the doc snippet fail for every framework (C1); a click at the badge's layout position does not reach it (C2); a twin with the list reversed fails the oracle at 8.3 % (C3); the error collector sees a `NotFoundError` thrown by `removeChild` (C4); React markup that does not match the client produces a hydration error (C5).
+Positive controls, all red as required, in both builds: without the polyfill (its URL answers 404) the oracle, the typing, the list hit-test and the doc snippet fail for every framework (C1); a click at the badge's layout position does not reach it (C2); a twin with the list reversed fails the oracle at 8.3 % (C3); the error collector sees a `NotFoundError` thrown by `removeChild` (C4); React markup that does not match the client produces a hydration error (C5; the production build reports it as the minified React error #418). Once: the production build-mode check, run against the development build, fails for every framework (C6).
+
+### 1.1 Development and production builds
+
+`test/frameworks/build.mjs` builds each app twice from the same sources, with esbuild:
+
+- **development** (`<fw>/dist/app.js`): `process.env.NODE_ENV = "development"`, the `development` export condition, Svelte compiled with `dev: true`, not minified.
+- **production** (`<fw>/dist/prod/app.js`): `process.env.NODE_ENV = "production"`, minified, the `production` export condition (React's `*.production.js` files, Lit's files outside `development/`, Svelte's `esm-env` DEV flag false), Svelte compiled with `dev: false`, Vue's `esm-bundler` build with `__VUE_PROD_DEVTOOLS__` and `__VUE_PROD_HYDRATION_MISMATCH_DETAILS__` false. React's server-rendered page is rendered by the production `react-dom/server` too.
+
+The test server answers the development URLs with the production files, so the pages and the oracles are the same. The build-mode scenario reads markers that only a development build has: for React, the `bundleType` that `react-dom` reports to a stand-in devtools hook (1 in development, 0 in production) and the `_debugOwner` field of a fiber; for Vue, `__vnode` on an element and the devtools hook replay queue; for Svelte, `__svelte_meta` on an element; for Lit, `litIssuedWarnings`. The receipt of the local run of 2026-11-06:
+
+| app | development build | production build | the page reports |
+|---|---|---|---|
+| React | 3,745,439 bytes, `bundleType` 1 | 229,008 bytes, `bundleType` 0 | `react-dom` 19.3.0 |
+| Vue | 2,045,286 bytes, `__vnode` present | 190,628 bytes, absent | `app.version` 3.5.44 |
+| Svelte | 949,433 bytes, `__svelte_meta` present | 66,212 bytes, absent | major version 5 (package 5.57.2) |
+| Lit | 473,187 bytes, dev-mode warning | 26,608 bytes, no warning | `lit-element` 4.2.2, `lit-html` 3.3.3, `@lit/reactive-element` 2.1.2 |
+
+The two KNOWN hydration probes of section 4 record warnings that only development React prints; they run in the development build only, and the results file says so.
 
 Framework mechanics these runs exercised: React's keyed reconciliation (`insertBefore` / `removeChild` on the canvas and on the relocated panel) under StrictMode; Vue's `<!--v-if-->` comment anchor as a direct child of the canvas; Svelte 5 comment anchors, snippets and `bind:this`; Lit's ChildPart marker comments and `repeat()` inside a canvas that lives in an open shadow root.
 
@@ -51,7 +72,7 @@ Not hidden (row `tree-identity`, limited; not re-tested here): CSS `:last-child`
 
 ## 4. Hydration and server rendering
 
-React 19 `hydrateRoot` over `react-dom/server` markup works: the server-rendered panel node is kept (not re-created by the client), the oracle and the typing scenario pass, handlers are attached. Two KNOWN probes of `npm run test:frameworks` watch the caveats; the first is still reproduced on every run:
+React 19 `hydrateRoot` over `react-dom/server` markup works: the server-rendered panel node is kept (not re-created by the client), the oracle and the typing scenario pass, handlers are attached. Two KNOWN probes of `npm run test:frameworks` watch the caveats (development build only: production React does not compare attributes during hydration); the first is still reproduced on every run:
 
 - The dev build logs `A tree hydrated but some attributes of the server rendered HTML didn't match the client properties` for the canvas, because the polyfill added `data-hic-canvas` before hydration (`aria-owns` is now written after `load`). `suppressHydrationWarning` on the `<canvas>` silences it (verified). React leaves the attributes in place, which is what the polyfill needs.
 - Fixed: a top-level drawable WITHOUT an `id` used to get a generated one before hydration (reported on the child); the id is now generated after `load` (probe `react-hydration-generated-child-id` reports it as no longer reproduced).
@@ -154,7 +175,7 @@ render() {
 ## 6. Not verified
 
 - DPR 2 or fractional DPR, headed Chrome, a real display refresh rate, other Chromium browsers: only headless Chrome at DPR 1 ran (154 until 2026-10-09, 155 until 2026-10-26, 157 in CI since).
-- Production builds (React, Vue and Svelte ran as development builds, Lit in dev mode), and performance of any kind: no timing was measured.
+- Performance of any kind, in either build: no timing was measured.
 - Vue, Svelte and Lit server rendering and hydration; React Server Components and streaming SSR.
 - A framework that MOVES the canvas (a keyed reorder of the list that contains the canvas), portals into a canvas, a framework-rendered drawable nested inside another drawable, text nodes as direct canvas children, toggling `content` from a framework.
 - Event delegation on the canvas itself (`canvas.onclick` receiving events of its children).
@@ -165,9 +186,11 @@ render() {
 ```sh
 npm run build
 (cd test/frameworks && npm install)          # React, Vue, Svelte, Lit: test-only deps; the root package keeps zero runtime deps
-npm run test:frameworks                      # [--only=react,vue] [--no-control]; headless Chrome; .scratch/results/frameworks-<ts>.json + PNGs
+npm run test:frameworks                      # [--only=react,vue] [--mode=dev|prod|both] [--no-control]; headless Chrome; .scratch/results/frameworks-<ts>.json + PNGs
 ```
 
-Last recorded run: 2026-11-06, the macOS CI job "headless apps" on the commit of 0.1.0-preview.26 (`npm ci` in `test/frameworks`, then `node test/frameworks/run.mjs`), headless Chrome 157.0.8103.39, DPR 1, with the versions above, development builds: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 33 s, with the same results for the two KNOWN hydration probes of section 4 as the local run that follows. Last recorded local run: 2026-10-26, headless Chrome 155.0.8059.85, DPR 1, with Svelte 5.57.2 and the other versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s (the run of 2026-10-22 gave the same counts). Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
+Last recorded local run, development and production builds: 2026-11-06, headless Chrome 156.0.8078.76, DPR 1, React 19.3.0, Vue 3.5.44, Svelte 5.57.2, Lit 3.3.3 (an older local install than the pinned versions): 82 scenario runs with 428 checks and 48 controls, all green, 8 min 10 s (development 4 min 5 s, production 4 min 3 s). Each build has 41 scenario runs, 214 checks and 22 controls; C6 adds 4.
+
+Last recorded CI run (development builds only): 2026-11-06, the macOS CI job "headless apps" on the commit of 0.1.0-preview.26 (`npm ci` in `test/frameworks`, then `node test/frameworks/run.mjs`), headless Chrome 157.0.8103.39, DPR 1, with the versions above, development builds: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 33 s, with the same results for the two KNOWN hydration probes of section 4 as the local run that follows. Earlier local run: 2026-10-26, headless Chrome 155.0.8059.85, DPR 1, with Svelte 5.57.2 and the other versions above: 37 scenario runs with 202 checks and 22 controls, all green, 4 min 5 s (the run of 2026-10-22 gave the same counts). Of the two KNOWN hydration probes of section 4, the canvas attributes are still reported and the generated child id is no longer reproduced. (The run of 2026-10-09 on Chrome 154.0.8037.98 gave the same counts.)
 
 If something breaks in your app, run `__HIC__.installed.report()` and note which facade or selector was involved; a minimal repro in the style of `examples/frameworks/` is the most useful bug report.
