@@ -338,3 +338,59 @@ test('a native build in an engine without the device-pixel ResizeObserver box: t
     assert.throws(box, 'Type error'); // uninstall restores the engine
   }
 });
+
+test('Chrome 154 shape: a native drawElementImageToTexture that takes the EARLIER destination dictionary gets a standard call mapped, once it failed its conversion; earlier calls and other errors pass unchanged', t => {
+  const w = makeFrame(t, '<canvas id="c" content="drawable"><div id="d"></div></canvas>');
+  if (!w.GPUQueue) w.GPUQueue = class GPUQueue {};
+  const calls = defineFakeNative(w, { legacy: true });
+  // measured on 154.0.8037.92: the current dictionary fails with "Failed to read the 'destination' property from 'GPUCopyElementImageDestination': Required member is undefined."
+  Object.defineProperty(w.GPUQueue.prototype, 'drawElementImageToTexture', { configurable: true, writable: true, enumerable: true, value: function (/** @type {any} */ s, /** @type {any} */ d) {
+    calls.push(['draw', s, d]);
+    if (s?.source === 'boom') throw new w.DOMException('containing canvas does not have a rendering context', 'OperationError');
+    if (!d || !('destination' in d)) throw new w.TypeError("Failed to read the 'destination' property from 'GPUCopyElementImageDestination': Required member is undefined.");
+  } });
+  const native = w.GPUQueue.prototype.drawElementImageToTexture;
+  const installed = installWith({ window: w }, fakeServices());
+  t.cleanup(() => installed.uninstall());
+  const q = Object.create(w.GPUQueue.prototype);
+  const el = w.document.getElementById('d');
+  const texture = { label: 't' };
+  const draws = () => calls.filter((x) => x[0] === 'draw');
+  q.drawElementImageToTexture({ source: el, sourceX: 1 }, { texture, size: [4, 5], origin: [2, 3] });
+  assert.equal(draws().length, 2, 'the current call failed its conversion once and was made again');
+  assert.deepEqual(draws()[1].slice(1), [{ source: el, sourceX: 1 }, { destination: { texture, origin: [2, 3] }, width: 4, height: 5 }], 'with the earlier destination dictionary (that build reads the current source names)');
+  q.drawElementImageToTexture({ source: el }, { texture });
+  assert.equal(draws().length, 3, 'later current calls are mapped at once');
+  assert.deepEqual(draws()[2].slice(1), [{ source: el }, { destination: { texture } }]);
+  const earlier = { destination: { texture }, width: 1, height: 1 };
+  q.drawElementImageToTexture({ source: el }, earlier);
+  assert.equal(draws()[3][2], earlier, 'a call in the earlier shape reaches the native method unchanged');
+  assert.throws(() => q.drawElementImageToTexture({ source: 'boom' }, { texture }), /containing canvas does not have a rendering context/);
+  assert.equal(draws().length, 5, 'another error is the native one, not retried');
+  installed.uninstall();
+  assert.equal(w.GPUQueue.prototype.drawElementImageToTexture, native, 'restored on uninstall');
+});
+
+test('Chrome 154 / 155 shape: texElementSubImage2D built over the three-argument texElementImage2D(target, internalformat, element)', t => {
+  const w = makeFrame(t, '<canvas id="c" content="drawable"><div id="d"></div></canvas>');
+  const calls = defineFakeNative(w, { legacy: true, omit: ['WebGL2RenderingContext.texElementSubImage2D'] });
+  Object.defineProperty(w.WebGL2RenderingContext.prototype, 'texElementImage2D', { configurable: true, writable: true, enumerable: true,
+    value: function (/** @type {number} */ target, /** @type {number} */ internalformat, /** @type {any} */ element) {
+      calls.push(['texElementImage2D', target, internalformat, element]);
+      this.texImage2D(target, 0, internalformat, 10, 10, 0, this.RGBA, this.UNSIGNED_BYTE, null);
+    } });
+  const installed = installWith({ window: w }, fakeServices());
+  t.cleanup(() => installed.uninstall());
+  const c = w.document.getElementById('c');
+  const gl = c.getContext('webgl2');
+  if (!gl) return; // no WebGL2 in this browser
+  const target = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, target);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 16, 16, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const el = w.document.getElementById('d');
+  gl.texElementSubImage2D(gl.TEXTURE_2D, 0, 2, 3, el);
+  const upload = calls.filter((x) => x[0] === 'texElementImage2D');
+  assert.equal(upload.length, 1);
+  assert.deepEqual(upload[0].slice(1), [gl.TEXTURE_2D, gl.RGBA8, el], 'the upload uses that build\'s argument order');
+  assert.equal(gl.getParameter(gl.TEXTURE_BINDING_2D), target, 'the binding is restored');
+});

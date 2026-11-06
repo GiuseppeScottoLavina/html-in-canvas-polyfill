@@ -13,11 +13,17 @@
     "whatwg",
     "webgpu",
     "webgl",
-    "foreignObject"
+    "foreignObject",
+    "safari",
+    "firefox",
+    "dom",
+    "live-dom",
+    "html",
+    "canvas-2d"
   ],
   "author": "Giuseppe Scotto Lavina <giuseppe.sc8.lavina@gmail.com>",
   "license": "MIT",
-  "homepage": "https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#readme",
+  "homepage": "https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/",
   "bugs": {
     "url": "https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues"
   },

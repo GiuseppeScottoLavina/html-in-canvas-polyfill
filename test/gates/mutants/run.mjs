@@ -3,7 +3,7 @@
 // --shard=k/n runs the k-th of n parts of the selection (shard.mjs: every mutant in exactly one part; CI runs the parts on separate machines).
 // --repeat=N runs every selected mutant N times against the same clean baseline and prints how often each was caught: a control that is caught only on some runs is
 // timing-dependent, and one run cannot tell (stale-after-resize was missed in 8 of 20 runs on the macOS runner before G-resize-drag compared the pixels at rest, 2026-10-28). Every run counts: one miss fails the suite.
-// For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`, dist/hic-live-engines.iife.js for `bundle: 'engines'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>, --engines-file=<copy>), and compare the
+// For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`, dist/hic-live-engines.iife.js for `bundle: 'engines'`, dist/hic-live-native-bridge.iife.js for `bundle: 'bridge'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>, --engines-file=<copy>, --bridge-file=<copy>), and compare the
 // failed checks with the CLEAN bundle's run of the same gate (cached per gate). A mutant is CAUGHT when a check goes red that is green on the clean bundle.
 //   CAUGHT        ok
 //   MISSED        the gates did not notice: the suite fails
@@ -33,6 +33,8 @@ const BUNDLES = {
   effects: { text: readFileSync(resolve(root, 'dist/hic-live-effects.iife.js'), 'utf8'), flag: 'effects-file' },
   // the Gecko / WebKit painters: only G-xbrowser scenarios load it (`xbrowser-<scenario>` gates)
   engines: { text: readFileSync(resolve(root, 'dist/hic-live-engines.iife.js'), 'utf8'), flag: 'engines-file' },
+  // the native bridge: G-bridged-translation loads it before the core
+  bridge: { text: readFileSync(resolve(root, 'dist/hic-live-native-bridge.iife.js'), 'utf8'), flag: 'bridge-file' },
 };
 for (const [name, b] of Object.entries(BUNDLES)) { b.clean = resolve(dir, `clean-${name}.js`); writeFileSync(b.clean, b.text); }
 const basePath = BUNDLES.core.clean;
@@ -55,20 +57,22 @@ if (has('check-anchors')) {
 }
 
 const passArgs = ['--no-control', ...(arg('wait-quiet') ? [`--wait-quiet=${arg('wait-quiet')}`] : [])];
-/** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'|'engines'} [which] which of the bundles `file` replaces */
-function runGate(gate, file, which = 'core') {
+/** @param {string} gate @param {string} file the bundle to serve @param {'core'|'effects'|'engines'|'bridge'} [which] which of the bundles `file` replaces */
+/** @param {string[]} [args] extra gate arguments of the mutant (`args`, e.g. the browser build a check needs) */
+function runGate(gate, file, which = 'core', args = []) {
   // `xbrowser-<scenario>`: that G-xbrowser scenario on Safari and Firefox (it prints the same result line as a gate)
   const xb = /^xbrowser-(.+)$/.exec(gate);
   const cmd = xb ? [resolve(root, 'test/xbrowser/run.mjs'), `--engine=${process.env.HIC_MUTANT_ENGINES ?? 'safari,firefox'}`, `--only=${xb[1]}`, '--no-control'] : [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs];
-  return gateRunOutcome(spawnSync(process.execPath, [...cmd, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
+  return gateRunOutcome(spawnSync(process.execPath, [...cmd, ...args, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
 }
 const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 
 const baselines = new Map();
-const baseline = (gate) => {
+const baseline = (gate, args = []) => {
   if (has('no-baseline')) return { failed: new Set(), usable: true };
-  if (!baselines.has(gate)) { const r = runGate(gate, basePath); baselines.set(gate, r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict }); }
-  return baselines.get(gate);
+  const key = [gate, ...args].join(' ');
+  if (!baselines.has(key)) { const r = runGate(gate, basePath, 'core', args); baselines.set(key, r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict }); }
+  return baselines.get(key);
 };
 
 const repeat = Math.max(1, Math.floor(+(arg('repeat') ?? 1)) || 1);
@@ -80,8 +84,8 @@ for (const m of selected.flatMap((x) => Array.from({ length: repeat }, () => x))
   writeFileSync(file, b.text);
   const perGate = {};
   for (const gate of m.gates) {
-    const base = baseline(gate);
-    const res = runGate(gate, file, m.bundle ?? 'core');
+    const base = baseline(gate, m.args);
+    const res = runGate(gate, file, m.bundle ?? 'core', m.args);
     if (res.notRun) { perGate[gate] = { caught: false, usable: false, detail: res.notRun }; continue; }
     const newly = [...failedOf(res)].filter((n) => !base.failed.has(n));
     perGate[gate] = { caught: newly.length > 0, usable: res.usable, newlyRed: newly.slice(0, 4), baselineRed: base.failed.size, highLoad: res.highLoad, focus: res.focus?.mode };

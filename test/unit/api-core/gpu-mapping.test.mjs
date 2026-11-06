@@ -33,3 +33,9 @@ test('mutation check: swapping sx and sy in the mapping is caught', () => {
   assert.equal(src.sx, 10);
   assert.equal(src.sy, 20);
 });
+
+test('no size: the earlier call gets no width/height (it copies the natural size), instead of a TypeError (G-bridged-translation, unsized)', () => {
+  const [src, dst] = toLegacyGpuArgs({ source: source.source }, { texture, origin: [20, 10] });
+  assert.deepEqual(src, { source: source.source });
+  assert.deepEqual(dst, { destination: { texture, origin: [20, 10] } });
+});

@@ -239,7 +239,10 @@ const LIMITS = {
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)
   // gzip 5.5 -> 5.25 KB (-60 / -206 bytes, 2026-10-27, measured 13,827 / 5,113): the Terser pass over esbuild's minified output
   // 14 -> 13.5 KB, gzip 5.25 -> 5 KB (-399 / -218 bytes, 2026-11-04, measured 13,457 / 4,909): contracts/events.js marks its frozen tables pure (unused tables dropped)
-  'hic-live-native-bridge.iife.min.js': { target: 13.5 * KB, ceiling: 13.5 * KB, gzip: 5 * KB },
+  // 13.5 -> 14.25 KB, gzip 5 -> 5.25 KB (+554 / +173 bytes, 2026-11-06, measured 14,011 / 5,082): the WebGPU and WebGL rows on the measured Chrome 154 and 155
+  //   builds (a standard drawElementImageToTexture mapped where the native one of a legacy build takes the earlier destination dictionary, the unsized mapping,
+  //   the three-argument upload)
+  'hic-live-native-bridge.iife.min.js': { target: 14.25 * KB, ceiling: 14.25 * KB, gzip: 5.25 * KB },
   // the Gecko / WebKit painters, outside the core; 40 -> 38.5 KB (2026-10-15, measured 38,295 / 14,794, with the control rules that left the core)
   // 38.5 -> 42 KB, gzip 15 -> 16.25 KB (+3,509 / +1,244 bytes, 2026-10-16, measured 41,804 / 16,038): the iOS control look (system tint, pill buttons and pop-ups from the computed
   //   style, the colour-well hue ring, medium-style date pills, no spin button, popup labels pinned) and the iOS classification of the engine

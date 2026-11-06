@@ -69,8 +69,8 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-polyfill.iife.min.js` | 365,411 | 124,382 |
 | `hic-live-effects.iife.js` | 81,755 | 21,351 |
 | `hic-live-effects.iife.min.js` | 40,124 | 14,172 |
-| `hic-live-native-bridge.iife.js` | 30,045 | 7,936 |
-| `hic-live-native-bridge.iife.min.js` | 13,457 | 4,909 |
+| `hic-live-native-bridge.iife.js` | 31,359 | 8,203 |
+| `hic-live-native-bridge.iife.min.js` | 14,011 | 5,082 |
 | `hic-live-engines.iife.js` | 75,402 | 22,387 |
 | `hic-live-engines.iife.min.js` | 45,781 | 17,409 |
 | `hic-live-gpu.iife.js` | 21,559 | 6,037 |
@@ -81,7 +81,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-loader.iife.min.js` | 17,465 | 6,329 |
 | `esm/index.js` | 39,364 | 13,698 |
 | `esm/effects.js` | 70,035 | 18,719 |
-| `esm/native-bridge.js` | 21,963 | 5,810 |
+| `esm/native-bridge.js` | 23,215 | 6,076 |
 | `esm/worker.js` | 6,977 | 2,402 |
 | `esm/loader.js` | 4,931 | 1,816 |
 | `plugins/crt.iife.js` | 17,245 | 6,175 |
@@ -159,7 +159,7 @@ Core = the 2D polyfill: native detection (`native-detect.js`: it decides between
 Moved out: the effect host, plugin ABI, GPU presenter, source providers, input mapper, interposer and frame sources (the effects bundle), the plugins (outside `src/` altogether, in `plugins/`), and the native bridge (`native-bridge.js` + `native-geometry.js` with its glue). Their sizes are in the generated table above.
 
 Native bridge, with the evidence for "separate script, not lazy":
-- It is only needed for a LEGACY native (Chrome 154 and 155 behind a flag) or a native missing a name it can build. Chrome 157 and Chrome Canary (a complete native, enabled by default; measured on Chrome 157.0.8103.39: kind `complete`, no gaps) need nothing of it, and 154-156 without the flag has no native, so the polyfill path runs. No gate runs the bridged mode end to end; its unit tests (`test/unit/api-core/native-bridge.browser.test.mjs`, `install.browser.test.mjs`) load it through the same registration as a page would.
+- It is only needed for a LEGACY native (Chrome 154 and 155 behind a flag) or a native missing a name it can build. Chrome 157 and Chrome Canary (a complete native, enabled by default; measured on Chrome 157.0.8103.39: kind `complete`, no gaps) need nothing of it, and 154-156 without the flag has no native, so the polyfill path runs. G-bridged-translation runs the bridged mode end to end on Chrome for Testing 154 and 155 with the flag, the built bridge bundle loaded before the built core; its unit tests (`test/unit/api-core/native-bridge.browser.test.mjs`, `install.browser.test.mjs`) load it through the same registration as a page would.
 - It cannot be fetched lazily: `install()` is synchronous (a fetch would make it asynchronous), the IIFE auto-installs during evaluation, and G-bundle requires no network request at load. So it is a second script that the page includes on purpose. When it is missing the core never throws: it uses the native build as found (mode `native`), records a `native-step-aside` entry in `report().deviations` that names the built files `dist/hic-live-native-bridge.iife.min.js` (or the readable `hic-live-native-bridge.iife.js`), and for the earlier `layoutsubtree` draft prints one `console.warn`, because `content="drawable"` canvases are not drawable there without the bridge.
 - The loader (`hic-live-loader`, `esm/loader.js`) is the opt-in shell that fetches the core only where it runs. It does not change `install()`, which stays synchronous: the page that chooses the loader accepts an asynchronous start, and the core's own tag keeps the synchronous one. It fetches the bridge only for a native build the bridge can bridge, before the core.
 
