@@ -16,7 +16,7 @@ Files: `App.jsx` (the app), `main.jsx` (createRoot, or hydrateRoot when the cont
 ```sh
 npm run build                                   # dist/ (the polyfill)
 (cd test/frameworks && npm install)             # framework deps live there, never in the root package
-node test/frameworks/build.mjs                  # builds examples/frameworks/*/dist/app.js
+node test/frameworks/build.mjs                  # builds examples/frameworks/*/dist/app.js (development) and */dist/prod/app.js (production)
 npm run demo                                    # then open http://127.0.0.1:8765/examples/frameworks/react/
 ```
 
