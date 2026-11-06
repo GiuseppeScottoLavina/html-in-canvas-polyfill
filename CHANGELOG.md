@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Scroll compositor: the second cover colour of 0.1.0-preview.25 delayed the first composed step of a list. Its tile was a capture of its own and its check two more partial bands, three post-frame jobs more before the first composition, and while the list still takes the plain path the pump runs about one such job per frame (an outside review measured 277.5 ms from install to the first composed paint on an iPad, Safari 27.2, a 760 x 1000 surface and 300 rows, against 231.5 ms in 0.1.0-preview.24). Both cover tiles now come from one capture (the second is that clone with only the list's background colour changed, byte for byte the tile a capture of its own makes) and decode side by side; their checks are read ahead of the pages, and a band reads on into the next tile when one tile's rest is shorter. Every pixel of both colours is still checked. On the same iPad, 14 fresh documents per release in both orders: 109.5 ms (median) against 132 ms for 0.1.0-preview.25 and 110.5 ms for 0.1.0-preview.24, paired with 0.1.0-preview.25 28.5 ms sooner (in sessions that began after a minute at rest, when Safari ran the page at 60 Hz, 6 each and noisy: 223 ms against 269.5 and 238.5); headless Chrome 156 at DPR 2, 12 each: 98.8 ms against 114.2 and 99.6. The tiles held at once before the first composition of that list fall from 6 port tiles to 3 (15.6 to 7.8 MB), and `scrollSurfaceBytes` now counts a cover tile until it is read. The core grows by 813 bytes minified, 335 gzipped.
+
 ## [0.1.0-preview.25] - 2026-11-05
 
 Fixes for an outside review of 0.1.0-preview.24. A `:hover` rule that matches only together with another state (`.btn:hover:focus`) no longer stays painted on the canvas after the mouse leaves (a regression of 0.1.0-preview.24). In the scroll compositor an invisible (`opacity: 0`) element outside a list no longer stops it composing, and the check for content painted over a list can no longer be fooled by its own colour. The unit runner names what a hung test was doing and no longer reports a hung test as passed.

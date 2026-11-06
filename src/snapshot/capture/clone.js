@@ -40,6 +40,7 @@ import { currentEngine } from '../../util/engine.js';
  * @property {string} extraCss     per-capture rules (scroll markers, the selection wrapper) that go after the shaken sheet
  * @property {CSSStyleDeclaration} layerStyle  computed style of the layer element: the source of the custom properties the root inherits
  * @property {Element[]} scrollers  elements of the clone that scroll vertically (CaptureResult.scrollers)
+ * @property {HTMLElement|null} cover  the scroller's clone of a cover tile (CaptureRequest.scroll shape 'cover'): its background is the first fill
  */
 
 /** Thrown when the drawable has more nodes than the absolute budget; capture turns it into a placeholder. */
@@ -143,6 +144,7 @@ export function spacerHeight(h, display = 'block') {
  * @property {import('./selection-paint.js').SelectionPainter|null} painter  selection colours of this capture (created on first use)
  * @property {(el: Element, sized?: boolean) => Rect|null} frame  LiveLayer.frameRect of the elements of this drawable, with the drawable-level reads made once (LiveLayer.frameMeasurer)
  * @property {Element[]} scrollers  cloned elements with vertical overflow to scroll (CloneResult.scrollers)
+ * @property {HTMLElement|null} cover  CloneResult.cover
  */
 
 /**
@@ -299,7 +301,7 @@ function cloneElement(ctx, src, known) {
   if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'square') appendInlineStyle(clone, 'border-radius:0!important');
   if (ctx.req.scroll?.el === src && (ctx.req.scroll.shape === 'backdrop' || ctx.req.scroll.shape === 'cover')) clone.setAttribute('data-hic-hide', '');
   // the compositor's cover check: the scroller's background in one colour (anything else on its port is painted by something else)
-  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'cover') appendInlineStyle(clone, `background:${ctx.req.scroll.fill}!important`);
+  if (ctx.req.scroll?.el === src && ctx.req.scroll.shape === 'cover') { appendInlineStyle(clone, `background:${ctx.req.scroll.fills?.[0]}!important`); ctx.cover = /** @type {HTMLElement} */ (clone); }
   if (ctx.animated?.has(src)) freezeAnimations(src, /** @type {HTMLElement} */ (clone));
   ctx.tokens.add(clone);
   if (!replaced && !LEAF_TAGS.has(ln)) cloneChildren(ctx, src, clone, cs);
@@ -640,7 +642,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   const ctx = {
     env, req, doc, layer, drawable: el, drawables: new Set(layer.drawableElements()), unsupported: [], tokens: createTokenCollector(), ix: interactionContext(req.interaction, layer.element),
     animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, scope: el.getRootNode(), topLayer: topLayerIn(el),
-    shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el), scrollers: [],
+    shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el), scrollers: [], cover: null,
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
   if (req.scroll?.hide.length || req.scroll?.shape === 'backdrop' || req.scroll?.shape === 'cover') ctx.scroll.rules.push('[data-hic-hide] *{visibility:hidden!important}');
@@ -708,7 +710,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   const caret = addSelectionAndCaret(ctx, root, size, ink);
   return {
     root, nodes: Math.max(ctx.nodes, sizeTotal), unsupported: ctx.unsupported, complete: !isPending(ctx.unsupported), tokens: ctx.tokens.finish(), frame,
-    layoutOffset: dRect ? { x: dRect.x, y: dRect.y } : null, caret, extraCss: ctx.scroll.rules.join('') + uses.css, layerStyle: layerCs, scrollers: ctx.scrollers,
+    layoutOffset: dRect ? { x: dRect.x, y: dRect.y } : null, caret, extraCss: ctx.scroll.rules.join('') + uses.css, layerStyle: layerCs, scrollers: ctx.scrollers, cover: ctx.cover,
   };
 }
 

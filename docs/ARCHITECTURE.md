@@ -403,10 +403,17 @@ Tick RUN(now), for each canvas record in reverse tree order:
     must each show its colour on every pixel (rounded corners excepted), and for a scroller that is not opaque, a tile with its content hidden must be one colour (what
     shows through it); otherwise the plan is refused (`refusedBy.cover`). One colour alone passed an overlay of exactly that colour (0.1.0-preview.24); every channel of
     the two lies near opposite ends (249 levels apart at least), so an opaque overlay differs from one of them whatever its colour, and a translucent one passes both
-    only below an alpha of 0.004, about one level over the content. The tiles are side builds like the pages (the second colour: one side build more per plan, and one
-    port tile more in the plan's surface budget until it is read; a 400 x 240 list, headless Chrome 156, 6 runs: the first composition 43 ms after the first step at
-    DPR 2 as before, 42-60 ms at DPR 1 against 40-43, at most a frame later), read back in bands of 262,144 pixels, one
-    post-frame job each (about 1 ms; a 2116 x 2000 px port read and tested at once took 15 ms). The planner's own steps are unchanged (10,000 rows, a 600 px port: 41-45 ms in
+    only below an alpha of 0.004, about one level over the content. The tiles are side builds like the pages, each counted in the plan's surface budget until it is read.
+    Both cover tiles come from one capture: the second is the same clone with only the scroller's background colour set to the second colour, in place, so it is
+    the tile a capture of its own makes, byte for byte; their decodes run side by side. A tile's first band of 262,144 pixels is read when it lands, the rest one
+    band per post-frame job (about 1 ms; a 2116 x 2000 px port read and tested at once took 15 ms), ahead of the pages, and a band reads on into the next tile when
+    one tile's rest is shorter. While the list still takes the plain path the pump runs about one side job per frame, so the number of jobs before the first
+    composition sets its time, not their cost (an iPad, Safari 27.2, a 760 x 1000 surface, 300 rows: 25 ms of side work in all, the longest job 3 ms). With a
+    capture and a check of its own the second colour cost three jobs more (0.1.0-preview.25: the plan, three tile captures, three pages and six bands; 277.5 ms
+    from install to the first composed paint against 231.5 ms with one colour, an outside review's medians); shared and packed, the plan, the cover capture, the
+    backdrop, five band jobs and the two pages under the port come first, as many jobs as with one colour (the same iPad, 14 fresh documents each: 109.5 ms
+    against 110.5 ms with one colour and 132 ms with the two tiles apart; headless Chrome 156 at DPR 2: 98.8 ms against 99.6 and 114.2), and the checks are done
+    before the pages land: at most three port tiles held at once there instead of six. The planner's own steps are unchanged (10,000 rows, a 600 px port: 41-45 ms in
     16-17 steps of at most 3.4 ms, before and after).
     Measured before the fix (headless Chrome 156, a 400 x 240 port): a box with `pointer-events: none`, a 12 px box between the grid's points, a shadow or outline reaching in from below,
     a `::after` of the drawable and a gradient behind a transparent list all composed wrong frames (288 to 92,112 of 104,000 pixels). Pages and tiles count toward `maxTotalSurfaceBytes` (ADR-B): a scroller is planned only when two pages and its tiles fit the room the retained surfaces leave, a page beyond that room replaces a farther one instead of being added (at most four), and a drawable surface that needs the room drops the caches served least recently, only until it fits (a promised step of a dropped cache becomes scroll damage).

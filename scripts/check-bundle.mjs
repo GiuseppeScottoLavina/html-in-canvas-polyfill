@@ -199,7 +199,10 @@ const LIMITS = {
   // 361.75 -> 362 KB (+431 bytes, gzip 123,201 under its ceiling, 2026-11-05, measured 361,939): an element outside a list of effective opacity 0 paints nothing (scroll-pages.js faded), and the
   //   cover check renders the port in two colours (an overlay of exactly the one colour of 0.1.0-preview.24 passed it)
   // -> 362.5 KB, gzip 123.25 -> 123.5 KB (2026-11-05, measured 362,402 / 123,298): the two changes above together (+894 / +235 from 361,508 / 123,063)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 362.5 * KB, gzip: 123.5 * KB },
+  // 362.5 -> 363.25 KB, gzip 123.5 -> 123.75 KB (+813 / +335 bytes, 2026-11-06, measured 363,215 / 123,633): the cover tiles of a plan from one capture and their
+  //   checks read ahead of the pages, a band across tiles (scroll-compose.js build, vet; capture.js the further fills); before it, the second cover colour cost three
+  //   post-frame jobs more before the first composition (+46 ms on an iPad, 0.1.0-preview.25)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 363.25 * KB, gzip: 123.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -399,7 +402,9 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // geckoWebkit 151 -> 151.25 KB (2026-11-05, measured 151,059; chromium 134,482 stays under its ceiling): the core it loads grew by the opacity-0 check outside a
   // list and the second cover colour (+157 gzip)
   // chromium 134.5 -> 134.75 KB (2026-11-05, measured 134,634 / 151,211): the two changes above together (+309 / +309 gzip)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 134.75 * KB, geckoWebkit: 151.25 * KB };
+  // chromium 134.75 -> 135 KB, geckoWebkit 151.25 -> 151.75 KB (2026-11-06, measured 134,996 / 151,573): the core it loads grew by the cover tiles from one
+  // capture and their packed checks (+335 gzip)
+  const LOADER_APP = { start: 8.1 * KB, chromium: 135 * KB, geckoWebkit: 151.75 * KB };
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';
