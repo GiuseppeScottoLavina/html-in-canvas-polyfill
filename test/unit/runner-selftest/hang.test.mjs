@@ -50,3 +50,43 @@ test('expect-fail: each prefix needs its own kind of report; a timeout- file tha
   assert.equal(expectFailMet('stall', r({ hung: true, hang: { ...base, longTasks: [{ ms: 6300, test: 'other' }] } }), 5000), false, 'a task of another test');
   assert.equal(expectFailMet('nope', r({}), 5000), undefined);
 });
+
+test('a hung test is never a pass: the pass a page published after the runner gave up, and a test the page never published, both read as hung (preview.25: `ok ... (0 ms)` and counted)', async () => {
+  const { markHung, describeHungTest } = await import('../lib/hang.mjs');
+  const rec = (name, status, body = status) => ({ name, status, body, ms: 0, error: '', console: [] });
+  const tests = [rec('a', 'pass'), rec('weird markup', 'pass')];
+  // a cleanup that blocked the page and then returned: the page published a pass; the binding said the body had passed when the runner gave up
+  const cleanup = markHung(tests, { ...base, phase: 'cleanup', body: 'pass' });
+  assert.deepEqual(cleanup.map((t) => [t.name, t.status, t.body, t.phase]), [['a', 'pass', 'pass', undefined], ['weird markup', 'hung', 'pass', 'cleanup']]);
+  assert.equal(describeHungTest(cleanup[1]), 'weird markup (its body passed; its cleanup had not ended when the runner gave up on the page)');
+  // the task after the test, with a body that failed
+  const settle = markHung([rec('weird markup', 'fail')], { ...base, phase: 'settle', body: 'fail' });
+  assert.equal(describeHungTest(settle[0]), 'weird markup (its body failed; the task after it had not ended when the runner gave up on the page)');
+  // a body that returned only after the runner gave up had not returned then: the published body result is not the one reported
+  const body = markHung([rec('weird markup', 'pass')], { ...base, phase: 'test', body: null });
+  assert.equal(describeHungTest(body[0]), 'weird markup (its body had not returned when the runner gave up on the page)');
+  // a page that never answered again published nothing: the test comes from the progress binding
+  assert.deepEqual(markHung([], { ...base, phase: 'cleanup', body: 'pass' }).map((t) => [t.name, t.status, t.body, t.phase]), [['weird markup', 'hung', 'pass', 'cleanup']]);
+  // the last test of that name is the one the hang names; the others keep their result
+  assert.deepEqual(markHung([rec('weird markup', 'pass'), rec('weird markup', 'running', null)], { ...base, body: null }).map((t) => t.status), ['pass', 'hung']);
+  // controls: no hang, or a hang before any test, changes nothing
+  assert.equal(markHung(tests, null), tests);
+  assert.equal(markHung(tests, { ...base, test: null }), tests);
+});
+
+test('expect-fail: a hang is detected only when its test is not reported as a pass and, when the file names one, in that phase; wait- is a page that kept answering', async () => {
+  const { expectFailMet, markHung } = await import('../lib/hang.mjs');
+  const passed = [{ name: 'weird markup', status: 'pass' }];
+  const r = (o) => ({ tests: [], pageErrors: [], loadError: null, hung: true, hang: base, ...o });
+  // the preview.25 report of a stall in the cleanup: detected as hung, but its test printed `ok`
+  assert.equal(expectFailMet('stall', r({ tests: passed, hang: { ...base, phase: 'cleanup' } }), 5000, 'cleanup'), false);
+  assert.equal(expectFailMet('stall', r({ tests: markHung(passed, { ...base, phase: 'cleanup' }), hang: { ...base, phase: 'cleanup' } }), 5000, 'cleanup'), true);
+  assert.equal(expectFailMet('stall', r({ hang: { ...base, phase: 'test' } }), 5000, 'settle'), false, 'a hang in another phase');
+  assert.equal(expectFailMet('stall', r({ hang: { ...base, phase: 'settle' } }), 5000, 'settle'), true);
+  assert.equal(expectFailMet('hung', r({ tests: passed, hang: { ...base, answeredAfterMs: null } }), 5000), false, 'hung, but its test printed `ok`');
+  const wait = { ...base, reason: /** @type {const} */ ('file-timeout'), silentMs: 0, phase: 'cleanup', answeredAfterMs: 2, longTasks: [] };
+  assert.equal(expectFailMet('wait', r({ hang: wait }), 5000, 'cleanup'), true);
+  assert.equal(expectFailMet('wait', r({ tests: passed, hang: wait }), 5000, 'cleanup'), false, 'the preview.25 report: `ok ... (0 ms)`');
+  assert.equal(expectFailMet('wait', r({ hang: { ...wait, silentMs: 5100 } }), 5000, 'cleanup'), false, 'a page that stopped answering is not a wait');
+  assert.equal(expectFailMet('wait', r({ hang: { ...wait, reason: 'unresponsive' } }), 5000, 'cleanup'), false);
+});

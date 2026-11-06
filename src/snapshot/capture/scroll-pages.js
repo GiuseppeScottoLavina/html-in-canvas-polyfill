@@ -331,7 +331,12 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   // every pinned element paints above everything else of the scroller (a pinned element of z-index auto or 0 is painted under a later positioned box of z-index
   // auto / 0 or stacking context of its own: a header without a z-index over a row with opacity or position: relative)
   if (pinned.some((p) => { const z = zOf(win.getComputedStyle(p)); return z <= otherZ || (z === 0 && layered); })) { unpinnable.add(s); return null; }
-  if (!(yield* portUnobstructed(doc, s, new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight), round, now, t0, still))) return null;
+  const portView = new DOMRect(vr.left + bl, vr.top + bt, s.clientWidth, s.clientHeight);
+  if (!(yield* portUnobstructed(doc, s, portView, round, now, t0, still))) return null;
+  /** @type {Element[]} the drawable's elements outside the scroller, its ancestors left out: read at admission (an element added later is a first
+   * sighting, whole-drawable damage, which drops the plan) */
+  const outside = outsideOf(doc, drawable, s);
+  if (outside.length > MAX_SCAN || !(yield* unblended(win, s, portView, vr.width / frame.width || 1, outside, now, now(), still))) return null;
   let bar = null;
   if (gutterX > 0.5) {
     // a classic bar is composed where the thumb's geometry is the one the clone paints and moves by whole surface pixels: Chromium's bars (chromiumVerticalBar /
@@ -350,9 +355,6 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     }
     bar = { gutter: { x: port.x + (f.cw ?? s.clientWidth), y: port.y, width: f.gv, height: s.clientHeight }, ...v };
   }
-  /** @type {Element[]|undefined} the drawable's elements outside the scroller, its ancestors left out: read at the first damage inside the port (an element added
-   * later is a first sighting, whole-drawable damage, which drops the plan) */
-  let outside;
   /** @type {Element[]|undefined} the scroller's elements outside its pinned elements: read at the first change inside its content, for a pin of z-index auto or 0 */
   let inside;
   const lowPin = pinned.some((p) => zOf(win.getComputedStyle(p)) === 0);
@@ -360,7 +362,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
     ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVERS,
     pinnable: (el) => el.isConnected && pinnable(el, win.getComputedStyle(el)),
-    clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, (outside ??= outsideOf(doc, drawable, s))),
+    clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, outside),
     ...(lowPin ? { unlayered: (/** @type {Rect[]} */ rects) => unlayered(win, s, rects, layer, (inside ??= insideOf(s, pinned))) } : {}),
   };
 }
@@ -449,8 +451,30 @@ function unlayered(win, s, rects, layer, inside) {
   return true;
 }
 
-/** @param {Window} win @param {Element} e @returns {boolean} a ::before or ::after box */
-const generated = (win, e) => ['::before', '::after'].some((p) => !/^(none|normal)$/.test(win.getComputedStyle(e, p).content));
+/** @typedef {(e: Element, p?: string) => CSSStyleDeclaration} StyleOf getComputedStyle within one check (outsideCheck) */
+
+/** @param {StyleOf} style @param {Element} e @returns {string[]} its ::before and ::after that generate a box */
+const generated = (style, e) => ['::before', '::after'].filter((p) => !/^(none|normal)$/.test(style(e, p).content));
+
+/** @param {CSSStyleDeclaration} cs @returns {boolean} composited with what lies under it by a blend mode other than normal */
+const blending = (cs) => (cs.mixBlendMode ?? 'normal') !== 'normal';
+
+/**
+ * One check of the elements outside the scroller `s` (unblended, quietOutside): every computed style is read once in it, an element's own and its generated boxes',
+ * and so are the answers of faded and blended for its ancestors. Nothing of it outlives the check: the next one reads the styles of its own time.
+ * @param {Window} win @param {Element} s
+ */
+function outsideCheck(win, s) {
+  /** @type {Map<Element, Record<string, CSSStyleDeclaration>>} */
+  const styles = new Map();
+  /** @type {StyleOf} */
+  const style = (e, p = '') => { const m = styles.get(e) ?? {}; styles.set(e, m); return (m[p] ??= win.getComputedStyle(e, p || null)); };
+  /** @type {Map<Element, boolean>} */
+  const fade = new Map(), blend = new Map();
+  /** `e` or one of its ancestors below the first one it shares with `s` has a blend mode other than normal @param {Element|null} e @returns {boolean} */
+  const blended = (e) => !!e && !e.contains(s) && (blend.get(e) ?? (blend.set(e, blending(style(e)) || blended(e.parentElement)).get(e) ?? false));
+  return { style, blended, faded: (/** @type {Element} */ e) => faded(style, e, s, fade) };
+}
 
 /** @param {string} v a computed shadow list @returns {number} css px it may reach beyond the box: every length of it added up (offsets, blur and spread), twice */
 const shadowReach = (v) => (v === 'none' ? 0 : 2 * (v.match(/-?[\d.]+px/g) ?? []).reduce((a, n) => a + Math.abs(parseFloat(n)), 0));
@@ -461,24 +485,25 @@ const inkReach = (cs) => (cs.filter !== 'none' || (cs.backdropFilter ?? 'none') 
 
 /**
  * What `e` (outside the scroller) may paint: `self` inside its border box (its descendants are judged on their own; unknown: yes), and how far beyond it, css px per
- * side (`x`, `y`: ink, content that overflows a box that does not clip it, a generated box; one positioned out of the box: anywhere).
- * @param {Window} win @param {Element} e @param {CSSStyleDeclaration} cs @returns {{self: boolean, x: number, y: number}}
+ * side (`x`, `y`: ink, content that overflows a box that does not clip it, a generated box; one positioned out of the box: anywhere); `mix`: a generated box of it
+ * has a blend mode other than normal.
+ * @param {StyleOf} style @param {Element} e @returns {{self: boolean, x: number, y: number, mix: boolean}}
  */
-function painting(win, e, cs) {
-  const h = /** @type {HTMLElement} */ (e);
+function painting(style, e) {
+  const h = /** @type {HTMLElement} */ (e), cs = style(e);
   const shown = cs.visibility === 'visible';
   let self = !!e.shadowRoot || e.localName.includes('-') || e.namespaceURI !== 'http://www.w3.org/1999/xhtml' || (shown && (PAINTERS.test(e.localName)
     || (parseColor(cs.backgroundColor)?.[3] ?? 1) > 0 || cs.backgroundImage !== 'none' || cs.display === 'list-item'
     || px(cs.borderTopWidth) + px(cs.borderRightWidth) + px(cs.borderBottomWidth) + px(cs.borderLeftWidth) > 0 || [...e.childNodes].some((n) => n.nodeType === 3 && /\S/.test(/** @type {Text} */ (n).data))));
-  let r = shown ? inkReach(cs) : cs.filter !== 'none' ? Infinity : 0;
-  for (const p of ['::before', '::after']) {
-    const pc = win.getComputedStyle(e, p);
-    if (/^(none|normal)$/.test(pc.content)) continue;
+  let r = shown ? inkReach(cs) : cs.filter !== 'none' ? Infinity : 0, mix = false;
+  for (const p of generated(style, e)) {
+    const pc = style(e, p);
     self = true;
+    mix ||= blending(pc);
     r = Math.max(r, /^(absolute|fixed|sticky)$/.test(pc.position) ? Infinity : inkReach(pc));
   }
   // overflowing content is a child's (judged on its own) or text and generated boxes of this one (scrollWidth / scrollHeight reach right and down)
-  return { self, x: r + (cs.overflowX === 'visible' ? Math.max(0, h.scrollWidth - h.clientWidth) : 0), y: r + (cs.overflowY === 'visible' ? Math.max(0, h.scrollHeight - h.clientHeight) : 0) };
+  return { mix, self, x: r + (cs.overflowX === 'visible' ? Math.max(0, h.scrollWidth - h.clientWidth) : 0), y: r + (cs.overflowY === 'visible' ? Math.max(0, h.scrollHeight - h.clientHeight) : 0) };
 }
 
 /**
@@ -487,15 +512,15 @@ function painting(win, e, cs) {
  * and outline included. Any other opacity paints (0.02 of an opaque box shifts its pixels by 5 levels). A change of it back to a value above 0 is damage, checked
  * again here. Not faded by an opacity of 0: a box of display: contents (it generates no box; its children paint), and, under it, an element in the top layer (a
  * popover or modal dialog paints outside its ancestors). Memoised per check over the ancestors (`memo`).
- * @param {Window} win @param {Element|null} e @param {Element} s @param {Map<Element, boolean>} memo @returns {boolean}
+ * @param {StyleOf} style @param {Element|null} e @param {Element} s @param {Map<Element, boolean>} memo @returns {boolean}
  */
-function faded(win, e, s, memo) {
+function faded(style, e, s, memo) {
   if (!e || e.contains(s)) return false;
   let v = memo.get(e);
   if (v === undefined) {
-    const cs = win.getComputedStyle(e);
+    const cs = style(e);
     // a box of display: contents has no box for its opacity to apply to; an element in the top layer is not painted inside its ancestors
-    memo.set(e, (v = (cs.display !== 'contents' && parseFloat(cs.opacity) === 0) || (!topLayer(e) && faded(win, e.parentElement, s, memo))));
+    memo.set(e, (v = (cs.display !== 'contents' && parseFloat(cs.opacity) === 0) || (!topLayer(e) && faded(style, e.parentElement, s, memo))));
   }
   return v;
 }
@@ -508,7 +533,8 @@ const topLayer = (e) => { try { return e.matches(':modal, :popover-open, :fullsc
  * sees only what is hit-testable at its points; a change there can also be a box with `pointer-events: none`, one between the points, or the shadow, outline,
  * overflowing text or generated box of an element beside the port (a damage rect holds the box of the element it comes from and the ink it paints). An element
  * whose box touches a damage rect is checked: whatever it paints inside its box where that box lies over the damaged part of the port, and its ink where that reaches
- * it; one of an effective opacity of 0 paints nothing (faded). Frame css px are mapped to the viewport through the scroller's own box, as clearOver does.
+ * it; one of an effective opacity of 0 paints nothing (faded). One that blends (blended, ScrollPlan.cover) may not paint over any part of the port. Frame css px are
+ * mapped to the viewport through the scroller's own box, as clearOver does.
  * @param {Window} win @param {HTMLElement} s @param {Rect} port @param {Rect[]} rects @param {LiveLayer} layer @param {Element[]} outside
  * @returns {boolean}
  */
@@ -519,22 +545,56 @@ function quietOutside(win, s, port, rects, layer, outside) {
   const kx = vr.width / fr.width, ky = vr.height / fr.height;
   const view = (/** @type {Rect} */ r) => ({ x: vr.left + (r.x - fr.x) * kx, y: vr.top + (r.y - fr.y) * ky, width: r.width * kx, height: r.height * ky });
   const pv = view(port);
-  /** a box (grown by gx, gy) meets a rect: edges that only touch do not count, a box of no size inside it does */
-  const meets = (/** @type {Rect} */ a, /** @type {DOMRect} */ b, gx = 0, gy = 0) => b.left - gx < a.x + a.width && b.right + gx > a.x && b.top - gy < a.y + a.height && b.bottom + gy > a.y;
   const near = /** @type {Array<[Rect, Rect]>} */ (rects.map(view).map((r) => [r, intersectRect(r, pv)]).filter(([, p]) => p));
   if (!near.length) return true;
   if (outside.length > MAX_OUTSIDE) return false;
-  /** @type {Map<Element, boolean>} */
-  const memo = new Map();
+  const c = outsideCheck(win, s);
   for (const e of outside) {
     if (!e.isConnected) continue;
     const b = e.getBoundingClientRect();
     if (!near.some(([r]) => meets(r, b, 0.5, 0.5))) continue;
-    // a box inside a display:none subtree (or a display:contents one) has no rect of its own
-    if (!e.getClientRects().length && !generated(win, e)) continue;
-    if (faded(win, e, s, memo)) continue;
-    const g = painting(win, e, win.getComputedStyle(e));
-    for (const [, p] of near) if ((g.self && meets(p, b)) || ((g.x || g.y) && meets(p, b, g.x * kx, g.y * ky))) return false;
+    const g = paints(c, e);
+    if (!g) continue;
+    if ((g.mix || c.blended(e)) && over(g, b, pv, kx, ky)) return false;
+    for (const [, p] of near) if (over(g, b, p, kx, ky)) return false;
+  }
+  return true;
+}
+
+/** a box (grown by gx, gy) meets a rect: edges that only touch do not count, a box of no size inside it does @param {Rect} a @param {DOMRect} b */
+const meets = (a, b, gx = 0, gy = 0) => b.left - gx < a.x + a.width && b.right + gx > a.x && b.top - gy < a.y + a.height && b.bottom + gy > a.y;
+
+/** what `g` paints (painting) of the box `b` reaches the rect `a` (viewport px; `kx`, `ky` css px to viewport px) @returns {boolean} */
+const over = (/** @type {ReturnType<typeof painting>} */ g, /** @type {DOMRect} */ b, /** @type {Rect} */ a, /** @type {number} */ kx, /** @type {number} */ ky) =>
+  (g.self && meets(a, b)) || (!!(g.x || g.y) && meets(a, b, g.x * kx, g.y * ky));
+
+/**
+ * What `e`, outside the scroller, paints (painting), or null for nothing: a box inside a display: none subtree (or of display: contents: no rect of its own, and no
+ * generated box), or one of an effective opacity of 0 (faded).
+ * @param {ReturnType<typeof outsideCheck>} c @param {Element} e
+ */
+const paints = (c, e) => ((!e.getClientRects().length && !generated(c.style, e).length) || c.faded(e) ? null : painting(c.style, e));
+
+/**
+ * The admission side of ScrollPlan.cover: no element of the drawable outside the scroller (its ancestors aside) that blends with what lies under it paints over the
+ * port. The cover check reads the port over one uniform colour at a time, and a blend can leave a uniform colour as it was and still change the content: an
+ * overlay of rgb(1, 254, 3) with mix-blend-mode: saturation keeps both cover colours (their saturation is that of the overlay, 253) and changes every less
+ * saturated row (15,878 of 104,000 pixels, up to 72 levels in the first composed step; Chrome 156 and iPad Safari 27.2). No set of colours tells that for every
+ * blend mode, so an element painted over the port with a blend mode other than normal, on itself, on an ancestor below the first one it shares with the scroller or
+ * on its ::before or ::after, refuses the plan. Nothing else outside is refused here (the covers see a normal overlay; one of opacity 0, of visibility: hidden or
+ * with nothing to paint passes). A backdrop-filter outside is not painted by the snapshot (the engines paint none inside an SVG image). In steps, as the scan.
+ * @param {Window} win @param {Element} s @param {DOMRect} port viewport rect @param {number} k css px to viewport px @param {Element[]} outside
+ * @param {() => number} now @param {number} t0 @param {() => boolean} still
+ * @returns {Generator<void, boolean, void>}
+ */
+function* unblended(win, s, port, k, outside, now, t0, still) {
+  const c = outsideCheck(win, s);
+  for (let i = 0; i < outside.length; i++) {
+    if (i && i % SCAN_CLOCK === 0 && now() - t0 > STEP_MS) { yield; if (!still()) return false; t0 = now(); }
+    const e = outside[i];
+    if (!c.blended(e) && !generated(c.style, e).some((p) => blending(c.style(e, p)))) continue;
+    const g = paints(c, e);
+    if (g && over(g, e.getBoundingClientRect(), port, k, k)) return false;
   }
   return true;
 }

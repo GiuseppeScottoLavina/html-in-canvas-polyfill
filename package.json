@@ -138,7 +138,7 @@
     "test:gates": "node test/gates/run-all.mjs",
     "test:unit:browser": "node test/unit/run.mjs",
     "test:unit": "node test/unit/lib/run-node-tests.mjs && node test/unit/run.mjs",
-    "test:unit:selftest": "node test/unit/run.mjs --module runner-selftest && node test/unit/run.mjs --module runner-selftest --expect-fail",
+    "test:unit:selftest": "node test/unit/run.mjs --module runner-selftest && node test/unit/run.mjs --module runner-selftest --expect-fail --file-timeout=15000",
     "test:harness": "node test/harness/selftest.mjs",
     "test:mutants": "node test/gates/mutants/run.mjs",
     "test:gates:all": "node scripts/test-all.mjs",

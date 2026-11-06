@@ -25,6 +25,18 @@
   //   hidden-shown  the box of opacity: 0 turns opacity: 1 after the plan: not composed
   //   hidden-faint  the box of opacity: 0 turns opacity: 0.02 after the plan (5 levels, under the pixel tolerance): not composed
   //   hidden-parent-shown  the wrapper of opacity: 0 turns opacity: 1 after the plan: not composed
+  // Blend modes, over rows of blue and navy (navy is barely saturated): a box outside the list composited with the list beneath it (mix-blend-mode) changes the rows
+  // under it and may leave a uniform colour as it is, so the cover check alone does not see it (rgb(1, 254, 3) under saturation leaves both cover colours unchanged):
+  //   blend-none    (control) the blue and navy rows, nothing over them: composed
+  //   blend-saturation  the box of the first cover colour with mix-blend-mode: saturation over the port: not composed
+  //   blend-multiply / blend-difference / blend-luminosity  magenta boxes in those modes: not composed
+  //   blend-parent  the box (normal) inside a transparent wrapper of its size with mix-blend-mode: saturation (the wrapper paints nothing itself): not composed
+  //   blend-pseudo  a transparent box without a stacking context whose ::before is the first cover colour with mix-blend-mode: saturation: not composed
+  //   blend-partial the blended box half over the port, half below it: not composed
+  //   blend-off     (control) the blended box below the port, outside it: composed
+  //   blend-hidden / blend-invisible / blend-transparent  (controls) the blended box of opacity: 0, of visibility: hidden, with no background: composed
+  //   blend-late    the blended box transparent while the list is planned, of the first cover colour after: not composed
+  //   backdrop-blur (control) a transparent box with backdrop-filter: blur(6px) over the port, which the snapshot does not paint: composed
   var q = new URLSearchParams(location.search);
   if (q.get('bundle')) document.write('<scr' + 'ipt src="' + q.get('bundle') + '" data-hic-manual></scr' + 'ipt>');
 </script>
@@ -39,6 +51,9 @@
   .box { position: absolute; left: 0; top: 60px; width: 400px; height: 30px; z-index: 5; pointer-events: none; background: rgb(255, 0, 255); }
   .wrap { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; }
   .list.round { border-radius: 12px; }
+  .list.navy .row:nth-child(2n+1) { background: rgb(30, 40, 60); }
+  .box.pb { z-index: auto; background: transparent; }
+  .box.pb::before { content: ''; position: absolute; inset: 0; background: rgb(1, 254, 3); mix-blend-mode: saturation; }
   .head { position: sticky; top: 0; z-index: 2; height: 30px; background: rgb(255, 0, 255); color: black; box-sizing: border-box; }
 </style></head>
 <body>
@@ -66,6 +81,20 @@
     'hidden-shown': { box: 'opacity:0', after: (d) => { d.querySelector('.box').style.opacity = '1'; } },
     'hidden-faint': { box: 'opacity:0', after: (d) => { d.querySelector('.box').style.opacity = '0.02'; } },
     'hidden-parent-shown': { box: '', wrap: true, after: (d) => { d.querySelector('.wrap').style.opacity = '1'; } },
+    'blend-none': { navy: true },
+    'blend-saturation': { navy: true, box: 'background:rgb(1, 254, 3);mix-blend-mode:saturation' },
+    'blend-multiply': { navy: true, box: 'mix-blend-mode:multiply' },
+    'blend-difference': { navy: true, box: 'mix-blend-mode:difference' },
+    'blend-luminosity': { navy: true, box: 'mix-blend-mode:luminosity' },
+    'blend-parent': { navy: true, box: 'background:rgb(1, 254, 3);top:0', wrap: 'opacity:1;mix-blend-mode:saturation;top:60px;width:400px;height:30px;pointer-events:none' },
+    'blend-pseudo': { navy: true, box: '', cls: 'pb' },
+    'blend-partial': { navy: true, box: 'background:rgb(1, 254, 3);mix-blend-mode:saturation;top:225px' },
+    'blend-off': { navy: true, box: 'background:rgb(1, 254, 3);mix-blend-mode:saturation;top:242px;height:18px' },
+    'blend-hidden': { navy: true, box: 'background:rgb(1, 254, 3);mix-blend-mode:saturation;opacity:0' },
+    'blend-invisible': { navy: true, box: 'background:rgb(1, 254, 3);mix-blend-mode:saturation;visibility:hidden' },
+    'blend-transparent': { navy: true, box: 'background:transparent;mix-blend-mode:saturation' },
+    'blend-late': { navy: true, box: 'background:transparent;mix-blend-mode:saturation', after: (d) => { d.querySelector('.box').style.background = 'rgb(1, 254, 3)'; } },
+    'backdrop-blur': { navy: true, box: 'background:transparent;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)' },
   };
   window.run = async (mode) => {
     const m = MODES[mode];
@@ -73,7 +102,8 @@
     const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), d = document.querySelector('.d'), list = document.querySelector('.list');
     list.innerHTML = (m.head ? '<div class="head">HEADER</div>' : '') + Array.from({ length: 120 }, (_, i) => '<div class="row">row ' + i + '</div>').join('');
     if (m.round) list.classList.add('round');
-    if (m.box !== undefined) d.insertAdjacentHTML('beforeend', (m.wrap ? '<div class="wrap">' : '') + '<div class="box" style="' + m.box + '"></div>' + (m.wrap ? '</div>' : ''));
+    if (m.navy) list.classList.add('navy');
+    if (m.box !== undefined) d.insertAdjacentHTML('beforeend', (m.wrap ? '<div class="wrap" style="' + (m.wrap === true ? '' : m.wrap) + '">' : '') + '<div class="box' + (m.cls ? ' ' + m.cls : '') + '" style="' + m.box + '"></div>' + (m.wrap ? '</div>' : ''));
     m.before?.(d);
     const installed = HicLivePolyfill.install({ maxDpr: 1 });
     canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(d, 0, 0); };
@@ -108,7 +138,9 @@
         max = Math.max(max, delta);
         if (settled[p] < 250 || settled[p + 1] < 250 || settled[p + 2] < 250) nonWhite++;
       }
-      return { mode, composed: first.composed, bad, max, arcBad, arcMax, nonWhite, total: 400 * 260, planned, after: scroll() };
+      // the settled canvas under the box's place (row 2, navy in the blend modes): the snapshot paints the blend there
+      const under = Array.from(settled.slice((75 * 400 + 100) * 4, (75 * 400 + 100) * 4 + 4));
+      return { mode, composed: first.composed, bad, max, arcBad, arcMax, nonWhite, under, total: 400 * 260, planned, after: scroll() };
     } finally { installed.uninstall(); }
   };
   window.__ready = true;
