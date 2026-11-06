@@ -80,6 +80,11 @@ const WAKE_FAST = 0.8;
 /** a finger that scrolls the page stirs one spot: each touch move adds at most this share of a wake dent there */
 const SCROLL_STIR = 0.22;
 const DEMO_SEED = 0x5eed;
+/**
+ * ms that the caustic textures outlive caustics turned off by an option (light or intensity 0): a slider dragged through 0 turns them off
+ * and on again within this, and each crossing would otherwise free and make 7 MB (at 1100 x 640 css px) again. Then they are released.
+ */
+export const LIGHT_GRACE_MS = 2000;
 
 let uiSerial = 0;
 
@@ -267,7 +272,8 @@ export const plugin = Object.freeze({
     /**
      * The caustic texture (lightGrid of the field's css size) and its 4x multisampled target, held only while caustics can show (`lit()`):
      * from the first frame on, so that a first tap allocates nothing, and made at once when an option change turns them on. While they
-     * cannot show (light 0, intensity 0, reduced motion) the picture binds a 1 x 1 texture that it never samples.
+     * cannot show (light 0, intensity 0, reduced motion) the picture binds a 1 x 1 texture that it never samples. An option change that
+     * turns them off keeps them for LIGHT_GRACE_MS (a slider dragged through 0 crosses it again within that), then releases them.
      */
     let lightTargets = { w: 0, h: 0, tex: /** @type {any} */ (null), ms: /** @type {any} */ (null), view: /** @type {any} */ (null), viewMs: /** @type {any} */ (null) };
     /** @param {number} w @param {number} h */
@@ -295,9 +301,19 @@ export const plugin = Object.freeze({
       }
       return unlit.view;
     };
-    /** Hold the caustic textures exactly while caustics can show, at the size of the field `f`. @param {Field} f */
+    /** the release of the caustic textures, pending since caustics turned off @type {ReturnType<typeof setTimeout>|null} */
+    let lightRelease = null;
+    const cancelLightRelease = () => { if (lightRelease !== null) { clearTimeout(lightRelease); lightRelease = null; } };
+    /**
+     * Hold the caustic textures while caustics can show, at the size of the field `f`. When they cannot, textures already made stay for
+     * LIGHT_GRACE_MS, unused, and are then released (one timer, no frame). @param {Field} f
+     */
     const fitLight = (f) => {
-      if (!lit()) { releaseLightTargets(); return; }
+      if (!lit()) {
+        if (lightTargets.tex && lightRelease === null) lightRelease = setTimeout(() => { lightRelease = null; if (!lit()) releaseLightTargets(); }, LIGHT_GRACE_MS);
+        return;
+      }
+      cancelLightRelease();
       const g = lightGrid(f.cssWidth, f.cssHeight);
       ensureLightTargets(g.w, g.h);
     };
@@ -559,7 +575,8 @@ export const plugin = Object.freeze({
         intensity = clamp01(next?.intensity, intensity);
         light = clamp01(next?.light, light);
         if (!reducedMotion) ambient = clamp01(next?.ambient, ambient);
-        // the caustic textures follow at once: made before the next tap when the light comes on, released when it goes off
+        // the caustic textures follow at once: made before the next tap when the light comes on; when it goes off they are released
+        // LIGHT_GRACE_MS later (fitLight)
         if (field) fitLight(field);
         syncUi();
       },
@@ -676,6 +693,7 @@ export const plugin = Object.freeze({
         for (const resolve of waiters.splice(0)) resolve(null);
         uniformBuffer.destroy?.();
         fieldTexture?.destroy?.();
+        cancelLightRelease();
         releaseLightTargets();
         unlit?.tex.destroy?.();
       },

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
-import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
+import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, LIGHT_GRACE_MS, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
 import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, DAMPING, PAD, VISCOSITY, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
@@ -567,7 +567,8 @@ test('intensity, light and ambient from options and setOptions reach the uniform
   assert.equal(rm.instance.continuous, false, 'reduced motion: no swell');
 });
 
-test('the caustic textures are held only while caustics can show: none with light 0, intensity 0 or reduced motion (binding 4 is then 1 x 1); an option change that turns them on makes them at once, so the next tap allocates nothing; turning them off releases them; control: the defaults make them at the first frame', async () => {
+test('the caustic textures are held only while caustics can show: none with light 0, intensity 0 or reduced motion (binding 4 is then 1 x 1); an option change that turns them on makes them at once, so the next tap allocates nothing; turning them off releases them after LIGHT_GRACE_MS; control: the defaults make them at the first frame', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const caustic = (w) => w.gpu.created.filter((t) => /^hic-water-effect-caustics(-ms)?$/.test(t.d.label));
   const live = (w) => caustic(w).filter((t) => !t.destroyed);
   const bytes = (w) => live(w).reduce((n, t) => n + t.d.size.width * t.d.size.height * 2 * (t.d.sampleCount ?? 1), 0);
@@ -595,13 +596,76 @@ test('the caustic textures are held only while caustics can show: none with ligh
   w.run(t0, 200);
   assert.equal(w.gpu.created.length, made, 'the first tap after that allocates nothing');
   w.instance.setOptions({ intensity: 0 });
-  assert.equal(live(w).length, 0, 'intensity 0: released at once');
+  assert.equal(live(w).length, 2, 'intensity 0: kept for the grace period');
+  t.mock.timers.tick(LIGHT_GRACE_MS);
+  assert.equal(live(w).length, 0, 'intensity 0: released LIGHT_GRACE_MS later');
   w.instance.render(w.frame(t0 + 220));
   assert.equal(live(w).length, 0);
   w.instance.setOptions({ intensity: 0.5 });
   assert.equal(live(w).length, 2, 'and made again when it comes back');
   w.instance.destroy();
   assert.ok(w.gpu.created.every((t) => t.destroyed), 'destroy releases every texture, the 1 x 1 one included');
+});
+
+test('a slider dragged through 0 keeps the caustic textures: light and intensity crossing 0 again and again within LIGHT_GRACE_MS make and free nothing, and the frames in between bind them unsampled; LIGHT_GRACE_MS after the last crossing to 0 they are released and the picture binds the 1 x 1 texture (control: the release happens, and a light turned on again makes them anew); destroy during the grace releases them and cancels the release', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const caustic = (w) => w.gpu.created.filter((x) => /^hic-water-effect-caustics(-ms)?$/.test(x.d.label));
+  const live = (w) => caustic(w).filter((x) => !x.destroyed);
+  const w = await createWater();
+  let now = performance.now();
+  w.instance.render(w.frame(now));
+  assert.equal(caustic(w).length, 2, 'the defaults make them at the first frame');
+  // a drag of the intensity slider down to 0 and back, twice, then of a light slider: one option change and one frame per input event
+  const drag = [0.12, 0.06, 0, 0.04, 0.1, 0.03, 0, 0, 0.08].map((intensity) => ({ intensity }))
+    .concat([0.5, 0.2, 0, 0.1, 0, 0.6].map((light) => ({ intensity: 0.5, light })));
+  for (const patch of drag) {
+    w.instance.setOptions(patch);
+    now += 1000 / 120;
+    t.mock.timers.tick(1000 / 120);
+    w.instance.render(w.frame(now));
+  }
+  assert.equal(caustic(w).length, 2, `${drag.length} option changes crossing 0 five times made no caustic texture`);
+  assert.equal(live(w).length, 2, 'and freed none');
+  const bound = () => w.gpu.created.filter((x) => x.d.label === 'hic-water-effect-caustics-none').length;
+  assert.equal(bound(), 0, 'the frames during the drag bound the caustic texture (no 1 x 1 stand-in)');
+  // the light ends at 0: kept for the grace period, then released
+  w.instance.setOptions({ light: 0 });
+  t.mock.timers.tick(LIGHT_GRACE_MS - 1);
+  assert.equal(live(w).length, 2, 'kept until LIGHT_GRACE_MS after the last crossing to 0');
+  w.instance.render(w.frame(now + 10));
+  assert.equal(live(w).length, 2, 'a frame during the grace keeps them too');
+  t.mock.timers.tick(1);
+  assert.equal(live(w).length, 0, 'control: LIGHT_GRACE_MS after it they are released');
+  w.instance.render(w.frame(now + 20));
+  assert.equal(bound(), 1, 'the next frame binds the 1 x 1 stand-in');
+  w.instance.setOptions({ light: 1 });
+  assert.equal(caustic(w).length, 4, 'control: the light on again makes them anew');
+  // a crossing to 0, then the grace interrupted by a crossing back: the pending release is cancelled
+  w.instance.setOptions({ intensity: 0 });
+  t.mock.timers.tick(LIGHT_GRACE_MS / 2);
+  w.instance.setOptions({ intensity: 0.3 });
+  t.mock.timers.tick(LIGHT_GRACE_MS);
+  assert.equal(live(w).length, 2, 'a crossing back during the grace cancels the release');
+  // destroy during the grace: everything is released at once and the release does not run later
+  w.instance.setOptions({ intensity: 0 });
+  w.instance.destroy();
+  assert.ok(w.gpu.created.every((x) => x.destroyed), 'destroy during the grace releases every texture');
+  const destroyed = w.gpu.created.length;
+  t.mock.timers.tick(LIGHT_GRACE_MS);
+  assert.equal(w.gpu.created.length, destroyed);
+});
+
+test('light 0, intensity 0 or reduced motion from the start: nothing is allocated and no release is pending, also after option changes that keep caustics off', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const [name, options, reduced] of [['light 0', { light: 0 }, false], ['intensity 0', { intensity: 0 }, false], ['reduced motion', {}, true]]) {
+    const w = await createWater(options, { reduced });
+    w.instance.render(w.frame(performance.now()));
+    w.instance.setOptions(reduced ? { light: 0.5, intensity: 0.7 } : { ...options, ambient: 0.2 });
+    w.instance.render(w.frame(performance.now() + 10));
+    t.mock.timers.tick(LIGHT_GRACE_MS);
+    assert.equal(w.gpu.created.filter((x) => /^hic-water-effect-caustics(-ms)?$/.test(x.d.label)).length, 0, `${name}: no caustic texture`);
+    w.instance.destroy();
+  }
 });
 
 test('a resize by a fraction of a cell keeps the ripples; another grid starts flat with a new texture', async () => {
