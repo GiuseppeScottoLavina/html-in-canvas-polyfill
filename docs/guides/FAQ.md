@@ -60,8 +60,9 @@ Where the bytes go: the bytes esbuild attributes to each source module of the mi
 Partly, and less verified than the rest.
 
 - The live elements stay in the document and in the accessibility tree: the layer is invisible (`opacity: 0`), not hidden from assistive technology. Focus, the tab order, keyboard input and IME work on the real elements.
-- Natively, the children of the canvas are its accessibility children. To keep that structure after the move, the layer has `role="presentation"` and the canvas `aria-owns` its top-level children ([ARCHITECTURE.md, ADR-M](../ARCHITECTURE.md#adr-m-accessibility-link)). In Chrome's accessibility tree, a `role="list"` canvas then has its `listitem` children with their names. That was measured once with a probe (Chrome 154). Unit tests check the `aria-owns` attribute, but no automated test checks the accessibility tree: the planned gate G-a11y is not written yet ([TEST-PLAN.md](../TEST-PLAN.md)).
-- Not verified: any real screen reader (VoiceOver, NVDA, JAWS, TalkBack), and the accessibility trees of Firefox and Safari.
+- Natively, the children of the canvas are its accessibility children. To keep that structure after the move, the layer has `role="presentation"` and the canvas `aria-owns` its top-level children ([ARCHITECTURE.md, ADR-M](../ARCHITECTURE.md#adr-m-accessibility-link)).
+- The gate G-a11y reads Chrome's real accessibility tree ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8). On a list canvas and a form canvas, and on the water-form page, the subtree of the canvas node equals the one Chrome builds for the same HTML as a plain page, line by line: roles, names, values and order. Tab reaches every control in DOM order and the focused node is under the canvas; typed text, a slider key and a script text change show in the tree; a polite live region keeps its text and politeness; and the tree is the same after `uninstall()` and a new `install()`. Its control drops the `aria-owns` link and must fail. On the same fixture, Chrome's native implementation (Canary 159) builds the same tree.
+- Not verified: any real screen reader (VoiceOver, NVDA, JAWS, TalkBack), and the accessibility trees of Firefox and Safari. An accessibility tree is what a screen reader reads, but the gate does not show what one announces.
 - A drawable that is never drawn still exposes its layout position to assistive technology, where native exposes no geometry until it is drawn (deviation `a11y-geometry`). Mark unused views `aria-hidden`.
 
 ## What happens in a browser with the native API (Chrome 157)?
@@ -139,11 +140,11 @@ It is a preview of a proposed standard (`0.1.0-preview.26` on npm; a new preview
 What is tested:
 
 - 727 unit tests in Node and 1,089 in headless Chrome, with type, module-boundary and bundle-size checks;
-- 16 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence), each with a positive control;
-- a mutation suite of 80 seeded bugs, every one of which must be caught;
+- 17 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence, the accessibility tree), each with a positive control;
+- a mutation suite of 81 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, and 11 of the 16 gates, 34 of the 80 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, and 12 of the 17 gates, 35 of the 81 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 
@@ -151,8 +152,8 @@ With an AI coding assistant. The code, tests and documentation were written with
 
 Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
-- changes reach `main` through pull requests (every change since 2026-10-22), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 11 of the 16 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
-- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 80 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
+- changes reach `main` through pull requests (every change since 2026-10-22), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 12 of the 17 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 81 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
 - the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;
 - the behaviour was checked on physical devices, not only in simulators.

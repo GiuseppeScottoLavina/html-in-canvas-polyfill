@@ -51,7 +51,7 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 
 | suite | where | why |
 | --- | --- | --- |
-| 11 of the 16 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS: every pull request, nightly on main, release tags | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
+| 12 of the 17 Chrome gates (`npm run test:gates`: all but the five below), real + control | CI macOS: every pull request, nightly on main, release tags | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
 | mutation suite, the 34 mutants whose gates all run in CI | CI macOS: 8 of them on pull requests (each CI gate is targeted by one), all 34 nightly and on release tags (4 machines) | |
 | `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture, playground and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS: every pull request, nightly on main, release tags | headless Chrome with macOS fonts, controls and a GPU |
 | `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS: every pull request, nightly on main, release tags | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
