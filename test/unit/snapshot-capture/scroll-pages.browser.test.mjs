@@ -193,10 +193,42 @@ test('admission: a box outside the list that blends with it (mix-blend-mode on i
     ['control: nothing to paint', 'mix-blend-mode:saturation', undefined, true],
     ['control: a blended wrapper of opacity 0', `${fill}top:0`, 'mix-blend-mode:saturation;opacity:0;top:60px;width:300px;height:20px', true],
     ['control: a normal wrapper', `${fill}top:0`, 'top:60px;width:300px;height:20px', true],
+    // a wrapper of no size that clips (0.1.0-preview.26: refused, the box's border rect met the port)
+    ['clipped whole by a wrapper of 0 x 0 with overflow: hidden', `${fill}mix-blend-mode:saturation`, 'overflow:hidden', true],
+    ['clipped whole by a wrapper of 0 x 0 with overflow: clip', `${fill}mix-blend-mode:saturation`, 'overflow:clip', true],
+    ['clipped whole by a wrapper 300 css px wide and 0 high', `${fill}mix-blend-mode:saturation`, 'overflow:hidden;width:300px', true],
+    ['a wrapper of 300 x 70 with overflow: hidden (10 px of the box show)', `${fill}mix-blend-mode:saturation`, 'overflow:hidden;width:300px;height:70px', false],
+    ['a fixed box in a wrapper of 0 x 0 (it escapes the clip)', `${fill}mix-blend-mode:saturation;position:fixed;left:auto;top:auto;margin-top:60px`, 'overflow:hidden', false],
+    ['a wrapper of 0 x 0 in flow (the box\'s containing block lies above it)', `${fill}mix-blend-mode:saturation`, 'overflow:hidden;position:static', false],
+    ['a transformed box in a wrapper of 0 x 0', `${fill}mix-blend-mode:saturation;transform:translateX(1px)`, 'overflow:hidden', false],
+    ['a box with a shadow in a wrapper of 0 x 0', `${fill}mix-blend-mode:saturation;box-shadow:0 0 8px #000`, 'overflow:hidden', false],
+    ...(CSS.supports('overflow-clip-margin', '20px') ? [/** @type {[string, string, string, boolean]} */ (['an overflow-clip-margin of 20 px', `${fill}mix-blend-mode:saturation`, 'overflow:clip;overflow-clip-margin:20px', false])] : []),
   ])) {
     const { m, plan } = blendPlan(box, wrap);
     await frames(2);
     assert.equal(!!plan(), planned, what);
+    m.layerEl.remove();
+  }
+});
+
+test('ScrollPlan.clear: a blended box planned as clipped whole is refused once part of it shows (the wrapper grows, turns overflow: visible)', async () => {
+  for (const [what, show] of /** @type {Array<[string, (w: HTMLElement) => void]>} */ ([
+    ['the wrapper grows to 300 x 100', (w) => { w.style.width = '300px'; w.style.height = '100px'; }],
+    ['the wrapper turns overflow: visible', (w) => { w.style.overflow = 'visible'; }],
+  ])) {
+    const { m, list, box, plan: planOf } = blendPlan('background:rgb(1,254,3);mix-blend-mode:saturation', 'overflow:hidden');
+    await frames(2);
+    const plan = planOf();
+    assert.ok(plan?.clear, `${what}: planned while clipped whole`);
+    const wrap = /** @type {HTMLElement} */ (box.parentElement);
+    const frame = m.layer.frameRect(list);
+    // a change of a row away from the box: the box is still clipped whole
+    assert.equal(plan.clear([{ x: frame.x, y: frame.y + 150, width: 300, height: 20 }]), true, `${what}: a change away from the clipped box`);
+    show(wrap);
+    await frames(1);
+    // the damage of the wrapper's change: its old and new box grown to its scrollable overflow (damage-rect.js), over the box
+    const w = m.layer.frameRect(wrap);
+    assert.equal(plan.clear([{ x: w.x, y: w.y, width: Math.max(w.width, wrap.scrollWidth), height: Math.max(w.height, wrap.scrollHeight) }]), false, what);
     m.layerEl.remove();
   }
 });
