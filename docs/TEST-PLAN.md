@@ -230,6 +230,23 @@ These are the gates that exist today (`test/gates/g-*.mjs`, helpers in `test/gat
 | near-size-resampled | an explicit draw size within 1 px and 1 % of the raster is drawn 1:1, so F1 at DPR 1.25 stays within 2.2 % of native (G-pixel-dpr) |
 | text-smoothing-off | text is drawn with native's stroke weight: glyphs set without macOS font smoothing (`-webkit-font-smoothing: antialiased` forced in the clone) lose 12-15 % of their ink on dark-on-light rows and 26-30 % on light-on-dark rows, and the text weight check of G-pixel-dpr sees it (macOS only: other platforms have no font smoothing) |
 
+**Manual screen-reader session (VoiceOver, macOS).** G-a11y reads an accessibility tree, not what a screen reader says, so a person repeats this session with VoiceOver in Safari on macOS for each release candidate. Serve the built repository (`node test/harness/server.mjs --port=8130`) and open `test/fixtures/a11y/index.html?mode=ref` (the same HTML as a plain page, the reference) and `?mode=poly` (inside two drawable canvases). The page has buttons for every scripted step, so no console is needed. Listen to the reference first, then do these steps on the polyfill page, each compared with the reference:
+1. VO+A from the title: the whole page, in order, nothing read twice or extra.
+2. The list items, one by one, with their positions.
+3. The rotor's headings and form controls.
+4. Option+Tab through the seven controls, in order, with the VoiceOver cursor over the drawn control.
+5. Typing in the Name field.
+6. The checkbox, twice.
+7. The slider, two steps.
+8. The Send button: its polite status message.
+9. "Live update", twice.
+10. "Change the text", then read the changed list item and heading.
+11. "Uninstall the polyfill", then VO+A.
+12. "Reinstall the polyfill", then VO+A and the Tab order again.
+13. The Send announcement after the reinstall.
+
+Last run: 2026-11-06, main 886b7fe, VoiceOver (English voice) in Safari 27.0.1 on macOS 27.0.1: all 13 steps as on the reference.
+
 ### 2.9 Cross-browser gate G-xbrowser (`npm run test:xbrowser`, Firefox, Safari and the optional Safari Technology Preview through W3C WebDriver)
 
 `node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=...] [--no-control]`. Driver: `test/harness/lib/webdriver.mjs` (zero deps; navigate, evaluate, viewport

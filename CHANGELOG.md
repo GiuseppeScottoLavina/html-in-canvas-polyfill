@@ -21,6 +21,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Docs: the README, the API contract, the support matrix, the FAQ and the getting-started guide call the two extensions and the loader's options experimental and Safari on the iPhone unqualified, as `docs/STABILITY.md` does.
 - Docs: the `native-bridged` row of `docs/STABILITY.md` is stable with G-bridged-translation as its evidence; API-CONTRACT 2.1, the support matrix and the test plan give the native shapes measured on Chrome for Testing 154.0.8037.92 and 155.0.8059.79 (154 lacks `onelementgeometryupdate` and `ElementGeometryUpdateEvent` and takes the earlier WebGPU destination dictionary; both have `texElementSubImage2D` natively).
 - Framework tests: `npm run test:frameworks` builds the React, Vue, Svelte and Lit apps in production mode too (`NODE_ENV=production`, minified, the `production` export condition, Svelte `dev: false`, Vue's production flags) and runs every scenario and control against both builds; a new build-mode scenario reads development-only markers from each page, and a new control proves that check fails on a development build. `--mode=dev|prod|both` (default both). The run grows from 37 to 82 scenario runs (about 4 to 8 minutes); the two KNOWN hydration probes stay development-only.
+- Docs: VoiceOver in Safari 27.0.1 on macOS 27.0.1 was run by hand on the accessibility fixture (13 steps: reading order, list positions, the rotor, the Tab order, typing, a checkbox, a slider, status and live announcements, a script text change, `uninstall()` and a new `install()`), all as on the same HTML as a plain page. `docs/STABILITY.md` lists VoiceOver with Safari on macOS as stable and the other screen readers as unqualified; the test plan describes the session so that it can be repeated for each release candidate.
 
 ### Fixed
 
@@ -29,6 +30,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Native bridge: `drawElementImageToTexture` without a `size`, mapped to the earlier `copyElementImageToTexture`, threw a `TypeError`; it now copies the natural size, as the native call does.
 - Native bridge: a `texElementSubImage2D` built over `texElementImage2D` now uses the three-argument form `(target, internalformat, element)` of the Chrome 154 and 155 builds (both have `texElementSubImage2D` natively, so this applies only to a build without it).
 - The native-bridge bundle grows to 14,011 bytes minified, 5,082 gzipped (+554 / +173 bytes); its ceiling is raised to 14.25 KB, gzip 5.25 KB.
+- Gate harness: on Linux every gate printed a Python `ModuleNotFoundError` from the macOS screen-lock check; the check now runs on macOS only, as the OS pointer helper already did.
 
 ## [0.1.0-preview.27] - 2026-11-06
 
