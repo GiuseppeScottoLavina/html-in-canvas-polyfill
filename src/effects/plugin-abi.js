@@ -36,6 +36,7 @@ function readActions(def) {
 
 /**
  * Validate (type string, apiVersion 2, version number, create function, optional outputCapabilities and actions), freeze. TypeError on invalid input.
+ * @experimental the effect plugin ABI, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @param {EffectPluginDefinition} def
  * @returns {EffectPluginDefinition}
  * @throws TypeError

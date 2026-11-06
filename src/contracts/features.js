@@ -13,7 +13,11 @@
 
 // Only the public entries (src/index.js, src/iife.js) import this table: the runtime reads a feature's status from feature-status.js, generated from it (npm run docs:sync). The pure annotation
 // lets a bundler drop the table, with every summary and reason, from an app that imports neither FEATURES nor featureById (G-bundle checks it).
-/** @type {ReadonlyArray<Readonly<FeatureRow>>} */
+/**
+ * The feature table of docs/SUPPORT-MATRIX.md.
+ * @experimental its rows, statuses and wording follow each release's measurements (docs/STABILITY.md)
+ * @type {ReadonlyArray<Readonly<FeatureRow>>}
+ */
 export const FEATURES = /* @__PURE__ */ Object.freeze([
   // ---- standard API surface
   { id: 'content-drawable', status: 'supported', summary: 'canvas content="drawable" + drawable attribute (reflected content IDL attribute)', reason: 'Descendants are relocated into a live layer; see tree-identity.' },
@@ -93,7 +97,12 @@ export const FEATURES = /* @__PURE__ */ Object.freeze([
   { id: 'csp-blocked', status: 'unsupported', summary: 'pages whose CSP forbids data: images (img-src) or new Function (onpaint attribute): detected through securitypolicyviolation and reported with a hint', reason: 'Every snapshot is a data: SVG image; without img-src data: nothing can be decoded.' },
 ]);
 
-/** @param {string} id @returns {Readonly<FeatureRow>|undefined} */
+/**
+ * The row of a feature id.
+ * @experimental the rows of the feature table follow each release's measurements (docs/STABILITY.md)
+ * @param {string} id
+ * @returns {Readonly<FeatureRow>|undefined}
+ */
 export function featureById(id) {
   return FEATURES.find((f) => f.id === id);
 }
