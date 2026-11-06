@@ -4,20 +4,138 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>html-in-canvas-polyfill examples</title>
+<meta name="color-scheme" content="light dark">
+<title>HTML-in-Canvas Polyfill for Safari and Firefox</title>
+<meta name="description" content="Preview HTML-in-Canvas polyfill for modern Safari and Firefox. Render live HTML in canvas, try interactive demos and use native support where available.">
+<link rel="canonical" href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HTML-in-Canvas Polyfill">
+<meta property="og:title" content="HTML-in-Canvas Polyfill for Safari and Firefox">
+<meta property="og:description" content="Render live, interactive HTML inside canvas in modern Safari and Firefox, with the browser's own implementation used where it exists. Preview.">
+<meta property="og:url" content="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/">
+<meta property="og:image" content="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/assets/social-preview-chrome-capture.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="HTML-in-Canvas Polyfill: a Chrome capture of the plugin gallery, a live HTML form inside a canvas under the WebGPU water effect, its name field focused and typed into.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="HTML-in-Canvas Polyfill for Safari and Firefox">
+<meta name="twitter:description" content="Render live, interactive HTML inside canvas in modern Safari and Firefox, with the browser's own implementation used where it exists. Preview.">
+<meta name="twitter:image" content="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/assets/social-preview-chrome-capture.png">
+<meta name="twitter:image:alt" content="HTML-in-Canvas Polyfill: a Chrome capture of the plugin gallery, a live HTML form inside a canvas under the WebGPU water effect, its name field focused and typed into.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "HTML-in-Canvas Polyfill",
+  "description": "A polyfill for the proposed HTML-in-Canvas API: live, interactive HTML drawn inside canvas (Canvas 2D, WebGL, WebGPU) in modern Safari and Firefox, native-first where the browser implements the API.",
+  "url": "https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/",
+  "codeRepository": "https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill",
+  "programmingLanguage": "JavaScript",
+  "runtimePlatform": "Web browser",
+  "license": "https://spdx.org/licenses/MIT.html",
+  "sameAs": ["https://www.npmjs.com/package/@giuseppe-scotto-lavina/html-in-canvas-polyfill"]
+}
+</script>
 <style>
-  :root { color-scheme: light dark; --code: #eef0f4; }
-  @media (prefers-color-scheme: dark) { :root { --code: #2a2d33; } }
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; padding: 0 1rem; max-width: 44rem; }
-  li { margin-bottom: .6rem; }
-  code { background: var(--code); padding: 0 .25em; border-radius: 3px; }
+  :root { color-scheme: light dark; --bg: #ffffff; --ink: #16181d; --muted: #4f5764; --line: #d9dde3; --code: #f1f3f6; --accent: #1f43c4; --accent-ink: #ffffff; --soft: #eef2fd; --focus: #1f43c4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111317; --ink: #e8eaee; --muted: #a9b0bb; --line: #30343c; --code: #1c1f25; --accent: #8fb0ff; --accent-ink: #0b1020; --soft: #1a2033; --focus: #8fb0ff; } }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 50rem; margin: 0 auto; padding: 2rem 16px 3rem; }
+  h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); line-height: 1.1; letter-spacing: -.02em; margin: 0 0 .4rem; }
+  h2 { font-size: 1.3rem; margin: 2.4rem 0 .6rem; }
+  h3 { font-size: 1.05rem; margin: 0 0 .25rem; }
+  p, ul { margin: 0 0 .9rem; }
+  a { color: var(--accent); text-underline-offset: .15em; }
+  a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+  .lead { font-size: 1.2rem; font-weight: 600; margin-bottom: .5rem; }
+  .status { border-left: 4px solid var(--accent); background: var(--soft); padding: .6rem .9rem; border-radius: 0 6px 6px 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.2rem 0 1.4rem; padding: 0; list-style: none; }
+  .actions a { display: inline-block; padding: .55rem 1rem; border-radius: 8px; border: 1px solid var(--accent); font-weight: 600; text-decoration: none; }
+  .actions a.primary { background: var(--accent); color: var(--accent-ink); }
+  figure { margin: 0 0 1rem; }
+  figure a { display: block; border-radius: 8px; }
+  figure img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); background: #020a13; }
+  figcaption { font-size: .88rem; color: var(--muted); margin-top: .4rem; }
+  code { font: .9em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--code); padding: 0 .25em; border-radius: 3px; overflow-wrap: anywhere; }
+  pre { background: var(--code); padding: .8rem 1rem; border-radius: 8px; overflow-x: auto; margin: 0 0 1rem; }
+  pre code { background: none; padding: 0; overflow-wrap: normal; font-size: .85rem; }
+  pre:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .uses { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); padding: 0; list-style: none; }
+  .uses li { border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; }
+  .uses p { margin: 0; color: var(--muted); }
+  .table { overflow-x: auto; margin: 0 0 .8rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  th, td { text-align: left; vertical-align: top; padding: .45rem .6rem; border-bottom: 1px solid var(--line); }
+  th { font-weight: 650; }
+  .demos li { margin-bottom: .6rem; }
+  .note { color: var(--muted); font-size: .93rem; }
+  footer { border-top: 1px solid var(--line); margin-top: 2.4rem; padding-top: 1rem; }
 </style>
 </head>
 <body>
-<h1>html-in-canvas-polyfill examples</h1>
-<p>A polyfill for the proposed HTML-in-Canvas API (<code>&lt;canvas content="drawable"&gt;</code>, <code>drawElementImage</code>, the <code>paint</code> event).
-  Each page below draws live HTML into a canvas: click and type into what you see.</p>
-<ul>
+<main>
+<h1>HTML-in-Canvas Polyfill</h1>
+<p class="lead">Render live HTML inside canvas.</p>
+<p>Use the proposed <a href="https://github.com/WICG/html-in-canvas">HTML-in-Canvas API</a> (<code>&lt;canvas content="drawable"&gt;</code>, <code>drawElementImage</code>, the <code>paint</code> event) in modern Safari and Firefox, with native support used automatically where available: in a browser that implements the API, such as Chrome 157, the polyfill steps aside and the browser draws natively. The HTML stays real and live: forms keep their focus, typing, scrolling and hit testing, and stay in the accessibility tree. Explore interactive forms, Canvas 2D rendering and optional WebGPU effects.</p>
+<p class="status"><strong>Currently in preview.</strong> The releases are <code>0.1.0</code> previews that follow a proposed standard, which may still change; no compatibility promise applies to them yet. Check the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>, the <a href="#browsers">browser support</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#known-limitations">known limitations</a> before integrating.</p>
+
+<ul class="actions" aria-label="Start here">
+  <li><a class="primary" href="plugins/">Try the demo</a></li>
+  <li><a href="playground/">Open playground</a></li>
+  <li><a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">GitHub</a></li>
+</ul>
+
+<figure>
+  <a href="plugins/?effect=water"><img src="assets/gallery-water-chrome-capture.webp" width="1100" height="640" alt="Chrome capture of the plugin gallery: an ordinary HTML contact form inside a canvas under the WebGPU water effect; the name field is focused and reads Ada Lovelace, typed through the ripples."></a>
+  <figcaption>The plugin gallery, captured in Chrome: an HTML form drawn inside a canvas through the WebGPU water effect. Clicks and typing reach the real <code>&lt;input&gt;</code>. The demo starts only when you open it.</figcaption>
+</figure>
+
+<h2 id="install">Install</h2>
+<p>From npm, for a bundler (TypeScript declarations included):</p>
+<pre tabindex="0"><code>npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill</code></pre>
+<pre tabindex="0"><code>import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill';
+install(); // synchronous: call it before your code uses the API</code></pre>
+<p>To download nothing in a browser that implements the API, use the loader instead: it makes the same decision first, and fetches the core (and, on Firefox and Safari, the engines bundle) only where the polyfill runs. With a bundler, <code>import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'</code>; from a CDN, one script tag:</p>
+<pre tabindex="0"><code>&lt;script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@0.1.0-preview.27/dist/hic-live-loader.iife.min.js"&gt;&lt;/script&gt;
+&lt;script type="module"&gt;
+  const { status, installed } = await HicLiveLoader.load();   // 'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'
+  // then use the standard API: canvas.onpaint = () =&gt; ctx.drawElementImage(form, 0, 0);
+&lt;/script&gt;</code></pre>
+<p>The full example, the plain script tags and the loader's options: the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#quick-start">quick start</a> and <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs">getting started</a>.</p>
+
+<h2 id="uses">What it is for</h2>
+<ul class="uses">
+  <li><h3><a href="plugins/">A live form under a GPU effect</a></h3><p>A WebGPU effect plugin bends the drawn form; the form stays usable through it, and clicks are mapped to the field you see.</p></li>
+  <li><h3><a href="form/">HTML in a Canvas 2D scene</a></h3><p>A contact form drawn with <code>drawElementImage</code> from <code>onpaint</code>; focus, typing and validation work where it is drawn.</p></li>
+  <li><h3><a href="webgl-texture/">HTML as a WebGL or WebGPU texture</a></h3><p>A spinning cube textured with a live form through <code>texElementSubImage2D</code>; WebGPU uploads with <code>drawElementImageToTexture</code>.</p></li>
+</ul>
+
+<h2 id="browsers">Browser support</h2>
+<p>Qualified: this kind of browser or device has run the test suites. Unqualified: expected to work, but it has not run them, so nothing is promised there.</p>
+<div class="table" tabindex="0" role="region" aria-label="Browser support">
+<table>
+  <thead><tr><th scope="col">Browser</th><th scope="col">What runs</th><th scope="col">Status</th></tr></thead>
+  <tbody>
+    <tr><td>Chrome 157 and later, desktop</td><td>the browser's own implementation; the polyfill steps aside</td><td>qualified</td></tr>
+    <tr><td>Chrome 154 to 156, desktop</td><td>the polyfill</td><td>qualified</td></tr>
+    <tr><td>Firefox 155 and later, desktop</td><td>the polyfill</td><td>qualified</td></tr>
+    <tr><td>Safari 27 and later, desktop</td><td>the polyfill</td><td>qualified</td></tr>
+    <tr><td>Safari on iPadOS 26 and later</td><td>the polyfill, with phone budgets</td><td>qualified on a physical iPad Pro</td></tr>
+    <tr><td>Chrome for Android 130 and later</td><td>the polyfill, with phone budgets</td><td>qualified on two physical phones</td></tr>
+    <tr><td>Safari on the iPhone, iOS 26 and later</td><td>expected to run as on the iPad</td><td>unqualified: run only on the iOS Simulator, never on a physical iPhone</td></tr>
+    <tr><td>Edge, Opera, Brave and other desktop Chromium; Chrome 130 to 153</td><td>expected to run as in Chrome</td><td>unqualified</td></tr>
+    <tr><td>Older Firefox and Safari, web views inside apps, Firefox for Android</td><td>refused with one console warning</td><td>refused</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Row by row, with versions and evidence: the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/SUPPORT-MATRIX.md">support matrix</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>. The effect plugins and the frame cap are experimental extensions of this library, not part of the HTML-in-Canvas proposal; they need WebGPU, and the demos fall back to 2D without it.</p>
+
+<h2 id="demos">Demos</h2>
+<p>Each page below draws live HTML into a canvas: click and type into what you see.</p>
+<ul class="demos">
   <li><a href="plugins/">plugins</a>: the effect gallery: pick a WebGPU effect plugin and apply it to one live form, with its controls, its actions and a frame cap slider (falls back to 2D without WebGPU).</li>
   <li><a href="effect-plugin/">effect-plugin</a>: the smallest page with effects: the effects host, the water plugin, a frame cap, and a disintegrate transition run from the page's submit handler (falls back to 2D without WebGPU).</li>
   <li><a href="playground/">playground</a>: edit the explainer example and run it in the browser; Share puts your code in a link.</li>
@@ -27,9 +145,18 @@
   <li><a href="webgl-texture/">webgl-texture</a>: a spinning cube textured with a live form (<code>texElementSubImage2D</code>).</li>
 </ul>
 <p><strong><a href="field-test/">Field test</a></strong>: a guided check of this polyfill, about six minutes, on your own device (Windows, a phone, another Mac). It compares the canvas with the plain page as your screen shows them, measures typing and scrolling, and ends with one report file to send back. Nothing is sent anywhere by the page.</p>
-<p>The effect plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; browsers' native implementations do not provide them, and this library runs them over the polyfill and over a native implementation alike.</p>
-<p>Tested: desktop Chrome, Firefox 155+ and Safari 27+ (other desktop Chromium browsers are expected to work, unverified); Chrome for Android 130+ on two physical phones and the Android Emulator, Safari on iPadOS on a physical iPad Pro, and Safari on iOS 26+ on the iOS Simulator only. In a browser with a complete native implementation the polyfill steps aside, and the effects run over the browser's own implementation.
-  Elsewhere (older browsers, web views inside apps, Firefox for Android) it refuses with one console warning, and most examples also say so on the page.</p>
-<p>Source, documentation and known limitations: <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">github.com/GiuseppeScottoLavina/html-in-canvas-polyfill</a>.</p>
+
+<h2 id="links">Documentation and feedback</h2>
+<ul>
+  <li><a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill">Source and README</a>, the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/FAQ.md">FAQ</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/API-CONTRACT.md">API contract</a></li>
+  <li><a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/releases">Releases</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/CHANGELOG.md">changelog</a></li>
+  <li><a href="https://www.npmjs.com/package/@giuseppe-scotto-lavina/html-in-canvas-polyfill">The npm package</a></li>
+  <li><a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/issues/new/choose">Report a problem</a>: the issue templates ask for the browser, the device and a page that reproduces it.</li>
+</ul>
+
+<footer>
+<p class="note">MIT licensed. An independent implementation of a WICG proposal, not affiliated with any browser vendor.</p>
+</footer>
+</main>
 </body>
 </html>
