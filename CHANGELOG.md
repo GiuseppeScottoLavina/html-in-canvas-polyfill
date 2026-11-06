@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+- The water plugin grows to 28,743 bytes minified, 11,154 gzipped (+1,777 / +725 bytes: the caustic textures' grace period +152, the caustics pass over its region +1,625); its ceiling is raised to 28.75 KB.
+
+### Changed
+
+- Water: the caustics pass draws only the part of its mesh that can differ from still water: the cells that may be non-zero, the reach of the B-spline around them, the farthest their light can land (bounded by the largest difference between neighbouring cells) and a flat rim; elsewhere the light is that of still water, and the picture no longer reads the caustic texture there. A tap's frames cost the GPU less until its rings cover the canvas: on an iPad (Safari, 2196 x 1276 device px) 0.99 ms instead of 1.51 ms 25 ms after the tap (the caustics pass 0.09 ms instead of 0.55 ms; after an idle GPU 0.27 ms instead of 1.71 ms), 1.51 ms instead of 1.87 ms 500 ms after it; on the Mac (Chrome) 0.13 ms instead of 0.24 ms. A whole stirred canvas is unchanged (2.7 ms on the iPad). Frames at fixed times: identical outside the region and with `light: 0`; inside the region the GPU adds up the caustic lines differently whenever the draw changes shape, as it does for triangles that light nothing: 230 to 7,300 pixels of 704,000 by up to 42 levels for those, 270 to 8,000 by up to 69 for the region, on the iPad and on the Mac.
+
+### Fixed
+
+- Water: dragging the light or the intensity through 0 freed and made again the caustic texture and its multisampled target at every crossing, 6.6 to 7 MB each time (42 to 49 MB in a 4 s drag on the gallery's slider on an iPad). They are now kept for 2 s after an option turns the caustics off, and released then; with `light: 0`, `intensity: 0` or reduced motion from the start nothing is allocated, as before. On the Mac (Chrome, 120 Hz) the input event that turns the caustics back on costs 0.33 to 0.77 ms instead of 0.35 to 1.3 ms; on the iPad its time is unchanged (0.6 to 1 ms, the host's work).
+- Water docs: the README's GPU numbers now give their method (a bench of the plugin alone: frames submitted back to back, timestamp queries on both passes, a frame after an idle GPU), their statistic and their runs, and say that the gallery's 1.3 ms on the Mac is timed at 120 Hz in the page, where the GPU clocks lower. The taps of the iPad and Mac measurements are said to be events dispatched by a script in the page, not a physical finger. The late second frame of a tap from rest on the iPad is documented as the platform's, with a control plugin that only copies the page (late in 8 of 18 taps, against 11 of 18 for the water).
+
 ## [0.1.0-preview.26] - 2026-11-06
 
 Fixes for an outside review of 0.1.0-preview.25, and a review of the water plugin. In the scroll compositor an element outside a list that blends with it (`mix-blend-mode`) and paints over its port no longer passes the cover check: the plan is refused. The second cover colour of 0.1.0-preview.25 no longer delays the first composed step: both cover tiles come from one capture, and on an iPad the first composed paint is back to the time of 0.1.0-preview.24. The unit runner publishes a pass only once a test's cleanup has ended. A partial G-gallery run reads as a diagnostic, never as the gate. Water steps only the region of its surface that can move and makes its caustic textures only while caustics can show; its frames are unchanged.
