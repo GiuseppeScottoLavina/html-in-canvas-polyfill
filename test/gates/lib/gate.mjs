@@ -39,6 +39,7 @@ const FOCUS_RANK = { real: 0, emulated: 1, 'cdp-click': 2, failed: 3 };
 
 /** Is the macOS session locked? A locked screen has no honest foreground: results are labelled. */
 function screenLocked() {
+  if (process.platform !== 'darwin') return null;
   try {
     return execFileSync('python3', ['-c', 'import Quartz;d=Quartz.CGSessionCopyCurrentDictionary();print(bool(d.get("CGSSessionScreenIsLocked")))'], { encoding: 'utf8', timeout: 5000 }).trim() === 'True';
   } catch { return null; }
