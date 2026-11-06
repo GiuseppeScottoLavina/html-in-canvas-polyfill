@@ -17,7 +17,10 @@ import { wgsl } from './wgsl.js';
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
 
-/** Read by the build (manifest) and the plugin gallery. `defaults` are the options the gallery passes to addPlugin. */
+/**
+ * Read by the build (manifest) and the plugin gallery. `defaults` are the options the gallery passes to addPlugin.
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'template',
   title: 'Offset (template)',
@@ -54,7 +57,11 @@ export function mapOffsetPoint(offset, point) {
   return { x: Math.max(0, point.x - offset), y: point.y };
 }
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'template',
   apiVersion: /** @type {const} */ (2),

@@ -56,6 +56,7 @@ export function createEffects(env, deps) {
 /**
  * The EffectsApi of a window, bound late: every call looks the installed core up (EXT.INSTALLED_KEY -> EXT.EFFECTS_SEAM_KEY), so the effects bundle can load before
  * install() ran, and after uninstall() createHost rejects instead of touching a dead install. Hosts are destroyed by the core's uninstall (seam.cleanups).
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @param {Window} win
  * @returns {EffectsApi}
  */
@@ -81,6 +82,7 @@ export function createLateEffects(win) {
 
 /**
  * Define window.HTMLInCanvasEffects (frozen) unless already present; returns the remover.
+ * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @param {Window} win
  * @param {EffectsApi} api
  * @returns {() => void}

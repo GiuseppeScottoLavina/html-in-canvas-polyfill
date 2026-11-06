@@ -1,6 +1,6 @@
-// Repo gates that need no browser: G-size, G-deps, G-no-blob, G-plugins, G-doc-sync (--docs only checks docs).
-//   node scripts/check-repo.mjs          size + deps + no-blob + plugin folder contract + doc sync
-//   node scripts/check-repo.mjs --docs   doc sync only (the matrix and the generated src/contracts/feature-status.js)
+// Repo gates that need no browser: G-size, G-deps, G-no-blob, G-plugins, G-doc-sync, G-stability (--docs only checks docs).
+//   node scripts/check-repo.mjs          size + deps + no-blob + plugin folder contract + doc sync + stability
+//   node scripts/check-repo.mjs --docs   doc sync (the matrix and the generated src/contracts/feature-status.js) and stability only
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, relative, sep } from 'node:path';
@@ -211,6 +211,14 @@ if (renderMatrix(matrix) !== matrix) problems.push('G-doc-sync: docs/SUPPORT-MAT
 let statusModule = '';
 try { statusModule = readFileSync(STATUS_PATH, 'utf8'); } catch { /* missing: reported below */ }
 if (renderStatusModule() !== statusModule) problems.push('G-doc-sync: src/contracts/feature-status.js differs from the table of src/contracts/features.js (run npm run docs:sync)');
+
+// G-stability: docs/STABILITY.md names every public surface with a status, and the type declarations and the other documents agree with it
+// (scripts/check-stability.mjs). Control: the same inputs with the frame cap's row called stable must fail.
+const { readStabilityInputs, stabilityProblems } = await import(pathToFileURL(join(root, 'scripts/check-stability.mjs')).href);
+const stabilityInputs = await readStabilityInputs(root);
+problems.push(...stabilityProblems(stabilityInputs));
+const stabilityControl = { ...stabilityInputs, stability: stabilityInputs.stability.replace(/^(\| extension \| `framecap`[^\n]*?)\| experimental \|/m, '$1| stable |') };
+if (stabilityControl.stability === stabilityInputs.stability || !stabilityProblems(stabilityControl).length) problems.push('G-stability: the check failed its own control (the frame cap called stable passed)');
 
 const known = allowSize ? problems.filter((p) => p.startsWith('G-size')) : [];
 const blocking = problems.filter((p) => !known.includes(p));

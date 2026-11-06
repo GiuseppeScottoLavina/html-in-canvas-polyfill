@@ -4,9 +4,11 @@
 //
 //   (cd test/frameworks && npm install)   once: the framework deps live in test/frameworks/node_modules, never in the root package
 //   npm run build                         dist/ must exist
-//   npm run test:frameworks               (= node test/frameworks/run.mjs [--only=react,vue] [--no-control] [--chrome=stable|canary|path])
+//   npm run test:frameworks               (= node test/frameworks/run.mjs [--only=react,vue] [--mode=dev|prod|both] [--no-control] [--chrome=stable|canary|path])
 //
-// Apps: examples/frameworks/<fw>/ (built into <fw>/dist/app.js by build.mjs). Every app has the same picture and the same test surface
+// Apps: examples/frameworks/<fw>/ (built by build.mjs into <fw>/dist/app.js as a DEVELOPMENT build and into <fw>/dist/prod/app.js as a
+// PRODUCTION build). Every scenario and control runs once per mode (default both): the production server answers the development URLs
+// with the production files, so the pages, the URLs and the oracles are the same. Every app has the same picture and the same test surface
 // window.__app = { ready, state: {name, order, selected, badge, badgeClicks}, actions: {add, remove, reverse, toggle}, q, rect, text }.
 //
 // Scenarios per framework (all input is TRUSTED CDP input unless it says "via the app API"):
@@ -23,7 +25,11 @@
 //   uninstall     uninstall() while the timer runs, keep mutating, the DOM stays consistent and nothing throws; install() again: the
 //                 canvas shows the CURRENT state (addEventListener('paint') survives) and a drawn row is clickable again
 //   doc-snippet   the code blocks of docs/guides/FRAMEWORKS.md section 5, extracted and wrapped by build.mjs: paint, click-focus, typing
-//   hydration     (React only) hydrateRoot over server-rendered markup: no hydration error, the server node is kept, oracle, typing
+//   hydration     (React only) hydrateRoot over server-rendered markup: no hydration error, the server node is kept, oracle, typing.
+//                 Its two KNOWN probes record development-only React warnings: they run in development only (the receipt says so)
+//   build-mode    the build really is the mode it claims, from runtime markers: React's renderer bundleType (through a stand-in
+//                 devtools hook) and the dev-only _debugOwner on fibers; Vue's dev-only __vnode on elements and devtools hook replay
+//                 queue; Svelte's dev-only __svelte_meta; Lit's dev-mode litIssuedWarnings. Also records the versions the page reports
 //   errors        every scenario fails on any console error / exception / log error (NotFoundError of removeChild/insertBefore,
 //                 Vue patch errors, Svelte anchor errors, Lit part errors all surface there)
 // Positive controls (the script fails if one stays green):
@@ -32,18 +38,24 @@
 //   C3 a reordered twin must fail the pixel oracle (per framework)
 //   C4 the error collector must see a NotFoundError thrown from removeChild
 //   C5 React: markup that does not match the client must produce a hydration error
+//   C6 the production build-mode check run against the DEVELOPMENT build must fail (per framework)
+// C1 to C5 run in each mode, C6 once.
 // Results: .scratch/results/frameworks-<timestamp>.json (+ PNGs). Headless only; one Chrome, our own PID, watchdog-killed.
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as H from '../harness/index.mjs';
 import { startServer } from '../../examples/serve.mjs';
-import { buildAll } from './build.mjs';
+import { buildAll, MODES } from './build.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const arg = (n) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split('=')[1];
 const ONLY = arg('only')?.split(',');
-const FRAMEWORKS = ['react', 'vue', 'svelte', 'lit'].filter((f) => !ONLY || ONLY.includes(f));
+const ALL_FRAMEWORKS = ['react', 'vue', 'svelte', 'lit'];
+const FRAMEWORKS = ALL_FRAMEWORKS.filter((f) => !ONLY || ONLY.includes(f));
+const MODE_ARG = arg('mode') ?? 'both';
+if (!['dev', 'prod', 'both'].includes(MODE_ARG)) { console.error(`--mode=${MODE_ARG}: expected dev, prod or both`); process.exit(2); }
+const RUN_MODES = MODE_ARG === 'both' ? ['dev', 'prod'] : [MODE_ARG];
 const WITH_CONTROL = !process.argv.includes('--no-control');
 const STAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const OUT = resolve(ROOT, '.scratch/results', `frameworks-${STAMP}`);
@@ -51,11 +63,11 @@ const VIEW = { width: 800, height: 600 };
 const BADGE = { x: 340, y: 300, w: 120, h: 40 };
 const PANEL_BG = [0xf4, 0xf1, 0xe8], BADGE_RED = [0xc0, 0x28, 0x3a];
 const sleep = H.sleep, q = JSON.stringify;
-const WATCHDOG_MS = 12 * 60 * 1000;
+const WATCHDOG_MS = 12 * 60 * 1000 * RUN_MODES.length; // a hang guard per mode, not a budget
 
 // ---- small helpers --------------------------------------------------------------------------------------------------------------
 class Run {
-  constructor(page, fw, scenario) { this.page = page; this.fw = fw; this.scenario = scenario; this.checks = []; this.numbers = {}; }
+  constructor(page, fw, scenario, mode) { this.page = page; this.fw = fw; this.scenario = scenario; this.mode = mode; this.checks = []; this.numbers = {}; }
   check(name, ok, detail) { this.checks.push({ name, ok: !!ok, ...(detail === undefined ? {} : { detail }) }); return !!ok; }
   async step(name, fn) {
     try { const out = await fn(); if (out !== undefined) this.check(name, out === true || out?.ok === true, out === true ? undefined : out); }
@@ -102,7 +114,7 @@ function errorsSince(page, mark = 0) {
   return { errors: errs.slice(mark), warnings: warns.map((w) => String(w.text).slice(0, 300)) };
 }
 const errorCount = (page) => page.errors({ includeWarnings: false }).length;
-const FRAMEWORK_ERROR = /NotFoundError|removeChild|insertBefore|replaceChild|Hydration|hydrat|\[Vue warn\]|patch|anchor|ChildPart|part|HierarchyRequestError|Cannot read propert/i;
+const FRAMEWORK_ERROR = /Minified React error|NotFoundError|removeChild|insertBefore|replaceChild|Hydration|hydrat|\[Vue warn\]|patch|anchor|ChildPart|part|HierarchyRequestError|Cannot read propert/i;
 
 async function openApp(page, base, fw, params = '', file = 'index.html') {
   await page.send('Emulation.setDeviceMetricsOverride', { width: VIEW.width, height: VIEW.height, deviceScaleFactor: 1, mobile: false });
@@ -412,6 +424,11 @@ async function hydration(run, base) {
     return { ok: e.errors.length === 0 && bad.length === 0, errors: e.errors.slice(0, 3), bad };
   });
   await typing(run, base, { params: '?tick=1', file: 'dist/hydrate.html' });
+  if (run.mode !== 'dev') {
+    // production React does not compare attributes during hydration: the warnings these probes record do not exist there
+    run.known = ['react-hydration-canvas-attributes', 'react-hydration-generated-child-id'].map((id) => ({ id, devOnly: true }));
+    return;
+  }
   // KNOWN probe (docs/guides/FRAMEWORKS.md, section 4): without suppressHydrationWarning on the canvas, React reports the attributes the polyfill added.
   // Recorded, not failed; it reports 'fixed' once the polyfill stops adding them before hydration.
   const p2 = await run.page.browser.newPage();
@@ -427,12 +444,50 @@ async function hydration(run, base) {
   } finally { await p2.close(); }
 }
 
+/** A stand-in for the React DevTools hook: react-dom announces itself to it with its version and bundleType (1 development, 0 production). */
+const REACT_HOOK = `window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = { supportsFiber: true, isDisabled: false, renderers: new Map(), seen: [], checkDCE() {},
+  inject(r) { this.seen.push({ version: r.version, bundleType: r.bundleType, rendererPackageName: r.rendererPackageName }); const id = this.renderers.size + 1; this.renderers.set(id, r); return id; },
+  onScheduleFiberRoot() {}, onCommitFiberRoot() {}, onCommitFiberUnmount() {}, onPostCommitFiberRoot() {}, setStrictMode() {} };`;
+/** Runtime markers of a development build, per framework: every one is true in development and false in production. */
+const BUILD_MARKERS = `(() => {
+  const fw = __app.fw, p = __app.q('#panel'), root = document.getElementById('root'), out = { markers: {}, versions: {} };
+  if (fw === 'react') {
+    const seen = window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.seen ?? [], dom = seen.find((r) => r.rendererPackageName === 'react-dom') ?? seen[0];
+    const key = Object.keys(p).find((k) => k.startsWith('__reactFiber$'));
+    out.markers.bundleTypeDevelopment = dom ? dom.bundleType === 1 : null;
+    out.markers.fiberDebugOwner = key ? '_debugOwner' in p[key] : null;
+    out.versions = { 'react-dom': dom?.version ?? null, bundleType: dom?.bundleType ?? null };
+  } else if (fw === 'vue') {
+    out.markers.elementVnode = '__vnode' in p;
+    out.markers.devtoolsHookReplay = '__VUE_DEVTOOLS_HOOK_REPLAY__' in window;
+    out.versions = { vue: root.__vue_app__?.version ?? null };
+  } else if (fw === 'svelte') {
+    out.markers.svelteMeta = p.__svelte_meta != null;
+    out.versions = { svelte: [...(window.__svelte?.v ?? [])].join() || null };
+  } else if (fw === 'lit') {
+    out.markers.litIssuedWarnings = globalThis.litIssuedWarnings instanceof Set;
+    out.versions = { 'lit-element': window.litElementVersions ?? null, 'lit-html': window.litHtmlVersions ?? null, '@lit/reactive-element': window.reactiveElementVersions ?? null };
+  }
+  return out; })()`;
+
+async function buildModeScenario(run, base, { expect = run.mode } = {}) {
+  const { page, fw } = run;
+  if (fw === 'react') await page.send('Page.addScriptToEvaluateOnNewDocument', { source: REACT_HOOK });
+  await run.step('app mounts', async () => ({ ok: await openApp(page, base, fw, '?tick=0') }));
+  await run.step(`the build is ${MODES[expect].name} (runtime markers)`, async () => {
+    const r = await page.evaluate(BUILD_MARKERS.replace('__app.fw', q(fw)));
+    run.numbers.build = r;
+    const want = expect === 'dev';
+    return { ok: Object.keys(r.markers).length > 0 && Object.values(r.markers).every((v) => v === want), expect: MODES[expect].name, ...r };
+  });
+}
+
 // ---- main ------------------------------------------------------------------------------------------------------------------------
 const SCENARIOS = { oracle, typing, list, conditional, timer, reconcile, remount, uninstall };
 
-async function runScenario(browser, base, fw, name, fn, opts) {
+async function runScenario(browser, base, fw, name, fn, opts, mode) {
   const page = await browser.newPage();
-  const run = new Run(page, fw, name);
+  const run = new Run(page, fw, name, mode);
   try { await fn(run, base, opts); }
   catch (e) { if (e instanceof H.CdpTimeoutError) throw e; run.check('scenario crashed', false, { error: String(e?.stack ?? e).slice(0, 400) }); }
   const { errors, warnings } = errorsSince(page);
@@ -444,7 +499,7 @@ async function runScenario(browser, base, fw, name, fn, opts) {
 
 function line(run) {
   const bad = run.checks.filter((c) => !c.ok);
-  return `${run.ok ? 'ok  ' : 'FAIL'} ${run.fw.padEnd(6)} ${run.scenario.padEnd(12)} ${run.checks.filter((c) => c.ok).length}/${run.checks.length}` +
+  return `${run.ok ? 'ok  ' : 'FAIL'} ${run.mode.padEnd(4)} ${run.fw.padEnd(6)} ${run.scenario.padEnd(12)} ${run.checks.filter((c) => c.ok).length}/${run.checks.length}` +
     (bad.length ? '\n' + bad.map((c) => `       x ${c.name} ${JSON.stringify(c.detail ?? '').slice(0, 400)}`).join('\n') : '');
 }
 
@@ -456,83 +511,119 @@ async function main() {
   const watchdog = setTimeout(async () => { console.error(`WATCHDOG: ${WATCHDOG_MS / 1000}s exceeded, killing our Chrome`); await browser.close().catch(() => {}); process.exit(3); }, WATCHDOG_MS);
   browser.conn.sendTimeoutMs = 30000;
   const result = { script: 'test/frameworks/run.mjs', startedAt: new Date().toISOString(), headless: true, dpr: 1, viewport: VIEW, chrome: browser.version?.Browser,
+    modes: RUN_MODES.map((m) => MODES[m].name),
     versions: Object.fromEntries(['react', 'react-dom', 'vue', 'svelte', 'lit'].map((p) => [p, JSON.parse(readFileSync(resolve(ROOT, 'test/frameworks/node_modules', p, 'package.json'), 'utf8')).version])),
-    runs: [], controls: [], pass: false };
-  let server, broken;
+    builds: [], runs: [], controls: [], pass: false };
+  const servers = {}, brokenServers = [];
   const problems = [];
+  const t0 = Date.now();
   try {
-    const B = resolve(ROOT, '.scratch/frameworks-build');
-    const snipFiles = Object.fromEntries(['react', 'vue', 'svelte', 'lit'].flatMap((f) => [[`/__snip/${f}.html`, resolve(B, 'snippets', `${f}.html`)], [`/__snip/${f}.bundle.js`, resolve(B, 'snippets', `${f}.bundle.js`)]]));
-    server = await startServer({ files: { '/examples/frameworks/react/dist/hydrate-mismatch.html': resolve(B, 'hydrate-mismatch.html'),
-      '/__probe/probe-noid.html': resolve(B, 'probe-noid.html'), '/__probe/probe-noid.js': resolve(B, 'probe-noid.js'),
-      ...snipFiles } });
-    console.log(`Chrome ${result.chrome} (headless), server ${server.url}; frameworks: ${q(result.versions)}`);
-    for (const fw of FRAMEWORKS) {
-      const names = Object.keys(SCENARIOS);
-      for (const n of names) { const run = await runScenario(browser, server.url, fw, n, SCENARIOS[n]); result.runs.push(serial(run)); console.log(line(run)); if (!run.ok) problems.push(`${fw}/${n}`); }
-      { const run = await runScenario(browser, server.url, fw, 'doc-snippet', docSnippet); result.runs.push(serial(run)); console.log(line(run)); if (!run.ok) problems.push(`${fw}/doc-snippet`); }
-      if (fw === 'react') {
-        const run = await runScenario(browser, server.url, fw, 'hydration', hydration); result.runs.push(serial(run)); console.log(line(run)); if (!run.ok) problems.push(`${fw}/hydration`);
-        for (const k of run.known ?? []) console.log(`       KNOWN ${k.id}: ${k.still ? 'still present, attributes ' + k.attributes.join(', ') : 'NOT reproduced any more (fixed?)'}`);
-      }
-    }
-    if (WITH_CONTROL) {
-      broken = await startServer({ files: { '/dist/hic-live-polyfill.iife.js': resolve(ROOT, '.scratch/does-not-exist.js'), ...snipFiles } });
+    /** Files a mode's server answers: the snippets, the probes and, in production, the production builds at the development URLs. */
+    const filesFor = (mode) => {
+      const m = MODES[mode], S = resolve(ROOT, m.scratch), D = resolve(ROOT, '.scratch/frameworks-build'), EX = resolve(ROOT, 'examples/frameworks');
+      const snip = Object.fromEntries(ALL_FRAMEWORKS.flatMap((f) => [[`/__snip/${f}.html`, resolve(S, 'snippets', `${f}.html`)], [`/__snip/${f}.bundle.js`, resolve(S, 'snippets', `${f}.bundle.js`)]]));
+      const apps = mode === 'dev' ? {} : Object.fromEntries([...ALL_FRAMEWORKS.map((f) => [`/examples/frameworks/${f}/dist/app.js`, resolve(EX, f, m.dir, 'app.js')]),
+        ['/examples/frameworks/react/dist/hydrate.html', resolve(EX, 'react', m.dir, 'hydrate.html')]]);
+      return { snip, apps, all: { '/examples/frameworks/react/dist/hydrate-mismatch.html': resolve(S, 'hydrate-mismatch.html'),
+        '/__probe/probe-noid.html': resolve(D, 'probe-noid.html'), '/__probe/probe-noid.js': resolve(D, 'probe-noid.js'), ...snip, ...apps } };
+    };
+    for (const mode of new Set([...RUN_MODES, ...(RUN_MODES.includes('prod') && WITH_CONTROL ? ['dev'] : [])])) servers[mode] = await startServer({ files: filesFor(mode).all });
+    console.log(`Chrome ${result.chrome} (headless), modes ${result.modes.join(' + ')}; frameworks: ${q(result.versions)}`);
+    for (const mode of RUN_MODES) {
+      const tm = Date.now(), url = servers[mode].url;
+      console.log(`--- ${MODES[mode].name} builds, server ${url}`);
       for (const fw of FRAMEWORKS) {
-        // C1: no polyfill. Each sub-check must turn red.
-        for (const [n, fn] of [['oracle', oracle], ['typing', typing], ['list', list], ['doc-snippet', docSnippet]]) {
-          const run = await runScenario(browser, broken.url, fw, `C1:${n}`, fn, { control: true });
-          const red = run.checks.filter((c) => !c.ok).map((c) => c.name);
-          const want = n === 'oracle' ? /pixel oracle/ : n === 'typing' ? /focuses|state|pixels/ : n === 'list' ? /hit|click/ : /paints|typing/;
-          const turned = red.some((r) => want.test(r));
-          result.controls.push({ control: `C1 no polyfill -> ${n}`, fw, turnedRed: turned, red });
-          console.log(`${turned ? 'ok  ' : 'FAIL'} control C1 (no polyfill) ${fw}/${n}: ${red.length} red`);
-          if (!turned) problems.push(`control C1 ${fw}/${n} stayed green`);
+        const all = [...Object.entries(SCENARIOS), ['doc-snippet', docSnippet], ...(fw === 'react' ? [['hydration', hydration]] : []), ['build-mode', buildModeScenario]];
+        for (const [n, fn] of all) {
+          const run = await runScenario(browser, url, fw, n, fn, undefined, mode);
+          result.runs.push(serial(run)); console.log(line(run)); if (!run.ok) problems.push(`${mode}:${fw}/${n}`);
+          for (const k of run.known ?? []) console.log(`       KNOWN ${k.id}: ${k.devOnly ? 'development-only warning, not run in this mode' : k.still ? 'still present, attributes ' + k.attributes.join(', ') : 'NOT reproduced any more (fixed?)'}`);
+          if (n === 'build-mode') {
+            const b = run.numbers.build ?? {};
+            const relPath = (p) => p.slice(ROOT.length + 1);
+            const file = resolve(ROOT, 'examples/frameworks', fw, MODES[mode].dir, 'app.js');
+            const receipt = { mode: MODES[mode].name, fw, file: relPath(file), bytes: readFileSync(file).length, ok: run.ok, markers: b.markers, versions: b.versions };
+            result.builds.push(receipt);
+            console.log(`       BUILD ${receipt.mode} ${fw}: ${receipt.file} ${receipt.bytes} bytes, page reports ${q(receipt.versions)}, dev markers ${q(receipt.markers)}`);
+          }
         }
-        // C3: a reordered twin must fail the oracle
-        const run = await runScenario(browser, server.url, fw, 'C3:reordered-twin', (r, b) => oracle(r, b, { tag: '-c3', reorderRef: true }), { control: true });
-        const c3 = run.checks.find((c) => /pixel oracle/.test(c.name));
-        const turned = !!c3 && !c3.ok && (c3.detail?.nonBlank === true);
-        result.controls.push({ control: 'C3 reordered twin fails the oracle', fw, turnedRed: turned, detail: c3?.detail });
-        console.log(`${turned ? 'ok  ' : 'FAIL'} control C3 (reordered twin) ${fw}: fraction ${c3?.detail?.fraction}`);
-        if (!turned) problems.push(`control C3 ${fw} stayed green`);
       }
-      // C4: the error collector sees a NotFoundError thrown by removeChild
-      {
-        const page = await browser.newPage();
-        await openApp(page, server.url, FRAMEWORKS[0], '?tick=0');
-        await page.evaluate(`setTimeout(() => document.body.removeChild(document.createElement('div')))`); await sleep(300);
-        const e = errorsSince(page).errors; const turned = e.some((x) => /NotFoundError/.test(x.text));
-        result.controls.push({ control: 'C4 error collector sees NotFoundError', turnedRed: turned });
-        console.log(`${turned ? 'ok  ' : 'FAIL'} control C4 (error collector) sees NotFoundError`);
-        if (!turned) problems.push('control C4 stayed green');
-        await page.close();
+      if (WITH_CONTROL) {
+        const { snip, apps } = filesFor(mode);
+        const broken = await startServer({ files: { '/dist/hic-live-polyfill.iife.js': resolve(ROOT, '.scratch/does-not-exist.js'), ...snip, ...apps } });
+        brokenServers.push(broken);
+        for (const fw of FRAMEWORKS) {
+          // C1: no polyfill. Each sub-check must turn red.
+          for (const [n, fn] of [['oracle', oracle], ['typing', typing], ['list', list], ['doc-snippet', docSnippet]]) {
+            const run = await runScenario(browser, broken.url, fw, `C1:${n}`, fn, { control: true }, mode);
+            const red = run.checks.filter((c) => !c.ok).map((c) => c.name);
+            const want = n === 'oracle' ? /pixel oracle/ : n === 'typing' ? /focuses|state|pixels/ : n === 'list' ? /hit|click/ : /paints|typing/;
+            const turned = red.some((r) => want.test(r));
+            result.controls.push({ control: `C1 no polyfill -> ${n}`, mode: MODES[mode].name, fw, turnedRed: turned, red });
+            console.log(`${turned ? 'ok  ' : 'FAIL'} ${mode.padEnd(4)} control C1 (no polyfill) ${fw}/${n}: ${red.length} red`);
+            if (!turned) problems.push(`${mode}: control C1 ${fw}/${n} stayed green`);
+          }
+          // C3: a reordered twin must fail the oracle
+          const run = await runScenario(browser, url, fw, 'C3:reordered-twin', (r, b) => oracle(r, b, { tag: `-${mode}-c3`, reorderRef: true }), { control: true }, mode);
+          const c3 = run.checks.find((c) => /pixel oracle/.test(c.name));
+          const turned = !!c3 && !c3.ok && (c3.detail?.nonBlank === true);
+          result.controls.push({ control: 'C3 reordered twin fails the oracle', mode: MODES[mode].name, fw, turnedRed: turned, detail: c3?.detail });
+          console.log(`${turned ? 'ok  ' : 'FAIL'} ${mode.padEnd(4)} control C3 (reordered twin) ${fw}: fraction ${c3?.detail?.fraction}`);
+          if (!turned) problems.push(`${mode}: control C3 ${fw} stayed green`);
+        }
+        // C4: the error collector sees a NotFoundError thrown by removeChild
+        {
+          const page = await browser.newPage();
+          await openApp(page, url, FRAMEWORKS[0], '?tick=0');
+          await page.evaluate(`setTimeout(() => document.body.removeChild(document.createElement('div')))`); await sleep(300);
+          const e = errorsSince(page).errors; const turned = e.some((x) => /NotFoundError/.test(x.text));
+          result.controls.push({ control: 'C4 error collector sees NotFoundError', mode: MODES[mode].name, turnedRed: turned });
+          console.log(`${turned ? 'ok  ' : 'FAIL'} ${mode.padEnd(4)} control C4 (error collector) sees NotFoundError`);
+          if (!turned) problems.push(`${mode}: control C4 stayed green`);
+          await page.close();
+        }
+        // C5: React hydration mismatch is reported (production React reports it as a minified error: react.dev/errors/418)
+        if (FRAMEWORKS.includes('react')) {
+          const page = await browser.newPage();
+          const src = readFileSync(resolve(ROOT, 'examples/frameworks/react', MODES[mode].dir, 'hydrate.html'), 'utf8').replace('nobody', 'SERVER');
+          writeFileSync(resolve(ROOT, MODES[mode].scratch, 'hydrate-mismatch.html'), src);
+          await openApp(page, url, 'react', '?tick=0', 'dist/hydrate-mismatch.html'); await sleep(500);
+          const e = errorsSince(page); const texts = [...e.errors.map((x) => x.text), ...e.warnings];
+          const turned = texts.some((t) => /hydrat|did not match|react\.dev\/errors\/418\b/i.test(t));
+          result.controls.push({ control: 'C5 React hydration mismatch reported', mode: MODES[mode].name, turnedRed: turned, reported: texts.slice(0, 2).map((t) => String(t).slice(0, 200)) });
+          console.log(`${turned ? 'ok  ' : 'FAIL'} ${mode.padEnd(4)} control C5 (hydration mismatch) reported`);
+          if (!turned) problems.push(`${mode}: control C5 stayed green`);
+          await page.close();
+        }
       }
-      // C5: React hydration mismatch is reported
-      if (FRAMEWORKS.includes('react')) {
-        const page = await browser.newPage();
-        const src = readFileSync(resolve(ROOT, 'examples/frameworks/react/dist/hydrate.html'), 'utf8').replace('nobody', 'SERVER');
-        writeFileSync(resolve(ROOT, '.scratch/frameworks-build/hydrate-mismatch.html'), src);
-        await openApp(page, server.url, 'react', '?tick=0', 'dist/hydrate-mismatch.html'); await sleep(500);
-        const e = errorsSince(page); const turned = [...e.errors.map((x) => x.text), ...e.warnings].some((t) => /hydrat|did not match/i.test(t));
-        result.controls.push({ control: 'C5 React hydration mismatch reported', turnedRed: turned });
-        console.log(`${turned ? 'ok  ' : 'FAIL'} control C5 (hydration mismatch) reported`);
-        if (!turned) problems.push('control C5 stayed green');
-        await page.close();
+      result[`${mode}Ms`] = Date.now() - tm;
+      console.log(`--- ${MODES[mode].name}: ${((Date.now() - tm) / 1000).toFixed(0)} s`);
+    }
+    // C6: the production check, run against the development build, must fail (so a production run cannot be a development build)
+    if (WITH_CONTROL && RUN_MODES.includes('prod')) {
+      for (const fw of FRAMEWORKS) {
+        const run = await runScenario(browser, servers.dev.url, fw, 'C6:prod-check-on-dev', (r, b) => buildModeScenario(r, b, { expect: 'prod' }), { control: true }, 'dev');
+        const c = run.checks.find((x) => /the build is production/.test(x.name));
+        const turned = !!c && !c.ok && Object.keys(c.detail?.markers ?? {}).length > 0;
+        result.controls.push({ control: 'C6 production check fails on the development build', fw, turnedRed: turned, markers: c?.detail?.markers });
+        console.log(`${turned ? 'ok  ' : 'FAIL'} control C6 (production check on the development build) ${fw}: markers ${q(c?.detail?.markers)}`);
+        if (!turned) problems.push(`control C6 ${fw} stayed green`);
       }
     }
   } finally {
     clearTimeout(watchdog);
-    await server?.close().catch(() => {}); await broken?.close().catch(() => {});
+    for (const sv of [...Object.values(servers), ...brokenServers]) await sv.close().catch(() => {});
     const closed = await browser.close().catch((e) => ({ error: String(e) }));
     result.browserClose = closed;
   }
-  result.pass = problems.length === 0; result.problems = problems; result.finishedAt = new Date().toISOString();
+  result.pass = problems.length === 0; result.problems = problems; result.finishedAt = new Date().toISOString(); result.totalMs = Date.now() - t0;
   const file = resolve(ROOT, '.scratch/results', `frameworks-${STAMP}.json`);
   writeFileSync(file, JSON.stringify(result, null, 1));
-  console.log(`\n${result.pass ? 'PASS' : 'FAIL'}  ${problems.length} problem(s)${problems.length ? ': ' + problems.join(', ') : ''}\nresults: ${file}`);
+  const nChecks = result.runs.reduce((n, r) => n + r.checks.length, 0);
+  console.log(`\n${result.runs.length} scenario runs, ${nChecks} checks, ${result.controls.length} controls, ${(result.totalMs / 1000).toFixed(0)} s` + RUN_MODES.map((m) => `, ${MODES[m].name} ${((result[`${m}Ms`] ?? 0) / 1000).toFixed(0)} s`).join(''));
+  console.log(`${result.pass ? 'PASS' : 'FAIL'}  ${problems.length} problem(s)${problems.length ? ': ' + problems.join(', ') : ''}\nresults: ${file}`);
   process.exit(result.pass ? 0 : 1);
 }
-function serial(run) { return { fw: run.fw, scenario: run.scenario, ok: run.ok, known: run.known, numbers: run.numbers, checks: run.checks, warnings: run.warnings }; }
+function serial(run) { return { mode: MODES[run.mode].name, fw: run.fw, scenario: run.scenario, ok: run.ok, known: run.known, numbers: run.numbers, checks: run.checks, warnings: run.warnings }; }
 
 main().catch((e) => { console.error(e); process.exit(1); });

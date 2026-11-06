@@ -240,6 +240,7 @@ function fillTexSubImage(env, cls, hasLegacyUpload, ledger) {
  * Install the bridge for a native build of kind `legacy` or a fillable `partial`. Records every patch in the ledger.
  * @param {HicEnv} env
  * @param {NativeState} native
+ * @experimental importing the native-bridge entry registers it for install(), which calls it; a page does not call it, and its signature may change (docs/STABILITY.md)
  * @param {PatchLedger} ledger
  * @returns {{adoptRoot: (root: ShadowRoot) => void, dispose: () => void}}
  *   adoptRoot = watch a shadow root for `content` attributes (the bridge has no root scope of its own); dispose = stop observers and remove the bridge's stylesheet and attributes (descriptors are restored by the ledger)

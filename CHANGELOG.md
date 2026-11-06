@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Docs: `docs/STABILITY.md`, one table of every public API, option, export, bundle and platform with its promise, its status (stable, experimental or unqualified) and the evidence, and the versioning policy that applies from `1.0.0-rc.1`. The frame cap, the effects (host, plugin ABI, actions, input mapper and interposer), the polyfill's events and handles, the loader's options, every install option but `mode` and `onUnsupportedBrowser`, `report()` and the feature table are experimental; Safari on the iPhone is unqualified until a physical iPhone has run the suites. The package ships the file.
+- Types: every experimental export and member carries `@experimental` in the declarations, with one line on why. No runtime change: the minified bundles are byte-identical and the declarations differ in comments only.
+- Repo check G-stability (`scripts/check-repo.mjs`): every export, bundle, plugin entry and member of the install and loader types has a row of `docs/STABILITY.md`, the `@experimental` tags follow it, and no table of the README, the API contract, the support matrix, the FAQ or the getting-started guide calls an experimental surface stable; with a positive control and a Node test that alters each input.
+- Tests: the gate G-a11y reads Chrome's accessibility tree (CDP `Accessibility.getFullAXTree`) under each canvas of a new accessibility fixture (a list canvas and a form canvas) and of F1, with the polyfill and as the same HTML on a plain page: roles, names, values and order, the tab order, text edits, a polite live region, and the tree after `uninstall()` and `install()`. With the polyfill the tree equals the plain page's line by line; Chrome's native implementation builds the same tree on the fixture (Canary 159, measured once). Its control drops the `aria-owns` link and makes the live layer inert; the mutant `a11y-owns-dropped` removes the link alone. It runs in CI on macOS. No real screen reader is verified yet.
+
+### Changed
+
+- Docs: the README, the API contract, the support matrix, the FAQ and the getting-started guide call the two extensions and the loader's options experimental and Safari on the iPhone unqualified, as `docs/STABILITY.md` does.
+- Framework tests: `npm run test:frameworks` builds the React, Vue, Svelte and Lit apps in production mode too (`NODE_ENV=production`, minified, the `production` export condition, Svelte `dev: false`, Vue's production flags) and runs every scenario and control against both builds; a new build-mode scenario reads development-only markers from each page, and a new control proves that check fails on a development build. `--mode=dev|prod|both` (default both). The run grows from 37 to 82 scenario runs (about 4 to 8 minutes); the two KNOWN hydration probes stay development-only.
+
 ## [0.1.0-preview.27] - 2026-11-06
 
 Fixes for an outside review of 0.1.0-preview.26, and the open points of the water plugin. `uninstall()` drops the scroll compositor's queued side builds, so a kept `HicInstalled` no longer holds their surfaces. A blended overlay clipped whole by an ancestor of no area no longer refuses the scroll plan. A passive touch listener on a managed canvas, an app's or a plugin's, stays passive on the live layer, and a plugin's listener gets each event once. Water keeps its caustic textures for 2 s after the light goes to 0 instead of making them again at every crossing, and its caustics pass draws only the region that can differ from still water. The docs give the frameworks guide its last CI run, and the water plugin's GPU numbers their method.

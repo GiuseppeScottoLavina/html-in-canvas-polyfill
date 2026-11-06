@@ -25,7 +25,10 @@ import { injectStyle } from '../_lib/ui.js';
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
 
-/** What the plugin gallery and the build read (plugins/README.md). */
+/**
+ * What the plugin gallery and the build read (plugins/README.md).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ */
 export const meta = Object.freeze({
   name: 'liquid-glass',
   title: 'Liquid glass',
@@ -324,7 +327,11 @@ const SLIDERS = /** @type {const} */ ([
   ['frost', 'Frost', 0, 100, 1, (/** @type {number} */ v) => `${Math.round(v * 100)}%`, 100],
 ]);
 
-/** @type {EffectPluginDefinition} */
+/**
+ * The plugin's definition (effect plugin ABI v2).
+ * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @type {EffectPluginDefinition}
+ */
 export const plugin = Object.freeze({
   type: 'liquid-glass',
   apiVersion: /** @type {const} */ (2),

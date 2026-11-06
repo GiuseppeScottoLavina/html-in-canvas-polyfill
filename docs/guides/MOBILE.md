@@ -9,7 +9,7 @@ are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them 
 
 | browser | what happens | how it is decided |
 |---|---|---|
-| Safari on iOS 26+ (iPhone) | polyfill | `Version/` major of the user agent (the OS token is frozen at `18_x` since iOS 26) |
+| Safari on iOS 26+ (iPhone) | polyfill (unqualified: no physical iPhone has run the suites; [STABILITY.md](../STABILITY.md)) | `Version/` major of the user agent (the OS token is frozen at `18_x` since iOS 26) |
 | Safari on iPadOS 26+ | polyfill, treated as iOS | iPadOS sends the macOS user agent; a `Macintosh` agent with more than one touch point (`navigator.maxTouchPoints`) is iPadOS (a Mac reports 0). "Request Desktop Website" on an iPhone is caught the same way |
 | Chrome, Firefox, Edge, Opera, ... on iOS | polyfill | every iOS browser is WebKit; their agents (`CriOS/`, `FxiOS/`, `EdgiOS/`, ...) carry no WebKit version, so they are admitted by the required features alone (CSS anchor positioning arrived in WebKit 26) |
 | Chrome for Android 130+ | polyfill; where the browser implements HTML-in-Canvas itself, the polyfill steps aside (native-first, as on desktop) | Chromium major from `userAgentData` or the agent; "Request desktop site" (a Linux agent) is still Android through `userAgentData.platform`. Measured: Chromium 158.0.8108.0 for Android ships the native API without a flag (kind `complete`): mode `native` |

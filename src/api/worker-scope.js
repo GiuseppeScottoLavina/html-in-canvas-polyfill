@@ -25,6 +25,7 @@ const BLEND = new Set(['multiply', 'screen', 'overlay', 'darken', 'lighten', 'co
 
 /**
  * Install into a dedicated worker's global scope; a no-op elsewhere (a window, a second call).
+ * @experimental importing the worker entry calls it; a worker does not need to, and its signature may change (docs/STABILITY.md)
  * @param {any} scope  the worker global
  * @returns {boolean} installed now
  */

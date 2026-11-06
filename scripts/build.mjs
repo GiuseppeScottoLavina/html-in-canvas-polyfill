@@ -194,6 +194,16 @@ if (!process.argv.includes('--no-esm') && !process.argv.includes('--no-types')) 
     for (const f of readdirSync(to)) if (f.endsWith('.d.ts')) writeFileSync(join(to, f), readFileSync(join(to, f), 'utf8').replaceAll('../../src/', '../../'));
   }
   rmSync(tmp, { recursive: true, force: true });
+  // A member of a JSDoc @typedef cannot carry a tag of its own (TypeScript ends the @property list at the first tag), so src/ marks an experimental member
+  // with a backticked `@experimental` at the start of its description (docs/STABILITY.md); in the emitted member comment it becomes the real tag.
+  const tagExperimental = (/** @type {string} */ dir) => {
+    for (const f of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, f.name);
+      if (f.isDirectory()) tagExperimental(p);
+      else if (f.name.endsWith('.d.ts')) writeFileSync(p, readFileSync(p, 'utf8').replace(/^(\s*\* )`@experimental`/gm, '$1@experimental'));
+    }
+  };
+  tagExperimental(join(root, 'dist/types'));
 }
 
 writeFileSync(join(root, 'dist/sizes.json'), JSON.stringify(rows, null, 1) + '\n');

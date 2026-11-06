@@ -1,0 +1,148 @@
+<!doctype html>
+<!-- Accessibility fixture (gate G-a11y, and a manual screen reader session): two drawable canvases whose children must keep their accessibility structure.
+     #chart: a list canvas after the explainer's pie chart example (canvas role="list", focusable listitem labels drawn around the chart).
+     #form:  a group canvas with one drawable form: a heading, a text field, a checkbox, a slider, a button and a polite status region.
+     The step buttons above the canvases change the text, update the status region, uninstall and reinstall the polyfill, so that a manual session needs no console.
+     ?mode=poly (default): the canvases with the polyfill; ?bundle= overrides the scripts (comma-separated, default the core and the engines bundle).
+     ?mode=ref: the plain-DOM reference: every canvas is replaced by a div with the same id, role and label, its children moved verbatim, no polyfill. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Accessibility fixture</title>
+<style>
+  body { margin: 16px; font: 15px/1.4 system-ui, -apple-system, sans-serif; color: #111; background: #fff; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  #mode-line { margin: 0 0 8px; color: #444; }
+  nav button { font: inherit; margin: 0 6px 6px 0; }
+  main { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0; }
+  #chart { width: 360px; height: 220px; border: 1px solid #ccc; background: #fafafa; }
+  #form { width: 420px; height: 300px; border: 1px solid #ccc; background: #fafafa; }
+  #chart > div { padding: 2px 6px; border-radius: 6px; background: #fff; border: 1px solid #999; font-size: 14px; }
+  #chart > div:focus { outline: 2px solid #0050d0; outline-offset: 1px; }
+  #contact { width: 420px; box-sizing: border-box; padding: 12px 16px; display: grid; gap: 8px; }
+  #contact h2 { margin: 0; font-size: 18px; }
+  #contact input[type=text] { font: inherit; width: 200px; }
+  #contact button { font: inherit; justify-self: start; }
+  #announce { margin: 0; min-height: 1.4em; color: #064; }
+  /* the plain-DOM reference: the twins keep the canvas box, children in normal flow */
+  [data-a11y-twin] { box-sizing: content-box; overflow: hidden; }
+  #chart[data-a11y-twin] { display: grid; gap: 6px; align-content: start; justify-items: start; padding: 8px; width: 344px; height: 204px; }
+</style>
+<script>
+  // classic loader: the polyfill scripts load before the canvases are parsed (document.write), as a page that lists the script tags does
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var mode = q.get('mode') || 'poly';
+    var bundle = q.get('bundle') || '/dist/hic-live-polyfill.iife.js,/dist/hic-live-engines.iife.js';
+    window.__A11Y = { mode: mode, bundle: mode === 'poly' ? bundle : 'none', ready: false, paints: 0, errors: [], step: 0 };
+    addEventListener('error', function (e) { window.__A11Y.errors.push(String(e.message)); });
+    if (mode === 'poly') bundle.split(',').forEach(function (src) { document.write('<script src="' + src + '" onerror="window.__A11Y.errors.push(\'bundle failed: \' + this.src)"><\/script>'); });
+  })();
+</script>
+</head>
+<body>
+<h1>Accessibility fixture</h1>
+<p id="mode-line">Starting.</p>
+<nav aria-label="Test steps">
+  <button type="button" id="step-text">Change the text</button>
+  <button type="button" id="step-live">Live update</button>
+  <button type="button" id="step-uninstall">Uninstall the polyfill</button>
+  <button type="button" id="step-reinstall">Reinstall the polyfill</button>
+</nav>
+<main>
+  <canvas id="chart" content="drawable" role="list" aria-label="Fruit sales" width="360" height="220">
+    <div drawable role="listitem" tabindex="0" id="item-apples">Apples: 40%</div>
+    <div drawable role="listitem" tabindex="0" id="item-pears">Pears: 35%</div>
+    <div drawable role="listitem" tabindex="0" id="item-plums">Plums: 25%</div>
+  </canvas>
+  <canvas id="form" content="drawable" role="group" aria-label="Contact form" width="420" height="300">
+    <form drawable id="contact">
+      <h2 id="form-title">Contact</h2>
+      <label>Name <input type="text" id="name" value="Ada"></label>
+      <label><input type="checkbox" id="news" checked> Send me news</label>
+      <label>Volume <input type="range" id="volume" min="0" max="10" value="5"></label>
+      <button type="button" id="send">Send</button>
+      <p id="announce" role="status" aria-live="polite">Nothing sent yet.</p>
+    </form>
+  </canvas>
+</main>
+<p><a href="#" id="end">End of the test page</a></p>
+<script>
+  (function () {
+    var A = window.__A11Y;
+    var $ = function (id) { return document.getElementById(id); };
+    var canvases = [$('chart'), $('form')];
+    var SLICES = [['item-apples', 0.40, '#d9534f'], ['item-pears', 0.35, '#5cb85c'], ['item-plums', 0.25, '#7b5fc4']];
+
+    function installed() { return typeof HicLivePolyfill === 'object' && HicLivePolyfill.getInstalled ? HicLivePolyfill.getInstalled() : null; }
+    function modeLine() {
+      var inst = installed();
+      $('mode-line').textContent = A.mode === 'ref' ? 'Reference page: plain HTML, no canvas, no polyfill.'
+        : inst ? 'Polyfill installed (mode ' + inst.mode + ').' : (typeof HicLivePolyfill === 'object' ? 'Polyfill not installed.' : 'Polyfill script not loaded.');
+    }
+
+    if (A.mode === 'ref') {
+      canvases.forEach(function (c) {
+        var d = document.createElement('div');
+        for (var i = 0; i < c.attributes.length; i++) { var a = c.attributes[i]; if (!/^(width|height|content)$/.test(a.name)) d.setAttribute(a.name, a.value); }
+        d.setAttribute('data-a11y-twin', '');
+        while (c.firstChild) d.appendChild(c.firstChild);
+        d.querySelectorAll(':scope > [drawable]').forEach(function (el) { el.removeAttribute('drawable'); });
+        c.replaceWith(d);
+      });
+      A.ready = true;
+    } else {
+      var painted = {};
+      // the explainer pattern: size the grid to the device pixels, draw from the paint event (a listener: it survives uninstall and reinstall)
+      canvases.forEach(function (c) {
+        var ctx = c.getContext('2d');
+        new ResizeObserver(function (entries) {
+          var e = entries[0], box = e.devicePixelContentBoxSize && e.devicePixelContentBoxSize[0];
+          c.width = box ? box.inlineSize : Math.round(e.contentRect.width * devicePixelRatio);
+          c.height = box ? box.blockSize : Math.round(e.contentRect.height * devicePixelRatio);
+        }).observe(c, { box: 'device-pixel-content-box' });
+        c.addEventListener('paint', function () {
+          if (typeof ctx.drawElementImage !== 'function') return;
+          var k = c.width / c.clientWidth;
+          ctx.reset();
+          if (c.id === 'chart') {
+            var cx = 180 * k, cy = 110 * k, r = 70 * k, a0 = -Math.PI / 2;
+            SLICES.forEach(function (s, i) {
+              var a1 = a0 + s[1] * 2 * Math.PI, mid = (a0 + a1) / 2, el = $(s[0]);
+              ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, a0, a1); ctx.closePath(); ctx.fillStyle = s[2]; ctx.fill();
+              var x = cx + Math.cos(mid) * (r + 14 * k), y = cy + Math.sin(mid) * (r + 14 * k);
+              if (Math.cos(mid) < 0) x -= el.offsetWidth * k;
+              ctx.drawElementImage(el, Math.round(x), Math.round(y - el.offsetHeight * k / 2));
+              a0 = a1;
+            });
+          } else {
+            ctx.drawElementImage($('contact'), 0, 0);
+          }
+          A.paints++;
+          painted[c.id] = true;
+          if (!A.ready && painted.chart && painted.form) { A.ready = true; modeLine(); }
+        });
+      });
+    }
+
+    var texts = [['item-apples', 'Apples: 40%', 'Apples: 45%'], ['form-title', 'Contact', 'Contact us']];
+    $('step-text').addEventListener('click', function () {
+      texts.forEach(function (t) { var el = $(t[0]); el.textContent = el.textContent === t[1] ? t[2] : t[1]; });
+    });
+    $('step-live').addEventListener('click', function () { A.step++; $('announce').textContent = 'Update ' + A.step + ': the list changed.'; });
+    $('send').addEventListener('click', function () { $('announce').textContent = 'Message sent by ' + $('name').value + '.'; });
+    $('step-uninstall').addEventListener('click', function () { var inst = installed(); if (inst) inst.uninstall(); modeLine(); });
+    $('step-reinstall').addEventListener('click', function () {
+      if (A.mode === 'poly' && typeof HicLivePolyfill === 'object' && !installed()) {
+        try { HicLivePolyfill.install(); } catch (e) { A.errors.push('install: ' + e); }
+        canvases.forEach(function (c) { if (c.requestPaint) c.requestPaint(); });
+      }
+      modeLine();
+    });
+    modeLine();
+  })();
+</script>
+</body>
+</html>
