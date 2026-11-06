@@ -54,7 +54,7 @@ const FIXTURES = {
     field: { id: 'project', root: '#hic-surface', name: 'Project', type: ' now', value: 'WebGPU interface now' },
     slider: { id: 'fps-cap', root: '#hic-surface', name: 'Frame cap · main + plugins', value: '65' },
     script: null,
-    live: { run: "(() => { const f = document.getElementById('form-feedback'); f.dataset.state = 'error'; f.textContent = 'Check the email field.'; })()", root: '#hic-surface', expect: 'status "" live=polite text="Check the email field."' },
+    live: { run: "(() => { const f = document.getElementById('form-feedback'); f.dataset.state = 'error'; f.textContent = 'Check the email field.'; })()", root: '#hic-surface', expect: 'status "" live=polite text="●Check the email field."' },
     lifecycle: null,
   },
 };

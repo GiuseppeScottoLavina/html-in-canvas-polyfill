@@ -36,6 +36,15 @@ test('axLines and axStructure: the comparable whole subtree and the announced st
   assert.deepEqual(axStructure(null), ['(not in the accessibility tree)']);
 });
 
+test('axStructure: a structure node under a non-structure node (a field in its label) is a child of the nearest structure ancestor, not of its previous sibling', () => {
+  const sub = [
+    { depth: 0, role: 'group', name: 'Form', props: {}, text: '' }, { depth: 1, role: 'heading', name: 'Contact', props: { level: 2 }, text: 'Contact' },
+    { depth: 1, role: 'LabelText', name: '', props: {}, text: 'Name' }, { depth: 2, role: 'textbox', name: 'Name', value: 'Ada', props: {}, text: '' },
+    { depth: 1, role: 'button', name: 'Send', props: {}, text: 'Send' },
+  ];
+  assert.deepEqual(axStructure(sub), ['root "Form"', '  heading "Contact" level=2 text="Contact"', '  textbox "Name" value="Ada"', '  button "Send"']);
+});
+
 test('positive control: without the link the canvas node has no children and the structure differs', () => {
   const broken = axStructure(axSubtree(tree({ owned: false }), 3));
   const good = axStructure(axSubtree(tree(), 3));

@@ -72,12 +72,13 @@ export function axLines(sub, { rootRole = true } = {}) {
 export function axStructure(sub) {
   if (!sub) return ['(not in the accessibility tree)'];
   /** @type {string[]} */ const out = [];
-  /** @type {number[]} */ const stack = [];   // depths of the structure ancestors
+  /** @type {{depth: number, structure: boolean}[]} */ const stack = [];   // the ancestors of the current node
   sub.forEach((e, i) => {
-    if (i > 0 && !STRUCTURE_ROLES.has(e.role)) return;
-    while (stack.length && stack[stack.length - 1] >= e.depth) stack.pop();
-    const d = stack.length;
-    stack.push(e.depth);
+    while (stack.length && stack[stack.length - 1].depth >= e.depth) stack.pop();
+    const structure = i === 0 || STRUCTURE_ROLES.has(e.role);
+    const d = stack.filter((a) => a.structure).length;
+    stack.push({ depth: e.depth, structure });
+    if (!structure) return;
     const bits = [`${i === 0 ? 'root' : e.role} "${e.name}"`];
     if (e.value !== undefined && e.value !== '') bits.push(`value=${JSON.stringify(String(e.value))}`);
     if (e.props.checked !== undefined) bits.push(`checked=${e.props.checked}`);
