@@ -286,14 +286,18 @@ async function framesAt(options, at, times, drop = {}) {
   dev.queue.writeTexture({ texture: src }, px, { bytesPerRow: W * 4 }, [W, H]);
   const dst = dev.createTexture({ size: [W, H], format: 'rgba8unorm', usage: U.RENDER_ATTACHMENT | U.COPY_SRC });
   const canvas = { clientWidth: W, clientHeight: H, clientLeft: 0, clientTop: 0, ownerDocument: document, getBoundingClientRect: () => ({ left: 0, top: 0, width: W, height: H }) };
-  const inst = /** @type {any} */ (await plugin.create(/** @type {any} */ ({ apiVersion: 2, device: dev, format: 'rgba8unorm', canvas, requestRender() {}, listen: () => () => {}, viewport: () => ({}) }), /** @type {any} */ (options)));
-  const frame = (/** @type {any} */ encoder, /** @type {number} */ now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, dpr: 1, sourceReady: true, encoder, sourceTexture: src, sourceView: src.createView(), destinationTexture: dst, destinationView: dst.createView() });
-  // the drop's clock starts at the action (performance.now(), held still here, so that every call sees the same phase of the steps to the
-  // frames: otherwise a slower first call can put one more step into its first frame); its first frame aligns the steps to the frame times,
-  // the later ones follow exactly
-  const now = performance.now, held = now.call(performance);
+  // Every clock the plugin reads is the same in every call: performance.now() is held at one fixed instant while the plugin is created (its
+  // start: the uniform TIME) and while the drop falls (the drop's clock; its first frame aligns the steps to the frame times, the later ones
+  // follow exactly), and the frames are at fixed times after it. So every call uploads bit-identical uniforms and fields (otherwise a slower
+  // first call puts one more step into its first frame, and TIME differs by the time the creation took).
+  const now = performance.now, held = 100000;
   performance.now = () => held;
-  try { inst.runAction('drop', { point: at, ...drop }, { reducedMotion: false }); } finally { performance.now = now; }
+  /** @type {any} */ let inst;
+  try {
+    inst = /** @type {any} */ (await plugin.create(/** @type {any} */ ({ apiVersion: 2, device: dev, format: 'rgba8unorm', canvas, requestRender() {}, listen: () => () => {}, viewport: () => ({}) }), /** @type {any} */ (options)));
+    inst.runAction('drop', { point: at, ...drop }, { reducedMotion: false });
+  } finally { performance.now = now; }
+  const frame = (/** @type {any} */ encoder, /** @type {number} */ t) => ({ now: t, width: W, height: H, cssWidth: W, cssHeight: H, dpr: 1, sourceReady: true, encoder, sourceTexture: src, sourceView: src.createView(), destinationTexture: dst, destinationView: dst.createView() });
   const t0 = held + 4.2;
   const out = [];
   for (const dt of times) {
@@ -352,8 +356,11 @@ gpuTest('the shader skips the B-spline where the field is exactly flat (outside 
 async function framesDrawn(options, at, times, how, drop = {}) {
   const pass = /** @type {any} */ (globalThis).GPURenderPassEncoder.prototype;
   const queue = /** @type {any} */ (globalThis).GPUQueue.prototype;
-  const draw = pass.draw, writeBuffer = queue.writeBuffer;
+  const draw = pass.draw, writeBuffer = queue.writeBuffer, writeTexture = queue.writeTexture;
   const mesh = causticMesh(480, 320, CAUSTIC_DEPTH_PX);
+  /** what the plugin uploads, as it made it (before the changes below): its uniforms and its field, hashed per upload */
+  /** @type {string[]} */ const uploads = [];
+  const hash = (/** @type {ArrayBufferView} */ d) => { const u = new Uint8Array(d.buffer, d.byteOffset, d.byteLength); let x = 2166136261; for (let i = 0; i < u.length; i += 1) x = Math.imul(x ^ u[i], 16777619); return (x >>> 0).toString(16); };
   /** @type {number[][]} */ const areas = [];
   /** @type {number[][]} */ const boxes = [];
   /** @type {number[]} */ let cut = [];
@@ -364,6 +371,7 @@ async function framesDrawn(options, at, times, how, drop = {}) {
     return draw.call(this, 2 * (mesh.columns + 1 + (how === 'wider' ? 4 : 0)), mesh.rows, v0, i0);
   };
   queue.writeBuffer = function (/** @type {any} */ buffer, /** @type {number} */ offset, /** @type {any} */ data, /** @type {any[]} */ ...rest) {
+    if (buffer?.label === 'hic-water-effect-globals' && data instanceof Float32Array) uploads.push(`u${hash(data)}`);
     if (buffer?.label === 'hic-water-effect-globals' && data instanceof Float32Array && data[G.CAUSTICS] > 0.5) {
       const cx = data[G.CSS] / data[G.GRID], cy = data[G.CSS + 1] / data[G.GRID + 1], b = data.subarray(G.BOX, G.BOX + 4);
       const area = [(b[0] - 2 - 3) * cx, (b[1] - 2 - 3) * cy, (b[2] - 2 + 4) * cx, (b[3] - 2 + 4) * cy];
@@ -381,7 +389,11 @@ async function framesDrawn(options, at, times, how, drop = {}) {
     }
     return writeBuffer.call(this, buffer, offset, data, ...rest);
   };
-  try { return { frames: await framesAt(options, at, times, drop), areas, boxes }; } finally { pass.draw = draw; queue.writeBuffer = writeBuffer; }
+  queue.writeTexture = function (/** @type {any} */ dst, /** @type {any} */ data, /** @type {any[]} */ ...rest) {
+    if (dst?.texture?.label === 'hic-water-effect-height-field') uploads.push(`f${hash(data)}`);
+    return writeTexture.call(this, dst, data, ...rest);
+  };
+  try { return { frames: await framesAt(options, at, times, drop), areas, boxes, uploads: uploads.join(' ') }; } finally { pass.draw = draw; queue.writeBuffer = writeBuffer; queue.writeTexture = writeTexture; }
 }
 
 /** Differing pixels of two frames outside and inside a css px area (a frame is 480 x 320 css px at DPR 1). @param {any} a @param {any} b @param {number[]} area */
@@ -397,7 +409,7 @@ function diffAround(a, b, area) {
   return { out, inside };
 }
 
-gpuTest('the caustic pass draws only the region that can differ from still water, and the frames are those of the whole pass: a pebble, light 1, intensity 1 and 0.3, frames at exact times from the first until its rings cover most of the canvas, against the whole mesh read everywhere. Outside the light box less 2 px (still water, and the rim of the region) they are bit-identical; inside it, where the moving surface and its spilled light are, this GPU varies the caustics with the shape of the draw alone, and the region changes them no more than triangles that light nothing do; controls: a region 3 rows short changes pixels outside, the region without the spill several times more inside than that variance', async () => {
+gpuTest('the caustic pass draws only the region that can differ from still water, and the frames are those of the whole pass: a pebble, light 1, intensity 1 and 0.3, frames at exact times from the first until its rings cover most of the canvas, against the whole mesh read everywhere. Every run uploads bit-identical uniforms and fields. Outside the light box less 2 px (still water, and the rim of the region) the frames are bit-identical; inside it, where the moving surface and its spilled light are, this GPU varies the caustics with the shape of the draw alone and from run to run, and the region changes them no more than that variance (triangles that light nothing, or the same draw again); controls: a region 3 rows short changes pixels outside, the region without the spill several times more inside than that variance', async () => {
   const code = await (await fetch('/plugins/water/water.wgsl')).text();
   assert.ok(code.includes('all(light_at >= globals.light_box.xy) && all(light_at <= globals.light_box.zw)'), 'the shader reads the caustic texture only inside the light box');
   assert.ok(code.includes('let origin = vec2<u32>(globals.mesh_from);'), 'the pass draws the mesh from mesh_from');
@@ -417,10 +429,15 @@ gpuTest('the caustic pass draws only the region that can differ from still water
     console.error(`water caustic region, intensity ${intensity}: light boxes ${zone.map((z) => z.map(Math.round).join(' ')).join(' | ')}; against the whole pass, outside the box ${fmt(diffs.map((x) => x.out))}, inside ${fmt(diffs.map((x) => x.inside))} of ${480 * 320}; the whole pass twice ${fmt(repeat.map((x) => ({ n: x.out.n + x.inside.n, max: Math.max(x.out.max, x.inside.max) })))}; with triangles that light nothing: outside ${fmt(inert.map((x) => x.out))}, inside ${fmt(inert.map((x) => x.inside))}; controls: 3 rows short, outside ${cTrim.map((x) => x.out.n)}; without the spill, inside ${cSpill.map((x) => x.inside.n)}`);
     const motion = [1, 2, 3, 4, 5].map((k) => exactDiff(shipped.frames[0], shipped.frames[k]).n);
     assert.ok(motion.every((n) => n > 2000), `the rings move: ${motion}`);
-    assert.ok(repeat.every((x) => x.out.n === 0 && x.inside.n === 0), 'the whole pass is reproducible');
+    // every run uploads the very same uniforms and fields (the clock is held): what differs between them is the GPU's alone
+    assert.ok(shipped.uploads.length > 0 && [whole, again, wider, trim, nospill].every((r) => r.uploads === shipped.uploads), 'every run uploads bit-identical uniforms and fields');
+    // the same draw with the same uploads twice: this GPU adds up the caustic lines in an order that varies from run to run too (0 to 93
+    // pixels by up to 3 levels measured on the Mac, more under load); outside the light box, where no triangles overlap, never
+    assert.ok(repeat.every((x) => x.out.n === 0), `the whole pass twice: no pixel differs outside the light box: ${fmt(repeat.map((x) => x.out))}`);
     assert.ok(inert.every((x) => x.out.n === 0), 'the GPU\'s own variance stays inside the light box');
     assert.ok(diffs.every((x) => x.out.n === 0), `outside the light box the region changes no pixel: ${fmt(diffs.map((x) => x.out))}`);
-    const most = Math.max(...inert.map((x) => x.inside.n)), deepest = Math.max(...inert.map((x) => x.inside.max));
+    // the GPU's variance inside the box: a change of the draw alone, or the same draw again, whichever is larger
+    const most = Math.max(...inert.map((x) => x.inside.n), ...repeat.map((x) => x.inside.n)), deepest = Math.max(...inert.map((x) => x.inside.max), ...repeat.map((x) => x.inside.max));
     assert.ok(diffs.every((x) => x.inside.n <= Math.max(10, 1.5 * most) && x.inside.max <= Math.max(2, 1.5 * deepest)), `inside it no more than the GPU's own variance: ${fmt(diffs.map((x) => x.inside))} vs ${fmt(inert.map((x) => x.inside))}`);
     // (where the box reaches beyond the canvas at the top and the bottom, the rows the control leaves out light nothing on it)
     const inCanvas = zone.map((z) => z[1] > 0 || z[3] < 320);
@@ -428,3 +445,4 @@ gpuTest('the caustic pass draws only the region that can differ from still water
     if (intensity === 1) assert.ok(cSpill.some((x, k) => x.inside.n > 3 * inert[k].inside.n + 100), `control: without the spill, several times the GPU's variance changes: ${cSpill.map((x) => x.inside.n)} vs ${inert.map((x) => x.inside.n)}`);
   }
 }, { timeout: 60000 });
+
