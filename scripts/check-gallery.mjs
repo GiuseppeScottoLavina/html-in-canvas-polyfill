@@ -24,8 +24,9 @@
 //   C7 reduced the page sees no reduced-motion preference while the emulation sets it
 //   C8 cap     the slider moved to 60 before the check ('off')
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
-// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs).
-// Results: .scratch/results/gallery-<timestamp>.json.
+// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off' or the controls is a diagnostic run:
+// it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
+// Results: .scratch/results/gallery-<timestamp>.json (`pass`, `green`, `scope`, `selection`, `skipped`).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -194,7 +195,8 @@ async function runOne(browser, server, name, view, o = {}) {
   return { checks, numbers };
 }
 
-const results = { script: 'scripts/check-gallery.mjs', startedAt: new Date().toISOString(), headless: true, views: VIEWS, runs: /** @type {any[]} */ ([]), controls: /** @type {any[]} */ ([]), pass: false };
+const results = { script: 'scripts/check-gallery.mjs', startedAt: new Date().toISOString(), headless: true, scope: plan.scope, skipped: plan.skipped,
+  selection: { plugins: plan.plugins, views: plan.views, off: plan.off, controls: plan.controls }, views: VIEWS, runs: /** @type {any[]} */ ([]), controls: /** @type {any[]} */ ([]), pass: false, green: false };
 const server = await startServer();
 let failed = 0;
 /** a new headless Chrome per group of runs: one browser at a time, and a crash costs one group, not the run */
@@ -254,8 +256,8 @@ try {
 } finally {
   await server.close().catch(() => {});
 }
-const verdict = galleryVerdict({ failed, checks: results.runs.reduce((n, r) => n + r.checks.length, 0), controls: results.controls.length });
-results.pass = verdict.pass;
+const verdict = galleryVerdict({ failed, checks: results.runs.reduce((n, r) => n + r.checks.length, 0), controls: results.controls.length, scope: plan.scope, skipped: plan.skipped });
+results.pass = verdict.pass; results.green = verdict.green;
 const outDir = resolve(ROOT, '.scratch/results'); mkdirSync(outDir, { recursive: true });
 const file = join(outDir, `gallery-${stamp}.json`);
 writeFileSync(file, JSON.stringify(results, null, 1));

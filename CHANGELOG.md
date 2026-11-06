@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Unit runner: a test whose body passed was published as passed before its cleanup and the task after it ran, so a cleanup that never ended was printed `ok ... (0 ms)` and counted as passed while the file failed as HUNG, and a cleanup or a task after the test that blocked the page for seconds was printed `ok` once the page answered again (reproduced on 0.1.0-preview.25: `2 passed` for a file with one such test and one normal file). A test now passes only once its body, its cleanup and the task after it have ended; the body's result is kept apart, and the test a hang names is printed `HUNG` with that result and the unfinished phase (`its body passed; its cleanup had not ended`) and counted as hung (`1 passed, 1 hung`). The file still fails with exit 1. The runner self-test has three new deliberate failures (a cleanup that blocks for 7 s, a task after the test that blocks for 7 s, a cleanup that never ends), each required in its phase and never reported as passed, and the existing 7 s block in a test body is no longer printed `ok` either (against the old runner 4 of the 9 deliberate failures are not detected).
+- G-gallery: a run with `--no-control`, with `--controls-only`, or with only some plugins or views printed `G-gallery: OK` and wrote `pass: true`, like the full gate. Such a run is now a diagnostic: it prints `G-gallery: DIAGNOSTIC PASS, not the gate` with what it left out, and its results record `scope` (`full` or `diagnostic`), the `selection`, what was `skipped`, and `green`, true only for a pass of the full selection.
+
 ## [0.1.0-preview.25] - 2026-11-05
 
 Fixes for an outside review of 0.1.0-preview.24. A `:hover` rule that matches only together with another state (`.btn:hover:focus`) no longer stays painted on the canvas after the mouse leaves (a regression of 0.1.0-preview.24). In the scroll compositor an invisible (`opacity: 0`) element outside a list no longer stops it composing, and the check for content painted over a list can no longer be fooled by its own colour. The unit runner names what a hung test was doing and no longer reports a hung test as passed.
