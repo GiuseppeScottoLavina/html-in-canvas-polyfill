@@ -20,10 +20,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
-- Native bridge: on Chrome 154 with the flag (measured on Chrome for Testing 154.0.8037.92), `drawElementImageToTexture` exists natively but takes the earlier destination dictionary, so every call with the current one failed. Such a call is now made again with the destination mapped, and later calls are mapped at once.
+- Native bridge: on Chrome 154 with the flag (measured on Chrome for Testing 154.0.8037.92), `drawElementImageToTexture` exists natively but takes the earlier destination dictionary, so every call with the current one failed. On a legacy build such a call is now made again with the destination mapped, and later calls are mapped at once.
 - Native bridge: `drawElementImageToTexture` without a `size`, mapped to the earlier `copyElementImageToTexture`, threw a `TypeError`; it now copies the natural size, as the native call does.
 - Native bridge: a `texElementSubImage2D` built over `texElementImage2D` now uses the three-argument form `(target, internalformat, element)` of the Chrome 154 and 155 builds (both have `texElementSubImage2D` natively, so this applies only to a build without it).
-- The native-bridge bundle grows to 13,992 bytes minified, 5,077 gzipped (+535 / +168 bytes); its ceiling is raised to 14 KB, gzip 5.25 KB.
+- The native-bridge bundle grows to 14,011 bytes minified, 5,082 gzipped (+554 / +173 bytes); its ceiling is raised to 14.25 KB, gzip 5.25 KB.
 
 ## [0.1.0-preview.27] - 2026-11-06
 

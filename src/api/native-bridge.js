@@ -168,7 +168,8 @@ function fillGaps(env, native, ledger) {
   } else if (gaps.has('GPUQueue.drawElementImageToTexture')) {
     env.reporter.unsupported({ feature: 'webgpu-draw-element', message: 'GPUQueue.drawElementImageToTexture is missing from this native build and has no legacy name to be built from' });
   }
-  if (queue && present.has('GPUQueue.drawElementImageToTexture')) wrapEarlierGpuDictionary(queue, ledger);
+  // a legacy build only: a nearly complete one keeps every native descriptor as found (it takes the current dictionary)
+  if (queue && native.kind === 'legacy' && present.has('GPUQueue.drawElementImageToTexture')) wrapEarlierGpuDictionary(queue, ledger);
   if (queue && env.options.legacyNames && present.has('GPUQueue.drawElementImageToTexture') && !present.has('GPUQueue.copyElementImageToTexture')) {
     ledger.define(queue, 'copyElementImageToTexture', { value: /** @this {any} */ function copyElementImageToTexture(/** @type {any} */ source, /** @type {any} */ target) {
       return this.drawElementImageToTexture(...fromLegacyGpuArgs(source, target));
