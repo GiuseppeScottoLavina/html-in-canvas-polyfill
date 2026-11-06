@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, POND_DEPTH, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
-import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, PAD, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
+import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, DAMPING, PAD, VISCOSITY, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 
 contractTest(import.meta.url);
@@ -145,6 +145,68 @@ test('the simulation is stable for every cell size it uses (noise stays bounded 
   }
 });
 
+/** The step as it was before the field kept its box: every interior cell, every step (the oracle of the bounded step). */
+function fullStep(f) {
+  const { h, v, lap, pw, gw, gh, c2 } = f;
+  for (let y = PAD; y < PAD + gh; y += 1) for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) {
+    const l = (4 * (h[i - 1] + h[i + 1] + h[i - pw] + h[i + pw]) + h[i - pw - 1] + h[i - pw + 1] + h[i + pw - 1] + h[i + pw + 1] - 20 * h[i]) / 6;
+    v[i] = (v[i] + c2 * l + VISCOSITY * (l - lap[i])) * DAMPING;
+    lap[i] = l;
+  }
+  for (let y = PAD; y < PAD + gh; y += 1) for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) h[i] += v[i];
+  mirror(f);
+}
+
+test('the step and the check for a still surface work only where the field can be non-zero (its box), with bit-identical results: pebbles in the middle, at a wall and in a corner, against the full step; the box grows by one cell a step and covers every non-zero cell; control: a box one cell too small changes the field', () => {
+  const same = (a, b) => a.h.every((x, i) => Object.is(x, b.h[i]) || (x === 0 && b.h[i] === 0)) && a.v.every((x, i) => x === b.v[i]) && a.lap.every((x, i) => x === b.lap[i]);
+  for (const [x, y] of [[200, 150], [3, 140], [396, 297]]) {
+    const f = createField(400, 300), g = createField(400, 300);
+    clear(f); clear(g);
+    assert.ok(f.box[0] > f.box[2], 'a cleared field is flat: its box is empty');
+    stamp(f, x, y, 22, -12); stamp(g, x, y, 22, -12);
+    const width0 = f.box[2] - f.box[0];
+    for (let k = 0; k < 90; k += 1) {
+      if (k === 40) { stamp(f, 120, 90, 14, 5); stamp(g, 120, 90, 14, 5); }
+      step(f); fullStep(g);
+      assert.equal(quiet(f, 0.5), quiet(g, 0.5));
+    }
+    assert.ok(same(f, g), `the bounded step equals the full step bit for bit (pebble at ${x}, ${y})`);
+    for (let j = 0; j < f.ph; j += 1) for (let i = 0; i < f.pw; i += 1) {
+      const k = j * f.pw + i;
+      if (f.h[k] !== 0 || f.v[k] !== 0 || f.lap[k] !== 0) assert.ok(i >= f.box[0] && i <= f.box[2] && j >= f.box[1] && j <= f.box[3], `cell ${i}, ${j} is non-zero outside the box`);
+    }
+    if (x === 200) assert.ok(f.box[2] - f.box[0] <= width0 + 2 * 90 && f.box[2] - f.box[0] > width0, 'the box grows by at most one cell on each side a step');
+  }
+  // the box starts small: a pebble from rest steps a small region, not the grid
+  const f = createField(1100, 640);
+  clear(f);
+  stamp(f, 550, 320, 22, -12);
+  step(f);
+  const cells = (f.box[2] - f.box[0] + 1) * (f.box[3] - f.box[1] + 1);
+  assert.ok(cells < 0.03 * f.pw * f.ph, `one pebble from rest: ${cells} of ${f.pw * f.ph} cells`);
+  // control: a box one cell too small is not enough (the step's reach is one cell)
+  const a = createField(400, 300), b = createField(400, 300);
+  clear(a); clear(b);
+  stamp(a, 200, 150, 22, -12); stamp(b, 200, 150, 22, -12);
+  for (let k = 0; k < 5; k += 1) { a.box[0] += 1; a.box[2] -= 1; step(a); fullStep(b); }
+  assert.ok(!same(a, b), 'control: a box that misses one cell gives another field');
+});
+
+test('the plugin\'s first pebble steps its own region: the box in the uniform block covers the pebble and a cell a step around it, not the grid; it grows with the rings', async () => {
+  const w = await createWater({ intensity: 1 });
+  const t0 = performance.now();
+  w.pointer('pointerdown', 300, 200);
+  w.instance.render(w.frame(t0 + 20));
+  const g = w.gpu.writes.at(-1);
+  const box = [g[G.BOX], g[G.BOX + 1], g[G.BOX + 2], g[G.BOX + 3]];
+  const pw = g[G.GRID] + 2 * PAD, ph = g[G.GRID + 1] + 2 * PAD;
+  const share = ((box[2] - box[0] + 1) * (box[3] - box[1] + 1)) / (pw * ph);
+  assert.ok(g[G.ACTIVE] === 1 && share > 0 && share < 0.08, `the first frame's box ${box} is ${(share * 100).toFixed(1)} % of the grid`);
+  w.run(t0 + 30, 600);
+  const later = w.gpu.writes.at(-1);
+  assert.ok(later[G.BOX + 2] - later[G.BOX] > box[2] - box[0], 'it grows with the rings');
+});
+
 test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px is not quiet, one of 0.02 px is; NaN resets to flat', () => {
   const f = createField(400, 400);
   // a raised cosine of radius r and height a has a largest slope of a * pi / (2 r): this one moves the page by 0.2 px at intensity 1
@@ -156,7 +218,8 @@ test('quiet() is a visibility threshold: a ripple that moves the page by 0.2 px 
   stamp(f, 200, 200, 40, a / 10);
   mirror(f);
   assert.equal(quiet(f), true);
-  f.h[(PAD + 3) * f.pw + PAD + 3] = NaN;
+  // a NaN can only come from the cells the step computes, the ones that may be non-zero (f.box): one in the middle of the pebble
+  f.h[(PAD + 66) * f.pw + PAD + 66] = NaN;
   assert.equal(quiet(f), true);
   assert.ok(f.h.every((v) => v === 0), 'a broken field is reset rather than run forever');
   assert.ok(CAUSTIC_PX > REFRACT_PX, 'the light focuses deeper than the view refracts');
@@ -502,6 +565,43 @@ test('intensity, light and ambient from options and setOptions reach the uniform
   assert.equal(w.instance.continuous, false);
   const rm = await createWater({ ambient: 1 }, { reduced: true });
   assert.equal(rm.instance.continuous, false, 'reduced motion: no swell');
+});
+
+test('the caustic textures are held only while caustics can show: none with light 0, intensity 0 or reduced motion (binding 4 is then 1 x 1); an option change that turns them on makes them at once, so the next tap allocates nothing; turning them off releases them; control: the defaults make them at the first frame', async () => {
+  const caustic = (w) => w.gpu.created.filter((t) => /^hic-water-effect-caustics(-ms)?$/.test(t.d.label));
+  const live = (w) => caustic(w).filter((t) => !t.destroyed);
+  const bytes = (w) => live(w).reduce((n, t) => n + t.d.size.width * t.d.size.height * 2 * (t.d.sampleCount ?? 1), 0);
+  const control = await createWater();
+  control.instance.render(control.frame(performance.now()));
+  assert.equal(live(control).length, 2, 'control: the defaults hold the caustic texture and its multisampled target from the first frame');
+  assert.equal(bytes(control), W * H * 2 * 5);
+  for (const [name, options, reduced] of [['light 0', { light: 0 }, false], ['intensity 0', { intensity: 0 }, false], ['reduced motion', {}, true], ['reduced motion and the swell', { ambient: 1 }, true]]) {
+    const w = await createWater(options, { reduced });
+    w.instance.render(w.frame(performance.now()));
+    w.instance.render(w.frame(performance.now() + 20));
+    assert.equal(caustic(w).length, 0, `${name}: no caustic texture is made`);
+    const none = w.gpu.created.filter((t) => t.d.label === 'hic-water-effect-caustics-none');
+    assert.equal(none.length, 1, `${name}: one 1 x 1 texture stands in for it`);
+    assert.deepEqual([none[0].d.size.width, none[0].d.size.height], [1, 1]);
+  }
+  const w = await createWater({ light: 0 });
+  w.instance.render(w.frame(performance.now()));
+  w.instance.setOptions({ light: 0.8 });
+  assert.equal(live(w).length, 2, 'the light comes on: the textures are made at once, before the next frame');
+  assert.equal(bytes(w), W * H * 2 * 5);
+  const made = w.gpu.created.length;
+  const t0 = performance.now();
+  w.pointer('pointerdown', 200, 150);
+  w.run(t0, 200);
+  assert.equal(w.gpu.created.length, made, 'the first tap after that allocates nothing');
+  w.instance.setOptions({ intensity: 0 });
+  assert.equal(live(w).length, 0, 'intensity 0: released at once');
+  w.instance.render(w.frame(t0 + 220));
+  assert.equal(live(w).length, 0);
+  w.instance.setOptions({ intensity: 0.5 });
+  assert.equal(live(w).length, 2, 'and made again when it comes back');
+  w.instance.destroy();
+  assert.ok(w.gpu.created.every((t) => t.destroyed), 'destroy releases every texture, the 1 x 1 one included');
 });
 
 test('a resize by a fraction of a cell keeps the ripples; another grid starts flat with a new texture', async () => {

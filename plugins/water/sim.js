@@ -46,6 +46,9 @@ export const CAUSTIC_PX = CAUSTIC_DEPTH_PX * (1 - 1 / 1.333);
  * @property {Float32Array} h  heights, css px, pw x ph (ghost cells included)
  * @property {Float32Array} v  vertical velocity, css px per step
  * @property {Float32Array} lap  the Laplacian of h of the previous step (its change is the Laplacian of v: the viscosity)
+ * @property {Int32Array} box  the cells that may be non-zero (h, v or lap), padded grid [x0, y0, x1, y1] inclusive; x0 > x1 when the
+ *   field is flat. Every cell outside it is exactly 0, so the step, the check for a still surface and the shader skip it with the very
+ *   same result (the step only spreads it by one cell). A new field counts as written everywhere; `clear` empties it.
  */
 
 /** The grid of a canvas of this css size. @param {number} cssWidth @param {number} cssHeight */
@@ -68,9 +71,26 @@ export function setSize(f, cssWidth, cssHeight) {
 export function createField(cssWidth, cssHeight) {
   const { gw, gh } = gridOf(cssWidth, cssHeight);
   const pw = gw + 2 * PAD, ph = gh + 2 * PAD;
-  const f = { cssWidth: 1, cssHeight: 1, gw, gh, pw, ph, cellX: 1, cellY: 1, c2: 0, h: new Float32Array(pw * ph), v: new Float32Array(pw * ph), lap: new Float32Array(pw * ph) };
+  const f = { cssWidth: 1, cssHeight: 1, gw, gh, pw, ph, cellX: 1, cellY: 1, c2: 0, h: new Float32Array(pw * ph), v: new Float32Array(pw * ph), lap: new Float32Array(pw * ph), box: Int32Array.of(0, 0, pw - 1, ph - 1) };
   setSize(f, cssWidth, cssHeight);
   return f;
+}
+
+/**
+ * Add the interior cells [x0, x1] x [y0, y1] (padded grid) to the cells that may be non-zero, and the ghost cells that mirror them.
+ * @param {Field} f @param {number} x0 @param {number} y0 @param {number} x1 @param {number} y1
+ */
+function include(f, x0, y0, x1, y1) {
+  const b = f.box;
+  if (x0 > x1 || y0 > y1) return;
+  if (b[0] > b[2]) { b[0] = x0; b[1] = y0; b[2] = x1; b[3] = y1; } else {
+    b[0] = Math.min(b[0], x0); b[1] = Math.min(b[1], y0); b[2] = Math.max(b[2], x1); b[3] = Math.max(b[3], y1);
+  }
+  // mirror() copies the PAD cells next to a wall into the ghost cells beyond it
+  if (b[0] < 2 * PAD) b[0] = 0;
+  if (b[1] < 2 * PAD) b[1] = 0;
+  if (b[2] >= f.gw) b[2] = f.pw - 1;
+  if (b[3] >= f.gh) b[3] = f.ph - 1;
 }
 
 /** Copy the border cells into the ghost cells (mirrored about the wall). @param {Field} f */
@@ -95,22 +115,27 @@ export function mirror(f) {
  * walls. @param {Field} f
  */
 export function step(f) {
-  const { h, v, lap, pw, gw, gh, c2 } = f;
+  const { h, v, lap, pw, gw, gh, c2, box } = f;
+  if (box[0] > box[2]) return;
+  // the cells that can change: the box and one cell around it (the stencil's reach); outside it every cell is 0 and stays 0
+  const x0 = Math.max(PAD, box[0] - 1), x1 = Math.min(PAD + gw - 1, box[2] + 1);
+  const y0 = Math.max(PAD, box[1] - 1), y1 = Math.min(PAD + gh - 1, box[3] + 1);
   const nu = VISCOSITY, damping = DAMPING;
-  for (let y = PAD; y < PAD + gh; y += 1) {
-    let i = y * pw + PAD;
-    const end = i + gw;
-    for (; i < end; i += 1) {
+  for (let y = y0; y <= y1; y += 1) {
+    let i = y * pw + x0;
+    const end = y * pw + x1;
+    for (; i <= end; i += 1) {
       const l = (4 * (h[i - 1] + h[i + 1] + h[i - pw] + h[i + pw]) + h[i - pw - 1] + h[i - pw + 1] + h[i + pw - 1] + h[i + pw + 1] - 20 * h[i]) / 6;
       v[i] = (v[i] + c2 * l + nu * (l - lap[i])) * damping;
       lap[i] = l;
     }
   }
-  for (let y = PAD; y < PAD + gh; y += 1) {
-    let i = y * pw + PAD;
-    const end = i + gw;
-    for (; i < end; i += 1) h[i] += v[i];
+  for (let y = y0; y <= y1; y += 1) {
+    let i = y * pw + x0;
+    const end = y * pw + x1;
+    for (; i <= end; i += 1) h[i] += v[i];
   }
+  include(f, x0, y0, x1, y1);
   mirror(f);
 }
 
@@ -126,6 +151,7 @@ export function stamp(f, x, y, radius, amplitude) {
   const rx = r / cellX, ry = r / cellY;
   const x0 = Math.max(0, Math.floor(gx - rx)), x1 = Math.min(gw - 1, Math.ceil(gx + rx));
   const y0 = Math.max(0, Math.floor(gy - ry)), y1 = Math.min(gh - 1, Math.ceil(gy + ry));
+  include(f, x0 + PAD, y0 + PAD, x1 + PAD, y1 + PAD);
   for (let cy = y0; cy <= y1; cy += 1) {
     const dy = (cy - gy) * cellY;
     for (let cx = x0; cx <= x1; cx += 1) {
@@ -148,6 +174,7 @@ export function swell(f, x, y, radius, depth) {
   const gx = x / cellX - 0.5, gy = y / cellY - 0.5;
   const x0 = Math.max(0, Math.floor(gx - r / cellX)), x1 = Math.min(gw - 1, Math.ceil(gx + r / cellX));
   const y0 = Math.max(0, Math.floor(gy - r / cellY)), y1 = Math.min(gh - 1, Math.ceil(gy + r / cellY));
+  include(f, x0 + PAD, y0 + PAD, x1 + PAD, y1 + PAD);
   for (let cy = y0; cy <= y1; cy += 1) {
     const dy = (cy - gy) * cellY;
     for (let cx = x0; cx <= x1; cx += 1) {
@@ -159,7 +186,7 @@ export function swell(f, x, y, radius, depth) {
 }
 
 /** Flat and still. @param {Field} f */
-export function clear(f) { f.h.fill(0); f.v.fill(0); f.lap.fill(0); }
+export function clear(f) { f.h.fill(0); f.v.fill(0); f.lap.fill(0); f.box.set([f.pw, f.ph, -1, -1]); }
 
 /** what a pixel cannot show: a shift of the page (css px) and a change of the caustic focus (relative) at intensity 1 */
 export const QUIET_SHIFT_PX = 0.1;
@@ -171,16 +198,20 @@ export const QUIET_FOCUS = 0.012;
  * @param {Field} f @param {number} [intensity]
  */
 export function quiet(f, intensity = 1) {
-  const { h, v, pw, gw, gh, cellX, cellY } = f;
+  const { h, v, pw, gw, gh, cellX, cellY, box } = f;
+  if (box[0] > box[2]) return true;
   const cell = Math.min(cellX, cellY);
   const k = Math.max(1e-3, intensity);
   const gradLimit = (QUIET_SHIFT_PX * cell) / (REFRACT_PX * k);
   const lapLimit = (QUIET_FOCUS * cell * cell) / (CAUSTIC_PX * k);
   const vLimit = gradLimit * 0.25;
-  for (let y = PAD; y < PAD + gh; y += 1) {
-    let i = y * pw + PAD;
-    const end = i + gw;
-    for (; i < end; i += 1) {
+  // the cells whose slopes or curvature can differ from 0: the box and one cell around it (outside it every cell is exactly 0)
+  const x0 = Math.max(PAD, box[0] - 1), x1 = Math.min(PAD + gw - 1, box[2] + 1);
+  const y0 = Math.max(PAD, box[1] - 1), y1 = Math.min(PAD + gh - 1, box[3] + 1);
+  for (let y = y0; y <= y1; y += 1) {
+    let i = y * pw + x0;
+    const end = y * pw + x1;
+    for (; i <= end; i += 1) {
       const c = h[i];
       if (c !== c) { clear(f); return true; }   // NaN (cannot happen with the stable constants above): reset to flat rather than run forever
       const gx = h[i + 1] - c, gy = h[i + pw] - c;
