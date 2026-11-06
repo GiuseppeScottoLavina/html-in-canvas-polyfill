@@ -19,6 +19,7 @@ const OWN_EVENTS = new Set([EVENTS.PAINT, EVENTS.ELEMENT_GEOMETRY_UPDATE, EVENTS
  * @property {EventListenerOrEventListenerObject} listener
  * @property {boolean} once
  * @property {AbortSignal|null} signal
+ * @property {boolean} passive  registered with `passive: true` (the canvas is not the window, the document or the body: `passive` left out means false there)
  */
 
 /** @type {WeakMap<HTMLCanvasElement, Map<string, Entry[]>>} listeners per canvas, kept across unmount/mount so a toggled canvas keeps its bridge */
@@ -43,11 +44,11 @@ function handlerDescriptors(canvas) {
   return handlerTable;
 }
 
-/** @param {unknown} options @returns {{capture: boolean, once: boolean, signal: AbortSignal|null}} */
+/** @param {unknown} options @returns {{capture: boolean, once: boolean, signal: AbortSignal|null, passive: boolean}} */
 function normalize(options) {
-  if (typeof options === 'boolean') return { capture: options, once: false, signal: null };
+  if (typeof options === 'boolean') return { capture: options, once: false, signal: null, passive: false };
   const o = /** @type {AddEventListenerOptions|undefined} */ (options);
-  return { capture: !!o?.capture, once: !!o?.once, signal: o?.signal ?? null };
+  return { capture: !!o?.capture, once: !!o?.once, signal: o?.signal ?? null, passive: o?.passive === true };
 }
 
 /** @param {unknown} err */
@@ -93,7 +94,7 @@ export function installEventBridge(canvas, layerEl) {
   let registry = registries.get(canvas);
   if (!registry) registries.set(canvas, (registry = new Map()));
   const entries = registry;
-  /** @type {Map<string, EventListener>} */
+  /** the forwarder on the layer per type and capture, passive exactly when every listener it serves is @type {Map<string, {fn: EventListener, passive: boolean}>} */
   const bridges = new Map();
   /** @type {Map<string, EventListener>} */
   const handlerBridges = new Map();
@@ -124,13 +125,14 @@ export function installEventBridge(canvas, layerEl) {
     });
   }
 
-  /** @param {string} key */
+  /** The forwarder of `key`, registered again only when the passive state of its listeners changes (one forwarder per key). @param {string} key */
   function ensureBridge(key) {
-    if (bridges.has(key)) return;
-    const [type, capture] = key.split('|');
-    const bridge = /** @type {EventListener} */ ((ev) => deliver(ev, key));
-    bridges.set(key, bridge);
-    layerEl.addEventListener(type, bridge, capture === '1');
+    const passive = (entries.get(key) ?? []).every((e) => e.passive), had = bridges.get(key);
+    if (had?.passive === passive) return;
+    const [type, capture] = key.split('|'), fn = /** @type {EventListener} */ ((ev) => deliver(ev, key));
+    if (had) layerEl.removeEventListener(type, had.fn, capture === '1');
+    bridges.set(key, { fn, passive });
+    layerEl.addEventListener(type, fn, { capture: capture === '1', passive });
   }
 
   /** @param {string} key @param {EventListenerOrEventListenerObject} listener */
@@ -139,12 +141,12 @@ export function installEventBridge(canvas, layerEl) {
     const at = list ? list.findIndex((e) => e.listener === listener) : -1;
     if (!list || at < 0) return;
     list.splice(at, 1);
-    if (list.length) return;
+    if (list.length) { ensureBridge(key); return; }
     entries.delete(key);
     const bridge = bridges.get(key);
     if (bridge) {
       const [type, capture] = key.split('|');
-      layerEl.removeEventListener(type, bridge, capture === '1');
+      layerEl.removeEventListener(type, bridge.fn, capture === '1');
       bridges.delete(key);
     }
   }
@@ -153,12 +155,12 @@ export function installEventBridge(canvas, layerEl) {
     writable: true,
     value: function addEventListener(/** @type {string} */ type, /** @type {EventListenerOrEventListenerObject|null} */ listener, /** @type {any} */ options) {
       nativeAdd.call(canvas, type, /** @type {any} */ (listener), options);
-      const { capture, once, signal } = normalize(options);
+      const { capture, once, signal, passive } = normalize(options);
       if (!listener || OWN_EVENTS.has(type) || signal?.aborted) return;
       const key = keyOf(type, capture);
       const list = entries.get(key) ?? [];
       if (list.some((e) => e.listener === listener)) return;
-      list.push({ listener, once, signal });
+      list.push({ listener, once, signal, passive });
       entries.set(key, list);
       ensureBridge(key);
       signal?.addEventListener('abort', () => drop(key, listener), { once: true });
@@ -208,7 +210,7 @@ export function installEventBridge(canvas, layerEl) {
     own.restore();
     for (const [key, bridge] of bridges) {
       const [type, capture] = key.split('|');
-      layerEl.removeEventListener(type, bridge, capture === '1');
+      layerEl.removeEventListener(type, bridge.fn, capture === '1');
     }
     for (const [name, bridge] of handlerBridges) layerEl.removeEventListener(name.slice(2), bridge);
     bridges.clear();
