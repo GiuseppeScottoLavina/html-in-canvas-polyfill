@@ -187,7 +187,8 @@ if (!docsOnly) {
   // 17340 -> 17360 (2026-11-06, measured 17,360): a blended element outside a list clipped whole by an ancestor of no area composes (+24: scroll-pages.js
   // clippedAway, emptyClip, moves); before it a wrapper of 0 x 0 with overflow: hidden around a blended overlay refused the plan (0 compositions and 1 tile per step
   // instead of 1 and 0, 0.1.0-preview.26)
-  if (total > 17360) problems.push(`G-size: core is ${total} code lines (> 17360)`);
+  // 17360 -> 17363 (2026-11-06, measured 17,363 with both): dispose drops the queued side builds (+3: store.js dropEntry and dispose)
+  if (total > 17363) problems.push(`G-size: core is ${total} code lines (> 17363)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
