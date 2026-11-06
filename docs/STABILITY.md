@@ -82,7 +82,8 @@ The stable perimeter is the standard HTML-in-Canvas API as Chrome 157 ships it n
 | platform | Safari on the iPhone (iOS 26 and later) | Expected as on the iPad; no physical iPhone on iOS 26 or later has run the suites, and the iPad does not stand in for it. | unqualified | the iOS Simulator only (iPhone 17, iOS 26.4), 2026-10-16 and 2026-10-27 |
 | platform | Chrome, Firefox and Edge on iOS | WebKit, admitted by the required features alone; never run. | unqualified | unit tests on their published user agents |
 | platform | refused browsers | Firefox before 155, Safari before 27, Chrome before 130, Safari on iOS before 26, Android WebView, in-app web views on iOS and Firefox for Android are refused with the reason named. | stable | G-mobile refusal (Safari on iOS 18 on a physical device, Chrome for Android 124); unit tests on the other user agents |
-| platform | screen readers | The live elements stay in the accessibility tree (`a11y-tree-link`); no real screen reader has been run. | unqualified | [FAQ](guides/FAQ.md#is-it-accessible) |
+| platform | screen readers | The live elements stay in the accessibility tree (`a11y-tree-link`) with the roles, names, order, focus and live regions of the same HTML on a plain page; no real screen reader has been run. | unqualified | G-a11y (Chrome's accessibility tree, in CI on macOS); [FAQ](guides/FAQ.md#is-it-accessible) |
+| platform | apps built with React 19, Vue 3, Svelte 5 and Lit 3 | The standard API works from a real app of each framework, as development and as production builds, with the limits of FRAMEWORKS.md sections 4 and 6; the package ships no framework wrapper. | stable | `npm run test:frameworks` (headless Chrome, the versions pinned in [FRAMEWORKS.md](guides/FRAMEWORKS.md)), the macOS CI job "headless apps" |
 
 ## 2. Versioning
 
