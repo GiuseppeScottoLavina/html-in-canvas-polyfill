@@ -68,7 +68,7 @@ export function App() {
   });
 
   const Surface = MODE === 'ref' ? 'div' : 'canvas';
-  // suppressHydrationWarning: the polyfill adds data-hic-canvas and aria-owns to the canvas before hydrateRoot runs, which React's dev
+  // suppressHydrationWarning: the polyfill adds data-hic-canvas to the canvas before hydrateRoot runs (aria-owns comes after the document's load), which React's dev
   // build reports as an attribute mismatch (docs/guides/FRAMEWORKS.md, section 4). It silences only this element's own attributes. ?strict-hydration=1 drops it (test probe).
   const surfaceProps = MODE === 'ref' ? { className: 'surface ref' }
     : { className: 'surface', content: 'drawable', suppressHydrationWarning: !STRICT_HYDRATION };
