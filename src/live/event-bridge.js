@@ -84,6 +84,38 @@ function asCanvas(ev, canvas, call) {
   }
 }
 
+/** @type {WeakSet<object>} the events whose current canvas listener is passive while the forwarder on the layer is not, and the Event prototype patched meanwhile */
+const passiveNow = new WeakSet();
+
+/**
+ * Run `call` as a passive listener of `ev` would run natively: preventDefault() and `returnValue = false` are ignored for this event only, also when they reach the
+ * prototype (`Event.prototype.preventDefault.call(ev)`). A forwarder serving passive and non-passive listeners together is not passive, so the browser does not do it.
+ * The prototype's descriptors are patched for the call only and restored after it; an event dispatched from inside the call stays cancelable.
+ * @param {Event} ev
+ * @param {() => void} call
+ */
+function asPassive(ev, call) {
+  let proto = Object.getPrototypeOf(ev);
+  while (proto && !Object.hasOwn(proto, 'preventDefault')) proto = Object.getPrototypeOf(proto);
+  const outer = proto && !passiveNow.has(proto);
+  const [prevent, value] = outer ? ['preventDefault', 'returnValue'].map((name) => Object.getOwnPropertyDescriptor(proto, name)) : [];
+  if (outer && !prevent?.configurable) { call(); return; }
+  if (outer) {
+    passiveNow.add(proto);
+    Object.defineProperty(proto, 'preventDefault', { ...prevent, value: /** @this {Event} */ function preventDefault() { if (!passiveNow.has(this)) prevent?.value.call(this); } });
+    if (value?.set && value.configurable) Object.defineProperty(proto, 'returnValue', { ...value, /** @this {Event} @param {boolean} v */ set(v) { if (!passiveNow.has(this)) value.set?.call(this, v); } });
+  }
+  passiveNow.add(ev);
+  try { call(); } finally {
+    passiveNow.delete(ev);
+    if (outer) {
+      passiveNow.delete(proto);
+      Object.defineProperty(proto, 'preventDefault', /** @type {PropertyDescriptor} */ (prevent));
+      if (value?.configurable) Object.defineProperty(proto, 'returnValue', value);
+    }
+  }
+}
+
 /**
  * Instance-level addEventListener/removeEventListener and on* accessors on the canvas; the layer gets one bridge listener per (type, capture). Returns the remover.
  * @param {HTMLCanvasElement} canvas
@@ -107,8 +139,8 @@ export function installEventBridge(canvas, layerEl) {
   /** @param {string} type @param {boolean} capture */
   const keyOf = (type, capture) => `${type}|${capture ? 1 : 0}`;
 
-  /** @param {Event} ev @param {string} key */
-  function deliver(ev, key) {
+  /** @param {Event} ev @param {string} key @param {boolean} passive the forwarder that calls it is passive */
+  function deliver(ev, key, passive) {
     if (ev.target === layerEl || ev.target === canvas) return;
     const list = entries.get(key);
     if (!list?.length) return;
@@ -117,10 +149,14 @@ export function installEventBridge(canvas, layerEl) {
       for (const entry of [...list]) {
         if (stopped()) break;
         if (entry.once) drop(key, entry.listener);
-        try {
-          if (typeof entry.listener === 'function') entry.listener.call(canvas, ev);
-          else entry.listener.handleEvent(ev);
-        } catch (err) { reportAsync(err); }
+        const call = () => {
+          try {
+            if (typeof entry.listener === 'function') entry.listener.call(canvas, ev);
+            else entry.listener.handleEvent(ev);
+          } catch (err) { reportAsync(err); }
+        };
+        // a passive listener in a non-passive group: its preventDefault is ignored, as natively
+        if (entry.passive && !passive) asPassive(ev, call); else call();
       }
     });
   }
@@ -129,7 +165,7 @@ export function installEventBridge(canvas, layerEl) {
   function ensureBridge(key) {
     const passive = (entries.get(key) ?? []).every((e) => e.passive), had = bridges.get(key);
     if (had?.passive === passive) return;
-    const [type, capture] = key.split('|'), fn = /** @type {EventListener} */ ((ev) => deliver(ev, key));
+    const [type, capture] = key.split('|'), fn = /** @type {EventListener} */ ((ev) => deliver(ev, key, passive));
     if (had) layerEl.removeEventListener(type, had.fn, capture === '1');
     bridges.set(key, { fn, passive });
     layerEl.addEventListener(type, fn, { capture: capture === '1', passive });

@@ -649,6 +649,12 @@ test('intensity, light and ambient from options and setOptions reach the uniform
   assert.equal(w.instance.continuous, true, 'the ambient swell is continuous by declaration');
   w.instance.render(w.frame(performance.now()));
   assert.ok(Math.abs(w.gpu.writes.at(-1)[G.AMBIENT] - 0.5 * AMBIENT_PX) < 1e-6);
+  w.instance.setOptions({ intensity: 0 });
+  assert.equal(w.instance.continuous, false, 'the swell at intensity 0 shows nothing (the output is the source): not continuous');
+  w.instance.render(w.frame(performance.now()));
+  assert.equal(w.gpu.writes.at(-1)[G.INTENSITY], 0, 'the option change itself is still drawn');
+  w.instance.setOptions({ intensity: 0.25 });
+  assert.equal(w.instance.continuous, true, 'a positive intensity brings the swell back');
   w.instance.setOptions({ ambient: 0 });
   assert.equal(w.instance.continuous, false);
   const rm = await createWater({ ambient: 1 }, { reduced: true });
