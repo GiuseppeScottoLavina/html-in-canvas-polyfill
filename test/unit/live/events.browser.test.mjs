@@ -1,6 +1,10 @@
 import { test, assert } from '/test/unit/lib/t.js';
 import { setup, page } from '/test/unit/live/lib.mjs';
 
+// references to the native methods taken before anything else runs, as a library loaded before the polyfill keeps them
+const NATIVE_PREVENT = Event.prototype.preventDefault;
+const NATIVE_RETURN_VALUE_SET = /** @type {(this: Event, v: boolean) => void} */ (Object.getOwnPropertyDescriptor(Event.prototype, 'returnValue')?.set);
+
 const KIDS = '<button id="btn">go</button><div id="d" drawable><span id="in">x</span></div>';
 
 test('canvas listeners receive events of relocated descendants with currentTarget and composedPath of the canvas', async (t) => {
@@ -113,6 +117,23 @@ test('inline on* attribute handlers and listeners survive an unmount/mount cycle
   assert.equal(Object.hasOwn(canvas, 'addEventListener'), false);
 });
 
+test('after an unmount/mount cycle the canvas listeners still run in their registration order, each with its passive flag', async (t) => {
+  const { managed } = setup({ t });
+  const { canvas } = page(KIDS);
+  const r = managed(canvas);
+  const inner = /** @type {Element} */ (canvas.querySelector('#in'));
+  /** @type {string[]} */ const log = [];
+  canvas.addEventListener('touchstart', () => log.push('1 active'));
+  canvas.addEventListener('touchstart', (ev) => { log.push('2 passive'); ev.preventDefault(); }, { passive: true });
+  canvas.addEventListener('touchstart', () => log.push('3 active'));
+  r.layer.unmount();
+  r.layer.mount();
+  const ev = new Event('touchstart', { bubbles: true, cancelable: true });
+  inner.dispatchEvent(ev);
+  assert.deepEqual(log, ['1 active', '2 passive', '3 active']);
+  assert.equal(ev.defaultPrevented, false, 'the passive one is still passive');
+});
+
 test('bridge does not double deliver or swallow errors', async (t) => {
   const { managed } = setup({ t });
   const { canvas } = page(KIDS);
@@ -148,7 +169,7 @@ function prevented(el, type = 'touchstart') {
   return ev.defaultPrevented;
 }
 
-test('the forwarder on the layer is as passive as the canvas listeners it serves: a passive touch listener gives a passive one (its preventDefault ignored, as natively); a non-passive one makes it non-passive (preventDefault works), and removing it makes it passive again; one forwarder per type at every step; capture and once keep working', async (t) => {
+test('every canvas listener has its own forwarder on the layer, exactly as passive as the listener: a passive touch listener gives a passive one (its preventDefault ignored, as natively); a non-passive one adds a non-passive one (preventDefault works), and removing it removes its forwarder only; capture and once keep working', async (t) => {
   const { managed } = setup({ t });
   const { canvas } = page(KIDS);
   const r = managed(canvas);
@@ -162,16 +183,15 @@ test('the forwarder on the layer is as passive as the canvas listeners it serves
   assert.equal(prevented(inner), false, 'its preventDefault is ignored, as for a passive listener natively');
   const active = (/** @type {Event} */ ev) => { seen.push('active'); ev.preventDefault(); };
   canvas.addEventListener('touchstart', active);
-  assert.equal(spy.live('touchstart'), 1, 'one forwarder for the type');
-  assert.equal(spy.calls.at(-1)?.passive, false, 'a listener with passive left out (the canvas is not the window, document or body: false there) makes it non-passive');
+  assert.equal(spy.live('touchstart'), 2, 'one forwarder per listener');
+  assert.deepEqual(spy.calls.at(-1), { op: 'add', type: 'touchstart', passive: false, capture: false }, 'a listener with passive left out (the canvas is not the window, document or body: false there) gets a non-passive one');
   assert.equal(prevented(inner), true, 'and preventDefault from the non-passive canvas listener works');
   canvas.removeEventListener('touchstart', active);
-  assert.equal(spy.live('touchstart'), 1, 'still one forwarder');
-  assert.equal(spy.calls.at(-1)?.passive, true, 'removing it makes the forwarder passive again');
-  assert.equal(prevented(inner), false);
-  const before = spy.calls.length;
+  assert.equal(spy.live('touchstart'), 1, 'removing it removes its forwarder');
+  assert.equal(spy.calls.at(-1)?.op, 'remove');
+  assert.equal(prevented(inner), false, 'the passive one is left, passive');
   canvas.addEventListener('touchstart', () => seen.push('second passive'), { passive: true });
-  assert.equal(spy.calls.length, before, 'no change of passive state: the forwarder is not registered again');
+  assert.deepEqual(spy.calls.at(-1), { op: 'add', type: 'touchstart', passive: true, capture: false }, 'a second passive listener: a second passive forwarder');
   // capture and once, through a passive forwarder of their own
   const order = [];
   canvas.addEventListener('touchmove', () => order.push('capture'), { capture: true, passive: true });
@@ -187,7 +207,7 @@ test('the forwarder on the layer is as passive as the canvas listeners it serves
   assert.ok(seen.includes('passive') && seen.includes('active') && seen.includes('second passive'));
 });
 
-test('a passive canvas listener next to a non-passive one that cancels nothing cannot cancel, as on a native element: preventDefault(), Event.prototype.preventDefault.call and returnValue = false are ignored in either order, capture and bubble, for a handleEvent object and a once listener; the non-passive one still cancels, an event dispatched from inside the passive listener stays cancelable, and the Event prototype is left as it was', async (t) => {
+test('a passive canvas listener next to a non-passive one that cancels nothing cannot cancel, as on a native element: preventDefault(), Event.prototype.preventDefault.call, returnValue = false and the native method or setter saved before the polyfill ran are ignored in either order, capture and bubble, for a handleEvent object and a once listener; the non-passive one still cancels, an event dispatched from inside the passive listener stays cancelable, and the Event prototype is left as it was', async (t) => {
   const { managed } = setup({ t });
   const { canvas } = page(KIDS);
   managed(canvas);
@@ -198,6 +218,8 @@ test('a passive canvas listener next to a non-passive one that cancels nothing c
     method: (ev) => ev.preventDefault(),
     prototype: (ev) => Event.prototype.preventDefault.call(ev),
     returnValue: (ev) => { ev.returnValue = false; },
+    savedMethod: (ev) => NATIVE_PREVENT.call(ev),
+    savedSetter: (ev) => NATIVE_RETURN_VALUE_SET.call(ev, false),
   };
   /** the same listeners on a native element and on the canvas: whether the event was cancelled, and what defaultPrevented read inside the passive listener @param {EventTarget} target @param {Element} at @param {{type: string, capture: boolean, first: 'passive'|'active', how: string, object?: boolean, once?: boolean, activeCancels?: boolean}} c */
   const run = (target, at, c) => {
@@ -248,4 +270,36 @@ test('a passive canvas listener next to a non-passive one that cancels nothing c
   const plain = new Event('x', { cancelable: true });
   plain.preventDefault();
   assert.equal(plain.defaultPrevented, true, 'outside a listener preventDefault works as before');
+});
+
+test('mixed passive and non-passive canvas listeners run in the native order; stopImmediatePropagation in a passive one stops the later ones; a later one removed during the dispatch does not run; on a native element the same', async (t) => {
+  const { managed } = setup({ t });
+  const { canvas } = page(KIDS);
+  managed(canvas);
+  const inner = /** @type {Element} */ (canvas.querySelector('#in'));
+  const ref = document.createElement('div');
+  const refChild = ref.appendChild(document.createElement('span'));
+  document.body.append(ref);
+  t.cleanup(() => ref.remove());
+  /** the order in which four listeners (active, passive, passive, active) ran @param {EventTarget} target @param {Element} at @param {'order'|'stop'|'remove'} mode */
+  const run = (target, at, mode) => {
+    /** @type {string[]} */ const log = [];
+    const ev = new Event('touchstart', { bubbles: true, cancelable: true });
+    const c = () => log.push('c passive');
+    const a = () => { log.push('a passive'); if (mode === 'stop') ev.stopImmediatePropagation(); if (mode === 'remove') target.removeEventListener('touchstart', c); };
+    const b = () => log.push('b active');
+    const d = () => log.push('d active');
+    target.addEventListener('touchstart', b);
+    target.addEventListener('touchstart', a, { passive: true });
+    target.addEventListener('touchstart', c, { passive: true });
+    target.addEventListener('touchstart', d);
+    at.dispatchEvent(ev);
+    for (const fn of [a, b, c, d]) target.removeEventListener('touchstart', fn);
+    return log;
+  };
+  for (const mode of /** @type {const} */ (['order', 'stop', 'remove'])) {
+    const native = run(ref, refChild, mode);
+    assert.ok(native.length >= 2, `native reference ${mode}: ${native}`);
+    assert.deepEqual(run(canvas, inner, mode), native, mode);
+  }
 });
