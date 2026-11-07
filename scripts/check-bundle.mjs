@@ -447,7 +447,8 @@ const unpacked = (packed) => [...packed].filter((f) => f.endsWith('.html')).flat
     .map((ref) => [ref, posix.normalize(posix.join(posix.dirname(page), ref))])
     .filter(([ref, file]) => !packed.has(file) && !packed.has(posix.join(file, 'index.html')) && !(ref.endsWith('/') && packed.has(posix.join(file, 'index.html'))))
     .map(([ref]) => `${page} -> ${ref}`));
-const packed = new Set(JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: root, encoding: 'utf8' }))[0].files.map((/** @type {{path: string}} */ f) => f.path));
+// on Windows npm is npm.cmd, which only a shell runs (the arguments are fixed)
+const packed = new Set(JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' }))[0].files.map((/** @type {{path: string}} */ f) => f.path));
 for (const miss of unpacked(packed)) problems.push(`G-bundle: the package references a file it does not contain: ${miss}`);
 if (!unpacked(new Set([...packed].filter((f) => f !== 'dist/hic-live-polyfill.iife.min.js'))).length) problems.push('G-bundle: the package reference check failed its control (the package without the minified core reported nothing)');
 
