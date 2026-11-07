@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Until `1.0.0`, fixes go into the next release candidate, published under the npm dist-tag `next`; earlier release candidates and the `0.1.0` previews are not patched. From `1.0.0`, the policy of `docs/STABILITY.md` (section 2, "Older lines") applies.
+Until `1.0.0`, a fix, security fixes included, ships in the next release (candidate) under the npm dist-tag `next`; no earlier release is patched (releases before `1.0.0` get no fixes, nothing is backported). From `1.0.0`, the policy of `docs/STABILITY.md` (section 2, "Older lines") applies.
 
 ## Reporting a vulnerability
 
