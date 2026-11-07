@@ -12,7 +12,7 @@
  * into one of four slots) with the same B-spline as the shader, so clicks and typing reach the field the user sees.
  *
  * Zero work at rest: the instance is `continuous` only while the surface moves; once it is flat (below what a pixel shows) the field is
- * cleared and the host stops rendering. The option `ambient` (a gentle swell) makes it continuous on purpose.
+ * cleared and the host stops rendering. The option `ambient` (a gentle swell) makes it continuous on purpose, at a positive intensity.
  *
  * Actions: 'drop' (a pebble at `point`; with `swell: true` one broad swell) and 'demo' (a short rain, then calm) resolve 'calm' once the surface is still. User input during the
  * demo (the pointer, setOptions) stops the rain at once and resolves the demo with null. With reduced motion both resolve 'calm' at once and nothing moves.
@@ -613,8 +613,9 @@ export const plugin = Object.freeze({
 
     return {
       spatial: true,
-      /** true while the surface moves (or with the ambient swell): the host renders every capped frame then, and none at rest */
-      get continuous() { return awake || ambient > 0; },
+      /** true while the surface moves (or with the ambient swell, unless the intensity is 0: the output is then the source): the host renders every capped frame then,
+       * and none at rest */
+      get continuous() { return awake || (ambient > 0 && intensity > 0); },
       setOptions(next) {
         // an option change during the demo is the user's: it takes over (the rain stops, the demo resolves null)
         if (rain.length || demoTakeover) takeOver();

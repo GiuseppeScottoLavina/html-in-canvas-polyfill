@@ -12,7 +12,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import { Script } from 'node:vm';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { discoverPlugins } from '../plugins/_shared/contract.mjs';
 
@@ -213,7 +213,9 @@ const LIMITS = {
   // 365.25 -> 365.5 KB (2026-11-06, measured 365,411 / 124,382 with all three changes: the clipped overlay, the side builds dropped at dispose, the event bridge)
   // 365.5 -> 365.75 KB (+262 / +113 bytes, gzip 124,492 under its ceiling, 2026-11-07, measured 365,667): whenPainted over a native implementation records the
   // native paint events (install.js installNative); before it, whenPainted in modes native and native-bridged never resolved at once after a paint
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 365.75 * KB, gzip: 124.5 * KB },
+  // 365.75 -> 366.5 KB, gzip 124.5 -> 124.75 KB (+710 / +204 bytes, 2026-11-07, measured 366,377 / 124,696): a passive canvas listener next to a non-passive one of the
+  // same type and phase cannot cancel the event, as natively (event-bridge.js asPassive; external audit of 1.0.0-rc.1)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 366.5 * KB, gzip: 124.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -385,7 +387,8 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // minified by esbuild with code splitting. Its polyfill path imports install() and the GPU bundle (chunks/loader-core-*.js), not the package entry, whose other
   // exports a dynamic import keeps, and the engines (chunks/engines-*.js) only on Gecko / WebKit. Measured 2026-11-05 (gzip level 9, the sum over the files of each
   // path), with the core of 0.1.0-preview.23: start 8,029 bytes; polyfill path on Chromium 132,220 (161,057 when it imported the package entry), on Gecko / WebKit 148,797. The ceilings are those plus a
-  // small margin. Control: the same app with the loader importing the package entry carries the feature prose and the engines in its Chromium path.
+  // small margin. 2026-11-07: Chromium 136 -> 136.25 KB, Gecko / WebKit 152.5 -> 152.75 KB (+199 / +201, measured 136,069 / 152,646): the core's passive-listener fix above.
+  // Control: the same app with the loader importing the package entry carries the feature prose and the engines in its Chromium path.
   /** @param {any} [plugin] @returns {Promise<{dyn: string[], start: number, chromium: number|null, geckoWebkit: number|null, prose: number, engines: boolean, enginesSplit: boolean}>} */
   const loaderApp = async (plugin) => {
     const r = await esbuild({ stdin: { contents: "import { load } from './dist/esm/loader.js'; globalThis.load = load;", resolveDir: root, sourcefile: 'app.js', loader: 'js' }, bundle: true, minify: true, format: 'esm', target: 'chrome130', splitting: true, outdir: join(root, '.scratch/loader-app'), write: false, metafile: true, logLevel: 'silent', plugins: plugin ? [plugin] : [] });
@@ -422,7 +425,7 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   //   list (scroll-pages.js clippedAway, +349 gzip)
   // geckoWebkit 152.25 -> 152.5 KB (2026-11-06, measured 135,696 / 152,273 with both): the core it loads grew by the side builds dropped at dispose too (+53 gzip)
   // chromium 135.75 -> 136 KB (2026-11-06, measured 135,760 / 152,337 with the event bridge's passive forwarder too)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 136 * KB, geckoWebkit: 152.5 * KB };
+  const LOADER_APP = { start: 8.1 * KB, chromium: 136.25 * KB, geckoWebkit: 152.75 * KB };
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';
@@ -433,6 +436,21 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   if (entryApp.prose !== prose.length || !entryApp.engines || !(/** @type {number} */ (entryApp.chromium) > LOADER_APP.chromium)) problems.push(`G-bundle: the loader payload check failed its control (the loader importing the package entry: ${entryApp.prose} prose strings, engines ${entryApp.engines}, ${entryApp.chromium} bytes)`);
   console.log(`ESM loader app (gzip): start ${app.start}, polyfill path Chromium ${app.chromium}, Gecko / WebKit ${app.geckoWebkit} (control, the package entry: ${entryApp.chromium}, ${entryApp.prose} prose strings)`);
 }
+
+// every local file that an HTML page of the npm package references (src, href, poster) is in the package: served from the extracted tarball the landing's
+// picture answered 404 in 1.0.0-rc.1 (package.json `files` left examples/assets/ out). The list is npm's own (`npm pack --dry-run`), so `files` and .npmignore both count.
+// Control: the same pages against the list without the first file they reference must report it.
+/** @param {Set<string>} packed @returns {string[]} the references to a file outside `packed`, as "page -> reference" */
+const unpacked = (packed) => [...packed].filter((f) => f.endsWith('.html')).flatMap((page) =>
+  [...readFileSync(join(root, page), 'utf8').matchAll(/\s(?:src|href|poster)=["']([^"'#?]+)["']/g)].map((m) => m[1])
+    .filter((ref) => !/^[a-z][a-z0-9+.-]*:|^\/\/|^\//i.test(ref))
+    .map((ref) => [ref, posix.normalize(posix.join(posix.dirname(page), ref))])
+    .filter(([ref, file]) => !packed.has(file) && !packed.has(posix.join(file, 'index.html')) && !(ref.endsWith('/') && packed.has(posix.join(file, 'index.html'))))
+    .map(([ref]) => `${page} -> ${ref}`));
+// on Windows npm is npm.cmd, which only a shell runs (the arguments are fixed)
+const packed = new Set(JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' }))[0].files.map((/** @type {{path: string}} */ f) => f.path));
+for (const miss of unpacked(packed)) problems.push(`G-bundle: the package references a file it does not contain: ${miss}`);
+if (!unpacked(new Set([...packed].filter((f) => f !== 'dist/hic-live-polyfill.iife.min.js'))).length) problems.push('G-bundle: the package reference check failed its control (the package without the minified core reported nothing)');
 
 // ---- 3. browser
 if (!process.argv.includes('--skip-browser')) {
