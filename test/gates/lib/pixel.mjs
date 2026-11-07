@@ -121,6 +121,9 @@ export async function compareToTwin(ctx, { ref, page, name, selector = '#hic-sur
   let poly;
   if (polyFirst) { await ctx.focus(page); await assertLayerHidden(ctx, page, name); poly = await canvasShot(page, selector); }
   await ctx.focus(ref);
+  // two frames of the twin's tab, now in front, before its screenshot: taken at once, it was all background once in a nightly run (2026-11-07, snippet 14 of
+  // G-regress-capture), which made the clean bundle red and so hid a mutant
+  await ref.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
   const twin = await H.screenshotElement(ref, refSelector);
   const regions = typeof rest.regions === 'function' ? await rest.regions(ref) : rest.regions;
   if (!polyFirst) { await ctx.focus(page); await assertLayerHidden(ctx, page, name); poly = await canvasShot(page, selector); }
@@ -135,8 +138,9 @@ export async function compareToTwin(ctx, { ref, page, name, selector = '#hic-sur
 /** Write the three images of a failed comparison next to the results (never in a control run). */
 export async function dumpFailure(ctx, name, poly, twin) {
   if (ctx.control) return;
-  const { writeFileSync } = await import('node:fs');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
   const { RESULTS } = await import('./gate.mjs');
+  mkdirSync(RESULTS, { recursive: true }); // a fresh checkout has no results folder before its first gate result
   const base = `${RESULTS}/${ctx.id}-${name.replace(/[^a-z0-9]+/gi, '-')}`;
   writeFileSync(`${base}.poly.png`, H.encodePng(poly));
   writeFileSync(`${base}.ref.png`, H.encodePng(twin));

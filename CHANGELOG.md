@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - Framework tests: `node test/frameworks/run.mjs --only=<name>` with a name that is not a framework of the suite ran nothing and printed PASS. An unknown or empty selection now exits 2 before any build, and a run with no scenario or no check fails. The receipt records the selected frameworks, whether the selection was partial and whether the controls ran.
 - Docs: `docs/STABILITY.md` (the `load` row), the README, the bundles page, the getting-started guide, the design decisions and the landing page say that over an earlier native build the loader downloads the native bridge and the core, as API-CONTRACT 2.4 already did.
 
+### Changed
+
+- Tests: the pixel oracle waits two frames of the plain-DOM twin's tab after bringing it to the front, before its screenshot. In the nightly run of 2026-11-07 a twin was captured as bare background, which turned the clean bundle red on G-regress-capture's snippet 14 and so hid the mutant `ancestor-css-lost` (reported MISSED; caught 4 of 4 times locally).
+- Tests: the mutant runner runs a clean bundle that fails a gate once more, and leaves out of the comparison only the checks red on both runs, so one flaky clean run no longer hides the mutants of those checks.
+- Tests: the pixel gates create the results folder before they write their PNGs, so G-regress-capture no longer fails "gate ran to completion" in a fresh checkout.
+
 ## [1.0.0-rc.1] - 2026-11-07
 
 The first release candidate of 1.0.0. `docs/STABILITY.md` lists what 1.0.0 promises, row by row, with the evidence for each, and the versioning policy; until 1.0.0 the stable rows change only by fixes. The standard API, the native, `native-bridged`, polyfill and refused modes, `install()` and a bare `load()` are stable; the frame cap, the effects, the loader's options and the other extensions are experimental; Safari on the iPhone is unqualified until a physical iPhone has run the suites. New evidence for that table: the mode `native-bridged` run end to end on Chrome for Testing 154 and 155 (G-bridged-translation, which found three bridge bugs), Chrome's accessibility tree under each canvas (G-a11y), a VoiceOver session in Safari on macOS, and production builds of the React, Vue, Svelte and Lit apps. The examples index is now the project's landing page.
