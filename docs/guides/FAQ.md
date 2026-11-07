@@ -6,7 +6,7 @@ Short answers to the questions people ask first, with links to the evidence. Whe
 
 [HTML-in-Canvas](https://github.com/WICG/html-in-canvas) is a WICG proposal, with a draft pull request to the HTML Standard ([whatwg/html#11588](https://github.com/whatwg/html/pull/11588)), that lets a `<canvas>` draw its own live HTML children: you mark the canvas `content="drawable"`, mark children `drawable`, and draw them with `ctx.drawElementImage()` in a `paint` event (or upload them as WebGL / WebGPU textures). The elements stay real DOM, so they keep focus, typing, hit testing and accessibility. Chrome 157 ships the API enabled by default, and Chrome Canary exposes it too; the proposal is still changing.
 
-This package implements that API in JavaScript for browsers that do not have it yet: desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iOS / iPadOS 26+. Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
+This package implements that API in JavaScript for browsers that do not have it yet: desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iPadOS 26+ (Safari on the iPhone, iOS 26+, is admitted but unqualified: no physical iPhone has run the suites). Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
 
 ## How does it work?
 
@@ -136,7 +136,7 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a release candidate of a proposed standard (`1.0.0-rc.1` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and only the newest release candidate gets fixes. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a release candidate of a proposed standard (`1.0.0-rc.1` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
