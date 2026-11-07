@@ -80,7 +80,7 @@
 <h1>HTML-in-Canvas Polyfill</h1>
 <p class="lead">Render live HTML inside canvas.</p>
 <p>Use the proposed <a href="https://github.com/WICG/html-in-canvas">HTML-in-Canvas API</a> (<code>&lt;canvas content="drawable"&gt;</code>, <code>drawElementImage</code>, the <code>paint</code> event) in modern Safari and Firefox, with native support used automatically where available: in a browser that implements the API, such as Chrome 157, the polyfill steps aside and the browser draws natively. The HTML stays real and live: forms keep their focus, typing, scrolling and hit testing, and stay in the accessibility tree. Explore interactive forms, Canvas 2D rendering and optional WebGPU effects.</p>
-<p class="status"><strong>Release candidate.</strong> <code>1.0.0-rc.1</code> follows a proposed standard, which may still change. Until <code>1.0.0</code> its stable rows change only by fixes; the experimental and unqualified rows carry no promise. Check the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>, the <a href="#browsers">browser support</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#known-limitations">known limitations</a> before integrating.</p>
+<p class="status"><strong>Release candidate.</strong> <code>1.0.0-rc.1</code> follows a proposed standard, which may still change. Until <code>1.0.0</code> its stable rows change only by fixes; experimental rows may change in any minor release, and unqualified rows promise nothing. Check the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>, the <a href="#browsers">browser support</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#known-limitations">known limitations</a> before integrating.</p>
 
 <ul class="actions" aria-label="Start here">
   <li><a class="primary" href="plugins/">Try the demo</a></li>
@@ -125,13 +125,13 @@ install(); // synchronous: call it before your code uses the API</code></pre>
     <tr><td>Safari 27 and later, desktop</td><td>the polyfill</td><td>qualified</td></tr>
     <tr><td>Safari on iPadOS 26 and later</td><td>the polyfill, with phone budgets</td><td>qualified on a physical iPad Pro</td></tr>
     <tr><td>Chrome for Android 130 and later</td><td>the polyfill, with phone budgets</td><td>qualified on two physical phones</td></tr>
-    <tr><td>Safari on the iPhone, iOS 26 and later</td><td>expected to run as on the iPad</td><td>unqualified: run only on the iOS Simulator, never on a physical iPhone</td></tr>
+    <tr><td>Safari on the iPhone, iOS 26 and later</td><td>expected to run as on the iPad</td><td>unqualified: run only on the iOS Simulator, never on a physical iPhone on iOS 26 or later</td></tr>
     <tr><td>Edge, Opera, Brave and other desktop Chromium; Chrome 130 to 153</td><td>expected to run as in Chrome</td><td>unqualified</td></tr>
     <tr><td>Older Firefox and Safari, web views inside apps, Firefox for Android</td><td>refused with one console warning</td><td>refused</td></tr>
   </tbody>
 </table>
 </div>
-<p class="note">Row by row, with versions and evidence: the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/SUPPORT-MATRIX.md">support matrix</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>. The effect plugins and the frame cap are experimental extensions of this library, not part of the HTML-in-Canvas proposal; they need WebGPU, and the demos fall back to 2D without it.</p>
+<p class="note">Row by row, with versions and evidence: the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/SUPPORT-MATRIX.md">support matrix</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>. The effect plugins and the frame cap are experimental extensions of this library, not part of the HTML-in-Canvas proposal. The effect plugins need WebGPU; the demos fall back to 2D without it.</p>
 
 <h2 id="demos">Demos</h2>
 <p>Each page below draws live HTML into a canvas: click and type into what you see.</p>
