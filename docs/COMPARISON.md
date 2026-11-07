@@ -1,8 +1,8 @@
 # Comparison with `html-in-canvas-polyfill` (npm)
 
-Measured on 2026-10-13 by this project, so read it as one party's measurements: every number below is reproducible with the method described, and where the other package is ahead it says so (section 6).
+Measured on 2026-10-13 by this project, so read it as one party's measurements: every number below comes with the method that produced it, and where the other package is ahead it says so (section 6).
 
-This is a snapshot of that date; the columns of this polyfill describe it as it was then. Changed since, for this polyfill (the other package was not measured again): the WPT tests are now pinned at a newer revision (2026-10-28, 248 files, 381 subtests), of which the polyfill passes 214 files and 333 subtests and the native oracle Canary 159.0.8128.2 236 and 369 (in each of its full runs) ([CONFORMANCE.md](CONFORMANCE.md)); at the revision used below the polyfill had reached 182 of 230 files and 307 of 375 subtests (was 139 and 238). The minified core is 365,411 bytes (124,382 gzip; [BUNDLES.md](BUNDLES.md)), Chrome for Android 130+ and Safari on iOS / iPadOS 26+ are admitted (Android verified on two physical phones and the emulator, iPadOS on a physical iPad, iOS on the simulator only), and an `ElementImage` can be drawn in a dedicated worker that loads the worker bundle. The latency, resize, update and first-paint numbers of all three subjects were measured again on 2026-10-30/31 ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)); where they differ from section 5 below, those are the current ones.
+This is a snapshot of that date; the columns of this polyfill describe it as it was then. Changed since, for this polyfill (the other package was not measured again): the WPT tests are now pinned at a newer revision (2026-10-28, 248 files, 381 subtests), of which the polyfill passes 214 files and 333 subtests and the native oracle Canary 159.0.8128.2 236 and 369 (in each of its full runs) ([CONFORMANCE.md](CONFORMANCE.md)); at the revision used below the polyfill had reached 182 of 230 files and 307 of 375 subtests (was 139 and 238). The minified core is 365,667 bytes (124,492 gzip; [BUNDLES.md](BUNDLES.md)), Chrome for Android 130+ and Safari on iOS / iPadOS 26+ are admitted (Android verified on two physical phones and the emulator, iPadOS on a physical iPad, iOS on the simulator only), and an `ElementImage` can be drawn in a dedicated worker that loads the worker bundle. The latency, resize, update and first-paint numbers of all three subjects were measured again on 2026-10-30/31 ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)); where they differ from section 5 below, those are the current ones.
 
 Scope: facts and our own measurements only. Chrome 154.0.8037.98 (no native feature), Apple M1 Max, macOS, DPR 2 for the gates and DPR 1 for WPT. Nothing was run in Firefox or Safari for this comparison. Load average stayed under 4.
 
@@ -10,10 +10,10 @@ Scope: facts and our own measurements only. Chrome 154.0.8037.98 (no native feat
 
 | | `html-in-canvas-polyfill` | this polyfill (ours) |
 |---|---|---|
-| version | 1.0.1 (npm, 2026-05-09). It is a 1.5 KB wrapper: `import 'three-html-render/polyfill'` + `installHtmlInCanvasPolyfill()`. Its README says "All credits go to repalash/three-html-render". | 0.1.0-preview.2 (preview) |
+| version | 1.0.1 (npm, 2026-05-09). It is a 1.5 KB wrapper: `import 'three-html-render/polyfill'` + `installHtmlInCanvasPolyfill()`. Its README says "All credits go to repalash/three-html-render". | the code of 0.1.0-preview.1 before its release on 2026-10-17 |
 | real implementation | `three-html-render` 0.1.2 by repalash (npm 2026-04-13; repo last push 2026-04-20, 190 stars, 12 forks, 1 issue/PR ever, 0 open) | this repo |
 | wrapper repo | samdenty/html-in-canvas-polyfill: 3 commits, all on 2026-05-09, 2 stars, 0 issues | |
-| npm downloads (2026-09-12 to 2026-10-11) | 58 (wrapper), 1,512 (three-html-render) | none yet (preview) |
+| npm downloads (2026-09-12 to 2026-10-11) | 58 (wrapper), 1,512 (three-html-render) | none (not yet published) |
 | licence | MIT (both packages; bundles ts-browser-helpers 0.12.0, MIT) | MIT |
 | runtime dependencies | `three-html-render` (optional peer: `three` >= 0.150, only for its Three.js renderer) | none |
 | size (classic IIFE, minified) | `dist/polyfill.js` 29,684 B, gzip -9 9,712 B (ESM `polyfill.mjs` 37,039 B unminified / 10,713 gzip) | core 256,396 B, gzip -9 90,176 B |
@@ -80,7 +80,7 @@ These runs had machine load above threshold (another process above 15 % CPU; loa
 
 ## 6. Where the other package is ahead (measured or factual)
 
-- About 8.6x smaller minified (29.7 KB vs 256 KB) and 9.3x smaller gzipped (9.7 KB vs 90.2 KB) on 2026-10-13; against the current core (361 KB / 123 KB) about 12.1x and 12.6x; published on npm and in use.
+- About 8.6x smaller minified (29.7 KB vs 256 KB) and 9.3x smaller gzipped (9.7 KB vs 90.2 KB) on 2026-10-13; against the core of 1.0.0-rc.1 (365 KB / 124 KB) about 12.3x and 12.8x; published on npm and in use.
 - Lower keystroke-to-canvas latency on the explainer while the text fits (p50 10.6 vs 17.3 ms) on 2026-10-13. In the remeasurement of 2026-10-30/31 this polyfill is ahead there (5.1 vs 11.5 ms), and the other package is ahead on first paint (form page in a new tab, p50 59.9 vs 91.1 ms) and on click to focus (p50 7.7 vs 14.6 ms) ([PERFORMANCE-COMPARISON.md](PERFORMANCE-COMPARISON.md)).
 - 7 WPT files pass that ours fails (listed above).
 - Three.js integration, WebXR examples, a browser extension; claims mobile and WebView support (not verified here; this polyfill refused mobile browsers at the time and admits Chrome for Android and Safari on iOS since, WebViews still refused).

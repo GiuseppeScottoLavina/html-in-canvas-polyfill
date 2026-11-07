@@ -29,9 +29,10 @@ function driftSection(result) {
   const { files, subtests } = result.counts;
   const byFile = new Map();
   for (const x of d.subtests) byFile.set(x.id, (byFile.get(x.id) ?? 0) + 1);
+  const head = `**Oracle drift.** The oracle ran on ${d.oracle}, but the pinned WPT revision is the copy that ${d.build} imported (\`test/vendor/wpt/VERSION.json\`).`;
+  if (!d.subtests.length) return `\n${head} Every subtest that the pinned build passed (\`test/wpt/oracle-baseline.json\`) passes in this oracle run too.\n`;
   return `
-**Oracle drift.** The oracle ran on ${d.oracle}, but the pinned WPT revision is the copy that ${d.build} imported (\`test/vendor/wpt/VERSION.json\`). Canary auto-updates and the newer build implements post-pin API changes
-(rendering and API changes after the pinned revision), so ${d.subtests.length} subtests that the pinned build passed fail in this oracle run. They are triaged as native passes from
+${head} Canary auto-updates and the newer build implements rendering and API changes made after the pinned revision, so ${d.subtests.length} subtests that the pinned build passed fail in this oracle run. They are triaged as native passes from
 \`test/wpt/oracle-baseline.json\` (every full run of ${d.build}), so a polyfill failure there still needs a written reason. Oracle at the pinned build: **${files.P} / ${files.total} files, ${subtests.P} / ${subtests.total} subtests**.
 Affected files: ${[...byFile].map(([id, n]) => `\`${id}\` (${n})`).join(', ')}.
 `;

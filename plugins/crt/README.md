@@ -2,7 +2,7 @@
 
 The HTML drawn in a canvas shown on an old bar arcade monitor: curved glass inside a bezel, thick scanlines, an RGB aperture grille, phosphor glow and bloom; clicks are mapped through the curvature.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![The form of the plugin gallery on the arcade CRT, typing into the message (one CSS px per pixel, so the scanlines and the phosphor stripes are visible)](media/crt.webp)
 

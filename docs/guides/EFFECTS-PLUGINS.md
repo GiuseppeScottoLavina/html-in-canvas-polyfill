@@ -11,9 +11,9 @@ The example plugins of this repository live in [`plugins/`](../../plugins/), out
 
 ## Extensions, not the standard
 
-The effects host (`HTMLInCanvasEffects`, this plugin interface, the input remapping) and the frame cap (`framecap`, `canvas.frameCap`) are **extensions of this library**. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them: they are this library's own API. Code that uses them depends on this library, not on the standard.
+The effects host (`HTMLInCanvasEffects`, this plugin interface, the input remapping) and the frame cap (`framecap`, `canvas.frameCap`) are **extensions of this library**. They are not part of the HTML-in-Canvas proposal, and browsers' native implementations do not provide them: they are this library's own API. Code that uses them depends on this library, not on the standard. They are **experimental** ([STABILITY.md](../STABILITY.md)): they may change or be removed in any minor release, with a CHANGELOG entry, and they are not expected to enter the specification. The example plugins of `plugins/` are experimental too: their options, actions, states and looks may change in the same way.
 
-They run over the polyfill's drawing (mode `polyfill`) and over a browser's own HTML-in-Canvas implementation that the installed polyfill stepped aside for (mode `native`): the page loads the same bundles and calls the same API, and `createHost` picks the path. Over a native implementation the host needs the standard members `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` and `getElementImageDefaultSize`; where one is missing (an earlier draft such as the `layoutsubtree` builds) `createHost` rejects with a `NotSupportedError` and the page keeps its 2D path. The extensions still need the core bundle installed: it decides the mode and defines `canvas.frameCap`, also in the native modes (a property of this library, not of the standard; `uninstall()` removes it). So a page that uses them loads the core's own tag (or calls `install()`), not only the loader, which downloads no core on a native implementation.
+They run over the polyfill's drawing (mode `polyfill`) and over a browser's own HTML-in-Canvas implementation that the installed polyfill stepped aside for (modes `native` and `native-bridged`): the page loads the same bundles and calls the same API, and `createHost` picks the path. Over a native implementation the host needs the standard members `GPUQueue.drawElementImageToTexture`, `updateElementGeometry`, `clearElementGeometry` and `getElementImageDefaultSize`; where one is missing (an earlier draft such as the `layoutsubtree` builds) `createHost` rejects with a `NotSupportedError` and the page keeps its 2D path. The extensions still need the core bundle installed: it decides the mode and defines `canvas.frameCap`, also in the native modes (a property of this library, not of the standard; `uninstall()` removes it). So a page that uses them loads the core's own tag (or calls `install()`), not only the loader, which downloads no core on a native implementation.
 
 #### On a native implementation
 
@@ -149,7 +149,7 @@ form.addEventListener('submit', async (event) => {
 
 | error | when |
 |---|---|
-| `TypeError` | `action` is not one of `handle.actions` (the message lists them: `unknown action "spin" of the plugin "disintegrate"; its actions are 'out', 'in', 'play'`); the plugin declares no actions; `options` is not an object; the plugin rejects the options (for example a `point` that is not `{x, y}`) |
+| `TypeError` | `action` is not one of `handle.actions` (the message lists them: `unknown action "spin" of the plugin "disintegrate"; its actions are 'out', 'in', 'play', 'demo'`); the plugin declares no actions; `options` is not an object; the plugin rejects the options (for example a `point` that is not `{x, y}`) |
 | `InvalidStateError` | the plugin was removed, is disabled, or failed |
 | the plugin's own error | the plugin threw or rejected while running the action; the plugin keeps running |
 
@@ -188,7 +188,7 @@ Two events on the canvas:
 | `effectframe` | the presented frame: `{now, delta, frameIndex, frameCap, sourceVersion}` | after each presented frame |
 | `effecterror` | `{error, type, id, phase}` | a plugin failed; `phase` is `create`, `render`, `resize`, `setOptions`, `recreate`, `destroy`, `mountUI-dispose`, `action` (a trigger of the plugin itself failed) or `settled`; `type: 'host', phase: 'recover'` when the host gave up after GPU device losses |
 
-A plugin that throws while rendering, resizing or taking options is marked failed and is no longer called (the canvas keeps its last presented frame); `handle.enabled` turns `false`, its pending `trigger` and `settled` resolve `null`, and `handle.setEnabled(true)` tries it again. Every error is also recorded in `__HIC__.installed.report().errors` and printed once.
+A plugin that throws while rendering, resizing or taking options is marked failed and is no longer called (the canvas keeps its last presented frame); `handle.enabled` turns `false`, its pending `trigger` and `settled` resolve `null`, and `handle.setEnabled(true)` tries it again. Every error is also recorded in `__HIC__.installed.report().errors` (the first 100) and printed once.
 
 **GPU device loss.** The host keeps presenting the last frame, opens a new device and creates every plugin again with its latest options, re-mounting its UI. More than 3 losses within 10 seconds stop the recovery (`effecterror` with `type: 'host'`).
 
@@ -290,7 +290,7 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 | `apiVersion` | `2` (any other value is a `TypeError`) |
 | `version` | finite number (your plugin's own version) |
 | `create(context, options)` | function, may be async, returns the instance |
-| `outputCapabilities` | optional. `{ directCanvasRenderAttachment: true }` promises that the pass only WRITES its destination as a colour attachment of the same format and never samples or reads it; the host may then give the last plugin the canvas texture directly. Any other key is a `TypeError`. |
+| `outputCapabilities` | optional. `{ directCanvasRenderAttachment: true }` promises that the pass only WRITES its destination as a colour attachment of the same format and never samples or reads it; the host may then give the last plugin the canvas texture directly. Any other key, or a value other than `true`, is a `TypeError`. |
 | `actions` | optional. A non-empty array of unique action names, each a lowercase word (`/^[a-z][a-z0-9-]{0,31}$/`): the names `handle.trigger` accepts. The instance must then implement `runAction` and `settled` (section 15). |
 
 ### 12. The context
@@ -557,7 +557,7 @@ The shared test kit of `plugins/_shared/` (test tooling, not shipped) covers the
 
 **The gallery check** (`scripts/check-gallery.mjs`, `npm run test:gallery`, headless Chrome) runs every plugin of the manifest, and the template plugin, through the rules of section 15.1 in the gallery, at 390 x 844 (a phone, touch emulation) and 1194 x 748 (an iPad in landscape): the stage is entirely in the first viewport and the form fits it without an inner scroll; the `demo` plays on selection, resolves within 6 s and not under reduced motion; once it settled, 2 s without any `effectframe` (unless the plugin declares `meta.continuous`); a vertical touch drag that starts on the stage away from a handle scrolls the page; and, once, that the frame cap defaults to the display rate the page measured. Its positive controls must turn each of those checks red.
 
-How the plugin of section 16 is verified: `npm run test:examples` serves `test/examples-smoke/wobble-plugin/index.html` (a red bar 14 css px wide at x = 300 in the source) in headless Chrome and checks: the host and plugin start; the presented frame is not blank and the live layer has computed opacity 0; amplitude 24 differs from amplitude 0 in more than 400 pixels; and the mapper against the pixels. For the last check the frame is frozen (`framecap=1`), a compositor screenshot is taken, the left edge of the bar is found on 38 rows, and `mapper(edge)` must give x = 300 within 2 px. The control is the identity mapper (what a plugin without a mapper amounts to), which must be wrong by 8 px or more on the same pixels.
+How the plugin of section 16 is verified: `npm run test:examples` serves `test/examples-smoke/wobble-plugin/index.html` (a red bar 14 css px wide at x = 300 in the source) in headless Chrome and checks: the host and plugin start; the presented frame is not blank and the live layer has computed opacity 0; amplitude 24 differs from amplitude 0 in more than 400 pixels; and the mapper against the pixels. For the last check the frame is frozen (`framecap=1`), a compositor screenshot is taken, the left edge of the bar must be found on at least 20 rows and move over at least 20 px, and `mapper(edge)` must give x = 300 within 2 px. The control is the identity mapper (what a plugin without a mapper amounts to), which must be wrong by 8 px or more on the same pixels.
 
 Result of one run on one machine (headless Chrome 154.0.8037.98, macOS, DPR 1, amplitude 24): bar edge moved over a range of 48 px, the plugin's mapper was off by at most 1.18 px, the identity mapper by 24.5 px (`.scratch/results/examples-<timestamp>.json`, `numbers.mapper`). This shows the mapper contract works for this plugin; it is not a statement about every plugin or GPU.
 

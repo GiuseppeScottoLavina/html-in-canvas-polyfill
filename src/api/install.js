@@ -35,6 +35,7 @@ import { installWorkerGuard } from './worker-guard.js';
 /** @typedef {import('../contracts/types.js').ResolvedOptions} ResolvedOptions */
 /** @typedef {import('../contracts/types.js').Services} Services */
 /** @typedef {import('./native-detect.js').ModeDecision} ModeDecision */
+/** @typedef {{adoptRoot: (root: ShadowRoot) => void, painted?: (canvas: HTMLCanvasElement) => boolean}} Adoption  adoptRoot's work per mode; painted: the canvas fired the native paint (modes native and native-bridged) */
 
 /** One slot per window, shared by every copy of the library on the page: a second bundle must find the first one's install instead of probing patched prototypes. */
 const SLOT = EXT.INSTALLED_KEY;
@@ -203,7 +204,7 @@ function build(win, doc, options, native, mode, services, notes = []) {
     bus.clear();
   };
 
-  /** @type {{adoptRoot: (root: ShadowRoot) => void}} */
+  /** @type {Adoption} */
   let adoption = { adoptRoot() {} };
   /** @type {import('../contracts/types.js').EffectsSeam} */
   let seam;
@@ -227,7 +228,7 @@ function build(win, doc, options, native, mode, services, notes = []) {
  * @param {Services} services
  * @param {import('../contracts/types.js').PatchLedger} ledger
  * @param {Array<() => void>} undo
- * @param {(a: {adoptRoot: (root: ShadowRoot) => void}) => void} setAdoption
+ * @param {(a: Adoption) => void} setAdoption
  * @returns {import('../contracts/types.js').EffectsSeam}
  */
 function installPolyfill(env, services, ledger, undo, setAdoption) {
@@ -266,17 +267,23 @@ function installPolyfill(env, services, ledger, undo, setAdoption) {
  * @param {Services} services
  * @param {import('../contracts/types.js').PatchLedger} ledger
  * @param {Array<() => void>} undo
- * @param {(a: {adoptRoot: (root: ShadowRoot) => void}) => void} setAdoption
+ * @param {(a: Adoption) => void} setAdoption
  * @returns {import('../contracts/types.js').EffectsSeam}
  */
 function installNative(env, native, mode, services, ledger, undo, setAdoption) {
   const composed = composeNative(env, services);
   undo.push(composed.dispose);
-  if (mode === 'native-bridged') {
-    const bridge = (/** @type {any} */ (globalThis))[EXT.NATIVE_BRIDGE_KEY].install(env, native, ledger);
-    undo.push(bridge.dispose);
-    setAdoption(bridge);
-  }
+  // whenPainted: the canvases that fired the browser's own `paint` since install. The event is not composed, so it reaches the window only from the document;
+  // a shadow root is heard once it is passed to adoptRoot. One capturing listener per scope, removed by uninstall (the abort).
+  /** @type {WeakSet<EventTarget>} */
+  const painted = new WeakSet();
+  const heard = new (/** @type {Window & typeof globalThis} */ (env.window)).AbortController();
+  const hear = (/** @type {EventTarget} */ scope) => scope.addEventListener('paint', (e) => { if (e.target) painted.add(e.target); }, { capture: true, signal: heard.signal });
+  hear(env.window);
+  undo.push(() => heard.abort());
+  const bridge = mode === 'native-bridged' ? (/** @type {any} */ (globalThis))[EXT.NATIVE_BRIDGE_KEY].install(env, native, ledger) : null;
+  if (bridge) undo.push(bridge.dispose);
+  setAdoption({ adoptRoot: (root) => { hear(root); bridge?.adoptRoot(root); }, painted: (canvas) => painted.has(canvas) });
   // a native build in an engine without the device-pixel ResizeObserver box (Safari Technology Preview with its HTML-in-Canvas feature) would make the
   // explainer's own sizing line throw: completed as in mode polyfill (feature-detected: nothing is patched where the engine has it; ledger-restored)
   installDevicePixelBox(env, ledger);
@@ -291,7 +298,7 @@ function installNative(env, native, mode, services, ledger, undo, setAdoption) {
  * @param {HicMode} mode
  * @param {Readonly<ResolvedOptions>} options
  * @param {() => void} uninstall
- * @param {{adoptRoot: (root: ShadowRoot) => void}} adoption
+ * @param {Adoption} adoption
  * @returns {HicInstalled}
  */
 function makeInstalled(env, native, mode, options, uninstall, adoption) {
@@ -306,7 +313,7 @@ function makeInstalled(env, native, mode, options, uninstall, adoption) {
     canvases: () => env.registry.all().filter((r) => r.state !== 'detached' && r.state !== 'disposed').map((r) => r.canvas),
     whenPainted(canvas, timeoutMs = 5000) {
       assertCanvas(canvas);
-      if (env.registry.get(canvas)?.paint.everFired) return Promise.resolve();
+      if (env.registry.get(canvas)?.paint.everFired || adoption.painted?.(canvas)) return Promise.resolve();
       return new Promise((resolve, reject) => {
         const finish = (/** @type {() => void} */ settle) => { win.clearTimeout(timer); canvas.removeEventListener('paint', onPaint); settle(); };
         const onPaint = () => finish(resolve);

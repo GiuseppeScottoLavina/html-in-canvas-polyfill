@@ -1,12 +1,12 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`0.1.0-preview.27`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0-rc.1`) unless dated.
 
 ## What is this?
 
 [HTML-in-Canvas](https://github.com/WICG/html-in-canvas) is a WICG proposal, with a draft pull request to the HTML Standard ([whatwg/html#11588](https://github.com/whatwg/html/pull/11588)), that lets a `<canvas>` draw its own live HTML children: you mark the canvas `content="drawable"`, mark children `drawable`, and draw them with `ctx.drawElementImage()` in a `paint` event (or upload them as WebGL / WebGPU textures). The elements stay real DOM, so they keep focus, typing, hit testing and accessibility. Chrome 157 ships the API enabled by default, and Chrome Canary exposes it too; the proposal is still changing.
 
-This package implements that API in JavaScript for browsers that do not have it yet: desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iOS / iPadOS 26+. Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
+This package implements that API in JavaScript for browsers that do not have it yet: desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iPadOS 26+ (Safari on the iPhone, iOS 26+, is admitted but unqualified: no physical iPhone has run the suites). Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
 
 ## How does it work?
 
@@ -30,21 +30,21 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
-## Why is the core about 361 KB minified (123 KB gzipped)?
+## Why is the core about 365 KB minified (124 KB gzipped)?
 
-In the current build, 365,411 bytes minified and 124,382 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 365,667 bytes minified and 124,492 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
-Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 361 KB, so they are approximate.
+Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 365 KB, so they are approximate.
 
 | part | share | about |
 |---|---|---|
-| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 82 KB |
+| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 83 KB |
 | API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 61 KB |
-| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 48 KB |
+| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 49 KB |
 | scrolling: scroll offsets and classic scrollbars in snapshots, the scroll compositor and its planner | 12.7 % | 46 KB |
 | change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 41 KB |
-| snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 35 KB |
-| caret, text selection and typed text | 5.4 % | 19 KB |
+| snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 36 KB |
+| caret, text selection and typed text | 5.4 % | 20 KB |
 | scheduler and frame cap | 3.5 % | 13 KB |
 | native detection | 2.4 % | 9 KB |
 | utilities | 2.1 % | 8 KB |
@@ -77,13 +77,13 @@ Two caveats:
 
 ## Does Chrome 157 download the polyfill?
 
-With the core's script tag, yes: 365,411 bytes (124,382 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,465 bytes, 6,329 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
+With the core's script tag, yes: 365,667 bytes (124,492 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,459 bytes, 6,324 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 
 "Verified" below means an automated suite ran there with positive controls: deliberately broken variants that must make the checks fail. Most suites compare the canvas with the same HTML rendered as a plain page in the same browser.
 
-- **Desktop:** Chrome 154 and 155 on macOS (headed browser gates), Chrome 156 and 157 (its native feature switched off) in CI (headless on Linux and Windows, headed on macOS). Firefox 155 and 157 and Safari 27.0.1 on macOS, through WebDriver. Chrome 157 (Chrome for Testing 157.0.8103.39) and Chrome Canary 157 to 159 for the native path.
+- **Desktop:** Chrome 154 and 155 on macOS (headed browser gates), Chrome 156 and 157 (its native feature switched off) in CI (headless on Linux and Windows, headed on macOS). Firefox 155 and 157 and Safari 27.0.1 on macOS, and Firefox 159 in CI on macOS, through WebDriver. Chrome 157 (Chrome for Testing 157.0.8103.39) and Chrome Canary 157 to 159 for the native path.
 - **Physical devices, 2026-10-30:** a Pixel 7 Pro (Android 17, Chrome 156), a Huawei Mate 10 Pro (Android 10, Chrome 156) and an iPad Pro 11-inch (iPadOS 27.2). An iPhone XR on iOS 18.7 checked that unsupported versions are refused cleanly.
 - **Simulators:** the iOS Simulator (iPhone 17 and iPad Air, iOS 26.4) and the Android Emulator (Chromium 158).
 - **Not verified:** a physical iPhone on iOS 26 or later (Safari on the iPhone is unqualified); a physical Windows or Linux machine (CI only, headless, no GPU); Edge, Opera, Brave and other Chromium browsers; memory and canvas limits pushed to their edge on a phone (the phone budgets come from WebKit's limits, not from a measurement); frame timing on a phone GPU; battery use; WebGPU effects under a real finger (the plugins' touch rules are checked with emulated touch in headless Chrome, `npm run test:gallery`).
@@ -104,7 +104,7 @@ Some deviations, such as the moved children, are not covered by WPT at all: see 
 
 ## How fast is it?
 
-See [PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md) for numbers measured against native Chrome and the other polyfill on the same pages, and [PERFORMANCE.md](PERFORMANCE.md) for how to read them. The short version: each update is done twice (the browser lays out and paints the live DOM, then the polyfill photographs it), so main-thread cost grows with the size of the drawable that changes. Keep frequently updated drawables well under about 1000 elements. First paint and memory are also worse than native.
+See [PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md) for numbers measured against native Chrome and the other package on the same pages, and [PERFORMANCE.md](PERFORMANCE.md) for how to read them. The short version: each update is done twice (the browser lays out and paints the live DOM, then the polyfill photographs it), so main-thread cost grows with the size of the drawable that changes. Keep frequently updated drawables well under about 1000 elements. First paint and memory are also worse than native.
 
 Inner scrolling is drawn from cached pages of the scroller in each step's frame, and the exact snapshot replaces it when scrolling settles. Known cases where that compositor does not apply and each step is rebuilt as a snapshot:
 
@@ -132,21 +132,21 @@ Security reports: [SECURITY.md](../../SECURITY.md).
 
 ## Does it work with React, Vue, Svelte and Lit?
 
-Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Lit 3 (in a shadow root) runs typing, clicks on drawn elements, keyed lists, conditional drawables, timers, remounts and uninstall against a plain-page twin, with positive controls. React 19 hydration works with `suppressHydrationWarning` on the canvas. These runs used headless Chrome at a device pixel ratio of 1 with development builds. Not verified: production builds, other frameworks, server rendering outside React, and performance. See [FRAMEWORKS.md](FRAMEWORKS.md) and its [list of what was not verified](FRAMEWORKS.md#6-not-verified).
+Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Lit 3 (in a shadow root) runs typing, clicks on drawn elements, keyed lists, conditional drawables, timers, remounts and uninstall against a plain-page twin, with positive controls. React 19 hydration works with `suppressHydrationWarning` on the canvas. These runs used headless Chrome at a device pixel ratio of 1, with development builds and, in a local run of 2026-11-06, with production builds of the same apps. Not verified: other frameworks, server rendering outside React, and performance. See [FRAMEWORKS.md](FRAMEWORKS.md) and its [list of what was not verified](FRAMEWORKS.md#6-not-verified).
 
 ## Is it production-ready?
 
-It is a preview of a proposed standard (`0.1.0-preview.27` on npm; a new preview goes to the `next` tag first and to `latest` once checked). The API it implements may still change, the two extensions are experimental, and only the newest preview gets fixes. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a release candidate of a proposed standard (`1.0.0-rc.1` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
 - 746 unit tests in Node and 1,091 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 17 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence, the accessibility tree), each with a positive control;
 - a gate that runs mode `native-bridged` end to end over the earlier draft of Chrome 154 and 155 (G-bridged-translation);
-- a mutation suite of 93 seeded bugs, every one of which must be caught;
+- a mutation suite of 94 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, G-bridged-translation on Linux, and 12 of the 18 gates, 35 of the 93 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, G-bridged-translation on Linux, and 12 of the 18 gates, 35 of the 94 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 
@@ -154,8 +154,8 @@ With an AI coding assistant. The code, tests and documentation were written with
 
 Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
-- changes reach `main` through pull requests (every change since 2026-10-22), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 12 of the 17 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
-- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 93 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
+- changes reach `main` through pull requests (every change since 2026-10-22, except one changelog edit that morning), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 12 of the 18 browser gates, with their controls; G-bridged-translation runs in the Linux job); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 94 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
 - the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;
 - the behaviour was checked on physical devices, not only in simulators.

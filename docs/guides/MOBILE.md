@@ -1,6 +1,6 @@
 # Phones and tablets
 
-The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+. **Android was verified on two physical phones, a Pixel 7 Pro (Android 17,
+The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+ (Safari on the iPhone is unqualified: [STABILITY.md](../STABILITY.md)). **Android was verified on two physical phones, a Pixel 7 Pro (Android 17,
 Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156), on 2026-10-30, where every applicable scenario passed with its control red, and on the Android Emulator.
 iPadOS was verified on a physical iPad Pro (iPadOS 27.2, the scenarios WebDriver can drive), iOS 26 on the iOS Simulator only; a physical iPhone XR (iOS 18.7) ran the refusal.** The numbers
 are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them is `npm run test:mobile` (`docs/TEST-PLAN.md`).

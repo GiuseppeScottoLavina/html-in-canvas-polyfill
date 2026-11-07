@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the newest preview published under the npm dist-tag `next` receives fixes. There is no stable release yet.
+Until `1.0.0`, a fix, security fixes included, ships in the next release (candidate) under the npm dist-tag `next`; no earlier release is patched (releases before `1.0.0` get no fixes, nothing is backported). From `1.0.0`, the policy of `docs/STABILITY.md` (section 2, "Older lines") applies.
 
 ## Reporting a vulnerability
 
@@ -12,6 +12,6 @@ Include the affected version, the browser and version, a minimal page that shows
 
 ## Scope
 
-The polyfill runs inside the page that loads it, with that page's privileges. Relevant reports include, for example: a drawn snapshot that exposes pixels the HTML-in-Canvas privacy rules exclude (cross-origin content, `:visited` styles, content outside the drawable subtree), script execution caused by the polyfill's own serialisation of page content, or a network request the polyfill makes on its own. The polyfill makes no network request when it loads; snapshots inline same-origin and CORS-enabled resources as `data:` URLs (README, "Known limitations").
+The polyfill runs inside the page that loads it, with that page's privileges. Relevant reports include, for example: a drawn snapshot that exposes pixels the HTML-in-Canvas privacy rules exclude (cross-origin content, `:visited` styles, content outside the drawable subtree), script execution caused by the polyfill's own serialisation of page content, or a network request the polyfill makes on its own. The bundles make no network request when they load (the optional loader downloads the core, and only where the polyfill runs). To draw a snapshot, the polyfill fetches the same-origin and CORS-enabled resources the drawn HTML references and inlines them as `data:` URLs (README, "Known limitations").
 
 Out of scope: problems that need the page author to load untrusted script, and limits that are already documented in `docs/SUPPORT-MATRIX.md` and `docs/CONFORMANCE.md`.

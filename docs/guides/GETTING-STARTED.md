@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `0.1.0-preview.27`, a preview on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new preview is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iOS / iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `1.0.0-rc.1`, a release candidate on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 What is stable, experimental or unqualified (Safari on the iPhone is unqualified, the frame cap and the effects are experimental): [STABILITY.md](../STABILITY.md).
 
@@ -81,7 +81,7 @@ Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 
 ### Loading the polyfill only where it runs
 
-Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (361 KB minified, 123 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (365 KB minified, 124 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run:
 
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->
@@ -128,7 +128,7 @@ The source element (`form` here) must have exactly the size of the canvas conten
 | Chrome for Android >= 130, Safari on iOS / iPadOS >= 26 (and the other iOS browsers, which are WebKit) | polyfill runs with phone budgets and the iOS control look; iOS pages also load `hic-live-engines.iife.min.js`. Android verified on a physical Pixel 7 Pro and a Huawei Mate 10 Pro (Chrome 156) and the Android Emulator; iPadOS on a physical iPad Pro (iPadOS 27.2); the iPhone is unqualified (iOS 26 on the iOS Simulator only) | MOBILE |
 | older Firefox/Safari, Android WebView, in-app iOS web views, Firefox for Android | refused loudly: one `console.warn`, `window.__HIC__.error` | SUPPORT-MATRIX |
 
-Measured on macOS: Chrome 154 and 155, Chrome 157 (native; Chrome for Testing 157.0.8103.39), Chrome Canary 157, 158 and 159 (native), Firefox 155.0.1 and 157.0.1, and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome headed (12 of the 17 browser gates; 156, and since 2026-11-04 157 with its native feature switched off) and Firefox (155, 159 since 2026-11-04). Other Chromium browsers are expected to work and are unverified.
+Measured on macOS: Chrome 154 and 155, Chrome 157 (native; Chrome for Testing 157.0.8103.39), Chrome Canary 157, 158 and 159 (native), Firefox 155.0.1 and 157.0.1, and Safari 27.0.1. On Linux and Windows only headless Chrome runs, in CI (unit tests, bundle check and the platform probe); CI on GitHub-hosted macOS runners also runs Chrome headed (12 of the 18 browser gates, G-bridged-translation headless in the Linux job; 156, and since 2026-11-04 157 with its native feature switched off) and Firefox (155, 159 since 2026-11-04). Other Chromium browsers are expected to work and are unverified.
 
 ## 6. When something looks wrong
 

@@ -20,7 +20,7 @@ points of `package.json` `exports` (`docs/BUNDLES.md`); the modules under `src/`
 
 | Implemented (supported or limited) | Not implemented (fails loudly, section 9) |
 |---|---|
-| `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Firefox < 155, Safari < 27 (desktop) or < 26 (iOS), other engines, web views, Firefox for Android, an engine lacking a required platform feature |
+| `content` attribute + IDL property; `drawable` attribute; legacy `layoutsubtree` / `layoutSubtree` | Chromium < 130, Firefox < 155, Safari < 27 (desktop) or < 26 (iOS), other engines, web views, Firefox for Android, an engine lacking a required platform feature |
 | `paint` event, `CanvasPaintEvent.changedElements`, `onpaint`, `requestPaint()` | cross-origin frames and objects (drawn as their own box, as natively); input in a fullscreen managed canvas and a `popover` managed canvas; `drawable` on an SVG element inside an `<svg>`; a CSP without `img-src data:` |
 | `ctx.drawElementImage` (all 4 overloads) on `CanvasRenderingContext2D` and `OffscreenCanvasRenderingContext2D` (main thread; in a dedicated worker with the worker bundle, section 5.2) | cross-origin resources that cannot be inlined (section 9.2) |
 | `canvas.captureElementImage`, `ElementImage` (`close()`), `getElementImageDefaultSize` on the canvas and on its OffscreenCanvas; an `ElementImage` posted to a dedicated Worker that loads the worker bundle (section 5.2) | an `ElementImage` through a MessagePort, a BroadcastChannel or to a ServiceWorker (use `toImageBitmap()`) |
@@ -37,7 +37,10 @@ Interfaces defined by the polyfill only when the platform lacks them: `window.El
 
 `install(options?)` is synchronous and idempotent per window (a second call returns the first `HicInstalled`). `HicInstalled` (`src/contracts/types.js`) is
 `{version, mode, native, options, report(), canvases(), whenPainted(canvas, timeoutMs = 5000), adopt(canvas), adoptRoot(root), uninstall()}`; `options`, `report()`, `canvases()`, `adopt` and `adoptRoot` are experimental. `whenPainted` resolves
-at once when the canvas has already fired `paint`, else at its first `paint`, and rejects with a `TimeoutError` `DOMException` after `timeoutMs`. An invalid option
+at once when the canvas has already fired `paint`, else at its first `paint`, and rejects with a `TimeoutError` `DOMException` after `timeoutMs`. In modes `native`
+and `native-bridged` the `paint` event is the browser's own, and the core records it from `install()` on with a capturing listener on the window and one on each
+shadow root passed to `adoptRoot` (the event is not composed, so a paint inside a shadow root does not reach the window); `uninstall()` removes them. There a canvas
+whose only paint fired before `install()`, or inside a shadow root not passed to `adoptRoot`, is not known to have painted: `whenPainted` waits for its next `paint`. An invalid option
 (unknown name, wrong type, value out of range) throws `TypeError`.
 
 **Behavioural probe (`api/native-detect.js`, pure, no side effects, never trusts `in` alone).** The decision rests on the CORE only:
@@ -80,9 +83,9 @@ G-bridged-translation (`test/gates/g-bridged-translation.mjs`, `docs/TEST-PLAN.m
 A legacy build without the geometry methods (Safari Technology Preview 254 with Debug > WebKit Internal Features > HTML-in-Canvas, measured live 2026-10-16) is bridged all the same: only the methods that exist are wrapped. That build fires `paint` only from `requestPaint()`, draws an element as the previous rendering update painted it, returns an identity matrix from every draw and draws nothing for a child with a css transform, and draws a sizeless element at css px as grid px. So on that shape the bridge requests the paints itself (`src/api/native-paint.js`: when a canvas becomes drawable and after every change inside it, one rendering update after the update that rendered the change; a grid resize at once), gives `drawElementImage(element, dx, dy)` the standard destination size (the border box times the canvas grid scale), and writes no transform rule: hit testing stays at the layout boxes (`docs/SUPPORT-MATRIX.md`).
 In every native mode `install()` also completes the ResizeObserver `device-pixel-content-box` where the engine lacks it, as in mode `polyfill` (feature-detected, nothing is patched on Chromium): the explainer's own sizing line threw on that WebKit build.
 
-Browser gate (only evaluated for `absent`/`forcePolyfill`): Chromium >= 130 on desktop and Chrome for Android (154 and 155 measured headed on desktop, 156 and 157 with its native feature switched off in CI: headless on Linux and Windows, headed on macOS; Android: Chromium 158 on
-the Android Emulator, with the polyfill forced over its native API), Firefox >= 155 or Safari >= 27 on desktop (the measured majors, G-xbrowser), Safari >= 26 on iOS / iPadOS (iPadOS detected from a `Macintosh` agent with
-more than one touch point; G-mobile on the iOS Simulator) and the other iOS browsers (WebKit, no version in their agent: decided by the features), AND every required platform
+Browser gate (only evaluated for `absent`/`forcePolyfill`): Chromium >= 130 on desktop and Chrome for Android (154 and 155 measured headed on desktop, 156 and 157 with its native feature switched off in CI: headless on Linux and Windows, headed on macOS; Android: Chrome 156 on
+two physical phones, and Chromium 158 on the Android Emulator with the polyfill forced over its native API), Firefox >= 155 or Safari >= 27 on desktop (the measured majors, G-xbrowser), Safari >= 26 on iOS / iPadOS (iPadOS detected from a `Macintosh` agent with
+more than one touch point; G-mobile on a physical iPad and on the iOS Simulator, no physical iPhone: unqualified in STABILITY.md) and the other iOS browsers (WebKit, no version in their agent: decided by the features), AND every required platform
 feature present (CSS anchor positioning, ResizeObserver, `HTMLImageElement.decode`, constructable stylesheets; a missing one is named in the message). Android WebView, in-app
 iOS web views (no `Safari/` token) and Firefox for Android are refused with that reason (`docs/guides/MOBILE.md`). Anything else: `install()` throws
 `HicUnsupportedError('browser')` (default `onUnsupportedBrowser: 'throw'`); `'warn'` logs once and installs nothing.
@@ -404,7 +407,7 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
 
 ### 7.3 Effect host
 `await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer})` -> `EffectHost`
-`{pluginCount, addPlugin(def, options) -> EffectHandle, stats(), destroy()}`.
+`{pluginCount, addPlugin(def, options) -> Promise<EffectHandle>, stats(), destroy()}`.
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the

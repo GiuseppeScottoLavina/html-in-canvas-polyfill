@@ -2,7 +2,7 @@
 
 The HTML drawn in a canvas sits behind a pane of glass that takes two impacts. The first cracks it, and the form stays visible and usable through the cracked glass; the second breaks it: slabs of glass with real thickness fall out in 3D, lit and casting soft shadows, then fly back into place and the cracks close.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![The gallery form: a first invalid submit cracks the glass from the Submit button, a second one breaks it; thick glass shards fall in 3D with their shadows and fly back, the form shows the error](media/shatter.webp)
 

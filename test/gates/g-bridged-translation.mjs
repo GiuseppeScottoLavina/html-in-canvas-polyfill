@@ -15,7 +15,9 @@
 //             WebGL2 texElementSubImage2D, GPUQueue.drawElementImageToTexture; on Chrome 154 the first two are absent anyway): never a refusal, each name built
 //             from the native API that is left and checked with the same pixel oracle; the earlier copyElementImageToTexture built over the current name
 //             (option legacyNames) where the native current name takes the current dictionary;
-//   renderer  the native renderer is never replaced: no 2D drawImage of a raster, no SVG or blob image, no live layer, no polyfill marker but the bridge's hit rule.
+//   renderer  the native renderer is never replaced: no 2D drawImage of a raster, no SVG or blob image, no live layer, no polyfill marker but the bridge's hit rule;
+//   painted   HicInstalled.whenPainted over the native paint events (lib/when-painted.mjs), in mode native-bridged and, on a page without the bridge, in mode native:
+//             at once for a canvas that already painted (also in a shadow root passed to adoptRoot), at the first paint otherwise, TimeoutError on a canvas that never paints.
 // End to end: every check above runs the real native implementation; only `gapfill` deletes native names first (a synthetic shape), and says which it deleted.
 // Control (must turn every class red): the same pages WITHOUT the bridge bundle (mode native, used as found), and the renderer page installed with
 // `forcePolyfill` (the polyfill replaces the native renderer).
@@ -31,6 +33,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, resolve } from 'node:path';
 import { runGate, H, BRIDGE_BUNDLE } from './lib/gate.mjs';
+import { whenPaintedChecks, whenPaintedProbe } from './lib/when-painted.mjs';
 
 /** the measured builds of the earlier draft, by major */
 export const BUILDS = { 154: '154.0.8037.92', 155: '155.0.8059.79' };
@@ -219,7 +222,24 @@ runGate('G-bridged-translation', async (ctx) => {
       legMode === 'native-bridged' && lr.built && !lr.error && lr.oracle?.ok, numbers.gapfill_gpu_legacyCaller, 'gapfill');
   }
 
-  const errs = [page, manual, syn, leg].flatMap((p) => p.errors({ includeWarnings: false })).filter((e) => !/legacy native implementation can only draw DIRECT children/.test(String(e?.text ?? e)));
+  // ---- 4. whenPainted over the native paint events: with the bridge (mode native-bridged), and the core alone on the same build (mode native) -------------
+  // not a control class: the control drops the bridge, which leaves mode native, and whenPainted holds there too
+  /** @type {Page[]} */
+  const wpPages = [];
+  // the core alone goes on the plain loader fixture: this page's own paint handlers draw content="drawable" canvases, which the build refuses without the bridge
+  const corePage = `/test/fixtures/loader/native.html?${new URLSearchParams({ script: core })}`;
+  for (const [label, path, attribute] of /** @type {const} */ ([['with the bridge', `${PAGE}?${new URLSearchParams({ bundle: bundles })}`, 'content'], ['the core alone (no bridge)', corePage, 'layoutsubtree']])) {
+    const p = await ctx.page();
+    wpPages.push(p);
+    await p.navigate(`${ctx.srv.url}${path}`);
+    await p.bringToFront();
+    await H.until(() => p.evaluate("!!window[Symbol.for('hic.installed')] && document.readyState === 'complete'"), 6000);
+    const r = await p.evaluate(whenPaintedProbe(attribute));
+    numbers[`whenPainted ${label}`] = r;
+    for (const [name, ok, detail] of whenPaintedChecks(r, label)) ctx.check(name, ok, detail, 'painted');
+  }
+
+  const errs = [page, manual, syn, leg, ...wpPages].flatMap((p) => p.errors({ includeWarnings: false })).filter((e) => !/legacy native implementation can only draw DIRECT children/.test(String(e?.text ?? e)));
   ctx.check('no uncaught exception and no console error on the pages, but the expected report of the non-direct draw', errs.length === 0, errs.slice(0, 4), 'mode');
   return { numbers };
 }, {
