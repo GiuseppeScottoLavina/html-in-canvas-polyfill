@@ -12,6 +12,7 @@ The second release candidate of 1.0.0: the fixes for an external audit of `1.0.0
 
 ### Changed
 
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-07, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
 - Docs: the test plan records that `1.0.0-rc.1` was released on the VoiceOver session of 2026-11-06, without a new one, because the code that runs in Safari changed only by the version string and a check of the native modes; the next release candidate and `1.0.0` repeat it.
 - Tests: the pixel oracle waits two frames of the plain-DOM twin's tab after bringing it to the front, before its screenshot. In the nightly run of 2026-11-07 a twin was captured as bare background, which turned the clean bundle red on G-regress-capture's snippet 14 and so hid the mutant `ancestor-css-lost` (reported MISSED; caught 4 of 4 times locally).
 - Tests: the mutant runner runs a clean bundle that fails a gate once more, and leaves out of the comparison only the checks red on both runs, so one flaky clean run no longer hides the mutants of those checks.
