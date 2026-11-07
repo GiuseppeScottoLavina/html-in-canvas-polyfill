@@ -38,6 +38,7 @@ The first release candidate of 1.0.0. `docs/STABILITY.md` lists what 1.0.0 promi
 - Native bridge: a `texElementSubImage2D` built over `texElementImage2D` now uses the three-argument form `(target, internalformat, element)` of the Chrome 154 and 155 builds (both have `texElementSubImage2D` natively, so this applies only to a build without it).
 - The native-bridge bundle grows to 14,011 bytes minified, 5,082 gzipped (+554 / +173 bytes); its ceiling is raised to 14.25 KB, gzip 5.25 KB.
 - Gate harness: on Linux every gate printed a Python `ModuleNotFoundError` from the macOS screen-lock check; the check now runs on macOS only, as the OS pointer helper already did.
+- `HicInstalled.whenPainted` in modes `native` and `native-bridged` (Chrome 157 and later, or a legacy build with the native bridge) never resolved at once for a canvas that had already painted: it looked in the polyfill's canvas registry, which is empty over a native implementation, so on a static canvas it waited for a next paint and rejected with `TimeoutError`. The core now records the native `paint` events from `install()` on, on the window and on each shadow root passed to `adoptRoot`; a paint that fired before `install()`, or inside a shadow root not passed to `adoptRoot`, is not seen (API-CONTRACT section 2). Checked on Chrome for Testing 154, 155 and 157 by G-bridged-translation and G-native-loader, with the mutant `native-when-painted-registry-only`.
 
 ## [0.1.0-preview.27] - 2026-11-06
 

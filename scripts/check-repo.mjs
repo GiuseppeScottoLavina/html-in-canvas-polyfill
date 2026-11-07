@@ -192,7 +192,9 @@ if (!docsOnly) {
   // 17366 -> 17385 (2026-11-06, measured 17,385): the native bridge on the measured Chrome 154 and 155 builds (+19: src/api/native-bridge.js
   // wrapEarlierGpuDictionary 16, the unsized mapping 1, the three-argument upload 2); before it, G-bridged-translation failed 5 checks on Chrome 154 (every
   // standard drawElementImageToTexture call) and 2 on 155 (a synthetic shape: the unsized mapping threw, the built texElementSubImage2D threw)
-  if (total > 17385) problems.push(`G-size: core is ${total} code lines (> 17385)`);
+  // 17385 -> 17388 (2026-11-07, measured 17,388): whenPainted over a native implementation (+3: src/api/install.js installNative records the native paint
+  // events on the window and on each adopted shadow root); before it, whenPainted in modes native and native-bridged never resolved at once after a paint
+  if (total > 17388) problems.push(`G-size: core is ${total} code lines (> 17388)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

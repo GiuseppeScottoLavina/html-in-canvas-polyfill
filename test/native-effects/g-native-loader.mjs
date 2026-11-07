@@ -4,8 +4,11 @@
 // loader (.js and .min.js) and the module loader (dist/esm/loader.js). Control: the same pages with the native API disabled (the harness default) load the core and
 // install in mode polyfill, so the request log and the patch check do see a download and an install. Also prints the bytes a page downloads on the native
 // browser with the loader and with a plain <script> tag of the core (Resource Timing; the harness server does not compress).
+// With a plain <script> tag the core installs in mode native over the browser's implementation: HicInstalled.whenPainted is checked there against the
+// native paint events (test/gates/lib/when-painted.mjs: at once after a paint, also in an adopted shadow root; at the first paint; TimeoutError).
 //   npm run build && node test/native-effects/g-native-loader.mjs --chrome=<Chrome 157+ or canary> [--no-control]
 import * as H from '../harness/index.mjs';
+import { whenPaintedChecks, whenPaintedProbe } from '../gates/lib/when-painted.mjs';
 
 const chrome = process.argv.find((a) => a.startsWith('--chrome='))?.slice(9) ?? 'canary';
 const control = !process.argv.includes('--no-control');
@@ -65,6 +68,19 @@ try {
       bytes[label] = v.resources.reduce((n, e) => n + e.bytes, 0);
       console.log(`info native, ${label}: ${bytes[label]} bytes of scripts (the core steps aside after downloading)`);
     }
+    const wp = await browser.newPage({ reuseFirst: false });
+    try {
+      await wp.navigate(`${srv.url}${PAGE}?script=/dist/hic-live-polyfill.iife.js`);
+      await wp.bringToFront();
+      const r = await wp.evaluate(whenPaintedProbe('content'));
+      const mode = r?.mode === 'native' && r?.kind === 'complete';
+      console.log(`${mode ? 'ok  ' : 'FAIL'} plain core script tag: the core installs in mode ${r?.mode}, kind ${r?.kind}`);
+      if (!mode) problems.push(`whenPainted: the core installed in mode ${r?.mode}, kind ${r?.kind} (mode native, kind complete expected)`);
+      for (const [name, ok, detail] of whenPaintedChecks(r, 'plain core script tag')) {
+        console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ' :: ' + JSON.stringify(detail)}`);
+        if (!ok) problems.push(name);
+      }
+    } finally { await wp.close(); }
   } finally { await browser.close().catch(() => {}); }
   if (control) {
     const off = await H.launchChrome({ name: 'native-loader-control', chrome, windowSize: [800, 600], dpr: 1, extraArgs: ['--headless=new'] });

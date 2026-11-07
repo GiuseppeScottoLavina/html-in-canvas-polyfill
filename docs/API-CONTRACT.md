@@ -37,7 +37,10 @@ Interfaces defined by the polyfill only when the platform lacks them: `window.El
 
 `install(options?)` is synchronous and idempotent per window (a second call returns the first `HicInstalled`). `HicInstalled` (`src/contracts/types.js`) is
 `{version, mode, native, options, report(), canvases(), whenPainted(canvas, timeoutMs = 5000), adopt(canvas), adoptRoot(root), uninstall()}`; `options`, `report()`, `canvases()`, `adopt` and `adoptRoot` are experimental. `whenPainted` resolves
-at once when the canvas has already fired `paint`, else at its first `paint`, and rejects with a `TimeoutError` `DOMException` after `timeoutMs`. An invalid option
+at once when the canvas has already fired `paint`, else at its first `paint`, and rejects with a `TimeoutError` `DOMException` after `timeoutMs`. In modes `native`
+and `native-bridged` the `paint` event is the browser's own, and the core records it from `install()` on with a capturing listener on the window and one on each
+shadow root passed to `adoptRoot` (the event is not composed, so a paint inside a shadow root does not reach the window); `uninstall()` removes them. There a canvas
+whose only paint fired before `install()`, or inside a shadow root not passed to `adoptRoot`, is not known to have painted: `whenPainted` waits for its next `paint`. An invalid option
 (unknown name, wrong type, value out of range) throws `TypeError`.
 
 **Behavioural probe (`api/native-detect.js`, pure, no side effects, never trusts `in` alone).** The decision rests on the CORE only:
