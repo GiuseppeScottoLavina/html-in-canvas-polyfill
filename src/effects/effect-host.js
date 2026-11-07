@@ -42,7 +42,7 @@ const SETTLE_MS = 100;
  * continuous plugins included; the frame clock keeps running (`frame.now` is the time of the frame), so on resume a time-based effect shows the state it has at that
  * time, with nothing replayed. Coming back into the margin renders at once. While paused, an unsettled trigger()/settled() still advances at 1000 / SETTLE_MS frames
  * per second, so its promise resolves; a hidden document runs no frames at all, so there it resolves on the first frame after the document is shown again.
- * DEVICE LOSS: `device.lost` is handled (ADR-G): keep presenting the last frame, recreate device, source/destination textures and every plugin pipeline (plugin.create is re-run with the same options), report once; gate G-fault-injection (G-device-lost).
+ * DEVICE LOSS: `device.lost` is handled (ADR-G): keep presenting the last frame, recreate device, source/destination textures and every plugin pipeline (plugin.create is re-run with the same options), report once; covered by the host unit tests (test/unit/gpu-effects/host.browser.test.mjs), the gate G-fault-injection is planned (TEST-PLAN 2.7).
  * NATIVE MODE (no record: the browser implements HTML-in-Canvas and the polyfill stepped aside): the source comes from the standard
  * GPUQueue.drawElementImageToTexture (source-provider.js), frames from a rAF loop plus the canvas's paint event (frame-source.js), the
  * stretch and the pointer remap from the standard updateElementGeometry (native-geometry.js, native-interposer.js).
