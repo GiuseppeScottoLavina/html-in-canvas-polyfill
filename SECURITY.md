@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the newest preview published under the npm dist-tag `next` receives fixes. There is no stable release yet.
+Only the newest release candidate published under the npm dist-tag `next` receives fixes. There is no stable release yet; from `1.0.0`, the policy of `docs/STABILITY.md` (section 2, "Older lines") applies.
 
 ## Reporting a vulnerability
 

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-11-07
+
+The first release candidate of 1.0.0. `docs/STABILITY.md` lists what 1.0.0 promises, row by row, with the evidence for each, and the versioning policy; until 1.0.0 the stable rows change only by fixes. The standard API, the native, `native-bridged`, polyfill and refused modes, `install()` and a bare `load()` are stable; the frame cap, the effects, the loader's options and the other extensions are experimental; Safari on the iPhone is unqualified until a physical iPhone has run the suites. New evidence for that table: the mode `native-bridged` run end to end on Chrome for Testing 154 and 155 (G-bridged-translation, which found three bridge bugs), Chrome's accessibility tree under each canvas (G-a11y), a VoiceOver session in Safari on macOS, and production builds of the React, Vue, Svelte and Lit apps. The examples index is now the project's landing page.
+
+- The core bundle is 365,405 bytes minified, 124,379 gzipped, and the loader 17,459 / 6,324: 6 and 3 to 5 bytes less than 0.1.0-preview.27, the version string. The native-bridge bundle grows to 14,011 / 5,082 bytes (below, Fixed). The other bundles are unchanged.
+
 ### Added
 
 - Docs: `docs/STABILITY.md`, one table of every public API, option, export, bundle and platform with its promise, its status (stable, experimental or unqualified) and the evidence, and the versioning policy that applies from `1.0.0-rc.1`. The frame cap, the effects (host, plugin ABI, actions, input mapper and interposer), the polyfill's events and handles, the loader's options, every install option but `mode` and `onUnsupportedBrowser`, `report()` and the feature table are experimental; Safari on the iPhone is unqualified until a physical iPhone has run the suites. The package ships the file.
@@ -17,6 +23,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Status: the README, the FAQ, the getting-started guide, the security policy and the landing page call this release a release candidate whose stable rows change only by fixes until `1.0.0`; `docs/STABILITY.md` says so where it says what it applies from.
 - README: the first sentence names Safari and Firefox and the native-first behaviour, and the live demo link points to the landing page (`examples/`); the site root keeps redirecting there. `package.json`: `homepage` is the landing page, and the keywords add `safari`, `firefox`, `dom`, `live-dom`, `html` and `canvas-2d`.
 - Docs: the README, the API contract, the support matrix, the FAQ and the getting-started guide call the two extensions and the loader's options experimental and Safari on the iPhone unqualified, as `docs/STABILITY.md` does.
 - Docs: the `native-bridged` row of `docs/STABILITY.md` is stable with G-bridged-translation as its evidence; API-CONTRACT 2.1, the support matrix and the test plan give the native shapes measured on Chrome for Testing 154.0.8037.92 and 155.0.8059.79 (154 lacks `onelementgeometryupdate` and `ElementGeometryUpdateEvent` and takes the earlier WebGPU destination dictionary; both have `texElementSubImage2D` natively).
@@ -637,7 +644,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.27...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.27...v1.0.0-rc.1
 [0.1.0-preview.27]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.26...v0.1.0-preview.27
 [0.1.0-preview.26]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.25...v0.1.0-preview.26
 [0.1.0-preview.25]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.24...v0.1.0-preview.25

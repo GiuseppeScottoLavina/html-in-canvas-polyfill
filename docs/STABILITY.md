@@ -2,7 +2,7 @@
 
 What the package promises, row by row: every public API, option, export, bundle and platform, with its status and the evidence behind it.
 
-**Applies from:** `1.0.0-rc.1`. The current releases are `0.1.0` previews, to which no compatibility promise applies.
+**Applies from:** `1.0.0-rc.1`. Between a release candidate and `1.0.0` the stable rows change only by fixes. The `0.1.0` previews carry no compatibility promise.
 
 Status words:
 

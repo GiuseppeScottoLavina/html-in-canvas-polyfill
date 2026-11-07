@@ -94,7 +94,7 @@ Describe what the change proves and what it does not, list the commands you ran 
 
 ## Releases
 
-Releases are made by the maintainer. A release is one commit that sets `version` in `package.json` and `src/version.js` (the build checks they are equal) and turns `[Unreleased]` in `CHANGELOG.md` into a dated `[x.y.z] - YYYY-MM-DD` section, tagged `vx.y.z`. Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag names the package version and that the changelog section is dated, repeats the CI checks, publishes to npm with provenance (dist-tag from `publishConfig.tag`: `next` while the versions are previews) and creates the GitHub release with that changelog section as its notes.
+Releases are made by the maintainer. A release is one commit that sets `version` in `package.json` and `src/version.js` (the build checks they are equal) and turns `[Unreleased]` in `CHANGELOG.md` into a dated `[x.y.z] - YYYY-MM-DD` section, tagged `vx.y.z`. Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag names the package version and that the changelog section is dated, repeats the CI checks, publishes to npm with provenance (dist-tag from `publishConfig.tag`: `next` for previews and release candidates) and creates the GitHub release with that changelog section as its notes.
 
 npm authentication, in this order of preference:
 
