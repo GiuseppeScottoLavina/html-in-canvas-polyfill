@@ -186,3 +186,66 @@ test('the forwarder on the layer is as passive as the canvas listeners it serves
   canvas.removeEventListener('touchstart', passiveOne, { passive: true });
   assert.ok(seen.includes('passive') && seen.includes('active') && seen.includes('second passive'));
 });
+
+test('a passive canvas listener next to a non-passive one that cancels nothing cannot cancel, as on a native element: preventDefault(), Event.prototype.preventDefault.call and returnValue = false are ignored in either order, capture and bubble, for a handleEvent object and a once listener; the non-passive one still cancels, an event dispatched from inside the passive listener stays cancelable, and the Event prototype is left as it was', async (t) => {
+  const { managed } = setup({ t });
+  const { canvas } = page(KIDS);
+  managed(canvas);
+  const inner = /** @type {Element} */ (canvas.querySelector('#in'));
+  const proto = Object.getOwnPropertyDescriptors(Event.prototype);
+  /** @type {Record<string, (ev: Event) => void>} */
+  const tries = {
+    method: (ev) => ev.preventDefault(),
+    prototype: (ev) => Event.prototype.preventDefault.call(ev),
+    returnValue: (ev) => { ev.returnValue = false; },
+  };
+  /** the same listeners on a native element and on the canvas: whether the event was cancelled, and what defaultPrevented read inside the passive listener @param {EventTarget} target @param {Element} at @param {{type: string, capture: boolean, first: 'passive'|'active', how: string, object?: boolean, once?: boolean, activeCancels?: boolean}} c */
+  const run = (target, at, c) => {
+    let inside = null;
+    const passiveFn = (/** @type {Event} */ ev) => { tries[c.how](ev); inside = ev.defaultPrevented; };
+    const passive = c.object ? { handleEvent: passiveFn } : passiveFn;
+    const active = (/** @type {Event} */ ev) => { if (c.activeCancels) ev.preventDefault(); };
+    const add = { passive: () => target.addEventListener(c.type, passive, { capture: c.capture, passive: true, once: c.once }), active: () => target.addEventListener(c.type, active, c.capture) };
+    if (c.first === 'passive') { add.passive(); add.active(); } else { add.active(); add.passive(); }
+    const cancelled = prevented(at, c.type);
+    target.removeEventListener(c.type, passive, c.capture);
+    target.removeEventListener(c.type, active, c.capture);
+    return { cancelled, inside };
+  };
+  const ref = document.createElement('div');
+  const refChild = ref.appendChild(document.createElement('span'));
+  document.body.append(ref);
+  t.cleanup(() => ref.remove());
+  const cases = [];
+  for (const type of ['touchstart', 'wheel', 'click']) for (const capture of [false, true]) for (const first of /** @type {const} */ (['passive', 'active'])) for (const how of Object.keys(tries)) cases.push({ type, capture, first, how });
+  cases.push({ type: 'touchstart', capture: false, first: 'active', how: 'method', object: true }, { type: 'wheel', capture: true, first: 'passive', how: 'method', once: true });
+  for (const c of cases) {
+    const native = run(ref, refChild, c);
+    assert.deepEqual(native, { cancelled: false, inside: false }, `native reference ${JSON.stringify(c)}`);
+    assert.deepEqual(run(canvas, inner, c), native, `canvas ${JSON.stringify(c)}`);
+  }
+  for (const first of /** @type {const} */ (['passive', 'active'])) {
+    const c = { type: 'touchstart', capture: false, first, how: 'method', activeCancels: true };
+    assert.deepEqual(run(canvas, inner, c), run(ref, refChild, c), `the non-passive listener cancels (${first} first)`);
+    assert.equal(run(canvas, inner, c).cancelled, true);
+  }
+  // an event dispatched synchronously from inside the passive listener keeps its own cancelability
+  let nested = null;
+  const passiveOuter = () => {
+    const ev = new Event('keydown', { cancelable: true });
+    inner.addEventListener('keydown', (e) => e.preventDefault(), { once: true });
+    inner.dispatchEvent(ev);
+    nested = ev.defaultPrevented;
+  };
+  const harmless = () => {};
+  canvas.addEventListener('touchstart', passiveOuter, { passive: true });
+  canvas.addEventListener('touchstart', harmless);
+  assert.equal(prevented(inner), false);
+  assert.equal(nested, true, 'the nested event was cancelled');
+  canvas.removeEventListener('touchstart', passiveOuter);
+  canvas.removeEventListener('touchstart', harmless);
+  for (const name of ['preventDefault', 'returnValue']) assert.deepEqual(Object.getOwnPropertyDescriptor(Event.prototype, name), proto[name], `Event.prototype.${name} restored`);
+  const plain = new Event('x', { cancelable: true });
+  plain.preventDefault();
+  assert.equal(plain.defaultPrevented, true, 'outside a listener preventDefault works as before');
+});

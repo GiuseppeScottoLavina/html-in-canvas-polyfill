@@ -48,7 +48,7 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 |---|---|---|
 | `intensity` | 0.5 | 0 to 1: the strength of the water (its refraction and its light); 0 shows the source unchanged |
 | `light` | 1 | 0 to 1: the caustics, the reflection and the glints; 0 keeps the refraction only |
-| `ambient` | 0 | 0 to 1: a gentle swell of three long waves that never settles. Above 0 the instance is `continuous` (rendered on every capped frame) on purpose. Off with reduced motion |
+| `ambient` | 0 | 0 to 1: a gentle swell of three long waves that never settles. Above 0, at a positive `intensity`, the instance is `continuous` (rendered on every capped frame) on purpose; at intensity 0 the output is the source and nothing renders. Off with reduced motion |
 | `shader` | `water.wgsl` | WGSL text that replaces the shader (same bindings and uniform layout) |
 
 `mountUI` adds the intensity slider.

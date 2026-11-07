@@ -194,7 +194,9 @@ if (!docsOnly) {
   // standard drawElementImageToTexture call) and 2 on 155 (a synthetic shape: the unsized mapping threw, the built texElementSubImage2D threw)
   // 17385 -> 17388 (2026-11-07, measured 17,388): whenPainted over a native implementation (+3: src/api/install.js installNative records the native paint
   // events on the window and on each adopted shadow root); before it, whenPainted in modes native and native-bridged never resolved at once after a paint
-  if (total > 17388) problems.push(`G-size: core is ${total} code lines (> 17388)`);
+  // 17388 -> 17413 (2026-11-07, measured 17,413): a passive canvas listener next to a non-passive one cannot cancel the event (+25: src/live/event-bridge.js asPassive
+  // and its call in deliver); before it, its preventDefault cancelled, which a native element ignores (external audit of 1.0.0-rc.1)
+  if (total > 17413) problems.push(`G-size: core is ${total} code lines (> 17413)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

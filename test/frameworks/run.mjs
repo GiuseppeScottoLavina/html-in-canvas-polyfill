@@ -5,6 +5,7 @@
 //   (cd test/frameworks && npm install)   once: the framework deps live in test/frameworks/node_modules, never in the root package
 //   npm run build                         dist/ must exist
 //   npm run test:frameworks               (= node test/frameworks/run.mjs [--only=react,vue] [--mode=dev|prod|both] [--no-control] [--chrome=stable|canary|path])
+//                                         a name in --only that is not a framework of the suite exits 2 before anything is built (selection.mjs)
 //
 // Apps: examples/frameworks/<fw>/ (built by build.mjs into <fw>/dist/app.js as a DEVELOPMENT build and into <fw>/dist/prod/app.js as a
 // PRODUCTION build). Every scenario and control runs once per mode (default both): the production server answers the development URLs
@@ -46,13 +47,15 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as H from '../harness/index.mjs';
 import { startServer } from '../../examples/serve.mjs';
-import { buildAll, MODES } from './build.mjs';
+import { ALL_FRAMEWORKS, selectFrameworks } from './selection.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const arg = (n) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split('=')[1];
-const ONLY = arg('only')?.split(',');
-const ALL_FRAMEWORKS = ['react', 'vue', 'svelte', 'lit'];
-const FRAMEWORKS = ALL_FRAMEWORKS.filter((f) => !ONLY || ONLY.includes(f));
+const selection = selectFrameworks(arg('only'));
+if (selection.error !== undefined) { console.error(selection.error); process.exit(2); }
+// imported after the selection: build.mjs exits at once without test/frameworks/node_modules, and a wrong --only must be refused first, everywhere
+const { buildAll, MODES } = await import('./build.mjs');
+const FRAMEWORKS = selection.frameworks;
 const MODE_ARG = arg('mode') ?? 'both';
 if (!['dev', 'prod', 'both'].includes(MODE_ARG)) { console.error(`--mode=${MODE_ARG}: expected dev, prod or both`); process.exit(2); }
 const RUN_MODES = MODE_ARG === 'both' ? ['dev', 'prod'] : [MODE_ARG];
@@ -511,7 +514,7 @@ async function main() {
   const watchdog = setTimeout(async () => { console.error(`WATCHDOG: ${WATCHDOG_MS / 1000}s exceeded, killing our Chrome`); await browser.close().catch(() => {}); process.exit(3); }, WATCHDOG_MS);
   browser.conn.sendTimeoutMs = 30000;
   const result = { script: 'test/frameworks/run.mjs', startedAt: new Date().toISOString(), headless: true, dpr: 1, viewport: VIEW, chrome: browser.version?.Browser,
-    modes: RUN_MODES.map((m) => MODES[m].name),
+    modes: RUN_MODES.map((m) => MODES[m].name), frameworks: FRAMEWORKS, partial: FRAMEWORKS.length < ALL_FRAMEWORKS.length, withControls: WITH_CONTROL,
     versions: Object.fromEntries(['react', 'react-dom', 'vue', 'svelte', 'lit'].map((p) => [p, JSON.parse(readFileSync(resolve(ROOT, 'test/frameworks/node_modules', p, 'package.json'), 'utf8')).version])),
     builds: [], runs: [], controls: [], pass: false };
   const servers = {}, brokenServers = [];
@@ -616,10 +619,12 @@ async function main() {
     const closed = await browser.close().catch((e) => ({ error: String(e) }));
     result.browserClose = closed;
   }
+  const nChecks = result.runs.reduce((n, r) => n + r.checks.length, 0);
+  // a run that checked nothing proves nothing
+  if (!result.runs.length || !nChecks) problems.push(`no scenario ran (${result.runs.length} scenario runs, ${nChecks} checks)`);
   result.pass = problems.length === 0; result.problems = problems; result.finishedAt = new Date().toISOString(); result.totalMs = Date.now() - t0;
   const file = resolve(ROOT, '.scratch/results', `frameworks-${STAMP}.json`);
   writeFileSync(file, JSON.stringify(result, null, 1));
-  const nChecks = result.runs.reduce((n, r) => n + r.checks.length, 0);
   console.log(`\n${result.runs.length} scenario runs, ${nChecks} checks, ${result.controls.length} controls, ${(result.totalMs / 1000).toFixed(0)} s` + RUN_MODES.map((m) => `, ${MODES[m].name} ${((result[`${m}Ms`] ?? 0) / 1000).toFixed(0)} s`).join(''));
   console.log(`${result.pass ? 'PASS' : 'FAIL'}  ${problems.length} problem(s)${problems.length ? ': ' + problems.join(', ') : ''}\nresults: ${file}`);
   process.exit(result.pass ? 0 : 1);

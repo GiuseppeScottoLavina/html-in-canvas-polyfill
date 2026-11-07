@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+- The core bundle is 366,377 bytes minified, 124,696 gzipped: 710 and 204 bytes more than 1.0.0-rc.1 (the passive listener fix below).
+
+### Fixed
+
+- Events: a passive canvas listener next to a non-passive one of the same type and phase could cancel the event. The polyfill serves the canvas listeners of a type through one forwarder on its layer, non-passive as soon as one of them is, so a `preventDefault()` from the passive listener cancelled it (on an iPad, a click no longer toggled a checkbox), where a native element ignores it. Now `preventDefault()`, `Event.prototype.preventDefault.call(event)` and `returnValue = false` are ignored while a passive canvas listener runs, for that event only; the non-passive listener still cancels, and an event dispatched from inside the passive listener stays cancelable. Present since 0.1.0-preview.26; reported by an external audit of 1.0.0-rc.1, reproduced on Chrome and on Safari on an iPad.
+- Package: the npm package now contains the picture of the landing page (`examples/assets/gallery-water-chrome-capture.webp`); served from the extracted package, the landing answered 404 for it. G-bundle checks that every local file an HTML page of the package references (`src`, `href`, `poster`) is in npm's own file list (`npm pack --dry-run`), with a control.
+- Water (experimental): with `ambient` above 0 and `intensity` 0 the instance stayed `continuous` and the host rendered every capped frame (about 60 per second on an iPad), though at intensity 0 the output is the source. The swell now keeps it continuous only at a positive intensity; the option change itself is still drawn.
+- Framework tests: `node test/frameworks/run.mjs --only=<name>` with a name that is not a framework of the suite ran nothing and printed PASS. An unknown or empty selection now exits 2 before any build, and a run with no scenario or no check fails. The receipt records the selected frameworks, whether the selection was partial and whether the controls ran.
+- Docs: `docs/STABILITY.md` (the `load` row), the README, the bundles page, the getting-started guide, the design decisions and the landing page say that over an earlier native build the loader downloads the native bridge and the core, as API-CONTRACT 2.4 already did.
+
 ## [1.0.0-rc.1] - 2026-11-07
 
 The first release candidate of 1.0.0. `docs/STABILITY.md` lists what 1.0.0 promises, row by row, with the evidence for each, and the versioning policy; until 1.0.0 the stable rows change only by fixes. The standard API, the native, `native-bridged`, polyfill and refused modes, `install()` and a bare `load()` are stable; the frame cap, the effects, the loader's options and the other extensions are experimental; Safari on the iPhone is unqualified until a physical iPhone has run the suites. New evidence for that table: the mode `native-bridged` run end to end on Chrome for Testing 154 and 155 (G-bridged-translation, which found three bridge bugs), Chrome's accessibility tree under each canvas (G-a11y), a VoiceOver session in Safari on macOS, and production builds of the React, Vue, Svelte and Lit apps. The examples index is now the project's landing page.
