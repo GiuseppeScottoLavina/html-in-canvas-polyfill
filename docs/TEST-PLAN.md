@@ -246,7 +246,7 @@ These are the gates that exist today (`test/gates/g-*.mjs`, helpers in `test/gat
 12. "Reinstall the polyfill", then VO+A and the Tab order again.
 13. The Send announcement after the reinstall.
 
-Last run: 2026-11-06, main 886b7fe, VoiceOver (English voice) in Safari 27.0.1 on macOS 27.0.1: all 13 steps as on the reference.
+Last run: 2026-11-06, main 886b7fe, VoiceOver (English voice) in Safari 27.0.1 on macOS 27.0.1: all 13 steps as on the reference. `1.0.0-rc.1` (9e390a8) was released on that session without repeating it, once, by the maintainer's decision: between the two commits the code that runs in Safari (mode polyfill) changed only by the version string and a `whenPainted` check that applies to the native modes alone, and G-a11y passed on the tagged commit. The next release candidate and `1.0.0` repeat the session.
 
 ### 2.9 Cross-browser gate G-xbrowser (`npm run test:xbrowser`, Firefox, Safari and the optional Safari Technology Preview through W3C WebDriver)
 

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - The core bundle is 366,377 bytes minified, 124,696 gzipped: 710 and 204 bytes more than 1.0.0-rc.1 (the passive listener fix below).
 
+### Changed
+
+- Docs: the test plan records that `1.0.0-rc.1` was released on the VoiceOver session of 2026-11-06, without a new one, because the code that runs in Safari changed only by the version string and a check of the native modes; the next release candidate and `1.0.0` repeat it.
+
 ### Fixed
 
 - Events: a passive canvas listener next to a non-passive one of the same type and phase could cancel the event. The polyfill serves the canvas listeners of a type through one forwarder on its layer, non-passive as soon as one of them is, so a `preventDefault()` from the passive listener cancelled it (on an iPad, a click no longer toggled a checkbox), where a native element ignores it. Now `preventDefault()`, `Event.prototype.preventDefault.call(event)` and `returnValue = false` are ignored while a passive canvas listener runs, for that event only; the non-passive listener still cancels, and an event dispatched from inside the passive listener stays cancelable. Present since 0.1.0-preview.26; reported by an external audit of 1.0.0-rc.1, reproduced on Chrome and on Safari on an iPad.
