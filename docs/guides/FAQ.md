@@ -154,7 +154,7 @@ With an AI coding assistant. The code, tests and documentation were written with
 
 Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
-- changes reach `main` through pull requests (every change since 2026-10-22, except one changelog edit that morning), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 12 of the 17 browser gates, with their controls); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
+- changes reach `main` through pull requests (every change since 2026-10-22, except one changelog edit that morning), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 12 of the 18 browser gates, with their controls; G-bridged-translation runs in the Linux job); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
 - every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 93 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
 - the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;

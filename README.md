@@ -80,7 +80,7 @@ Put the script tags and the example in one HTML file and open it (from disk work
 
 | browser | status |
 |---|---|
-| Chrome desktop 130 to 156 (no native API) | polyfill runs; measured on 154 and 155 (macOS); 156 and 157 (its native feature switched off) in CI (headless on Linux and Windows, headed on macOS: 12 of the 17 browser gates); 130 to 153 admitted but not verified |
+| Chrome desktop 130 to 156 (no native API) | polyfill runs; measured on 154 and 155 (macOS); 156 and 157 (its native feature switched off) in CI (headless on Linux and Windows, headed on macOS: 12 of the 18 browser gates; G-bridged-translation runs headless in the Linux job); 130 to 153 admitted but not verified |
 | Chrome 157 and Chrome Canary (a native implementation, enabled by default: Chrome 157.0.8103.39 measured, Canary 157.0.8103.0 to 159.0.8137.0) | polyfill steps aside (mode `native`, kind `complete`, no bridge needed) and the page draws natively; the two extensions run over the native implementation (measured on Chrome 157.0.8103.39 and Canary 159.0.8137.0) |
 | Chrome 154-155 with the `CanvasDrawElement` flag (the earlier `layoutsubtree` draft) | used as found, with one console warning; load `hic-live-native-bridge.iife.min.js` before the core to bridge `content="drawable"` to it |
 | Edge, Opera, Brave and other desktop Chromium 130+ | unqualified: expected to work, not verified |
