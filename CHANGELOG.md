@@ -4,11 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-11-07
+
+The second release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.1`, no API change. One stable row, the forwarding of canvas listeners, now behaves as natively for a passive listener (Fixed, below).
+
 - The core bundle is 366,377 bytes minified, 124,696 gzipped: 710 and 204 bytes more than 1.0.0-rc.1 (the passive listener fix below).
 
 ### Changed
 
 - Docs: the test plan records that `1.0.0-rc.1` was released on the VoiceOver session of 2026-11-06, without a new one, because the code that runs in Safari changed only by the version string and a check of the native modes; the next release candidate and `1.0.0` repeat it.
+- Tests: the pixel oracle waits two frames of the plain-DOM twin's tab after bringing it to the front, before its screenshot. In the nightly run of 2026-11-07 a twin was captured as bare background, which turned the clean bundle red on G-regress-capture's snippet 14 and so hid the mutant `ancestor-css-lost` (reported MISSED; caught 4 of 4 times locally).
+- Tests: the mutant runner runs a clean bundle that fails a gate once more, and leaves out of the comparison only the checks red on both runs, so one flaky clean run no longer hides the mutants of those checks.
+- Tests: the pixel gates create the results folder before they write their PNGs, so G-regress-capture no longer fails "gate ran to completion" in a fresh checkout.
 
 ### Fixed
 
@@ -17,12 +24,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - Water (experimental): with `ambient` above 0 and `intensity` 0 the instance stayed `continuous` and the host rendered every capped frame (about 60 per second on an iPad), though at intensity 0 the output is the source. The swell now keeps it continuous only at a positive intensity; the option change itself is still drawn.
 - Framework tests: `node test/frameworks/run.mjs --only=<name>` with a name that is not a framework of the suite ran nothing and printed PASS. An unknown or empty selection now exits 2 before any build, and a run with no scenario or no check fails. The receipt records the selected frameworks, whether the selection was partial and whether the controls ran.
 - Docs: `docs/STABILITY.md` (the `load` row), the README, the bundles page, the getting-started guide, the design decisions and the landing page say that over an earlier native build the loader downloads the native bridge and the core, as API-CONTRACT 2.4 already did.
-
-### Changed
-
-- Tests: the pixel oracle waits two frames of the plain-DOM twin's tab after bringing it to the front, before its screenshot. In the nightly run of 2026-11-07 a twin was captured as bare background, which turned the clean bundle red on G-regress-capture's snippet 14 and so hid the mutant `ancestor-css-lost` (reported MISSED; caught 4 of 4 times locally).
-- Tests: the mutant runner runs a clean bundle that fails a gate once more, and leaves out of the comparison only the checks red on both runs, so one flaky clean run no longer hides the mutants of those checks.
-- Tests: the pixel gates create the results folder before they write their PNGs, so G-regress-capture no longer fails "gate ran to completion" in a fresh checkout.
 
 ## [1.0.0-rc.1] - 2026-11-07
 
@@ -665,7 +666,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.27...v1.0.0-rc.1
 [0.1.0-preview.27]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.26...v0.1.0-preview.27
 [0.1.0-preview.26]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.25...v0.1.0-preview.26
