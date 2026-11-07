@@ -47,13 +47,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as H from '../harness/index.mjs';
 import { startServer } from '../../examples/serve.mjs';
-import { buildAll, MODES } from './build.mjs';
 import { ALL_FRAMEWORKS, selectFrameworks } from './selection.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const arg = (n) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split('=')[1];
 const selection = selectFrameworks(arg('only'));
 if (selection.error !== undefined) { console.error(selection.error); process.exit(2); }
+// imported after the selection: build.mjs exits at once without test/frameworks/node_modules, and a wrong --only must be refused first, everywhere
+const { buildAll, MODES } = await import('./build.mjs');
 const FRAMEWORKS = selection.frameworks;
 const MODE_ARG = arg('mode') ?? 'both';
 if (!['dev', 'prod', 'both'].includes(MODE_ARG)) { console.error(`--mode=${MODE_ARG}: expected dev, prod or both`); process.exit(2); }
