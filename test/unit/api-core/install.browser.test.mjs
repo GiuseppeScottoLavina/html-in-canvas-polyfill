@@ -178,6 +178,42 @@ test('whenPainted: resolves on the next paint event, immediately after the first
   assert.throws(() => installed.whenPainted(/** @type {any} */ ({}), 10), TypeError);
 });
 
+test('whenPainted in modes native and native-bridged: resolves at once after a native paint (document, adopted shadow root), at the first paint otherwise; uninstall stops listening', async t => {
+  const atOnce = async (/** @type {Promise<void>} */ p) => { let done = false; p.then(() => { done = true; }, () => {}); await null; await null; return done; };
+  const timedOut = (/** @type {Promise<void>} */ p) => p.then(() => null, (e) => e?.name);
+  for (const [mode, fake] of /** @type {const} */ ([['native', {}], ['native-bridged', { legacy: true }]])) {
+    const w = makeFrame(t, '<canvas id="c" content="drawable"><b></b></canvas><div id="h"></div>');
+    defineFakeNative(w, fake);
+    const installed = installIn(t, w);
+    assert.equal(installed.mode, mode);
+    const c = w.document.getElementById('c');
+    const root = w.document.getElementById('h').attachShadow({ mode: 'open' });
+    root.innerHTML = '<canvas content="drawable"><b></b></canvas>';
+    const s = /** @type {HTMLCanvasElement} */ (root.firstElementChild);
+    // the browser's paint event is not composed and does not bubble
+    const paint = (/** @type {Element} */ el) => el.dispatchEvent(new w.Event('paint'));
+    assert.equal(await timedOut(installed.whenPainted(c, 30)), 'TimeoutError', `${mode}: no paint yet`);
+    const first = installed.whenPainted(c, 2000);
+    paint(c);
+    assert.equal(await atOnce(first), true, `${mode}: resolves at the first paint`);
+    assert.equal(await atOnce(installed.whenPainted(c, 2000)), true, `${mode}: resolves at once once the canvas has painted`);
+    paint(s);
+    assert.equal(await timedOut(installed.whenPainted(s, 30)), 'TimeoutError', `${mode}: a paint inside a shadow root not passed to adoptRoot does not reach the window`);
+    installed.adoptRoot(root);
+    paint(s);
+    assert.equal(await atOnce(installed.whenPainted(s, 2000)), true, `${mode}: a paint inside an adopted shadow root is seen`);
+    installed.uninstall();
+    const d = w.document.createElement('canvas');
+    w.document.body.append(d);
+    const e = w.document.createElement('canvas');
+    root.append(e);
+    paint(d);
+    paint(e);
+    assert.equal(await timedOut(installed.whenPainted(d, 30)), 'TimeoutError', `${mode}: after uninstall the window listener is gone`);
+    assert.equal(await timedOut(installed.whenPainted(e, 30)), 'TimeoutError', `${mode}: after uninstall the shadow root listener is gone`);
+  }
+});
+
 test('adoptRoot: a root created before install is refused with the hint, then managed after adoptRoot', async t => {
   const w = makeFrame(t, '<div id="h"></div>');
   const closed = w.document.getElementById('h').attachShadow({ mode: 'closed' });

@@ -32,7 +32,7 @@ Yes, and this is the main structural difference from native. The children of the
 
 ## Why is the core about 365 KB minified (124 KB gzipped)?
 
-In the current build, 365,405 bytes minified and 124,379 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 365,667 bytes minified and 124,492 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
 Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 365 KB, so they are approximate.
 
@@ -77,7 +77,7 @@ Two caveats:
 
 ## Does Chrome 157 download the polyfill?
 
-With the core's script tag, yes: 365,405 bytes (124,379 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,459 bytes, 6,324 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
+With the core's script tag, yes: 365,667 bytes (124,492 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,459 bytes, 6,324 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 
@@ -143,10 +143,10 @@ What is tested:
 - 746 unit tests in Node and 1,091 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 17 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence, the accessibility tree), each with a positive control;
 - a gate that runs mode `native-bridged` end to end over the earlier draft of Chrome 154 and 155 (G-bridged-translation);
-- a mutation suite of 93 seeded bugs, every one of which must be caught;
+- a mutation suite of 94 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, G-bridged-translation on Linux, and 12 of the 18 gates, 35 of the 93 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, G-bridged-translation on Linux, and 12 of the 18 gates, 35 of the 94 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 
@@ -155,7 +155,7 @@ With an AI coding assistant. The code, tests and documentation were written with
 Who or what wrote a line says nothing about whether it is correct, so the project relies on checks that do not depend on it:
 
 - changes reach `main` through pull requests (every change since 2026-10-22, except one changelog edit that morning), which CI checks on Linux and Windows (unit tests, type, module-boundary and bundle checks) and, since 2026-10-26, on macOS (now 12 of the 18 browser gates, with their controls; G-bridged-translation runs in the Linux job); the other five gates, the WPT run and the phone suites run on the maintainer's Mac;
-- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 93 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
+- every gate has a positive control (a deliberately broken renderer that must make it fail), and a mutation suite of 94 seeded bugs checks that the gates catch them, so a check that passes vacuously is itself caught;
 - fidelity is judged against the plain page and against Chrome's native implementation, and conformance against the official WPT tests;
 - the numbers in these docs are measured and dated, including the ones that got worse, and the limits are listed;
 - the behaviour was checked on physical devices, not only in simulators.

@@ -211,7 +211,9 @@ const LIMITS = {
   // 364 -> 364.25 KB (+212 / +60 bytes, 2026-11-06, measured 364,142 / 123,979): the event bridge keeps each canvas listener's passive flag and its forwarder on
   //   the layer is passive exactly when every listener it serves is (a passive touch listener on the canvas became a non-passive one on the layer)
   // 365.25 -> 365.5 KB (2026-11-06, measured 365,411 / 124,382 with all three changes: the clipped overlay, the side builds dropped at dispose, the event bridge)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 365.5 * KB, gzip: 124.5 * KB },
+  // 365.5 -> 365.75 KB (+262 / +113 bytes, gzip 124,492 under its ceiling, 2026-11-07, measured 365,667): whenPainted over a native implementation records the
+  // native paint events (install.js installNative); before it, whenPainted in modes native and native-bridged never resolved at once after a paint
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 365.75 * KB, gzip: 124.5 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)

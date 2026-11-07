@@ -128,9 +128,9 @@ export {};
  * @property {Readonly<ResolvedOptions>} options  `@experimental` (the resolved options; most options are experimental)
  * @property {() => HicReport} report  `@experimental` (a diagnostic format: its fields follow the implementation)
  * @property {() => HTMLCanvasElement[]} canvases  `@experimental` (a hook of the polyfill: native has no managed canvases). managed canvases in tree order
- * @property {(canvas: HTMLCanvasElement, timeoutMs?: number) => Promise<void>} whenPainted  resolves at once when canvas has already fired paint, else at its first paint event; rejects with a TimeoutError DOMException after timeoutMs (default 5000)
+ * @property {(canvas: HTMLCanvasElement, timeoutMs?: number) => Promise<void>} whenPainted  resolves at once when canvas has already fired paint, else at its first paint event; rejects with a TimeoutError DOMException after timeoutMs (default 5000). In modes native and native-bridged a paint counts from install() on, in the document or in a shadow root passed to adoptRoot
  * @property {(canvas: HTMLCanvasElement) => void} adopt  `@experimental` (a hook of the polyfill: native has no managed canvases). manage a canvas now (needed only with autoDiscover:false); no-op when content is not drawable/legacy
- * @property {(root: ShadowRoot) => void} adoptRoot  `@experimental` (a hook of the polyfill: native has no managed canvases). explicit hook for a shadow root the install could not observe (closed root created before install, or autoDiscover:false); idempotent
+ * @property {(root: ShadowRoot) => void} adoptRoot  `@experimental` (a hook of the polyfill: native has no managed canvases). explicit hook for a shadow root the install could not observe (closed root created before install, or autoDiscover:false); in modes native and native-bridged, whenPainted hears the native paint inside that root from then on; idempotent
  * @property {() => void} uninstall  idempotent; restores DOM, prototypes, listeners
  */
 
