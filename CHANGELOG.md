@@ -17,6 +17,11 @@ The third release candidate of 1.0.0: the fixes for an external audit of `1.0.0-
 - Mutant tests: a mutant could be reported CAUGHT against a clean run that did not run or was not usable; it is now NOT USABLE. A mutant whose only new red checks were also red on one of the two clean runs (a flaky check) is UNCERTAIN, which fails the suite, instead of CAUGHT. The decisions are in `test/gates/mutants/verdict.mjs`, with node tests, and the receipt keeps both clean runs.
 - Docs: `SECURITY.md` says what the loader downloads in each case, as `docs/STABILITY.md` does.
 
+### Changed
+
+- Mutant tests: a mutant that any of its gates may catch is CAUGHT by one usable gate that caught it, even when another of its gates was dropped (`paint-nothing`, caught by G-f1-form while its G-explainer run was dropped because the OS pointer moved, was reported NOT USABLE); a mutant that every gate must catch still needs every gate usable.
+- Tests: G-resize-drag makes a drag again, up to three times, when it showed the page fewer than 8 sizes, the precondition that the drag exercised the scenario (a loaded CI runner let the page see 6 sizes in 120 steps once; the threshold and every pixel and blank check are unchanged, and every attempt is in the receipt).
+
 ## [1.0.0-rc.2] - 2026-11-07
 
 The second release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.1`, no API change. One stable row, the forwarding of canvas listeners, now behaves as natively for a passive listener (Fixed, below).

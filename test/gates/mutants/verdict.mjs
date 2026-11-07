@@ -53,14 +53,15 @@ export function gateVerdict(base, res) {
 }
 
 /**
- * The status of a mutant from its gates. UNCERTAIN, like MISSED and NOT USABLE, fails the suite: rerun it.
+ * The status of a mutant from its gates. UNCERTAIN, like MISSED and NOT USABLE, fails the suite: rerun it. A mutant that any of its gates may catch (the default)
+ * is CAUGHT by one usable gate that caught it, whatever happened to the others; one that every gate must catch (`expect: 'all'`) needs every gate usable.
  * @param {Array<{usable: boolean, caught: boolean, uncertain: boolean}>} gates @param {{expect?: 'all'|'any', pendingFix?: string}} m
  * @returns {'CAUGHT'|'MISSED'|'PENDING'|'NOT USABLE'|'UNCERTAIN'}
  */
 export function mutantStatus(gates, m) {
+  if (m.expect !== 'all' && gates.some((g) => g.usable && g.caught)) return 'CAUGHT';
   if (!gates.length || gates.some((g) => !g.usable)) return 'NOT USABLE';
-  const caught = m.expect === 'all' ? gates.every((g) => g.caught) : gates.some((g) => g.caught);
-  if (caught) return 'CAUGHT';
+  if (m.expect === 'all' && gates.every((g) => g.caught)) return 'CAUGHT';
   if (gates.some((g) => g.uncertain)) return 'UNCERTAIN';
   return m.pendingFix ? 'PENDING' : 'MISSED';
 }

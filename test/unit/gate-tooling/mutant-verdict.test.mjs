@@ -50,4 +50,10 @@ test('a mutant run: CAUGHT only by a check green on every clean run; UNCERTAIN w
   assert.equal(mutantStatus([gateVerdict(base, run(['solid'], false))], {}), 'NOT USABLE');
   assert.equal(mutantStatus([gateVerdict(base, run(['solid'])), gateVerdict(base, run([]))], { expect: 'all' }), 'MISSED');
   assert.equal(mutantStatus([], {}), 'NOT USABLE');
+  // paint-nothing, 2026-11-07: caught by G-f1-form while its G-explainer run was dropped (the OS pointer moved): one usable catch proves it, unless every gate must catch
+  const dropped = gateVerdict(base, run(['solid'], false));
+  assert.equal(mutantStatus([dropped, gateVerdict(base, run(['solid']))], {}), 'CAUGHT');
+  assert.equal(mutantStatus([dropped, gateVerdict(base, run([]))], {}), 'NOT USABLE', 'a dropped run and a green one prove nothing');
+  assert.equal(mutantStatus([dropped, gateVerdict(base, run(['solid']))], { expect: 'all' }), 'NOT USABLE');
+  assert.equal(mutantStatus([gateVerdict(base, run(['solid'])), gateVerdict(base, run(['solid']))], { expect: 'all' }), 'CAUGHT');
 });
