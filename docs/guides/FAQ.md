@@ -32,7 +32,7 @@ Yes, and this is the main structural difference from native. The children of the
 
 ## Why is the core about 365 KB minified (124 KB gzipped)?
 
-In the current build, 365,405 bytes minified and 124,379 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other HTML-in-Canvas polyfill on npm is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 365,405 bytes minified and 124,379 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
 Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 365 KB, so they are approximate.
 
@@ -104,7 +104,7 @@ Some deviations, such as the moved children, are not covered by WPT at all: see 
 
 ## How fast is it?
 
-See [PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md) for numbers measured against native Chrome and the other polyfill on the same pages, and [PERFORMANCE.md](PERFORMANCE.md) for how to read them. The short version: each update is done twice (the browser lays out and paints the live DOM, then the polyfill photographs it), so main-thread cost grows with the size of the drawable that changes. Keep frequently updated drawables well under about 1000 elements. First paint and memory are also worse than native.
+See [PERFORMANCE-COMPARISON.md](../PERFORMANCE-COMPARISON.md) for numbers measured against native Chrome and the other package on the same pages, and [PERFORMANCE.md](PERFORMANCE.md) for how to read them. The short version: each update is done twice (the browser lays out and paints the live DOM, then the polyfill photographs it), so main-thread cost grows with the size of the drawable that changes. Keep frequently updated drawables well under about 1000 elements. First paint and memory are also worse than native.
 
 Inner scrolling is drawn from cached pages of the scroller in each step's frame, and the exact snapshot replaces it when scrolling settles. Known cases where that compositor does not apply and each step is rebuilt as a snapshot:
 

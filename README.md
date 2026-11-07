@@ -97,7 +97,7 @@ The headed browser gates run on macOS, at a device pixel ratio of 2 (some also a
 
 Short answers to the common questions (size, lag behind the DOM, accessibility, native support, privacy, what is verified): [docs/guides/FAQ.md](docs/guides/FAQ.md).
 
-- **The picture lags the DOM by one frame or more.** Each update is cloned, serialised into an SVG image and decoded by the browser before it can be drawn. On Chromium a change that needs no font or image to load is painted one frame later, others two frames or more. Typing in single-line fields (in Chrome) and inner scrolling have shortcuts that bring them close to native; other updates do not. Firefox uses the scrolling shortcut only at a device pixel ratio of 1, for scrollers with square corners and no rounded corners, transforms, images, SVG or form controls inside; elsewhere it rebuilds the scroller at every step. During a window drag the canvas shows pixels 1 to 3 frames old.
+- **The picture lags the DOM by one frame or more.** Each update is cloned, serialised into an SVG image and decoded by the browser before it can be drawn. On Chromium a change that needs no font or image to load is painted one frame later, others two frames or more. Typing in single-line fields (in Chrome) and inner scrolling have shortcuts that bring them close to native; other updates do not. Firefox uses the scrolling shortcut only at a device pixel ratio of 1, for scrollers with square corners whose content has no rounded corners, dotted lines, transforms, images, SVG or form controls; elsewhere it rebuilds the scroller at every step. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections can still see the layer.
 - **Size.** The core is about 124 KB gzipped (365 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS. The browser itself leaves them out of a canvas; the polyfill draws the element's box without its content and logs one console message, never a silent gap. Also not drawn: native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
@@ -122,11 +122,11 @@ Short answers to the common questions (size, lag behind the DOM, accessibility, 
 canvas.onpaint ──▶ ctx.drawElementImage(form, x, y)   (also WebGL / WebGPU uploads and effect plugins)
 ```
 
-The browser itself lays out and paints the HTML; the polyfill only takes pictures of it, so text, CSS and form controls look like the plain page. The main design choices and why they were made: [docs/DESIGN-DECISIONS.md](docs/DESIGN-DECISIONS.md). Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The browser itself lays out and paints the HTML; the polyfill only takes pictures of it, so text, CSS and form controls look like the plain page, within the limits listed in [docs/SUPPORT-MATRIX.md](docs/SUPPORT-MATRIX.md) (Firefox and Safari draw some form controls and light text differently in a snapshot). The main design choices and why they were made: [docs/DESIGN-DECISIONS.md](docs/DESIGN-DECISIONS.md). Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Compared with the alternatives
 
-Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages, harness and input for all three. The other polyfill on npm implements the older `layoutsubtree` name, so it ran through a small attribute adapter ([included](test/bench/compare/competitor/)).
+Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages, harness and input for all three. The other package on npm implements the older `layoutsubtree` name, so it ran through a small attribute adapter ([included](test/bench/compare/competitor/)).
 
 | | this polyfill | [`html-in-canvas-polyfill`](https://www.npmjs.com/package/html-in-canvas-polyfill) 1.0.1 | native (Chrome Canary) |
 |---|---|---|---|

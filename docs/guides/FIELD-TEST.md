@@ -164,10 +164,6 @@ The footer has a "Self-check (for developers)" button: the oracle must pass iden
 - `clean`: every step; the capture calibrates without changing the device pixel ratio; the five picture comparisons, the comparison where the scrolling stopped and the form at rest at an emulated 125 % zoom (`Emulation.setDeviceMetricsOverride`: the page sees `devicePixelRatio` change as with Ctrl and +) pass; typing and scrolling are measured in the canvas and on screen; the report downloads through the page's button, validates and stays within the crop budget; the self-check passes.
 - `dpr125`: the same at a device pixel ratio of 1.25 (`--force-device-scale-factor=1.25`, the common Windows setting), without the zoom step.
 
-Each run pins its scrollbars (`clean` and the others overlay, `dpr125` classic; `--scrollbars=overlay|classic` sets all), never the system setting, which macOS switches on its own. The
-emulated zoom sets `devicePixelRatio` but not the ResizeObserver device-pixel-content-box, so the page's canvases keep their 1x backing store during the zoom step and are shown
-upscaled; with classic bars the page scrollbar puts that canvas on half a pixel and the comparison failed at 4.4 % (overlay: 0 %). A real zoom or device scale resizes the canvas
-(the `dpr125` run: a 423 px grid for the 338.4 css px box), so testers do not see this.
 - `broken` (positive control): `drawElementImage` is wrapped to draw 8 grid px lower; every picture comparison must fail and keep its diff picture.
 - `clean` and `dpr125` also run the scroll smoothness step, with a trusted wheel stream over the Rounded list as the tester's scrolling: every part measured, the report's record complete, green in headless Chrome at DPR 1 (`dpr125`: the scroll frames are amber, a known difference listed in the script).
 - `smooth-drop` (positive control of the scroll metrics): every second `paint` event of the smoothness canvas is stopped before the page's `onpaint`, a canvas that updates in every other frame: the scripted part must be red. The tester does not scroll: the part ends by its (shortened) timeout and is recorded as skipped.
@@ -177,6 +173,11 @@ upscaled; with classic bars the page scrollbar puts that canvas on half a pixel 
 - `denied`: `getDisplayMedia` rejects; the report records `denied` and the canvas-only checks still run.
 - `refused`: the user agent says Chrome 120; the polyfill refuses and the page still produces a valid report with the refusal.
 - `missing`: the core bundle answers 404; the page still produces a valid report.
+
+Each run pins its scrollbars (`clean` and the others overlay, `dpr125` classic; `--scrollbars=overlay|classic` sets all), never the system setting, which macOS switches on its own. The
+emulated zoom sets `devicePixelRatio` but not the ResizeObserver device-pixel-content-box, so the page's canvases keep their 1x backing store during the zoom step and are shown
+upscaled; with classic bars the page scrollbar puts that canvas on half a pixel and the comparison failed at 4.4 % (overlay: 0 %). A real zoom or device scale resizes the canvas
+(the `dpr125` run: a 423 px grid for the 338.4 css px box), so testers do not see this.
 
 `npm run test:pages` also loads the page as part of the Pages site.
 
