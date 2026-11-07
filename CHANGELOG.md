@@ -19,6 +19,7 @@ The third release candidate of 1.0.0: the fixes for an external audit of `1.0.0-
 
 ### Changed
 
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-07, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
 - Mutant tests: a mutant that any of its gates may catch is CAUGHT by one usable gate that caught it, even when another of its gates was dropped (`paint-nothing`, caught by G-f1-form while its G-explainer run was dropped because the OS pointer moved, was reported NOT USABLE); a mutant that every gate must catch still needs every gate usable.
 - Tests: G-resize-drag makes a drag again, up to three times, when it showed the page fewer than 8 sizes, the precondition that the drag exercised the scenario (a loaded CI runner let the page see 6 sizes in 120 steps once; the threshold and every pixel and blank check are unchanged, and every attempt is in the receipt).
 
