@@ -24,18 +24,17 @@ export function whenPaintedProbe(attribute = 'content') {
     const c = document.createElement('canvas');
     c.width = 60; c.height = 40;
     ${attribute === 'layoutsubtree' ? "c.setAttribute('layoutsubtree', '');" : "c.setAttribute('content', 'drawable');"}
-    c.innerHTML = '<div style="width: 20px; height: 20px; background: rgb(0, 128, 0)"></div>';
+    // drawable: in the current API only a child that carries it is drawn and fires paint (Chrome 157 fires none for a canvas whose children lack it); the earlier draft ignores it
+    c.innerHTML = '<div drawable style="width: 20px; height: 20px; background: rgb(0, 128, 0)"></div>';
     c.getContext('2d');
     c.__paints = 0;
     c.addEventListener('paint', () => { c.__paints++; });
     return c;
   };
   const settle = async (p, c) => { const t0 = performance.now(); const out = await p.then(() => 'resolved', (e) => e && e.name); return { out, ms: +(performance.now() - t0).toFixed(2), paintsAtSettle: c ? c.__paints : null }; };
-  // a canvas that has not painted two frames after it was inserted is asked once (requestPaint): Chrome 157 fires no paint at the first rendering of a
-  // canvas inserted by script (measured on Chrome for Testing 157.0.8103.39), the builds of the earlier draft do
-  const insert = async (c, parent) => { parent.append(c); await frames(2); if (!c.__paints) { c.__asked = true; c.requestPaint(); } };
+  const insert = async (c, parent) => { parent.append(c); await frames(2); };
   const painted = async (c) => { const t0 = performance.now(); while (!c.__paints && performance.now() - t0 < 3000) await frame(); await frames(4); return c.__paints; };
-  const atOnce = async (c) => { const before = await painted(c); const r = await settle(installed.whenPainted(c, 1000), c); return { ...r, paintedBefore: before, paintsDuring: r.paintsAtSettle - before, requested: !!c.__asked }; };
+  const atOnce = async (c) => { const before = await painted(c); const r = await settle(installed.whenPainted(c, 1000), c); return { ...r, paintedBefore: before, paintsDuring: r.paintsAtSettle - before }; };
   const r = { mode: installed.mode, kind: installed.native && installed.native.kind, visibility: document.visibilityState };
   const a = make(); await insert(a, document.body);
   r.already = await atOnce(a);
