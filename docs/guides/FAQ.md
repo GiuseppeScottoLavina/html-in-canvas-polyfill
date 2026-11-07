@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0-rc.1`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0-rc.2`) unless dated.
 
 ## What is this?
 
@@ -136,7 +136,7 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a release candidate of a proposed standard (`1.0.0-rc.1` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a release candidate of a proposed standard (`1.0.0-rc.2` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 

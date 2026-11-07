@@ -68,10 +68,22 @@ function runGate(gate, file, which = 'core', args = []) {
 const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 
 const baselines = new Map();
+// A check red on the clean bundle is left out of the comparison, so a flake there hides every mutant that check would catch (ancestor-css-lost MISSED in the nightly
+// of 2026-11-07: the twin of snippet 14 was screenshotted blank on the clean run). A red clean run is run once more, and only the checks red on both runs are left out.
 const baseline = (gate, args = []) => {
   if (has('no-baseline')) return { failed: new Set(), usable: true };
   const key = [gate, ...args].join(' ');
-  if (!baselines.has(key)) { const r = runGate(gate, basePath, 'core', args); baselines.set(key, r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict }); }
+  if (!baselines.has(key)) {
+    const r = runGate(gate, basePath, 'core', args);
+    let b = r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict };
+    if (b.failed.size && !r.notRun) {
+      const again = runGate(gate, basePath, 'core', args);
+      const failed = again.notRun ? b.failed : new Set([...b.failed].filter((n) => failedOf(again).has(n)));
+      console.log(`baseline ${key}: ${b.failed.size} check(s) red on the clean bundle, ${failed.size} still red on a second run${failed.size ? ': ' + [...failed].join(' | ').slice(0, 200) : ''}`);
+      b = { ...b, failed, usable: b.usable && (again.notRun ? true : again.usable) };
+    }
+    baselines.set(key, b);
+  }
   return baselines.get(key);
 };
 
