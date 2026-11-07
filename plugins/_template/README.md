@@ -43,7 +43,7 @@ Nothing moves on its own: the picture is shifted, not animated, `shift` jumps an
 
 ## Performance
 
-One full-screen pass with one texture sample per pixel; rendered only when the source changed or on request (not `continuous`): at rest, and after its demo, it presents no frame. The kit's GPU time measurements use this pass as their baseline (0.09 ms per frame at 2200x1240 on an Apple M1 Max).
+One full-screen pass with one texture sample per pixel; rendered only when the source changed or on request (not `continuous`): at rest, and after its demo, it presents no frame. The GPU time tests of `glitch` and `page-curl` use this pass as their baseline (0.09 ms per frame at 2200x1240 on an Apple M1 Max, 2026-11-04, in the glitch test); `measureGpuTime` compares with a pass that only clears.
 
 ## Limitations
 
@@ -63,7 +63,7 @@ A starting point, not an effect: replace the shader, the mapper and the action.
 
 | file | |
 |---|---|
-| `index.js` | `meta`, `plugin` and the mapper formula `mapOffsetPoint` |
+| `index.js` | `meta`, `plugin`, the mapper formula `mapOffsetPoint`, and the demo's `DEMO_MS`, `DEMO_SWING` and `demoOffset` |
 | `offset.wgsl` | the shader |
 | `wgsl.js` | loads the `.wgsl` files of the folder when the plugin runs from source; the build replaces it with inlined strings. Copy it unchanged. |
 | `test/template.test.mjs` | Node: the folder contract, the mapper formula, the per-frame freeze of the mapper, the actions through the real handle (state, superseding, removal; the demo: it moves and ends at rest, no frame requested after it, user input takes over, reduced motion) |
