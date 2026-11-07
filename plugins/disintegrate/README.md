@@ -2,7 +2,7 @@
 
 A transition: the CONTENT of the HTML drawn in a canvas (text, field borders and fills, buttons, icons) turns to dust of its own live colours and swirls away in depth while the page itself stays, then flies back and settles into the page's new state.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![The gallery form, with its live counter running: the text, fields and buttons heat at an eroding front and turn to dust of their own colours while the panels stay, the dust swirls away in depth, then flies back and settles into the letters, with the text typed meanwhile and the new counter value](media/disintegrate.webp)
 

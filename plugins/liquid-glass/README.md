@@ -2,7 +2,7 @@
 
 A slab of refractive glass over the HTML drawn in a canvas: a finger drags it, a mouse or a pen leads it on a spring (or it stays pinned), and a click or a tap through the glass reaches the element the glass shows there.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![The glass touring the form of the plugin gallery (the demo action)](media/liquid-glass.webp)
 

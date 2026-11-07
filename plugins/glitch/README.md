@@ -2,7 +2,7 @@
 
 A controlled digital glitch over the HTML drawn in a canvas: a spectral RGB split, block displacement, scanline tearing, a VHS tracking band, pixel-sorting streaks, corrupted macroblocks, grain and scanlines; a burst plays on a validation error, and clicks follow the displaced blocks.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![glitch in the plugin gallery](media/glitch.webp)
 
@@ -79,7 +79,7 @@ With `prefers-reduced-motion: reduce`: no block ever moves (the mapper is the id
 
 On the iPad Pro 11-inch (3rd generation, Safari, iPadOS 27.2, 120 Hz, frame cap 120), measured from `effectframe` events on 2026-11-04: the ambient mode at the default intensity renders 14 frames per second (it rendered 120 before this version), at 8.3 ms intervals while an event plays; a burst and the demo render 118 to 120 frames per second with frame intervals of 8.34 ms (p50) and 8.5 to 8.6 ms (p95); burst mode at rest renders nothing (0 frames in 3 s). Headless Chrome at 60 Hz: about 6 frames per second in the ambient mode.
 
-Frames are requested only while something plays: a burst, the demo or an ambient event, every frame within the frame cap. Between ambient events the picture is still: the plugin sets one timer for the next event and the host renders nothing, so the ambient mode costs a few frames per second instead of every frame (measured below). Burst mode at rest costs nothing. Per frame the render path allocates nothing (one uniform array rewritten in place, one reused pass descriptor; mappers are copied into 4 preallocated slots). After a GPU device loss the host re-creates the plugin with the same options.
+Frames are requested only while something plays: a burst, the demo or an ambient event, every frame within the frame cap. Between ambient events the picture is still: the plugin sets one timer for the next event and the host renders nothing, so the ambient mode costs a few frames per second instead of every frame (measured above). Burst mode at rest costs nothing. Per frame the render path allocates nothing (one uniform array rewritten in place, one reused pass descriptor; mappers are copied into 4 preallocated slots). After a GPU device loss the host re-creates the plugin with the same options.
 
 ## Limitations
 
