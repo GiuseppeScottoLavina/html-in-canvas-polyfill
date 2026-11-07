@@ -2,7 +2,7 @@
 
 A controlled digital glitch over the HTML drawn in a canvas: a spectral RGB split, block displacement, scanline tearing, a VHS tracking band, pixel-sorting streaks, corrupted macroblocks, grain and scanlines; a burst plays on a validation error, and clicks follow the displaced blocks.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![glitch in the plugin gallery](media/glitch.webp)
 

@@ -2,7 +2,7 @@
 
 A water surface over the HTML drawn in a canvas. A tap drops a pebble into the pond: a few broad rings that the wave equation carries outwards for about 2 s, in the same water as the wake a moving pointer leaves. The page below is the floor of the pool: it is refracted through the surface normals and lit by caustics computed as light is (a refracted mesh of the surface, energy conserving), and the surface reflects a sky, a window light and a sun. Clicks and typing are remapped through the displacement to the field the user sees. At rest it costs nothing: no effect frame, no animation loop.
 
-An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)).
+An **example** effect plugin of this library, not part of the polyfill: nothing in `src/` imports it, and the polyfill, the frame cap and the effects host work without it. The effects host and its plugins are extensions of this library, not part of the HTML-in-Canvas proposal; native implementations do not provide them ([details](../../docs/guides/EFFECTS-PLUGINS.md#extensions-not-the-standard)). Like the host, it is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): its options, actions and look may change in any minor release.
 
 ![The gallery form under the water plugin: a short rain, then the pointer leaves a wake and a click through the ripples focuses the email field](media/water.webp)
 

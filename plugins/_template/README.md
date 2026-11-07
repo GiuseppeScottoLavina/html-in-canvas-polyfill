@@ -1,6 +1,6 @@
 # Plugin template
 
-The smallest complete **spatial** effect plugin with **actions**: it shifts the picture sideways by `offset` CSS pixels, supplies the input mapper that keeps clicks on the element the user sees, and has two actions, `shift` and `demo`. It follows the three rules of every interactive plugin ([the guide, 15.1](../../docs/guides/EFFECTS-PLUGINS.md#151-touch-demo-and-zero-work-at-rest)): it claims no touch gesture (it has nothing to grab), its `demo` shows the effect without any input, and it does no work at rest. Start a new plugin from a copy of this folder. Folders whose name starts with `_` are not built, so this one never ships as a bundle.
+The smallest complete **spatial** effect plugin with **actions**: it shifts the picture sideways by `offset` CSS pixels, supplies the input mapper that keeps clicks on the element the user sees, and has two actions, `shift` and `demo`. It follows the three rules of every interactive plugin ([the guide, 15.1](../../docs/guides/EFFECTS-PLUGINS.md#151-touch-demo-and-zero-work-at-rest)): it claims no touch gesture (it has nothing to grab), its `demo` shows the effect without any input, and it does no work at rest. Start a new plugin from a copy of this folder. Folders whose name starts with `_` are not built, so this one never ships as a bundle. The plugin interface it uses (ABI v2) is **experimental** ([STABILITY.md](../../docs/STABILITY.md)): it may change in any minor release, with a CHANGELOG entry.
 
 ## What it does
 
