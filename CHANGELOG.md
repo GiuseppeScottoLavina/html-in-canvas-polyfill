@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: the test plan records that `1.0.0-rc.1` was released on the VoiceOver session of 2026-11-06, without a new one, because the code that runs in Safari changed only by the version string and a check of the native modes; the next release candidate and `1.0.0` repeat it.
+
 ## [1.0.0-rc.1] - 2026-11-07
 
 The first release candidate of 1.0.0. `docs/STABILITY.md` lists what 1.0.0 promises, row by row, with the evidence for each, and the versioning policy; until 1.0.0 the stable rows change only by fixes. The standard API, the native, `native-bridged`, polyfill and refused modes, `install()` and a bare `load()` are stable; the frame cap, the effects, the loader's options and the other extensions are experimental; Safari on the iPhone is unqualified until a physical iPhone has run the suites. New evidence for that table: the mode `native-bridged` run end to end on Chrome for Testing 154 and 155 (G-bridged-translation, which found three bridge bugs), Chrome's accessibility tree under each canvas (G-a11y), a VoiceOver session in Safari on macOS, and production builds of the React, Vue, Svelte and Lit apps. The examples index is now the project's landing page.
