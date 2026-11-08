@@ -61,7 +61,8 @@ async function listboxScroll(ctx, numbers) {
   if (ctx.control) await page.evaluate(`(() => { for (const id of ['frac', 'natural']) document.getElementById(id).scrollTop += 2; return true; })()`);
   const a = await offsets(page), b = await offsets(ref);
   numbers.listbox = { poly: a, ref: b };
-  ['frac', 'natural'].forEach((id, i) => ctx.check(`listbox: the ${id === 'frac' ? 'fractional-height' : 'natural-size'} listbox is scrolled to its selected option as the engine scrolls it (scrollTop ${a[i]} vs ${b[i]})`, b[i] > 0 && Math.abs(a[i] - b[i]) <= 0.01, { poly: a[i], ref: b[i] }, 'listbox'));
+  // the measured offsets go in the detail, not the name: the mutant runner tells a flaky check by its name (test/gates/mutants/verdict.mjs)
+  ['frac', 'natural'].forEach((id, i) => ctx.check(`listbox: the ${id === 'frac' ? 'fractional-height' : 'natural-size'} listbox is scrolled to its selected option as the engine scrolls it (scrollTop within 0.01 px)`, b[i] > 0 && Math.abs(a[i] - b[i]) <= 0.01, { poly: a[i], ref: b[i] }, 'listbox'));
 }
 
 runGate('G-regress-capture', async (ctx) => {

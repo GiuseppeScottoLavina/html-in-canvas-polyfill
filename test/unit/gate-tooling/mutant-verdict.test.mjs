@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { selectMutants, baselineOf, gateVerdict, mutantStatus } from '../../gates/mutants/verdict.mjs';
+import { selectMutants, baselineOf, gateVerdict, mutantStatus, asGateRun } from '../../gates/mutants/verdict.mjs';
+import { gateRunOutcome } from '../../gates/lib/gate.mjs';
 import { MUTANTS } from '../../gates/mutants/mutants.mjs';
 
 const RUN = fileURLToPath(new URL('../../gates/mutants/run.mjs', import.meta.url));
@@ -56,4 +57,18 @@ test('a mutant run: CAUGHT only by a check green on every clean run; UNCERTAIN w
   assert.equal(mutantStatus([dropped, gateVerdict(base, run([]))], {}), 'NOT USABLE', 'a dropped run and a green one prove nothing');
   assert.equal(mutantStatus([dropped, gateVerdict(base, run(['solid']))], { expect: 'all' }), 'NOT USABLE');
   assert.equal(mutantStatus([gateVerdict(base, run(['solid'])), gateVerdict(base, run(['solid']))], { expect: 'all' }), 'CAUGHT');
+});
+
+test('a gate process that printed PASS and then exited 1 or was killed is not usable, so it cannot be a clean baseline; an ordinary FAIL with exit 1 is usable', () => {
+  const line = (/** @type {string} */ verdict, /** @type {any[]} */ assertions) => JSON.stringify({ gate: 'G-x', verdict, pass: verdict === 'PASS', usable: true, assertions, failed: [] });
+  const pass = [{ name: 'p', ok: true }];
+  const crashed = asGateRun(gateRunOutcome({ stdout: line('PASS', pass) + '\n', status: 1 }));
+  assert.equal(crashed.usable, false, 'PASS then exit 1');
+  assert.equal(asGateRun(gateRunOutcome({ stdout: line('PASS', pass), status: null, signal: 'SIGKILL' })).usable, false, 'PASS then killed');
+  assert.equal(baselineOf([crashed]).usable, false, 'no baseline from it');
+  const fail = asGateRun(gateRunOutcome({ stdout: line('FAIL', [{ name: 'p', ok: false }]), status: 1 }));
+  assert.deepEqual([fail.usable, [...fail.failed]], [true, ['p']], 'a red check and exit 1: an ordinary, usable FAIL');
+  const ok = asGateRun(gateRunOutcome({ stdout: line('PASS', pass), status: 0 }));
+  assert.deepEqual([ok.usable, ok.failed.size], [true, 0]);
+  assert.equal(asGateRun(gateRunOutcome({ stdout: '', status: 1 })).usable, false, 'no result line: not run');
 });

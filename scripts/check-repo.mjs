@@ -197,7 +197,9 @@ if (!docsOnly) {
   // 17388 -> 17413 (2026-11-07, measured 17,413): a passive canvas listener next to a non-passive one cannot cancel the event (+25: src/live/event-bridge.js asPassive
   // and its call in deliver); before it, its preventDefault cancelled, which a native element ignores (external audit of 1.0.0-rc.1)
   // 17413 -> 17374 (2026-11-07, measured 17,374): one forwarder per canvas listener replaces the shared forwarder and asPassive (-39: src/live/event-bridge.js)
-  if (total > 17374) problems.push(`G-size: core is ${total} code lines (> 17374)`);
+  // 17374 -> 17376 (2026-11-08, measured 17,376): a registration ends on the current mount, by identity (+2: src/live/event-bridge.js endEntry, the abort watcher
+  // and the per-mount remover); before it, an abort after an unmount/mount cycle left the forwarder calling the listener (external audit of 1.0.0-rc.3)
+  if (total > 17376) problems.push(`G-size: core is ${total} code lines (> 17376)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

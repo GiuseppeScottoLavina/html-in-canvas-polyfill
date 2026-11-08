@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-11-08
+
+The fourth release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.3`, no API change. It fixes a regression of `1.0.0-rc.3` in the forwarding of canvas listeners (Fixed, below).
+
+- The core bundle is 365,353 bytes minified, 124,388 gzipped: 42 and 6 bytes more than 1.0.0-rc.3.
+
+### Fixed
+
+- Events (a regression of 1.0.0-rc.3): after the canvas was unmounted and mounted again (its `content` toggled, for example), aborting the `signal` of a canvas listener, or removing the listener, left its forwarder on the layer, so the listener kept being called; registering the same function again then called it twice per event. The abort watcher ended the registration on the mount that had made it, whose forwarders were already gone. Now a registration ends by its own identity on the current mount: abort, `removeEventListener` and `once` remove its forwarder there and its watcher from its signal, an earlier signal cannot end a later registration of the same function, and an unmount removes the forwarders it registered. Reported by an external audit of 1.0.0-rc.3, reproduced on Chrome and on Safari on an iPad.
+- Mutant tests: a gate process that printed a PASS result line and then exited non-zero or was killed is not usable, so it can no longer stand as a clean baseline with no red check; an ordinary FAIL (a red check, exit 1) is unchanged.
+- Tests: five gate checks had measured values in their names (G-regress-capture's listbox `scrollTop`, the listener audit's counts, G-pixel-dpr's page shift, G-a11y's line count). The mutant runner tells a flaky check by its name, so a value that changed between runs hid one; the values are now in the detail, and the checks and thresholds are unchanged.
+
 ## [1.0.0-rc.3] - 2026-11-07
 
 The third release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.2`, no API change. One stable row, the forwarding of canvas listeners, now leaves the passive rules to the browser (Fixed, below).
@@ -686,7 +698,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.3...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.4...HEAD
+[1.0.0-rc.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.27...v1.0.0-rc.1

@@ -94,7 +94,7 @@ export async function checkListenerState(ctx, { page, urls, label, effectHost = 
   const byType = {};
   for (const f of poly) byType[keyOf(f)] = (byType[keyOf(f)] ?? 0) + 1;
   numbers[label] = { debuggerPolyfillListeners: poly.length, trackerLive: tr.live.length, byType, observers: tr.observers, intervals: tr.intervals };
-  ctx.check(`${label}: the audit sees polyfill listeners (not vacuous: debugger ${poly.length}, tracker ${tr.live.length})`, poly.length > 0 && tr.live.length > 0, { scripts: [...new Set(a.found.map((f) => f.url))].slice(0, 5) }, 'audit');
+  ctx.check(`${label}: the audit sees polyfill listeners (not vacuous: in the debugger and in the tracker)`, poly.length > 0 && tr.live.length > 0, { debugger: poly.length, tracker: tr.live.length, scripts: [...new Set(a.found.map((f) => f.url))].slice(0, 5) }, 'audit');
   // With the effect host on, a plugin's passive touch listener is allowed: in the debugger's view only where the listener function itself is
   // in a plugin bundle, in the tracker's only where a plugin's code registered it. Every non-passive one, and every touch listener of the core
   // or of the effects bundle, stays forbidden.
@@ -115,7 +115,7 @@ export async function checkClean(ctx, { page, urls, label, numbers }) {
   const tr = await readTracker(page);
   const poly = a.found.filter((f) => f.poly);
   numbers[label] = { debuggerPolyfillListeners: poly.length, trackerLive: tr.live, observers: tr.observers, intervals: tr.intervals, rafFiredAfter: tr.raf.fired - r0 };
-  ctx.check(`${label}: zero listeners attributed to the bundle (debugger: ${poly.length}, tracker: ${tr.live.length})`, poly.length === 0 && tr.live.length === 0, { debugger: poly.slice(0, 4), tracker: tr.live.slice(0, 4) }, 'leftover');
+  ctx.check(`${label}: zero listeners attributed to the bundle (in the debugger and in the tracker)`, poly.length === 0 && tr.live.length === 0, { debuggerCount: poly.length, trackerCount: tr.live.length, debugger: poly.slice(0, 4), tracker: tr.live.slice(0, 4) }, 'leftover');
   ctx.check(`${label}: no mutation / resize / intersection observer of the bundle is still observing, no interval is left`, tr.observers.length === 0 && tr.intervals.length === 0, { observers: tr.observers, intervals: tr.intervals }, 'leftover');
   ctx.check(`${label}: no polyfill requestAnimationFrame callback fires in the second after uninstall`, tr.raf.fired - r0 <= 2, { fired: tr.raf.fired - r0 }, 'leftover');
 }

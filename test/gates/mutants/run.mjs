@@ -20,7 +20,7 @@ import { MUTANTS } from './mutants.mjs';
 import { buildMutant } from './build.mjs';
 import { parseShard, planShards } from './shard.mjs';
 import { gateRunOutcome } from '../lib/gate.mjs';
-import { selectMutants, baselineOf, gateVerdict, mutantStatus } from './verdict.mjs';
+import { selectMutants, baselineOf, gateVerdict, mutantStatus, asGateRun } from './verdict.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../..');
@@ -73,10 +73,8 @@ function runGate(gate, file, which = 'core', args = []) {
   const cmd = xb ? [resolve(root, 'test/xbrowser/run.mjs'), `--engine=${process.env.HIC_MUTANT_ENGINES ?? 'safari,firefox'}`, `--only=${xb[1]}`, '--no-control'] : [resolve(root, 'test/gates', gate + '.mjs'), ...passArgs];
   return gateRunOutcome(spawnSync(process.execPath, [...cmd, ...args, `--${BUNDLES[which].flag}=${file}`], { cwd: root, encoding: 'utf8', timeout: 900000 }));
 }
-const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 
-/** a gate run as verdict.mjs reads it @returns {import('./verdict.mjs').GateRun} */
-const asRun = (r) => (r.notRun ? { notRun: r.notRun, usable: false, failed: new Set() } : { usable: r.usable, failed: failedOf(r), verdict: r.verdict });
+const asRun = asGateRun;
 const baselines = new Map();
 // A check red on the clean bundle is left out of the comparison, so a flake there hid every mutant that check would catch (ancestor-css-lost MISSED in the nightly
 // of 2026-11-07: the twin of snippet 14 was screenshotted blank on the clean run). A clean run with red checks is run once more: only the checks red on both are
