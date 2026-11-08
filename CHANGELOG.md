@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] - 2026-11-07
+
+The third release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.2`, no API change. One stable row, the forwarding of canvas listeners, now leaves the passive rules to the browser (Fixed, below).
+
+- The core bundle is 365,311 bytes minified, 124,382 gzipped: 1,066 and 314 bytes less than 1.0.0-rc.2 (the listener fix below replaces code).
+
+### Fixed
+
+- Events: a passive canvas listener could still cancel the event through a reference to the native `Event.prototype.preventDefault`, or to the `returnValue` setter, saved before the polyfill was installed (a library loaded first keeps one), when a non-passive listener of the same type and phase was on the canvas. The fix of 1.0.0-rc.2 patched the prototype during the call, which such a reference bypasses. Now every canvas listener has its own forwarder on the layer, registered in the same order with its own capture and passive flags, so the browser applies the passive rules itself, whatever reference the page holds; stopImmediatePropagation and a listener removed during the dispatch are also handled natively, and the polyfill no longer touches `Event.prototype`. Reported by an external audit of 1.0.0-rc.2, reproduced on Chrome and on Safari on an iPad (a checkbox that did not toggle).
+- Mutant tests: `node test/gates/mutants/run.mjs --only=typo` printed "OK: 0 mutants" and exited 0. An unknown name, a `--gate` that no mutant runs or an empty selection now exits 2 before anything is read or built; an empty part of a sharded run says that nothing was tested.
+- Mutant tests: a mutant could be reported CAUGHT against a clean run that did not run or was not usable; it is now NOT USABLE. A mutant whose only new red checks were also red on one of the two clean runs (a flaky check) is UNCERTAIN, which fails the suite, instead of CAUGHT. The decisions are in `test/gates/mutants/verdict.mjs`, with node tests, and the receipt keeps both clean runs.
+- Docs: `SECURITY.md` says what the loader downloads in each case, as `docs/STABILITY.md` does.
+
+### Changed
+
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-07, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
+- Mutant tests: a mutant that any of its gates may catch is CAUGHT by one usable gate that caught it, even when another of its gates was dropped (`paint-nothing`, caught by G-f1-form while its G-explainer run was dropped because the OS pointer moved, was reported NOT USABLE); a mutant that every gate must catch still needs every gate usable.
+- Tests: G-resize-drag makes a drag again, up to three times, when it showed the page fewer than 8 sizes, the precondition that the drag exercised the scenario (a loaded CI runner let the page see 6 sizes in 120 steps once; the threshold and every pixel and blank check are unchanged, and every attempt is in the receipt).
+
 ## [1.0.0-rc.2] - 2026-11-07
 
 The second release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.1`, no API change. One stable row, the forwarding of canvas listeners, now behaves as natively for a passive listener (Fixed, below).
@@ -667,7 +686,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.3...HEAD
+[1.0.0-rc.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.27...v1.0.0-rc.1
 [0.1.0-preview.27]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v0.1.0-preview.26...v0.1.0-preview.27

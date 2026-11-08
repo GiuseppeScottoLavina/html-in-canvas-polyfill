@@ -41,11 +41,19 @@ runGate('G-resize-drag', async (ctx) => {
   // the page sees one size per rendering update, so a drag must last enough updates for the "many sizes" precondition: 30 steps at 8 ms (240 ms) gave 15-16 sizes
   // on a quiet machine but 7-13 on a loaded one (the plain DOM page the same as the polyfill's, 2026-10-29) and 7 once on the CI runner; 60 steps at 8 ms kept
   // the cadence and doubled the updates, but a loaded CI runner on Chrome 157 still saw 7 and 14 sizes in two runs (2026-11-04, flagged high-load; the 50 ms drags
-  // 30 of 30, every pixel check green): 120 steps at 8 ms (960 ms) keep the cadence and the threshold
+  // 30 of 30, every pixel check green): 120 steps at 8 ms (960 ms) keep the cadence and the threshold. A loaded CI runner still let the page see 6 sizes in 120 steps
+  // once (2026-11-07, high-load; the other three drags of the run 23 to 28): a drag that shows the page fewer than MIN_SIZES sizes did not exercise the scenario, so it is
+  // made again, up to DRAG_ATTEMPTS times, from its start size. The threshold is unchanged, every attempt is in the receipt, and the blank detector watches them all.
+  const MIN_SIZES = 8, DRAG_ATTEMPTS = 3;
   for (const [cadence, steps] of [[50, 30], [8, 120]]) {
     for (const [from, to] of [[BIG, SMALL], [SMALL, BIG]]) {
-      const d = await H.dragResize(page, { from, to, steps, intervalMs: cadence, settleMs: 500 });
-      drags.push({ cadence, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk });
+      /** @type {Array<{resizeEvents: number, distinctWidths: number, reached: boolean}>} */ const attempts = [];
+      let d;
+      do {
+        d = await H.dragResize(page, { from, to, steps, intervalMs: cadence, settleMs: 500 });
+        attempts.push({ resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, reached: d.reachedTarget });
+      } while (d.pageSaw.distinctWidths < MIN_SIZES && attempts.length < DRAG_ATTEMPTS);
+      drags.push({ cadence, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk, attempts });
       // at rest after a drag to 700 with NO input since: nothing but the resize can re-raster the tile here. The later 700 px check cannot tell a stale tile: the click of the
       // hit check damages the focused button, and any damage re-rasters the whole drawable at the new size (the stale-after-resize mutant passed it in 8 of 20 runs, 2026-10-28)
       if (to === SMALL) {
@@ -62,7 +70,7 @@ runGate('G-resize-drag', async (ctx) => {
   numbers.drags = drags;
   numbers.blank = { frames: report.frames, valid: report.valid, blankFrames: report.blankFrames.length, blankRuns: report.blankRuns, longestBlankRun: report.longestBlankRun, sizeWrites: report.sizeChanges.length, frameGapMs: report.frameGapMs };
   ctx.check('the blank detector run is valid (the canvas had content)', report.valid, { baseline: report.baseline, frames: report.frames }, 'blank');
-  ctx.check('every drag reached its target size and the page saw many sizes', drags.every((d) => d.reached && d.distinctWidths >= 8), drags, 'resize');
+  ctx.check('every drag reached its target size and the page saw many sizes', drags.every((d) => d.reached && d.distinctWidths >= MIN_SIZES), drags, 'resize');
   ctx.check('zero blank frames across all four drags (after the first non-blank paint)', report.blankFrames.length === 0, { blankFrames: report.blankFrames.slice(0, 5), runs: report.blankRuns }, 'blank');
   ctx.check('the canvas backing store followed the window (>= 20 size writes by the explainer RO)', report.sizeChanges.length >= 20, { sizeWrites: report.sizeChanges.length }, 'resize');
 

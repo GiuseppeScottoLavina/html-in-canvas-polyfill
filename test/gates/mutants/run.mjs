@@ -4,12 +4,14 @@
 // --repeat=N runs every selected mutant N times against the same clean baseline and prints how often each was caught: a control that is caught only on some runs is
 // timing-dependent, and one run cannot tell (stale-after-resize was missed in 8 of 20 runs on the macOS runner before G-resize-drag compared the pixels at rest, 2026-10-28). Every run counts: one miss fails the suite.
 // For every mutant: build a mutated COPY of dist/hic-live-polyfill.iife.js (or of dist/hic-live-effects.iife.js for a mutant with `bundle: 'effects'`, dist/hic-live-engines.iife.js for `bundle: 'engines'`, dist/hic-live-native-bridge.iife.js for `bundle: 'bridge'`) under .scratch/mutants, run each targeted gate with --no-control --bundle-file=<copy> (--effects-file=<copy>, --engines-file=<copy>, --bridge-file=<copy>), and compare the
-// failed checks with the CLEAN bundle's run of the same gate (cached per gate). A mutant is CAUGHT when a check goes red that is green on the clean bundle.
+// failed checks with the CLEAN bundle's run of the same gate (cached per gate; run twice when the first run has red checks). A mutant is CAUGHT when a check goes red
+// that is green on every clean run (verdict.mjs). An unknown --only name, a --gate no mutant runs or an empty selection exits 2 before anything is built.
 //   CAUGHT        ok
 //   MISSED        the gates did not notice: the suite fails
 //   PENDING       MISSED but marked pendingFix (the fix of that finding is not in the bundle yet): reported, does not fail
 //   ANCHOR DRIFT  the anchor no longer occurs exactly once (the bundle was rebuilt): fix the mutant definition; fails
-//   NOT USABLE    a gate run was dropped (focus lost): rerun; fails
+//   NOT USABLE    a gate run was dropped (focus lost), of the mutant or of the clean bundle: rerun; fails
+//   UNCERTAIN     the only checks the mutant turned red were also red on one of the two clean runs (flaky): rerun; fails
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
@@ -18,6 +20,7 @@ import { MUTANTS } from './mutants.mjs';
 import { buildMutant } from './build.mjs';
 import { parseShard, planShards } from './shard.mjs';
 import { gateRunOutcome } from '../lib/gate.mjs';
+import { selectMutants, baselineOf, gateVerdict, mutantStatus } from './verdict.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../..');
@@ -25,6 +28,15 @@ const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.le
 const has = (k) => process.argv.includes(`--${k}`);
 const only = arg('only')?.split(',');
 const gateFilter = arg('gate');
+// the selection first: a name that is not a mutant or an empty selection exits 2 before anything is read, built or launched (verdict.mjs)
+const selection = selectMutants(MUTANTS, { only, gate: gateFilter });
+if (selection.error !== undefined) { console.error(selection.error); process.exit(2); }
+const shard = parseShard(arg('shard'));
+const filtered = selection.selected;
+const selected = shard ? planShards(filtered, shard.count)[shard.index - 1].mutants : filtered;
+if (shard) console.log(`shard ${shard.index}/${shard.count}: ${selected.length} of ${filtered.length} mutants (${selected.map((m) => m.name).join(', ')})`);
+// a part of a sharded run can be empty: said so, and never reported as mutants caught
+if (!selected.length) { console.log(`EMPTY: shard ${shard?.index}/${shard?.count} has no mutant of the selection; nothing was tested`); process.exit(0); }
 const dir = resolve(root, '.scratch/mutants');
 mkdirSync(dir, { recursive: true });
 // the optional bundles a mutant can target (docs/BUNDLES.md); every other bundle stays the clean one
@@ -41,10 +53,6 @@ const basePath = BUNDLES.core.clean;
 
 const build = (m) => buildMutant(BUNDLES[m.bundle ?? 'core'].text, m);
 
-const shard = parseShard(arg('shard'));
-const filtered = MUTANTS.filter((m) => (!only || only.includes(m.name)) && (!gateFilter || m.gates.includes(gateFilter)));
-const selected = shard ? planShards(filtered, shard.count)[shard.index - 1].mutants : filtered;
-if (shard) console.log(`shard ${shard.index}/${shard.count}: ${selected.length} of ${filtered.length} mutants (${selected.map((m) => m.name).join(', ')})`);
 if (has('list')) { for (const m of selected) console.log(`${m.name.padEnd(32)} ${m.bundle ?? 'core'} ${m.gates.join(',')}${m.pendingFix ? '  [pending ' + m.pendingFix + ']' : ''}\n    ${m.proves}`); process.exit(0); }
 
 const built = new Map();
@@ -67,21 +75,20 @@ function runGate(gate, file, which = 'core', args = []) {
 }
 const failedOf = (res) => new Set(res.assertions.filter((a) => !a.ok).map((a) => a.name).concat(res.failed.filter((f) => /^gate (ran|made|did not finish)/.test(f))));
 
+/** a gate run as verdict.mjs reads it @returns {import('./verdict.mjs').GateRun} */
+const asRun = (r) => (r.notRun ? { notRun: r.notRun, usable: false, failed: new Set() } : { usable: r.usable, failed: failedOf(r), verdict: r.verdict });
 const baselines = new Map();
-// A check red on the clean bundle is left out of the comparison, so a flake there hides every mutant that check would catch (ancestor-css-lost MISSED in the nightly
-// of 2026-11-07: the twin of snippet 14 was screenshotted blank on the clean run). A red clean run is run once more, and only the checks red on both runs are left out.
+// A check red on the clean bundle is left out of the comparison, so a flake there hid every mutant that check would catch (ancestor-css-lost MISSED in the nightly
+// of 2026-11-07: the twin of snippet 14 was screenshotted blank on the clean run). A clean run with red checks is run once more: only the checks red on both are
+// left out, and one red on a single run is flaky (verdict.mjs baselineOf). Both runs are kept in the receipt.
 const baseline = (gate, args = []) => {
-  if (has('no-baseline')) return { failed: new Set(), usable: true };
+  if (has('no-baseline')) return { usable: true, failed: new Set(), flaky: new Set(), runs: 0 };
   const key = [gate, ...args].join(' ');
   if (!baselines.has(key)) {
-    const r = runGate(gate, basePath, 'core', args);
-    let b = r.notRun ? { failed: new Set(), usable: false, notRun: r.notRun } : { failed: failedOf(r), usable: r.usable, verdict: r.verdict };
-    if (b.failed.size && !r.notRun) {
-      const again = runGate(gate, basePath, 'core', args);
-      const failed = again.notRun ? b.failed : new Set([...b.failed].filter((n) => failedOf(again).has(n)));
-      console.log(`baseline ${key}: ${b.failed.size} check(s) red on the clean bundle, ${failed.size} still red on a second run${failed.size ? ': ' + [...failed].join(' | ').slice(0, 200) : ''}`);
-      b = { ...b, failed, usable: b.usable && (again.notRun ? true : again.usable) };
-    }
+    const runs = [asRun(runGate(gate, basePath, 'core', args))];
+    if (runs[0].failed.size) runs.push(asRun(runGate(gate, basePath, 'core', args)));
+    const b = { ...baselineOf(runs), receipts: runs.map((r) => ({ usable: r.usable, notRun: r.notRun, verdict: r.verdict, red: [...r.failed] })) };
+    if (runs.length > 1) console.log(`baseline ${key}: ${runs[0].failed.size} check(s) red on the clean bundle, ${b.failed.size} red on both runs, ${b.flaky.size} on one only${b.usable ? '' : ' (not usable)'}`);
     baselines.set(key, b);
   }
   return baselines.get(key);
@@ -98,16 +105,12 @@ for (const m of selected.flatMap((x) => Array.from({ length: repeat }, () => x))
   for (const gate of m.gates) {
     const base = baseline(gate, m.args);
     const res = runGate(gate, file, m.bundle ?? 'core', m.args);
-    if (res.notRun) { perGate[gate] = { caught: false, usable: false, detail: res.notRun }; continue; }
-    const newly = [...failedOf(res)].filter((n) => !base.failed.has(n));
-    perGate[gate] = { caught: newly.length > 0, usable: res.usable, newlyRed: newly.slice(0, 4), baselineRed: base.failed.size, highLoad: res.highLoad, focus: res.focus?.mode };
+    const v = gateVerdict(base, asRun(res));
+    perGate[gate] = { ...v, newlyRed: v.newlyRed.slice(0, 4), flakyRed: v.flakyRed.slice(0, 4), baselineRed: base.failed.size, baselineFlaky: base.flaky.size, highLoad: res.highLoad, focus: res.focus?.mode };
   }
-  const entries = Object.values(perGate);
-  const usable = entries.every((e) => e.usable !== false);
-  const caught = m.expect === 'all' ? entries.every((e) => e.caught) : entries.some((e) => e.caught);
-  const status = !usable ? 'NOT USABLE' : caught ? 'CAUGHT' : m.pendingFix ? 'PENDING' : 'MISSED';
+  const status = mutantStatus(Object.values(perGate), m);
   rows.push({ mutant: m.name, status, pendingFix: m.pendingFix ?? null, expect: m.expect ?? 'any', perGate });
-  console.log(`${status.padEnd(12)} ${m.name.padEnd(32)} ${Object.entries(perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'GREEN'}${e.caught ? ' (' + e.newlyRed.join(' | ').slice(0, 160) + ')' : ''}`).join(' ')}`);
+  console.log(`${status.padEnd(12)} ${m.name.padEnd(32)} ${Object.entries(perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'GREEN'}${e.caught ? ' (' + e.newlyRed.join(' | ').slice(0, 160) + ')' : e.uncertain ? ' (only checks also red on a clean run: ' + e.flakyRed.join(' | ').slice(0, 120) + ')' : e.usable ? '' : ' (' + e.detail + ')'}`).join(' ')}`);
 }
 if (repeat > 1) for (const m of selected) {
   const mine = rows.filter((r) => r.mutant === m.name);
@@ -115,7 +118,7 @@ if (repeat > 1) for (const m of selected) {
 }
 console.table(rows.map((r) => ({ mutant: r.mutant, status: r.status + (r.pendingFix ? ` (${r.pendingFix})` : ''), gates: Object.entries(r.perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'green'}`).join(' ') || r.detail })));
 mkdirSync(resolve(root, '.scratch/results'), { recursive: true });
-writeFileSync(resolve(root, `.scratch/results/mutants-${new Date().toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify({ at: new Date().toISOString(), rows }, null, 1));
-const bad = rows.filter((r) => ['MISSED', 'ANCHOR DRIFT', 'NOT USABLE'].includes(r.status));
+writeFileSync(resolve(root, `.scratch/results/mutants-${new Date().toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify({ at: new Date().toISOString(), rows, baselines: Object.fromEntries([...baselines].map(([k, b]) => [k, { usable: b.usable, runs: b.runs, failed: [...b.failed], flaky: [...b.flaky], receipts: b.receipts }])) }, null, 1));
+const bad = rows.filter((r) => ['MISSED', 'ANCHOR DRIFT', 'NOT USABLE', 'UNCERTAIN'].includes(r.status));
 console.log(bad.length ? `FAIL: ${bad.map((r) => r.mutant + ':' + r.status).join(', ')}` : `OK: ${rows.length} mutants, ${rows.filter((r) => r.status === 'PENDING').length} pending`);
 process.exit(bad.length ? 1 : 0);
