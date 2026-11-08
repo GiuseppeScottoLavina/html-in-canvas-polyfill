@@ -43,7 +43,8 @@ runGate('G-resize-drag', async (ctx) => {
   // the cadence and doubled the updates, but a loaded CI runner on Chrome 157 still saw 7 and 14 sizes in two runs (2026-11-04, flagged high-load; the 50 ms drags
   // 30 of 30, every pixel check green): 120 steps at 8 ms (960 ms) keep the cadence and the threshold. A loaded CI runner still let the page see 6 sizes in 120 steps
   // once (2026-11-07, high-load; the other three drags of the run 23 to 28): a drag that shows the page fewer than MIN_SIZES sizes did not exercise the scenario, so it is
-  // made again, up to DRAG_ATTEMPTS times, from its start size. The threshold is unchanged, every attempt is in the receipt, and the blank detector watches them all.
+  // made again, up to DRAG_ATTEMPTS times, from its start size. The threshold is unchanged, every attempt is in the receipt, and the blank detector watches them all;
+  // the pixel check at rest below follows the last attempt only, so an earlier attempt that fell short is not qualified by pixels.
   const MIN_SIZES = 8, DRAG_ATTEMPTS = 3;
   for (const [cadence, steps] of [[50, 30], [8, 120]]) {
     for (const [from, to] of [[BIG, SMALL], [SMALL, BIG]]) {

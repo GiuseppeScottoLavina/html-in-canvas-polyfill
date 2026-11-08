@@ -134,6 +134,78 @@ test('after an unmount/mount cycle the canvas listeners still run in their regis
   assert.equal(ev.defaultPrevented, false, 'the passive one is still passive');
 });
 
+test('a registration ends on the current mount, whichever mount made it: abort, removeEventListener and once after unmount/mount cycles leave no call and no forwarder on the layer; a new registration of the same function is called once and ended by its own signal only', async (t) => {
+  const { managed } = setup({ t });
+  const { canvas } = page(KIDS);
+  const r = managed(canvas);
+  const inner = /** @type {Element} */ (canvas.querySelector('#in'));
+  const layer = /** @type {any} */ (r.layer.element);
+  const spy = spyForwarders(layer);
+  t.cleanup(spy.restore);
+  const fire = (/** @type {string} */ type) => inner.dispatchEvent(new Event(type, { bubbles: true }));
+  const cycle = (n = 1) => { for (let i = 0; i < n; i++) { r.layer.unmount(); r.layer.mount(); } };
+  /** a counted listener of a fresh type @param {string} type @param {any} [options] */
+  const counted = (type, options) => { const c = { n: 0, fn: () => { c.n++; } }; canvas.addEventListener(type, c.fn, options); fire(type); assert.equal(c.n, 1, `${type}: active before the action`); return c; };
+  const cases = [
+    ['abort on the same mount', (/** @type {AbortController} */ ac) => ac.abort()],
+    ['abort while unmounted, then mount', (ac) => { r.layer.unmount(); ac.abort(); r.layer.mount(); }],
+    ['abort after a remount', (ac) => { cycle(); ac.abort(); }],
+    ['abort after three remounts', (ac) => { cycle(3); ac.abort(); }],
+  ];
+  for (const [i, [name, act]] of cases.entries()) for (const capture of [false, true]) {
+    const type = `x${i}${capture ? 'c' : ''}`;
+    const ac = new AbortController();
+    const c = counted(type, { signal: ac.signal, capture, passive: true });
+    /** @type {any} */ (act)(ac);
+    fire(type); cycle(); fire(type);
+    assert.equal(c.n, 1, `${name}${capture ? ' (capture)' : ''}: no call after the abort`);
+    assert.equal(spy.live(type), 0, `${name}${capture ? ' (capture)' : ''}: no forwarder left on the layer`);
+  }
+  // removeEventListener and once after a remount
+  const rm = counted('xr');
+  cycle(); canvas.removeEventListener('xr', rm.fn); fire('xr'); cycle(); fire('xr');
+  assert.equal(rm.n, 1, 'removeEventListener after a remount');
+  assert.equal(spy.live('xr'), 0);
+  let once = 0;
+  canvas.addEventListener('xo', () => once++, { once: true });
+  cycle(); fire('xo'); fire('xo'); cycle(); fire('xo');
+  assert.equal(once, 1, 'once after a remount');
+  assert.equal(spy.live('xo'), 0);
+  // the same function registered again with a new signal after the first was aborted: one call per event, ended by its own signal; the old signal ends nothing
+  const ac1 = new AbortController(), ac2 = new AbortController();
+  const again = counted('xa', { signal: ac1.signal });
+  cycle(); ac1.abort();
+  canvas.addEventListener('xa', again.fn, { signal: ac2.signal });
+  fire('xa');
+  assert.equal(again.n, 2, 'registered again: exactly one call');
+  cycle(); fire('xa');
+  assert.equal(again.n, 3, 'still one call after a remount');
+  ac2.abort(); fire('xa'); cycle(); fire('xa');
+  assert.equal(again.n, 3, 'its own signal ends it');
+  assert.equal(spy.live('xa'), 0);
+  // a registration ended by removeEventListener takes its abort watcher off its signal, and aborting that signal later ends nothing, not even a new registration
+  // of the same function (natively the same)
+  const ac3 = new AbortController(), ac4 = new AbortController();
+  /** @type {string[]} */ const unwatched = [];
+  const sigRemove = ac3.signal.removeEventListener;
+  ac3.signal.removeEventListener = function (/** @type {any[]} */ ...args) { unwatched.push(args[0]); return sigRemove.apply(this, /** @type {any} */ (args)); };
+  const later = counted('xl', { signal: ac3.signal });
+  cycle(); canvas.removeEventListener('xl', later.fn);
+  assert.deepEqual(unwatched, ['abort'], 'its abort watcher is removed from the signal');
+  canvas.addEventListener('xl', later.fn, { signal: ac4.signal });
+  ac3.abort(); fire('xl');
+  assert.equal(later.n, 2, 'aborting the old signal does not end the new registration');
+  ac4.abort(); fire('xl');
+  assert.equal(later.n, 2);
+  // control: a remount alone keeps a registration, called once per event
+  const kept = counted('xk', { signal: new AbortController().signal });
+  cycle(2); fire('xk');
+  assert.equal(kept.n, 2, 'a remount without abort keeps exactly one call');
+  assert.equal(spy.live('xk'), 1, 'control: the spy sees the forwarder of the current mount');
+  r.layer.unmount();
+  assert.equal(spy.live('xk'), 0, 'unmount removes the forwarders it registered');
+});
+
 test('bridge does not double deliver or swallow errors', async (t) => {
   const { managed } = setup({ t });
   const { canvas } = page(KIDS);

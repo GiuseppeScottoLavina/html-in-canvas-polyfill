@@ -23,6 +23,18 @@ export function selectMutants(mutants, { only, gate }) {
  */
 
 /**
+ * A gate's outcome (lib/gate.mjs gateRunOutcome) as a run: the names of its red checks. A process that printed a PASS result line and then exited non-zero or was
+ * killed is not usable: its result line cannot be trusted, and as a clean run it would be a baseline with no red check. An ordinary FAIL (a red check, exit 1) is.
+ * @param {any} res @returns {GateRun & {verdict?: string}}
+ */
+export function asGateRun(res) {
+  if (res.notRun) return { notRun: res.notRun, usable: false, failed: new Set() };
+  const failed = new Set(res.assertions.filter((/** @type {any} */ a) => !a.ok).map((/** @type {any} */ a) => a.name).concat(res.failed.filter((/** @type {string} */ f) => /^gate (ran|made|did not finish)/.test(f))));
+  const brokenProcess = res.failed.some((/** @type {string} */ f) => /^gate process /.test(f));
+  return { usable: !!res.usable && !brokenProcess, failed, verdict: res.verdict };
+}
+
+/**
  * The clean bundle's baseline of a gate from its runs (one, or two when the first had red checks). A check red on every run is left out of the comparison
  * (`failed`); one red on some runs only is `flaky`: a mutant that turns only such checks red proves nothing. A run that did not run or is not usable makes the
  * baseline unusable, and no mutant can then be judged on that gate.

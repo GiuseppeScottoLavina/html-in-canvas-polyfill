@@ -136,7 +136,7 @@ runGate('G-a11y', async (ctx) => {
           { first: firstDifference(got.structure, F.roots[r].structure), got: got.structure.slice(0, 16) }, 'tree');
         ctx.check(`${tag} ${r}: the root node has role ${F.roots[r].role[mode]}`, got.role === F.roots[r].role[mode], { role: got.role }, 'tree');
         if (mode === 'ref') ref[r] = got.lines;
-        else ctx.check(`${tag} ${r}: every node of the subtree equals the plain page's, line by line (${ref[r]?.length} lines)`, firstDifference(got.lines, ref[r]) === null,
+        else ctx.check(`${tag} ${r}: every node of the subtree equals the plain page's, line by line`, firstDifference(got.lines, ref[r]) === null,
           { first: firstDifference(got.lines, ref[r]), lines: got.lines.length, refLines: ref[r]?.length }, 'tree');
       }
       // ---- lifecycle (polyfill only): before any edit, so the trees compare like with like

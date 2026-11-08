@@ -136,7 +136,7 @@ runGate('G-pixel-dpr', async (ctx) => {
     row.shifted = await page.evaluate('window.__shifted ?? null');
     const moved = (await canvasShot(page)).img;
     row.vsShifted = +(diff(moved, rest) * 100).toFixed(3);
-    ctx.check(`${fx} at DPR ${DPR}: the canvas does not depend on the page position (moved by ${row.shifted?.toFixed(3)} css px: delta > 16 on <= 0.05 %)`, row.shifted !== null && row.vsShifted <= 0.05, row, 'origin');
+    ctx.check(`${fx} at DPR ${DPR}: the canvas does not depend on the page position (moved by a fraction of a css px: delta > 16 on <= 0.05 %)`, row.shifted !== null && row.vsShifted <= 0.05, row, 'origin');
     // native's canvas does not depend on the page position: the moved page is compared with the same native reference
     row.shiftedVsNative = +(diff(moved, ref) * 100).toFixed(3);
     ctx.check(`${fx} at DPR ${DPR}: moved by a fraction of a device pixel, the canvas still equals native's (<= ${+(LIMIT[fx] * 100).toFixed(1)} %)`, row.shiftedVsNative <= LIMIT[fx] * 100, row, 'pixel');

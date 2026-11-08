@@ -20,10 +20,27 @@ const OWN_EVENTS = new Set([EVENTS.PAINT, EVENTS.ELEMENT_GEOMETRY_UPDATE, EVENTS
  * @property {boolean} once
  * @property {AbortSignal|null} signal
  * @property {boolean} passive  registered with `passive: true` (the canvas is not the window, the document or the body: `passive` left out means false there)
+ * @property {string} key  its type and capture (keyOf)
+ * @property {(() => void)|undefined} [detach]  removes its forwarder from the layer of the current mount (none while the canvas is unmounted)
+ * @property {(() => void)|undefined} [unwatch]  removes its abort watcher from its signal
  */
 
 /** @type {WeakMap<HTMLCanvasElement, Map<string, Entry[]>>} listeners per canvas, kept across unmount/mount so a toggled canvas keeps its bridge */
 const registries = new WeakMap();
+
+/**
+ * End the registration `entry` (removeEventListener, once, or its signal aborted), whatever mount registered it: out of the canvas registry, its forwarder off the
+ * layer of the current mount, its abort watcher off its signal. By identity: an earlier registration of the same function cannot end a later one.
+ * @param {Map<string, Entry[]>} entries @param {Entry} entry
+ */
+function endEntry(entries, entry) {
+  const list = entries.get(entry.key), at = list ? list.indexOf(entry) : -1;
+  if (!list || at < 0) return;
+  list.splice(at, 1);
+  if (!list.length) entries.delete(entry.key);
+  entry.detach?.();
+  entry.unwatch?.();
+}
 
 /** @type {Array<{name: string, desc: PropertyDescriptor}>|null} */
 let handlerTable = null;
@@ -90,7 +107,7 @@ export function installEventBridge(canvas, layerEl) {
   let registry = registries.get(canvas);
   if (!registry) registries.set(canvas, (registry = new Map()));
   const entries = registry;
-  /** the forwarder of each canvas listener, on the layer of this mount @type {Map<Entry, EventListener>} */
+  /** the forwarder of each canvas listener on the layer of this mount, and its remover @type {Map<Entry, () => void>} */
   const forwarders = new Map();
   /** @type {Map<string, EventListener>} */
   const handlerBridges = new Map();
@@ -103,12 +120,12 @@ export function installEventBridge(canvas, layerEl) {
   /** @param {string} type @param {boolean} capture */
   const keyOf = (type, capture) => `${type}|${capture ? 1 : 0}`;
 
-  /** Register the forwarder of `entry` (a listener of `key`) on the layer. @param {string} key @param {Entry} entry */
-  function forward(key, entry) {
-    const [type, capture] = key.split('|');
+  /** Register the forwarder of `entry` on the layer of this mount. @param {Entry} entry */
+  function forward(entry) {
+    const [type, capture] = entry.key.split('|');
     const fn = /** @type {EventListener} */ ((ev) => {
       if (ev.target === layerEl || ev.target === canvas) return;
-      if (entry.once) drop(key, entry.listener);
+      if (entry.once) endEntry(entries, entry);
       patchPath(ev, layerEl, canvas);
       asCanvas(ev, canvas, () => {
         try {
@@ -117,23 +134,14 @@ export function installEventBridge(canvas, layerEl) {
         } catch (err) { reportAsync(err); }
       });
     });
-    forwarders.set(entry, fn);
-    layerEl.addEventListener(type, fn, { capture: capture === '1', passive: entry.passive });
-  }
-
-  /** @param {string} key @param {EventListenerOrEventListenerObject} listener */
-  function drop(key, listener) {
-    const list = entries.get(key);
-    const at = list ? list.findIndex((e) => e.listener === listener) : -1;
-    if (!list || at < 0) return;
-    const [entry] = list.splice(at, 1);
-    if (!list.length) entries.delete(key);
-    const fn = forwarders.get(entry);
-    if (fn) {
-      const [type, capture] = key.split('|');
+    const detach = () => {
       layerEl.removeEventListener(type, fn, capture === '1');
       forwarders.delete(entry);
-    }
+      if (entry.detach === detach) entry.detach = undefined;
+    };
+    forwarders.set(entry, detach);
+    entry.detach = detach;
+    layerEl.addEventListener(type, fn, { capture: capture === '1', passive: entry.passive });
   }
 
   own.define(canvas, 'addEventListener', {
@@ -145,21 +153,27 @@ export function installEventBridge(canvas, layerEl) {
       const key = keyOf(type, capture);
       const list = entries.get(key) ?? [];
       if (list.some((e) => e.listener === listener)) return;
-      const entry = { listener, once, signal, passive };
+      /** @type {Entry} */ const entry = { listener, once, signal, passive, key };
       list.push(entry);
       entries.set(key, list);
-      forward(key, entry);
-      signal?.addEventListener('abort', () => drop(key, listener), { once: true });
+      forward(entry);
+      if (signal) {
+        // the watcher ends this registration, on whichever mount the canvas is then (or none): not the mount that registered it
+        const onAbort = () => endEntry(entries, entry);
+        signal.addEventListener('abort', onAbort, { once: true });
+        entry.unwatch = () => signal.removeEventListener('abort', onAbort);
+      }
     },
   });
   own.define(canvas, 'removeEventListener', {
     writable: true,
     value: function removeEventListener(/** @type {string} */ type, /** @type {EventListenerOrEventListenerObject|null} */ listener, /** @type {any} */ options) {
       nativeRemove.call(canvas, type, /** @type {any} */ (listener), options);
-      if (listener) drop(keyOf(type, normalize(options).capture), listener);
+      const entry = listener ? entries.get(keyOf(type, normalize(options).capture))?.find((e) => e.listener === listener) : undefined;
+      if (entry) endEntry(entries, entry);
     },
   });
-  for (const [key, list] of entries) for (const entry of list) forward(key, entry);
+  for (const list of entries.values()) for (const entry of list) forward(entry);
 
   /** @param {string} name @param {PropertyDescriptor} desc */
   function bridgeHandler(name, desc) {
@@ -194,12 +208,9 @@ export function installEventBridge(canvas, layerEl) {
 
   return () => {
     own.restore();
-    for (const [key, list] of entries) {
-      const [type, capture] = key.split('|');
-      for (const entry of list) { const fn = forwarders.get(entry); if (fn) layerEl.removeEventListener(type, fn, capture === '1'); }
-    }
+    // the forwarders this mount registered (not the registry's entries: one may have ended meanwhile); a second call finds none
+    for (const detach of [...forwarders.values()]) detach();
     for (const [name, bridge] of handlerBridges) layerEl.removeEventListener(name.slice(2), bridge);
-    forwarders.clear();
     handlerBridges.clear();
   };
 }
