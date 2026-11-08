@@ -10,6 +10,10 @@ The fourth release candidate of 1.0.0: the fixes for an external audit of `1.0.0
 
 - The core bundle is 365,353 bytes minified, 124,388 gzipped: 42 and 6 bytes more than 1.0.0-rc.3.
 
+### Changed
+
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-08, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
+
 ### Fixed
 
 - Events (a regression of 1.0.0-rc.3): after the canvas was unmounted and mounted again (its `content` toggled, for example), aborting the `signal` of a canvas listener, or removing the listener, left its forwarder on the layer, so the listener kept being called; registering the same function again then called it twice per event. The abort watcher ended the registration on the mount that had made it, whose forwarders were already gone. Now a registration ends by its own identity on the current mount: abort, `removeEventListener` and `once` remove its forwarder there and its watcher from its signal, an earlier signal cannot end a later registration of the same function, and an unmount removes the forwarders it registered. Reported by an external audit of 1.0.0-rc.3, reproduced on Chrome and on Safari on an iPad.
