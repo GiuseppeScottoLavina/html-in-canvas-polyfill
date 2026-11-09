@@ -201,7 +201,9 @@ if (!docsOnly) {
   // and the per-mount remover); before it, an abort after an unmount/mount cycle left the forwarder calling the listener (external audit of 1.0.0-rc.3)
   // 17376 -> 17392 (2026-11-09, measured 17,392): a once canvas listener runs once across the two routes (+16: src/live/event-bridge.js guardOnce and
   // releaseCanvasListeners, src/live/live-layer.js dispose); before it, an event of a relocated child and one aimed at the canvas both ran it (external audit of 1.0.0-rc.4)
-  if (total > 17392) problems.push(`G-size: core is ${total} code lines (> 17392)`);
+  // 17392 -> 17412 (2026-11-09, measured 17,412): the event bridge as one ordered registry per canvas (+20: src/live/event-bridge.js defineMethods, reregister, the
+  // handler entries); before it the on* handlers ignored false and their order on the children's route, and the unmounted window was not seen (the listener matrix)
+  if (total > 17412) problems.push(`G-size: core is ${total} code lines (> 17412)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

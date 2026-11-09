@@ -23,6 +23,7 @@ const stages = [
   ['native-effects', 'the effects over Chrome Canary\'s own implementation', [node, 'test/native-effects/run.mjs', '--require-canary']],
   ['firefox-scroll', 'G-xbrowser\'s scroll scenario on Firefox', [node, 'test/xbrowser/run.mjs', '--engine=firefox', '--only=scroll']],
   ['safari', 'G-xbrowser on Safari and Safari Technology Preview (the latter skipped by the suite when it is not installed); quit Safari first', [node, 'test/xbrowser/run.mjs', '--engine=safari,stp']],
+  ['safari-listener-matrix', 'the listener matrix on Safari (Firefox runs it in the macOS CI, Chrome in the browser unit tests); quit Safari first', [node, 'test/xbrowser/listener-matrix.mjs', '--engine=safari']],
   ['mobile', 'G-mobile: iOS Simulator and Android Emulator (docs/guides/MOBILE.md)', [node, 'test/mobile/run.mjs']],
 ];
 const rows = [];

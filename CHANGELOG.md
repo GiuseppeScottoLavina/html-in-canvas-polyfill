@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-11-09
+
+The sixth release candidate of 1.0.0, no API change. The finding of an external audit of `1.0.0-rc.5` was the fifth in a row about the forwarding of canvas listeners, each found one combination at a time. So this release adds the listener matrix, a test that compares a canvas listener with the same listener on a native element over about 20,000 combinations in Chrome, Firefox and Safari, and fixes everything it found: the audit's case and two classes that no audit had found (Fixed, below). Run on the bridges of 1.0.0-rc.1 to rc.5, the matrix finds each audit's finding.
+
+- The core bundle is 366,577 bytes minified, 124,773 gzipped: 779 and 238 bytes more than 1.0.0-rc.5 (about 250 of them are the restoration rule in the `tree-identity` row, which the classic bundle carries).
+
+### Added
+
+- Tests: the listener matrix (`test/unit/live/listener-matrix.mjs`, docs/TEST-PLAN.md 2.3). It covers:
+  - every combination of a canvas listener's options;
+  - what its callback does (stopping, cancelling, a nested dispatch by either route, removing itself, adding another);
+  - two listeners and their order, including cancelling through native methods saved before the polyfill;
+  - an `on*` handler next to a listener;
+  - the lifecycle: removal, abort, remount, unmounted window, uninstall and install, uninstalled window;
+  - both routes in both orders.
+
+  Every case runs on the polyfill's canvas and on a native element with a child, and the two are compared call by call. It runs in Chrome in the browser unit tests, in Firefox in the macOS CI (`test/xbrowser/listener-matrix.mjs`) and in Safari locally and on the iPad (`test/unit/live/listener-matrix.html`), with a positive control. 0 divergences in all three engines.
+
+### Fixed
+
+- Events: after an uninstall and an install, a `once` canvas listener could run twice if it stopped the event's propagation or dispatched an event at a child (the audit's case). A reinstall now registers the bridge's listeners again natively, in their order, each `once` listener behind a new guard, so a guard always runs before its listener.
+- Events: an `on*` handler property of the canvas (`canvas.onclick = fn`) returning `false` did not cancel an event of a relocated child, and on the children's route it did not keep its place among the canvas listeners (it was registered once per mount and ran after them). Handlers are now entries of the same ordered registry: a handler sits where it was first set, keeps its place when it is replaced and goes last when it is set to null and set again, as natively; it is read from the canvas at each event and `false` cancels.
+- Events: while the canvas was unmounted (`content` set to `fallback`), a listener removed from the canvas was still called through the layer after the next mount, and one added then never got its children's events after it. The bridge's methods now last while the canvas is managed, mounted or not; only the forwarders are per mount.
+- Contract: the `tree-identity` row states what a reinstall restores. The polyfill sees no change to the canvas listeners while it is not installed, so they are restored as they were at the uninstall: one removed or run (`once`) meanwhile is registered again, and one added meanwhile gets only the events aimed at the canvas. Handlers are read from the canvas. This replaces the sentence of 1.0.0-rc.5, which covered only part of it.
+
 ## [1.0.0-rc.5] - 2026-11-09
 
 The fifth release candidate of 1.0.0: the fix for an external audit of `1.0.0-rc.4`, no API change. A `once` listener on the canvas now runs once, as natively, whichever route its event takes (Fixed, below).
@@ -718,7 +743,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.5...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.6...HEAD
+[1.0.0-rc.6]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.2...v1.0.0-rc.3

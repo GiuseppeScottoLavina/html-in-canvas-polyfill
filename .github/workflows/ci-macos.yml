@@ -194,6 +194,9 @@ jobs:
           # WebGL on the virtual GPU, which Firefox's blocklist refuses ("gl is null" in the explainer's texture check)
           HIC_FIREFOX_PREFS: '{"webgl.force-enabled": true}'
         run: node test/xbrowser/run.mjs --engine=firefox --only="$(node test/ci/macos-plan.mjs --xbrowser)"
+      - name: The listener matrix on Firefox (Chrome runs it in the browser unit tests; Safari locally)
+        timeout-minutes: 15
+        run: node test/xbrowser/listener-matrix.mjs --engine=firefox
       - uses: ./.github/actions/macos-results
         if: always()
         with:
