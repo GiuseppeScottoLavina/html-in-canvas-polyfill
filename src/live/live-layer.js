@@ -8,7 +8,7 @@ import { onCanvasSuspension } from '../util/suspension.js';
 import { createA11yLink } from './a11y-link.js';
 import { createAncestorClip } from './ancestor-clip.js';
 import { collectDrawables, cssPath, nativeDom, nearestDrawableOf } from './drawables.js';
-import { installEventBridge } from './event-bridge.js';
+import { installEventBridge, releaseCanvasListeners } from './event-bridge.js';
 import { installCanvasSelection } from './canvas-selection.js';
 import {
   appliedMatrixOf, appliedOffsetOf, applyGeometryToElement, applyHitTestOrder, clearGeometry, flushGeometryWrites, revalidateOffsets, revalidateScrolled, scrollMovedElements,
@@ -384,6 +384,7 @@ export function createLiveLayer(env, record) {
     },
     dispose() {
       unmount();
+      releaseCanvasListeners(canvas);
       disposed = true;
       childListeners.clear();
     },

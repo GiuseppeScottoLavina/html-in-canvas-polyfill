@@ -218,7 +218,10 @@ const LIMITS = {
   // 366.5 -> 365.5 KB, gzip 124.75 -> 124.5 KB (-1,066 / -314 bytes, 2026-11-07, measured 365,311 / 124,382): one forwarder per canvas listener, as passive as its
   // listener, in place of the shared forwarder and the temporary Event.prototype patch (a reference to the native preventDefault saved before install bypassed it;
   // external audit of 1.0.0-rc.2)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 365.5 * KB, gzip: 124.5 * KB },
+  // 365.5 -> 366 KB, gzip 124.5 -> 124.75 KB (+445 / +147 bytes, 2026-11-09, measured 365,798 / 124,535): a once canvas listener runs once across the event of a
+  // relocated child and one aimed at the canvas (event-bridge.js guardOnce, releaseCanvasListeners) and the limit after an uninstall in the tree-identity row
+  // (external audit of 1.0.0-rc.4)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 366 * KB, gzip: 124.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -392,6 +395,7 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // path), with the core of 0.1.0-preview.23: start 8,029 bytes; polyfill path on Chromium 132,220 (161,057 when it imported the package entry), on Gecko / WebKit 148,797. The ceilings are those plus a
   // small margin. 2026-11-07: Chromium 136 -> 136.25 KB, Gecko / WebKit 152.5 -> 152.75 KB (+199 / +201, measured 136,069 / 152,646): the core's passive-listener fix above.
   // 2026-11-07 again: Chromium 136.25 -> 136 KB, Gecko / WebKit 152.75 -> 152.5 KB (-317 / -317, measured 135,752 / 152,329): the per-listener forwarders.
+  // 2026-11-09: Gecko / WebKit 152.5 -> 152.75 KB (+205, measured 152,534; Chromium 135,957 under its ceiling): the once guard of the core.
   // Control: the same app with the loader importing the package entry carries the feature prose and the engines in its Chromium path.
   /** @param {any} [plugin] @returns {Promise<{dyn: string[], start: number, chromium: number|null, geckoWebkit: number|null, prose: number, engines: boolean, enginesSplit: boolean}>} */
   const loaderApp = async (plugin) => {
@@ -429,7 +433,7 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   //   list (scroll-pages.js clippedAway, +349 gzip)
   // geckoWebkit 152.25 -> 152.5 KB (2026-11-06, measured 135,696 / 152,273 with both): the core it loads grew by the side builds dropped at dispose too (+53 gzip)
   // chromium 135.75 -> 136 KB (2026-11-06, measured 135,760 / 152,337 with the event bridge's passive forwarder too)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 136 * KB, geckoWebkit: 152.5 * KB };
+  const LOADER_APP = { start: 8.1 * KB, chromium: 136 * KB, geckoWebkit: 152.75 * KB };
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';

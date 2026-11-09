@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] - 2026-11-09
+
+The fifth release candidate of 1.0.0: the fix for an external audit of `1.0.0-rc.4`, no API change. A `once` listener on the canvas now runs once, as natively, whichever route its event takes (Fixed, below).
+
+- The core bundle is 365,798 bytes minified, 124,535 gzipped: 445 and 147 bytes more than 1.0.0-rc.4 (about 200 of them are the new sentence of the `tree-identity` row, which the classic bundle carries).
+
+### Changed
+
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-09, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
+
+### Fixed
+
+- Events: a `once` listener on the canvas could run twice, once for an event of a relocated child and once for an event aimed at the canvas itself, in either order. The polyfill registers it natively on the canvas and as a forwarder on the layer, and each consumed it on its own. Now a guard, a passive native listener of the same type, phase and signal set on the canvas before the listener's own registration, ends the registration when an event reaches the canvas, and the forwarder ends it and removes the native registration and the guard before it calls the listener. A nested dispatch from inside the listener does not run it again, and registering the same function again makes a new once registration. The guard stays while the canvas is unmounted, when its children's events reach it natively, and goes with an uninstall, so an uninstall still leaves no listener of the polyfill; a reinstall sets it again. The `tree-identity` row states the one case left: a once listener still pending at an uninstall that fires before a reinstall can run once more after it. Present before 1.0.0-rc.3; reported by an external audit of 1.0.0-rc.4, reproduced on Chrome and on Safari on an iPad.
+- Tests: G-resize-drag tells a slow machine from a slow polyfill. A drag that still showed the page fewer than 8 sizes after its attempts is made once more on the plain-DOM twin: when the twin sees too few sizes as well, the run is NOT USABLE, with the reason (gates can now say so, `ctx.unusable`); when the twin sees enough, the check fails as before.
+- Changelog: the 1.0.0-rc.4 entry says precisely which removal failed (one after an abort, not one alone).
+
 ## [1.0.0-rc.4] - 2026-11-08
 
 The fourth release candidate of 1.0.0: the fixes for an external audit of `1.0.0-rc.3`, no API change. It fixes a regression of `1.0.0-rc.3` in the forwarding of canvas listeners (Fixed, below).
@@ -16,7 +32,7 @@ The fourth release candidate of 1.0.0: the fixes for an external audit of `1.0.0
 
 ### Fixed
 
-- Events (a regression of 1.0.0-rc.3): after the canvas was unmounted and mounted again (its `content` toggled, for example), aborting the `signal` of a canvas listener, or removing the listener, left its forwarder on the layer, so the listener kept being called; registering the same function again then called it twice per event. The abort watcher ended the registration on the mount that had made it, whose forwarders were already gone. Now a registration ends by its own identity on the current mount: abort, `removeEventListener` and `once` remove its forwarder there and its watcher from its signal, an earlier signal cannot end a later registration of the same function, and an unmount removes the forwarders it registered. Reported by an external audit of 1.0.0-rc.3, reproduced on Chrome and on Safari on an iPad.
+- Events (a regression of 1.0.0-rc.3): after the canvas was unmounted and mounted again (its `content` toggled, for example), aborting the `signal` of a canvas listener left its forwarder on the layer, so the listener kept being called, and a later `removeEventListener` did not remove it either (a removal alone after a remount was correct); registering the same function again then called it twice per event. The abort watcher ended the registration on the mount that had made it, whose forwarders were already gone. Now a registration ends by its own identity on the current mount: abort, `removeEventListener` and `once` remove its forwarder there and its watcher from its signal, an earlier signal cannot end a later registration of the same function, and an unmount removes the forwarders it registered. Reported by an external audit of 1.0.0-rc.3, reproduced on Chrome and on Safari on an iPad.
 - Mutant tests: a gate process that printed a PASS result line and then exited non-zero or was killed is not usable, so it can no longer stand as a clean baseline with no red check; an ordinary FAIL (a red check, exit 1) is unchanged.
 - Tests: five gate checks had measured values in their names (G-regress-capture's listbox `scrollTop`, the listener audit's counts, G-pixel-dpr's page shift, G-a11y's line count). The mutant runner tells a flaky check by its name, so a value that changed between runs hid one; the values are now in the detail, and the checks and thresholds are unchanged.
 
@@ -702,7 +718,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.4...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.5...HEAD
+[1.0.0-rc.5]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.1...v1.0.0-rc.2

@@ -86,3 +86,12 @@ test('a gate past its watchdog fails naming what it still waits for; behind a lo
   const l = hangVerdict({ minutes: 10, pending: [], screenLocked: true });
   assert.equal(l.verdict, 'NOT USABLE'); assert.equal(l.usable, false); assert.match(l.reason, /waiting: none; screen locked: true.*unlock and rerun/);
 });
+
+test('a gate that found the machine unable to exercise its scenario (ctx.unusable) is NOT USABLE, with the reason, even when its checks are green', () => {
+  const real = { checks: [{ name: 'a', ok: true }], numbers: {} };
+  const out = judge({ real, environment: ['real: the plain-DOM twin also saw only 5 sizes'] });
+  assert.equal(out.verdict, 'NOT USABLE');
+  assert.equal(out.usable, false);
+  assert.ok(out.degraded.some((d) => d.startsWith('environment:real: the plain-DOM twin')));
+  assert.equal(judge({ real }).verdict, 'PASS', 'control: without it the same run passes');
+});

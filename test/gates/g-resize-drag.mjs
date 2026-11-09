@@ -54,7 +54,7 @@ runGate('G-resize-drag', async (ctx) => {
         d = await H.dragResize(page, { from, to, steps, intervalMs: cadence, settleMs: 500 });
         attempts.push({ resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, reached: d.reachedTarget });
       } while (d.pageSaw.distinctWidths < MIN_SIZES && attempts.length < DRAG_ATTEMPTS);
-      drags.push({ cadence, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk, attempts });
+      drags.push({ cadence, steps, to: `${to.width}x${to.height}`, reached: d.reachedTarget, resizeEvents: d.pageSaw.resizeEvents, distinctWidths: d.pageSaw.distinctWidths, actual: d.injector.actual, cadenceOk: d.injector.cadenceOk, attempts });
       // at rest after a drag to 700 with NO input since: nothing but the resize can re-raster the tile here. The later 700 px check cannot tell a stale tile: the click of the
       // hit check damages the focused button, and any damage re-rasters the whole drawable at the new size (the stale-after-resize mutant passed it in 8 of 20 runs, 2026-10-28)
       if (to === SMALL) {
@@ -68,6 +68,18 @@ runGate('G-resize-drag', async (ctx) => {
     }
   }
   const report = await detector.stop();
+  // a drag that still showed the page fewer than MIN_SIZES sizes is made once more on the plain-DOM twin, the same steps and cadence: when the twin sees too few
+  // as well, the machine renders too slowly to exercise the scenario and the run proves nothing (NOT USABLE); when the twin sees enough, the shortfall is the
+  // polyfill's and the check below fails (2026-11-08: a CI run showed the polyfill page 5 or 6 sizes on all six attempts of the 8 ms drags, 18 and 20 on the
+  // 50 ms ones, while other runs of the same code saw 12 to 38)
+  for (const d of drags.filter((x) => x.distinctWidths < MIN_SIZES)) {
+    const [from, to] = d.to === `${SMALL.width}x${SMALL.height}` ? [BIG, SMALL] : [SMALL, BIG];
+    await ctx.focus(ref);
+    const t = await H.dragResize(ref, { from, to, steps: d.steps, intervalMs: d.cadence, settleMs: 300 });
+    d.twin = { distinctWidths: t.pageSaw.distinctWidths, resizeEvents: t.pageSaw.resizeEvents, reached: t.reachedTarget };
+    if (t.pageSaw.distinctWidths < MIN_SIZES) ctx.unusable(`the plain-DOM twin also saw only ${t.pageSaw.distinctWidths} sizes in the ${d.cadence} ms drag to ${d.to}: this machine renders too slowly to exercise a resize drag`);
+  }
+  if (drags.some((d) => d.twin)) await ctx.focus(page);
   numbers.drags = drags;
   numbers.blank = { frames: report.frames, valid: report.valid, blankFrames: report.blankFrames.length, blankRuns: report.blankRuns, longestBlankRun: report.longestBlankRun, sizeWrites: report.sizeChanges.length, frameGapMs: report.frameGapMs };
   ctx.check('the blank detector run is valid (the canvas had content)', report.valid, { baseline: report.baseline, frames: report.frames }, 'blank');

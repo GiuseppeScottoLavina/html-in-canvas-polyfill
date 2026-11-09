@@ -108,7 +108,7 @@ function prepareBundles(id, bundleFile, kinds, optional = {}) {
  * A control passes only when it detected something AND every declared class has a red check. A focus that was refused/lost makes the run NOT USABLE (pass:false); a CDP-click focus,
  * machine load above threshold, a locked screen and --no-control only DEGRADE it (reportable, never counted toward a threshold decision).
  */
-export function judge({ real, control, controlClasses = [], focus = {}, highLoad = false, screenLocked = false, noControl = false, foreignPointer = [] }) {
+export function judge({ real, control, controlClasses = [], focus = {}, highLoad = false, screenLocked = false, noControl = false, foreignPointer = [], environment = [] }) {
   const out = { numbers: {}, assertions: [], failed: [], control: { ran: false, detected: false, failed: [], failedClasses: [], missingClasses: [] }, usable: true, degraded: [], pass: false, countsForThresholds: false, verdict: 'FAIL' };
   if (real) {
     out.numbers = real.numbers;
@@ -128,6 +128,8 @@ export function judge({ real, control, controlClasses = [], focus = {}, highLoad
   if (focus.mode === 'failed') { out.usable = false; out.degraded.push('focus:failed'); }
   if (focus.lost) { out.usable = false; out.degraded.push(`focus-lost:${focus.lostAt ?? ''}`); }
   if (foreignPointer.length) { out.usable = false; out.degraded.push(`foreign-pointer:${foreignPointer.length}`); }
+  // a gate that found the machine unable to exercise its scenario (ctx.unusable): the run proves nothing either way
+  for (const why of environment) { out.usable = false; out.degraded.push(`environment:${why}`); }
   if (focus.mode === 'cdp-click') out.degraded.push('focus:cdp-click');
   if (focus.mode === 'emulated') out.degraded.push('focus:emulated');
   if (highLoad) out.degraded.push('high-load');
@@ -237,6 +239,8 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
         focus: (page) => focusPage(page, result.focus),
         stillFocused: (page, what) => stillFocused(page, result.focus, what),
         note(k, v) { numbers[k] = v; },
+        /** the machine cannot exercise the scenario (shown by a plain-DOM control, never by the polyfill alone): the run becomes NOT USABLE @param {string} why */
+        unusable(why) { (result.environment ??= []).push(`${phase}: ${why}`); },
         polyUrl: (fixture, params = {}) => H.fixtureUrl(srv, fixture, { mode: 'poly', bundle, params }),
       };
       try {
@@ -252,7 +256,7 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
       for (const p of pages) { try { await p.close(); } catch { /* closing the tab is best effort */ } }
       outcomes[phase] = { checks, numbers, thrown };
     }
-    Object.assign(result, judge({ real: outcomes.real, control: outcomes.control, controlClasses, focus: result.focus, highLoad: result.highLoad, screenLocked: result.screenLocked, noControl: result.noControl, foreignPointer: result.foreignPointer }));
+    Object.assign(result, judge({ real: outcomes.real, control: outcomes.control, controlClasses, focus: result.focus, highLoad: result.highLoad, screenLocked: result.screenLocked, noControl: result.noControl, foreignPointer: result.foreignPointer, environment: result.environment ?? [] }));
   } catch (err) {
     result.failed.push(`gate setup failed: ${String(err?.stack ?? err).slice(0, 800)}`);
     result.pass = false;
