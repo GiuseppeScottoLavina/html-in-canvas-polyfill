@@ -399,7 +399,10 @@ function changedTokens(m) {
  * (ancestorTokens; any change when a sheet cannot be read), the language or direction, or a computed value of the canvas itself (what the drawables inherit: its inherited and
  * custom properties; styleSignature). A change that restyles only the ancestor (WPT onpaint 'canvas ancestor changes': its own background) paints nothing in the
  * canvas, and natively fires no paint event.
- * The chain is re-read when the canvas is (re)activated (a moved canvas resumes with forced damage), so a canvas that was moved to another parent is followed at once.
+ * The chain is re-read whenever nodes were inserted or removed in a scope (BUS.TREE_CHANGED, from the registry), whatever the cause of the damage that comes with
+ * the move: a move inside one task and a move of an ancestor leave the canvas active, and a canvas inserted again after a suspension resumes with `content-attr`
+ * damage (it was `forced` until 1.0.0-rc.7 changed it for the runaway guard, and this watcher, which re-read the chain on `forced` only, lost the new parent).
+ * It is re-read on forced damage too. A chain that changed is watched anew and damages the canvas, which also re-checks its presentation (presentation-watch.js).
  * @param {HicEnv} env
  * @param {CanvasRecord} record
  * @returns {() => void}
@@ -425,10 +428,13 @@ function watchAncestors(env, record) {
     if (batch.length && reaches(batch)) env.scheduler.damage(record, 'mutation', null, null);
   });
   const observe = () => { for (const el of watched) mo.observe(el, { attributes: true, attributeOldValue: true }); };
-  function sync() {
+  /** @param {boolean} restyle re-read the inherited-style signature even when the chain is the same (forced damage: the whole content is redone) */
+  function sync(restyle) {
     const next = ancestorsOf(record.canvas);
-    signature = styleSignature(record.canvas);
-    if (next.length === watched.length && next.every((el, i) => el === watched[i])) return;
+    const same = next.length === watched.length && next.every((el, i) => el === watched[i]);
+    // reading the signature resolves styles: a tree change that did not move the canvas (most of them) must not pay for it
+    if (restyle || !same) signature = styleSignature(record.canvas);
+    if (same) return;
     mo.disconnect();
     watched = next;
     tokens = undefined;
@@ -439,7 +445,8 @@ function watchAncestors(env, record) {
   observe();
   const offDamage = env.bus.on(BUS.DAMAGE, (/** @type {{record: CanvasRecord, cause: string}} */ e) => {
     if (e.cause === 'stylesheet') tokens = undefined;
-    else if (e.record === record && e.cause === 'forced') sync();
+    else if (e.record === record && e.cause === 'forced') sync(true);
   });
-  return () => { offDamage(); mo.disconnect(); watched = []; };
+  const offTree = env.bus.on(BUS.TREE_CHANGED, () => { if (record.state === 'active') sync(false); });
+  return () => { offDamage(); offTree(); mo.disconnect(); watched = []; };
 }

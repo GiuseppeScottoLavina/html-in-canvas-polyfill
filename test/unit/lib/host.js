@@ -81,7 +81,9 @@ if (!U.loadError) {
     } catch (e) {
       const err = /** @type {any} */ (e);
       status = err?.isTimeout ? 'timeout' : 'fail';
-      rec.error = String(err?.stack ?? err);
+      // Firefox and Safari leave the message out of the stack: put it first (test/xbrowser runs these files there)
+      const stack = String(err?.stack ?? err);
+      rec.error = err?.message && !stack.includes(err.message) ? `${err.name ?? 'Error'}: ${err.message}\n${stack}` : stack;
     }
     rec.body = status;
     progress({ ev: 'phase', phase: 'cleanup', body: status });
