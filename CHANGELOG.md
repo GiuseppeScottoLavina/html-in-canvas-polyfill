@@ -16,6 +16,7 @@ The seventh release candidate of 1.0.0, no API change. An external audit of `1.0
 
 ### Changed
 
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-09, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
 - Tests: each part of the listener matrix has its own positive control (the same cases with a canvas that drops `once` must diverge) and a fixed number of cases, in Chrome, in Firefox and Safari (`test/xbrowser/listener-matrix.mjs`) and on a device; `this` is checked exactly (the object for a `handleEvent` listener, the canvas for a function) where either was accepted. From an external audit of 1.0.0-rc.6.
 - Tests: G-bundle checks that the ceilings stated in docs/BUNDLES.md are the ones it enforces, with a control (1.0.0-rc.6 still stated the gzip ceiling of the core and the module loader's ceilings of the release before).
 - Tests: G-resize-drag puts the window back to 1400 px after the drags on the plain-DOM twin, so that a run already FAIL or NOT USABLE does not add pixel failures of its own.
