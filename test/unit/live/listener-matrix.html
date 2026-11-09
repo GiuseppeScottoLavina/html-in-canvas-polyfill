@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- The listener matrix (listener-matrix.mjs) in any engine, for test/xbrowser/listener-matrix.mjs (Firefox, Safari) and the iPad: window.runMatrix() runs all
-     its parts and returns their divergence counts. ?control sabotages the canvas side (its listeners drop `once`), so that divergences must appear. -->
+     its parts and returns, for each, its case count, its divergences and those of its positive control (a canvas that drops `once`, which must diverge). -->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>listener matrix</title></head><body>
 <script type="module">
 import * as M from '/test/unit/live/listener-matrix.mjs';
@@ -8,10 +8,6 @@ window.runMatrix = async () => {
   const cleanups = [];
   const t = { cleanup: (fn) => cleanups.push(fn) };
   const pair = await M.setupPair(t);
-  if (location.search.includes('control')) {
-    const target = pair.canvas.target, add = target.addEventListener;
-    target.addEventListener = function (type, fn, o) { return add.call(this, type, fn, typeof o === 'object' && o ? { ...o, once: false } : o); };
-  }
   const out = {};
   const parts = [
     ['base', () => M.casesFor(['none', 'remove', 'abort']), M.divergences],
@@ -25,7 +21,9 @@ window.runMatrix = async () => {
     const c = cases();
     const t0 = performance.now();
     const div = await run(pair, c);
-    out[name] = { cases: c.length, divergences: div.length, ms: Math.round(performance.now() - t0), first: div.slice(0, 3).map((d) => ({ native: d.native, poly: d.poly, life: d.life, behaviour: d.behaviour })) };
+    // the positive control of this part: the same cases with a canvas that drops `once` (listener-matrix.mjs controlOf)
+    const control = await run(M.controlOf(pair), c);
+    out[name] = { cases: c.length, divergences: div.length, control: control.length, ms: Math.round(performance.now() - t0), first: div.slice(0, 3).map((d) => ({ native: d.native, poly: d.poly, life: d.life, behaviour: d.behaviour })) };
   }
   for (const fn of cleanups.reverse()) await fn();
   out.ua = navigator.userAgent.match(/(Version|Firefox|Chrome)\/[\d.]+/)?.[0];
