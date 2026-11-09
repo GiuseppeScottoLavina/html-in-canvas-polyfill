@@ -134,7 +134,7 @@ export function createScheduler(env, store, hooks) {
   });
   const offState = env.bus.on(BUS.CANVAS_STATE, (/** @type {{record: CanvasRecord, state: string}} */ e) => {
     const entry = entries.get(e.record);
-    if (entry?.registered && e.state === 'active') resume(entry);
+    if (entry?.registered && e.state === 'active') resume(entry, 'content-attr');
   });
   // A drawable added to / removed from a mounted canvas: the store tracks it (forced damage) but only the scheduler can arm a tick to build, commit and paint it.
   // ... and so is a drawable that the surface budget held back once memory is freed (an ElementImage closed): it does not tick while it waits for that.
@@ -190,9 +190,12 @@ export function createScheduler(env, store, hooks) {
 
   /**
    * Full damage and a forced paint: first mount, hidden tab shown again, canvas active again. The gate clocks and the cap phase must not carry the time spent invisible.
-   * @param {Entry} entry
+   * A mount or a canvas active again comes from the page (its content attribute, an insertion, a move): its damage is `content-attr`, damage from outside the
+   * pipeline, so that a page that toggles a canvas many times a second is not taken for a feedback loop by the runaway guard (it was `forced`, which the guard
+   * counts as the pipeline's own: 90 such remounts in 3 s uninstalled the polyfill). Rendering treats both alike (damage.js STRUCTURAL, store.js RETRY_CAUSES).
+   * @param {Entry} entry @param {'content-attr'|'forced'} [cause]
    */
-  function resume(entry) {
+  function resume(entry, cause = 'forced') {
     const paint = entry.record.paint;
     paint.waitingSince = null;
     paint.gateReason = null;
@@ -200,7 +203,7 @@ export function createScheduler(env, store, hooks) {
     // A canvas without a drawable has nothing to snapshot: native fires no paint for it (WPT moved-webgl-canvas would see an exception thrown by its handler); the first drawable added damages it.
     paint.force = (entry.record.layer?.drawableElements().length ?? 0) > 0;
     capGate.reset(entry.record.id);
-    api.damage(entry.record, 'forced', null, null);
+    api.damage(entry.record, cause, null, null);
   }
 
   /** @param {{record: CanvasRecord, changed: Element[], removed: Element[]}} change */
@@ -755,7 +758,7 @@ export function createScheduler(env, store, hooks) {
       registeredCount++;
       record.frameCap = parseFrameCap(record.canvas.getAttribute(EXT.FRAME_CAP_ATTR), env.options.defaultFrameCap);
       record.dpr = env.window.devicePixelRatio || 1;
-      resume(entry);
+      resume(entry, 'content-attr');
     },
 
     unregister(record) {

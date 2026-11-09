@@ -323,6 +323,25 @@ for (const p of PLUGINS) {
 }
 for (const name of discoverPlugins(root).map((p) => p.name)) if (!PLUGINS.some((p) => p.name === name)) problems.push(`G-bundle: plugins/${name} is not in dist/plugins/manifest.json`);
 
+// docs/BUNDLES.md states the ceilings (the sentence of `npm run check:bundle`): each number must be the one enforced here, so that the page cannot drift from the
+// gate (1.0.0-rc.6 still printed the gzip budget of the core and the module loader's ceilings of the release before). Control: a changed ceiling must be seen.
+/** @param {string} doc @param {Record<string, {ceiling: number, gzip?: number}>} limits @param {Record<string, number>} plugins @param {{chromium: number, geckoWebkit: number}} app @returns {string[]} */
+const budgetDrift = (doc, limits, plugins, app) => {
+  const line = doc.split('\n').find((l) => l.startsWith('- `npm run check:bundle`')) ?? '';
+  const kb = (/** @type {number} */ n) => `${+(n / KB).toFixed(3)} KB`;
+  const names = { core: 'hic-live-polyfill', effects: 'hic-live-effects', bridge: 'hic-live-native-bridge', engines: 'hic-live-engines', GPU: 'hic-live-gpu', worker: 'hic-live-worker', loader: 'hic-live-loader' };
+  /** @type {string[]} */ const want = [];
+  const [minPart, gzPart] = [line.slice(line.indexOf('(min files;'), line.indexOf('gzip level 9:')), line.slice(line.indexOf('gzip level 9:'), line.indexOf('each plugin'))];
+  for (const [label, file] of Object.entries(names)) {
+    const l = limits[`${file}.iife.min.js`];
+    if (!minPart.includes(`${label} ${kb(l.ceiling)}`)) want.push(`${label} ${kb(l.ceiling)} (minified)`);
+    if (l.gzip !== undefined && !gzPart.includes(`${label} ${kb(l.gzip)}`)) want.push(`${label} ${kb(l.gzip)} (gzip)`);
+  }
+  for (const [name, n] of Object.entries(plugins)) if (!line.includes(`${name} ${+(n / KB).toFixed(3)}`)) want.push(`plugin ${name} ${kb(n)}`);
+  if (!line.includes(`Chromium ${kb(app.chromium)}, on Firefox / Safari ${kb(app.geckoWebkit)}`)) want.push(`module loader Chromium ${kb(app.chromium)}, Firefox / Safari ${kb(app.geckoWebkit)}`);
+  return line ? want : ['the sentence of `npm run check:bundle` is missing'];
+};
+
 // ---- 1. size
 const sizeProblem = (raw, target, ceiling) => (raw > ceiling ? 'ceiling' : raw > target ? 'target' : null);
 const dynamicImport = (text) => /\bimport\s*\(/.test(text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''));
@@ -438,6 +457,9 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // geckoWebkit 152.25 -> 152.5 KB (2026-11-06, measured 135,696 / 152,273 with both): the core it loads grew by the side builds dropped at dispose too (+53 gzip)
   // chromium 135.75 -> 136 KB (2026-11-06, measured 135,760 / 152,337 with the event bridge's passive forwarder too)
   const LOADER_APP = { start: 8.1 * KB, chromium: 136.25 * KB, geckoWebkit: 152.75 * KB };
+  const bundlesDoc = readFileSync(join(root, 'docs/BUNDLES.md'), 'utf8');
+  for (const d of budgetDrift(bundlesDoc, LIMITS, PLUGIN_LIMITS, LOADER_APP)) problems.push(`G-bundle: docs/BUNDLES.md does not state the enforced ceiling ${d}`);
+  if (!budgetDrift(bundlesDoc.replace(/gzip level 9: core [0-9.]+ KB/, 'gzip level 9: core 1 KB'), LIMITS, PLUGIN_LIMITS, LOADER_APP).length) problems.push('G-bundle: the ceiling check of docs/BUNDLES.md failed its control (a changed gzip ceiling of the core passed)');
   const app = await loaderApp();
   const entryApp = await loaderApp({ name: 'loader-imports-entry', setup(/** @type {any} */ b) { b.onLoad({ filter: /dist[\\/]esm[\\/]loader\.js$/ }, (/** @type {any} */ a) => ({ contents: readFileSync(a.path, 'utf8').replace(/import\("\.\/chunks\/loader-core-\w+\.js"\)/, 'import("./index.js")'), loader: 'js', resolveDir: dirname(a.path) })); } });
   const where = 'G-bundle: an app that imports only load() from dist/esm/loader.js';

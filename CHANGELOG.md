@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.7] - 2026-11-09
+
+The seventh release candidate of 1.0.0, no API change. An external audit of `1.0.0-rc.6` found no functional defect; its requests for precision gave each part of the listener matrix its own positive control, and those controls found a defect of the runaway guard that was there before (Fixed, below).
+
+- The core bundle is 366,611 bytes minified, 124,787 gzipped: 34 and 14 bytes more than 1.0.0-rc.6.
+
+### Fixed
+
+- Runaway guard: a page that toggled a canvas between drawable and fallback content many times a second, with events reaching its listeners in between, could make the guard take the remounts for a feedback loop and uninstall the polyfill ("committed 90 times in 3000 ms with nothing on the page asking for it"). The damage of a mount, and of a canvas active again, was `forced`, which the guard counts as the pipeline's own; it is now `content-attr`, damage from outside the pipeline as API-CONTRACT 9.1 lists it, and rendered alike (`src/schedule/scheduler.js`). The damage of a tab shown again stays `forced`. Found by the per-part positive controls of the listener matrix below, whose second round of remounts tripped it every time; `test/unit/api-core/runaway-remount.browser.test.mjs` replays that sequence and fails on the code before.
+
+### Changed
+
+- Tests: each part of the listener matrix has its own positive control (the same cases with a canvas that drops `once` must diverge) and a fixed number of cases, in Chrome, in Firefox and Safari (`test/xbrowser/listener-matrix.mjs`) and on a device; `this` is checked exactly (the object for a `handleEvent` listener, the canvas for a function) where either was accepted. From an external audit of 1.0.0-rc.6.
+- Tests: G-bundle checks that the ceilings stated in docs/BUNDLES.md are the ones it enforces, with a control (1.0.0-rc.6 still stated the gzip ceiling of the core and the module loader's ceilings of the release before).
+- Tests: G-resize-drag puts the window back to 1400 px after the drags on the plain-DOM twin, so that a run already FAIL or NOT USABLE does not add pixel failures of its own.
+- Docs: docs/BUNDLES.md states the current ceilings (core gzip 125 KB, module loader 136.25 and 152.75 KB); docs/ARCHITECTURE.md says that the event bridge's own properties stay until the canvas is disposed, while the rest of the facade goes at each unmount.
+
 ## [1.0.0-rc.6] - 2026-11-09
 
 The sixth release candidate of 1.0.0, no API change. The finding of an external audit of `1.0.0-rc.5` was the fifth in a row about the forwarding of canvas listeners, each found one combination at a time. So this release adds the listener matrix, a test that compares a canvas listener with the same listener on a native element over about 20,000 combinations in Chrome, Firefox and Safari, and fixes everything it found: the audit's case and two classes that no audit had found (Fixed, below). Run on the bridges of 1.0.0-rc.1 to rc.5, the matrix finds each audit's finding.
@@ -747,7 +764,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.6...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.7...HEAD
+[1.0.0-rc.7]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.3...v1.0.0-rc.4

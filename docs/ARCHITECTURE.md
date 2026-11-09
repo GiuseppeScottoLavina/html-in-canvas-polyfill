@@ -153,7 +153,8 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
   `flow-root` [probe]). The layer has layout containment (like the spec's canvas) and is `display:grid` with one 100% x 100% cell and `align-items:start`; each direct child gets
   `grid-area:1/1; margin:0; position:static; justify-self:start; align-self:start` through a zero-specificity `:where()` rule, so children are blockified, shrink to fit and sit at the
   origin like native. Differences that remain (the origin is the canvas content box, children of a `display:contents` child) are deviation `children-layout`.
-- **DOM-identity facade** (`live/tree-facade.js`, `event-bridge.js`; instance-level own properties, removed on unmount; prototypes are not touched except
+- **DOM-identity facade** (`live/tree-facade.js`, `event-bridge.js`; instance-level own properties, removed on unmount, except those of the event bridge, which stay
+  until the canvas is disposed (an uninstall, or the canvas no longer managed) so that a listener added or removed while it is unmounted is seen; prototypes are not touched except
   where noted): on the canvas: `childNodes, children, first/lastChild, first/lastElementChild, childElementCount, hasChildNodes, append, prepend, appendChild,
   insertBefore, moveBefore (where the engine has it), removeChild, replaceChild, replaceChildren, contains, innerHTML, outerHTML, textContent, cloneNode, insertAdjacentElement/Text/HTML (inside positions),
   querySelector[All], getElementsByTagName[NS], getElementsByClassName, addEventListener/removeEventListener` operate on the LOGICAL child list

@@ -50,6 +50,15 @@ export async function setupPair(t) {
 let serial = 0;
 
 /**
+ * Register a listener on a side: on a control side (controlOf) the canvas drops `once`, a broken bridge that every part of the matrix must notice.
+ * @param {any} side @param {string} type @param {any} fn @param {any} o
+ */
+const add = (side, type, fn, o) => side.target.addEventListener(type, fn, side.dropOnce && o && typeof o === 'object' ? { ...o, once: false } : o);
+
+/** The pair with its canvas side sabotaged (it drops `once`): the positive control of each part. @param {any} pair */
+export const controlOf = (pair) => ({ ...pair, canvas: { ...pair.canvas, dropOnce: true } });
+
+/**
  * The part of a log compared with the native element. With the polyfill uninstalled until the last dispatch, everything up to that point is compared (the
  * canvas is then native and must behave exactly so); the last dispatch follows the restoration of the reinstall (event-bridge.js reregister), which the events
  * test holds with explicit expectations.
@@ -80,7 +89,8 @@ export async function runCase(side, o, behaviour, life, at, childFirst) {
   /** @type {any} */
   let listener;
   const body = function (/** @type {any} */ self, /** @type {Event} */ ev) {
-    log.push(`L:${ev.eventPhase}:${ev.currentTarget === target}:${self === target || self === listener}`);
+    // `this` is the target for a function and the object itself for a handleEvent object
+    log.push(`L:${ev.eventPhase}:${ev.currentTarget === target}:${self === (behaviour === 'handleEvent' ? listener : target)}`);
     if (depth > 0) return;
     depth++;
     try {
@@ -94,7 +104,7 @@ export async function runCase(side, o, behaviour, life, at, childFirst) {
     } finally { depth--; }
   };
   listener = behaviour === 'handleEvent' ? { handleEvent(/** @type {Event} */ ev) { body(this, ev); } } : function (/** @type {Event} */ ev) { body(this, ev); };
-  target.addEventListener(type, listener, { once: o.once, capture: o.capture, passive: o.passive, ...(ac ? { signal: ac.signal } : {}) });
+  add(side, type, listener, { once: o.once, capture: o.capture, passive: o.passive, ...(ac ? { signal: ac.signal } : {}) });
   const step = async () => {
     for (const part of life.split('+')) {
       if (part === 'remount') await side.remount();
@@ -193,8 +203,8 @@ export async function runPair(side, a, b, behaviour, life, childFirst, who = 'A'
   };
   A = (/** @type {Event} */ ev) => act('A', ev);
   B = (/** @type {Event} */ ev) => act('B', ev);
-  target.addEventListener(type, A, a);
-  target.addEventListener(type, B, b);
+  add(side, type, A, a);
+  add(side, type, B, b);
   for (const part of life.split('+')) { if (part === 'remount') await side.remount(); else if (part === 'reinstall') await side.reinstall(); else if (part === 'unmount') await side.unmount(); else if (part === 'uninstall') await side.uninstall(); }
   for (let i = 0; i < 4; i++) {
     if (i === 3 && life.includes('unmount')) await side.mount();
@@ -268,9 +278,9 @@ export async function runHandler(side, o, listenerFirst, behaviour, life, childF
     } finally { depth--; }
     return undefined;
   };
-  if (listenerFirst) target.addEventListener('click', L, o);
+  if (listenerFirst) add(side, 'click', L, o);
   target.onclick = H;
-  if (!listenerFirst) target.addEventListener('click', L, o);
+  if (!listenerFirst) add(side, 'click', L, o);
   for (const part of life.split('+')) { if (part === 'remount') await side.remount(); else if (part === 'reinstall') await side.reinstall(); else if (part === 'unmount') await side.unmount(); else if (part === 'uninstall') await side.uninstall(); }
   for (let i = 0; i < 4; i++) {
     if (i === 3 && life.includes('unmount')) await side.mount();

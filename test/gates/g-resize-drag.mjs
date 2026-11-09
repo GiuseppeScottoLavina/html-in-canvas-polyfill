@@ -79,7 +79,9 @@ runGate('G-resize-drag', async (ctx) => {
     d.twin = { distinctWidths: t.pageSaw.distinctWidths, resizeEvents: t.pageSaw.resizeEvents, reached: t.reachedTarget };
     if (t.pageSaw.distinctWidths < MIN_SIZES) ctx.unusable(`the plain-DOM twin also saw only ${t.pageSaw.distinctWidths} sizes in the ${d.cadence} ms drag to ${d.to}: this machine renders too slowly to exercise a resize drag`);
   }
-  if (drags.some((d) => d.twin)) await ctx.focus(page);
+  // the twin's drags shared the window and may have left it at 700 px: back to the 1400 px that the final checks below expect, so that a run already FAIL or
+  // NOT USABLE reports no pixel failure of its own on top
+  if (drags.some((d) => d.twin)) { await ctx.focus(page); await page.setInnerSize(BIG.width, BIG.height); await H.sleep(300); }
   numbers.drags = drags;
   numbers.blank = { frames: report.frames, valid: report.valid, blankFrames: report.blankFrames.length, blankRuns: report.blankRuns, longestBlankRun: report.longestBlankRun, sizeWrites: report.sizeChanges.length, frameGapMs: report.frameGapMs };
   ctx.check('the blank detector run is valid (the canvas had content)', report.valid, { baseline: report.baseline, frames: report.frames }, 'blank');
