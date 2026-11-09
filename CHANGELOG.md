@@ -22,6 +22,10 @@ The sixth release candidate of 1.0.0, no API change. The finding of an external 
 
   Every case runs on the polyfill's canvas and on a native element with a child, and the two are compared call by call. It runs in Chrome in the browser unit tests, in Firefox in the macOS CI (`test/xbrowser/listener-matrix.mjs`) and in Safari locally and on the iPad (`test/unit/live/listener-matrix.html`), with a positive control. 0 divergences in all three engines.
 
+### Changed
+
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-09, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
+
 ### Fixed
 
 - Events: after an uninstall and an install, a `once` canvas listener could run twice if it stopped the event's propagation or dispatched an event at a child (the audit's case). A reinstall now registers the bridge's listeners again natively, in their order, each `once` listener behind a new guard, so a guard always runs before its listener.
