@@ -199,7 +199,9 @@ if (!docsOnly) {
   // 17413 -> 17374 (2026-11-07, measured 17,374): one forwarder per canvas listener replaces the shared forwarder and asPassive (-39: src/live/event-bridge.js)
   // 17374 -> 17376 (2026-11-08, measured 17,376): a registration ends on the current mount, by identity (+2: src/live/event-bridge.js endEntry, the abort watcher
   // and the per-mount remover); before it, an abort after an unmount/mount cycle left the forwarder calling the listener (external audit of 1.0.0-rc.3)
-  if (total > 17376) problems.push(`G-size: core is ${total} code lines (> 17376)`);
+  // 17376 -> 17392 (2026-11-09, measured 17,392): a once canvas listener runs once across the two routes (+16: src/live/event-bridge.js guardOnce and
+  // releaseCanvasListeners, src/live/live-layer.js dispose); before it, an event of a relocated child and one aimed at the canvas both ran it (external audit of 1.0.0-rc.4)
+  if (total > 17392) problems.push(`G-size: core is ${total} code lines (> 17392)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

@@ -206,6 +206,111 @@ test('a registration ends on the current mount, whichever mount made it: abort, 
   assert.equal(spy.live('xk'), 0, 'unmount removes the forwarders it registered');
 });
 
+test('a once canvas listener runs once across the two routes (an event of a relocated child and one aimed at the canvas, in either order, capture and bubble), as on a native element; a nested dispatch inside it does not run it again; registered again it runs once more', async (t) => {
+  const { managed } = setup({ t });
+  const { canvas } = page(KIDS);
+  managed(canvas);
+  const inner = /** @type {Element} */ (canvas.querySelector('#in'));
+  const ref = document.createElement('div');
+  const refChild = ref.appendChild(document.createElement('span'));
+  document.body.append(ref);
+  t.cleanup(() => ref.remove());
+  /** the calls after each of four dispatches, alternating the routes @param {EventTarget} target @param {Element} child @param {string} type @param {boolean} capture @param {boolean} childFirst */
+  const run = (target, child, type, capture, childFirst) => {
+    let n = 0;
+    target.addEventListener(type, () => { n++; }, { once: true, capture, passive: true });
+    /** @type {number[]} */ const seen = [];
+    for (let i = 0; i < 4; i++) { const at = (i % 2 === 0) === childFirst ? child : target; at.dispatchEvent(new Event(type, { bubbles: true })); seen.push(n); }
+    return seen;
+  };
+  let k = 0;
+  for (const capture of [false, true]) for (const childFirst of [true, false]) {
+    const type = `once${k++}`;
+    const native = run(ref, refChild, type, capture, childFirst);
+    assert.deepEqual(native, [1, 1, 1, 1], `native reference ${type}`);
+    assert.deepEqual(run(canvas, inner, type, capture, childFirst), native, `canvas: capture ${capture}, ${childFirst ? 'child' : 'canvas'} first`);
+  }
+  // a nested dispatch from inside the once listener, by either route, does not run it again
+  for (const nestAt of [inner, canvas]) for (const firstAt of [inner, canvas]) {
+    let n = 0;
+    const type = `oncenest${k++}`;
+    canvas.addEventListener(type, () => { n++; nestAt.dispatchEvent(new Event(type, { bubbles: true })); }, { once: true });
+    firstAt.dispatchEvent(new Event(type, { bubbles: true }));
+    assert.equal(n, 1, `first at ${firstAt === canvas ? 'canvas' : 'child'}, nested at ${nestAt === canvas ? 'canvas' : 'child'}`);
+  }
+  // the same function registered again after it ran: once more, by either route
+  let again = 0;
+  const fn = () => { again++; };
+  canvas.addEventListener('onceagain', fn, { once: true });
+  canvas.dispatchEvent(new Event('onceagain'));
+  canvas.addEventListener('onceagain', fn, { once: true });
+  inner.dispatchEvent(new Event('onceagain', { bubbles: true }));
+  inner.dispatchEvent(new Event('onceagain', { bubbles: true }));
+  canvas.dispatchEvent(new Event('onceagain'));
+  assert.equal(again, 2);
+});
+
+test('a once canvas listener: removeEventListener before it ran leaves no registration on the canvas or the layer; it runs once across an unmount/mount cycle (the canvas route while unmounted, the child route after); a dispose removes the polyfill\'s own listeners from the canvas', async (t) => {
+  const { managed } = setup({ t });
+  const { canvas } = page(KIDS);
+  /** the canvas's native registrations, as the bridge makes them: adds minus removes per function */
+  /** @type {Map<any, number>} */ const live = new Map();
+  const add = canvas.addEventListener, rem = canvas.removeEventListener;
+  canvas.addEventListener = function (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) { live.set(fn, (live.get(fn) ?? 0) + 1); return add.call(this, type, fn, o); };
+  canvas.removeEventListener = function (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) { if (live.has(fn)) live.set(fn, live.get(fn) - 1); return rem.call(this, type, fn, o); };
+  t.cleanup(() => { delete canvas.addEventListener; delete canvas.removeEventListener; });
+  const r = managed(canvas);
+  const inner = /** @type {Element} */ (canvas.querySelector('#in'));
+  const spy = spyForwarders(/** @type {any} */ (r.layer.element));
+  t.cleanup(spy.restore);
+  // the registrations the polyfill made on the canvas for one addEventListener call (a once registration the browser consumed is not removed through the spy,
+  // so each step counts only its own)
+  /** @param {string} type @param {any} fn @param {any} options */
+  const addOwn = (type, fn, options) => { const before = new Set(live.keys()); canvas.addEventListener(type, fn, options); return [...live.keys()].filter((k) => !before.has(k) && k !== fn); };
+  const left = (/** @type {any[]} */ fns) => fns.filter((k) => (live.get(k) ?? 0) > 0).length;
+  // removed before it ran
+  let removed = 0;
+  const f = () => { removed++; };
+  const fGuards = addOwn('onceremove', f, { once: true });
+  assert.equal(left(fGuards), 1, 'control: one guard of the polyfill is on the canvas');
+  canvas.removeEventListener('onceremove', f);
+  inner.dispatchEvent(new Event('onceremove', { bubbles: true }));
+  canvas.dispatchEvent(new Event('onceremove'));
+  assert.equal(removed, 0);
+  assert.equal(left(fGuards), 0, 'no guard left on the canvas');
+  assert.equal(spy.live('onceremove'), 0, 'no forwarder left on the layer');
+  // the child route, then the canvas route: the listener's own native registration goes with the guard
+  const g = () => {};
+  const gGuards = addOwn('oncechild', g, { once: true });
+  inner.dispatchEvent(new Event('oncechild', { bubbles: true }));
+  assert.equal(live.get(g), 0, 'its native registration is removed');
+  assert.equal(left(gGuards), 0, 'and its guard');
+  // across an unmount/mount cycle: while unmounted the children are the canvas's own and their events reach it natively
+  let cycled = 0;
+  canvas.addEventListener('oncecycle', () => { cycled++; }, { once: true });
+  r.layer.unmount();
+  inner.dispatchEvent(new Event('oncecycle', { bubbles: true }));
+  r.layer.mount();
+  inner.dispatchEvent(new Event('oncecycle', { bubbles: true }));
+  canvas.dispatchEvent(new Event('oncecycle'));
+  assert.equal(cycled, 1, 'ran once while unmounted, never again after the mount');
+  assert.equal(spy.live('oncecycle'), 0);
+  // a dispose (uninstall) leaves no listener of the polyfill on the canvas: the user's own registration stays
+  let hCalls = 0;
+  const h = () => { hCalls++; };
+  const hGuards = addOwn('oncedispose', h, { once: true });
+  assert.equal(left(hGuards), 1, 'control: its guard is on the canvas');
+  r.layer.dispose();
+  assert.equal(left(hGuards), 0, 'no guard after the dispose');
+  assert.equal(live.get(h), 1, "the user's own registration is untouched");
+  // a reinstall (a new layer for the same canvas) sets the guard again: the once listener, still pending, runs once across the two routes
+  const r2 = managed(canvas);
+  canvas.dispatchEvent(new Event('oncedispose'));
+  /** @type {Element} */ (canvas.querySelector('#in')).dispatchEvent(new Event('oncedispose', { bubbles: true }));
+  assert.equal(hCalls, 1, 'after a dispose and a new mount: once, the canvas route first');
+  assert.ok(r2.layer);
+});
+
 test('bridge does not double deliver or swallow errors', async (t) => {
   const { managed } = setup({ t });
   const { canvas } = page(KIDS);

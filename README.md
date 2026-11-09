@@ -34,9 +34,9 @@ install(); // synchronous: call it before your code uses the API; throws HicUnsu
 Or from a CDN, with plain script tags placed before your own scripts (no `defer`, `async` or `type="module"`: the polyfill installs while its tag runs):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@1.0.0-rc.4/dist/hic-live-polyfill.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@1.0.0-rc.5/dist/hic-live-polyfill.iife.min.js"></script>
 <!-- Firefox and Safari: this second bundle draws form controls in those engines' look. Chrome does not need it. -->
-<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@1.0.0-rc.4/dist/hic-live-engines.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@1.0.0-rc.5/dist/hic-live-engines.iife.min.js"></script>
 ```
 
 To download nothing in a browser that implements the API (Chrome 157), load `dist/hic-live-loader.iife.min.js` instead (6 KB gzipped) and `await HicLiveLoader.load()` before your code uses the API; it fetches the core, and the engines bundle on Firefox and Safari, only where the polyfill runs, and the native bridge with the core over an earlier native build that the bridge completes. With a bundler, `import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'` does the same through `import()`, which the bundler must keep split ([GETTING-STARTED](docs/guides/GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs)).
@@ -99,12 +99,12 @@ Short answers to the common questions (size, lag behind the DOM, accessibility, 
 
 - **The picture lags the DOM by one frame or more.** Each update is cloned, serialised into an SVG image and decoded by the browser before it can be drawn. On Chromium a change that needs no font or image to load is painted one frame later, others two frames or more. Typing in single-line fields (in Chrome) and inner scrolling have shortcuts that bring them close to native; other updates do not. Firefox uses the scrolling shortcut only at a device pixel ratio of 1, for scrollers with square corners whose content has no rounded corners, dotted lines, transforms, images, SVG or form controls; elsewhere it rebuilds the scroller at every step. During a window drag the canvas shows pixels 1 to 3 frames old.
 - **Children are relocated.** The children of the canvas move into an invisible live layer, a `<hic-layer>` element next to the canvas. `children`, `parentNode` and friends answer as if nothing moved, but CSS `:last-child`, `:nth-child`, `+` and live collections can still see the layer.
-- **Size.** The core is about 124 KB gzipped (365 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
+- **Size.** The core is about 125 KB gzipped (366 KB minified). Drawables that change often should stay well under about 1000 elements ([docs/guides/PERFORMANCE.md](docs/guides/PERFORMANCE.md)).
 - **Not drawn:** cross-origin (or sandboxed) iframes, `<object>` and `<embed>`, and cross-origin images, fonts and CSS without CORS. The browser itself leaves them out of a canvas; the polyfill draws the element's box without its content and logs one console message, never a silent gap. Also not drawn: native UI such as select popups, date pickers and IME composition. Same-origin iframes are drawn. A strict CSP must allow `img-src data:`.
 - **Animated images:** an animated GIF, APNG, WebP or AVIF `<img>` plays where the browser has `ImageDecoder` (WebCodecs), in a secure context; Safari 27, which has none, shows its first frame. Animated CSS images (`background-image` and the like) show their first frame everywhere.
 - **Phones and tablets:** verified on a physical Pixel 7 Pro (Android 17, Chrome 156), a physical Huawei Mate 10 Pro (Android 10, Chrome 156) and a physical iPad Pro 11-inch (iPadOS 27.2), and on the Android Emulator and the iOS Simulator (iPhone 17, iOS 26.4). No physical iPhone on iOS 26 or later was run, so Safari on the iPhone is unqualified; a physical iPhone on iOS 18 confirmed the clean refusal. Pinch-zoom shows the canvas bitmap scaled, not re-rastered (as native canvases do). Memory budgets for phones are chosen from WebKit's limits, not measured ([docs/guides/MOBILE.md](docs/guides/MOBILE.md)).
 - **Not supported:** web views inside apps, Firefox for Android, an `ElementImage` sent through a MessagePort or BroadcastChannel (a dedicated worker that loads `hic-live-worker` takes one and draws it).
-- **Release candidate.** `1.0.0-rc.4` follows a proposed standard that may still change. Until `1.0.0` its stable rows change only by fixes.
+- **Release candidate.** `1.0.0-rc.5` follows a proposed standard that may still change. Until `1.0.0` its stable rows change only by fixes.
 - **Stability.** What 1.0.0 promises, row by row, and the versioning policy: [docs/STABILITY.md](docs/STABILITY.md). The two extensions below are experimental.
 
 ## How it works
@@ -137,7 +137,7 @@ Measured on one machine (Apple M1 Max, macOS, 120 Hz, DPR 2) with the same pages
 | blank frames during real window resizes | 0 of 3135 | 542 of 3130 | 0 of 3127 |
 | one update in a 1000-element drawable, main thread | 15.3 ms | 44.9 ms | 6.0 ms |
 | first paint of a form page (new tab), p50 | 91 ms | 60 ms | 66 ms |
-| core bundle, minified / gzipped | 365 KB / 124 KB | 30 KB / 10 KB | none |
+| core bundle, minified / gzipped | 366 KB / 125 KB | 30 KB / 10 KB | none |
 | browsers | desktop Chrome before 157, Firefox 155+, Safari 27+; Chrome for Android 130+ (two physical phones and the emulator), iPadOS Safari 26+ (a physical iPad); the iPhone unqualified (simulator only) | claims all, including mobile (not verified here) | Chrome 157 and Canary (enabled by default) |
 
 The WPT row is this polyfill on 2026-10-29 ([docs/CONFORMANCE.md](docs/CONFORMANCE.md)), the other package as measured on 2026-10-13, and native Chrome at the build whose copy of the tests is pinned (newer Canary builds already implement later API changes that the pinned tests predate); the latency, resize, update and first-paint rows of this polyfill were measured on 2026-10-31 with 0.1.0-preview.16 plus the two large-drawable fixes released in 0.1.0-preview.17 (Chrome 156), those of the other package and native on 2026-10-30/31 (Chrome 156; native: Canary 159.0.8131.0), each subject twice; the bundle row is the current build. The other package is smaller, starts faster and offers a Three.js renderer. Full tables, method and caveats: [docs/PERFORMANCE-COMPARISON.md](docs/PERFORMANCE-COMPARISON.md) and [docs/COMPARISON.md](docs/COMPARISON.md). Libraries such as html2canvas are a different tool: they re-implement CSS painting to take a static picture, and the result is not interactive.
