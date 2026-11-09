@@ -1,6 +1,8 @@
 /**
- * canvas.addEventListener bridge: listeners on the canvas also receive bubbling events of relocated descendants (currentTarget AND composedPath() overridden: the layer entry is replaced by the canvas), and the `on*` event-handler IDL
- * properties of the canvas (`canvas.onclick = fn`, from the HTMLElement/GlobalEventHandlers descriptor table) are instance accessors that register one bridge listener on the layer.
+ * canvas.addEventListener bridge: listeners on the canvas also receive bubbling events of relocated descendants (currentTarget AND composedPath() overridden: the layer
+ * entry is replaced by the canvas), and the `on*` event-handler IDL properties of the canvas (`canvas.onclick = fn`, from the HTMLElement/GlobalEventHandlers
+ * descriptor table) are instance accessors whose handlers take their place in the same ordered registry. A canvas listener must behave as on a native element
+ * whose child's events and own events reach it: the listener matrix holds that (test/unit/live/listener-matrix.mjs, docs/TEST-PLAN.md 2.3).
  * Module: live (src/live/*).
  *
  * Only listeners registered while the canvas is managed are bridged (the bridge cannot enumerate listeners that were added natively before); they stay registered
@@ -16,30 +18,41 @@ const OWN_EVENTS = new Set([EVENTS.PAINT, EVENTS.ELEMENT_GEOMETRY_UPDATE, EVENTS
 
 /**
  * @typedef {Object} Entry
- * @property {EventListenerOrEventListenerObject} listener
+ * @property {EventListenerOrEventListenerObject|null} listener  null for the entry of an `on*` handler
+ * @property {string|null} handler  the `on*` property of a handler entry: its value is read from the canvas at each event, as natively
  * @property {boolean} once
  * @property {AbortSignal|null} signal
  * @property {boolean} passive  registered with `passive: true` (the canvas is not the window, the document or the body: `passive` left out means false there)
  * @property {string} key  its type and capture (keyOf)
  * @property {(() => void)|undefined} [detach]  removes its forwarder from the layer of the current mount (none while the canvas is unmounted)
  * @property {(() => void)|undefined} [unwatch]  removes its abort watcher from its signal
- * @property {(() => void)|undefined} [unguard]  a `once` registration: removes its guard on the canvas (see guardOnce)
+ * @property {(() => void)|undefined} [unguard]  a `once` registration: removes its guard (see guardOnce)
  * @property {(() => void)|undefined} [unregister]  a `once` registration: removes the listener's own native registration on the canvas
  */
 
-/** @type {WeakMap<HTMLCanvasElement, Map<string, Entry[]>>} listeners per canvas, kept across unmount/mount so a toggled canvas keeps its bridge */
-const registries = new WeakMap();
+/**
+ * The bridge of one canvas. Its registry, its methods and its guards last while the canvas is managed, mounted or not (a listener added, removed or run while
+ * the canvas is unmounted is seen); only the forwarders are per mount. A dispose (an uninstall, or the canvas no longer managed) restores the methods and
+ * removes the guards; the registry stays, so that a reinstall bridges the listeners again.
+ * @typedef {{entries: Map<string, Entry[]>, own: ReturnType<typeof createOwnProps>|null, add: Function, remove: Function, layerEl: HTMLElement|null}} Bridge
+ */
+
+/** @type {WeakMap<HTMLCanvasElement, Bridge>} */
+const bridges = new WeakMap();
+
+/** @param {string} type @param {boolean} capture */
+const keyOf = (type, capture) => `${type}|${capture ? 1 : 0}`;
 
 /**
- * End the registration `entry` (removeEventListener, once, or its signal aborted), whatever mount registered it: out of the canvas registry, its forwarder off the
- * layer of the current mount, its abort watcher off its signal. By identity: an earlier registration of the same function cannot end a later one.
- * @param {Map<string, Entry[]>} entries @param {Entry} entry
+ * End the registration `entry` (removeEventListener, once, its signal aborted, a handler set to null): out of the registry, its forwarder off the layer, its
+ * abort watcher off its signal, its guard off. By identity: an earlier registration of the same function cannot end a later one.
+ * @param {Bridge} b @param {Entry} entry
  */
-function endEntry(entries, entry) {
-  const list = entries.get(entry.key), at = list ? list.indexOf(entry) : -1;
+function endEntry(b, entry) {
+  const list = b.entries.get(entry.key), at = list ? list.indexOf(entry) : -1;
   if (!list || at < 0) return;
   list.splice(at, 1);
-  if (!list.length) entries.delete(entry.key);
+  if (!list.length) b.entries.delete(entry.key);
   entry.detach?.();
   entry.unwatch?.();
   entry.unguard?.();
@@ -47,28 +60,64 @@ function endEntry(entries, entry) {
 }
 
 /**
- * A `once` canvas listener is registered twice: natively on the canvas (events aimed at the canvas itself) and as a forwarder on the layer (events of the
- * relocated children). Natively it runs once, whichever route comes first. The guard, a passive native listener of the same type, phase and signal registered on
- * the canvas before the listener's own registration, ends the registration when an event reaches the canvas, so the forwarder goes too; the forwarder ends it
- * and removes the native registration and the guard before it calls the listener. The guard stays while the canvas is unmounted (its events then reach the
- * canvas natively) and goes when the layer is disposed (releaseCanvasListeners), so an uninstall leaves no listener of the polyfill behind.
- * @param {HTMLCanvasElement} canvas @param {Map<string, Entry[]>} entries @param {Entry} entry @param {Function} add @param {Function} remove the native methods
+ * A `once` canvas listener is registered twice: natively on the canvas (events aimed at the canvas, and the children's while unmounted) and as a forwarder on the
+ * layer (the relocated children's events). Natively it runs once, whichever route comes first. The guard, a passive native listener of the same type, phase and
+ * signal registered on the canvas just before the listener's own registration, ends the registration when an event is about to reach the listener there, so the
+ * forwarder goes with it; the forwarder ends it and removes the native registration and the guard before it calls the listener. A guard goes with a dispose, so
+ * an uninstall leaves no listener of the polyfill; a reinstall registers the type's listeners again behind their guards (reregister).
+ * @param {Bridge} b @param {HTMLCanvasElement} canvas @param {Entry} entry
  */
-function guardOnce(canvas, entries, entry, add, remove) {
+function guardOnce(b, canvas, entry) {
   const [type, phase] = entry.key.split('|'), capture = phase === '1';
-  const guard = () => { entry.unguard = undefined; endEntry(entries, entry); };
-  add.call(canvas, type, guard, { capture, passive: true, once: true, ...(entry.signal ? { signal: entry.signal } : {}) });
-  entry.unguard = () => remove.call(canvas, type, guard, capture);
-  entry.unregister = () => remove.call(canvas, type, entry.listener, capture);
+  const guard = () => { entry.unguard = undefined; endEntry(b, entry); };
+  b.add.call(canvas, type, guard, { capture, passive: true, once: true, ...(entry.signal ? { signal: entry.signal } : {}) });
+  entry.unguard = () => b.remove.call(canvas, type, guard, capture);
+  entry.unregister = () => b.remove.call(canvas, type, entry.listener, capture);
 }
 
 /**
- * The layer of `canvas` is disposed (an uninstall, or the canvas no longer managed): the guards of its pending `once` listeners go, and a later mount sets them
- * again. A `once` listener that fires natively in between is not seen: after a reinstall it can run once more (the `tree-identity` row of src/contracts/features.js).
+ * The first mount after a dispose (a reinstall) restores the bridge's registrations as they were at the uninstall: the polyfill could not see the page while it
+ * was not installed, and native listeners cannot be read. Each type and phase is registered natively again, in the order of the registry, each once listener
+ * behind a new guard (a guard runs first only if it is registered first), and an on* handler among them is set again in its place (handlers are read from the
+ * canvas, so one the page set or cleared meanwhile counts as it left it). So they keep their order among themselves and after the listeners registered before
+ * the bridge; a listener removed or run (once) while the polyfill was not installed is registered again, and one added meanwhile is not bridged (the
+ * tree-identity row of src/contracts/features.js).
+ * @param {Bridge} b @param {HTMLCanvasElement} canvas @param {Entry[]} list
+ */
+function reregister(b, canvas, list) {
+  const capture = list[0].key.endsWith('|1');
+  const type = list[0].key.slice(0, -2);
+  /** @type {Array<() => void>} */ const again = [];
+  for (const entry of list) {
+    if (entry.handler) {
+      const desc = /** @type {PropertyDescriptor} */ (handlerDescriptors(canvas).find((h) => h.name === entry.handler)?.desc);
+      const value = desc.get?.call(canvas);
+      desc.set?.call(canvas, null);
+      again.push(() => desc.set?.call(canvas, value));
+    } else {
+      b.remove.call(canvas, type, entry.listener, capture);
+      again.push(() => {
+        if (entry.once) guardOnce(b, canvas, entry);
+        b.add.call(canvas, type, entry.listener, { capture, once: entry.once, passive: entry.passive, ...(entry.signal ? { signal: entry.signal } : {}) });
+      });
+    }
+  }
+  for (const add of again) add();
+}
+
+/**
+ * The canvas is disposed (an uninstall, or the canvas no longer managed): the forwarders, the methods and the `on*` accessors go, and the guards of its pending
+ * `once` listeners; the registry stays for a reinstall. While the polyfill is not installed the page's listeners are native and the polyfill sees nothing: after
+ * a reinstall the canvas listeners are bridged as they were at the uninstall (the `tree-identity` row of src/contracts/features.js).
  * @param {HTMLCanvasElement} canvas
  */
 export function releaseCanvasListeners(canvas) {
-  for (const list of registries.get(canvas)?.values() ?? []) for (const entry of list) { entry.unguard?.(); entry.unguard = undefined; }
+  const b = bridges.get(canvas);
+  if (!b?.own) return;
+  b.own.restore();
+  b.own = null;
+  for (const list of b.entries.values()) for (const entry of list) { entry.detach?.(); entry.unguard?.(); entry.unguard = undefined; }
+  b.layerEl = null;
 }
 
 /** @type {Array<{name: string, desc: PropertyDescriptor}>|null} */
@@ -125,71 +174,67 @@ function asCanvas(ev, canvas, call) {
 }
 
 /**
- * Instance-level addEventListener/removeEventListener and on* accessors on the canvas. Every canvas listener gets its own forwarder on the layer, registered in the
- * same order with the listener's capture and passive flags: the browser itself then ignores a passive listener's preventDefault (whatever reference to it the page
- * holds), stops the later ones at stopImmediatePropagation and skips one removed during the dispatch. Returns the remover.
- * @param {HTMLCanvasElement} canvas
- * @param {HTMLElement} layerEl
- * @returns {() => void}
+ * Register the forwarder of `entry` on the layer of the current mount (none while the canvas is unmounted). Every canvas listener and `on*` handler has its own,
+ * in registration order with its capture and passive flags: the browser then ignores a passive listener's preventDefault (whatever reference to it the page
+ * holds), stops the later ones at stopImmediatePropagation and skips one removed during the dispatch. A handler that returns false cancels the event.
+ * @param {Bridge} b @param {HTMLCanvasElement} canvas @param {Entry} entry
  */
-export function installEventBridge(canvas, layerEl) {
-  let registry = registries.get(canvas);
-  if (!registry) registries.set(canvas, (registry = new Map()));
-  const entries = registry;
-  /** the forwarder of each canvas listener on the layer of this mount, and its remover @type {Map<Entry, () => void>} */
-  const forwarders = new Map();
-  /** @type {Map<string, EventListener>} */
-  const handlerBridges = new Map();
-  /** @type {Map<string, Function>} */
-  const handlers = new Map();
-  const own = createOwnProps();
-  const nativeAdd = canvas.addEventListener;
-  const nativeRemove = canvas.removeEventListener;
-
-  /** @param {string} type @param {boolean} capture */
-  const keyOf = (type, capture) => `${type}|${capture ? 1 : 0}`;
-
-  /** Register the forwarder of `entry` on the layer of this mount. @param {Entry} entry */
-  function forward(entry) {
-    const [type, capture] = entry.key.split('|');
-    const fn = /** @type {EventListener} */ ((ev) => {
-      if (ev.target === layerEl || ev.target === canvas) return;
-      if (entry.once) { entry.unregister?.(); endEntry(entries, entry); }
-      patchPath(ev, layerEl, canvas);
-      asCanvas(ev, canvas, () => {
-        try {
-          if (typeof entry.listener === 'function') entry.listener.call(canvas, ev);
-          else entry.listener.handleEvent(ev);
-        } catch (err) { reportAsync(err); }
-      });
+function forward(b, canvas, entry) {
+  const layerEl = b.layerEl;
+  if (!layerEl) return;
+  const [type, capture] = entry.key.split('|');
+  const fn = /** @type {EventListener} */ ((ev) => {
+    if (ev.target === layerEl || ev.target === canvas) return;
+    if (entry.once) { entry.unregister?.(); endEntry(b, entry); }
+    patchPath(ev, layerEl, canvas);
+    asCanvas(ev, canvas, () => {
+      try {
+        if (entry.handler) {
+          const value = /** @type {any} */ (canvas)[entry.handler];
+          if (typeof value === 'function' && value.call(canvas, ev) === false) ev.preventDefault();
+        } else if (typeof entry.listener === 'function') entry.listener.call(canvas, ev);
+        else entry.listener?.handleEvent(ev);
+      } catch (err) { reportAsync(err); }
     });
-    const detach = () => {
-      layerEl.removeEventListener(type, fn, capture === '1');
-      forwarders.delete(entry);
-      if (entry.detach === detach) entry.detach = undefined;
-    };
-    forwarders.set(entry, detach);
-    entry.detach = detach;
-    layerEl.addEventListener(type, fn, { capture: capture === '1', passive: entry.passive });
-  }
+  });
+  const detach = () => {
+    layerEl.removeEventListener(type, fn, capture === '1');
+    if (entry.detach === detach) entry.detach = undefined;
+  };
+  entry.detach = detach;
+  layerEl.addEventListener(type, fn, { capture: capture === '1', passive: entry.passive });
+}
 
+/** @param {Bridge} b @param {Entry} entry */
+function append(b, entry) {
+  const list = b.entries.get(entry.key) ?? [];
+  list.push(entry);
+  b.entries.set(entry.key, list);
+}
+
+/**
+ * The instance-level addEventListener / removeEventListener and `on*` accessors of the canvas, defined once per install of the bridge (until a dispose).
+ * @param {Bridge} b @param {HTMLCanvasElement} canvas
+ */
+function defineMethods(b, canvas) {
+  const own = (b.own = createOwnProps());
+  b.add = canvas.addEventListener;
+  b.remove = canvas.removeEventListener;
   own.define(canvas, 'addEventListener', {
     writable: true,
     value: function addEventListener(/** @type {string} */ type, /** @type {EventListenerOrEventListenerObject|null} */ listener, /** @type {any} */ options) {
       const { capture, once, signal, passive } = normalize(options);
       const key = keyOf(type, capture);
-      const list = !listener || OWN_EVENTS.has(type) || signal?.aborted ? null : entries.get(key) ?? [];
-      /** @type {Entry|null} */ const entry = list && listener && !list.some((e) => e.listener === listener) ? { listener, once, signal, passive, key } : null;
+      const bridged = !!listener && !OWN_EVENTS.has(type) && !signal?.aborted;
+      /** @type {Entry|null} */ const entry = bridged && !(b.entries.get(key) ?? []).some((e) => e.listener === listener) ? { listener, handler: null, once, signal, passive, key } : null;
       // the guard of a once listener goes on the canvas before the listener's own registration, so that it runs first (guardOnce)
-      if (entry?.once) guardOnce(canvas, entries, entry, nativeAdd, nativeRemove);
-      nativeAdd.call(canvas, type, /** @type {any} */ (listener), options);
-      if (!list || !entry) return;
-      list.push(entry);
-      entries.set(key, list);
-      forward(entry);
+      if (entry?.once) guardOnce(b, canvas, entry);
+      b.add.call(canvas, type, /** @type {any} */ (listener), options);
+      if (!entry) return;
+      append(b, entry);
+      forward(b, canvas, entry);
       if (signal) {
-        // the watcher ends this registration, on whichever mount the canvas is then (or none): not the mount that registered it
-        const onAbort = () => endEntry(entries, entry);
+        const onAbort = () => endEntry(b, entry);
         signal.addEventListener('abort', onAbort, { once: true });
         entry.unwatch = () => signal.removeEventListener('abort', onAbort);
       }
@@ -198,53 +243,49 @@ export function installEventBridge(canvas, layerEl) {
   own.define(canvas, 'removeEventListener', {
     writable: true,
     value: function removeEventListener(/** @type {string} */ type, /** @type {EventListenerOrEventListenerObject|null} */ listener, /** @type {any} */ options) {
-      nativeRemove.call(canvas, type, /** @type {any} */ (listener), options);
-      const entry = listener ? entries.get(keyOf(type, normalize(options).capture))?.find((e) => e.listener === listener) : undefined;
-      if (entry) endEntry(entries, entry);
+      b.remove.call(canvas, type, /** @type {any} */ (listener), options);
+      const entry = listener ? b.entries.get(keyOf(type, normalize(options).capture))?.find((e) => e.listener === listener) : undefined;
+      if (entry) endEntry(b, entry);
     },
   });
-  for (const list of entries.values()) for (const entry of list) {
-    forward(entry);
-    // a guard released by a dispose is set again (it now follows the listener's own registration)
-    if (entry.once && !entry.unguard) guardOnce(canvas, entries, entry, nativeAdd, nativeRemove);
-  }
-
-  /** @param {string} name @param {PropertyDescriptor} desc */
-  function bridgeHandler(name, desc) {
-    const type = name.slice(2);
+  // an on* handler is an entry of the registry where it was first set, as natively: a new value keeps its place, null ends it (set again, it goes last)
+  for (const { name, desc } of handlerDescriptors(canvas)) {
+    const key = keyOf(name.slice(2), false);
+    const sync = () => {
+      const entry = b.entries.get(key)?.find((e) => e.handler === name);
+      const active = typeof desc.get?.call(canvas) === 'function';
+      if (active && !entry) { const made = { listener: null, handler: name, once: false, signal: null, passive: false, key }; append(b, made); forward(b, canvas, made); }
+      else if (!active && entry) endEntry(b, entry);
+    };
     own.define(canvas, name, {
       get() { return desc.get?.call(canvas); },
-      set(value) {
-        desc.set?.call(canvas, value);
-        if (typeof value === 'function') { handlers.set(name, value); ensureHandlerBridge(name, type); } else handlers.delete(name);
-      },
+      set(value) { desc.set?.call(canvas, value); sync(); },
     });
-    const inline = desc.get?.call(canvas);
-    if (typeof inline === 'function') { handlers.set(name, inline); ensureHandlerBridge(name, type); }
+    sync();
   }
+}
 
-  /** @param {string} name @param {string} type */
-  function ensureHandlerBridge(name, type) {
-    if (handlerBridges.has(name)) return;
-    const bridge = /** @type {EventListener} */ ((ev) => {
-      const handler = handlers.get(name);
-      if (!handler || ev.target === layerEl || ev.target === canvas) return;
-      patchPath(ev, layerEl, canvas);
-      asCanvas(ev, canvas, () => {
-        try { handler.call(canvas, ev); } catch (err) { reportAsync(err); }
-      });
-    });
-    handlerBridges.set(name, bridge);
-    layerEl.addEventListener(type, bridge);
+/**
+ * Mount the bridge of `canvas` on `layerEl`: the methods if the bridge is not installed (its first mount, or the first after a dispose, which also restores the
+ * registrations of the uninstall: reregister), then one forwarder per registration, in order. Returns the remover of this mount's forwarders.
+ * @param {HTMLCanvasElement} canvas
+ * @param {HTMLElement} layerEl
+ * @returns {() => void}
+ */
+export function installEventBridge(canvas, layerEl) {
+  let b = bridges.get(canvas);
+  if (!b) bridges.set(canvas, (b = { entries: new Map(), own: null, add: canvas.addEventListener, remove: canvas.removeEventListener, layerEl: null }));
+  const bridge = b;
+  if (!bridge.own) {
+    const reinstall = bridge.entries.size > 0;
+    defineMethods(bridge, canvas);
+    // the first mount after a dispose: the registrations as they were at the uninstall, in order (reregister)
+    if (reinstall) for (const list of [...bridge.entries.values()]) reregister(bridge, canvas, [...list]);
   }
-
-  for (const { name, desc } of handlerDescriptors(canvas)) bridgeHandler(name, desc);
-
+  bridge.layerEl = layerEl;
+  for (const list of [...bridge.entries.values()]) for (const entry of [...list]) forward(bridge, canvas, entry);
   return () => {
-    own.restore();
-    // the forwarders this mount registered (not the registry's entries: one may have ended meanwhile); a second call finds none
-    for (const detach of [...forwarders.values()]) detach();
-    for (const [name, bridge] of handlerBridges) layerEl.removeEventListener(name.slice(2), bridge);
-    handlerBridges.clear();
+    for (const list of bridge.entries.values()) for (const entry of list) entry.detach?.();
+    if (bridge.layerEl === layerEl) bridge.layerEl = null;
   };
 }

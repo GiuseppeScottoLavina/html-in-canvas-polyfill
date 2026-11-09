@@ -160,8 +160,13 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
   (writes go into the layer, then `onChildrenChanged` fires; this is how React/Vue/Lit reconcile children of the canvas). A node that reaches the canvas itself through a native method is moved on into the layer with the state-preserving `moveBefore()` where the engine has it (an iframe keeps its document). On relocated top-level children: `parentNode, parentElement, previousSibling, nextSibling,
   previous/nextElementSibling`. On the canvas also `nextSibling/nextElementSibling` (skip the layer), and with `parentFacade` (default true) on the PARENT of the canvas: `children, childNodes, childElementCount, firstChild/lastChild,
   firstElementChild/lastElementChild` hide the layer (`children` becomes a snapshot array-like, not a live HTMLCollection). CSS `:last-child`, `:nth-child`, `+`, native live collections and `parent.innerHTML` still see the layer (limit, row `tree-identity`); only the canvas's own `:last-child`, `:only-child` and `:nth-last-child()` rules are mirrored through twins blind to the layer (`structuralTwins`, `live/selector-bridge.js`).
-  `canvas.addEventListener(type, fn)` and the `on*` handler properties of the canvas (`canvas.onclick = fn`) register a bridge listener on the layer for events whose target is a
-  descendant, overriding `currentTarget` to the canvas and `composedPath()` (the layer entry is replaced by the canvas) (own-property overrides on the event work [probe]).
+  `canvas.addEventListener(type, fn)` and the `on*` handler properties of the canvas (`canvas.onclick = fn`) are entries of one ordered registry per canvas, each with
+  its own forwarder on the layer (its capture and passive flags, so that the browser applies passivity, stopImmediatePropagation and removal during a dispatch) for
+  events whose target is a descendant, overriding `currentTarget` to the canvas and `composedPath()` (the layer entry is replaced by the canvas) (own-property
+  overrides on the event work [probe]). A handler entry sits where the handler was first set, reads the handler at each event and cancels on `false`. The
+  registry and the canvas methods last while the canvas is managed, mounted or not; the forwarders are per mount; a `once` listener has a guard on the canvas so
+  that it runs once across the two routes; a reinstall restores the registrations of the uninstall in order (`live/event-bridge.js`). The listener matrix
+  (`test/unit/live/listener-matrix.mjs`, TEST-PLAN 2.3) compares all of it with a native element.
 - **Selector bridge** (`live/selector-bridge.js`, option `selectorBridge`): `queries` = `Document/Element .querySelector[All], matches, closest` are wrapped
   (only when a managed canvas exists and the selector has a descendant or child combinator): the native result is unioned (document order, deduped) with the
   result of the selector rewritten for each managed canvas (the compound that `canvas.matches()` is replaced by `[data-hic-layer="N"]`);

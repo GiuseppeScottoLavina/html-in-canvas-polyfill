@@ -114,7 +114,10 @@ test('inline on* attribute handlers and listeners survive an unmount/mount cycle
   assert.equal(n, 3);
   assert.equal(Object.hasOwn(canvas, 'addEventListener'), true);
   r.layer.unmount();
-  assert.equal(Object.hasOwn(canvas, 'addEventListener'), false);
+  // the bridge's methods stay while the canvas is managed, mounted or not (a listener added or removed while unmounted is seen); a dispose restores them
+  assert.equal(Object.hasOwn(canvas, 'addEventListener'), true, 'still bridged while unmounted');
+  r.layer.dispose();
+  assert.equal(Object.hasOwn(canvas, 'addEventListener'), false, 'restored by the dispose');
 });
 
 test('after an unmount/mount cycle the canvas listeners still run in their registration order, each with its passive flag', async (t) => {
