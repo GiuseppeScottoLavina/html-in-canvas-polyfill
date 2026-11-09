@@ -10,6 +10,10 @@ The fifth release candidate of 1.0.0: the fix for an external audit of `1.0.0-rc
 
 - The core bundle is 365,798 bytes minified, 124,535 gzipped: 445 and 147 bytes more than 1.0.0-rc.4 (about 200 of them are the new sentence of the `tree-identity` row, which the classic bundle carries).
 
+### Changed
+
+- Docs: the test plan records the VoiceOver session on this candidate (2026-11-09, Safari 27.0.1 on macOS 27.0.1, all 13 steps as on the reference).
+
 ### Fixed
 
 - Events: a `once` listener on the canvas could run twice, once for an event of a relocated child and once for an event aimed at the canvas itself, in either order. The polyfill registers it natively on the canvas and as a forwarder on the layer, and each consumed it on its own. Now a guard, a passive native listener of the same type, phase and signal set on the canvas before the listener's own registration, ends the registration when an event reaches the canvas, and the forwarder ends it and removes the native registration and the guard before it calls the listener. A nested dispatch from inside the listener does not run it again, and registering the same function again makes a new once registration. The guard stays while the canvas is unmounted, when its children's events reach it natively, and goes with an uninstall, so an uninstall still leaves no listener of the polyfill; a reinstall sets it again. The `tree-identity` row states the one case left: a once listener still pending at an uninstall that fires before a reinstall can run once more after it. Present before 1.0.0-rc.3; reported by an external audit of 1.0.0-rc.4, reproduced on Chrome and on Safari on an iPad.
