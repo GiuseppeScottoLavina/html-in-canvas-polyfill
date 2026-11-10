@@ -283,17 +283,27 @@ export function createCanvasRegistry(env, createLiveLayer) {
     /** @type {Set<HTMLCanvasElement>} */
     const nominated = new Set();
     let removals = false;
+    let tree = false;
+    const authored = (/** @type {Node} */ n) => !(isElement(n) && env.isManagedLayerNode(n));
     for (const m of list) {
       if (m.type === 'attributes') {
         if (isCanvas(m.target)) { nominated.add(m.target); failed.delete(m.target); }
         continue;
       }
       for (const n of m.addedNodes) collectCanvases(n, nominated);
-      if (!removals) removals = Array.prototype.some.call(m.removedNodes, (/** @type {Node} */ n) => !(isElement(n) && env.isManagedLayerNode(n)));
+      if (!removals) removals = Array.prototype.some.call(m.removedNodes, authored);
+      if (!tree) tree = removals || Array.prototype.some.call(m.addedNodes, authored);
     }
+    // A suspended canvas that is connected again was inserted with something that holds it in a shadow tree (its host, or an element above the host): querySelectorAll
+    // above does not reach into shadow trees, so the canvas would stay suspended, its layer out of the document, until the grace period disposed it.
+    if (tree) for (const [canvas, rec] of records) if (rec.state === 'suspended' && canvas.isConnected) nominated.add(canvas);
     let changed = false;
     for (const canvas of nominated) changed = reconcile(canvas) || changed;
     if (removals || changed) reconcileAll();
+    // A canvas, or an element above it, may have moved without the canvas changing state (a move inside one task, an ancestor moved): the observers that follow its
+    // ancestors re-read the chain (mutation-observer.js watchAncestors). Nominating canvases is not enough: an ancestor moved does not nominate them, nor does a
+    // shadow host moved with a canvas in its shadow tree.
+    if (tree) env.bus.emit(BUS.TREE_CHANGED, {});
   }
 
   /** @param {Scope} root */

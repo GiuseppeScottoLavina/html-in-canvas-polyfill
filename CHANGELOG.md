@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.8] - 2026-11-10
+
+The eighth release candidate of 1.0.0, no API change. An external audit of `1.0.0-rc.7` found a regression of that release: a canvas inserted again under another parent after a suspension stopped following the attributes of its new ancestors. The ancestor-move matrix built for it (69 cases, in Chrome, Firefox and Safari) found four older defects of the same family, fixed here too.
+
+- The core bundle is 367,253 bytes minified, 124,990 gzipped: 642 and 203 bytes more than 1.0.0-rc.7.
+
+### Fixed
+
+- A canvas inserted again under another parent after it was suspended (removed for a moment, then put back elsewhere before it was dropped) kept watching the attributes of its former ancestors: a class or an inherited custom property set on its new parent or higher did not repaint it, while a change on the former parent did. 1.0.0-rc.7 brought this in, when the damage of a canvas active again stopped being `forced` for the runaway guard; the watcher of the ancestors re-read them on `forced` damage only. The watcher now re-reads them after every insertion or removal in an observed scope, whatever the cause of the damage (external audit of 1.0.0-rc.7).
+- The same fix covers moves that no release followed: a canvas moved to another parent inside one task, an ancestor of a canvas moved, a canvas in a shadow tree moved there, and a move under a parent that already sets an inherited custom property, which kept the old value on the canvas.
+- A canvas in a shadow tree whose host was removed and inserted in another place across a checkpoint stayed suspended, its content out of the document, until the grace period dropped it: the registry now reconciles a suspended canvas that is connected again after any insertion.
+- The clone of a canvas in a shadow tree now has the language the browser gives the canvas: the language set above its host in Chrome, only that of `<html>` in Safari, none in Firefox (measured; before, `<html lang>` everywhere and nothing set in between), so `:lang()` rules and the font fallback of the language match the page.
+
+### Changed
+
+- Tests: the ancestor-move matrix (`test/unit/schedule/ancestor-move-*.browser.test.mjs`, docs/TEST-PLAN.md G-ancestor-move, 69 cases), in Chrome, in Firefox in the macOS CI and in Safari locally (`test/xbrowser/ancestor-move.mjs`); on 1.0.0-rc.7 the same cases fail 32 of 69 in Chrome. The unit host page puts the message of a failed assertion first in Firefox and Safari, whose stacks leave it out.
+- Docs: docs/BUNDLES.md states the new ceilings (core 367.5 KB raw, module loader 136.5 and 153 KB); docs/ARCHITECTURE.md describes the tree-change signal in the lifecycle; version 1.0.0-rc.8.
+
 ## [1.0.0-rc.7] - 2026-11-09
 
 The seventh release candidate of 1.0.0, no API change. An external audit of `1.0.0-rc.6` found no functional defect; its requests for precision gave each part of the listener matrix its own positive control, and those controls found a defect of the runaway guard that was there before (Fixed, below).

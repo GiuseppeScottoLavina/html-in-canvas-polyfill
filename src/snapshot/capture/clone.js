@@ -195,6 +195,30 @@ function copyRootAttributes(live, root) {
   root.setAttribute('class', [...classes].join(' '));
 }
 
+/**
+ * The language of a canvas in a shadow tree, for the clone root, as the browser decides it: the shells of the clone stop at the shadow root and the root copies
+ * the lang of <html> and <body>, while the browsers differ on what a shadow tree inherits (measured 2026-11-10: Chrome the language of the host and above, as the
+ * HTML spec says; Safari only that of <html>; Firefox none). So the candidates found above the host are asked to the canvas itself, nearest first (`:lang()`
+ * matches what the browser computes for it), and none matching makes the language unknown. null: the canvas is not in a shadow tree, or a lang inside its own tree
+ * decides (a shell carries it).
+ * @param {Window} win @param {Element} canvas @returns {string|null}
+ */
+function shadowLanguageOf(win, canvas) {
+  let top = canvas;
+  for (let el = /** @type {Element|null} */ (canvas); el; el = el.parentElement) {
+    if (el.hasAttribute('lang')) return null;
+    top = el;
+  }
+  const host = /** @type {ShadowRoot} */ (top.getRootNode()).host;
+  if (!host) return null;
+  for (let el = /** @type {Element|null} */ (host); el; el = el.parentElement ?? /** @type {ShadowRoot} */ (el.getRootNode()).host ?? null) {
+    const lang = el.getAttribute('lang');
+    if (!lang) continue;
+    try { if (canvas.matches(`:lang(${/** @type {Window & typeof globalThis} */ (win).CSS.escape(lang)})`)) return lang; } catch { /* a value :lang() cannot take */ }
+  }
+  return '';
+}
+
 /** @param {Ctx} ctx @param {Element} src @param {string} feature @param {string} message @returns {Element} */
 function placeholderFor(ctx, src, feature, message) {
   const size = ctx.layer.borderBoxSize(src) ?? { width: 0, height: 0 };
@@ -655,6 +679,8 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
 
   const root = doc.createElement('div');
   copyRootAttributes(live, root);
+  const lang = shadowLanguageOf(win, req.record.canvas);
+  if (lang !== null) root.setAttribute('lang', lang);
   setInlineStyle(root, `${inheritedStyle(layer.element, layerCs)}${ROOT_NEUTRAL}width:${n3(frame.width)}px!important;height:${n3(frame.height)}px!important;padding:${n3(ink.top)}px 0 0 ${n3(ink.left)}px!important`);
   ctx.tokens.add(root);
 

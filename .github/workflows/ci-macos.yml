@@ -197,6 +197,9 @@ jobs:
       - name: The listener matrix on Firefox (Chrome runs it in the browser unit tests; Safari locally)
         timeout-minutes: 15
         run: node test/xbrowser/listener-matrix.mjs --engine=firefox
+      - name: The ancestor-move matrix on Firefox (Chrome runs it in the browser unit tests; Safari locally)
+        timeout-minutes: 15
+        run: node test/xbrowser/ancestor-move.mjs --engine=firefox
       - uses: ./.github/actions/macos-results
         if: always()
         with:

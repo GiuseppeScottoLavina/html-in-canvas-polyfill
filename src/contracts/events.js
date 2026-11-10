@@ -11,6 +11,8 @@ export const BUS = /* @__PURE__ */ Object.freeze({
   CANVAS_UNMOUNTING: 'canvas:unmounting',
   /** {record: CanvasRecord, state: string, previous: string}. Emitted by the registry only. */
   CANVAS_STATE: 'canvas:state',
+  /** {} nodes were inserted or removed in an observed scope (outside the polyfill's own nodes): a canvas or an ancestor of it may have moved. Emitted by the registry only. */
+  TREE_CHANGED: 'tree:changed',
   /** {record, added: Element[], removed: Element[]} eligible drawable set changed (live -> snapshot, api) */
   DRAWABLES_CHANGED: 'drawables:changed',
   /** Damage (contracts/types.js). Observers publish it through Scheduler.damage(), not directly. */

@@ -203,7 +203,11 @@ if (!docsOnly) {
   // releaseCanvasListeners, src/live/live-layer.js dispose); before it, an event of a relocated child and one aimed at the canvas both ran it (external audit of 1.0.0-rc.4)
   // 17392 -> 17412 (2026-11-09, measured 17,412): the event bridge as one ordered registry per canvas (+20: src/live/event-bridge.js defineMethods, reregister, the
   // handler entries); before it the on* handlers ignored false and their order on the children's route, and the unmounted window was not seen (the listener matrix)
-  if (total > 17412) problems.push(`G-size: core is ${total} code lines (> 17412)`);
+  // 17412 -> 17437 (2026-11-10, measured 17,437): the ancestor chain follows every move (+25: src/api/canvas-registry.js tree-change signal and suspended canvases
+  // reconciled, src/schedule/observers/mutation-observer.js sync on it, src/snapshot/capture/clone.js shadowLanguageOf); before it a canvas moved inside one task,
+  // or inserted again under another parent after rc.7, kept the old chain, a shadow host moved across a checkpoint left its canvas suspended, and the clone of a
+  // canvas in a shadow tree had the language of <html> whatever the browser gives it (external audit of 1.0.0-rc.7)
+  if (total > 17437) problems.push(`G-size: core is ${total} code lines (> 17437)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
