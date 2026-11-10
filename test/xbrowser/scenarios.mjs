@@ -369,6 +369,8 @@ export async function scrollCompose(ctx) {
  * rounds it so, the plan does not: the snapshot's knob leaves the twin's, and the composed frames the settled ones.
  * corners (core): the cover check reads the corner pixels of its tiles again, which Safari on macOS does not draw exactly: every plan is refused and nothing composes
  * (the state of 0.1.0-preview.23 to 1.0.0-rc.7). blind (core, on the overlay case): the cover check passes whatever it reads: the lists compose under the line.
+ * systemFill (core): the first cover fill is left as the clone declared it, before the system's bar was painted as a background layer with the list's own colour:
+ * the first cover tile shows the page through the list, and both lists are refused (the same releases, with the system's bars).
  * @type {Record<string, {bars: 'styled'|'system'|'overlay', bundle: 'core'|'engines', edits: Array<[string, string]>}>}
  */
 export const WEBKIT_BAR_MUTANTS = {
@@ -379,6 +381,7 @@ export const WEBKIT_BAR_MUTANTS = {
   systemThumb: { bars: 'system', bundle: 'core', edits: [['Math.ceil(Math.floor(x * 256) / 256)', 'Math.round(x)']] },
   systemRefusal: { bars: 'system', bundle: 'core', edits: [['if (!f.styled) return webkitSystemBar(win, s, f);', 'if (!f.styled) return null;']] },
   systemLook: { bars: 'system', bundle: 'engines', edits: [['Math.ceil(Math.floor(x * 256) / 256)', 'Math.round(x)']] },
+  systemFill: { bars: 'system', bundle: 'core', edits: [['if (fills.length && clone.cover) setCoverFill(clone.cover, fills[0]);', '']] },
 };
 
 /**

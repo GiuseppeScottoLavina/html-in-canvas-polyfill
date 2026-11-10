@@ -474,7 +474,12 @@ Tick RUN(now), for each canvas record in reverse tree order:
     Chrome 156 and Safari on an iPad: 1 to 3 ms a band, under 0.3 ms for one pixel), so nine bands cost about 360 ms. The first read of a tile is one pixel, the
     port's centre, and it is timed; once it took more than 5 ms (`VET_SLOW_MS`), that tile is read whole in the same task and every later tile in one read, in a
     post-frame job of its own, never as it lands. One pixel is timed and not a band, which allocates a megabyte: a band read on a busy machine crossed 5 ms once
-    in a full run of the unit tests.
+    in a full run of the unit tests. Measured in Safari 27.0.1 with the system's classic bars, the list of the figures above: 58 updates a second, 168 to 171 of
+    about 175 steps composed, the longest frame 41 to 63 ms, and the first composed step 146 to 150 ms after the first scroll (66 to 68 ms before the check).
+    The cover colours are set on the finished clone (`capture.js` `setCoverFill`), the first one too: the clone declares it where it builds the scroller, and a
+    bar painted after that as a background layer of the scroller declares the scroller's own colour again with its layers (`webkit-bars.js` `paintWebkitBars`,
+    the system's classic bar in Safari on macOS, which shows while a mouse is attached; Chromium's bar of a listbox). The first cover tile then showed the page
+    through the list, and from 0.1.0-preview.23 to 1.0.0-rc.7 every scroller with the system's bar was refused there, whatever its corner pixels.
     Measured before the fix (headless Chrome 156, a 400 x 240 port): a box with `pointer-events: none`, a 12 px box between the grid's points, a shadow or outline reaching in from below,
     a `::after` of the drawable and a gradient behind a transparent list all composed wrong frames (288 to 92,112 of 104,000 pixels). Pages and tiles count toward `maxTotalSurfaceBytes` (ADR-B): a scroller is planned only when two pages and its tiles fit the room the retained surfaces leave, a page beyond that room replaces a farther one instead of being added (at most four), and a drawable surface that needs the room drops the caches served least recently, only until it fits (a promised step of a dropped cache becomes scroll damage).
   - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1, only square scrollers and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row
