@@ -8,7 +8,7 @@ import { intersectRect } from '../../util/rect.js';
 import { evaluateBudget } from './budget.js';
 import { BudgetExceeded, cloneDrawable } from './clone.js';
 import { createCssCollector } from './css-collector.js';
-import { hasStructuralSelectors, shakeCss } from './css-shake.js';
+import { hasStructuralSelectors, shakeCss, structureOf } from './css-shake.js';
 import { setInlineStyle } from './inline-style.js';
 import { placeholderElement } from './placeholder.js';
 import { collectVarNames, inheritCustomProperties } from './custom-props.js';
@@ -54,7 +54,10 @@ export function createCapture(env) {
   };
   /** @type {Map<string, {css: string, vars: Set<string>}>} */
   const shaken = new Map();
-  /** @type {WeakMap<object, boolean>} bundles whose CSS has no sibling-position selectors (pruned spacer runs may be merged) */
+  /**
+   * @type {WeakMap<object, {fold: boolean, local: import('./css-shake.js').Structure|null}>} per bundle: may pruned spacer runs be merged at all, and, when its CSS
+   * has selectors that count siblings, where (null: it has none, every container may)
+   */
   const foldable = new WeakMap();
   /** @type {WeakMap<object, Set<string>>} bundle keys whose @container usage was already checked */
   const containerChecked = new WeakMap();
@@ -102,10 +105,15 @@ export function createCapture(env) {
     if (verdict === 'degrade') entries.push(entry('node-budget', `${count} nodes exceed the hard budget of ${env.options.nodeBudget.hard}: the drawable is updated at most 4 times per second`, 'Split the content into several drawables or render less DOM.', el));
     const bundle = collector.bundle(req.record, req.resources);
     const t1 = env.now();
-    let fold = foldable.get(bundle);
-    if (fold === undefined) foldable.set(bundle, (fold = !hasStructuralSelectors(bundle.css)));
+    let how = foldable.get(bundle);
+    if (!how) {
+      // a quirks-mode document matches class and id selectors without regard to case: its selectors are not tied to containers by their names
+      const local = hasStructuralSelectors(bundle.css) ? (env.document.compatMode === 'BackCompat' ? { global: true, nth: [], back: [], sibling: [] } : structureOf(bundle.css)) : null;
+      foldable.set(bundle, (how = { fold: !local?.global, local: local && !local.global ? local : null }));
+    }
+    const { fold, local } = how;
     const noHas = !bundle.css.includes(':has(');
-    const clone = cloneDrawable(env, verdict === 'ok' ? req : { ...req, prune: true }, inert, fold, fold && noHas, noHas);
+    const clone = cloneDrawable(env, verdict === 'ok' ? req : { ...req, prune: true }, inert, fold, fold && noHas, noHas, local);
     const t2 = env.now();
     const shakenCss = memoShake(`${bundle.key}|${clone.tokens.signature}`, () => shakeCss(bundle.css, clone.tokens));
     const css = shakenCss.css + clone.extraCss;

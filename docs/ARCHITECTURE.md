@@ -343,8 +343,29 @@ Tick RUN(now), for each canvas record in reverse tree order:
    A 1125-node DOM measured ~25.7 ms RunTask per full commit (90 % busy) on the prototype [E5]: pruning and per-drawable surfaces are the lever, not a faster serializer.
    In a pruned tile, the trailing children of a large block / inline flow container that lie below the kept region are left out altogether (`clone.js` truncation): the cut starts a line
    (or the rest of its line is uniform), everything after it is below the region (one Range rect), and the container keeps its live height (and, as a row flex item, its width), so the kept
-   lines lay out as they do live. Not done where the dropped content could matter: sibling-position or `:has()` selectors, justification, a styled last line, balanced / pretty wrapping,
-   line clamping, columns, `::after` content, reversed numbering, scroll containers, focus inside.
+   lines lay out as they do live. Not done where the dropped content could matter: `:has()` selectors, selectors that count the siblings from the end, justification, a styled last
+   line, balanced / pretty wrapping, line clamping, columns, `::after` content, reversed numbering, scroll containers, focus inside.
+   **Selectors that count siblings** (`css-shake.js` `structureOf`, `clone.js` `siblingRules`; 1.0.0-rc.8). A merged run of spacers and a tail left out change what `:nth-child()`,
+   `:last-child`, `+` or `~` see. Up to 1.0.0-rc.7 one such selector anywhere in the page's CSS, whatever it selected, turned both off for every drawable (measured: a counter
+   beside 1,000 cells, one `.x:nth-child(even)` rule that matches nothing in the drawable: a 54 KB snapshot instead of 9.8 KB, 30 updates a second instead of 59 on an iPad, 41
+   instead of 60 in Chrome), and almost every real stylesheet has one. Each selector is now tied to the containers it can reach: a compound that counts is read as the type, id and
+   classes an element needs to match it (`Need`, which admits more than the compound matches), with the compound a child combinator joins it to, and a container is reached when its
+   children together have what the compound needs and the container what its parent compound needs. In a container a selector reaches: `:nth-child()` and `:nth-of-type()` keep a
+   spacer for every pruned child (the tail may still be left out: nothing before it counts it); `:nth-last-child()`, `:nth-last-of-type()`, `:last-of-type` and `:only-of-type` keep
+   every child; `+` and `~` between compounds of type, id and class selectors merge only children that are the same to them (both or neither meet the left compound, both or neither the
+   right one), so the run's first spacer stands for each of them, and with any other compound beside the combinator (an attribute, a state, `:first-child`) no run is merged.
+   `:first-child`, `:first-of-type`, `:last-child`, `:only-child` and `:empty` need no rule: a run keeps its first spacer, the last child is never merged into a run, a hidden stand-in
+   follows the kept children where a tail is left out, and a container keeps a child either way. A selector that cannot be tied to a container (a counting selector inside `:has()`, in
+   a selector argument with a combinator, in a nested rule, in the prelude of a scope rule, on a namespaced type; a document in quirks mode, whose class and id selectors ignore case)
+   keeps the old behaviour for the whole drawable. A container with a shadow root, and a slot, keep every child. Checked by the selectors themselves (G-prune-structure): every
+   element of a pruned clone matches exactly the selectors its live element matches.
+   **Margins that collapsed through a pruned child** (`clone.js` `throughMargin`; 1.0.0-rc.8). A spacer has no descendants, so the margin of a first or last row that had collapsed
+   through its group was gone with it, and everything after the spacer stood that margin too high (a 10 px margin: a tile 10 px off, 42 % of its pixels; hidden where the group
+   merged into a run with its neighbours, whose spacer spans the live boxes, so it showed with children of different types, list items, or selectors that count siblings). In a block
+   flow the live boxes say what the gap was: a spacer takes the live gap to the box before it as its top margin when the gap is larger than both margins the clone has there, the
+   spacer before a kept child takes it as its bottom margin, and a spacer that is the first or the last child takes the margin that reached its edge (a first or last in-flow
+   block-level child whose border edge lies on its parent's has its margin outside the parent; the edges tell, with no reading of what stops a margin). Rows that touch cost no
+   style read, and no margin is written where none was lost (the walk-parity tests still compare the clone byte for byte with the released walk).
 8. **Async-decode pipelining and its main-thread cost** (`pump.js`, `decode.js`): one build in flight per drawable and `maxInFlight` (2) per canvas; decode is `new Image(); img.decoding='async'; img.src=url`, then the image itself when it is complete one microtask later (`decodedAtOnce`), else `await img.decode()` (with a 4 s timeout); the decoded image is committed
    into the surface from the landed queue during `commitLanded()` with the atomic bounded commit (`drawImage` into a 2D canvas launders the SVG-image taint; `createImageBitmap(img)` and `copyExternalImageToTexture(img)` throw
    `SecurityError` on Chrome [E4]) and `img.src=''` frees the decode. Measured on the prototype: build 0.9 ms + encode 0.08 ms + decode p50 2.7 ms (small DOM), 118 commits/s at DPR 2 [E5 throughput]; E5's `mainMsPerCommit` EXCLUDES decode.
