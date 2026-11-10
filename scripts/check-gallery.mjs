@@ -6,7 +6,8 @@
 //   npm run build && npm run test:gallery
 //   node scripts/check-gallery.mjs [--only=water,template] [--views=phone,ipad] [--no-control] [--controls-only]
 //
-// Per plugin and view (phone 390 x 844 at DPR 3, iPad landscape 1194 x 748 at DPR 2; mobile metrics and touch emulation):
+// Per plugin and view (phone 390 x 844 at DPR 3, iPad landscape 1194 x 748 at DPR 2; mobile metrics and touch emulation; and a short phone, 375 x 667 at DPR 2,
+// the height a phone browser leaves under its bars, where the stage has its smallest height and reaches below the first viewport: `fit` only):
 //   fold      the stage (the canvas) lies entirely in the first viewport; no horizontal page scroll
 //   fit       the form fits the stage without an inner scroll (scrollHeight <= clientHeight + 1), with the plugin's controls mounted
 //   demo      a plugin with an action `demo`: the gallery played it on selection, it resolved with a state (not null, no error) within 6 s,
@@ -31,6 +32,7 @@
 //   C8 cap     the slider moved to 60 before the check ('off')
 //   C9 fit     (water, the daylight scene) a picture 900 px tall    C10 switch (water, the daylight scene) the switch takes no pointer input
 //   C11 live   (water, the live scene) the page's one-second timer never starts
+//   C12 fit    (page-curl, the daylight scene, the short phone) the scene's picture as a block under its title and a stage of 580 px
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
 // a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
@@ -49,7 +51,10 @@ const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const ALL_VIEWS = [
   { name: 'phone', width: 390, height: 844, dpr: 3 },
   { name: 'ipad', width: 1194, height: 748, dpr: 2 },
+  { name: 'short', width: 375, height: 667, dpr: 2 },
 ];
+/** what a view checks of a run's steps: the short phone only whether the form fits (its stage is below the first viewport by design) */
+const stepsFor = (/** @type {any} */ view, /** @type {string[]} */ steps) => (view.name === 'short' ? steps.filter((s) => s === 'fit' || s === 'scene') : steps);
 /** Plugins whose look does not depend on an input or an event, so they need no `demo` (EFFECTS-PLUGINS.md 15.1, rule 2). */
 const NO_DEMO = /** @type {Record<string, string>} */ ({ crt: 'a monitor look that is there at rest; it is continuous by design' });
 const DEMO_LIMIT_MS = 6000;
@@ -259,7 +264,7 @@ try {
   for (const name of plan.plugins) {
     await withBrowser(async (browser) => {
       for (const view of VIEWS) {
-        const r = await runOne(browser, server, name, view, { steps: ['demo', 'rest', 'fold', 'fit', 'scroll'] });
+        const r = await runOne(browser, server, name, view, { steps: stepsFor(view, ['demo', 'rest', 'fold', 'fit', 'scroll']) });
         results.runs.push({ plugin: name, view: view.name, ...r });
         for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${name.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
       }
@@ -273,7 +278,7 @@ try {
   if (plan.off) {
     await withBrowser(async (browser) => {
       const view = VIEWS.find((v) => v.name === 'ipad') ?? VIEWS[0];
-      const r = await runOne(browser, server, 'off', view, { steps: ['cap', 'fold', 'fit'] });
+      const r = await runOne(browser, server, 'off', view, { steps: view.name === 'short' ? ['cap', 'fit'] : ['cap', 'fold', 'fit'] });
       results.runs.push({ plugin: 'off', view: view.name, ...r });
       for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${'off'.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
     });
@@ -283,8 +288,10 @@ try {
     await withBrowser(async (browser) => {
       for (const scene of ['daylight', 'live']) {
         for (const view of VIEWS) {
-          const r = await runOne(browser, server, 'water', view, { query: `&scene=${scene}`, scene, steps: ['scene', 'fold', 'fit', 'switch', ...(scene === 'live' ? ['live'] : [])] });
-          results.runs.push({ plugin: `water, ${scene} scene`, view: view.name, ...r });
+          // (the short phone with the plugin whose controls are the tallest)
+          const plugin = view.name === 'short' ? 'page-curl' : 'water';
+          const r = await runOne(browser, server, plugin, view, { query: `&scene=${scene}`, scene, steps: stepsFor(view, ['scene', 'fold', 'fit', 'switch', ...(scene === 'live' ? ['live'] : [])]) });
+          results.runs.push({ plugin: `${plugin}, ${scene} scene`, view: view.name, ...r });
           for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${scene.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
         }
       }
@@ -292,7 +299,7 @@ try {
   }
 
   if (withControl) {
-    const phone = { name: 'phone', width: 390, height: 844, dpr: 3 }, ipad = { name: 'ipad', width: 1194, height: 748, dpr: 2 };
+    const phone = { name: 'phone', width: 390, height: 844, dpr: 3 }, ipad = { name: 'ipad', width: 1194, height: 748, dpr: 2 }, short = { name: 'short', width: 375, height: 667, dpr: 2 };
     const CONTROLS = [
       { id: 'C1', step: 'fold', name: 'template', view: ipad, o: { css: '#top::after { content: ""; display: block; height: 700px; }', steps: ['fold'] } },
       { id: 'C2', step: 'fit', name: 'template', view: phone, o: { css: '#demo-form .card { padding-bottom: 600px !important; }', steps: ['fit'] } },
@@ -305,6 +312,7 @@ try {
       { id: 'C9', step: 'fit', name: 'water', view: phone, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .photo { height: 900px !important; }', steps: ['fit'] } },
       { id: 'C10', step: 'switch', name: 'water', view: ipad, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .scenes { pointer-events: none !important; }', steps: ['switch'] } },
       { id: 'C11', step: 'live', name: 'water', view: ipad, o: { query: '&scene=live', scene: 'live', script: "{ const si = window.setInterval; window.setInterval = function (f, ms, ...a) { return f && f.name === 'liveTick' ? 0 : si.call(this, f, ms, ...a); }; }", steps: ['live'] } },
+      { id: 'C12', step: 'fit', name: 'page-curl', view: short, o: { query: '&scene=daylight', scene: 'daylight', css: ':root { --fit: 580px !important; } #demo-form .scene[data-scene="daylight"] { display: block !important; } #demo-form .photo { height: 64px !important; margin-top: 8px !important; }', steps: ['fit'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {

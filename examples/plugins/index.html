@@ -163,7 +163,7 @@
   }
   /* phones and narrow windows: one column; the form fits the stage without an inner scroll */
   @media (max-width: 760px) {
-    :root { --gutter: 12px; --fit: 580px; --stage-max: 760px; }
+    :root { --gutter: 12px; --fit: 640px; --stage-max: 760px; }
     body { font-size: 14px; }
     #hint { flex-basis: 100%; order: 3; }
     #hud { margin-left: auto; font-size: 11px; }
@@ -175,12 +175,16 @@
     .hero { gap: 0; }
     .eyebrow { margin-bottom: 4px; font-size: 10px; }
     .hero h1 { max-width: none; font-size: 30px; line-height: 1; letter-spacing: -.04em; }
-    .lede, .try { display: none; }
+    .eyebrow, .lede, .try { display: none; }
     .scenes { margin-bottom: 8px; }
-    .photo { height: 64px; margin-top: 8px; border-radius: 12px; }
-    .photo .sun { width: 34px; height: 34px; top: 22%; }
+    /* daylight and live data: the picture beside the title, in one row (a block under it would not fit a short phone with every effect's controls) */
+    .scene[data-scene="daylight"]:not([hidden]), .scene[data-scene="live"]:not([hidden]) { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 12px; align-items: center; }
+    .scene .eyebrow, .scene .lede { grid-column: 1 / -1; }
+    .scene[data-scene="daylight"] h1 { font-size: 24px; white-space: nowrap; }
+    .photo { height: 44px; margin-top: 0; border-radius: 12px; }
+    .photo .sun { width: 26px; height: 26px; top: 16%; }
     .photo .cloud { display: none; }
-    .bars { height: 44px; margin-top: 8px; padding: 6px; }
+    .bars { height: 40px; margin-top: 0; padding: 5px; gap: 4px; }
     .feed { display: none; }
     .bar h1 { font-size: .95rem; }
     .card h2 { margin-bottom: 8px; font-size: 18px; }
@@ -190,8 +194,9 @@
     textarea { height: 58px; }
     .control input[type=range] { height: 30px; }
   }
-  /* a tall phone: room for the lede */
+  /* a tall phone: room for the eyebrow and the lede */
   @media (max-width: 760px) and (min-height: 800px) {
+    .eyebrow { display: block; }
     .lede { display: block; margin-top: 8px; font-size: 12px; line-height: 1.4; }
   }
   /* phones: one strip of chips that scrolls sideways (a vertical drag on it still scrolls the page) */
