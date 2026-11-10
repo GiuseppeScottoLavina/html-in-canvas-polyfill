@@ -56,7 +56,7 @@ const ROOM_AXIS : vec3<f32> = vec3<f32>(0.0, -0.3714, 0.9285);
 /** how much of the lamp's light on the far side comes through the cloth */
 const TRANSMIT : f32 = 0.16;
 /** what the darkest print still scatters: the cloth's shading shows on a black page too (linear reflectance) */
-const FABRIC : f32 = 0.035;
+const FABRIC : f32 = 0.05;
 /** css px between the threads of the weave */
 const THREAD : f32 = 2.4;
 
@@ -370,7 +370,7 @@ fn fs_cloth(v : ClothOut, @builtin(front_facing) facing : bool) -> @location(0) 
   let room = room_light(n) * open;
   // the sheen: white light, a little of the cloth's own colour, woven
   let tint = mix(vec3<f32>(1.0), albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 0.05), 0.25) * weave(v.uv);
-  let gloss = 2.2 * g.sheen;
+  let gloss = 3.4 * g.sheen;
   var col : vec3<f32>;
   var changed : f32;
   if (facing) {

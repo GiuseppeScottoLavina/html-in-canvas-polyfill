@@ -10,12 +10,12 @@
  *   1. forces: gravity, the air (a drag on the motion along the surface normal and a smaller one along the surface, both relative to the
  *      wind), the hand that holds the cloth (a damped spring with a bounded force);
  *   2. the particles move;
- *   3. distance constraints, one pass, the small steps doing the work of iterations (Macklin et al., "Small Steps in Physics Simulation",
- *      2019): the weave (rigid), the shear across each cell (compliant: woven cloth shears easily) and the bending across two cells
+ *   3. constraints, one pass, the small steps doing the work of iterations (Macklin et al., "Small Steps in Physics Simulation", 2019):
+ *      the weave, thread by thread, each thread solved as a whole (`thread`: a tridiagonal system), so that it is rigid whatever load it
+ *      carries; the shear across each cell (compliant: woven cloth shears easily); the bending of each thread over three particles
  *      (compliant: it sets the width of the folds);
  *   4. the tethers (Kim et al., "Long Range Attachments", 2012): no particle is further from a pin than the cloth between them is long.
- *      One pass of the weave alone would let the cloth stretch under its own weight like rubber; the tethers make the hanging cloth
- *      inextensible exactly, and the flat hanging pose an exact fixed point of the step;
+ *      They rarely act (the threads already hold), and make the flat hanging pose an exact fixed point of the step;
  *   5. the wall behind the cloth, with friction;
  *   6. the velocities follow from the positions.
  */
@@ -38,17 +38,20 @@ export const GRAVITY = 13;
 /** the wall behind the cloth, as a share of the smaller side of the canvas, and the friction of the cloth on it (the share of the sliding lost per step) */
 export const WALL_GAP = 0.085;
 export const WALL_FRICTION = 0.25;
-/** the longest span (in cells, a power of two) that is held to its length (step 4 of `step`) */
-export const SPAN_MAX = 32;
 /** compliance of the shear diagonals and of the bending, as the dimensionless XPBD term alpha / h^2 (0: rigid) */
-export const SHEAR = 6;
+export const SHEAR = 60;
+/** how much of the push that would keep a compressed link at its length the link gives (`thread`): threads buckle, they are not rods */
+export const SQUASH = 0.25;
 /** where the two pins of `corners` hold the cloth: this share of the width in from where the corners hang flat, so that the cloth has slack */
 export const CORNER_SLACK = 0.02;
 /** s: a pin that is moved (the cloth hung again, the pins changed) follows its place with this time constant */
 export const PIN_TAU = 0.11;
 /** the hand: natural frequency (rad/s) and the largest acceleration of the spring that holds the cloth, in gravities */
-export const GRAB_OMEGA = 90;
-export const GRAB_MAX_G = 60;
+export const GRAB_OMEGA = 250;
+export const GRAB_MAX_G = 240;
+/** s over which the hand leans into the pull, and how far at most (a share of the canvas height) */
+export const GRAB_LEAN = 0.2;
+export const GRAB_REACH_PX = 0.25;
 /** the cloth under the hand: particles within GRAB_REACH cells are held, the nearest ones hardest (a Gaussian of GRAB_SIGMA cells) */
 export const GRAB_SIGMA = 0.85;
 export const GRAB_REACH = 2.2;
@@ -57,13 +60,13 @@ export const GRAB_REACH = 2.2;
  * (pinned along its top edge), the last part of the way is taken by the hand: within ASSIST_PX of the flat pose and slower than
  * ASSIST_SPEED it is drawn onto that pose with the time constant ASSIST_TAU, and it is the flat pose exactly when the rest is below SNAP_PX.
  */
-export const SLEEP_SPEED = 1.2;
+export const SLEEP_SPEED = 3;
 export const SLEEP_S = 0.2;
 export const ASSIST_PX = 0.4;
-export const ASSIST_SPEED = 8;
+export const ASSIST_SPEED = 20;
 export const ASSIST_TAU = 0.045;
 export const SNAP_PX = 0.012;
-/** held by its corners: a particle slower than STICK_SPEED css px/s keeps the share STICK of its speed per step */
+/** held by its corners or by a hand: a particle slower than STICK_SPEED css px/s keeps the share STICK of its speed per step */
 export const STICK_SPEED = 14;
 export const STICK = 0.9;
 /** how much a displacement towards or away from the viewer counts against one across the canvas (it moves a pixel that much less) */
@@ -92,14 +95,13 @@ const DEPTH_SHARE = 0.4;
  * @property {Float64Array} nrm  surface normals of the last step
  * @property {Pins} pins
  * @property {{a: Int32Array, b: Int32Array, len: Float64Array, weave: number, shear: number, count: number}} links
- * @property {{a: Int32Array, b: Int32Array, len: Float64Array, count: number}} spans
  * @property {{pin: Int32Array, len: Float64Array, per: number}} tethers
  * @property {number} gravity  css px / s^2
  * @property {number} wall  z of the wall (negative)
  * @property {number} dragN  1/s, on the motion along the normal @property {number} dragT  1/s, on all motion
- * @property {number} bend  compliance of the bending (alpha / h^2)
+ * @property {number} bend  compliance of the bending (`flatten`)
  * @property {number} wind  the breeze, 0..1 @property {Gust[]} gusts
- * @property {{idx: Int32Array, wt: Float64Array, count: number, sum: number, x: number, y: number, z: number, on: boolean}} grab
+ * @property {{idx: Int32Array, wt: Float64Array, count: number, sum: number, x: number, y: number, z: number, ox: number, oy: number, oz: number, on: boolean}} grab
  * @property {{t0: number, seconds: number, done: number}|null} peel  the pins are letting go, from the left (`drop`)
  * @property {{t0: number, seconds: number, from: Float64Array, to: Float64Array}|null} lower  the pins are coming down to their places (`hangFrom`)
  * @property {number} time  s of simulated time @property {number} quiet  s for which the cloth has been slow
@@ -129,8 +131,8 @@ export function createCloth(width, height) {
   const lx = width / cols, ly = height / rows;
   const rest = new Float64Array(3 * n);
   for (let j = 0; j < ny; j += 1) for (let i = 0; i < nx; i += 1) { const k = 3 * (j * nx + i); rest[k] = i * lx; rest[k + 1] = j * ly; }
-  // the links, in the order they are solved: down the cloth from the pinned edge (a pass carries the pins' hold towards the hem), across it,
-  // the two diagonals of each cell, then the bending across two cells
+  // the links: the weave down the cloth and across it (solved thread by thread, `thread`; listed for `stretch`), the two diagonals of each
+  // cell, then the pairs two cells apart on one thread, whose middle particle the bending acts on
   /** @type {number[]} */ const a = [];
   /** @type {number[]} */ const b = [];
   /** @type {number[]} */ const len = [];
@@ -144,15 +146,6 @@ export function createCloth(width, height) {
   const shear = a.length;
   for (let j = 0; j < rows - 1; j += 1) for (let i = 0; i < nx; i += 1) link(i, j, i, j + 2);
   for (let j = 0; j < ny; j += 1) for (let i = 0; i < cols - 1; i += 1) link(i, j, i + 2, j);
-  // the spans, the longest first: two particles of one thread are never further apart than the thread between them is long
-  /** @type {number[]} */ const sa = [];
-  /** @type {number[]} */ const sb = [];
-  /** @type {number[]} */ const sl = [];
-  for (let s = SPAN_MAX; s >= 2; s >>= 1) {
-    const half = s >> 1;
-    for (let i = 0; i < nx; i += 1) for (let j = 0; j + s < ny; j += half) { sa.push(j * nx + i); sb.push((j + s) * nx + i); sl.push(s * ly); }
-    for (let j = 0; j < ny; j += 1) for (let i = 0; i + s < nx; i += half) { sa.push(j * nx + i); sb.push(j * nx + i + s); sl.push(s * lx); }
-  }
   const reach = Math.ceil(GRAB_REACH) * 2 + 2;
   /** @type {Cloth} */
   const c = {
@@ -160,14 +153,14 @@ export function createCloth(width, height) {
     x: rest.slice(), p: rest.slice(), v: new Float64Array(3 * n), rest, w: new Float64Array(n).fill(1), pinAt: rest.slice(), nrm: new Float64Array(3 * n),
     pins: 'none',
     links: { a: Int32Array.from(a), b: Int32Array.from(b), len: Float64Array.from(len), weave, shear, count: a.length },
-    spans: { a: Int32Array.from(sa), b: Int32Array.from(sb), len: Float64Array.from(sl), count: sa.length },
     tethers: { pin: new Int32Array(2 * n).fill(-1), len: new Float64Array(2 * n), per: 0 },
-    gravity: GRAVITY * height, wall: -WALL_GAP * Math.min(width, height), dragN: 4, dragT: 2.4, bend: 120, wind: 0, gusts: [],
-    grab: { idx: new Int32Array(reach * reach), wt: new Float64Array(reach * reach), count: 0, sum: 0, x: 0, y: 0, z: 0, on: false },
+    gravity: GRAVITY * height, wall: -WALL_GAP * Math.min(width, height), dragN: 3.5, dragT: 3.7, bend: 2100, wind: 0, gusts: [],
+    grab: { idx: new Int32Array(reach * reach), wt: new Float64Array(reach * reach), count: 0, sum: 0, x: 0, y: 0, z: 0, ox: 0, oy: 0, oz: 0, on: false },
     peel: null, lower: null, time: 0, quiet: 0, asleep: true, flat: true, speed: 0, away: 0,
   };
   for (let k = 0; k < n; k += 1) c.nrm[3 * k + 2] = 1;
   setPins(c, 'top');
+  layFlat(c);
   return c;
 }
 
@@ -198,6 +191,8 @@ export function setPins(c, pins) {
       const x = c.rest[3 * k], y = c.rest[3 * k + 1];
       tethers.pin[2 * k] = left; tethers.len[2 * k] = Math.hypot(x, y);
       tethers.pin[2 * k + 1] = right; tethers.len[2 * k + 1] = Math.hypot(c.width - x, y);
+      // a cloth with slack stays in its plane as long as nothing disturbs it: a faint, uneven breath of air lets it fold
+      c.v[3 * k + 2] += 0.03 * c.height * Math.sin(12.9898 * k + 4.1) * Math.sin(0.37 * k);
     }
   }
   wake(c);
@@ -254,7 +249,7 @@ export function take(c, s, t, x, y, z) {
     }
   }
   grab.count = count; grab.sum = sum; grab.on = count > 0;
-  grab.x = x; grab.y = y; grab.z = z;
+  grab.x = x; grab.y = y; grab.z = z; grab.ox = 0; grab.oy = 0; grab.oz = 0;
   wake(c);
 }
 
@@ -376,6 +371,70 @@ function solve(x, w, a, b, len, k0, k1, soft) {
   }
 }
 
+const TX = new Float64Array(MAX_SIDE), TY = new Float64Array(MAX_SIDE), TZ = new Float64Array(MAX_SIDE);
+const TD = new Float64Array(MAX_SIDE), TE = new Float64Array(MAX_SIDE), TR = new Float64Array(MAX_SIDE);
+/**
+ * One thread of the weave, solved as a whole: the particles first, first + stride, ... are a chain of `links` links of the length `len`,
+ * and the corrections that bring every link to its length at once (to first order: one Newton step of all its constraints together)
+ * are the solution of a tridiagonal system, here by elimination. A link then pulls on its neighbours along their own directions with
+ * the tension the whole thread needs: the cloth swings as a hanging sheet does and does not stretch under its weight, which one pass
+ * over the links one by one cannot give (their stretch grows with the load each of them carries). Against compression a link gives way
+ * (SQUASH).
+ * @param {Float64Array} x @param {Float64Array} w @param {number} first @param {number} stride @param {number} links @param {number} len
+ */
+function thread(x, w, first, stride, links, len) {
+  // the unit vector of each link, and by how much it is too long (negated: the right-hand side)
+  let free = 0;
+  for (let k = 0, i = first; k < links; k += 1, i += stride) {
+    const a = 3 * i, b = a + 3 * stride;
+    const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], dz = x[b + 2] - x[a + 2];
+    const l = Math.sqrt(dx * dx + dy * dy + dz * dz), inv = l > 1e-9 ? 1 / l : 0;
+    TX[k] = dx * inv; TY[k] = dy * inv; TZ[k] = dz * inv; TR[k] = len - l;
+    free += w[i] + w[i + stride];
+  }
+  if (free === 0) return;
+  // the system: on the diagonal the inverse masses of a link's two particles; beside it the particle it shares with the next link
+  for (let k = 0, i = first; k < links; k += 1, i += stride) {
+    const wb = w[i + stride];
+    TD[k] = w[i] + wb;
+    if (TD[k] === 0) { TD[k] = 1; TR[k] = 0; }
+    TE[k] = k < links - 1 ? -wb * (TX[k] * TX[k + 1] + TY[k] * TY[k + 1] + TZ[k] * TZ[k + 1]) : 0;
+  }
+  for (let k = 1; k < links; k += 1) { const f = TE[k - 1] / TD[k - 1]; TD[k] -= f * TE[k - 1]; TR[k] -= f * TR[k - 1]; }
+  TR[links - 1] /= TD[links - 1];
+  for (let k = links - 2; k >= 0; k -= 1) TR[k] = (TR[k] - TE[k] * TR[k + 1]) / TD[k];
+  // a thread pulls, it hardly pushes: a link that the solution asks to push (TR > 0) gives only the share SQUASH of it. Rigid in
+  // compression, a row of links can stand as an arch, and the cloth could not be gathered at all.
+  for (let k = 0; k < links; k += 1) if (TR[k] > 0) TR[k] *= SQUASH;
+  // each particle moves by the pull of the link before it and of the link after it
+  let px = 0, py = 0, pz = 0;
+  for (let k = 0, i = first; k <= links; k += 1, i += stride) {
+    const m = k < links ? TR[k] : 0, qx = m * TX[k], qy = m * TY[k], qz = m * TZ[k], wi = w[i], a = 3 * i;
+    if (k < links) { x[a] += wi * (px - qx); x[a + 1] += wi * (py - qy); x[a + 2] += wi * (pz - qz); px = qx; py = qy; pz = qz; }
+    else { x[a] += wi * px; x[a + 1] += wi * py; x[a + 2] += wi * pz; }
+  }
+}
+
+/**
+ * Bending, for the links k0 .. k1 (each spans two cells of one thread): the particle in the middle and its two neighbours are drawn towards
+ * a straight, evenly spaced line (the second difference of the thread towards zero), by the share 6 / (6 + soft) per step. Unlike a
+ * distance across the two cells, this resists the shortest buckle of the grid (a zigzag from particle to particle) most, so the grid of
+ * the simulation never shows as wrinkles one cell wide.
+ * @param {Float64Array} x @param {Float64Array} w @param {Int32Array} a @param {Int32Array} b @param {number} k0 @param {number} k1 @param {number} soft
+ */
+function flatten(x, w, a, b, k0, k1, soft) {
+  for (let k = k0; k < k1; k += 1) {
+    const i = a[k], j = b[k], m = (i + j) >> 1, i3 = 3 * i, j3 = 3 * j, m3 = 3 * m;
+    const wi = w[i], wj = w[j], wm = w[m], ws = wi + wj + 4 * wm;
+    if (ws === 0) continue;
+    const s = 1 / (ws + soft), si = wi * s, sj = wj * s, sm = 2 * wm * s;
+    const cx = x[i3] + x[j3] - 2 * x[m3], cy = x[i3 + 1] + x[j3 + 1] - 2 * x[m3 + 1], cz = x[i3 + 2] + x[j3 + 2] - 2 * x[m3 + 2];
+    x[i3] -= si * cx; x[i3 + 1] -= si * cy; x[i3 + 2] -= si * cz;
+    x[j3] -= sj * cx; x[j3 + 1] -= sj * cy; x[j3 + 2] -= sj * cz;
+    x[m3] += sm * cx; x[m3 + 1] += sm * cy; x[m3 + 2] += sm * cz;
+  }
+}
+
 /**
  * One step of STEP_S seconds. Does nothing while the cloth is asleep.
  * @param {Cloth} c
@@ -383,7 +442,7 @@ function solve(x, w, a, b, len, k0, k1, soft) {
 export function step(c) {
   if (c.asleep) return;
   const h = STEP_S;
-  const { n, nx, x, p, v, w, nrm, rest, pinAt, grab, links, spans, tethers } = c;
+  const { n, nx, x, p, v, w, nrm, rest, pinAt, grab, links, tethers } = c;
   const t = c.time;
   if (c.peel) {
     // the pins let go one after the other, from the left: the cloth peels off its edge and falls
@@ -430,9 +489,15 @@ export function step(c) {
       qx += gw * v[k]; qy += gw * v[k + 1]; qz += gw * v[k + 2];
     }
     const inv = 1 / grab.sum, om = GRAB_OMEGA, den = 1 + 2 * om * h + om * om * h * h;
-    let ax = (om * om * (grab.x - px * inv) - 2 * om * qx * inv) / den;
-    let ay = (om * om * (grab.y - py * inv) - 2 * om * qy * inv) / den;
-    let az = (om * om * (grab.z - pz * inv) - 2 * om * qz * inv) / den;
+    // a spring alone would hold the cloth short of the hand by the weight that hangs from it: the hand leans into the pull until the
+    // cloth is where it holds it (the error, integrated over GRAB_LEAN seconds, bounded)
+    const ex = grab.x - px * inv, ey = grab.y - py * inv, ez = grab.z - pz * inv, lean = h / GRAB_LEAN, far = GRAB_REACH_PX * c.height;
+    grab.ox += ex * lean; grab.oy += ey * lean; grab.oz += ez * lean;
+    const ol = Math.hypot(grab.ox, grab.oy, grab.oz);
+    if (ol > far) { const k = far / ol; grab.ox *= k; grab.oy *= k; grab.oz *= k; }
+    let ax = (om * om * (ex + grab.ox) - 2 * om * qx * inv) / den;
+    let ay = (om * om * (ey + grab.oy) - 2 * om * qy * inv) / den;
+    let az = (om * om * (ez + grab.oz) - 2 * om * qz * inv) / den;
     const al = Math.hypot(ax, ay, az), most = GRAB_MAX_G * c.gravity;
     if (al > most) { const s = most / al; ax *= s; ay *= s; az *= s; }
     for (let m = 0; m < grab.count; m += 1) {
@@ -453,24 +518,11 @@ export function step(c) {
     }
   }
   // ---- 3. the links ----
-  solve(x, w, links.a, links.b, links.len, 0, links.weave, 0);
+  for (let i = 0; i < nx; i += 1) thread(x, w, i, nx, c.rows, c.ly);
+  for (let j = 0; j < c.ny; j += 1) thread(x, w, j * nx, 1, c.cols, c.lx);
   solve(x, w, links.a, links.b, links.len, links.weave, links.shear, SHEAR);
-  solve(x, w, links.a, links.b, links.len, links.shear, links.count, c.bend);
-  // ---- 4. the spans and the tethers ----
-  {
-    const { a, b, len, count } = spans;
-    for (let k = 0; k < count; k += 1) {
-      const i = a[k], j = b[k], i3 = 3 * i, j3 = 3 * j;
-      const dx = x[j3] - x[i3], dy = x[j3 + 1] - x[i3 + 1], dz = x[j3 + 2] - x[i3 + 2];
-      const d2 = dx * dx + dy * dy + dz * dz, L = len[k];
-      if (d2 <= L * L) continue;
-      const wi = w[i], wj = w[j], ws = wi + wj;
-      if (ws === 0) continue;
-      const d = Math.sqrt(d2), s = (d - L) / (d * ws), si = wi * s, sj = wj * s;
-      x[i3] += si * dx; x[i3 + 1] += si * dy; x[i3 + 2] += si * dz;
-      x[j3] -= sj * dx; x[j3 + 1] -= sj * dy; x[j3 + 2] -= sj * dz;
-    }
-  }
+  flatten(x, w, links.a, links.b, links.shear, links.count, c.bend);
+  // ---- 4. the tethers ----
   if (tethers.per === 1) {
     for (let k = nx; k < n; k += 1) {
       if (tethers.pin[k] < 0) continue;
@@ -490,7 +542,7 @@ export function step(c) {
     }
   }
   // ---- 5. the wall, 6. the velocities; how fast and how far from flat the cloth is ----
-  const wall = c.wall, keep = 1 - WALL_FRICTION, ih = 1 / h, sticky = c.pins === 'corners' && !c.grab.on;
+  const wall = c.wall, keep = 1 - WALL_FRICTION, ih = 1 / h, sticky = c.pins === 'corners' || c.grab.on;
   let fast = 0, far = 0;
   for (let k = 0, k3 = 0; k < n; k += 1, k3 += 3) {
     if (x[k3 + 2] < wall && w[k] !== 0) {
@@ -514,14 +566,14 @@ export function step(c) {
 }
 
 /**
- * Coming to rest (see SLEEP_SPEED): only when nothing drives the cloth (no hand, no wind). Pinned along the top it is drawn onto the flat
- * pose over the last fraction of a pixel and ends on it exactly; held otherwise it stops where it hangs.
+ * Coming to rest (see SLEEP_SPEED): only when no wind drives the cloth. Pinned along the top, with no hand on it, it is drawn onto the flat
+ * pose over the last fraction of a pixel and ends on it exactly; held by its corners or by a hand that keeps still, it stops where it hangs.
  * @param {Cloth} c
  */
 function rest_(c) {
-  if (c.grab.on || c.wind > 0 || c.gusts.length > 0 || c.peel || c.lower) { c.quiet = 0; return; }
+  if (c.wind > 0 || c.gusts.length > 0 || c.peel || c.lower) { c.quiet = 0; return; }
   const h = STEP_S, { x, p, v, rest, n } = c;
-  if (c.pins === 'top') {
+  if (c.pins === 'top' && !c.grab.on) {
     if (c.away < ASSIST_PX && c.speed < ASSIST_SPEED) {
       if (c.away < SNAP_PX) { layFlat(c); return; }
       const k = 1 - Math.exp(-h / ASSIST_TAU);
@@ -529,7 +581,7 @@ function rest_(c) {
     }
     return;
   }
-  if (c.pins === 'none') return;
+  if (c.pins === 'none' && !c.grab.on) return;
   c.quiet = c.speed < SLEEP_SPEED ? c.quiet + h : 0;
   if (c.quiet >= SLEEP_S) { v.fill(0); p.set(x); c.asleep = true; c.speed = 0; }
 }
@@ -552,13 +604,14 @@ export function drop(c, seconds) {
  */
 export function hangFrom(c, y0, angle, pins, seconds) {
   const { n, x, p, v, rest, pinAt } = c;
+  v.fill(0);
   setPins(c, pins);
   const ca = Math.cos(angle), sa = Math.sin(angle);
   for (let k3 = 0; k3 < 3 * n; k3 += 3) {
     // (the pins of `corners` hold their particles a little inside the sheet: the sheet is hung by its corners as it is, and gathers as they come down)
     x[k3] = rest[k3]; x[k3 + 1] = y0 + rest[k3 + 1] * ca; x[k3 + 2] = rest[k3 + 1] * sa;
   }
-  p.set(x); v.fill(0);
+  p.set(x);
   c.lower = { t0: c.time, seconds: Math.max(STEP_S, seconds), from: x.slice(0, 3 * c.nx), to: pinAt.slice(0, 3 * c.nx) };
   c.grab.on = false; c.gusts.length = 0;
   wake(c);

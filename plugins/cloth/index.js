@@ -67,7 +67,7 @@ export const HEM = 44;
 const LIFT = 0.07;
 const LIFT_TRAVEL = 70;
 /** a moving pointer: css px/s of push per css px of travel (at most HOVER_STEP css px per event count), over a Gaussian of HOVER_RADIUS css px (shares of the canvas height) */
-const HOVER_PUSH = 7;
+const HOVER_PUSH = 11;
 const HOVER_STEP = 48;
 const HOVER_RADIUS = 0.075;
 /** a press: a poke of this many canvas heights per second, over POKE_RADIUS (a share of the canvas height) */
@@ -91,7 +91,7 @@ const HANGING = 0, DROPPING = 1, DROPPED = 2, RISING = 3;
 /** `weight` (0 light .. 1 heavy) as the numbers of the simulation: the air slows a light cloth more, a heavy cloth is stiffer across its folds. PURE. @param {number} weight */
 export function fabric(weight) {
   const k = Math.min(1, Math.max(0, weight));
-  return { dragN: 6.4 - 4 * k, dragT: 3 - 1.1 * k, bend: 360 * (1 - k) ** 2 + 40, push: 1.3 - 0.55 * k };
+  return { dragN: 5 - 3 * k, dragT: 4.4 - 1.4 * k, bend: 6000 * (1 - k) ** 2 + 600, push: 1.3 - 0.55 * k };
 }
 
 /** '#rgb' / '#rrggbb' -> [r, g, b] in 0..1, linear light (else `fallback`). @param {unknown} hex @param {number[]} fallback */
@@ -262,8 +262,8 @@ export const plugin = Object.freeze({
       if (cloth && Math.abs(cloth.width - W) < 0.01 && Math.abs(cloth.height - H) < 0.01) return cloth;
       const c = createCloth(W, H);
       applyFabric(c);
-      if (pinsNow() === 'corners' && status !== DROPPED) { setPins(c, 'corners'); unsettle(c); }
-      else if (c.wind > 0) wake(c);
+      if (pinsNow() === 'corners' && status !== DROPPED) setPins(c, 'corners');
+      else if (c.wind > 0 && status === HANGING) wake(c);
       cloth = c;
       clock = NaN;
       const length = stateLength(c.cols, c.rows);
@@ -282,11 +282,6 @@ export const plugin = Object.freeze({
       }
       return c;
     }
-    /** A cloth with slack hangs in a plane as long as nothing disturbs it: a faint, uneven breath of air lets it fold. @param {Cloth} c */
-    function unsettle(c) {
-      for (let k = 0; k < c.n; k += 1) c.v[3 * k + 2] += 0.03 * c.height * Math.sin(12.9898 * k + 4.1) * Math.sin(0.37 * k);
-    }
-
     /** the cloth, before the first frame too (then of the canvas's client size) */
     const theCloth = () => cloth ?? ensureCloth(canvas.clientWidth || 1, canvas.clientHeight || 1);
     /** Something moved the cloth: frames are needed until it rests again. */
@@ -307,7 +302,6 @@ export const plugin = Object.freeze({
       status = RISING;
       fade.now = fade.to = 0;
       hangFrom(c, -RISE_FROM * c.height, RISE_ANGLE, pinsNow(), lowerSeconds(c, RISE_FROM * c.height));
-      if (pinsNow() === 'corners') unsettle(c);
       applyFabric(c);
       clock = NaN;
       stir();
@@ -595,7 +589,6 @@ export const plugin = Object.freeze({
           applyFabric(cloth);
           if (pinsNow() !== cloth.pins && (status === HANGING || status === RISING) && !reducedMotion) {
             setPins(cloth, pinsNow());
-            if (pinsNow() === 'corners') unsettle(cloth);
           } else if (cloth.wind > 0 && status === HANGING) wake(cloth);
         }
         if (before !== o.pins || cloth?.wind) stir();
