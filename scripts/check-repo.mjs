@@ -214,11 +214,14 @@ if (!docsOnly) {
   // 17464 -> 17704 (2026-11-10, measured 17,704): selectors that count siblings tied to their containers (+240: src/snapshot/capture/css-shake.js splitCompounds,
   // readCompound, structureOf; src/snapshot/capture/clone.js siblingRules, throughMargin and the spacer margins of cloneChildList); before it one such selector
   // anywhere in the page's CSS kept a spacer for every pruned row of every drawable, and a pruned group lost the margins that had collapsed through it
-  // 17704 -> 17725 (2026-11-10, measured 17,725): EffectPluginContext.localPoint (+21: src/effects/effect-host.js localPoint and the place of each mapper,
+  // 17704 -> 17720 (2026-11-10, measured 17,720): a pinned control keeps the percentage of its width (+16: src/snapshot/capture/native-controls.js pinnedSize,
+  // src/snapshot/capture/webkit-caret.js declaredWidth); before it a full-width range across a grid of `1fr auto` moved the readout beside it out of its row in
+  // Safari and Firefox
+  // 17720 -> 17741 (2026-11-10, measured 17,741): EffectPluginContext.localPoint (+21: src/effects/effect-host.js localPoint and the place of each mapper,
   // src/effects/input-mapper.js mapAfter, src/effects/effect-plugins.js); before it the first of two stacked plugins read the pointer on the canvas
-  // 17725 -> 17727 (2026-11-10, measured 17,727): EffectHost.mapPoint (+2: src/effects/effect-host.js, src/effects/index.js), the host's own mapping of a pointer
+  // 17741 -> 17743 (2026-11-10, measured 17,743): EffectHost.mapPoint (+2: src/effects/effect-host.js, src/effects/index.js), the host's own mapping of a pointer
   // for a page to show (the gallery's input map)
-  if (total > 17727) problems.push(`G-size: core is ${total} code lines (> 17727)`);
+  if (total > 17743) problems.push(`G-size: core is ${total} code lines (> 17743)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

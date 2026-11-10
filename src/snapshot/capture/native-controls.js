@@ -13,6 +13,7 @@ import { currentEngine } from '../../util/engine.js';
 import { pressOnThumb } from '../../util/native-states.js';
 import { accentPalette, geckoArrow, geckoBoxSkin, geckoDisabledBorder, geckoListboxBar, geckoListboxThumb, geckoProgressSkin, geckoRangeSkin, geckoToggleSkin } from './gecko-skins.js';
 import { usedColorScheme } from './color-scheme.js';
+import { declaredWidth } from './webkit-caret.js';
 import {
   THUMB, alpha, buttonSkin, cancelGlyph, css, inactiveTints, iosColorWellSkin, luminance, magnifierGlyph, pressedShade, searchSkin, svgDoc, colorWellSkin, foregroundOn, meterSkin, over, popupGlyph, progressSkin, rangeSkin, resizerGlyph, skinUrl, spinGlyph, textFieldSkin,
   tintWithContrast, toggleSkin,
@@ -205,10 +206,36 @@ function borderBox(cs, el) {
   return box;
 }
 
-/** @param {CSSStyleDeclaration} cs @param {{w: number, h: number}} box @returns {string} the live box, pinned */
-function pinBox(cs, box) {
-  let d = `appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;width:${box.w}px!important;height:${box.h}px!important;`
-    + 'min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;border-style:solid!important;border-color:transparent!important;'
+/**
+ * The size of a pinned control: its live border box, `width:Xpx; height:Ypx` under box-sizing:border-box, with no other limit. Except for the width where the page
+ * sizes the control with a percentage (`100%`, `calc(100% - 8px)`): then that expression is kept, with the page's own min-width and max-width. A length in its
+ * place gives the same box but another contribution to the intrinsic sizes of the container: a percentage counts as `auto` there, a length counts in full.
+ * Measured (Safari 27 on an iPad, Firefox 157): in a grid of `1fr auto`, a range of `width: 100%` across both columns, pinned to its 535.5 px, took the whole row
+ * for the `1fr` column; the `auto` column stayed at the min-width of its item, 44 px for a text of 96, and the text was drawn 52 px to the right, out of its row.
+ * The page's width is the computed one, read with the CSS Typed OM (WebKit). Gecko has none (Firefox 157): there it is the width the page's rules declare, where
+ * they agree on one (webkit-caret.js declaredWidth); a width that comes from a custom property, from rules that differ or from a sheet that cannot be read stays
+ * a length.
+ * @param {Element} src @param {CSSStyleDeclaration} cs @param {{w: number, h: number}} box @param {number} [grow] px the caller adds to the border box's width (a skin that reaches outside the box)
+ * @returns {string}
+ */
+export function pinnedSize(src, cs, box, grow = 0) {
+  const height = `height:${box.h}px!important;min-height:0!important;max-height:none!important;`;
+  let own = '';
+  try { own = typeof (/** @type {any} */ (src).computedStyleMap) === 'function' ? String(/** @type {any} */ (src).computedStyleMap().get('width') ?? '') : declaredWidth(src); } catch { /* no computed style for this element */ }
+  if (!own.includes('%')) return `box-sizing:border-box!important;width:${box.w + grow}px!important;min-width:0!important;max-width:none!important;${height}`;
+  const px = (/** @type {string} */ v) => parseFloat(v) || 0;
+  // the page's box-sizing is replaced by border-box: with content-box its widths leave the padding and the border out
+  const extra = (cs.boxSizing === 'border-box' ? 0 : px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth)) + grow;
+  const grown = (/** @type {string} */ v) => (extra ? `calc(${v} + ${extra}px)` : v);
+  // (the resolved values of min-width and max-width are the computed ones: a percentage stays one)
+  const min = /^(auto|0px|)$/.test(cs.minWidth) ? cs.minWidth || 'auto' : grown(cs.minWidth);
+  const max = /^(none|)$/.test(cs.maxWidth) ? 'none' : grown(cs.maxWidth);
+  return `box-sizing:border-box!important;width:${grown(own)}!important;min-width:${min}!important;max-width:${max}!important;${height}`;
+}
+
+/** @param {CSSStyleDeclaration} cs @param {{w: number, h: number}} box @param {Element} src @param {number} [grow] @returns {string} the live box, pinned (pinnedSize) */
+function pinBox(cs, box, src, grow) {
+  let d = `appearance:none!important;-webkit-appearance:none!important;${pinnedSize(src, cs, box, grow)}border-style:solid!important;border-color:transparent!important;`
     + 'background:none!important;box-shadow:none!important;';
   for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
     const k = side.toLowerCase();
@@ -421,7 +448,7 @@ export function paintNativeControl(src, clone, known) {
  */
 function cssControl(src, clone, cs, kind, box, engine) {
   if (kind === 'checkbox' || kind === 'radio' || kind === 'range') return false;
-  let decl = `box-sizing:border-box!important;width:${box.w}px!important;height:${box.h}px!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;`;
+  let decl = pinnedSize(src, cs, box);
   if (engine === 'gecko' && kind === 'menulist' && cs.appearance !== 'none') {
     const c = contentRect(cs, box.w, box.h);
     const arrow = svgDoc(box.w, box.h, geckoArrow({ x: c.x + c.w - 18, y: c.y, w: 18, h: c.h }, rgbaOf(src.ownerDocument, cs.color)));
@@ -450,7 +477,7 @@ function paintWebkit(src, clone, cs, kind, box) {
   const pressed = !disabled && src.matches(':active');
   const ios = currentEngine().os === 'ios';
   const { w, h } = box;
-  let decl = pinBox(cs, box);
+  let decl = pinBox(cs, box, src);
   switch (kind) {
     case 'checkbox': case 'radio':
       decl += skinDecl(toggleSkin(w, h, { type: kind, checked: el.checked, indeterminate: el.indeterminate, disabled, tint: inactive?.fill ?? tint, ink: inactive ? p.label : undefined, pressed }, p), 0, kind === 'radio' ? Math.min(w, h) / 2 : Math.min(w, h) * 5.5 / 16);
@@ -556,7 +583,7 @@ const geckoRinged = (src, cs, kind) => kind !== 'range' && cs.outlineStyle === '
 
 /** @param {CSSStyleDeclaration} cs @param {{w: number, h: number}} box @returns {string} the pinned box grown by 2 px on every side around the same content box */
 function growForRing(cs, box) {
-  let d = `width:${box.w + 4}px!important;height:${box.h + 4}px!important;`;
+  let d = `height:${box.h + 4}px!important;`;
   for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
     const k = side.toLowerCase();
     d += `border-${k}-width:${(parseFloat(/** @type {any} */ (cs)['border' + side + 'Width']) || 0) + 2}px!important;margin-${k}:${(parseFloat(/** @type {any} */ (cs)['margin' + side]) || 0) - 2}px!important;`;
@@ -577,9 +604,10 @@ function paintGecko(src, clone, cs, kind, box) {
   const disabled = src.matches(':disabled');
   const hover = src.matches(':hover'), active = hover && src.matches(':active');
   const { w, h } = box;
-  let decl = pinBox(cs, box);
   const ring = geckoRinged(src, cs, kind) ? accent.accent : null;
   const boxKind = kind === 'button' || kind === 'menulist' || kind === 'color' || kind === 'text' || kind === 'date' || kind === 'textarea' || kind === 'listbox';
+  // (a range's skin and a focus ring reach outside the box: the box grows, its margins shrink by as much)
+  let decl = pinBox(cs, box, src, kind === 'range' ? 2 * GECKO_OUT : ring && boxKind ? 4 : 0);
   if (ring && boxKind) decl += growForRing(cs, box);
   else if (ring) decl += `outline:2px solid ${css(ring)}!important;outline-offset:-1px!important;`;
   switch (kind) {
@@ -590,7 +618,7 @@ function paintGecko(src, clone, cs, kind, box) {
     case 'range':
       clone.setAttribute('data-hic-range', '');
       // the thumb's shadow falls outside the box and a background cannot: the box grows by OUT on every side and its margins shrink by as much (same layout)
-      decl += skinDecl(geckoRangeSkin(w, h, { ratio: rangeRatio(el), disabled, rtl: cs.direction === 'rtl', accent, hover, active }, GECKO_OUT), 0, 0) + `width:${w + 2 * GECKO_OUT}px!important;height:${h + 2 * GECKO_OUT}px!important;`;
+      decl += skinDecl(geckoRangeSkin(w, h, { ratio: rangeRatio(el), disabled, rtl: cs.direction === 'rtl', accent, hover, active }, GECKO_OUT), 0, 0) + `height:${h + 2 * GECKO_OUT}px!important;`;
       for (const side of ['Top', 'Right', 'Bottom', 'Left']) decl += `margin-${side.toLowerCase()}:${(parseFloat(/** @type {any} */ (cs)['margin' + side]) || 0) - GECKO_OUT}px!important;`;
       break;
     case 'progress': case 'meter': {
