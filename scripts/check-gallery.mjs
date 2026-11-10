@@ -6,7 +6,8 @@
 //   npm run build && npm run test:gallery
 //   node scripts/check-gallery.mjs [--only=water,template] [--views=phone,ipad] [--no-control] [--controls-only]
 //
-// Per plugin and view (phone 390 x 844 at DPR 3, iPad landscape 1194 x 748 at DPR 2; mobile metrics and touch emulation):
+// Per plugin and view (phone 390 x 844 at DPR 3, iPad landscape 1194 x 748 at DPR 2; mobile metrics and touch emulation; and a short phone, 375 x 667 at DPR 2,
+// the height a phone browser leaves under its bars, where the stage has its smallest height and reaches below the first viewport: `fit` only):
 //   fold      the stage (the canvas) lies entirely in the first viewport; no horizontal page scroll
 //   fit       the form fits the stage without an inner scroll (scrollHeight <= clientHeight + 1), with the plugin's controls mounted
 //   demo      a plugin with an action `demo`: the gallery played it on selection, it resolved with a state (not null, no error) within 6 s,
@@ -14,6 +15,12 @@
 //   rest      once the demo ended and handle.settled() resolved, after 1 s of grace: 0 effectframe events over 2 s, unless the plugin
 //             declares `meta.continuous` (then the rate at rest is printed); the HUD then reads 0 fx/s
 //   scroll    (phone) a vertical touch drag that starts on the stage, left of the middle and away from the corners, scrolls the page
+// Per scene other than the form (examples/plugins/ `?scene=daylight`, `?scene=live`) and view, with the water plugin:
+//   scene     the gallery shows that scene: its block is laid out, the others are not, and __gallery.scene names it
+//   fold, fit as above, with the scene's content
+//   switch    a touch tap on the drawn switch, through the effect, selects another scene and comes back (the address follows)
+//   live      (the live scene) the drawn content changes about once a second and the effect presents it: frames arrive at rest, and the drawn clock
+//             moves on; back on the form, 0 effect frames over 2 s
 // Once, under prefers-reduced-motion (phone): no demo is played ('prefers-reduced-motion'). Once ('off', iPad): the frame cap defaults to
 // the display rate measured by the page (canvas.frameCap 0 = uncapped, the slider at its top = the rounded rate).
 // Positive controls (each must turn ITS check red; --no-control skips them), all on the template plugin unless said otherwise:
@@ -23,8 +30,11 @@
 //   C5 demo    the gallery opened with ?demo=0                    C6 scroll  a non-passive touchstart listener that cancels every touch
 //   C7 reduced the page sees no reduced-motion preference while the emulation sets it
 //   C8 cap     the slider moved to 60 before the check ('off')
+//   C9 fit     (water, the daylight scene) a picture 900 px tall    C10 switch (water, the daylight scene) the switch takes no pointer input
+//   C11 live   (water, the live scene) the page's one-second timer never starts
+//   C12 fit    (page-curl, the daylight scene, the short phone) the scene's picture as a block under its title and a stage of 580 px
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
-// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off' or the controls is a diagnostic run:
+// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
 // Results: .scratch/results/gallery-<timestamp>.json (`pass`, `green`, `scope`, `selection`, `skipped`).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -41,7 +51,10 @@ const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const ALL_VIEWS = [
   { name: 'phone', width: 390, height: 844, dpr: 3 },
   { name: 'ipad', width: 1194, height: 748, dpr: 2 },
+  { name: 'short', width: 375, height: 667, dpr: 2 },
 ];
+/** what a view checks of a run's steps: the short phone only whether the form fits (its stage is below the first viewport by design) */
+const stepsFor = (/** @type {any} */ view, /** @type {string[]} */ steps) => (view.name === 'short' ? steps.filter((s) => s === 'fit' || s === 'scene') : steps);
 /** Plugins whose look does not depend on an input or an event, so they need no `demo` (EFFECTS-PLUGINS.md 15.1, rule 2). */
 const NO_DEMO = /** @type {Record<string, string>} */ ({ crt: 'a monitor look that is there at rest; it is continuous by design' });
 const DEMO_LIMIT_MS = 6000;
@@ -96,7 +109,7 @@ function neverIdleEffects() {
 
 /**
  * One gallery run. @param {any} browser @param {any} server @param {string} name @param {any} view
- * @param {{query?: string, css?: string, script?: string, effects?: string, reducedMotion?: boolean, fakeNoReduce?: boolean, steps?: string[]}} [o]
+ * @param {{query?: string, css?: string, script?: string, effects?: string, reducedMotion?: boolean, fakeNoReduce?: boolean, steps?: string[], scene?: string}} [o]
  */
 async function runOne(browser, server, name, view, o = {}) {
   const page = await browser.newPage({ reuseFirst: false });
@@ -159,6 +172,14 @@ async function runOne(browser, server, name, view, o = {}) {
       if (!info.continuous && atRest === 0) check('rest', 'the HUD reads 0 effect frames per second at rest', hud.text === '0' || hud.text === '-', hud);
     }
 
+    // the scene the address asked for
+    if (want('scene')) {
+      const sc = await page.evaluate(`(() => { const f = document.getElementById('demo-form'); return { scene: window.__gallery.scene, attr: f.dataset.scene,
+        shown: [...f.querySelectorAll('.scene')].filter((e) => e.offsetHeight > 0).map((e) => e.dataset.scene), pressed: [...f.querySelectorAll('.scenes button[aria-pressed="true"]')].map((b) => b.dataset.scene) }; })()`);
+      numbers.scene = sc;
+      check('scene', `the gallery shows the ${o.scene} scene and no other`, sc.scene === o.scene && sc.attr === o.scene && sc.shown.join() === o.scene && sc.pressed.join() === o.scene, sc);
+    }
+
     // fold and fit, with the plugin's controls mounted
     if (want('fold') || want('fit')) {
       const m = await page.evaluate(`(() => { const s = document.getElementById('stage').getBoundingClientRect(); const f = document.getElementById('demo-form');
@@ -176,6 +197,40 @@ async function runOne(browser, server, name, view, o = {}) {
       await H.touchDrag(page, { x: Math.round(s.x), y: Math.round(s.y), dir: 1, step: 14, count: 14, intervalMs: 16, restMs: 30 });
       const scrolled = await H.until(() => page.evaluate('window.scrollY > 60 ? window.scrollY : null'), 1500);
       check('scroll', 'a vertical touch drag that starts on the stage (away from a handle) scrolls the page', !!scrolled, { scrollY: scrolled ?? (await page.evaluate('window.scrollY')), at: s });
+    }
+
+    // a touch tap on the drawn switch selects another scene, through the effect, and comes back
+    if (want('switch')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await H.sleep(150);
+      const tap = async (/** @type {string} */ scene) => {
+        const at = await page.evaluate(`(() => { const r = document.querySelector('.scenes button[data-scene=${JSON.stringify(scene)}]').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+        await H.sleep(60);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        return H.until(() => page.evaluate(`window.__gallery.scene === ${JSON.stringify(scene)} ? { scene: window.__gallery.scene, query: new URL(location.href).searchParams.get('scene') } : null`), 2000);
+      };
+      const there = await tap('form'), back = await tap(/** @type {string} */ (o.scene));
+      check('switch', `a tap on the drawn switch selects the form scene and one more comes back to ${o.scene} (the address follows)`,
+        !!there && there.query === null && !!back && back.query === o.scene, { there, back, now: await page.evaluate('window.__gallery.scene') });
+    }
+
+    // the live scene: content that changes once a second is presented; the form scene is at rest again
+    if (want('live')) {
+      if ((await page.evaluate('window.__gallery.handle && window.__gallery.handle.actions ? 1 : 0')) === 1) await page.evaluate(`Promise.race([Promise.resolve(window.__gallery.handle.settled()), new Promise((r) => setTimeout(r, 10000))])`);
+      await H.sleep(1200);
+      const a = await page.evaluate(`({ frames: window.__gc.frames, clock: document.getElementById('live-clock').textContent })`);
+      await H.sleep(3200);
+      const b = await page.evaluate(`({ frames: window.__gc.frames, clock: document.getElementById('live-clock').textContent })`);
+      numbers.live = { framesIn3s: b.frames - a.frames, from: a.clock, to: b.clock };
+      check('live', 'the live scene changes about once a second and the effect presents it (the clock moves on; 3 to 120 effect frames in 3.2 s)', b.clock !== a.clock && b.frames - a.frames >= 3 && b.frames - a.frames <= 120, numbers.live);
+      await page.evaluate(`document.querySelector('.scenes button[data-scene="form"]').click()`);
+      await H.sleep(1500);
+      const c = await page.evaluate('window.__gc.frames');
+      await H.sleep(2000);
+      const atRest = (await page.evaluate('window.__gc.frames')) - c;
+      numbers.liveThenForm2s = atRest;
+      check('live', 'back on the form scene: 0 effect frames over 2 s (the timer stopped)', atRest === 0, { framesIn2s: atRest });
     }
 
     // the frame cap defaults to the display rate
@@ -209,7 +264,7 @@ try {
   for (const name of plan.plugins) {
     await withBrowser(async (browser) => {
       for (const view of VIEWS) {
-        const r = await runOne(browser, server, name, view, { steps: ['demo', 'rest', 'fold', 'fit', 'scroll'] });
+        const r = await runOne(browser, server, name, view, { steps: stepsFor(view, ['demo', 'rest', 'fold', 'fit', 'scroll']) });
         results.runs.push({ plugin: name, view: view.name, ...r });
         for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${name.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
       }
@@ -223,14 +278,28 @@ try {
   if (plan.off) {
     await withBrowser(async (browser) => {
       const view = VIEWS.find((v) => v.name === 'ipad') ?? VIEWS[0];
-      const r = await runOne(browser, server, 'off', view, { steps: ['cap', 'fold', 'fit'] });
+      const r = await runOne(browser, server, 'off', view, { steps: view.name === 'short' ? ['cap', 'fit'] : ['cap', 'fold', 'fit'] });
       results.runs.push({ plugin: 'off', view: view.name, ...r });
       for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${'off'.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
     });
   }
 
+  if (plan.scenes) {
+    await withBrowser(async (browser) => {
+      for (const scene of ['daylight', 'live']) {
+        for (const view of VIEWS) {
+          // (the short phone with the plugin whose controls are the tallest)
+          const plugin = view.name === 'short' ? 'page-curl' : 'water';
+          const r = await runOne(browser, server, plugin, view, { query: `&scene=${scene}`, scene, steps: stepsFor(view, ['scene', 'fold', 'fit', 'switch', ...(scene === 'live' ? ['live'] : [])]) });
+          results.runs.push({ plugin: `${plugin}, ${scene} scene`, view: view.name, ...r });
+          for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${scene.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
+        }
+      }
+    });
+  }
+
   if (withControl) {
-    const phone = { name: 'phone', width: 390, height: 844, dpr: 3 }, ipad = { name: 'ipad', width: 1194, height: 748, dpr: 2 };
+    const phone = { name: 'phone', width: 390, height: 844, dpr: 3 }, ipad = { name: 'ipad', width: 1194, height: 748, dpr: 2 }, short = { name: 'short', width: 375, height: 667, dpr: 2 };
     const CONTROLS = [
       { id: 'C1', step: 'fold', name: 'template', view: ipad, o: { css: '#top::after { content: ""; display: block; height: 700px; }', steps: ['fold'] } },
       { id: 'C2', step: 'fit', name: 'template', view: phone, o: { css: '#demo-form .card { padding-bottom: 600px !important; }', steps: ['fit'] } },
@@ -240,6 +309,10 @@ try {
       { id: 'C6', step: 'scroll', name: 'template', view: phone, o: { script: "document.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false, capture: true });", steps: ['scroll'] } },
       { id: 'C7', step: 'demo', name: 'template', view: phone, o: { reducedMotion: true, fakeNoReduce: true, steps: ['demo'] } },
       { id: 'C8', step: 'cap', name: 'off', view: ipad, o: { script: "addEventListener('load', () => setTimeout(() => { const r = document.getElementById('fps-cap'); r.value = '60'; r.dispatchEvent(new Event('input')); }, 300));", steps: ['cap'] } },
+      { id: 'C9', step: 'fit', name: 'water', view: phone, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .photo { height: 900px !important; }', steps: ['fit'] } },
+      { id: 'C10', step: 'switch', name: 'water', view: ipad, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .scenes { pointer-events: none !important; }', steps: ['switch'] } },
+      { id: 'C11', step: 'live', name: 'water', view: ipad, o: { query: '&scene=live', scene: 'live', script: "{ const si = window.setInterval; window.setInterval = function (f, ms, ...a) { return f && f.name === 'liveTick' ? 0 : si.call(this, f, ms, ...a); }; }", steps: ['live'] } },
+      { id: 'C12', step: 'fit', name: 'page-curl', view: short, o: { query: '&scene=daylight', scene: 'daylight', css: ':root { --fit: 580px !important; } #demo-form .scene[data-scene="daylight"] { display: block !important; } #demo-form .photo { height: 64px !important; margin-top: 8px !important; }', steps: ['fit'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {
