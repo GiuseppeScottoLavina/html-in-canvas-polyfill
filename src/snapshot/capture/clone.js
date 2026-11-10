@@ -8,7 +8,7 @@ import { inflateRect, intersectRect } from '../../util/rect.js';
 import { applyFont, buildDocumentSelectionRects, buildSelectionRects, inputSelectionRect, measureCaret, measuringContext, rangeHighlights } from './caret-overlay.js';
 import { rangeRectsIn } from '../../util/selection-rects.js';
 import { ancestorShell, canvasAncestors } from './custom-props.js';
-import { createTokenCollector } from './css-shake.js';
+import { createTokenCollector, meets } from './css-shake.js';
 import { applyScrollState, hasBarGutter, listboxThumb, scrollFacts } from './scroll-emulation.js';
 import { appendWithStubs, buildShell, shellFactsOf, shellNeedsBox, siblingStub } from './shells.js';
 import {
@@ -135,8 +135,9 @@ export function spacerHeight(h, display = 'block') {
  * @property {Rect|null} keep  damage prune region in the drawable frame
  * @property {number} nodes
  * @property {number} absolute
- * @property {boolean} fold  pruned spacer runs may be merged (no selector depends on sibling positions)
+ * @property {boolean} fold  pruned spacer runs may be merged (no selector depends on sibling positions, or `local` says where they do)
  * @property {boolean} trunc  trailing children below the keep region may be left out (fold, and no :has() selector)
+ * @property {import('./css-shake.js').Structure|null} local  the CSS has selectors that depend on sibling positions: what a container's children allow there (siblingRules); null = it has none
  * @property {Set<Element>} topLayer  elements of the drawable (in its own tree scope) rendered in the top layer
  * @property {Node} scope  tree scope of the drawable (document or the canvas's shadow root): elements of other scopes are inside shadow trees of the drawable
  * @property {number} shift  css px by which the descendants of CaptureRequest.scroll.el appear moved in the clone (live scrollTop - rendered scrollTop): live rects are shifted by it before a prune test
@@ -260,9 +261,9 @@ function spacerInfo(ctx, k, window, cs) {
 }
 
 /**
- * A run of adjacent, equally wide block spacers in a block-flow parent becomes one spacer (measured: the SVG shrinks several times). Only when no selector counts siblings (ctx.fold):
- * a merged run shifts :nth-child parity and sibling combinators of the rows behind it.
- * @typedef {{el: HTMLElement, tag: string, x: number, y: number, width: number}} SpacerRun
+ * A run of adjacent, equally wide block spacers in a block-flow parent becomes one spacer (measured: the SVG shrinks several times). Only where no selector counts the
+ * siblings (ctx.fold, and siblingRules for the container): a merged run shifts :nth-child parity and sibling combinators of the rows behind it.
+ * @typedef {{el: HTMLElement, tag: string, x: number, y: number, width: number, same?: string}} SpacerRun  `same`: SiblingRules.same of its first child
  */
 
 /** block spacers that may be merged: list items are not, every one counts in the list numbering */
@@ -374,6 +375,104 @@ function cloneChildren(ctx, src, clone, cs) {
   }
 }
 
+/**
+ * @typedef {Object} SiblingRules  what the selectors that count siblings (Structure) allow among the children of one container
+ * @property {boolean} fold  spacer runs may be merged here
+ * @property {((el: Element) => string)|null} same  with `fold`: only children with the same value are merged into one run (the sibling combinators that reach this
+ *   container tell them apart); null = any
+ * @property {boolean} trunc  trailing children may be left out here
+ * @property {Element|null} last  the last element child: never merged into a run (it stays the :last-child, and the container never comes down to one child)
+ */
+
+/**
+ * A container's children against the selectors that count siblings. A selector reaches the container when its children, taken together, have every type, id and
+ * class the selector's compounds need (Need admits more than the compound matches, so no container a selector does reach is missed), and the container has what the
+ * compound before a child combinator needs.
+ *  - :nth-child(), :nth-of-type(): no run is merged (the index of what follows would change); trailing children may be left out (nothing before them counts them).
+ *  - :nth-last-child(), :nth-last-of-type(), :last-of-type, :only-of-type: neither.
+ *  - `+`, `~` between compounds of type, id and class selectors: a run is merged of children that are the same to each of them (both or neither meet its left
+ *    compound, both or neither its right one): the run's first spacer then stands for every one of them, before and after it. Other compounds (an attribute,
+ *    a state, :first-child): no run. Trailing children may be left out.
+ * A container with a shadow root, or a slot, keeps every child: its flattened children are not the siblings a selector sees.
+ * @param {import('./css-shake.js').Structure} st @param {Element} src @param {Node[]} kids
+ * @returns {SiblingRules}
+ */
+function siblingRules(st, src, kids) {
+  /** @type {Element|null} */
+  let last = null;
+  for (let i = kids.length; i-- && !last;) if (kids[i].nodeType === 1) last = /** @type {Element} */ (kids[i]);
+  if (src.shadowRoot || src.localName === 'slot') return { fold: false, same: null, trunc: false, last };
+  const tags = new Set(), classes = new Set(), ids = new Set();
+  let seen = '';
+  for (const k of kids) {
+    if (k.nodeType !== 1) continue;
+    const el = /** @type {Element} */ (k);
+    tags.add(el.localName.toLowerCase());
+    if (el.id) ids.add(el.id);
+    const cls = el.getAttribute('class');
+    if (cls && cls !== seen) { seen = cls; for (const c of cls.split(/\s+/)) if (c) classes.add(c); }
+  }
+  /** @param {import('./css-shake.js').Need} n */
+  const among = (n) => (n.tag === null || tags.has(n.tag)) && (n.id === null || ids.has(n.id)) && n.classes.every((c) => classes.has(c));
+  /** @param {import('./css-shake.js').Anchor} a */
+  const reaches = (a) => among(a.child) && (!a.prev || among(a.prev)) && (!a.parent || meets(a.parent, src));
+  const back = st.back.some(reaches);
+  let fold = !back && !st.nth.some(reaches);
+  /** @type {import('./css-shake.js').Need[]} */
+  const tell = [];
+  if (fold) {
+    for (const a of st.sibling) {
+      if (!reaches(a)) continue;
+      if (!a.exact) { fold = false; break; }
+      tell.push(/** @type {import('./css-shake.js').Need} */ (a.prev), a.child);
+    }
+  }
+  const same = fold && tell.length ? (/** @type {Element} */ el) => { let key = ''; for (const n of tell) key += meets(n, el) ? '1' : '0'; return key; } : null;
+  return { fold, same, trunc: !back, last };
+}
+
+/** a container whose children are laid out one under the other, their vertical margins collapsing */
+const BLOCK_FLOW = /^(block|list-item|flow-root)$/;
+const num = (/** @type {string} */ v) => Number.parseFloat(v) || 0;
+
+/**
+ * The margin of `el` at its top (or bottom) edge joined with those of the descendants that collapsed through it. A first (last) in-flow block-level child whose
+ * border edge lies on its parent's has its margin outside the parent, joined with the parent's own: the largest positive one plus the most negative one. The
+ * edges tell (no reading of what stops a margin: a border, a padding, a formatting context of its own, clearance all leave the child's edge off the parent's
+ * unless its margin is zero). A spacer has no descendants, so it is given this margin itself.
+ * @param {Ctx} ctx @param {Element} el @param {boolean} top
+ * @returns {number} css px
+ */
+function throughMargin(ctx, el, top) {
+  const win = ctx.env.window;
+  let pos = 0, neg = 0;
+  /** @type {Element|null} */
+  let cur = el;
+  let r = ctx.frame(el, true);
+  for (let depth = 0; cur && r && depth < 16; depth++) {
+    const m = num(top ? win.getComputedStyle(cur).marginTop : win.getComputedStyle(cur).marginBottom);
+    if (m > pos) pos = m; else if (m < neg) neg = m;
+    /** @type {Element|null} */
+    let child = top ? cur.firstElementChild : cur.lastElementChild;
+    /** @type {CSSStyleDeclaration|null} */
+    let cs = null;
+    for (; child; child = top ? child.nextElementSibling : child.previousElementSibling) {
+      cs = win.getComputedStyle(child);
+      if (cs.display !== 'none' && cs.position !== 'absolute' && cs.position !== 'fixed' && cs.float === 'none') break;
+    }
+    if (!child || !cs || NO_PRUNE_DISPLAY.test(cs.display)) break;
+    /** @type {Rect|null} */
+    const cr = ctx.frame(child, true);
+    if (!cr || Math.abs(top ? cr.y - r.y : cr.y + cr.height - r.y - r.height) > 0.01) break;
+    cur = child;
+    r = cr;
+  }
+  return pos + neg;
+}
+
+/** @param {HTMLElement} sp @param {'margin-top'|'margin-bottom'} side @param {number} v css px @param {number} dpr */
+const setMargin = (sp, side, v, dpr) => sp.style.setProperty(side, `${layoutPx(onLiveGrid(v, dpr))}px`, 'important');
+
 /** @param {Ctx} ctx @param {Element} src @param {Element} clone @param {Rect|null} window @param {CSSStyleDeclaration} srcStyle  computed style of `src` */
 function cloneChildList(ctx, src, clone, window, srcStyle) {
   /** @type {SpacerRun|null} */
@@ -381,13 +480,31 @@ function cloneChildList(ctx, src, clone, window, srcStyle) {
   const prune = !!(ctx.keep || window);
   const blockParent = ctx.fold && prune && /^(block|list-item|flow-root|flex|grid)$/.test(srcStyle.display);
   const kids = flatChildren(src);
-  const cut = ctx.trunc && ctx.keep && !window && kids.length > TRUNC_MIN_CHILDREN ? truncation(ctx, src, kids) : null;
+  /** @type {SiblingRules|null} read when a run could be merged or the tail left out, in a clone whose CSS counts siblings */
+  let rules = null;
+  const rulesOf = () => (rules ??= siblingRules(/** @type {import('./css-shake.js').Structure} */ (ctx.local), src, kids));
+  const cut = ctx.trunc && ctx.keep && !window && kids.length > TRUNC_MIN_CHILDREN && (!ctx.local || rulesOf().trunc) ? truncation(ctx, src, kids) : null;
   const end = cut ? cut.index : kids.length;
+  // A pruned child's descendants are gone, and with them the margins that collapsed through it: a group whose first row has a top margin stood that margin lower
+  // than its spacer does, and everything after it with it (measured: a 10 px margin, a tile 10 px off). In a block flow the live boxes say what the gap was: a
+  // spacer takes as its top margin the live gap to the box before it when that is more than its own margin (the gap is the larger of the two margins that
+  // meet there, so the gap as one of them gives the gap), the spacer before a kept child takes the gap as its bottom margin, and a spacer that is the first or
+  // the last child takes the margin that reached its edge (throughMargin). Margins that overlap (a gap under the spacer's own margin) are left as they are.
+  const flow = prune && BLOCK_FLOW.test(srcStyle.display) && srcStyle.writingMode === 'horizontal-tb';
+  const dpr = ctx.env.window.devicePixelRatio;
+  /**
+   * @type {{live: Element, bottom: number|null, sp: HTMLElement|null, cs: CSSStyleDeclaration|null}|null} the in-flow block-level child before this one: its live
+   * bottom edge (read when asked) and, for a spacer, its element and the computed style its bottom margin is read from (only where a gap asks for it: rows that
+   * touch cost no style read)
+   */
+  let above = null;
+  let inFlow = 0;
+  const bottomOf = (/** @type {NonNullable<typeof above>} */ a) => (a.bottom ??= (() => { const r = ctx.frame(a.live, true); return r ? r.y + r.height : NaN; })());
   for (let i = 0; i < end; i++) {
     const k = kids[i];
     if (k.nodeType === 3) {
       const text = /** @type {Text} */ (k).data;
-      if (/\S/.test(text)) run = null;
+      if (/\S/.test(text)) { run = null; above = null; inFlow++; }
       if (!ctx.selection || !appendSelectedText(ctx, src, /** @type {Text} */ (k), clone)) clone.appendChild(ctx.doc.createTextNode(text));
       continue;
     }
@@ -395,6 +512,8 @@ function cloneChildList(ctx, src, clone, window, srcStyle) {
     const el = /** @type {Element} */ (k);
     if (ctx.drawables.has(el)) {
       run = null;
+      above = null;
+      inFlow++;
       const size = ctx.layer.borderBoxSize(el);
       if (size) {
         const sp = spacerFor(ctx, el, { x: 0, y: 0, width: size.width, height: size.height });
@@ -408,17 +527,55 @@ function cloneChildList(ctx, src, clone, window, srcStyle) {
     const info = cs ? spacerInfo(ctx, el, window, cs) : null;
     if (info) {
       ctx.nodes += 1 + el.getElementsByTagName('*').length;
-      if (blockParent && extendRun(run, el, info, ctx.env.window.devicePixelRatio)) continue;
+      // with selectors that count siblings: only where they allow it, never the last child, and only what is the same to the sibling combinators as the run's first
+      /** @type {SiblingRules|null} */
+      const local = ctx.local && run ? rulesOf() : null;
+      // (a spacer is a block-level box in the flow, or it would not be one: spacerInfo)
+      const top = info.r.y - ctx.shift, bottom = top + info.r.height;
+      if (blockParent && (!local || (local.fold && el !== local.last && (!local.same || local.same(el) === run?.same))) && extendRun(run, el, info, dpr)) {
+        if (above) { above.live = el; above.bottom = bottom; above.cs = info.cs; }
+        continue;
+      }
       const sp = /** @type {HTMLElement} */ (spacerFor(ctx, el, info.r, info.cs.display));
       clone.appendChild(sp);
+      if (flow) {
+        const gap = above ? top - bottomOf(above) : inFlow ? NaN : throughMargin(ctx, el, true);
+        // (more than both margins that meet there as the clone has them: its own, and that of the box above, a spacer's or a kept child's own)
+        if (gap > 0.01 && gap > num(info.cs.marginTop) + 0.01 && (!above || gap > num((above.cs ?? ctx.env.window.getComputedStyle(above.live)).marginBottom) + 0.01)) setMargin(sp, 'margin-top', gap, dpr);
+        above = { live: el, bottom, sp, cs: info.cs };
+        inFlow++;
+      }
       run = blockParent && MERGEABLE.test(info.cs.display) && countsNothing(info.cs) ? { el: sp, tag: el.localName, x: info.r.x, y: info.r.y, width: info.r.width } : null;
+      if (run && ctx.local) { const r = rulesOf(); if (!r.fold) run = null; else if (r.same) run.same = r.same(el); }
       continue;
     }
     run = null;
+    if (flow && cs) {
+      // out of the flow, or no box: the boxes around it meet as if it were not there; a box that is not block-level starts a line
+      const out = cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed' || cs.float !== 'none';
+      if (!out) {
+        if (NO_PRUNE_DISPLAY.test(cs.display)) above = null;
+        else {
+          if (above?.sp && above.cs) { const r = ctx.frame(el, true); const gap = r ? r.y - bottomOf(above) : NaN; if (gap > 0.01 && gap > num(above.cs.marginBottom) + 0.01 && gap > num(cs.marginTop) + 0.01) setMargin(above.sp, 'margin-bottom', gap, dpr); }
+          above = { live: el, bottom: null, sp: null, cs: null };
+        }
+        inFlow++;
+      }
+    } else above = null;
     const c = cloneElement(ctx, el, cs);
     if (c) clone.appendChild(c);
   }
+  // a spacer that is the last child: the margin that reached its bottom edge through its descendants
+  if (flow && !cut && above?.sp && above.cs) { const through = throughMargin(ctx, above.live, false); if (through > 0.01 && through > num(above.cs.marginBottom) + 0.01) setMargin(above.sp, 'margin-bottom', through, dpr); }
   if (!cut) return;
+  // with selectors that count siblings: a hidden stand-in of the first child left out follows the kept ones, so that the last of them is not the :last-child and
+  // one alone not the :only-child (it paints nothing and takes no room)
+  if (ctx.local) {
+    const stub = ctx.doc.importNode(/** @type {Element} */ (kids[cut.index]), false);
+    cleanAttributes(stub);
+    setInlineStyle(stub, 'display:none!important');
+    clone.appendChild(stub);
+  }
   appendInlineStyle(clone, cut.pin);
   // the left-out children still count for the node budget, as pruned spacers do
   for (let i = cut.index; i < kids.length; i++) if (kids[i].nodeType === 1) ctx.nodes += 1 + /** @type {Element} */ (kids[i]).getElementsByTagName('*').length;
@@ -646,12 +803,13 @@ function ancestorsOf(el, canvas, layerEl) {
  * @param {HicEnv} env
  * @param {CaptureRequest} req
  * @param {Document} doc  inert document that owns the clone (no custom element upgrades, no resource loads)
- * @param {boolean} [fold]  pruned spacer runs may be merged: true only when the page CSS has no sibling-position selectors
+ * @param {boolean} [fold]  pruned spacer runs may be merged: the page CSS has no sibling-position selectors, or `local` ties them to containers
  * @param {boolean} [trunc]  trailing children below a pruned tile may be left out: `fold` and no :has() selector
+ * @param {import('./css-shake.js').Structure|null} [local]  the page CSS has selectors that depend on sibling positions: where (Ctx.local)
  * @param {boolean} [wrapSelection]  the page CSS has no :has() selector: selected page text may be wrapped in the clone (an extra inline element changes no :has() answer)
  * @returns {CloneResult}
  */
-export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSelection = false) {
+export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSelection = false, local = null) {
   const layer = req.record.layer;
   if (!layer) throw new Error('the canvas has no live layer');
   const el = req.element;
@@ -665,7 +823,7 @@ export function cloneDrawable(env, req, doc, fold = false, trunc = false, wrapSe
   /** @type {Ctx} */
   const ctx = {
     env, req, doc, layer, drawable: el, drawables: new Set(layer.drawableElements()), unsupported: [], tokens: createTokenCollector(), ix: interactionContext(req.interaction, layer.element),
-    animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, scope: el.getRootNode(), topLayer: topLayerIn(el),
+    animated: null, scroll: { rules: [], nextId: 0 }, keep: req.prune && req.rect ? inflateRect(req.rect, env.options.inkMargin) : null, nodes: 0, absolute: env.options.nodeBudget.absolute, fold, trunc: fold && trunc, local, scope: el.getRootNode(), topLayer: topLayerIn(el),
     shift: 0, selection: null, painter: null, frame: layer.frameMeasurer(el), scrollers: [], cover: null,
   };
   ctx.selection = pageSelectionIn(ctx, el, size, wrapSelection);
@@ -874,7 +1032,7 @@ function appendSelectedText(ctx, src, k, clone) {
   const client = part.getClientRects();
   const boxes = Array.from(client).filter((r) => r.width >= 0.5 && r.height >= 0.5);
   if (!boxes.length) return false; // collapsed white space: nothing is painted
-  if (parent !== src || !WRAP_DISPLAY.test(cs.display) || (!ctx.fold && parent.childElementCount > 0)) {
+  if (parent !== src || !WRAP_DISPLAY.test(cs.display) || ((!ctx.fold || ctx.local) && parent.childElementCount > 0)) {
     sel.fallback.push({ range: part, el: parent });
     return false;
   }

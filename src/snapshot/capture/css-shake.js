@@ -179,7 +179,192 @@ function declarationText(body) {
   return { fonts, anims };
 }
 
-const STRUCTURAL = /:(?:nth-|first-|last-|only-|empty)|[+~](?!=)/;
+// ---------------------------------------------------------------------------------------------- selectors that count siblings
+
+/**
+ * @typedef {Object} Need  what an element must have for a compound selector to match it: its type, id and class selectors. The rest of the compound is not read, so a
+ *   Need admits every element the compound matches, and more
+ * @property {string|null} tag  lower case; null = any
+ * @property {string|null} id
+ * @property {string[]} classes
+ */
+
+/**
+ * @typedef {Object} Anchor  a compound selector whose match depends on the siblings of the element (one child of a container)
+ * @property {Need} child  that element
+ * @property {Need} [prev]  a sibling combinator: the compound on its left (an earlier child of the same container)
+ * @property {Need|null} parent  the compound a child combinator joins the sibling group to (the container), when there is one
+ * @property {boolean} [exact]  a sibling combinator between two compounds made of type, id and class selectors only: two children of which both or neither meet `prev`,
+ *   and both or neither `child`, are the same to it
+ */
+
+/**
+ * @typedef {Object} Structure  the selectors of a CSS bundle that count siblings, by what a pruned clone may then do in a container whose children they can match
+ * @property {boolean} global  one of them could not be tied to a container (inside :has(), in a selector argument with a combinator, in a nested rule, in the
+ *   prelude of a scope rule, a namespaced type...): no container is folded or truncated
+ * @property {Anchor[]} nth  :nth-child() and :nth-of-type(): a merged run of spacers shifts the index of what follows it; children left out after the kept ones do not
+ * @property {Anchor[]} back  :nth-last-child(), :nth-last-of-type(), :last-of-type and :only-of-type: both would change the count from the end
+ * @property {Anchor[]} sibling  `+` and `~`: a run is merged only of children that are the same to every such selector (`exact`), or not at all; children left out after
+ *   the kept ones change nothing before them
+ *
+ * Not in it, because a clone built with a Structure keeps them as they are by construction (clone.js cloneChildList): :first-child and :first-of-type (a run keeps
+ * its first spacer, and nothing is left out before a kept child); :last-child and :only-child (the last child is never merged into a run, and a hidden stand-in
+ * follows the kept children when the rest is left out); :empty (a container keeps a child either way).
+ */
+
+/** a selector worth parsing: a counting pseudo-class or a sibling combinator somewhere in its text */
+const COUNTING = /:(?:nth-|last-of-type|only-of-type)|[+~](?!=)/i;
+const NTH = new Set(['nth-child', 'nth-of-type']);
+const BACK = new Set(['nth-last-child', 'nth-last-of-type', 'last-of-type', 'only-of-type']);
+/** pseudo-classes whose arguments are selectors matched against the element itself */
+const SELF_LIST = new Set(['not', 'is', 'where', 'matches', '-webkit-any', '-moz-any']);
+
+/**
+ * One complex selector as its compounds, each with the combinator on its left (' ', '>', '+', '~'; null for the first), or null when it is not understood (a column
+ * combinator, a leading combinator as in a relative selector).
+ * @param {string} sel
+ * @returns {Array<{comb: string|null, text: string}>|null}
+ */
+export function splitCompounds(sel) {
+  const s = sel.trim();
+  /** @type {Array<{comb: string|null, text: string}>} */
+  const out = [];
+  let start = 0;
+  /** @type {string|null} */
+  let comb = null;
+  for (let i = 0; i <= s.length; i++) {
+    const c = i < s.length ? s.charCodeAt(i) : 32;
+    if (c === 40) { i = skipParens(s, i) - 1; continue; }
+    if (c === 91) { const e = s.indexOf(']', i); i = e < 0 ? s.length : e; continue; }
+    if (c === 34 || c === 39) { i = skipString(s, i) - 1; continue; }
+    if (c === 92) { i++; continue; }
+    if (c === 124 && s.charCodeAt(i + 1) === 124) return null;
+    if (c !== 32 && c !== 9 && c !== 10 && c !== 13 && c !== 12 && c !== 62 && c !== 43 && c !== 126) continue;
+    const text = s.slice(start, i);
+    if (!text) return null;
+    out.push({ comb, text });
+    // the combinator: white space around at most one of > + ~
+    let j = i, sign = ' ';
+    for (; j < s.length; j++) {
+      const d = s[j];
+      if (d === '>' || d === '+' || d === '~') { if (sign !== ' ') return null; sign = d; } else if (!/\s/.test(d)) break;
+    }
+    if (j >= s.length) { if (sign !== ' ') return null; break; }
+    comb = sign;
+    start = j;
+    i = j - 1;
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * One compound selector: what an element needs to match it, whether it counts siblings (`nth`, `back`), and whether it is made of type, id and class selectors only.
+ * `global`: it cannot be tied to the element's own container.
+ * @param {string} comp
+ * @returns {{need: Need, nth: boolean, back: boolean, plain: boolean, global: boolean}}
+ */
+function readCompound(comp) {
+  /** @type {Need} */
+  const need = { tag: null, id: null, classes: [] };
+  const out = { need, nth: false, back: false, plain: true, global: false };
+  const fail = () => { out.global = true; return out; };
+  let i = 0;
+  const first = comp.charCodeAt(0);
+  if (first === 42) i = 1;
+  else if (first === 38) return fail();
+  else if (first !== 46 && first !== 35 && first !== 91 && first !== 58) {
+    const m = IDENT.exec(comp);
+    if (!m || comp[m[0].length] === '|') return fail();
+    need.tag = unescapeIdent(m[0]).toLowerCase();
+    i = m[0].length;
+  }
+  while (i < comp.length) {
+    const ch = comp[i];
+    if (ch === '.' || ch === '#') {
+      const m = IDENT.exec(comp.slice(i + 1));
+      if (!m) return fail();
+      if (ch === '.') need.classes.push(unescapeIdent(m[0])); else need.id = unescapeIdent(m[0]);
+      i += 1 + m[0].length;
+    } else if (ch === '[') {
+      const e = comp.indexOf(']', i);
+      out.plain = false;
+      i = e < 0 ? comp.length : e + 1;
+    } else if (ch === ':') {
+      const element = comp[i + 1] === ':';
+      i += element ? 2 : 1;
+      const m = IDENT.exec(comp.slice(i));
+      if (!m) return fail();
+      const name = m[0].toLowerCase();
+      i += m[0].length;
+      let args = '';
+      if (comp[i] === '(') { const e = skipParens(comp, i); args = comp.slice(i + 1, e - 1); i = e; }
+      if (element || name === 'before' || name === 'after' || name === 'first-line' || name === 'first-letter') {
+        // a pseudo-element: ::slotted() and ::part() take selectors of other trees
+        if (args && COUNTING.test(args)) return fail();
+        continue;
+      }
+      out.plain = false;
+      if (NTH.has(name)) out.nth = true;
+      else if (BACK.has(name)) out.back = true;
+      else if (SELF_LIST.has(name)) {
+        for (const arg of splitSelectorList(args)) {
+          if (!COUNTING.test(arg)) continue;
+          const parts = splitCompounds(arg);
+          if (!parts || parts.length !== 1) return fail();
+          const inner = readCompound(parts[0].text);
+          if (inner.global) return fail();
+          out.nth ||= inner.nth;
+          out.back ||= inner.back;
+        }
+      } else if (args && COUNTING.test(args)) return fail();
+    } else return fail();
+  }
+  return out;
+}
+
+/** @param {RuleNode[]} nodes @returns {boolean} a counting selector in a nested rule (relative to its parent rule: not tied to a container here) */
+function anyCounting(nodes) {
+  for (const n of nodes) {
+    if (n.k === 'group' ? anyCounting(n.kids ?? []) : n.k === 'style' && (COUNTING.test(n.pre) || (n.body.includes('{') && anyCounting(parseRules(n.body))))) return true;
+  }
+  return false;
+}
+
+/** @param {RuleNode[]} nodes @param {Structure} st */
+function collectStructure(nodes, st) {
+  for (const n of nodes) {
+    if (st.global) return;
+    if (n.k === 'group') {
+      if (/^\s*@scope\b/i.test(n.pre) && COUNTING.test(n.pre)) { st.global = true; return; }
+      collectStructure(n.kids ?? [], st);
+      continue;
+    }
+    if (n.k !== 'style') continue;
+    if (n.body.includes('{') && anyCounting(parseRules(n.body))) { st.global = true; return; }
+    if (!COUNTING.test(n.pre)) continue;
+    for (const sel of splitSelectorList(n.pre)) {
+      if (!COUNTING.test(sel)) continue;
+      const parts = splitCompounds(sel);
+      if (!parts) { st.global = true; return; }
+      const read = parts.map((p) => readCompound(p.text));
+      if (read.some((r) => r.global)) { st.global = true; return; }
+      /** the compound a child combinator joins the sibling group of compound `i` to @param {number} i @returns {Need|null} */
+      const parentOf = (i) => {
+        let j = i;
+        while (j > 0 && (parts[j].comb === '+' || parts[j].comb === '~')) j--;
+        return j > 0 && parts[j].comb === '>' ? read[j - 1].need : null;
+      };
+      for (let i = 0; i < parts.length; i++) {
+        const r = read[i];
+        if (r.back) st.back.push({ child: r.need, parent: parentOf(i) });
+        else if (r.nth) st.nth.push({ child: r.need, parent: parentOf(i) });
+        if (parts[i].comb === '+' || parts[i].comb === '~') st.sibling.push({ child: r.need, prev: read[i - 1].need, parent: parentOf(i), exact: r.plain && read[i - 1].plain });
+      }
+    }
+  }
+}
+
+const STRUCTURAL = /:(?:nth-|first-|last-|only-|empty)|[+~](?!=)/i;
 
 /** @param {RuleNode[]} nodes @returns {boolean} */
 function anyStructural(nodes) {
@@ -190,13 +375,44 @@ function anyStructural(nodes) {
 }
 
 /**
- * Does any selector depend on sibling positions (:nth-*, :first/last/only-*, :empty, `+`, `~`)? Then removing or merging siblings in a pruned clone would change which rules match.
+ * Does any selector depend on sibling positions at all (:nth-*, :first/last/only-*, :empty, `+`, `~`)? Without one, a pruned clone merges and leaves out siblings
+ * freely, and a wrapper may be added among an element's children (the selection's). With one, structureOf() says what may be done where.
  * @param {string} css
  * @returns {boolean}
  */
 export function hasStructuralSelectors(css) {
   if (!lastParse || lastParse.css !== css) lastParse = { css, nodes: parseRules(css) };
   return anyStructural(lastParse.nodes);
+}
+
+/** @type {{css: string, structure: Structure}|null} */
+let lastStructure = null;
+
+/**
+ * The selectors of `css` whose match depends on sibling positions (:nth-*(), :last-of-type, :only-of-type, `+`, `~`), each tied to the containers it can reach.
+ * Removing or merging siblings in a pruned clone changes which of those rules match, so the clone builder asks, per container, what it may do there (clone.js).
+ * @param {string} css
+ * @returns {Structure}
+ */
+export function structureOf(css) {
+  if (lastStructure?.css === css) return lastStructure.structure;
+  /** @type {Structure} */
+  const st = { global: false, nth: [], back: [], sibling: [] };
+  if (COUNTING.test(css)) {
+    if (!lastParse || lastParse.css !== css) lastParse = { css, nodes: parseRules(css) };
+    collectStructure(lastParse.nodes, st);
+  }
+  if (st.global) { st.nth = []; st.back = []; st.sibling = []; }
+  lastStructure = { css, structure: st };
+  return st;
+}
+
+/** @param {Need} need @param {Element} el @returns {boolean} `el` has what the compound needs */
+export function meets(need, el) {
+  if (need.tag !== null && el.localName.toLowerCase() !== need.tag) return false;
+  if (need.id !== null && el.id !== need.id) return false;
+  for (const c of need.classes) if (!el.classList.contains(c)) return false;
+  return true;
 }
 
 /**
