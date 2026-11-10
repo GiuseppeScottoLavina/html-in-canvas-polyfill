@@ -360,7 +360,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   const lowPin = pinned.some((p) => zOf(win.getComputedStyle(p)) === 0);
   return {
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
-    ...(grid ? { grid } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVERS,
+    ...(grid ? { grid, softCorners: true } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVERS,
     pinnable: (el) => el.isConnected && pinnable(el, win.getComputedStyle(el)),
     clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, outside),
     ...(lowPin ? { unlayered: (/** @type {Rect[]} */ rects) => unlayered(win, s, rects, layer, (inside ??= insideOf(s, pinned))) } : {}),

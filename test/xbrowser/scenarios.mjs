@@ -278,7 +278,7 @@ export async function scroll(ctx) {
  * changes (the rounded badges are composed, and a page edge or the scrollport cuts their corners at other rows than in the settled tile). refusal: the 1x rule is
  * dropped, so a page at another devicePixelRatio is composed too.
  */
-const GECKO_COMPOSE_MUTANTS = {
+export const GECKO_COMPOSE_MUTANTS = {
   grid: [['function clipInvariant(cs) {', 'function clipInvariant(cs) {\n    return true;'], ['GECKO_UNVERIFIED.has(el.localName) ||', '']],
   refusal: [['if (gecko && win.devicePixelRatio !== 1) return null;', '']],
 };
@@ -367,14 +367,21 @@ export async function scrollCompose(ctx) {
  * settled one. refusal: WebKit's author-styled bars are refused again: nothing composes. System bars: systemThumb (core): the plan rounds the knob's offset to the
  * nearest css px where AppKit and the painter round it up (webkitSystemKnob); systemRefusal (core): the system bars are refused again; systemLook (engines): the painter
  * rounds it so, the plan does not: the snapshot's knob leaves the twin's, and the composed frames the settled ones.
- * @type {Record<string, {bars: 'styled'|'system', bundle: 'core'|'engines', edits: Array<[string, string]>}>}
+ * corners (core): the cover check reads the corner pixels of its tiles again, which Safari on macOS does not draw exactly: every plan is refused and nothing composes
+ * (the state of 0.1.0-preview.23 to 1.0.0-rc.7). blind (core, on the overlay case): the cover check passes whatever it reads: the lists compose under the line.
+ * systemFill (core): the first cover fill is left as the clone declared it, before the system's bar was painted as a background layer with the list's own colour:
+ * the first cover tile shows the page through the list, and both lists are refused (the same releases, with the system's bars).
+ * @type {Record<string, {bars: 'styled'|'system'|'overlay', bundle: 'core'|'engines', edits: Array<[string, string]>}>}
  */
-const WEBKIT_BAR_MUTANTS = {
+export const WEBKIT_BAR_MUTANTS = {
   thumb: { bars: 'styled', bundle: 'core', edits: [['const v = webkitStyledBar(f.gv, f.ch ?? s.clientHeight, s.clientHeight, s.scrollHeight, min);', 'const v = verticalBar(f.gv, s.clientHeight, s.scrollHeight, true, false, min);']] },
   refusal: { bars: 'styled', bundle: 'core', edits: [['if (!f.styled) return webkitSystemBar(win, s, f);', 'if (!f.styled) return webkitSystemBar(win, s, f);\n    return null;']] },
+  corners: { bars: 'styled', bundle: 'core', edits: [['...grid ? { grid, softCorners: true } : {}', '...grid ? { grid } : {}']] },
+  blind: { bars: 'overlay', bundle: 'core', edits: [['if (!ok) {\n            drop(entry, c);\n            refusal(entry, c.el, "cover");\n            return;\n          }', 'if (false) {\n            drop(entry, c);\n            refusal(entry, c.el, "cover");\n            return;\n          }']] },
   systemThumb: { bars: 'system', bundle: 'core', edits: [['Math.ceil(Math.floor(x * 256) / 256)', 'Math.round(x)']] },
   systemRefusal: { bars: 'system', bundle: 'core', edits: [['if (!f.styled) return webkitSystemBar(win, s, f);', 'if (!f.styled) return null;']] },
   systemLook: { bars: 'system', bundle: 'engines', edits: [['Math.ceil(Math.floor(x * 256) / 256)', 'Math.round(x)']] },
+  systemFill: { bars: 'system', bundle: 'core', edits: [['if (fills.length && clone.cover) setCoverFill(clone.cover, fills[0]);', '']] },
 };
 
 /**
@@ -484,6 +491,8 @@ async function systemBarTwin(ctx, bundle, sels) {
  * Each: both lists composed in at least 3 of 10 jumps, and every composed frame equal to the tile the snapshot settles on at that offset (outside the rounded corners no
  * pixel over 16; on their antialiased arc at most 2 % of the arc pixels, as G-mobile); a scripted scroll of each composes at least half of its steps. The control serves
  * mutant bundles (WEBKIT_BAR_MUTANTS).
+ * The overlay case (`overlay=line`, styled bars): a line one css px thin lies across both lists, outside them, with pointer-events: none. The cover check, which on
+ * WebKit reads tiles of one pixel per css px, refuses both plans (refusedBy.cover) and no step is composed. Its control is the mutant `blind`.
  */
 async function scrollComposeWebkitBars(ctx) {
   const { s } = ctx;
@@ -510,6 +519,25 @@ async function scrollComposeWebkitBars(ctx) {
     if (bars === 'system') r.twin = await systemBarTwin(ctx, bundle, sels);
     ctx.numbers[`scrollCompose${bars === 'styled' ? 'Styled' : 'System'}Bars${tag}`] = { dpr: r.dpr, gutters, share: r.share, twin: r.twin, jumps: r.jumps.map((j) => ({ sel: j.sel, t: j.t, composed: j.composed, grid: j.grid, offArc: j.offArc, onArc: j.onArc, arcPixels: j.arcPixels, max: j.max })) };
     return r;
+  };
+  /** The overlay case: a scripted scroll of each list under the line, then the compositor's counters. @param {string} bundle @param {string} tag */
+  const runOverlay = async (bundle, tag) => {
+    const u = new URL('/test/fixtures/mobile/scroll-compose.html', ctx.srv.url);
+    u.searchParams.set('iso', '0'); u.searchParams.set('mode', 'poly'); u.searchParams.set('bundle', bundle); u.searchParams.set('bars', 'styled'); u.searchParams.set('overlay', 'line');
+    await s.navigate(u.href);
+    await until(s, 'window.__HIC_FIXTURE && (window.__HIC_FIXTURE.ready || window.__HIC_FIXTURE.fatal)', 20000).catch(() => null);
+    await sleep(1000);
+    const share = [];
+    for (const sel of sels) share.push({ sel, ...(await s.evaluate(SCRIPTED_SHARE(sel), { timeoutMs: 60000 })) });
+    const scroll = await s.evaluate('(() => { const x = window.__HIC__.installed.report().canvases[0].stats.snapshot.scroll ?? {}; return { composed: x.composed ?? 0, plans: x.plans ?? 0, refusedBy: x.refusedBy ?? {} }; })()');
+    const line = await s.evaluate('(() => { const r = document.getElementById("line")?.getBoundingClientRect(); return r ? { width: r.width, height: r.height } : null; })()');
+    ctx.numbers[`scrollComposeOverlay${tag}`] = { share, scroll, line };
+    return { share, scroll, line };
+  };
+  /** @param {any} r @param {string} label */
+  const judgeOverlay = (r, label) => {
+    ctx.check(`scrollCompose${label} overlay: under a line one css px thin across both lists no step is composed (${r.share.map((/** @type {any} */ x) => `${x.sel} ${x.composed} of ${x.steps}`).join(', ')}) and both plans are refused for the cover (refusedBy.cover ${r.scroll.refusedBy.cover})`,
+      !!r.line && r.line.width > 100 && r.share.every((/** @type {any} */ x) => x.steps > 50 && x.composed === 0) && r.scroll.composed === 0 && r.scroll.refusedBy.cover >= 2, r, 'cover');
   };
   /** @param {any} r @param {string} label @param {'styled'|'system'} bars */
   const judge = (r, label, bars) => {
@@ -544,6 +572,7 @@ async function scrollComposeWebkitBars(ctx) {
   ctx.numbers.scrollComposeSystemBarsApplicable = { gutters: systemGutters, applicable: system };
   if (!ctx.control) {
     judge(await run(ctx.bundle, '', 'styled'), '', 'styled');
+    judgeOverlay(await runOverlay(ctx.bundle, ''), '');
     if (system) judge(await run(ctx.bundle, '', 'system'), '', 'system');
     else ctx.check(`scrollCompose system bars: not applicable, the system shows overlay bars (gutters ${systemGutters.join(' / ')}); set "Show scroll bars: Always" to run it`, true, systemGutters, 'n/a');
     await noErrors(ctx, 'scrollCompose');
@@ -562,7 +591,9 @@ async function scrollComposeWebkitBars(ctx) {
     writeFileSync(file, built.text);
     const path = `/__mutant/${m.bundle}-webkit-${cls}.js`;
     ctx.files[path] = file;
-    judge(await run(ctx.bundle.split(',').map((b) => (b === files[m.bundle] ? path : b)).join(','), `Mutant_${cls}`, m.bars), ` (mutant ${cls})`, m.bars);
+    const bundle = ctx.bundle.split(',').map((b) => (b === files[m.bundle] ? path : b)).join(',');
+    if (m.bars === 'overlay') judgeOverlay(await runOverlay(bundle, `Mutant_${cls}`), ` (mutant ${cls})`);
+    else judge(await run(bundle, `Mutant_${cls}`, m.bars), ` (mutant ${cls})`, m.bars);
   }
 }
 
@@ -985,6 +1016,6 @@ export async function nativeExamples(ctx) {
 export const NATIVE_SCENARIOS = { nativeSurface, nativeExplainer, nativeForm, nativeUninstall, nativeExamples };
 
 export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, scrollCompose, unsupported, uninstall, decodeTiming };
-/** classes each scenario's control must turn red; scrollCompose: on Safari (styled bars, a `share` check) the composed frames and the composed share, with the system's classic bars also the knob against the twin (`bar-look`), on Firefox the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
-export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share', ...(row.checks.some((c) => c.cls === 'bar-look') ? ['bar-look'] : [])] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
+/** classes each scenario's control must turn red; scrollCompose: on Safari (styled bars, a `share` check) the composed frames, the composed share and the cover check under an overlay (`cover`), with the system's classic bars also the knob against the twin (`bar-look`), on Firefox the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
+export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share', 'cover', ...(row.checks.some((c) => c.cls === 'bar-look') ? ['bar-look'] : [])] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
 export { KEYS };

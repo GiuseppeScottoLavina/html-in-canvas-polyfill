@@ -60,7 +60,20 @@ for (const m of selected) built.set(m.name, build(m));
 if (has('check-anchors')) {
   let bad = 0;
   for (const m of selected) { const b = built.get(m.name); if (b.drift) { bad++; console.log(`DRIFT ${m.name}: ${b.drift}`); } }
-  console.log(`${selected.length - bad}/${selected.length} anchors match exactly once`);
+  // The controls of G-xbrowser and G-mobile scrollCompose serve mutant bundles of their own, and those gates run on a Mac and on devices only: an anchor of theirs
+  // that drifted was seen only there (the `corner` mutant of G-mobile had not matched since 0.1.0-preview.23). With no selection, they are checked here too.
+  let more = 0;
+  if (!arg('only') && !arg('gate')) {
+    const xb = await import('../../xbrowser/scenarios.mjs'), mobile = await import('../../mobile/scenarios.mjs');
+    const scenario = [
+      ...Object.entries(xb.GECKO_COMPOSE_MUTANTS).map(([name, edits]) => ({ name: `G-xbrowser scrollCompose (Firefox) ${name}`, bundle: 'core', edits })),
+      ...Object.entries(xb.WEBKIT_BAR_MUTANTS).map(([name, m]) => ({ name: `G-xbrowser scrollCompose (Safari) ${name}`, bundle: m.bundle, edits: m.edits })),
+      ...Object.entries(mobile.COMPOSE_MUTANTS).map(([name, edits]) => ({ name: `G-mobile scrollCompose ${name}`, bundle: 'core', edits })),
+    ];
+    more = scenario.length;
+    for (const m of scenario) { const b = buildMutant(BUNDLES[/** @type {'core'|'engines'} */ (m.bundle)].text, { edits: m.edits }); if ('drift' in b) { bad++; console.log(`DRIFT ${m.name}: ${b.drift}`); } }
+  }
+  console.log(`${selected.length + more - bad}/${selected.length + more} anchors match exactly once`);
   process.exit(bad ? 1 : 0);
 }
 

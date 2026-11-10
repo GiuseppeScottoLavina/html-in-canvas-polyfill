@@ -6,7 +6,7 @@
      #round: rounded, bordered, opaque, with a sticky header (the scroll-and-resize example's inbox). #square: square, transparent (over the white root), with a sticky header.
      ?mode=ref|poly&bundle=... (shared/boot.js); ?badges=square: square badges (G-xbrowser scrollCompose: Gecko composes no content with rounded corners); ?bars=none: scrollbar-width none on the lists
      (no gutter whatever the system's scrollbars: Gecko composes no scroller with a classic bar); ?bars=styled: author-styled bars (::-webkit-scrollbar: a 11 px bar, a track
-     colour, a rounded thumb; G-xbrowser scrollCompose on Safari) -->
+     colour, a rounded thumb; G-xbrowser scrollCompose on Safari); ?overlay=line: a thin line across both lists (the cover check, on Safari) -->
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #eef1f6; color: #1b2330; font: 14px/1.4 system-ui, -apple-system, sans-serif; }
@@ -33,6 +33,12 @@
   if (fq.get('badges') === 'square') document.head.insertAdjacentHTML('beforeend', '<style>.list li b { border-radius: 0; }</style>');
   if (fq.get('bars') === 'none') document.head.insertAdjacentHTML('beforeend', '<style>.list { scrollbar-width: none; }</style>');
   if (fq.get('bars') === 'styled') document.head.insertAdjacentHTML('beforeend', '<style>.list::-webkit-scrollbar { width: 11px; } .list::-webkit-scrollbar-track { background: #e4e9f2; } .list::-webkit-scrollbar-thumb { background: #7d889e; border-radius: 5px; }</style>');
+  // ?overlay=line: a line one css px thin across both lists, outside them and with pointer-events: none (G-xbrowser scrollCompose on Safari): every page would carry it
+  // along, so the cover check refuses their plans
+  if (fq.get('overlay') === 'line') {
+    document.head.insertAdjacentHTML('beforeend', '<style>#root { position: relative; }</style>');
+    document.getElementById('root').insertAdjacentHTML('beforeend', '<div id="line" style="position:absolute;left:0;right:0;top:180.4px;height:1px;background:#c33;pointer-events:none"></div>');
+  }
   for (const ol of document.querySelectorAll('.list ol')) {
     let html = '';
     for (let i = 0; i < 60; i++) html += `<li><b style="background:hsl(${(i * 37) % 360} 65% 42%)">${i}</b><span>Row ${i} amber fjord kelp</span></li>`;

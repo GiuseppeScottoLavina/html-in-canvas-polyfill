@@ -30,7 +30,7 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
-## Why is the core about 367 KB minified (125 KB gzipped)?
+## Why is the core about 368 KB minified (125 KB gzipped)?
 
 In the current build, 366,611 bytes minified and 124,787 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 

@@ -425,14 +425,16 @@ const EMPTY_CANVAS_SCROLL = `(async () => {
 })()`;
 
 /**
- * Mutants of the readable core bundle for the scrollCompose control: each takes back one part of the WebKit composition (an anchor that drifted fails loudly).
+ * Mutants of the readable core bundle for the scrollCompose control: each takes back one part of the WebKit composition (an anchor that drifted fails loudly, and
+ * `npm test` checks every anchor: test/gates/mutants/run.mjs --check-anchors).
  * grid: pages and rects on device pixels (the Chromium snapping): the composed frames came out one device pixel low. corner: a rounded port composed with 'copy':
  * an accelerated WebKit canvas drops the destination under the antialiased curve. empty: a canvas that never painted counts as one whose first snapshot is due, for
  * good, so the scheduler builds inside the frame, where the side builds (plans, pages) never run: nothing is composed while an empty drawable canvas is on the page.
  */
-const COMPOSE_MUTANTS = {
-  grid: [['...grid ? { grid } : {},', '...{},']],
-  corner: [['const over = round && grid ? "source-over" : "copy";', 'const over = "copy";']],
+export const COMPOSE_MUTANTS = {
+  grid: [['...grid ? { grid, softCorners: true } : {},', '...{},']],
+  // (without the name of the constant: the bundler numbers a name that occurs elsewhere in the bundle, and the anchor with it had not matched since 0.1.0-preview.23)
+  corner: [['round && grid ? "source-over" : "copy";', '"copy";']],
   empty: [['entry.resized || firstDue(entry, now)', 'entry.resized || !entry.record.paint.everFired']],
 };
 
