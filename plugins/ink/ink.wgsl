@@ -4,9 +4,9 @@
 //   - where the map squeezes the page (its Jacobian has a singular value above 1) the source is read with several taps along the squeezed
 //     direction, so stretched text does not alias; the taps are averaged in linear light;
 //   - the pigment is a layer of absorbing and scattering particles over the page (Kubelka and Munk): the absorption K and the scattering
-//     S of the four inks add up by their densities, and the layer's reflectance R and transmittance T over a page of reflectance Rg give
+//     S of the three inks add up by their densities, and the layer's reflectance R and transmittance T over a page of reflectance Rg give
 //     R + T^2 Rg / (1 - R Rg) per channel. Over a bright page the ink glazes it (absorption); over a dark page it shows by the light its
-//     particles scatter;
+//     particles scatter. The pigment keeps its strength until it is `hold` seconds old and has faded out at `life` seconds;
 //   - half a level of dither where there is pigment (its gradients are slow);
 //   - where the field is zero and there is no pigment, the output is the source texel, untouched.
 
@@ -16,9 +16,9 @@ struct Globals {
   box : vec4<f32>,                 // the cells whose displacement may be non-zero (padded grid, x0 y0 x1 y1 inclusive)
   ink_box : vec4<f32>,             // CSS px (x0 y0 x1 y1) outside which there is no pigment
   state : vec4<f32>,               // layer of the field texture, 1: the field is not zero, 1: the source is ready, 1: there is pigment
-  look : vec4<f32>,                // sheen of the moving water (0: none), unused
-  absorb : array<vec4<f32>, 4>,    // K of each ink per unit density, linear RGB
-  scatter : array<vec4<f32>, 4>,   // S of each ink per unit density, linear RGB
+  look : vec4<f32>,                // the pigment is at full strength up to this age (s), gone at this age (s), unused, unused
+  absorb : array<vec4<f32>, 3>,    // K of each ink per unit density, linear RGB
+  scatter : array<vec4<f32>, 3>,   // S of each ink per unit density, linear RGB
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -106,7 +106,7 @@ fn page_encoded(uv : vec2<f32>) -> vec3<f32> {
   return mix(CLEAR, c.rgb, c.a);
 }
 
-// the four pigment densities at uv: a cubic B-spline of the pigment texture as 4 bilinear taps (smooth under magnification)
+// the pigment at uv (three densities and their age x density): a cubic B-spline of the pigment texture as 4 bilinear taps (smooth under magnification)
 fn pigment_at(uv : vec2<f32>) -> vec4<f32> {
   let size = vec2<f32>(textureDimensions(pigment));
   let sp = uv * size - vec2<f32>(0.5);
@@ -153,7 +153,10 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let at = uv * css;
   if (globals.state.w > 0.5 && all(at >= globals.ink_box.xy) && all(at <= globals.ink_box.zw)) { rho = pigment_at(uv); }
   let moved = s.live && any(s.d != vec2<f32>(0.0));
-  let inked = any(rho > vec4<f32>(0.0));
+  // the densities that show: all of the pigment while it is young, none of it at the end of its life
+  let total = rho.r + rho.g + rho.b;
+  let ink = rho.rgb * (1.0 - smoothstep(globals.look.x, globals.look.y, rho.a / max(total, 1e-6)));
+  let inked = any(ink > vec3<f32>(0.0));
   // nothing here: the source, untouched
   if (!moved && !inked) { return vec4<f32>(page_encoded(uv), 1.0); }
 
@@ -187,8 +190,8 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
 
   var color = page;
   if (inked) {
-    let k = rho.x * globals.absorb[0].rgb + rho.y * globals.absorb[1].rgb + rho.z * globals.absorb[2].rgb + rho.w * globals.absorb[3].rgb;
-    let sc = rho.x * globals.scatter[0].rgb + rho.y * globals.scatter[1].rgb + rho.z * globals.scatter[2].rgb + rho.w * globals.scatter[3].rgb;
+    let k = ink.x * globals.absorb[0].rgb + ink.y * globals.absorb[1].rgb + ink.z * globals.absorb[2].rgb;
+    let sc = ink.x * globals.scatter[0].rgb + ink.y * globals.scatter[1].rgb + ink.z * globals.scatter[2].rgb;
     color = layer_over(k, sc, page);
   }
   var encoded = to_srgb(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)));

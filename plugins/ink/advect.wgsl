@@ -1,22 +1,24 @@
-// One step of the pigment of the ink plugin: four densities (one per ink of the palette) in an rgba16float texture of about one texel
-// per CSS px, carried by the same flow that sim.js steps on the CPU.
+// One step of the pigment of the ink plugin, in an rgba16float texture of about one texel per CSS px: the densities of the three inks
+// of the palette (r, g, b) and their age, as density x seconds (a), carried by the same flow that sim.js steps on the CPU.
 //   - the velocity is the curl of the cubic B-spline of the stream function (the field texture, channel b): divergence free at every
 //     point, so the flow neither gathers nor thins the pigment;
 //   - each texel traces back one step (a midpoint step, RK2) and reads the pigment there with a Catmull-Rom filter (9 bilinear taps),
 //     limited to the four texels around that point: a third-order read that keeps filaments a few texels wide over hundreds of steps and
 //     cannot ring or go negative;
-//   - the pigment fades (times `keep`, less `loss`, not below zero: it is exactly gone after a finite time);
+//   - the pigment ages by the step; it is removed once it is `life` seconds old (ink.wgsl has faded it out by then), so all of it is
+//     gone that long after the last release, and index.js knows when without reading anything back. Ink released onto older ink
+//     makes the mixture younger (the age is the mean, weighted by density);
 //   - new pigment is released along up to four segments of the pointer's path: a Gaussian across the path, integrated along it (the error
 //     function), so consecutive segments join without beads.
 
 struct Step {
   size : vec4<f32>,                // pigment texture size (texels), then the CSS size of the canvas
   grid : vec4<f32>,                // interior cells across and down, then 1 / cell size (CSS px)
-  t : vec4<f32>,                   // dt (s), keep, loss, layer of the field texture
+  t : vec4<f32>,                   // dt (s), the life of the pigment (s), the largest density an ink may reach, layer of the field texture
   n : vec4<f32>,                   // number of segments, 1 when the water moves, unused, unused
   seg : array<vec4<f32>, 4>,       // a.xy, b.xy (CSS px)
   shape : array<vec4<f32>, 4>,     // radius (CSS px), density at the centre of the path, unused, unused
-  ink : array<vec4<f32>, 4>,       // the share of each of the four inks
+  ink : array<vec4<f32>, 4>,       // the share of each of the three inks (rgb)
 }
 
 @group(0) @binding(0) var<uniform> step : Step;
@@ -127,6 +129,9 @@ fn released(p : vec2<f32>, i : i32) -> f32 {
   return step.shape[i].y * along * exp(-0.5 * across / (r * r)) * edge * edge;
 }
 
+// under this total density the pigment is dropped: it shows nothing, and the support of the pigment stays compact
+const LEAST : f32 = 0.002;
+
 @fragment
 fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let css = step.size.zw;
@@ -140,10 +145,13 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   } else {
     rho = textureLoad(pigment, vec2<i32>(position.xy), 0);
   }
-  rho = max(rho * step.t.y - vec4<f32>(step.t.z), vec4<f32>(0.0));
+  let total = rho.r + rho.g + rho.b;
+  rho.a = rho.a + total * step.t.x;
+  if (total < LEAST || rho.a >= step.t.y * total) { rho = vec4<f32>(0.0); }
+  var fresh = vec3<f32>(0.0);
   let count = i32(step.n.x);
   for (var i = 0; i < count; i = i + 1) {
-    rho = rho + step.ink[i] * released(p, i);
+    fresh = fresh + step.ink[i].rgb * released(p, i);
   }
-  return rho;
+  return vec4<f32>(min(rho.rgb + fresh, vec3<f32>(step.t.z)), rho.a);
 }

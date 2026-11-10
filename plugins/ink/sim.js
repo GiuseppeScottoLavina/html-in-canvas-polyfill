@@ -32,9 +32,9 @@ export const MAX_STEPS_PER_FRAME = 8;
 export const CELL_PX = 10;
 export const MAX_CELLS = 8192;
 /** the page holds still where the water moves slower than this, CSS px/s; a displaced page comes home at least this fast */
-export const STICK_PX_S = 1.5;
+export const STICK_PX_S = 4;
 /** the vorticity loses this much per second on top of the drag, 1/s^2: a slow swirl stops in finite time */
-export const W_FRICTION = 0.6;
+export const W_FRICTION = 2;
 /** the vorticity gradient (1/s per CSS px) under which confinement fades out: it sharpens swirls, not the noise of water nearly at rest */
 export const CONFINE_FLOOR = 0.02;
 /** sweeps of the multigrid V cycle before and after the coarse correction, and on the coarsest grid */
@@ -63,9 +63,7 @@ const COARSEST = 16;
  * @property {number} maxSpeed  the largest speed at a cell centre in the last step, CSS px/s
  * @property {number} maxShift  the largest displacement after the last step, CSS px
  * @property {number} maxW  the largest |w| of any cell, 1/s
- * @property {Float32Array} ink  per cell, an upper bound of the pigment density that the GPU holds there (`inkAdd`, `inkCarry`)
- * @property {number} maxInk  the largest value of `ink`: 0 when no pigment is left anywhere
- * @property {boolean} traced  the last step moved the water (its departure points are in tmp[3], tmp[4])
+ * @property {boolean} traced  the last step moved the water
  */
 
 /** The grid of a canvas of this CSS size: multiples of 8 cells each way (three coarser grids for the solver). @param {number} cssWidth @param {number} cssHeight */
@@ -95,9 +93,9 @@ export function createFluid(cssWidth, cssHeight) {
   const f = {
     cssWidth: 1, cssHeight: 1, gw, gh, pw, ph, cellX: 1, cellY: 1,
     w: field(), psi: field(), dx: field(), dy: field(), uc: field(), vc: field(),
-    tmp: [field(), field(), field(), field(), field(), field(), field(), field(), field()],
+    tmp: [field(), field(), field(), field(), field(), field(), field(), field()],
     levels, flowing: false, moved: false, box: Int32Array.of(pw, ph, -1, -1), maxSpeed: 0, maxShift: 0, maxW: 0,
-    ink: field(), maxInk: 0, traced: false,
+    traced: false,
   };
   setSize(f, cssWidth, cssHeight);
   return f;
@@ -108,12 +106,12 @@ export function clear(f) {
   f.w.fill(0); f.psi.fill(0); f.dx.fill(0); f.dy.fill(0); f.uc.fill(0); f.vc.fill(0);
   for (const l of f.levels) l.p.fill(0);
   f.flowing = false; f.moved = false; f.maxSpeed = 0; f.maxShift = 0; f.maxW = 0;
-  f.ink.fill(0); f.maxInk = 0; f.traced = false;
+  f.traced = false;
   f.box.set([f.pw, f.ph, -1, -1]);
 }
 
-/** Nothing moves, nothing is displaced and no pigment is left: every field is exactly zero. @param {Fluid} f */
-export const quiet = (f) => !f.flowing && !f.moved && f.maxInk === 0;
+/** Nothing moves and nothing is displaced: every field is exactly zero. @param {Fluid} f */
+export const quiet = (f) => !f.flowing && !f.moved;
 
 /**
  * The ghost cells of a field, mirrored about the walls: `sx` is the sign across the left and right walls (-1: the field is zero on them),
@@ -438,27 +436,6 @@ export function stir(f, x, y, ax, ay, radius) {
 }
 
 /**
- * Spin the water around (x, y) CSS px: a swirl of vorticity `spin` (1/s; positive turns clockwise on the screen) at the centre, falling
- * to zero at `radius`. @param {Fluid} f @param {number} x @param {number} y @param {number} spin @param {number} radius
- */
-export function twirl(f, x, y, spin, radius) {
-  const { w, pw, gw, gh, cellX, cellY } = f;
-  const r = Math.max(radius, 2 * Math.max(cellX, cellY));
-  const gx = x / cellX - 0.5, gy = y / cellY - 0.5;
-  const x0 = Math.max(0, Math.ceil(gx - r / cellX)), x1 = Math.min(gw - 1, Math.floor(gx + r / cellX));
-  const y0 = Math.max(0, Math.ceil(gy - r / cellY)), y1 = Math.min(gh - 1, Math.floor(gy + r / cellY));
-  for (let cy = y0; cy <= y1; cy += 1) {
-    const ry = (cy - gy) * cellY;
-    for (let cx = x0; cx <= x1; cx += 1) {
-      const rx = (cx - gx) * cellX;
-      const q = 1 - (rx * rx + ry * ry) / (r * r);
-      if (q > 0) { const i = (cy + PAD) * pw + cx + PAD, v = w[i] + spin * q * q * q; w[i] = v; if (v > f.maxW) f.maxW = v; else if (-v > f.maxW) f.maxW = -v; }
-    }
-  }
-  f.flowing = true;
-}
-
-/**
  * The velocity of the water at (x, y) CSS px as of the last step, CSS px/s (the cell under the point), written to `out`.
  * @param {Fluid} f @param {number} x @param {number} y @param {{x: number, y: number}} out
  */
@@ -467,57 +444,6 @@ export function velocityAt(f, x, y, out) {
   const cx = Math.min(f.gw - 1, Math.max(0, Math.floor(x / f.cellX))), cy = Math.min(f.gh - 1, Math.max(0, Math.floor(y / f.cellY)));
   const i = (cy + PAD) * f.pw + cx + PAD;
   out.x = f.uc[i] * f.cellX * STEP_HZ; out.y = f.vc[i] * f.cellY * STEP_HZ;
-}
-
-// ---- the pigment, as far as the CPU follows it ------------------------------------------------------------------------------------------
-// The pigment lives on the GPU, at a finer resolution than this grid (advect.wgsl); nothing is read back. `ink` is an upper bound of its
-// density per cell, kept by the same rules, so the plugin knows when the last of it has faded.
-
-/**
- * Pigment of density `amount` was released along the segment a - b (CSS px), reaching `reach` CSS px from it: raise the bound of every
- * cell that the release can touch. @param {Fluid} f
- * @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} reach @param {number} amount
- */
-export function inkAdd(f, ax, ay, bx, by, reach, amount) {
-  const { ink, pw, gw, gh, cellX, cellY } = f;
-  const r = reach + Math.hypot(cellX, cellY);
-  const x0 = Math.max(0, Math.floor((Math.min(ax, bx) - r) / cellX)), x1 = Math.min(gw - 1, Math.floor((Math.max(ax, bx) + r) / cellX));
-  const y0 = Math.max(0, Math.floor((Math.min(ay, by) - r) / cellY)), y1 = Math.min(gh - 1, Math.floor((Math.max(ay, by) + r) / cellY));
-  const ex = bx - ax, ey = by - ay, l2 = ex * ex + ey * ey;
-  for (let cy = y0; cy <= y1; cy += 1) {
-    const y = (cy + 0.5) * cellY;
-    for (let cx = x0; cx <= x1; cx += 1) {
-      const x = (cx + 0.5) * cellX;
-      const t = l2 > 0 ? Math.min(1, Math.max(0, ((x - ax) * ex + (y - ay) * ey) / l2)) : 0;
-      const qx = x - ax - t * ex, qy = y - ay - t * ey;
-      if (qx * qx + qy * qy < r * r) { const i = (cy + PAD) * pw + cx + PAD, v = ink[i] + amount; ink[i] = v; if (v > f.maxInk) f.maxInk = v; }
-    }
-  }
-}
-
-/**
- * One step of the bound: each cell takes the largest bound among the 3 x 3 cells around where its water was a step ago (after a step
- * that moved the water), then fades as the pigment does: times `keep`, less `loss`, not below zero.
- * @param {Fluid} f @param {number} keep @param {number} loss
- */
-export function inkCarry(f, keep, loss) {
-  if (f.maxInk === 0) return;
-  const { pw, gw, gh, tmp } = f;
-  const from = f.ink, to = tmp[8], qx = tmp[3], qy = tmp[4];
-  let max = 0;
-  for (let y = PAD; y < PAD + gh; y += 1) {
-    for (let x = PAD, i = y * pw + PAD; x < PAD + gw; x += 1, i += 1) {
-      let m = from[i];
-      if (f.traced) {
-        const k = ((qy[i] + 0.5) | 0) * pw + ((qx[i] + 0.5) | 0);
-        m = Math.max(from[k - pw - 1], from[k - pw], from[k - pw + 1], from[k - 1], from[k], from[k + 1], from[k + pw - 1], from[k + pw], from[k + pw + 1]);
-      }
-      m = m * keep - loss;
-      if (m > 0) { to[i] = m; if (m > max) max = m; } else to[i] = 0;
-    }
-  }
-  f.ink = to; tmp[8] = from; f.maxInk = max;
-  if (max === 0) to.fill(0);
 }
 
 // ---- what the GPU and the input mapper read -------------------------------------------------------------------------------------------

@@ -26,7 +26,7 @@ import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 import { clampNum } from '../_lib/number.js';
-import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, clear, createFluid, fieldAt, gridOf, inkAdd, inkCarry, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
+import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, clear, createFluid, fieldAt, gridOf, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -50,10 +50,10 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['demo', 'stir', 'clear']));
 
 /** Offsets in the uniform block (ink.wgsl Globals), in floats. The mapper state is this block followed by the packed field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 40 });
-export const GLOBALS_LENGTH = 56;
+export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 36 });
+export const GLOBALS_LENGTH = 48;
 /** Offsets in the uniform block of one pigment step (advect.wgsl Step), in floats; STEP_FLOATS each (256 bytes, the offset alignment of uniform buffers). */
-export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, KEEP: 9, LOSS: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48 });
+export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, LIFE: 9, CAP: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48 });
 export const STEP_FLOATS = 64;
 /** segments of pigment released per step (advect.wgsl), and how many may wait for their step */
 export const SEGMENTS_PER_STEP = 4;
@@ -62,23 +62,37 @@ const SEGMENT_QUEUE = 64;
 const MAPPER_SLOTS = 4;
 
 /** how hard the pointer pushes the water: the share of its own speed that the water under it takes up, at intensity 1 */
-export const HOVER_PUSH = 0.3;
+export const HOVER_PUSH = 0.22;
 export const PRESS_PUSH = 1;
 /** the reach of the push, CSS px, and the fastest pointer it follows, CSS px/s */
 export const STIR_RADIUS = 32;
 const MAX_POINTER_SPEED = 2400;
 /** the integral of the push's profile (1 - t^2)^3 across its diameter, in radii: a pass straight through gives the centre the full push */
 const PROFILE_LINE = 32 / 35;
+/**
+ * The wake of a body that moves through water sheds swirls to alternate sides (a vortex street), about one pair per five body widths.
+ * The push sways sideways by WAKE_SWAY of its strength with that period along the path, so a stroke leaves a street and not a
+ * straight jet: the swirls that fold the pigment.
+ */
+export const WAKE_SWAY = 0.4;
+export const WAKE_PX = 5 * STIR_RADIUS;
 /** a press: the drop lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
 export const DROP_PUSH = 260;
 /** the pigment: the Gaussian radius of the pen and of a drop (CSS px), their reach in radii (advect.wgsl), the density at pigment 1 */
-export const PEN_RADIUS = 7;
-export const DROP_RADIUS = 11;
+export const PEN_RADIUS = 8;
+export const DROP_RADIUS = 15;
 export const REACH = 3;
 export const INK_DENSITY = 1;
-/** the pigment fades by 1/e in FADE_S seconds and loses FADE_LOSS of density per second on top, so it is gone after a finite time */
-export const FADE_S = 1.2;
-export const FADE_LOSS = 0.05;
+/** no ink gets denser than this, however often the pen passes */
+export const INK_CAP = 1.2;
+/**
+ * The pigment keeps its full strength until it is INK_HOLD seconds old, then fades, and is gone at INK_LIFE seconds (ink.wgsl,
+ * advect.wgsl): a stroke stays whole while it is drawn and folded, and all pigment is gone INK_LIFE after the last release.
+ */
+export const INK_HOLD = 1.3;
+export const INK_LIFE = 2.9;
+/** the plugin keeps rendering this long after the last pigment is due to go, ms (the age of a mixture is carried with a filter) */
+const INK_SLACK_MS = 150;
 /** the pigment texture: about this many texels, at most the device resolution */
 export const PIGMENT_TEXELS = 900000;
 /** vorticity confinement, 1/s (sim.js) */
@@ -93,17 +107,17 @@ export const STIR_MS = 300;
 const GOLDEN_ANGLE = 2.399963;
 
 /**
- * The palettes: four inks each, as [colour of the ink on white paper, colour of the light its particles scatter]. The absorption of an
- * ink is K = ABSORB * -ln(colour) per channel (a layer of density 1 over white shows about that colour) and its scattering
- * S = SCATTER * sheen: what shows of it over a dark page.
+ * The palettes: three inks each, as [colour of the ink on white paper, colour of the light its particles scatter]. The absorption of an
+ * ink is K = ABSORB * -ln(colour) per channel and its scattering S = SCATTER * sheen: over a bright page the ink shows by what it
+ * absorbs, over a dark page by what it scatters. Both are strong: a layer of density 0.1 still shows.
  */
 export const PALETTES = Object.freeze({
-  marbling: Object.freeze([['#2740c9', '#5d86ff'], ['#d3204f', '#ff5c7c'], ['#f2a516', '#ffc04a'], ['#0e9c8a', '#3fe0c5']]),
-  sumi: Object.freeze([['#14161c', '#b99a6e'], ['#4a2f1f', '#e0b58a'], ['#b8281f', '#ff7a5c'], ['#1f2f52', '#8fa9e6']]),
-  neon: Object.freeze([['#00b7ff', '#35d8ff'], ['#ff2d95', '#ff5cb0'], ['#7bdc00', '#b6ff3d'], ['#8a4dff', '#a880ff']]),
+  marbling: Object.freeze([['#2740c9', '#5d86ff'], ['#d3204f', '#ff5c7c'], ['#f2a516', '#ffc04a']]),
+  sumi: Object.freeze([['#14161c', '#b99a6e'], ['#b8281f', '#ff7a5c'], ['#1f2f52', '#8fa9e6']]),
+  neon: Object.freeze([['#00b7ff', '#35d8ff'], ['#ff2d95', '#ff5cb0'], ['#7bdc00', '#b6ff3d']]),
 });
-const ABSORB = 1.15;
-const SCATTER = 0.42;
+const ABSORB = 2.2;
+const SCATTER = 2.6;
 
 let uiSerial = 0;
 
@@ -116,37 +130,37 @@ function linearColor(value) {
 }
 
 /**
- * The absorption and scattering of the four inks of a palette, as the uniform block holds them (4 x vec4 K, then 4 x vec4 S; linear RGB
- * per unit density). `palette` is a name of PALETTES, or up to four entries, each a colour or a pair [ink, sheen]; anything else, and
- * every entry that is not a colour, falls back to 'marbling'. PURE. @param {unknown} palette @returns {Float32Array}
+ * The absorption and scattering of the three inks of a palette, as the uniform block holds them (3 x vec4 K, then 3 x vec4 S; linear
+ * RGB per unit density). `palette` is a name of PALETTES, or up to three entries, each a colour or a pair [ink, sheen]; anything else,
+ * and every entry that is not a colour, falls back to 'marbling'. PURE. @param {unknown} palette @returns {Float32Array}
  */
 export function inkOptics(palette) {
   const base = PALETTES.marbling;
   const named = typeof palette === 'string' && Object.hasOwn(PALETTES, palette) ? /** @type {any} */ (PALETTES)[palette] : null;
-  const list = named ?? (Array.isArray(palette) ? palette : base);
-  const out = new Float32Array(32);
-  for (let i = 0; i < 4; i += 1) {
-    const entry = list[i % Math.max(1, list.length)];
+  const list = named ?? (Array.isArray(palette) && palette.length ? palette : base);
+  const out = new Float32Array(24);
+  for (let i = 0; i < 3; i += 1) {
+    const entry = list[i % list.length];
     const pair = Array.isArray(entry) ? entry : [entry, entry];
     const ink = linearColor(pair[0]) ?? /** @type {number[]} */ (linearColor(base[i][0]));
     const sheen = linearColor(pair[1]) ?? linearColor(pair[0]) ?? /** @type {number[]} */ (linearColor(base[i][1]));
     for (let c = 0; c < 3; c += 1) {
       out[i * 4 + c] = -ABSORB * Math.log(Math.min(1, Math.max(0.02, ink[c])));
-      out[16 + i * 4 + c] = SCATTER * sheen[c];
+      out[12 + i * 4 + c] = SCATTER * sheen[c];
     }
   }
   return out;
 }
 
 /**
- * The shares of the four inks at `phase` along the palette (one turn per unit): two neighbours, cross-faded. PURE.
- * @param {number} phase @param {Float32Array|number[]} out @param {number} [offset]
+ * The shares of the three inks at `phase` along the palette (one turn per unit): two neighbours, cross-faded. PURE.
+ * @param {number} phase @param {Float32Array|number[]} out  four numbers from `offset`; the fourth is 0 @param {number} [offset]
  */
 export function inkMix(phase, out, offset = 0) {
-  const p = (phase - Math.floor(phase)) * 4, i = Math.floor(p) % 4, t = p - Math.floor(p), k = t * t * (3 - 2 * t);
+  const p = (phase - Math.floor(phase)) * 3, i = Math.floor(p) % 3, t = p - Math.floor(p), k = t * t * (3 - 2 * t);
   for (let c = 0; c < 4; c += 1) out[offset + c] = 0;
   out[offset + i] = 1 - k;
-  out[offset + ((i + 1) % 4)] = k;
+  out[offset + ((i + 1) % 3)] = k;
 }
 
 /**
@@ -269,12 +283,13 @@ export const plugin = Object.freeze({
     let heal = clampNum(initialOptions?.heal, 0, 1, 0.5);
     let pigment = clampNum(initialOptions?.pigment, 0, 1, meta.defaults.pigment);
     let palette = initialOptions?.palette;
+    let selectText = initialOptions?.selectText === true;
     globals.set(inkOptics(palette), G.ABSORB);
+    globals[G.LOOK] = INK_HOLD; globals[G.LOOK + 1] = INK_LIFE;
     /** the constants of a step: the flow dies by 1/e in 0.3 s (flow 0) to 3 s (flow 1); the page comes home at 1/s (heal 0) to 8/s (heal 1) */
     const params = { drag: 1, heal: 1, confine: CONFINE };
     const tune = () => { params.drag = 1 / (0.3 * 10 ** flow); params.heal = 8 ** heal; };
     tune();
-    const fadeKeep = Math.exp(-DT / FADE_S), fadeLoss = FADE_LOSS * DT;
 
     /** @type {Fluid|null} */ let fluid = null;
     /** the field of the last step, as uploaded (CHANNELS floats per cell) @type {Float32Array} */ let packed = new Float32Array(0);
@@ -290,7 +305,9 @@ export const plugin = Object.freeze({
     const dirty = [new Int32Array(4), new Int32Array(4)];
     /** CSS px rectangle outside which there is no pigment; empty when x0 > x1 */
     const inkBox = new Float64Array([1, 1, 0, 0]);
-    /** the pigment textures hold pigment that must go before the next step (the action clear, a canvas of another size) */
+    /** some pigment may be left: until `inkUntil` on the simulation clock, the life of the pigment after the last release */
+    let inkLive = false, inkUntil = 0;
+    /** the pigment textures hold pigment that must go before the next step (it has outlived its life, or the action clear) */
     let wipe = false;
     /** @type {any[]} */ let advectGroups = [null, null];
     let bindGroups = new WeakMap();
@@ -310,11 +327,13 @@ export const plugin = Object.freeze({
     /** resolves the running demo with null when the user takes over @type {((state: string|null) => void)|null} */
     let demoTakeover = null;
     /** @type {((state: string|null) => void)[]} */ const waiters = [];
-    /** pigment waiting for its step: [ax, ay, bx, by, radius, density, 4 shares], SEGMENT_QUEUE of them in a ring */
+    /** pigment waiting for its step: [ax, ay, bx, by, radius, density, the shares of the inks (4 floats)], SEGMENT_QUEUE of them in a ring */
     const segments = new Float32Array(SEGMENT_QUEUE * 10);
     let segmentHead = 0, segmentCount = 0;
     /** where the hue is along the palette, and the direction of the last drop */
     let hue = 0, dropAngle = 0.4;
+    /** the length of all paths so far, CSS px (the phase of the wake's sway) */
+    let travel = 0;
     /** mapper states: the uniform block followed by the packed field (reallocated with the fluid) @type {Float32Array[]} */
     let mapperStates = [];
     /** @type {any[]} */ let mappers = [];
@@ -359,7 +378,7 @@ export const plugin = Object.freeze({
         }));
         bindGroups = new WeakMap();
         // new textures are empty: whatever pigment there was is gone
-        f.ink.fill(0); f.maxInk = 0;
+        inkLive = false;
         inkBox.set([1, 1, 0, 0]);
         wipe = false;
       }
@@ -390,15 +409,15 @@ export const plugin = Object.freeze({
 
     /**
      * Pigment for the next step: along a - b (CSS px of the fluid), a Gaussian of `radius` across with `density` at its centre, in the
-     * inks of the current hue. @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} radius @param {number} density
+     * inks at `phase` of the palette. @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} radius @param {number} density @param {number} phase
      */
-    function release(ax, ay, bx, by, radius, density) {
+    function release(ax, ay, bx, by, radius, density, phase) {
       if (density <= 0) return;
       // a full queue (no frame for a long time): the oldest segment gives way
       if (segmentCount === SEGMENT_QUEUE) { segmentHead = (segmentHead + 1) % SEGMENT_QUEUE; segmentCount -= 1; }
       const o = ((segmentHead + segmentCount) % SEGMENT_QUEUE) * 10;
       segments[o] = ax; segments[o + 1] = ay; segments[o + 2] = bx; segments[o + 3] = by; segments[o + 4] = radius; segments[o + 5] = density;
-      inkMix(hue, segments, o + 6);
+      inkMix(phase, segments, o + 6);
       segmentCount += 1;
     }
 
@@ -414,20 +433,24 @@ export const plugin = Object.freeze({
       if (dist <= 0) return;
       const seconds = Math.max(4, ms) / 1000;
       const speed = Math.min(MAX_POINTER_SPEED, dist / seconds);
-      const vx = ((bx - ax) / dist) * speed, vy = ((by - ay) / dist) * speed;
+      const ex = (bx - ax) / dist, ey = (by - ay) / dist;
       if (!still) {
         const n = Math.max(1, Math.ceil((3 * dist) / STIR_RADIUS));
         const gain = (push * intensity * dist) / (n * PROFILE_LINE * STIR_RADIUS);
         for (let k = 0; k < n; k += 1) {
-          const x = ax + ((bx - ax) * (k + 0.5)) / n, y = ay + ((by - ay) * (k + 0.5)) / n;
+          const t = (k + 0.5) / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+          const sway = speed * WAKE_SWAY * Math.sin((2 * Math.PI * (travel + dist * t)) / WAKE_PX);
           velocityAt(f, x, y, water);
-          stir(f, x, y, (vx - water.x) * gain, (vy - water.y) * gain, STIR_RADIUS);
+          stir(f, x, y, (ex * speed - ey * sway - water.x) * gain, (ey * speed + ex * sway - water.y) * gain, STIR_RADIUS);
         }
       }
+      travel += dist;
       if (inked && pigment > 0) {
-        // a slow pen leaves a broader, denser line
-        const slow = Math.exp(-speed / 500);
-        release(ax, ay, bx, by, PEN_RADIUS * (0.8 + 0.5 * slow), pigment * INK_DENSITY * (0.5 + 0.5 * slow));
+        // a slow pen leaves a broader, denser line; the pen carries two inks side by side, which the wake folds into each other
+        const slow = Math.exp(-speed / 500), radius = PEN_RADIUS * (0.8 + 0.5 * slow), density = pigment * INK_DENSITY * (0.55 + 0.45 * slow);
+        const ox = -ey * 0.8 * radius, oy = ex * 0.8 * radius;
+        release(ax + ox, ay + oy, bx + ox, by + oy, radius, density, hue);
+        release(ax - ox, ay - oy, bx - ox, by - oy, radius, density, hue + 1 / 3);
         hue += dist / HUE_PX;
       }
       wake();
@@ -435,14 +458,18 @@ export const plugin = Object.freeze({
 
     /**
      * A drop of ink at (x, y) CSS px of the fluid, landing with the speed (jx, jy) CSS px/s: the water takes it as a puff (a pair of swirls
-     * that roll the drop into a mushroom). @param {number} x @param {number} y @param {number} jx @param {number} jy @param {number} amount @param {boolean} still
+     * that roll the drop into a mushroom). The drop is one ink around a core of the next.
+     * @param {number} x @param {number} y @param {number} jx @param {number} jy @param {boolean} still
      */
-    function drop(x, y, jx, jy, amount, still) {
+    function drop(x, y, jx, jy, still) {
       if (intensity <= 0) return;
       const f = currentFluid();
       hue += HUE_STEP;
       if (!still) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
-      if (pigment > 0) release(x, y, x, y, DROP_RADIUS, pigment * INK_DENSITY * amount);
+      if (pigment > 0) {
+        release(x, y, x, y, DROP_RADIUS, pigment * INK_DENSITY, hue);
+        release(x, y, x, y, 0.45 * DROP_RADIUS, pigment * INK_DENSITY, hue + 1 / 3);
+      }
       wake();
     }
 
@@ -459,6 +486,8 @@ export const plugin = Object.freeze({
 
     {
       /** @type {{x: number, y: number, t: number}|null} */ let last = null;
+      /** a pointer is pressed on the canvas */
+      let pressing = false;
       /** the direction the pointer last moved in (unit), and when */
       let headX = 0, headY = 0, headT = -1e9;
       /** @param {{x: number, y: number}} a @param {{x: number, y: number}} b @param {number} ms @param {boolean} pressed @param {number} t */
@@ -482,10 +511,11 @@ export const plugin = Object.freeze({
         const p = local(e.clientX, e.clientY);
         if (!p) return;
         takeOver();
+        pressing = true;
         const t = e.timeStamp || performance.now();
         // the drop keeps the pointer's heading; a press at rest sends each drop another way
         if (t - headT > 250) { dropAngle += GOLDEN_ANGLE; headX = Math.cos(dropAngle); headY = Math.sin(dropAngle); }
-        drop(p.x, p.y, headX * DROP_PUSH, headY * DROP_PUSH, 1, reducedMotion);
+        drop(p.x, p.y, headX * DROP_PUSH, headY * DROP_PUSH, reducedMotion);
         last = { x: p.x, y: p.y, t };
       }, passive);
       context.listen('pointermove', (event) => {
@@ -498,11 +528,20 @@ export const plugin = Object.freeze({
         const t = e.timeStamp || performance.now();
         const prev = last;
         last = { x: p.x, y: p.y, t };
+        if (e.buttons === 0) pressing = false;
         if (prev) move(prev, p, t - prev.t, e.buttons !== 0 || e.pointerType === 'touch', t);
       }, passive);
-      const end = () => { last = null; };
+      const end = () => { last = null; pressing = false; };
       context.listen('pointerleave', end, passive);
       context.listen('pointercancel', end, passive);
+      context.listen('pointerup', () => { pressing = false; }, passive);
+      // A pressed pointer that moves over the page stirs it; the browser would also select the text it crosses, and the selection would
+      // be drawn into the ink. While a press lasts, a selection that starts outside a text field does not start (option selectText).
+      context.listen('selectstart', (event) => {
+        const target = /** @type {any} */ (event.target);
+        const field = target?.closest ? target : target?.parentElement;
+        if (pressing && !selectText && !reducedMotion && intensity > 0 && !field?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) event.preventDefault();
+      });
       // touch events: passive (never preventDefault), and they keep arriving while the finger scrolls the page
       /** @type {Map<number, {x: number, y: number, t: number}>} */ const fingers = new Map();
       const touches = (/** @type {Event} */ e) => /** @type {any} */ (e).changedTouches ?? [];
@@ -543,13 +582,13 @@ export const plugin = Object.freeze({
     }
 
     /**
-     * One step of the pigment on the GPU, as pass `index` of this frame: the segments due, the fade, and (when the water moves) the
-     * transport by the field of layer `index`. @param {Fluid} f @param {any} encoder @param {number} index @param {boolean} still
+     * One step of the pigment on the GPU, as pass `index` of this frame: the segments due, the ageing, and (when the water moves) the
+     * transport by the field of layer `index`; true when it reads that layer. @param {Fluid} f @param {any} encoder @param {number} index @param {boolean} still
      */
     function stepPigment(f, encoder, index, still) {
       const count = Math.min(SEGMENTS_PER_STEP, segmentCount);
-      if (!count && f.maxInk === 0) return false;
-      inkCarry(f, fadeKeep, fadeLoss);
+      if (!count && !inkLive) return false;
+      if (count) { inkLive = true; inkUntil = simClock + INK_LIFE * 1000 + INK_SLACK_MS; }
       const moving = f.traced && !still;
       // the pigment cannot leave this rectangle: it moves no faster than the water (and the filter spreads it by a fraction of a texel)
       if (inkBox[0] <= inkBox[2] && moving) {
@@ -558,14 +597,13 @@ export const plugin = Object.freeze({
       }
       stepData[S.SIZE] = pigSize.w; stepData[S.SIZE + 1] = pigSize.h; stepData[S.CSS] = f.cssWidth; stepData[S.CSS + 1] = f.cssHeight;
       stepData[S.GRID] = f.gw; stepData[S.GRID + 1] = f.gh; stepData[S.INV_CELL] = 1 / f.cellX; stepData[S.INV_CELL + 1] = 1 / f.cellY;
-      stepData[S.DT] = DT; stepData[S.KEEP] = fadeKeep; stepData[S.LOSS] = fadeLoss; stepData[S.LAYER] = index;
+      stepData[S.DT] = DT; stepData[S.LIFE] = INK_LIFE; stepData[S.CAP] = INK_CAP; stepData[S.LAYER] = index;
       stepData[S.COUNT] = count; stepData[S.FLOWING] = moving ? 1 : 0;
       for (let i = 0; i < count; i += 1) {
         const o = segmentHead * 10, radius = segments[o + 4], density = segments[o + 5], reach = REACH * radius;
         stepData.set(segments.subarray(o, o + 4), S.SEG + 4 * i);
         stepData[S.SHAPE + 4 * i] = radius; stepData[S.SHAPE + 4 * i + 1] = density;
         stepData.set(segments.subarray(o + 6, o + 10), S.INK + 4 * i);
-        inkAdd(f, segments[o], segments[o + 1], segments[o + 2], segments[o + 3], reach, density);
         const x0 = Math.min(segments[o], segments[o + 2]) - reach - 2, y0 = Math.min(segments[o + 1], segments[o + 3]) - reach - 2;
         const x1 = Math.max(segments[o], segments[o + 2]) + reach + 2, y1 = Math.max(segments[o + 1], segments[o + 3]) + reach + 2;
         if (inkBox[0] > inkBox[2]) { inkBox[0] = x0; inkBox[1] = y0; inkBox[2] = x1; inkBox[3] = y1; } else {
@@ -593,11 +631,12 @@ export const plugin = Object.freeze({
         pigAttachment.view = null;
       }
       cur = to;
-      if (f.maxInk === 0) { inkBox.set([1, 1, 0, 0]); wipe = true; }
+      // the last pigment has outlived its life: the textures are emptied, and nothing is read from them until the next release
+      if (simClock >= inkUntil) { inkLive = false; inkBox.set([1, 1, 0, 0]); wipe = true; }
       return moving;
     }
 
-    /** Both pigment textures emptied (the pigment has faded out everywhere, or was wiped). @param {any} encoder */
+    /** Both pigment textures emptied (the pigment has outlived its life, or was wiped). @param {any} encoder */
     function wipePigment(encoder) {
       wipe = false;
       for (let i = 0; i < 2; i += 1) {
@@ -632,7 +671,7 @@ export const plugin = Object.freeze({
       // a long gap (off-screen, a low frame cap) is skipped, not caught up: the plugin's own strokes skip it too (their clock is the simulation's)
       if (n > MAX_STEPS_PER_FRAME) {
         const skipped = (n - MAX_STEPS_PER_FRAME) * STEP_MS;
-        simClock += skipped; n = MAX_STEPS_PER_FRAME;
+        simClock += skipped; n = MAX_STEPS_PER_FRAME; inkUntil += skipped;
         for (const s of scripts) s.t0 += skipped;
       }
       const still = reducedMotion;
@@ -647,7 +686,7 @@ export const plugin = Object.freeze({
         fresh = stepPigment(f, frame.encoder, i, still);
         if (fresh) upload(f, i); else layer = i;
         simClock += STEP_MS;
-        if (quiet(f) && !segmentCount && !scripts.length) awake = false;
+        if (quiet(f) && !inkLive && !segmentCount && !scripts.length) awake = false;
       }
       // the picture reads the field of the last step
       if (!fresh && f.moved) upload(f, layer);
@@ -667,6 +706,7 @@ export const plugin = Object.freeze({
         heal = clampNum(next?.heal, 0, 1, heal);
         pigment = clampNum(next?.pigment, 0, 1, pigment);
         if (next && 'palette' in next && next.palette !== palette) { palette = next.palette; globals.set(inkOptics(palette), G.ABSORB); }
+        if (next?.selectText !== undefined) selectText = next.selectText === true;
         tune();
         syncUi();
         context.requestRender();
@@ -676,7 +716,7 @@ export const plugin = Object.freeze({
         if (action === 'clear') {
           takeOver();
           scripts = []; segmentCount = 0;
-          if (fluid) { clear(fluid); wipe = true; inkBox.set([1, 1, 0, 0]); }
+          if (fluid) { clear(fluid); wipe = true; inkLive = false; inkBox.set([1, 1, 0, 0]); }
           awake = false;
           // the frame that shows the clean page resolves it
           context.requestRender();
@@ -703,7 +743,7 @@ export const plugin = Object.freeze({
         if (intensity <= 0) return wait();
         const f = currentFluid();
         const p = at ? toFluid(at.x, at.y) : { x: f.cssWidth / 2, y: f.cssHeight / 2 };
-        if (still) { drop(p.x, p.y, 0, 0, 1, true); return wait(); }
+        if (still) { drop(p.x, p.y, 0, 0, true); return wait(); }
         if (Number.isNaN(degrees)) dropAngle += GOLDEN_ANGLE;
         const angle = Number.isNaN(degrees) ? dropAngle : (degrees * Math.PI) / 180;
         const k = Math.min(2, Math.max(0.1, strength));
@@ -721,7 +761,7 @@ export const plugin = Object.freeze({
         const f = ensureFluid(frame.cssWidth || canvas.clientWidth || frame.width, frame.cssHeight || canvas.clientHeight || frame.height, frame.dpr || 1);
         if (awake) advance(f, frame);
         if (wipe) wipePigment(frame.encoder);
-        const inked = f.maxInk > 0 && inkBox[0] <= inkBox[2];
+        const inked = inkLive && inkBox[0] <= inkBox[2];
         globals[G.RES] = frame.width; globals[G.RES + 1] = frame.height;
         globals[G.CSS] = f.cssWidth; globals[G.CSS + 1] = f.cssHeight;
         globals[G.GRID] = f.gw; globals[G.GRID + 1] = f.gh;
