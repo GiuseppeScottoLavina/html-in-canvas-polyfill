@@ -439,6 +439,21 @@ Tick RUN(now), for each canvas record in reverse tree order:
     against 110.5 ms with one colour and 132 ms with the two tiles apart; headless Chrome 156 at DPR 2: 98.8 ms against 99.6 and 114.2), and the checks are done
     before the pages land: at most three port tiles held at once there instead of six. The planner's own steps are unchanged (10,000 rows, a 600 px port: 41-45 ms in
     16-17 steps of at most 3.4 ms, before and after).
+    Where the browser's canvas is not Chromium's, the tiles of the check differ in three ways (1.0.0-rc.8). (1) Safari on macOS does not draw the four corner
+    pixels of an image exactly (27.0.1, an M1 Max: an SVG image of one colour, of any size, has them up to 4 levels off with an alpha of 253 to 255, different
+    from one drawing to the next; the pixel beside each is exact; Safari on an iPad draws all of them exactly). The check was exact on them, so from
+    0.1.0-preview.23 to 1.0.0-rc.7 every plan was refused there (`refusedBy.cover`) and every scroll step took the plain path (a 300-row list at 60 Hz: 44 to 53
+    updates a second and a frame of 133 to 146 ms at each attempt, against 59 and 25 ms before the check). A plan on WebKit says so (`ScrollPlan.softCorners`), and
+    the check leaves out the corner pixels of its tiles where they lie in the port, nothing else (an overlay that covers one of those four pixels and no other is
+    not seen). (2) WebKit lays the image out at css scale, snaps every box edge to whole css px and scales the result with a transform (`ScrollPlan.grid`), so a
+    tile rendered at scale 1 holds the same boxes as one at the surface's scale: the cover tiles and the backdrop check are rendered with one pixel per css px
+    there, a quarter of the pixels at a scale of 2 and a ninth at 3. Chromium and Gecko lay the image out at the surface's scale, where a box under one css px
+    may round away at another scale: their tiles keep it. (3) A read can cost by the call, not by the pixel: in Safari on macOS every `getImageData` that follows
+    a drawing or comes in a later task waits 40 to 50 ms for a 716 x 860 px canvas, whatever the size of the rect read (a second read in the same task: 0.2 ms;
+    Chrome 156 and Safari on an iPad: 1 to 3 ms a band, under 0.3 ms for one pixel), so nine bands cost about 360 ms. The first read of a tile is one pixel, the
+    port's centre, and it is timed; once it took more than 5 ms (`VET_SLOW_MS`), that tile is read whole in the same task and every later tile in one read, in a
+    post-frame job of its own, never as it lands. One pixel is timed and not a band, which allocates a megabyte: a band read on a busy machine crossed 5 ms once
+    in a full run of the unit tests.
     Measured before the fix (headless Chrome 156, a 400 x 240 port): a box with `pointer-events: none`, a 12 px box between the grid's points, a shadow or outline reaching in from below,
     a `::after` of the drawable and a gradient behind a transparent list all composed wrong frames (288 to 92,112 of 104,000 pixels). Pages and tiles count toward `maxTotalSurfaceBytes` (ADR-B): a scroller is planned only when two pages and its tiles fit the room the retained surfaces leave, a page beyond that room replaces a farther one instead of being added (at most four), and a drawable surface that needs the room drops the caches served least recently, only until it fits (a promised step of a dropped cache becomes scroll damage).
   - **Engines** (`composeGrid`). Chromium and WebKit compose; Gecko composes only at a device pixel ratio of 1, only square scrollers and only content whose painting no clip edge changes (below). The composition must land every rect, page offset and row

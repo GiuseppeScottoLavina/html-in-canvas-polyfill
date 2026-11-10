@@ -6,9 +6,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [1.0.0-rc.8] - 2026-11-10
 
-The eighth release candidate of 1.0.0, no API change. An external audit of `1.0.0-rc.7` found a regression of that release: a canvas inserted again under another parent after a suspension stopped following the attributes of its new ancestors. The ancestor-move matrix built for it (69 cases, in Chrome, Firefox and Safari) found four older defects of the same family, fixed here too.
+The eighth release candidate of 1.0.0, no API change. An external audit of `1.0.0-rc.7` found a regression of that release: a canvas inserted again under another parent after a suspension stopped following the attributes of its new ancestors. The ancestor-move matrix built for it (69 cases, in Chrome, Firefox and Safari) found four older defects of the same family, fixed here too. A check of the whole project on Safari, on an iPad and on Firefox then found that Safari on macOS had composed no inner scrolling since 0.1.0-preview.23, fixed here as well.
 
-- The core bundle is 367,253 bytes minified, 124,990 gzipped: 642 and 203 bytes more than 1.0.0-rc.7.
+- The core bundle is 367,886 bytes minified, 125,323 gzipped: 1,275 and 536 bytes more than 1.0.0-rc.7.
 
 ### Fixed
 
@@ -16,11 +16,15 @@ The eighth release candidate of 1.0.0, no API change. An external audit of `1.0.
 - The same fix covers moves that no release followed: a canvas moved to another parent inside one task, an ancestor of a canvas moved, a canvas in a shadow tree moved there, and a move under a parent that already sets an inherited custom property, which kept the old value on the canvas.
 - A canvas in a shadow tree whose host was removed and inserted in another place across a checkpoint stayed suspended, its content out of the document, until the grace period dropped it: the registry now reconciles a suspended canvas that is connected again after any insertion.
 - The clone of a canvas in a shadow tree now has the language the browser gives the canvas: the language set above its host in Chrome, only that of `<html>` in Safari, none in Firefox (measured; before, `<html lang>` everywhere and nothing set in between), so `:lang()` rules and the font fallback of the language match the page.
+- Safari on macOS composed no inner scrolling since 0.1.0-preview.23: every plan of the scroll compositor was refused (`refusedBy.cover` in the report's scroll stats) and every step was rebuilt. The check added in that release reads the port without the scroller's content and wants every pixel in the cover colour, and Safari on macOS does not draw the four corner pixels of an image exactly (27.0.1: up to 4 levels off, an alpha of 253 to 255, different from one drawing to the next, whatever the image; Safari on an iPad draws them exactly, so the mobile gate passed). Measured on a 300-row list at 60 Hz: 44 to 53 canvas updates a second and a frame of 133 to 146 ms at each attempt, against 59 and at most 25 ms on the commit before the check. On WebKit the check now leaves out the corner pixels of its tiles, and no other pixel.
+- The cover check costs less where the canvas is not Chromium's. On WebKit its tiles are rendered with one pixel per css px (the image is laid out in css px and scaled, so the tile holds the same boxes): a quarter of the pixels at a device pixel ratio of 2. Where a read of the canvas costs by the call (Safari on macOS: 40 to 50 ms for every `getImageData` that follows a drawing, whatever its size, so about 360 ms for the nine bands of one plan), a tile is read whole in one task instead of in bands. On an iPad (Safari 27.2, 120 Hz, a 300-row list scrolled at once after its first paint) the first composed step comes 71 to 104 ms after the first scroll, from 99 to 123 ms (46 to 59 ms before the check existed).
 
 ### Changed
 
+- Tests: G-xbrowser `scrollCompose` on Safari has a mutant that reads the corner pixels again (nothing composes: the state of 0.1.0-preview.23 to 1.0.0-rc.7 on a Mac) and an overlay case (a line one css px thin across both lists refuses their plans, read from tiles of one pixel per css px; its control is a check that passes whatever it reads). `test/unit/snapshot-store/scroll-vet-tiles.browser.test.mjs` covers the corner pixels, the tiles on the grid and the slow read, each with its control. This gate runs on a Mac only (the hosted runners have Safari 26): it was red from 0.1.0-preview.23 on and was not run.
+- Tests: `npm test` now checks the anchors of the mutant bundles that the controls of G-xbrowser and G-mobile `scrollCompose` serve (12, with the 94 of the gates). Those gates run on a Mac and on devices only, and the `corner` mutant of G-mobile had not matched since 0.1.0-preview.23 (the bundler had numbered the constant it named), so that control could not run; it names the expression now.
 - Tests: the ancestor-move matrix (`test/unit/schedule/ancestor-move-*.browser.test.mjs`, docs/TEST-PLAN.md G-ancestor-move, 69 cases), in Chrome, in Firefox in the macOS CI and in Safari locally (`test/xbrowser/ancestor-move.mjs`); on 1.0.0-rc.7 the same cases fail 32 of 69 in Chrome. The unit host page puts the message of a failed assertion first in Firefox and Safari, whose stacks leave it out.
-- Docs: docs/BUNDLES.md states the new ceilings (core 367.5 KB raw, module loader 136.5 and 153 KB); docs/ARCHITECTURE.md describes the tree-change signal in the lifecycle; version 1.0.0-rc.8.
+- Docs: docs/BUNDLES.md states the new ceilings (core 368 KB raw and 125.5 KB gzipped, module loader 137 and 153.5 KB); docs/ARCHITECTURE.md describes the cover check's tiles on WebKit; docs/ARCHITECTURE.md describes the tree-change signal in the lifecycle; version 1.0.0-rc.8.
 
 ## [1.0.0-rc.7] - 2026-11-09
 

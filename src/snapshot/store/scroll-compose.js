@@ -39,6 +39,13 @@ const MAX_MISSES = 2;
 const MAX_PENDING_RECTS = 16;
 /** pixels of the cover checks read and tested per post-frame job (scroll-compose.js vet: about 1 ms each, headless Chrome 156): one band, of one tile or across them */
 const VET_PIXELS = 1 << 18;
+/**
+ * a read of ONE pixel of a cover tile that takes longer than this: the read costs by the call, not by the pixel. Safari 27.0.1 on macOS waits for its GPU process in
+ * every getImageData that follows a drawing or comes in a later task (a 716 x 860 px tile: 40 to 50 ms whatever the rect, for each band of 366 rows as for one
+ * pixel, and 0.2 ms for a second read in the same task; Chrome 156 and Safari on an iPad: under 0.3 ms for a pixel, 1 to 3 ms a band). Such a tile is read whole,
+ * in one task. One pixel is timed, not a band: a band allocates a megabyte, and its time on a busy machine says less
+ */
+const VET_SLOW_MS = 5;
 /** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
 const AHEAD_PAGES = 2;
 
@@ -64,6 +71,7 @@ const AHEAD_PAGES = 2;
  * @property {Geometry} geo
  * @property {ScrollPlan} plan
  * @property {Rect} portPx  the scrollport in surface pixels (snapped)
+ * @property {Rect} vetPx  the scrollport in the pixels of a cover tile (install: one pixel per cell of ScrollPlan.grid, else the surface's)
  * @property {Page[]} pages
  * @property {Map<Element, {pad: Surface|null, w: number, h: number}>} pins
  * @property {{track: {pad: Surface|null, px: Rect}, thumb: {pad: Surface|null, px: Rect, top: number}}|null} bar  classic bar tiles: the track (thumb hidden) and the thumb alone, captured at offset `top`
@@ -89,6 +97,9 @@ const AHEAD_PAGES = 2;
  * @typedef {Object} Check  a cover check under way (vet)
  * @property {Surface} pad  its tile
  * @property {{x: number, y: number}} at  the port in the tile (tile px)
+ * @property {number} w  the port's size, tile px
+ * @property {number} h
+ * @property {Rect[]} skip  what is left out, in the port's pixels: the corner squares of a rounded port, the tile's own corner pixels (ScrollPlan.softCorners)
  * @property {number[]|null} want  r, g, b of the cover colour, or null: the colour (and alpha) of the port's centre (read with the first band)
  * @property {number} y  the next row of the port to read
  */
@@ -252,7 +263,7 @@ function cacheBytes(c, held) {
   if (c.backdrop) add(c.backdrop.pad, area(c.backdrop.px));
   // the cover checks' tiles, held until they are read (vet: one per cover colour, and the backdrop of a scroller that is not opaque; a rounded scroller's backdrop
   // is one of them, counted above)
-  if (!held) n += Math.min(c.vet, (c.plan.cover?.length ?? 0) + (c.backdrop || c.plan.opaque ? 0 : 1)) * area(c.portPx);
+  if (!held) n += Math.min(c.vet, (c.plan.cover?.length ?? 0) + (c.backdrop || c.plan.opaque ? 0 : 1)) * area(c.vetPx);
   // (decoded: those whose bands wait to be read)
   else for (const k of c.checks) if (k.pad !== c.backdrop?.pad) n += k.pad.width * k.pad.height;
   return n * 4;
@@ -287,6 +298,8 @@ export function createScrollCompositor(deps) {
   let epoch = 0;
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
   let seq = 0;
+  /** a read of a cover tile took longer than VET_SLOW_MS in this browser (vet) */
+  let slowRead = false;
   /** diagnostics (SnapshotStats.scroll) */
   const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0, stale: 0 };
   /** `refusals` by reason (SnapshotStats.scroll.refusedBy): they add up to it */
@@ -316,14 +329,14 @@ export function createScrollCompositor(deps) {
    * one slot each, from one capture; their decodes run side by side.
    * @param {Entry} entry @param {Cache} cache @param {Rect} px @param {PageRequest} scroll @param {Slot|Slot[]} slot
    */
-  function build(entry, cache, px, scroll, slot) {
+  function build(entry, cache, px, scroll, slot, geo = cache.geo) {
     const at = epoch;
     const slots = Array.isArray(slot) ? slot : [slot];
     deps.schedule(entry, () => {
       if (mapOf(entry).get(cache.el) !== cache) return;
       if (cache.early && at !== epoch) { ahead.delete(cache.el); drop(entry, cache); return; }
       if ('seq' in slots[0]) slots[0].seq = seq;
-      const got = deps.capture(entry, toCss(px, cache.geo), cache.geo, scroll);
+      const got = deps.capture(entry, toCss(px, geo), geo, scroll);
       if (!got) { counters.failed++; drop(entry, cache); return; }
       const urls = Array.isArray(got) ? got : [got];
       // fewer tiles than fills (the scroller was not cloned): not vouched for
@@ -398,25 +411,36 @@ export function createScrollCompositor(deps) {
    */
   function vet(entry, c, landed) {
     if (mapOf(entry).get(c.el) !== c) return;
-    const R = c.portPx;
-    const list = landed ? [landed] : c.checks;
-    let left = VET_PIXELS;
-    while (list.length && (left === VET_PIXELS || left >= R.width)) {
-      const k = list[0];
-      const h = Math.min(R.height - k.y, Math.max(1, Math.floor(left / R.width)));
-      let ok = false;
-      try {
-        const ctx = /** @type {CanvasRenderingContext2D} */ (k.pad.getContext('2d'));
-        k.want ??= [...ctx.getImageData(k.at.x + (R.width >> 1), k.at.y + (R.height >> 1), 1, 1).data];
-        const d = ctx.getImageData(k.at.x, k.at.y + k.y, R.width, h).data;
-        ok = vetPixels(d, R.width, h, k.want, c.corners.map((q) => ({ x: q.x - R.x, y: q.y - R.y - k.y, width: q.width, height: q.height })));
-      } catch { /* not read back: not vouched for */ }
-      if (!ok) { drop(entry, c); refusal(entry, c.el, 'cover'); return; }
-      k.y += h;
-      left -= h * R.width;
-      if (k.y >= R.height) { list.shift(); c.vet--; }
+    // where a read is slow (VET_SLOW_MS), a tile that landed waits for the post-frame pump as the bands do: three tiles landing in one frame were read in that frame
+    if (landed && slowRead) c.checks.push(landed);
+    else {
+      const list = landed ? [landed] : c.checks;
+      let left = VET_PIXELS;
+      while (list.length && (left === VET_PIXELS || left >= list[0].w)) {
+        const k = list[0];
+        let h = slowRead ? k.h - k.y : Math.min(k.h - k.y, Math.max(1, Math.floor(left / k.w)));
+        let ok = false;
+        try {
+          const ctx = /** @type {CanvasRenderingContext2D} */ (k.pad.getContext('2d'));
+          // the first read of a tile is the pixel at the port's centre (the colour a backdrop must have everywhere), timed: see VET_SLOW_MS
+          if (!k.y) {
+            const t0 = now();
+            const centre = [...ctx.getImageData(k.at.x + (k.w >> 1), k.at.y + (k.h >> 1), 1, 1).data];
+            if (now() - t0 > VET_SLOW_MS) slowRead = true;
+            k.want ??= centre;
+          }
+          // where a read is slow: the whole tile now, in this task (a second read costs no second wait there), and nothing more in this job
+          if (slowRead) { h = k.h - k.y; left = 0; }
+          const d = ctx.getImageData(k.at.x, k.at.y + k.y, k.w, h).data;
+          ok = vetPixels(d, k.w, h, /** @type {number[]} */ (k.want), k.skip.map((q) => ({ x: q.x, y: q.y - k.y, width: q.width, height: q.height })));
+        } catch { /* not read back: not vouched for */ }
+        if (!ok) { drop(entry, c); refusal(entry, c.el, 'cover'); return; }
+        k.y += h;
+        left -= h * k.w;
+        if (k.y >= k.h) { list.shift(); c.vet--; }
+      }
+      if (landed && landed.y < landed.h) c.checks.push(landed);
     }
-    if (landed && landed.y < R.height) c.checks.push(landed);
     if (!c.checks.length || c.vetting) return;
     c.vetting = true;
     deps.schedule(entry, () => { c.vetting = false; vet(entry, c); }, true);
@@ -446,15 +470,27 @@ export function createScrollCompositor(deps) {
     if (round && plan.whole) return refuse('shape');
     const shape = round ? /** @type {const} */ ('square') : undefined;
     const padPx = snapPx(paddingBox(plan), geo, grid);
+    // The cover tiles on a grid (WebKit): one pixel per grid cell, whatever the scale of the surface. WebKit lays the image out at css scale, snaps every box edge to
+    // whole css px and scales the result with a transform (snapPx), so a tile at scale 1 holds the same boxes as one at the surface's scale, and what paints over
+    // the port at one paints over it at the other: the same check on a quarter of the pixels at a scale of 2, a ninth at 3. Chromium and Gecko lay the image out at
+    // the surface's scale (a box under one css px may round away at another scale): their tiles keep it
+    const vgeo = grid && geo.scale * grid > 1 ? { ...geo, scale: 1 / grid } : geo;
+    const vetPx = vgeo === geo ? portPx : snapPx(plan.port, vgeo, grid);
+    /**
+     * The corner pixels of a tile `tw` x `th` that lie in its port (`at`, `w` x `h`), in the port's pixels; none without ScrollPlan.softCorners.
+     * @param {number} tw @param {number} th @param {{x: number, y: number}} at @param {number} w @param {number} h @returns {Rect[]}
+     */
+    const soft = (tw, th, at, w, h) => (plan.softCorners ? [[0, 0], [tw - 1, 0], [0, th - 1], [tw - 1, th - 1]] : [])
+      .map(([x, y]) => ({ x: x - at.x, y: y - at.y, width: 1, height: 1 })).filter((q) => q.x >= 0 && q.y >= 0 && q.x < w && q.y < h);
     // what the scroller needs to compose a step: two pages (one covers the port at its own offset only), its pinned elements, its bar and backdrop tiles
     // the cover checks' tiles (vet: one per cover colour, and a backdrop) are held until they are read
-    let need = (AHEAD_PAGES + (plan.cover ? plan.cover.length + (plan.opaque || round ? 0 : 1) : 0)) * area(portPx) + (round ? area(padPx) : 0);
+    let need = AHEAD_PAGES * area(portPx) + (plan.cover ? plan.cover.length + (plan.opaque || round ? 0 : 1) : 0) * area(vetPx) + (round ? area(padPx) : 0);
     if (plan.bar) need += 2 * area(snapPx(plan.bar.gutter, geo, grid));
     for (const p of plan.pinned) { const r = entry.record.layer?.frameRect(p); if (r) need += area(snapPx(r, geo, grid)); }
     if (!fits(entry, need * 4)) return refuse('budget');
     /** @type {Cache} */
     const cache = {
-      el, geo, plan, portPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
+      el, geo, plan, portPx, vetPx, pages: [], pins: new Map(), bar: null, backdrop: round ? { pad: null, px: padPx } : null, corners: round ? cornerSquares(padPx, round, geo.scale) : [],
       shown: null, queued: false, last: live, unverified: [], recheck: new Set(), relayer: [], vet: 0, checks: [], vetting: false, memo: new Map(), early, used: now(),
     };
     if (plan.cover) {
@@ -463,10 +499,14 @@ export function createScrollCompositor(deps) {
       // backdrop tile when it is rounded)
       // (the cover tiles from one capture, decoded side by side: a capture each cost a post-frame job, about one 60 Hz frame in Safari on an iPad, before the first composition)
       cache.vet = plan.cover.length + (plan.opaque ? 0 : 1);
+      const skip = [
+        ...(round ? cornerSquares(vgeo === geo ? padPx : snapPx(paddingBox(plan), vgeo, grid), round, vgeo.scale).map((q) => ({ x: q.x - vetPx.x, y: q.y - vetPx.y, width: q.width, height: q.height })) : []),
+        ...soft(vetPx.width, vetPx.height, { x: 0, y: 0 }, vetPx.width, vetPx.height),
+      ];
       /** @param {number[]|null} want @returns {Slot} the tile of one check, not kept once it is read */
-      const tile = (want) => { const t = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { t.pad = null; vet(entry, cache, { pad, at: { x: 0, y: 0 }, want, y: 0 }); } }; return t; };
-      build(entry, cache, portPx, { el, top: live, hide: [], shape: 'cover', fills: plan.cover.map((want) => `rgb(${want.join(',')})`) }, plan.cover.map(tile));
-      if (!plan.opaque && !round) build(entry, cache, portPx, { el, top: live, hide: [], shape: 'backdrop' }, tile(null));
+      const tile = (want) => { const t = { pad: /** @type {Surface|null} */ (null), check: (/** @type {Surface} */ pad) => { t.pad = null; vet(entry, cache, { pad, at: { x: 0, y: 0 }, w: vetPx.width, h: vetPx.height, skip, want, y: 0 }); } }; return t; };
+      build(entry, cache, vetPx, { el, top: live, hide: [], shape: 'cover', fills: plan.cover.map((want) => `rgb(${want.join(',')})`) }, plan.cover.map(tile), vgeo);
+      if (!plan.opaque && !round) build(entry, cache, vetPx, { el, top: live, hide: [], shape: 'backdrop' }, tile(null), vgeo);
     }
     if (plan.bar) {
       const b = plan.bar;
@@ -478,7 +518,11 @@ export function createScrollCompositor(deps) {
     }
     if (cache.backdrop) {
       const b = cache.backdrop;
-      if (plan.cover && !plan.opaque) Object.assign(b, { check: (/** @type {Surface} */ pad) => vet(entry, cache, { pad, at: { x: portPx.x - padPx.x, y: portPx.y - padPx.y }, want: null, y: 0 }) });
+      if (plan.cover && !plan.opaque) {
+        const at = { x: portPx.x - padPx.x, y: portPx.y - padPx.y };
+        const skip = [...cache.corners.map((q) => ({ x: q.x - portPx.x, y: q.y - portPx.y, width: q.width, height: q.height })), ...soft(padPx.width, padPx.height, at, portPx.width, portPx.height)];
+        Object.assign(b, { check: (/** @type {Surface} */ pad) => vet(entry, cache, { pad, at, w: portPx.width, h: portPx.height, skip, want: null, y: 0 }) });
+      }
       build(entry, cache, padPx, { el, top: live, hide: [], shape: 'backdrop' }, b);
     }
     for (const p of plan.pinned) {

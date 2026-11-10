@@ -207,7 +207,10 @@ if (!docsOnly) {
   // reconciled, src/schedule/observers/mutation-observer.js sync on it, src/snapshot/capture/clone.js shadowLanguageOf); before it a canvas moved inside one task,
   // or inserted again under another parent after rc.7, kept the old chain, a shadow host moved across a checkpoint left its canvas suspended, and the clone of a
   // canvas in a shadow tree had the language of <html> whatever the browser gives it (external audit of 1.0.0-rc.7)
-  if (total > 17437) problems.push(`G-size: core is ${total} code lines (> 17437)`);
+  // 17437 -> 17459 (2026-11-10, measured 17,459): the cover check's tiles on WebKit (+22: src/snapshot/store/scroll-compose.js soft corners, tiles on the grid, a
+  // slow read reads the tile whole); before it Safari on macOS refused every scroll plan since 0.1.0-preview.23 (the corner pixels of an image drawn into a canvas
+  // are not exact there), and each band of a check waited 40 to 50 ms for its read
+  if (total > 17459) problems.push(`G-size: core is ${total} code lines (> 17459)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
