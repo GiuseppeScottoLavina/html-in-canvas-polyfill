@@ -40,7 +40,7 @@ export function webkitAccentCaret(caretAt, colorAt, caretIsColor) {
 
 /** @typedef {{sel: string, value: string, important: boolean}} Decl */
 
-/** @typedef {{sig: string, color: Decl[], caret: Decl[], media: Array<[MediaQueryList, boolean]>}} Rules  media: each condition evaluated and its result then */
+/** @typedef {{sig: string, color: Decl[], caret: Decl[], width: Decl[], media: Array<[MediaQueryList, boolean]>}} Rules  media: each condition evaluated and its result then */
 
 /** @type {WeakMap<Document|ShadowRoot, Rules>} */
 const ruleCache = new WeakMap();
@@ -59,7 +59,7 @@ export function resetCaretRules() {
 }
 
 /**
- * The author style rules of a tree that declare color or caret-color (media and supports conditions evaluated, imported sheets followed, other group rules entered), cached until a
+ * The author style rules of a tree that declare color, caret-color or width (media and supports conditions evaluated, imported sheets followed, other group rules entered), cached until a
  * sheet is added, removed or replaced, its rule count changes, a media condition it evaluated changes its result, or resetCaretRules.
  * @param {Document|ShadowRoot} root @returns {Rules}
  */
@@ -71,7 +71,7 @@ function rulesOf(root) {
   const hit = ruleCache.get(root);
   if (hit && hit.sig === sig && hit.media.every(([m, was]) => m.matches === was)) return hit;
   /** @type {Rules} */
-  const out = { sig, color: [], caret: [], media: [] };
+  const out = { sig, color: [], caret: [], width: [], media: [] };
   const mqls = win ? queries.get(win) ?? /** @type {Map<string, MediaQueryList>} */ (queries.set(win, new Map()).get(win)) : null;
   const media = (/** @type {string} */ q) => {
     const m = q && win && mqls ? mqls.get(q) ?? /** @type {MediaQueryList} */ (mqls.set(q, win.matchMedia(q)).get(q)) : null;
@@ -82,7 +82,7 @@ function rulesOf(root) {
   const walk = (list) => {
     for (const r of Array.from(list ?? [])) {
       if (r instanceof CSSStyleRule) {
-        for (const [prop, into] of /** @type {const} */ ([['color', out.color], ['caret-color', out.caret]])) {
+        for (const [prop, into] of /** @type {const} */ ([['color', out.color], ['caret-color', out.caret], ['width', out.width]])) {
           const value = r.style.getPropertyValue(prop);
           if (value) into.push({ sel: r.selectorText, value, important: r.style.getPropertyPriority(prop) === 'important' });
         }
@@ -109,6 +109,17 @@ function winning(el, rules, prop) {
   const strong = mine.filter((r) => r.important);
   if (strong.length || (inline && style.getPropertyPriority(prop))) return [...strong.map((r) => r.value), ...(inline && style.getPropertyPriority(prop) ? [inline] : [])];
   return inline ? [inline] : mine.map((r) => r.value);
+}
+
+/**
+ * The width the page declares for `el`, where its rules agree on one (an inline width, else the rules that match; `!important` first): for an engine without the CSS
+ * Typed OM, which cannot read a computed width (native-controls.js pinnedSize). '' where nothing declares one, where the declarations differ (the cascade order
+ * between rules is not resolved), or where a sheet cannot be read.
+ * @param {Element} el @returns {string}
+ */
+export function declaredWidth(el) {
+  const all = winning(el, rulesOf(/** @type {Document|ShadowRoot} */ (el.getRootNode())).width, 'width');
+  return all.length && all.every((v) => v === all[0]) ? all[0] : '';
 }
 
 /**

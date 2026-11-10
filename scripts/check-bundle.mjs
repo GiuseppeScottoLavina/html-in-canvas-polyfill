@@ -281,7 +281,10 @@ const LIMITS = {
   //   (native-states.js pressOnThumb: Safari's slider press test)
   // 45.75 -> 45.875 KB (+252 / +103 bytes, 2026-11-04, measured 45,767 / 17,398): Safari's caret rules are read again after a style sheet change (webkit-caret.js
   //   resetCaretRules through EngineSkins.stylesChanged) and when a media condition they used changes its result (an edited declaration or a matchMedia change kept the old colour)
-  'hic-live-engines.iife.min.js': { target: 45.875 * KB, ceiling: 45.875 * KB, gzip: 17.5 * KB },
+  // 45.875 -> 46.375 KB, gzip 17.5 -> 17.75 KB (+544 / +288 bytes, 2026-11-10, measured 46,325 / 17,697): a pinned control keeps the percentage of its width, with the
+  //   page's min-width and max-width (native-controls.js pinnedSize; webkit-caret.js declaredWidth for Gecko, which has no CSS Typed OM); a px width there moved the readout
+  //   beside a full-width range out of its grid row in Safari and Firefox
+  'hic-live-engines.iife.min.js': { target: 46.375 * KB, ceiling: 46.375 * KB, gzip: 17.75 * KB },
   // WebGL / WebGPU element textures, outside the core; 16 -> 10.75 KB (2026-10-15, measured 10,469 / 4,015)
   // the worker side of an ElementImage posted to a dedicated worker (2026-10-22, measured 9,687 / 3,922); 10 -> 9.25 KB (2026-10-22, measured 9,215 / 3,790):
   //   OffscreenCanvas.getElementTransform removed
@@ -472,7 +475,8 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // chromium 136.5 -> 137 KB, geckoWebkit 153 -> 153.5 KB (2026-11-10, measured 136,800 / 153,377): the core it loads grew by the cover check's tiles on WebKit
   // chromium 137 -> 139.25 KB, geckoWebkit 153.5 -> 156 KB (2026-11-10, measured 139,178 / 155,755): the core it loads grew by the selectors that count siblings
   // tied to their containers and the margins of pruned children (+2,380 gzip in this bundling)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 139.25 * KB, geckoWebkit: 156 * KB };
+  // geckoWebkit 156 -> 156.25 KB (2026-11-10, measured 139,178 / 156,022): the engines bundle it loads grew by the percentage width of a pinned control (+267 gzip in this bundling)
+  const LOADER_APP = { start: 8.1 * KB, chromium: 139.25 * KB, geckoWebkit: 156.25 * KB };
   const bundlesDoc = readFileSync(join(root, 'docs/BUNDLES.md'), 'utf8');
   for (const d of budgetDrift(bundlesDoc, LIMITS, PLUGIN_LIMITS, LOADER_APP)) problems.push(`G-bundle: docs/BUNDLES.md does not state the enforced ceiling ${d}`);
   if (!budgetDrift(bundlesDoc.replace(/gzip level 9: core [0-9.]+ KB/, 'gzip level 9: core 1 KB'), LIMITS, PLUGIN_LIMITS, LOADER_APP).length) problems.push('G-bundle: the ceiling check of docs/BUNDLES.md failed its control (a changed gzip ceiling of the core passed)');

@@ -214,7 +214,10 @@ if (!docsOnly) {
   // 17464 -> 17704 (2026-11-10, measured 17,704): selectors that count siblings tied to their containers (+240: src/snapshot/capture/css-shake.js splitCompounds,
   // readCompound, structureOf; src/snapshot/capture/clone.js siblingRules, throughMargin and the spacer margins of cloneChildList); before it one such selector
   // anywhere in the page's CSS kept a spacer for every pruned row of every drawable, and a pruned group lost the margins that had collapsed through it
-  if (total > 17704) problems.push(`G-size: core is ${total} code lines (> 17704)`);
+  // 17704 -> 17720 (2026-11-10, measured 17,720): a pinned control keeps the percentage of its width (+16: src/snapshot/capture/native-controls.js pinnedSize,
+  // src/snapshot/capture/webkit-caret.js declaredWidth); before it a full-width range across a grid of `1fr auto` moved the readout beside it out of its row in
+  // Safari and Firefox
+  if (total > 17720) problems.push(`G-size: core is ${total} code lines (> 17720)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
