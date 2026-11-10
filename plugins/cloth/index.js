@@ -23,7 +23,7 @@ import { wgsl } from './wgsl.js';
 import { clampNum } from '../_lib/number.js';
 import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
-import { MAX_STEPS_PER_FRAME, STEP_MS, createCloth, drop, gust, hangFrom, heldPoint, holdAt, layFlat, letGo, push, setPins, step, take, wake } from './sim.js';
+import { MAX_STEPS_PER_FRAME, STEP_MS, createCloth, drop, gust, hangFrom, heldPoint, holdAt, layFlat, letGo, lowerSeconds, push, setPins, step, take, wake } from './sim.js';
 import { CAMERA, CLOTH, FLAT, GONE, HEAD, S, SUB, castCloth, mapClothPoint, stateLength, writeControlPoints } from './surface.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -49,15 +49,15 @@ export { NO_TARGET, isNoTarget, mapClothPoint };
 export const ACTIONS = Object.freeze(/** @type {const} */ (['demo', 'gust', 'drop', 'in']));
 export const PINS = Object.freeze(['top', 'corners']);
 /** floats of the uniform block (cloth.wgsl Globals) */
-export const UNIFORM_FLOATS = 24;
-const U = Object.freeze({ RES: 0, CSS: 2, GRID: 4, CAMERA: 6, WALL: 7, LIGHT: 8, SHEEN: 11, READY: 12, THROUGH: 13, SHADE: 14, FADE: 15, BACKDROP: 16, MARGIN: 19, BLUR: 20 });
+export const UNIFORM_FLOATS = 28;
+const U = Object.freeze({ RES: 0, CSS: 2, GRID: 4, CAMERA: 6, WALL: 7, LIGHT: 8, SHEEN: 11, READY: 12, THROUGH: 13, SHADE: 14, FADE: 15, BACKDROP: 16, MARGIN: 19, BLUR: 20, LINEN: 24 });
 /** towards the lamp: up and to the left of the viewer (cloth.wgsl g.light) */
-export const LIGHT = Object.freeze((() => { const v = [-0.42, -0.62, 0.66]; const l = Math.hypot(...v); return v.map((x) => x / l); })());
+export const LIGHT = Object.freeze((() => { const v = [-0.5, -0.68, 0.54]; const l = Math.hypot(...v); return v.map((x) => x / l); })());
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
 /** css px of the canvas per texel of the shadow map, and how far the map reaches beyond the canvas (a share of its larger side) */
 const SHADOW_PX = 3;
-const SHADOW_MARGIN = 0.25;
+const SHADOW_MARGIN = 0.3;
 /** css px a pressed mouse travels before the press is the cloth's gesture and no longer the page's click; a finger's */
 export const GRAB_SLOP = 6;
 export const TOUCH_SLOP = 8;
@@ -74,7 +74,7 @@ const HOVER_RADIUS = 0.075;
 const POKE = 0.62;
 const POKE_RADIUS = 0.06;
 /** the demo: one gust of this strength from the left, a little downwards */
-export const DEMO_GUST = Object.freeze({ direction: 14, strength: 1.1 });
+export const DEMO_GUST = Object.freeze(/** @type {{direction: number, strength: number}} */ ({ direction: 14, strength: 1.1 }));
 /** drop: the pins let go over this many seconds; in: the cloth is hung from this many canvas heights above its place, swung this far towards the viewer (radians) */
 export const PEEL_S = 0.32;
 const RISE_FROM = 1.12;
@@ -204,7 +204,7 @@ export const plugin = Object.freeze({
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     if (/** @type {any} */ (doc)?.createElement) injectStyle(doc, 'cloth', UI_CSS);   // the cursor rule (a test fake may have no DOM)
 
-    const o = { weight: 0.5, wind: 0, pins: /** @type {'top'|'corners'} */ ('top'), sheen: 0.5, shadow: 0.85, through: 0.3, backdrop: [0.016, 0.015, 0.02] };
+    const o = { weight: 0.5, wind: 0, pins: /** @type {'top'|'corners'} */ ('top'), sheen: 0.5, shadow: 0.85, through: 0.35, backdrop: [0.05, 0.047, 0.052], back: [0.33, 0.31, 0.28] };
     /** @param {Readonly<Record<string, unknown>>|undefined|null} next */
     function readOptions(next) {
       if (!next) return;
@@ -215,6 +215,7 @@ export const plugin = Object.freeze({
       if (next.through !== undefined) o.through = clampNum(next.through, 0, 1, o.through);
       if (next.pins !== undefined) o.pins = next.pins === 'corners' ? 'corners' : 'top';
       if (next.backdrop !== undefined) o.backdrop = parseColor(next.backdrop, o.backdrop);
+      if (next.back !== undefined) o.back = parseColor(next.back, o.back);
     }
     readOptions(initialOptions);
     /** the pins as the simulation has them (flat and whole with reduced motion) */
@@ -305,7 +306,7 @@ export const plugin = Object.freeze({
       riseNext = false;
       status = RISING;
       fade.now = fade.to = 0;
-      hangFrom(c, -RISE_FROM * c.height, RISE_ANGLE, pinsNow());
+      hangFrom(c, -RISE_FROM * c.height, RISE_ANGLE, pinsNow(), lowerSeconds(c, RISE_FROM * c.height));
       if (pinsNow() === 'corners') unsettle(c);
       applyFabric(c);
       clock = NaN;
@@ -675,6 +676,7 @@ export const plugin = Object.freeze({
         globals[U.SHEEN] = o.sheen; globals[U.READY] = frame.sourceReady ? 1 : 0; globals[U.THROUGH] = o.through; globals[U.SHADE] = o.shadow;
         globals[U.FADE] = fade.now;
         globals[U.BACKDROP] = o.backdrop[0]; globals[U.BACKDROP + 1] = o.backdrop[1]; globals[U.BACKDROP + 2] = o.backdrop[2];
+        globals[U.LINEN] = o.back[0]; globals[U.LINEN + 1] = o.back[1]; globals[U.LINEN + 2] = o.back[2];
         const timestampWrites = frame.profiling?.timestampWrites?.('cloth');
         if (mode !== CLOTH) {
           // the page itself (or, once the cloth has gone, the wall): one full-screen pass

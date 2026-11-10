@@ -31,6 +31,8 @@ struct Globals {
   margin : f32,             // css px by which the shadow map is larger than the canvas on every side
   blur : vec2<f32>,         // fs_blur: the step between taps, in uv
   pad : vec2<f32>,
+  linen : vec3<f32>,        // the unprinted back of the cloth (linear)
+  pad2 : f32,
 }
 
 @group(0) @binding(0) var<uniform> g : Globals;
@@ -46,13 +48,17 @@ const PI : f32 = 3.14159265;
 /** heights above the wall are stored as a share of this many css px (16-bit floats) */
 const HEIGHT_SCALE : f32 = 1024.0;
 /** the share of the light on the flat cloth that comes from the room, the rest from the lamp */
-const ROOM : f32 = 0.36;
+const ROOM : f32 = 0.34;
 /** how far the lamp's light wraps round a fold (fabric scatters it through its fibres): 0 is Lambert */
-const WRAP : f32 = 0.3;
+const WRAP : f32 = 0.25;
 /** the room's light comes from in front of the cloth and a little from above */
 const ROOM_AXIS : vec3<f32> = vec3<f32>(0.0, -0.3714, 0.9285);
 /** how much of the lamp's light on the far side comes through the cloth */
 const TRANSMIT : f32 = 0.16;
+/** what the darkest print still scatters: the cloth's shading shows on a black page too (linear reflectance) */
+const FABRIC : f32 = 0.035;
+/** css px between the threads of the weave */
+const THREAD : f32 = 2.4;
 
 // ---- the surface ---------------------------------------------------------------------------------------------------------------------
 
@@ -128,9 +134,9 @@ fn to_srgb(c : vec3<f32>) -> vec3<f32> {
 /** interleaved gradient noise in [0, 1): a stable dither per backing pixel */
 fn ign(p : vec2<f32>) -> f32 { return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715)))); }
 fn hash12(p : vec2<f32>) -> f32 {
-  var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
-  p3 = p3 + dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
+  var h = vec2<u32>(vec2<i32>(p)) * vec2<u32>(1597334673u, 3812015801u);
+  let n = (h.x ^ h.y) * 1597334673u;
+  return f32(n >> 8u) / 16777216.0;
 }
 fn vnoise(p : vec2<f32>) -> f32 {
   let i = floor(p);
@@ -206,23 +212,34 @@ fn wrap_light(c : f32) -> f32 { return max(c + WRAP, 0.0) / (1.0 + WRAP); }
 fn room_light(n : vec3<f32>) -> f32 { return 0.5 + 0.5 * dot(n, ROOM_AXIS); }
 
 /** The sheen of the fabric: the fibres that stand up from the weave scatter light towards grazing directions. Estevez and Kulla's
-    distribution ("Production Friendly Microfacet Sheen BRDF", 2017) with Neubelt and Pettineo's visibility term, times the cosine. */
-fn sheen_lobe(n : vec3<f32>, v : vec3<f32>, l : vec3<f32>, roughness : f32) -> f32 {
+    distribution ("Production Friendly Microfacet Sheen BRDF", 2017) with Neubelt and Pettineo's visibility term, times the cosine;
+    and the smooth threads of the weave themselves mirror the lamp in a broad lobe (GGX, the same visibility). */
+fn sheen_lobe(n : vec3<f32>, v : vec3<f32>, l : vec3<f32>) -> f32 {
   let nl = max(dot(n, l), 0.0);
   let nv = max(dot(n, v), 1e-3);
   let nh = clamp(dot(n, normalize(l + v)), 0.0, 1.0);
-  let inv = 1.0 / roughness;
-  let d = (2.0 + inv) * pow(max(1.0 - nh * nh, 1e-4), 0.5 * inv) / (2.0 * PI);
-  let vis = 1.0 / (4.0 * (nl + nv - nl * nv) + 1e-3);
-  return d * vis * nl;
+  let fuzz = 3.8 * pow(max(1.0 - nh * nh, 1e-4), 0.9) / (2.0 * PI);
+  let a2 = 0.2;   // roughness 0.45
+  let k = nh * nh * (a2 - 1.0) + 1.0;
+  let thread = 0.09 * a2 / (PI * k * k);
+  return (fuzz + thread) * nl / (4.0 * (nl + nv - nl * nv) + 1e-3);
 }
 
-/** the wall: matt, lit by the lamp in a soft pool towards the side it hangs on, with a little grain */
+/** the weave in the sheen: over and under, thread by thread; faded where a pixel covers more than half a thread (1 elsewhere) */
+fn weave(uv : vec2<f32>) -> f32 {
+  let t = uv * g.css / THREAD;
+  let w = max(fwidth(t.x), fwidth(t.y));
+  let pattern = sin(2.0 * PI * t.x) * sin(2.0 * PI * t.y);
+  return 1.0 + 0.45 * pattern * (1.0 - smoothstep(0.25, 0.6, w));
+}
+
+/** the wall: matt plaster, lit by the lamp in a soft pool towards the side it hangs on */
 fn wall_color(q : vec2<f32>) -> vec3<f32> {
   let aspect = g.css.x / g.css.y;
-  let c = (q / g.css - vec2<f32>(0.5) - 0.42 * vec2<f32>(g.light.x, g.light.y)) * vec2<f32>(aspect, 1.0);
-  let pool = 0.5 + 0.75 * exp(-dot(c, c) * 1.1);
-  let grain = 1.0 + 0.05 * (vnoise(q * 0.9) - 0.5) + 0.07 * (vnoise(q * 0.07 + 31.0) - 0.5);
+  let c = (q / g.css - vec2<f32>(0.5) - 0.3 * normalize(g.light.xy)) * vec2<f32>(aspect, 1.0);
+  let pool = 0.42 + 0.9 * exp(-dot(c, c) * 0.9);
+  let r = mat2x2<f32>(0.8, 0.6, -0.6, 0.8) * q;
+  let grain = 1.0 + 0.10 * (vnoise(r * 0.011) - 0.5) + 0.07 * (vnoise(r * 0.047 + 31.0) - 0.5) + 0.04 * (vnoise(r * 0.31 + 7.0) - 0.5);
   return g.backdrop * pool * grain;
 }
 
@@ -351,25 +368,25 @@ fn fs_cloth(v : ClothOut, @builtin(front_facing) facing : bool) -> @location(0) 
   let level = ROOM * room_light(rest_n) + (1.0 - ROOM) * wrap_light(g.light.z);
   let lamp = wrap_light(dot(n, g.light)) * lit;
   let room = room_light(n) * open;
-  // the fibres' sheen: white light, a little of the cloth's own colour
-  let tint = mix(vec3<f32>(1.0), albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 0.05), 0.3);
-  let gloss = g.sheen * 0.55;
+  // the sheen: white light, a little of the cloth's own colour, woven
+  let tint = mix(vec3<f32>(1.0), albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 0.05), 0.25) * weave(v.uv);
+  let gloss = 2.2 * g.sheen;
   var col : vec3<f32>;
   var changed : f32;
   if (facing) {
     let light = (ROOM * room + (1.0 - ROOM) * lamp) / level;
-    let sheen = sheen_lobe(n, view, g.light, 0.55) * lit - sheen_lobe(rest_n, rest_view, g.light, 0.55);
+    let sheen = sheen_lobe(n, view, g.light) * lit - sheen_lobe(rest_n, rest_view, g.light);
     let rim = pow(1.0 - max(dot(n, view), 0.0), 4.0) * room - pow(1.0 - rest_view.z, 4.0) * room_light(rest_n);
-    col = albedo * light + tint * gloss * (sheen + 0.25 * rim);
+    col = albedo * light + FABRIC * (light - 1.0) + tint * gloss * (sheen + 0.04 * rim);
     changed = clamp(abs(light - 1.0) * 40.0 + abs(sheen) * 40.0 + abs(rim) * 10.0, 0.0, 1.0);
   } else {
-    // the back: the weave with the print soaked through it, lit by the room behind the cloth (dimmer: the wall is near) and by the
+    // the back: the linen with the print soaked through it, lit by the room behind the cloth (dimmer: the wall is near) and by the
     // lamp's light that comes through from the printed side
-    let weave = mix(vec3<f32>(dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722))), albedo, 0.7) * g.through;
+    let back = mix(g.linen, albedo, g.through);
     let through = wrap_light(dot(printed, g.light)) * lit * TRANSMIT;
-    let light = (ROOM * room * 0.7 + (1.0 - ROOM) * (lamp + through)) / level;
-    let sheen = sheen_lobe(n, view, g.light, 0.55) * lit;
-    col = weave * light + tint * gloss * 0.5 * g.through * sheen;
+    let light = (ROOM * room * 0.75 + (1.0 - ROOM) * (lamp + through)) / level;
+    let sheen = sheen_lobe(n, view, g.light) * lit;
+    col = back * light + tint * gloss * 0.6 * sheen * dot(g.linen, vec3<f32>(1.0));
     changed = 1.0;
   }
   // dithered where the effect lit or shaded the page; the page's own pixels where it did not

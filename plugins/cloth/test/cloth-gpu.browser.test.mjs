@@ -15,7 +15,7 @@ const H = 320;
 const scene = markerScene({ w: W, h: H });
 // The oracle calls a pixel bright when its red channel is over 110. For the mapper checks the cloth is lit evenly (no shadow, no sheen)
 // and its back is dark, so that a bright pixel can only be a white marker on the printed side, whatever fold it lies in.
-const PLAIN = { ...meta.defaults, shadow: 0, sheen: 0, through: 0.04 };
+const PLAIN = { ...meta.defaults, shadow: 0, sheen: 0, through: 0.04, back: '#000' };
 
 /** @param {any} rig @param {string} type @param {number[]} at @param {number} [buttons] */
 function pointer(rig, type, [x, y], buttons = 1) {

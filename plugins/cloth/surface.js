@@ -29,7 +29,7 @@ export const FLAT = 0;
 export const CLOTH = 1;
 export const GONE = 2;
 /** the camera looks at the middle of the canvas from this many times its larger side away (css px: CAMERA * max(W, H)) */
-export const CAMERA = 2.4;
+export const CAMERA = 1.6;
 
 /** floats of the state of a cloth of cols x rows cells @param {number} cols @param {number} rows */
 export const stateLength = (cols, rows) => HEAD + (cols + 3) * (rows + 3) * 4;

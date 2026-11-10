@@ -63,8 +63,11 @@ export const ASSIST_PX = 0.4;
 export const ASSIST_SPEED = 8;
 export const ASSIST_TAU = 0.045;
 export const SNAP_PX = 0.012;
+/** held by its corners: a particle slower than STICK_SPEED css px/s keeps the share STICK of its speed per step */
+export const STICK_SPEED = 14;
+export const STICK = 0.9;
 /** how much a displacement towards or away from the viewer counts against one across the canvas (it moves a pixel that much less) */
-const DEPTH_SHARE = 0.3;
+const DEPTH_SHARE = 0.4;
 
 /** @typedef {'top'|'corners'|'none'} Pins */
 /**
@@ -98,6 +101,7 @@ const DEPTH_SHARE = 0.3;
  * @property {number} wind  the breeze, 0..1 @property {Gust[]} gusts
  * @property {{idx: Int32Array, wt: Float64Array, count: number, sum: number, x: number, y: number, z: number, on: boolean}} grab
  * @property {{t0: number, seconds: number, done: number}|null} peel  the pins are letting go, from the left (`drop`)
+ * @property {{t0: number, seconds: number, from: Float64Array, to: Float64Array}|null} lower  the pins are coming down to their places (`hangFrom`)
  * @property {number} time  s of simulated time @property {number} quiet  s for which the cloth has been slow
  * @property {boolean} asleep  nothing moves; `step` does nothing until `wake`
  * @property {boolean} flat  asleep in the flat pose exactly
@@ -160,7 +164,7 @@ export function createCloth(width, height) {
     tethers: { pin: new Int32Array(2 * n).fill(-1), len: new Float64Array(2 * n), per: 0 },
     gravity: GRAVITY * height, wall: -WALL_GAP * Math.min(width, height), dragN: 4, dragT: 2.4, bend: 120, wind: 0, gusts: [],
     grab: { idx: new Int32Array(reach * reach), wt: new Float64Array(reach * reach), count: 0, sum: 0, x: 0, y: 0, z: 0, on: false },
-    peel: null, time: 0, quiet: 0, asleep: true, flat: true, speed: 0, away: 0,
+    peel: null, lower: null, time: 0, quiet: 0, asleep: true, flat: true, speed: 0, away: 0,
   };
   for (let k = 0; k < n; k += 1) c.nrm[3 * k + 2] = 1;
   setPins(c, 'top');
@@ -176,7 +180,7 @@ export function createCloth(width, height) {
 export function setPins(c, pins) {
   const { nx, n, tethers } = c;
   c.pins = pins;
-  c.peel = null;
+  c.peel = null; c.lower = null;
   c.w.fill(1);
   tethers.pin.fill(-1);
   tethers.per = pins === 'top' ? 1 : pins === 'corners' ? 2 : 0;
@@ -326,8 +330,10 @@ function windAt(c, x, y, t) {
       e = k > 0 && k < 1 ? Math.sin(Math.PI * k) ** 2 : 0;
     }
     if (e === 0) continue;
-    const u = g.strength * GUST_WIND * H * e;
-    wz += u; wx += 0.3 * u * g.dx; wy += 0.3 * u * g.dy;
+    // uneven, as moving air is: eddies that travel with the front, and more of it where the cloth hangs free
+    const eddy = 1 + 0.5 * Math.sin((6.3 * (1.7 * x + 0.6 * y)) / diag + 5 * t) + 0.32 * Math.sin((6.3 * (3.1 * x - 1.3 * y)) / diag - 7.3 * t + 1.7);
+    const u = g.strength * GUST_WIND * H * e * eddy * (0.55 + 0.9 * (y / H));
+    wz += u; wx += 0.5 * u * g.dx; wy += 0.5 * u * g.dy;
   }
   wind3[0] = wx; wind3[1] = wy; wind3[2] = wz;
 }
@@ -388,6 +394,17 @@ export function step(c) {
     }
     c.peel.done = Math.max(c.peel.done, upto);
     if (upto >= nx) { c.pins = 'none'; tethers.per = 0; c.peel = null; }
+  }
+  if (c.lower) {
+    // the pins come down to their places: a smooth step in time (no speed at either end)
+    const k = Math.min(1, (t + h - c.lower.t0) / c.lower.seconds), e = k * k * (3 - 2 * k), { from, to } = c.lower;
+    for (let i = 0; i < nx; i += 1) {
+      if (w[i] !== 0) continue;
+      const i3 = 3 * i;
+      pinAt[i3] = from[i3] + (to[i3] - from[i3]) * e; pinAt[i3 + 1] = from[i3 + 1] + (to[i3 + 1] - from[i3 + 1]) * e; pinAt[i3 + 2] = from[i3 + 2] + (to[i3 + 2] - from[i3 + 2]) * e;
+      x[i3] = pinAt[i3]; x[i3 + 1] = pinAt[i3 + 1]; x[i3 + 2] = pinAt[i3 + 2];
+    }
+    if (k >= 1) c.lower = null;
   }
   // ---- 1. forces ----
   normals(c);
@@ -473,7 +490,7 @@ export function step(c) {
     }
   }
   // ---- 5. the wall, 6. the velocities; how fast and how far from flat the cloth is ----
-  const wall = c.wall, keep = 1 - WALL_FRICTION, ih = 1 / h;
+  const wall = c.wall, keep = 1 - WALL_FRICTION, ih = 1 / h, sticky = c.pins === 'corners' && !c.grab.on;
   let fast = 0, far = 0;
   for (let k = 0, k3 = 0; k < n; k += 1, k3 += 3) {
     if (x[k3 + 2] < wall && w[k] !== 0) {
@@ -481,8 +498,10 @@ export function step(c) {
       x[k3] = p[k3] + (x[k3] - p[k3]) * keep; x[k3 + 1] = p[k3 + 1] + (x[k3 + 1] - p[k3 + 1]) * keep;
     }
     const vx = (x[k3] - p[k3]) * ih, vy = (x[k3 + 1] - p[k3 + 1]) * ih, vz = (x[k3 + 2] - p[k3 + 2]) * ih;
-    v[k3] = vx; v[k3 + 1] = vy; v[k3 + 2] = vz;
     const s2 = vx * vx + vy * vy + vz * vz;
+    // a cloth that hangs in folds comes to rest by the friction of its threads: what only creeps, stops
+    const hold = sticky && s2 < STICK_SPEED * STICK_SPEED ? STICK : 1;
+    v[k3] = vx * hold; v[k3 + 1] = vy * hold; v[k3 + 2] = vz * hold;
     if (s2 > fast) fast = s2;
     const ex = x[k3] - rest[k3], ey = x[k3 + 1] - rest[k3 + 1], ez = (x[k3 + 2] - rest[k3 + 2]) * DEPTH_SHARE;
     const e2 = ex * ex + ey * ey + ez * ez;
@@ -500,7 +519,7 @@ export function step(c) {
  * @param {Cloth} c
  */
 function rest_(c) {
-  if (c.grab.on || c.wind > 0 || c.gusts.length > 0 || c.peel) { c.quiet = 0; return; }
+  if (c.grab.on || c.wind > 0 || c.gusts.length > 0 || c.peel || c.lower) { c.quiet = 0; return; }
   const h = STEP_S, { x, p, v, rest, n } = c;
   if (c.pins === 'top') {
     if (c.away < ASSIST_PX && c.speed < ASSIST_SPEED) {
@@ -526,21 +545,27 @@ export function drop(c, seconds) {
 }
 
 /**
- * The cloth as a rigid sheet that hangs from its top edge at the height y0 (css px; negative: above the canvas), swung by `angle` radians
- * about that edge towards the viewer, still. The pins hold the top edge there and carry it to its place (`step`). For the cloth that is
- * hung again. @param {Cloth} c @param {number} y0 @param {number} angle @param {Pins} [pins]
+ * The cloth as a rigid sheet that hangs from its pins at the height y0 (css px; negative: above the canvas), swung by `angle` radians
+ * about its top edge towards the viewer, still; the pins then come down to their places over `seconds` (`step`). For the cloth that is
+ * hung again. The pins must not fall faster than the cloth does, or they overtake it and it folds over them: `lowerSeconds` is the
+ * shortest time that keeps it taut. @param {Cloth} c @param {number} y0 @param {number} angle @param {Pins} pins @param {number} seconds
  */
-export function hangFrom(c, y0, angle, pins = 'top') {
-  const { n, x, p, v, rest } = c;
+export function hangFrom(c, y0, angle, pins, seconds) {
+  const { n, x, p, v, rest, pinAt } = c;
   setPins(c, pins);
   const ca = Math.cos(angle), sa = Math.sin(angle);
   for (let k3 = 0; k3 < 3 * n; k3 += 3) {
+    // (the pins of `corners` hold their particles a little inside the sheet: the sheet is hung by its corners as it is, and gathers as they come down)
     x[k3] = rest[k3]; x[k3 + 1] = y0 + rest[k3 + 1] * ca; x[k3 + 2] = rest[k3 + 1] * sa;
   }
   p.set(x); v.fill(0);
+  c.lower = { t0: c.time, seconds: Math.max(STEP_S, seconds), from: x.slice(0, 3 * c.nx), to: pinAt.slice(0, 3 * c.nx) };
   c.grab.on = false; c.gusts.length = 0;
   wake(c);
 }
+
+/** The shortest time in which pins may come down `distance` css px on their smooth way (`step`) without falling faster than the cloth: their largest acceleration stays under 0.8 g. @param {Cloth} c @param {number} distance */
+export const lowerSeconds = (c, distance) => Math.sqrt((6 * Math.abs(distance)) / (0.8 * c.gravity));
 
 /** The largest relative stretch of a link of the weave (0.01: one percent longer than at rest); for tests and measurements. @param {Cloth} c */
 export function stretch(c) {
