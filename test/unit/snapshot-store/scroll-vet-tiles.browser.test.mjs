@@ -4,9 +4,9 @@
 //   out, and nothing else: the pixel beside a corner still refuses the plan. Control: without softCorners the same tiles are refused.
 // - ScrollPlan.grid (WebKit): the cover tiles are rendered with one pixel per grid cell, whatever the scale of the surface (the image is laid out in css px and
 //   scaled with a transform, so the tile holds the same boxes); the pages keep the surface's scale. Control: a plan without a grid asks for the surface's scale.
-// - A read that costs by the call (Safari on macOS: 40 to 50 ms for each getImageData that follows a drawing or comes in a later task, whatever its size): the
-//   first read of a tile is one pixel, timed; once it took more than 5 ms, that tile is read whole in the same task and every later tile in one read, in a
-//   post-frame job of its own. Control: with fast reads the same port is read in bands.
+// - A read that costs by the call (Safari on macOS: 40 to 50 ms for each getImageData that follows a drawing or comes in a later task, whatever its size): at the
+//   first later band of a tile one pixel is read, timed; when it took more than 5 ms, the rest of each tile is read in one task instead of band by band. Control:
+//   with fast reads the same port is read in bands.
 import { test, assert } from '/test/unit/lib/t.js';
 import { RGBA, makeRig, svgUrl } from './helpers.mjs';
 
@@ -122,11 +122,11 @@ function slowReads(t, ms) {
 }
 const tall = (/** @type {number[]} */ fill, /** @type {number[][]} */ odd) => tile(fill, odd, 600, 900);
 
-test('a read that costs by the call: after a slow read of one pixel that tile is read whole in the same task, and the next tile in one read', async (t) => {
+test('a read that costs by the call: after a slow read of one pixel at the first later band, the rest of each tile is read in one task', async (t) => {
   const reads = slowReads(t, 8);
   const r = await planned(t, { cover: COVERS, opaque: true }, [{ url: tall(COVER, []) }, { url: tall(COVER2, []) }, ...pages], { frame: TALL, size: [620, 920] });
-  // (the reads of more than one pixel) the first tile whole, after its timed pixel; the second tile: all its rows in one read
-  assert.deepEqual(reads, [900, 900], `rows read (${JSON.stringify(reads)})`);
+  // (the reads of more than one pixel) the first band of each tile as it lands; then, after the timed pixel, the rest of the first tile at once, and the rest of the second
+  assert.deepEqual(reads, [436, 436, 464, 464], `rows read (${JSON.stringify(reads)})`);
   assert.equal(r.rig.store.stats().scroll.refusedBy.cover, 0);
   assert.deepEqual(step(r, 20), { promised: true, composed: 1 });
 });

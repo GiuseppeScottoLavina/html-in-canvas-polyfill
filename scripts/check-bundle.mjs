@@ -227,15 +227,15 @@ const LIMITS = {
   // 366.75 -> 367.5 KB (+642 / +203 bytes, 2026-11-10, measured 367,253 / 124,990; gzip stays under 125 KB): the ancestor chain of a canvas follows every move
   // (the registry's tree-change signal, suspended canvases reconciled when a shadow host comes back) and the clone root takes the language the browser gives a
   // canvas in a shadow tree (clone.js shadowLanguageOf; external audit of 1.0.0-rc.7)
-  // 367.5 -> 368 KB, gzip 125 -> 125.5 KB (+697 / +359 bytes, 2026-11-10, measured 367,950 / 125,349): the cover check of the scroll compositor leaves out the
+  // 367.5 -> 368 KB, gzip 125 -> 125.5 KB (+734 / +368 bytes, 2026-11-10, measured 367,987 / 125,358): the cover check of the scroll compositor leaves out the
   // corner pixels of its tiles on WebKit (ScrollPlan.softCorners), renders those tiles with one pixel per css px there, reads a tile whole where a read costs by
   // the call (scroll-compose.js vet), and sets its first fill on the finished clone (capture.js setCoverFill); before it Safari on macOS composed no scroller since
   // 0.1.0-preview.23
-  // 368 -> 374.25 KB, gzip 125.5 -> 127.75 KB (+6,288 / +2,320 bytes, 2026-11-10, measured 374,238 / 127,669): selectors that count siblings are tied to the
+  // 368 -> 374.5 KB, gzip 125.5 -> 127.75 KB (+6,288 / +2,319 bytes, 2026-11-10, measured 374,275 / 127,677): selectors that count siblings are tied to the
   // containers they reach (css-shake.js structureOf: the selector reader is about 4 KB of it; clone.js siblingRules), where one such selector anywhere turned the
   // merging of spacers and the cut of the tail off for every drawable (a 1,000-element drawable on an iPad: 30 updates a second instead of 59), and a spacer takes
   // the margins that collapsed through the child it stands for (clone.js throughMargin; a tile 10 px off without it)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 374.25 * KB, gzip: 127.75 * KB },
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 374.5 * KB, gzip: 127.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -470,7 +470,7 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // chromium 136.25 -> 136.5 KB, geckoWebkit 152.75 -> 153 KB (2026-11-10, measured 136,363 / 152,940): the core it loads grew by the ancestor chain that follows
   //   every move and the shadow tree language (+203 gzip)
   // chromium 136.5 -> 137 KB, geckoWebkit 153 -> 153.5 KB (2026-11-10, measured 136,800 / 153,377): the core it loads grew by the cover check's tiles on WebKit
-  // chromium 137 -> 139.25 KB, geckoWebkit 153.5 -> 156 KB (2026-11-10, measured 139,187 / 155,764): the core it loads grew by the selectors that count siblings
+  // chromium 137 -> 139.25 KB, geckoWebkit 153.5 -> 156 KB (2026-11-10, measured 139,178 / 155,755): the core it loads grew by the selectors that count siblings
   // tied to their containers and the margins of pruned children (+2,380 gzip in this bundling)
   const LOADER_APP = { start: 8.1 * KB, chromium: 139.25 * KB, geckoWebkit: 156 * KB };
   const bundlesDoc = readFileSync(join(root, 'docs/BUNDLES.md'), 'utf8');

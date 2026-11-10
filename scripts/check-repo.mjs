@@ -207,14 +207,14 @@ if (!docsOnly) {
   // reconciled, src/schedule/observers/mutation-observer.js sync on it, src/snapshot/capture/clone.js shadowLanguageOf); before it a canvas moved inside one task,
   // or inserted again under another parent after rc.7, kept the old chain, a shadow host moved across a checkpoint left its canvas suspended, and the clone of a
   // canvas in a shadow tree had the language of <html> whatever the browser gives it (external audit of 1.0.0-rc.7)
-  // 17437 -> 17463 (2026-11-10, measured 17,463): the cover check's tiles on WebKit (+26: src/snapshot/store/scroll-compose.js soft corners, tiles on the grid, a
+  // 17437 -> 17464 (2026-11-10, measured 17,464): the cover check's tiles on WebKit (+27: src/snapshot/store/scroll-compose.js soft corners, tiles on the grid, a
   // slow read reads the tile whole; src/snapshot/capture/capture.js setCoverFill); before it Safari on macOS refused every scroll plan since 0.1.0-preview.23 (the
   // corner pixels of an image drawn into a canvas are not exact there, and the system's bar, painted after the first fill, declared the list's own colour again),
   // and each band of a check waited 40 to 50 ms for its read
-  // 17463 -> 17703 (2026-11-10, measured 17,703): selectors that count siblings tied to their containers (+240: src/snapshot/capture/css-shake.js splitCompounds,
+  // 17464 -> 17704 (2026-11-10, measured 17,704): selectors that count siblings tied to their containers (+240: src/snapshot/capture/css-shake.js splitCompounds,
   // readCompound, structureOf; src/snapshot/capture/clone.js siblingRules, throughMargin and the spacer margins of cloneChildList); before it one such selector
   // anywhere in the page's CSS kept a spacer for every pruned row of every drawable, and a pruned group lost the margins that had collapsed through it
-  if (total > 17703) problems.push(`G-size: core is ${total} code lines (> 17703)`);
+  if (total > 17704) problems.push(`G-size: core is ${total} code lines (> 17704)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
