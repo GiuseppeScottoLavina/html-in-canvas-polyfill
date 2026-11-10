@@ -3,7 +3,7 @@
  * Module: gpu-effects (src/effects/**).
  */
 
-import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
+import { HicUnsupportedError, invalidState, typeError } from '../contracts/errors.js';
 import { BUS, EVENTS } from '../contracts/events.js';
 import { createPluginSet } from './effect-plugins.js';
 import { nativeFrameSource, schedulerFrameSource } from './frame-source.js';
@@ -12,6 +12,7 @@ import { createMapperChain } from './input-mapper.js';
 import { createInterposer } from './interposer.js';
 import { contentBoxOf, createNativeGeometry } from './native-geometry.js';
 import { createNativeInterposer } from './native-interposer.js';
+import { isNoTarget } from './no-target.js';
 import { captureMapper } from './plugin-abi.js';
 import { createNativeSourceProvider, createStoreSourceProvider } from './source-provider.js';
 import { watchVisibility } from '../util/visibility.js';
@@ -142,6 +143,7 @@ class HostRuntime {
     this.settleDue = false;
     /** @type {Array<() => void>} */ this.cleanups = [];
     this.chain = createMapperChain();
+    /** the plugins of the newest presented frame, in chain order @type {Slot[]} */ this.presentedOrder = [];
     /** @type {{stats: () => {remapped: number, passedThrough: number}}|null} */ this.interposer = null;
     /** @type {Presenter} */ this.presenter = /** @type {any} */ (null);
     this.provider = record ? createStoreSourceProvider(env, record, source) : createNativeSourceProvider(env, canvas, source);
@@ -156,6 +158,7 @@ class HostRuntime {
       reducedMotion: () => !!(/** @type {any} */ (env.window)).matchMedia?.('(prefers-reduced-motion: reduce)').matches,
       reportError: (error, slot, phase) => this.reportPluginError(error, slot, phase),
       onWait: () => { if (!this.isVisible()) this.armSettle(); },
+      localPoint: (slot, point) => this.localPoint(slot, point),
     });
     const hook = (/** @type {number} */ now, /** @type {{frameCap: number, due: boolean, repeat?: boolean}} */ info) => this.onFrame(now, info);
     this.frames = record ? schedulerFrameSource(deps.scheduler, record, hook) : nativeFrameSource(env, canvas, hook);
@@ -316,7 +319,9 @@ class HostRuntime {
     this.frameIndex += 1;
     this.counters.frames += 1;
     this.frameTimes[this.counters.frames % FPS_WINDOW] = now;
-    this.chain.push(frame.frameIndex, this.captureMappers(presented, frame));
+    const captured = this.captureMappers(presented, frame);
+    this.presentedOrder = presented.map((s) => s.slot);
+    this.chain.push(frame.frameIndex, captured.mappers, captured.places);
     this.canvas.dispatchEvent(new CustomEvent(EVENTS.EFFECT_FRAME, { detail: Object.freeze({ ...frame }) }));
   }
 
@@ -341,16 +346,36 @@ class HostRuntime {
   /**
    * @param {import('./effect-plugins.js').Stage[]} stages
    * @param {EffectPresentationFrame} frame
-   * @returns {InputMapper[]}
+   * @returns {{mappers: InputMapper[], places: number[]}}  `places[i]`: the place in `stages` of the plugin of `mappers[i]`
    */
   captureMappers(stages, frame) {
     /** @type {InputMapper[]} */
     const mappers = [];
-    for (const s of stages) {
+    /** @type {number[]} */
+    const places = [];
+    for (let i = 0; i < stages.length; i += 1) {
+      const s = stages[i];
       if (!s.instance.spatial) continue;
-      try { mappers.push(captureMapper(s.instance, s.def, frame)); } catch (error) { this.plugins.fail(s.slot, error); }
+      try { mappers.push(captureMapper(s.instance, s.def, frame)); places.push(i); } catch (error) { this.plugins.fail(s.slot, error); }
     }
-    return mappers;
+    return { mappers, places };
+  }
+
+  /**
+   * EffectPluginContext.localPoint: where a point of the canvas is in the picture this plugin rendered, in the newest presented frame: the point through the
+   * mappers of the plugins after it. The same point for the last plugin, and for a plugin that was not in that frame (just added: it runs last).
+   * EffectHost.mapPoint is the same from before the first plugin (`slot` null): the point in the source.
+   * @param {Slot|null} slot @param {{x: number, y: number}} point  canvas-relative css px of the content box
+   * @returns {{x: number, y: number}|null}  null where a later plugin shows nothing of this plugin's picture
+   */
+  localPoint(slot, point) {
+    const x = Number(point?.x), y = Number(point?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw typeError('the point must have finite x and y (canvas-relative CSS pixels)');
+    const place = slot ? this.presentedOrder.indexOf(slot) : -1;
+    if (slot && (place < 0 || place === this.presentedOrder.length - 1)) return { x, y };
+    const vp = this.presenter.viewport();
+    const q = this.chain.mapAfter(place, { x, y, width: vp.cssWidth, height: vp.cssHeight });
+    return isNoTarget(q) ? null : q;
   }
 
   /** @param {EffectViewport} vp */
@@ -455,6 +480,7 @@ class HostRuntime {
       get pluginCount() { return rt.plugins.count; },
       addPlugin: (def, options) => rt.plugins.add(def, options),
       stats: () => rt.stats(),
+      mapPoint: (point) => rt.localPoint(null, point),
       destroy: () => rt.destroy(),
     };
   }

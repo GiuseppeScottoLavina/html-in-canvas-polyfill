@@ -217,7 +217,11 @@ if (!docsOnly) {
   // 17704 -> 17720 (2026-11-10, measured 17,720): a pinned control keeps the percentage of its width (+16: src/snapshot/capture/native-controls.js pinnedSize,
   // src/snapshot/capture/webkit-caret.js declaredWidth); before it a full-width range across a grid of `1fr auto` moved the readout beside it out of its row in
   // Safari and Firefox
-  if (total > 17720) problems.push(`G-size: core is ${total} code lines (> 17720)`);
+  // 17720 -> 17741 (2026-11-10, measured 17,741): EffectPluginContext.localPoint (+21: src/effects/effect-host.js localPoint and the place of each mapper,
+  // src/effects/input-mapper.js mapAfter, src/effects/effect-plugins.js); before it the first of two stacked plugins read the pointer on the canvas
+  // 17741 -> 17743 (2026-11-10, measured 17,743): EffectHost.mapPoint (+2: src/effects/effect-host.js, src/effects/index.js), the host's own mapping of a pointer
+  // for a page to show (the gallery's input map)
+  if (total > 17743) problems.push(`G-size: core is ${total} code lines (> 17743)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

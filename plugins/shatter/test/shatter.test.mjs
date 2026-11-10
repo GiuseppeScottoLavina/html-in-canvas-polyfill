@@ -194,8 +194,11 @@ function fakeGpu() {
   return { device, created, writes, draws, live, descriptors, encoder: { beginRenderPass: (/** @type {any} */ d) => { descriptors.push(d); draws.push(['pass', d.depthStencilAttachment ? '3d' : 'flat']); return pass; } } };
 }
 
-/** The plugin behind the real effect handle, over the fake GPU. @param {Record<string, unknown>} options @param {{reducedMotion?: boolean}} [o] */
-async function instance(options, { reducedMotion = false } = {}) {
+/**
+ * The plugin behind the real effect handle, over the fake GPU. `localPoint` stands for the plugins added after this one (context.localPoint).
+ * @param {Record<string, unknown>} options @param {{reducedMotion?: boolean, localPoint?: (point: {x: number, y: number}) => {x: number, y: number}|null}} [o]
+ */
+async function instance(options, { reducedMotion = false, localPoint } = {}) {
   const gpu = fakeGpu();
   const realFetch = globalThis.fetch;
   globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
@@ -209,7 +212,7 @@ async function instance(options, { reducedMotion = false } = {}) {
   /** a pointer press on the canvas, as context.listen hears it @param {number} clientX @param {number} clientY */
   const press = (clientX, clientY) => canvas.dispatchEvent(Object.assign(new Event('pointerdown'), { clientX, clientY }));
   try {
-    const h = await nodeHandle(plugin, { duration: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion });
+    const h = await nodeHandle(plugin, { duration: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion, localPoint });
     const inst = h.inst;
     const sourceTexture = { width: 960, height: 640 };
     const sourceView = {}, destinationView = {};
@@ -309,6 +312,37 @@ test('instance: the impact point is the last pointer press, else the centre of t
   api.handle.trigger('out');
   api.inst.render(api.frame(10)); api.inst.render(api.frame(20));
   assert.deepEqual(impactOf(api), [240, 160], 'the canvas centre');
+});
+
+/** an invalid submit right after a press at client (x, y) (no press without them); returns where the glass cracked @param {any} x @param {number} [cx] @param {number} [cy] */
+function crackAfterPress(x, cx, cy) {
+  x.inst.render(x.frame(0));
+  if (cx !== undefined && cy !== undefined) x.press(cx, cy);
+  x.source.invalid = true;
+  x.source.dispatchEvent(new Event('submit'));
+  x.inst.render(x.frame(10)); x.inst.render(x.frame(20));
+  assert.equal(patterns(x.gpu), 1, 'the invalid submit cracks');
+  return impactOf(x);
+}
+
+test('instance: with plugins added after it, the press is read through context.localPoint: the glass cracks where the press is seen in its own picture; control: without them, at the press', async () => {
+  const DX = 120, DY = 60;
+  const shifted = crackAfterPress(await instance({ onSubmit: 'invalid' }, { localPoint: (p) => ({ x: p.x + DX, y: p.y + DY }) }), 50, 60);
+  const there = crackAfterPress(await instance({ onSubmit: 'invalid' }), 50 + DX, 60 + DY);
+  const here = crackAfterPress(await instance({ onSubmit: 'invalid' }), 50, 60);
+  assert.deepEqual(shifted, [50 + DX, 60 + DY], 'the impact is the press as context.localPoint gives it');
+  assert.deepEqual(shifted, there, 'the same impact as a press at that point with no plugin after it');
+  assert.deepEqual(here, [50, 60], 'control: with no plugin after it the impact is the press itself');
+  assert.notDeepEqual(shifted, here, 'control: the impact depends on where the press is');
+});
+
+test('instance: a press where a later plugin shows nothing of the glass (context.localPoint gives null) stores no point: the impact comes from the invalid field, as with no press at all; control: a press that is seen decides the impact', async () => {
+  const unseen = crackAfterPress(await instance({ onSubmit: 'invalid' }, { localPoint: () => null }), 50, 60);
+  const noPress = crackAfterPress(await instance({ onSubmit: 'invalid' }));
+  const seen = crackAfterPress(await instance({ onSubmit: 'invalid' }), 50, 60);
+  assert.deepEqual(unseen, noPress, 'exactly as with no press');
+  assert.deepEqual(unseen, [350, 110], 'the centre of the invalid field');
+  assert.deepEqual(seen, [50, 60], 'control: the same press, seen, is the impact');
 });
 
 test('instance: submit wiring: invalid cracks, invalid again breaks it, a valid one heals a cracked pane; a submit during a transition does nothing', async () => {

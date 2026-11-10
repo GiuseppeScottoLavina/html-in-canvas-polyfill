@@ -345,7 +345,8 @@ function fakeGpu() {
 }
 
 const W = 400, H = 300;
-async function createWater(options = {}, { reduced = false } = {}) {
+/** `localPoint` stands for the plugins added after the water (context.localPoint); without it the context has none */
+async function createWater(options = {}, { reduced = false, localPoint = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const gpu = fakeGpu();
   const listeners = {};
@@ -358,6 +359,7 @@ async function createWater(options = {}, { reduced = false } = {}) {
     canvas: { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ ...rect }), clientWidth: W, clientHeight: H, clientLeft: 0, clientTop: 0 },
     listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; },
     viewport: () => ({}),
+    ...(localPoint ? { localPoint } : {}),
   };
   const instance = await WaterEffectPlugin.create(context, { shader: '// wgsl', ...options });
   const frame = (now) => ({ now, width: W * 2, height: H * 2, cssWidth: W, cssHeight: H, dpr: 2, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder });
@@ -631,6 +633,73 @@ test('touch moves and the pointer moves of the same finger are not both counted'
   const touchOnly = await depth(false);
   const both = await depth(true);
   assert.ok(touchOnly > 0.5 && Math.abs(both - touchOnly) < 1e-6, `the same wake (${touchOnly} vs ${both})`);
+});
+
+/** where the water of the last uploaded field is, css px: the centre of |height| over the field, or null while nothing was uploaded @param {any} w */
+function stirredAt(w) {
+  if (!w.gpu.textures.length) return null;
+  const f = lastField(w);
+  let m = 0, sx = 0, sy = 0;
+  for (let j = 0; j < f.gh; j += 1) for (let i = 0; i < f.gw; i += 1) { const a = Math.abs(f.at(i, j)); m += a; sx += a * (i + 0.5) * f.cx; sy += a * (j + 0.5) * f.cy; }
+  return [sx / m, sy / m];
+}
+/**
+ * What stirs the water in the pointer tests below, each from client (x, y): a tap, a short mouse stroke to the right, the same stroke of a finger (touch events).
+ * @type {Record<string, (w: any, x: number, y: number, t: number) => void>}
+ */
+const STIRS = {
+  tap: (w, x, y) => w.pointer('pointerdown', x, y),
+  stroke: (w, x, y, t) => { for (let i = 0; i <= 2; i += 1) w.pointer('pointermove', x + 10 * i, y, { timeStamp: t + 10 * i }); },
+  finger: (w, x, y, t) => { w.touch('touchstart', x, y, t); for (let i = 1; i <= 2; i += 1) w.touch('touchmove', x + 10 * i, y, t + 10 * i); },
+};
+/** one of STIRS at client (x, y), then a frame 60 ms later: whether the water moves, and where @param {string} how @param {number} x @param {number} y @param {((p: {x: number, y: number}) => {x: number, y: number}|null)} [localPoint] */
+async function stirred(how, x, y, localPoint) {
+  const w = await createWater({ intensity: 0.5 }, { localPoint });
+  const t0 = performance.now();
+  STIRS[how](w, x, y, t0);
+  const woke = w.instance.continuous;
+  w.instance.render(w.frame(t0 + 60));
+  return { woke, asked: w.renders(), at: stirredAt(w) };
+}
+
+test('with plugins added after the water, the pointer is read through context.localPoint: a tap, a mouse stroke and a finger stir the water where they are seen on it (within 0.5 css px of the same input there); control: without them, under the pointer', async () => {
+  const DX = 120, DY = 60;
+  const shift = (/** @type {{x: number, y: number}} */ p) => ({ x: p.x + DX, y: p.y + DY });
+  for (const how of Object.keys(STIRS)) {
+    const shifted = await stirred(how, 100, 80, shift);
+    const there = await stirred(how, 100 + DX, 80 + DY);
+    const here = await stirred(how, 100, 80);
+    assert.ok(shifted.woke && there.woke && here.woke && shifted.at && there.at && here.at, `${how}: the water moves`);
+    assert.ok(Math.hypot(shifted.at[0] - there.at[0], shifted.at[1] - there.at[1]) < 0.5, `${how}: the same water as the same input at that point with no plugin after it: (${shifted.at}) vs (${there.at})`);
+    assert.ok(Math.abs(shifted.at[0] - here.at[0] - DX) < 0.5 && Math.abs(shifted.at[1] - here.at[1] - DY) < 0.5, `${how}: control: with no plugin after it the water moves under the pointer, ${DX} x ${DY} px away: (${here.at})`);
+  }
+});
+
+test('where a later plugin shows nothing of the water (context.localPoint gives null) a tap drops no pebble and a stroke or a finger leaves no wake: not continuous, no frame asked for, nothing uploaded; control: the same input stirs without that', async () => {
+  for (const how of Object.keys(STIRS)) {
+    const unseen = await stirred(how, 200, 150, () => null);
+    assert.equal(unseen.woke, false, `${how}: not continuous`);
+    assert.equal(unseen.asked, 0, `${how}: no frame asked for`);
+    assert.equal(unseen.at, null, `${how}: the field is not uploaded`);
+    const control = await stirred(how, 200, 150);
+    assert.ok(control.woke && control.asked > 0 && control.at, `${how}: control: seen, the same input stirs the water`);
+  }
+});
+
+test('a path that crosses a place where a later plugin shows nothing of the water ends there: no wake is drawn across the gap, by the mouse or by a finger; control: the same path, seen all along, leaves a wake', async () => {
+  // the water is not shown under x 150..170: the stroke 100 -> 160 -> 220 has one point in the gap, so its two halves are two paths of one point each
+  const gap = (/** @type {{x: number, y: number}} */ p) => (p.x >= 150 && p.x <= 170 ? null : p);
+  const across = async (/** @type {boolean} */ byTouch, /** @type {any} */ localPoint) => {
+    const w = await createWater({ intensity: 1 }, { localPoint });
+    const t0 = performance.now();
+    if (byTouch) { w.touch('touchstart', 100, 150, t0); for (let i = 1; i <= 2; i += 1) w.touch('touchmove', 100 + 60 * i, 150, t0 + 10 * i); }
+    else for (let i = 0; i <= 2; i += 1) w.pointer('pointermove', 100 + 60 * i, 150, { timeStamp: t0 + 10 * i });
+    return w.instance.continuous;
+  };
+  for (const byTouch of [false, true]) {
+    assert.equal(await across(byTouch, gap), false, `${byTouch ? 'finger' : 'mouse'}: nothing joins the two sides of the gap`);
+    assert.equal(await across(byTouch, undefined), true, `${byTouch ? 'finger' : 'mouse'}: control: seen all along, the path leaves a wake`);
+  }
 });
 
 test('intensity, light and ambient from options and setOptions reach the uniform block, clamped to 0..1; ambient makes it continuous on purpose', async () => {

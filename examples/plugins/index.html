@@ -37,7 +37,7 @@
   a { color: #9cf5ff; }
   code { font: 12px/1.5 ui-monospace, monospace; color: #9cf5ff; overflow-wrap: anywhere; }
 
-  /* ---- the chrome above the stage: one bar and one strip of chips, so the stage starts within the first ~110 px ---- */
+  /* ---- the chrome above the stage: one bar and two strips of chips (the effect, and a second one over it), so the stage starts within the first ~150 px ---- */
   #top { max-width: 1100px; margin: 0 auto; }
   .bar { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; min-height: 28px; }
   .bar h1 { margin: 0; font-size: 1.05rem; letter-spacing: -.01em; white-space: nowrap; }
@@ -54,7 +54,30 @@
   #picker button:hover { border-color: rgba(121, 239, 255, .6); }
   #picker button[aria-pressed="true"] { border-color: var(--accent); background: #0b2a40; color: #fff; box-shadow: 0 0 0 2px rgba(121, 239, 255, .22); }
   #picker button:disabled { cursor: not-allowed; opacity: .45; }
-  #picker button:focus-visible, #panel button:focus-visible, #panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #picker button:focus-visible, #stack button:focus-visible, #panel button:focus-visible, #panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* a second effect over the first: a smaller strip under the first one */
+  #stack { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; }
+  #stack li { display: flex; }
+  #stack .lab { position: sticky; left: 0; z-index: 1; align-self: stretch; align-items: center; padding: 0 6px 0 2px; font: 600 .78rem/1 system-ui, sans-serif; color: var(--ink-3); white-space: nowrap; background: var(--bg); }
+  #stack button { min-height: 28px; padding: 0 11px; font: 600 .8rem/1 system-ui, sans-serif; color: var(--ink-2); cursor: pointer; white-space: nowrap;
+    border: 1px solid rgba(190, 237, 255, .18); border-radius: 999px; background: transparent; }
+  #stack button:hover { border-color: rgba(121, 239, 255, .6); }
+  #stack button[aria-pressed="true"] { border-color: var(--accent); background: #0b2a40; color: #fff; }
+  #stack button:disabled { cursor: not-allowed; opacity: .4; }
+  /* the input map: where the host sends the pointer, drawn over the stage (outside the canvas: it is the page's, not part of the drawn form) */
+  #map-toggle { min-height: 24px; padding: 0 10px; font: 600 .76rem/1 system-ui, sans-serif; color: var(--ink-2); cursor: pointer; white-space: nowrap; border: 1px solid rgba(190, 237, 255, .24); border-radius: 999px; background: transparent; }
+  #map-toggle[aria-pressed="true"] { color: #1b0220; border-color: transparent; background: #ff7ad9; }
+  #map-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #map { position: absolute; z-index: 5; overflow: hidden; pointer-events: none; border-radius: 18px; font: 11px/1.35 ui-monospace, monospace; }
+  #map[hidden] { display: none; }
+  #map .box { position: absolute; box-sizing: border-box; border: 1.5px solid #ff7ad9; border-radius: 4px; background: rgba(255, 122, 217, .1); }
+  #map .dot, #map .at { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; }
+  #map .dot { border: 1.5px solid #fff; background: rgba(0, 0, 0, .35); }
+  #map .at { background: #ff7ad9; box-shadow: 0 0 0 2px rgba(27, 2, 32, .7); }
+  #map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #map line { stroke: #ff7ad9; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  #map .tag { position: absolute; max-width: min(440px, 92%); padding: 3px 7px; border-radius: 6px; color: #ffe9f8; background: rgba(27, 2, 32, .88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #map .tag b { color: #ff9be3; font-weight: 600; }
   #notice { display: none; box-sizing: border-box; margin: 8px 0 0; padding: .6rem .8rem; border: 1px solid #c9a24a; border-radius: 12px; background: #2a210c; color: #ffe7a8; font-size: .88rem; }
   #notice.shown { display: block; }
 
@@ -63,15 +86,16 @@
   #stage { display: block; box-sizing: border-box; width: 100%; height: clamp(var(--fit), calc(100svh - var(--chrome) - 12px), var(--stage-max));
     border: 1px solid var(--line); border-radius: 18px; background: #03101c; }
   #panel { box-sizing: border-box; min-width: 0; display: grid; align-content: start; gap: 10px; font-size: .85rem; color: var(--ink-2); }
-  #about { box-sizing: border-box; display: grid; gap: .3rem; padding: .75rem .9rem; border: 1px solid rgba(190, 237, 255, .14); border-radius: 14px; background: #04121f; }
-  #about h2 { margin: 0; font-size: 1rem; color: var(--ink); }
-  #about h2 small { margin-left: .4rem; font-weight: 400; color: var(--ink-3); }
-  #about p { margin: 0; }
-  #about p b { color: var(--ink); font-weight: 600; }
-  #about .source { justify-self: start; }
-  #about .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .2rem; }
-  #about .actions button { min-height: 30px; padding: .15rem .75rem; font: 12px/1.5 ui-monospace, monospace; color: var(--ink); cursor: pointer; border: 1px solid rgba(121, 239, 255, .45); border-radius: 8px; background: #0b2a40; }
-  #about .actions output { flex-basis: 100%; font: 12px/1.5 ui-monospace, monospace; color: var(--ink-3); overflow-wrap: anywhere; }
+  #about, #about-2 { box-sizing: border-box; display: grid; gap: .3rem; padding: .75rem .9rem; border: 1px solid rgba(190, 237, 255, .14); border-radius: 14px; background: #04121f; }
+  #about h2, #about-2 h2 { margin: 0; font-size: 1rem; color: var(--ink); }
+  #about h2 small, #about-2 h2 small { margin-left: .4rem; font-weight: 400; color: var(--ink-3); }
+  #about p, #about-2 p { margin: 0; }
+  #about p b, #about-2 p b { color: var(--ink); font-weight: 600; }
+  #about .source, #about-2 .source { justify-self: start; }
+  #about .actions, #about-2 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .2rem; }
+  #about .actions button, #about-2 .actions button { min-height: 30px; padding: .15rem .75rem; font: 12px/1.5 ui-monospace, monospace; color: var(--ink); cursor: pointer; border: 1px solid rgba(121, 239, 255, .45); border-radius: 8px; background: #0b2a40; }
+  #about-2[hidden] { display: none; }
+  #about .actions output, #about-2 .actions output { flex-basis: 100%; font: 12px/1.5 ui-monospace, monospace; color: var(--ink-3); overflow-wrap: anywhere; }
   #panel details { padding: .6rem .9rem; border: 1px solid rgba(190, 237, 255, .1); border-radius: 14px; background: #030e19; }
   #panel summary { cursor: pointer; color: var(--ink); font-weight: 600; }
   #panel details p { margin: .45rem 0 0; }
@@ -144,7 +168,13 @@
   .control output { color: #9cf5ff; text-align: right; font-variant-numeric: tabular-nums; min-width: 6ch; white-space: nowrap; }
   .control input[type=range] { grid-column: 1 / -1; width: 100%; height: 26px; margin: 0; accent-color: #79efff; cursor: ew-resize; }
   #effect-controls { display: grid; gap: 6px; min-height: 1.2em; color: rgba(224, 247, 255, .72); font-size: 11px; font-weight: 700; }
-  #effect-controls:empty::before { content: attr(data-empty); color: rgba(224, 247, 255, .45); font-weight: 400; }
+  #effect-controls:empty::before, .fx-ui:empty::before { content: attr(data-empty); color: rgba(224, 247, 255, .45); font-weight: 400; }
+  /* one box of controls per effect; with two effects, a switch chooses whose controls are shown */
+  .fx-ui { display: grid; gap: 6px; min-width: 0; }
+  .fx-ui[hidden], .fx-tabs[hidden] { display: none; }
+  .fx-tabs { display: flex; gap: 5px; }
+  .fx-tabs button { min-height: 22px; padding: 0 9px; font: 700 10px/1 system-ui, sans-serif; letter-spacing: .04em; color: inherit; cursor: pointer; border: 1px solid rgba(178, 230, 255, .28); border-radius: 999px; background: rgba(8, 25, 48, .35); }
+  .fx-tabs button[aria-pressed="true"] { color: #03131e; border-color: transparent; background: #79efff; }
   #effect-controls input[type=range] { width: 100%; accent-color: #79efff; }
   .actions { display: flex; align-items: center; gap: 12px; }
   button.submit { padding: 10px 18px; font: inherit; font-weight: 800; color: #03131e; border: 1px solid rgba(139, 240, 255, .5); border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, #78f7ff, #c5fbff 55%, #bba8ff); }
@@ -165,17 +195,23 @@
   @media (max-width: 760px) {
     :root { --gutter: 12px; --fit: 640px; --stage-max: 760px; }
     body { font-size: 14px; }
-    #hint { flex-basis: 100%; order: 3; }
+    #hint { flex: 1 1 60%; order: 3; }
+    #map-toggle { order: 4; }
     #hud { margin-left: auto; font-size: 11px; }
     #hud .mode, #hud .q { display: none; }   /* the mode is in "About this page"; the quantiles are named in the readout's title */
     #picker button { min-height: 36px; padding: 0 13px; }
+    #stack button { min-height: 32px; }
+    /* the switch between two effects' controls takes no row here: it sits beside the card's heading */
+    .card { position: relative; }
+    .fx-tabs { position: absolute; top: 12px; right: 14px; }
+    .fx-tabs button { min-height: 26px; }
     #stage { border-radius: 16px; }
     #demo-form { grid-template-columns: 1fr; grid-template-rows: auto 1fr; align-content: start; padding: 10px; gap: 10px; }
     .hero, .card { padding: 14px; border-radius: 16px; }
     .hero { gap: 0; }
     .eyebrow { margin-bottom: 4px; font-size: 10px; }
     .hero h1 { max-width: none; font-size: 30px; line-height: 1; letter-spacing: -.04em; }
-    .eyebrow, .lede, .try { display: none; }
+    .eyebrow, .lede, .try { display: none; }   /* a phone shows the title alone: under the bar and the two strips of chips the stage has no room for more with every effect's controls */
     .scenes { margin-bottom: 8px; }
     /* daylight and live data: the picture beside the title, in one row (a block under it would not fit a short phone with every effect's controls) */
     .scene[data-scene="daylight"]:not([hidden]), .scene[data-scene="live"]:not([hidden]) { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 12px; align-items: center; }
@@ -194,15 +230,10 @@
     textarea { height: 58px; }
     .control input[type=range] { height: 30px; }
   }
-  /* a tall phone: room for the eyebrow and the lede */
-  @media (max-width: 760px) and (min-height: 800px) {
-    .eyebrow { display: block; }
-    .lede { display: block; margin-top: 8px; font-size: 12px; line-height: 1.4; }
-  }
   /* phones: one strip of chips that scrolls sideways (a vertical drag on it still scrolls the page) */
   @media (max-width: 760px), (max-height: 500px) {
-    #picker { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-right: calc(-1 * var(--gutter)); padding-right: var(--gutter); }
-    #picker::-webkit-scrollbar { display: none; }
+    #picker, #stack { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-right: calc(-1 * var(--gutter)); padding-right: var(--gutter); }
+    #picker::-webkit-scrollbar, #stack::-webkit-scrollbar { display: none; }
   }
   /* phones in landscape: the stage starts under the chips and keeps the form's height; the page scrolls */
   @media (max-height: 500px) and (min-width: 600px) {
@@ -216,9 +247,11 @@
   <header class="bar">
     <h1>Effect plugins</h1>
     <p id="hint">Live HTML drawn through a GPU effect: the form below stays usable.</p>
+    <button id="map-toggle" type="button" aria-pressed="false" title="Show where the pointer is sent: the element of the page under it as you see it, at its real place in the page">Input map</button>
     <p id="hud" aria-label="Frame readout" title="effect frames in the last second; frame interval median / 95th percentile; the frame cap; the mode of the polyfill"><span><b id="m-fps">-</b> fx/s</span><span><b id="m-iv">-</b> ms<span class="q"> p50/p95</span></span><span>cap <b id="m-cap">-</b></span><span class="mode"><b id="m-mode">starting</b></span></p>
   </header>
   <ul id="picker" aria-label="Effect"></ul>
+  <ul id="stack" aria-label="A second effect, applied to the picture of the first"></ul>
   <p id="notice" role="status"></p>
 </div>
 
@@ -271,12 +304,16 @@
     </form>
   </canvas>
 
+  <div id="map" hidden aria-hidden="true"><svg><line></line></svg><i class="box"></i><i class="at"></i><i class="dot"></i><span class="tag"></span></div>
+
   <aside id="panel" aria-label="About the selected effect">
     <section id="about" aria-live="polite" aria-label="The selected effect"><h2 id="about-title">Effect off</h2></section>
+    <section id="about-2" aria-live="polite" aria-label="The second effect, applied on top" hidden></section>
     <details id="page-about">
       <summary>About this page</summary>
       <p>Pick an effect: it is applied to the same live HTML form drawn inside the canvas, and the form stays usable through it. An effect that has a <code>demo</code> action plays it once when you pick it (not when you prefer reduced motion); its actions are the buttons in the panel (<code>handle.trigger</code>).</p>
-      <p>The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>; <code>&amp;demo=0</code> opens it without the showcase.</p>
+      <p>The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>; <code>&amp;demo=0</code> opens it without the showcase. A second effect can run over the first (<code>&amp;then=&lt;name&gt;</code>): it reads the picture the first one rendered, and a click is mapped back through both.</p>
+      <p><b>Input map</b> (<code>&amp;map=1</code>) shows what the host does with the pointer. An effect moves pixels, so the field you see under the pointer is elsewhere in the page: the host maps the pointer back through the effect (<code>host.mapPoint</code>) and sends it to the element there. The white ring is the pointer, the pink dot the place in the page it is sent to, the pink frame the real element at that place (in its true position, under the canvas), and the label says which element it is and what it holds now.</p>
       <p>The readout above the canvas counts the <code>effectframe</code> events of the last second: frames per second, and the interval between frames (median and 95th percentile). At rest an effect that is not continuous by design presents nothing, so it reads 0.</p>
       <p id="status">mode: <b id="m-mode-2">starting</b><br>effect: <b id="m-effect">starting</b><br>display: <b id="m-display">measuring</b><br>prefers-reduced-motion: <b id="m-motion">-</b></p>
     </details>
@@ -290,8 +327,9 @@
   const $ = (id) => document.getElementById(id);
   const hic = window.__HIC__;
   // window.__gallery: what the page shows, for its tests: the effects host, the effect handle of the selected plugin, the last action it ran
-  // (an action button), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`)
-  const state = (window.__gallery = { ready: false, mode: null, active: null, scene: 'form', plugins: [], host: null, handle: null, lastAction: null, demo: null, displayHz: null, hud: null });
+  // (an action button), what the input map shows (`map`, null while it shows nothing), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`); with a second
+  // effect over the first, its name (`then`, 'off' without one), its handle (`handle2`) and whose controls the form shows (`controls`)
+  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, map: null, lastAction: null, demo: null, displayHz: null, hud: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = matchMedia('(pointer: coarse)');
@@ -331,48 +369,50 @@
   }
 
   // ---- what the selected effect is: its manifest entry (title, version, description, reduced-motion behaviour, defaults, source) ----
+  // `second`: the panel of the effect applied on top (#about-2, hidden without one); its ids end in -2.
   const SOURCE = 'https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/tree/main/plugins/';
-  function describe(p) {
-    const about = $('about');
+  function describe(p, second) {
+    const about = $(second ? 'about-2' : 'about');
     const line = (label, text, code) => {
       const el = document.createElement('p');
       el.append(Object.assign(document.createElement('b'), { textContent: label + ': ' }), code ? Object.assign(document.createElement('code'), { textContent: text }) : text);
       return el;
     };
-    const title = Object.assign(document.createElement('h2'), { id: 'about-title' });
+    const title = Object.assign(document.createElement('h2'), { id: second ? 'about-title-2' : 'about-title' });
+    if (second) about.hidden = !p;
     if (!p) {
       title.textContent = 'Effect off';
-      about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: 'The form as the polyfill draws it, with no plugin: the plain HTML-in-Canvas picture.' }));
+      about.replaceChildren(...(second ? [] : [title, Object.assign(document.createElement('p'), { textContent: 'The form as the polyfill draws it, with no plugin: the plain HTML-in-Canvas picture.' })]));
       return;
     }
-    title.append(p.title, Object.assign(document.createElement('small'), { textContent: p.name + ' v' + p.version }));
+    title.append(second ? 'On top: ' + p.title : p.title, Object.assign(document.createElement('small'), { textContent: p.name + ' v' + p.version }));
     const link = Object.assign(document.createElement('a'), { className: 'source', href: SOURCE + p.name, textContent: 'Source and README', target: '_blank', rel: 'noopener' });
-    about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: p.description }));
-    if (p.actions && p.actions.length) about.append(actionButtons(p.actions));
+    about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: second ? 'Applied to the picture the first effect rendered. ' + p.description : p.description }));
+    if (p.actions && p.actions.length) about.append(actionButtons(p.actions, second));
     about.append(line('Reduced motion', p.reducedMotion || 'not stated by the plugin'), line('Options passed here (meta.defaults)', JSON.stringify(p.defaults), true), link);
   }
 
   // ---- actions: handle.trigger(action) resolves with the state the plugin rests in afterwards, or null when a newer action superseded it ----
-  const showResult = (name, text) => { const out = $('action-state'); if (out) out.textContent = 'handle.trigger(' + JSON.stringify(name) + ')' + text; };
+  const showResult = (name, text, second) => { const out = $(second ? 'action-state-2' : 'action-state'); if (out) out.textContent = 'handle.trigger(' + JSON.stringify(name) + ')' + text; };
   const resultText = (s) => ' -> ' + (s === null ? 'null (superseded)' : JSON.stringify(s));
-  function actionButtons(names) {
+  function actionButtons(names, second) {
     const row = Object.assign(document.createElement('p'), { className: 'actions' });
-    const result = Object.assign(document.createElement('output'), { id: 'action-state', textContent: 'handle.trigger(action) ->' });
+    const result = Object.assign(document.createElement('output'), { id: second ? 'action-state-2' : 'action-state', textContent: 'handle.trigger(action) ->' });
     row.append(Object.assign(document.createElement('b'), { textContent: 'Actions:' }));
     for (const name of names) {
       const button = Object.assign(document.createElement('button'), { type: 'button', textContent: name });
       button.dataset.action = name;
       button.addEventListener('click', async () => {
-        const handle = current;
+        const handle = second ? over : current;
         if (!handle) return;
         const run = (state.lastAction = { action: name, done: false, state: undefined, error: null });
-        showResult(name, ' running');
+        showResult(name, ' running', second);
         try {
           run.state = await handle.trigger(name);
-          showResult(name, resultText(run.state));
+          showResult(name, resultText(run.state), second);
         } catch (error) {
           run.error = error.message;
-          showResult(name, ' failed: ' + error.message);
+          showResult(name, ' failed: ' + error.message, second);
         }
         run.done = true;
       });
@@ -384,15 +424,16 @@
 
   // ---- the demo on selection: a plugin whose look depends on an input or an event has an action `demo` (docs/guides/EFFECTS-PLUGINS.md);
   // the gallery plays it once when the effect is selected, never under reduced motion. User input during it takes over (the plugin's part).
-  function playDemo(handle, name) {
+  function playDemo(handle, name, second) {
     const actions = handle && handle.actions ? [...handle.actions] : [];
     const skip = !autoDemo ? 'demo=0' : reduceMotion.matches ? 'prefers-reduced-motion' : !actions.includes('demo') ? 'no demo action' : '';
     const run = (state.demo = { name, played: !skip, skipped: skip || null, done: !!skip, state: undefined, error: null, ms: null });
     if (skip) return;
     const t0 = performance.now();
-    showResult('demo', ' running (on selection)');
-    Promise.resolve().then(() => handle.trigger('demo')).then((s) => { run.state = s; if (current === handle) showResult('demo', resultText(s)); },
-      (error) => { run.error = error.message; if (current === handle) showResult('demo', ' failed: ' + error.message); })
+    const shown = () => (second ? over : current) === handle;
+    showResult('demo', ' running (on selection)', second);
+    Promise.resolve().then(() => handle.trigger('demo')).then((s) => { run.state = s; if (shown()) showResult('demo', resultText(s), second); },
+      (error) => { run.error = error.message; if (shown()) showResult('demo', ' failed: ' + error.message, second); })
       .finally(() => { run.done = true; run.ms = Math.round(performance.now() - t0); });
   }
 
@@ -529,6 +570,62 @@
   });
   setScene(new URL(location.href).searchParams.get('scene') || 'form', false);
 
+  // ---- the input map (&map=1): where the pointer is sent ---------------------------------------------------------------------------
+  // An effect moves pixels, so the host maps the pointer back through every plugin (host.mapPoint, the mappers of the frame on screen) and acts on the element
+  // of the page at that place. The map draws that over the stage: the pointer, the place it is sent to, and the frame of the real element there (the live element
+  // lies under the canvas where the page laid it out). It is drawn again when the pointer moves and when the effect presents a frame (the picture moved under a
+  // still pointer); nothing runs while neither happens.
+  const map = { on: false, x: 0, y: 0, inside: false };
+  const short = (text, n) => { const t = String(text).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '\u2026' : t; };
+  function drawMap() {
+    const root = $('map');
+    if (!map.on || !map.inside) { root.hidden = true; state.map = null; return; }
+    const r = canvas.getBoundingClientRect();
+    const ox = r.left + canvas.clientLeft, oy = r.top + canvas.clientTop;
+    const p = { x: map.x - ox, y: map.y - oy };
+    let q = p;
+    try { if (state.host) q = state.host.mapPoint(p); } catch (error) { q = null; }
+    const hit = q ? document.elementsFromPoint(ox + q.x, oy + q.y).find((e) => e !== form && form.contains(e)) || form : null;
+    Object.assign(root.style, { left: ox + scrollX + 'px', top: oy + scrollY + 'px', width: canvas.clientWidth + 'px', height: canvas.clientHeight + 'px' });
+    const [line, box, at, dot, tag] = [root.querySelector('line'), root.querySelector('.box'), root.querySelector('.at'), root.querySelector('.dot'), root.querySelector('.tag')];
+    Object.assign(dot.style, { left: p.x + 'px', top: p.y + 'px' });
+    at.hidden = box.hidden = !q;
+    line.setAttribute('visibility', q ? 'visible' : 'hidden');
+    let rect = null, name = 'nothing of the page here';
+    if (q && hit) {
+      const b = hit.getBoundingClientRect();
+      rect = { x: b.left - ox, y: b.top - oy, width: b.width, height: b.height };
+      Object.assign(box.style, { left: rect.x + 'px', top: rect.y + 'px', width: rect.width + 'px', height: rect.height + 'px' });
+      Object.assign(at.style, { left: q.x + 'px', top: q.y + 'px' });
+      for (const [k, v] of [['x1', p.x], ['y1', p.y], ['x2', q.x], ['y2', q.y]]) line.setAttribute(k, String(v));
+      name = hit.localName + (hit.id ? '#' + hit.id : hit.classList.length ? '.' + hit.classList[0] : '');
+    }
+    const holds = !hit ? '' : 'value' in hit && typeof hit.value === 'string' && hit.localName !== 'button' ? (hit.type === 'checkbox' ? (hit.checked ? 'checked' : 'not checked') : JSON.stringify(short(hit.value, 22))) : hit === form ? '' : JSON.stringify(short(hit.textContent, 22));
+    tag.replaceChildren(Object.assign(document.createElement('b'), { textContent: name }), holds ? ' ' + holds : '', q ? ' \u00b7 ' + Math.round(p.x) + ', ' + Math.round(p.y) + ' \u2192 ' + Math.round(q.x) + ', ' + Math.round(q.y) : '');
+    root.hidden = false;
+    // the label: beside the pointer, kept inside the stage
+    const tw = tag.offsetWidth, th = tag.offsetHeight;
+    Object.assign(tag.style, { left: Math.max(4, Math.min(canvas.clientWidth - tw - 4, p.x + 14)) + 'px', top: Math.max(4, p.y - th - 12 < 4 ? p.y + 16 : p.y - th - 12) + 'px' });
+    state.map = { pointer: p, source: q, element: hit ? hit.id || hit.localName : null, rect, moved: q ? Math.hypot(q.x - p.x, q.y - p.y) : null, label: tag.textContent };
+  }
+  function setMap(on, byUser) {
+    map.on = !!on;
+    $('map-toggle').setAttribute('aria-pressed', String(map.on));
+    drawMap();
+    if (!byUser) return;
+    const url = new URL(location.href);
+    if (map.on) url.searchParams.set('map', '1'); else url.searchParams.delete('map');
+    history.replaceState(null, '', url);
+  }
+  const mapAt = (event) => { if (!map.on) return; map.x = event.clientX; map.y = event.clientY; map.inside = true; drawMap(); };
+  // (EventTarget's own listener on the canvas and one on the page for the layer over it would hear an event twice: the canvas forwards the layer's events)
+  canvas.addEventListener('pointermove', mapAt, { passive: true });
+  canvas.addEventListener('pointerdown', mapAt, { passive: true });
+  canvas.addEventListener('pointerleave', (event) => { if (event.pointerType !== 'touch') { map.inside = false; drawMap(); } }, { passive: true });
+  canvas.addEventListener('effectframe', () => { if (map.on && map.inside) drawMap(); });
+  $('map-toggle').addEventListener('click', () => setMap(!map.on, true));
+  setMap(new URL(location.href).searchParams.get('map') === '1', false);
+
   // ---- the plugin list: dist/plugins/manifest.json, written by the build from every plugins/<name>/ (plugins/README.md) -----------
   const manifestRequest = fetch('../../dist/plugins/manifest.json').then((r) => (r.ok ? r.json() : Promise.reject(new Error('manifest ' + r.status))));
 
@@ -582,70 +679,157 @@
     return loaded.get(p.name);
   }
 
-  const buttons = new Map();
-  let current = null, serial = 0;
-  async function select(name) {
+  // ---- the effect, and a second one over it ---------------------------------------------------------------------------------------
+  // The host runs its plugins in the order they were added: the first reads the drawn form, the second reads the picture of the first, and a pointer is mapped
+  // back through both. `choose(effect, then, changed)`: `changed` is the strip the user picked from ('effect' also at the start): that effect plays its demo,
+  // and the form shows its controls. A change of the second effect leaves the first one running as it is.
+  const buttons = new Map(), buttons2 = new Map();
+  let current = null, over = null, serial = 0;
+  const entryOf = (name) => plugins.find((x) => x.name === name);
+  const metaOf = (name) => (window.HicLivePlugins && window.HicLivePlugins[name] && window.HicLivePlugins[name].meta) || null;
+  function showControls(name) {
+    const root = $('effect-controls');
+    for (const el of root.querySelectorAll('.fx-ui')) el.hidden = el.dataset.fx !== name;
+    for (const b of root.querySelectorAll('.fx-tabs button')) b.setAttribute('aria-pressed', String(b.dataset.fx === name));
+    state.controls = name;
+  }
+  /** the box an effect's controls are mounted in, and with two effects the switch between them (HTML in the canvas, like the rest of the form) */
+  function controlsBox(p) {
+    const root = $('effect-controls');
+    let tabs = root.querySelector('.fx-tabs');
+    if (!tabs) {
+      tabs = Object.assign(document.createElement('div'), { className: 'fx-tabs', hidden: true });
+      tabs.setAttribute('role', 'group');
+      tabs.setAttribute('aria-label', 'Controls of');
+      tabs.addEventListener('click', (event) => { const b = event.target instanceof Element ? event.target.closest('button[data-fx]') : null; if (b) showControls(b.dataset.fx); });
+      root.append(tabs);
+    }
+    const tab = Object.assign(document.createElement('button'), { type: 'button', textContent: p.title });
+    tab.dataset.fx = p.name;
+    tabs.append(tab);
+    tabs.hidden = tabs.children.length < 2;
+    const box = Object.assign(document.createElement('div'), { className: 'fx-ui' });
+    box.dataset.fx = p.name;
+    box.dataset.empty = 'This effect has no controls.';
+    root.append(box);
+    return box;
+  }
+  function dropControls(name) {
+    const root = $('effect-controls');
+    for (const el of root.querySelectorAll('[data-fx="' + name + '"]')) el.remove();
+    const tabs = root.querySelector('.fx-tabs');
+    if (tabs) tabs.hidden = tabs.children.length < 2;
+  }
+  async function start(p) {
+    const entry = await loadPlugin(p);
+    const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions(p.name) });
+    return { entry, handle };
+  }
+  async function choose(effect, then, changed) {
     const mine = ++serial;
-    for (const [key, button] of buttons) button.setAttribute('aria-pressed', String(key === name));
-    if (current) { current.remove(); current = null; state.handle = null; }       // removing a plugin also disposes its mounted UI
-    state.demo = null;
-    $('effect-controls').replaceChildren();
+    if (!host || !entryOf(effect)) effect = 'off';
+    if (effect === 'off' || then === effect || !entryOf(then)) then = 'off';
+    const keep = changed === 'then' && !!current && state.active === effect;      // the first effect goes on as it is
+    for (const [key, button] of buttons) button.setAttribute('aria-pressed', String(key === effect));
+    for (const [key, button] of buttons2) {
+      button.setAttribute('aria-pressed', String(key === then));
+      button.disabled = !host || effect === 'off' || key === effect;
+    }
+    // removing a plugin also disposes its mounted UI
+    if (over) { over.remove(); dropControls(state.then); over = null; state.handle2 = null; state.then = 'off'; }
+    if (!keep) {
+      if (current) { current.remove(); current = null; state.handle = null; }
+      state.demo = null;
+      $('effect-controls').replaceChildren();
+      state.controls = null;
+    } else showControls(effect);
     const url = new URL(location.href);
-    if (name === 'off') url.searchParams.delete('effect'); else url.searchParams.set('effect', name);
+    if (effect === 'off') url.searchParams.delete('effect'); else url.searchParams.set('effect', effect);
+    if (then === 'off') url.searchParams.delete('then'); else url.searchParams.set('then', then);
     history.replaceState(null, '', url);
-    describe(name === 'off' || !host ? null : plugins.find((x) => x.name === name));
-    showHint(name, null);
-    if (name === 'off' || !host) {
+    const p = entryOf(effect), q = entryOf(then);
+    if (!keep) describe(p || null, false);
+    describe(q || null, true);
+    if (!keep || !q) showHint(effect, metaOf(effect));
+    if (!p) {
       state.active = 'off';
       $('m-effect').textContent = host ? 'off (the host shows the form unchanged)' : '2D, no effect';
       return;
     }
-    const p = plugins.find((x) => x.name === name);
-    $('m-effect').textContent = 'loading ' + p.title;
+    const running = () => (q && over ? p.title + ' and ' + q.title + ' on top: plugins running' : p.title + ' plugin running');
+    if (!keep) {
+      $('m-effect').textContent = 'loading ' + p.title;
+      try {
+        const { entry, handle } = await start(p);
+        if (mine !== serial) { handle.remove(); return; }                         // another choice was made meanwhile
+        current = state.handle = handle;
+        handle.mountUI(controlsBox(p));                                           // the plugin's own controls, as HTML inside the drawn form
+        showControls(effect);
+        state.active = effect;
+        showHint(effect, entry.meta);
+        $('m-effect').textContent = running() + (entry.meta && entry.meta.continuous ? ' (continuous by design: ' + entry.meta.continuous + ')' : '');
+        playDemo(handle, effect, false);
+      } catch (error) {
+        if (mine !== serial) return;
+        state.active = 'off';
+        $('m-effect').textContent = 'failed: ' + error.message;
+        notice('The ' + p.title + ' effect could not start: ' + error.message);
+        return;
+      }
+    }
+    if (!q) { $('m-effect').textContent = running(); return; }
     try {
-      const entry = await loadPlugin(p);
-      if (mine !== serial) return;                                              // another choice was made meanwhile
-      const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions(p.name) });
+      const { entry, handle } = await start(q);
       if (mine !== serial) { handle.remove(); return; }
-      current = state.handle = handle;
-      handle.mountUI($('effect-controls'));                                     // the plugin's own controls, as HTML inside the drawn form
-      state.active = name;
-      showHint(name, entry.meta);
-      $('m-effect').textContent = p.title + ' plugin running' + (entry.meta && entry.meta.continuous ? ' (continuous by design: ' + entry.meta.continuous + ')' : '');
-      playDemo(handle, name);
+      over = state.handle2 = handle;
+      state.then = then;
+      handle.mountUI(controlsBox(q));
+      if (changed === 'then') { showControls(then); showHint(then, entry.meta); playDemo(handle, then, true); }
+      $('m-effect').textContent = running();
     } catch (error) {
       if (mine !== serial) return;
-      state.active = 'off';
-      $('m-effect').textContent = 'failed: ' + error.message;
-      notice('The ' + p.title + ' effect could not start: ' + error.message);
+      buttons2.get(then)?.setAttribute('aria-pressed', 'false');
+      buttons2.get('off')?.setAttribute('aria-pressed', 'true');
+      describe(null, true);
+      url.searchParams.delete('then');
+      history.replaceState(null, '', url);
+      notice('The ' + q.title + ' effect could not start on top: ' + error.message);
     }
   }
+  const select = (name) => choose(name, state.then, 'effect');
 
-  const add = (name, title, description) => {
+  const add = (list, map, key, name, title, description, pick) => {
     const li = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.dataset.effect = name;
+    button.dataset[key] = name;
     button.title = description;   // the panel shows the full description of the selected effect
     button.setAttribute('aria-pressed', 'false');
     button.disabled = !host && name !== 'off';
     button.textContent = title;
-    button.addEventListener('click', () => select(name));
+    button.addEventListener('click', () => pick(name));
     li.append(button);
-    $('picker').append(li);
-    buttons.set(name, button);
+    list.append(li);
+    map.set(name, button);
   };
-  add('off', 'Effect off', 'The form as drawn, with no plugin.');
-  for (const p of plugins) add(p.name, p.title, p.description);
+  add($('picker'), buttons, 'effect', 'off', 'Effect off', 'The form as drawn, with no plugin.', select);
+  for (const p of plugins) add($('picker'), buttons, 'effect', p.name, p.title, p.description, select);
+  // the second strip: the same effects, applied to the picture of the first
+  const pickThen = (name) => choose(state.active, name, 'then');
+  $('stack').append(Object.assign(document.createElement('li'), { className: 'lab', textContent: '+ on top' }));
+  add($('stack'), buttons2, 'then', 'off', 'None', 'One effect only.', pickThen);
+  for (const p of plugins) add($('stack'), buttons2, 'then', p.name, p.title, 'Over the first effect: ' + p.description, pickThen);
 
-  const wanted = new URL(location.href).searchParams.get('effect');
+  const params = new URL(location.href).searchParams;
+  const wanted = params.get('effect');
   const first = wanted && (wanted === 'off' || plugins.some((p) => p.name === wanted)) ? wanted : plugins.length ? plugins[0].name : 'off';
-  await select(host ? first : 'off');
+  await choose(host ? first : 'off', params.get('then') || 'off', 'effect');
   await calibrateCap();
   state.ready = true;
   // a narrow strip of chips scrolls sideways: bring the selected one into it (no vertical scroll of the page)
-  const strip = $('picker'), chip = buttons.get(state.active);
-  if (chip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = Math.max(0, chip.offsetLeft - strip.offsetLeft - 24);
+  for (const [strip, chip] of [[$('picker'), buttons.get(state.active)], [$('stack'), buttons2.get(state.then)]]) {
+    if (chip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = Math.max(0, chip.offsetLeft - strip.offsetLeft - 24);
+  }
 })();
 </script>
 </body>

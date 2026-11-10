@@ -14,8 +14,9 @@ const RING_SIZE = 3;
 
 /**
  * @typedef {Object} MapperChain
- * @property {(serial: number, mappers: InputMapper[]) => void} push  mappers captured for the frame just presented (ring of the last 3)
+ * @property {(serial: number, mappers: InputMapper[], places?: number[]) => void} push  mappers captured for the frame just presented (ring of the last 3); `places[i]` is the place of the plugin of `mappers[i]` in that frame's chain (0 = the first plugin)
  * @property {(p: InputPoint, age?: number) => {x: number, y: number}} map  through the newest presented frame (`age` 1..2 = older presentations); NO_TARGET when a mapper says no element is shown there
+ * @property {(place: number, p: InputPoint) => {x: number, y: number}} mapAfter  through the mappers of the plugins after `place` in the newest presented frame only (where a point of the canvas is in the picture the plugin at `place` rendered); NO_TARGET like `map`
  * @property {(age?: number) => ((p: InputPoint) => {x: number, y: number})} captureGesture  frozen mapper for one pointer gesture (captureGestureSnapshot when offered)
  * @property {() => boolean} active  the newest presented frame had at least one spatial mapper
  * @property {() => void} clear
@@ -47,18 +48,22 @@ function compose(mappers) {
  * @returns {MapperChain}
  */
 export function createMapperChain() {
-  /** @type {{serial: number, mappers: InputMapper[]}[]} */
+  /** @type {{serial: number, mappers: InputMapper[], places: number[]}[]} */
   const ring = [];
   /** @param {number|undefined} age */
   const at = (age) => (ring.length === 0 ? undefined : ring[ring.length - 1 - Math.min(Math.max(0, Math.trunc(age ?? 0)), ring.length - 1)]);
   return {
-    push(serial, mappers) {
-      ring.push({ serial, mappers: mappers.slice() });
+    push(serial, mappers, places) {
+      ring.push({ serial, mappers: mappers.slice(), places: places ? places.slice() : mappers.map((_, i) => i) });
       if (ring.length > RING_SIZE) ring.shift();
     },
     map(p, age) {
       const e = at(age);
       return e ? compose(e.mappers)(p) : { x: p.x, y: p.y };
+    },
+    mapAfter(place, p) {
+      const e = at(0);
+      return e ? compose(e.mappers.filter((_, i) => e.places[i] > place))(p) : { x: p.x, y: p.y };
     },
     captureGesture(age) {
       const e = at(age);

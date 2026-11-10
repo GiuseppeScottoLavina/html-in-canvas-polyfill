@@ -73,7 +73,8 @@ test('tilt towards the pointer: the side under the pointer comes closer (drawn l
 });
 
 
-async function create(options = {}, { reduced = false } = {}) {
+/** `localPoint` stands for the plugins added after this one (context.localPoint); without it the context has none */
+async function create(options = {}, { reduced = false, localPoint = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' });
@@ -83,7 +84,7 @@ async function create(options = {}, { reduced = false } = {}) {
   const win = Object.assign(new EventTarget(), { matchMedia: () => ({ matches: reduced }), screen: { orientation: { angle: 0 } } });
   const canvas = { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: 1100, clientHeight: 620, clientLeft: 0, clientTop: 0 };
   let requests = 0;
-  const context = { apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, requestRender() { requests += 1; }, listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; } };
+  const context = { apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, requestRender() { requests += 1; }, listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; }, ...(localPoint ? { localPoint } : {}) };
   try {
     const instance = await plugin.create(context, options);
     let now = performance.now();
@@ -203,6 +204,76 @@ test('touch: a finger tilts the card where it rests, through PASSIVE listeners t
   for (let k = 0; k < 400 && instance.continuous; k += 1) instance.render(frame());
   assert.ok(Math.abs(ryOf(gpu.writes.at(-1).copy)) < 1e-9, 'flat again');
   assert.equal(calls.n, 0, 'no preventDefault: the card never claims the gesture');
+});
+
+/** the pose in the block: the rotation of the card and where the glare is (not the clock of the shimmer) */
+const poseOf = (u) => [...u.slice(4, 7), ...u.slice(8, 11), ...u.slice(12, 15), u[18], u[19], u[22], u[23]];
+/** the pose the card settles in after `event` (a pointermove or a touchstart at a client point), with `localPoint` for the plugins added after it */
+async function settledPose(type, x, y, localPoint) {
+  const { instance, gpu, listeners, frame } = await create({ tilt: 20, idle: false }, { localPoint });
+  instance.render(frame());
+  listeners[type](type === 'pointermove' ? { clientX: x, clientY: y } : touch(x, y, { n: 0 }));
+  const woke = instance.continuous;
+  for (let k = 0; k < 400 && instance.continuous; k += 1) instance.render(frame());
+  return { woke, pose: poseOf(gpu.writes.at(-1).copy) };
+}
+
+test('with plugins added after it, the pointer is read through context.localPoint: the card tilts towards the point where the pointer is seen on it (mouse and finger); control: without them, towards the pointer', async () => {
+  const DX = 120, DY = 60;
+  const shift = (p) => ({ x: p.x + DX, y: p.y + DY });
+  for (const type of ['pointermove', 'touchstart']) {
+    const shifted = await settledPose(type, 700, 400, shift);
+    const there = await settledPose(type, 700 + DX, 400 + DY);
+    const here = await settledPose(type, 700, 400);
+    assert.ok(shifted.woke && there.woke && here.woke, `${type}: the card moves`);
+    assert.deepEqual(shifted.pose, there.pose, `${type}: the same pose as a pointer at that point with no plugin after it`);
+    assert.ok(Math.abs(shifted.pose.at(-4) - (700 + DX) / 1100) < 1e-6 && Math.abs(shifted.pose.at(-3) - (400 + DY) / 620) < 1e-6, `${type}: the glare is at the point as seen`);
+    assert.notDeepEqual(shifted.pose, here.pose, `${type}: control: the pose depends on where the pointer is`);
+    assert.ok(Math.abs(here.pose.at(-4) - 700 / 1100) < 1e-6, `${type}: control: with no plugin after it the glare is at the pointer`);
+  }
+});
+
+test('where a later plugin shows nothing of the card (context.localPoint gives null) a pointer move or a finger does not tilt it: flat, nothing asked for; control: the same events tilt it without that', async () => {
+  for (const type of ['pointermove', 'touchstart']) {
+    const { instance, gpu, listeners, frame, requests } = await create({ tilt: 20, idle: false }, { localPoint: () => null });
+    instance.render(frame());
+    const flat = poseOf(gpu.writes.at(-1).copy);
+    const asked = requests();
+    listeners[type](type === 'pointermove' ? { clientX: 1100, clientY: 310 } : touch(1100, 310, { n: 0 }));
+    assert.equal(instance.continuous, false, `${type}: nothing moves`);
+    assert.equal(requests(), asked, `${type}: no frame asked for`);
+    for (let k = 0; k < 30; k += 1) instance.render(frame());
+    assert.deepEqual(poseOf(gpu.writes.at(-1).copy), flat, `${type}: the card stays flat`);
+    const control = await settledPose(type, 1100, 310);
+    assert.ok(control.woke, `${type}: control: seen, the same event moves the card`);
+    assert.notDeepEqual(control.pose, flat, `${type}: control: and tilts it`);
+  }
+});
+
+test('whether the pointer has left the canvas is decided on the canvas itself, not through context.localPoint: a leave inside the canvas keeps the tilt and one outside releases the card, also where the plugins after it shift the point or show nothing of the card', async () => {
+  const DX = 120, DY = 60;
+  const full = (20 * Math.PI) / 180;
+  for (const [name, later, inside, outside] of /** @type {const} */ ([
+    // an inside point that is seen outside the card, an outside point that is seen inside it
+    ['shifted', (p) => ({ x: p.x + DX, y: p.y + DY }), [1050, 310], [-60, 310]],
+    ['nothing shown', () => null, [550, 310], [1200, 310]],
+  ])) {
+    let seen = (p) => p;
+    const { instance, gpu, listeners, frame } = await create({ tilt: 20, idle: false }, { localPoint: (p) => seen(p) });
+    instance.render(frame());
+    listeners.pointermove({ clientX: 1100, clientY: 310 });
+    for (let k = 0; k < 400 && instance.continuous; k += 1) instance.render(frame());
+    assert.ok(Math.abs(ryOf(gpu.writes.at(-1).copy) - full) < 1e-6, `${name}: tilted towards the right edge`);
+    seen = later;
+    listeners.pointerleave({ clientX: inside[0], clientY: inside[1] });
+    assert.equal(instance.continuous, false, `${name}: a leave inside the canvas (to its live layer) releases nothing`);
+    for (let k = 0; k < 30; k += 1) instance.render(frame());
+    assert.ok(Math.abs(ryOf(gpu.writes.at(-1).copy) - full) < 1e-6, `${name}: still tilted`);
+    listeners.pointerleave({ clientX: outside[0], clientY: outside[1] });
+    assert.equal(instance.continuous, true, `${name}: a leave outside the canvas releases the card`);
+    for (let k = 0; k < 400 && instance.continuous; k += 1) instance.render(frame());
+    assert.ok(Math.abs(ryOf(gpu.writes.at(-1).copy)) < 1e-9, `${name}: flat again`);
+  }
 });
 
 test('demoTarget: a smooth sweep that starts and ends at the rest target and reaches the edges of the card in between', () => {

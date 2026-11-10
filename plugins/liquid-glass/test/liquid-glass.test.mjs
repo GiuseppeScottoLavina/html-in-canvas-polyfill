@@ -180,7 +180,8 @@ test('a moving lens stretches along its velocity, also diagonally, and squashes 
   assert.deepEqual([...rest.slice(8, 11)], [1, 0, 1], 'at rest the deformation is the identity');
 });
 
-async function create(options = {}, { reduced = false, source = null } = {}) {
+/** `localPoint` stands for the plugins added after this one (context.localPoint); without it the context has none */
+async function create(options = {}, { reduced = false, source = null, localPoint = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' });
@@ -193,6 +194,7 @@ async function create(options = {}, { reduced = false, source = null } = {}) {
   const context = {
     apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, source, requestRender: () => { renders += 1; },
     listen: (type, fn, opts) => { listeners[type] = fn; listenOptions[type] = opts; return () => {}; },
+    ...(localPoint ? { localPoint } : {}),
   };
   try {
     const instance = await plugin.create(context, options);
@@ -368,6 +370,93 @@ test('a pinned lens cannot be dragged: the touch is left to the page', async () 
   for (let k = 0; k < 60; k += 1) instance.render(frame());
   assert.ok(!move.prevented);
   assert.deepEqual([last()[4], last()[5]], [400, 250]);
+});
+
+/** every uniform block from a pointer move to (x, y) until the lens rests, with `localPoint` for the plugins added after it */
+async function followed(x, y, localPoint) {
+  const { instance, listeners, frame, last } = await create({ x: 0.5, y: 0.5 }, { localPoint });
+  instance.render(frame());
+  listeners.pointermove({ clientX: x, clientY: y, pointerType: 'mouse' });
+  const blocks = [];
+  for (let k = 0; k < 360 && instance.continuous; k += 1) { instance.render(frame()); blocks.push([...last()]); }
+  return blocks;
+}
+/** where a finger that lands at (x, y) and moves 50 px right and 20 px down leaves the lens, and whether its move was claimed */
+async function fingerDrag(x, y, localPoint) {
+  const { instance, frame, last, touch } = await create({ x: 0.5, y: 0.5 }, { localPoint });
+  instance.render(frame());
+  touch('touchstart', x, y, 100);
+  const claimed = touch('touchmove', x + 50, y + 20, 116).prevented;
+  for (let k = 0; k < 120; k += 1) instance.render(frame());
+  return { claimed, at: [last()[4], last()[5]] };
+}
+
+test('with plugins added after it, the pointer is read through context.localPoint: the lens goes where the pointer is seen on the glass, frame for frame as for a pointer there; control: without them, to the pointer', async () => {
+  const DX = 120, DY = 60;
+  const shift = (p) => ({ x: p.x + DX, y: p.y + DY });
+  const shifted = await followed(300, 150, shift);
+  const there = await followed(300 + DX, 150 + DY);
+  const here = await followed(300, 150);
+  assert.ok(shifted.length > 20, `the lens moved (${shifted.length} frames)`);
+  assert.deepEqual(shifted, there, 'the same frames as a pointer at that point with no plugin after it');
+  assert.deepEqual(shifted.at(-1).slice(4, 6), [300 + DX, 150 + DY], 'settled on the point as seen');
+  assert.deepEqual(here.at(-1).slice(4, 6), [300, 150], 'control: with no plugin after it the lens settles on the pointer');
+});
+
+test('with plugins added after it, a finger grabs the lens where the lens is seen: the drag starts there and follows the finger as seen; control: without them that touch is beside the lens', async () => {
+  const DX = 120, DY = 60;
+  const shift = (p) => ({ x: p.x + DX, y: p.y + DY });
+  // the lens rests at (400, 250); the plugins after it show its centre under a finger at (280, 190)
+  const shifted = await fingerDrag(400 - DX, 250 - DY, shift);
+  const there = await fingerDrag(400, 250);
+  const here = await fingerDrag(400 - DX, 250 - DY);
+  assert.ok(shifted.claimed, 'the finger is on the lens as seen: its move is the lens\'s');
+  assert.deepEqual(shifted.at, there.at, 'the same drag as a finger at that point with no plugin after it');
+  assert.ok(Math.abs(shifted.at[0] - 450) < 0.5 && Math.abs(shifted.at[1] - 270) < 0.5, `the lens follows the finger: ${shifted.at}`);
+  assert.equal(here.claimed, false, 'control: with no plugin after it the touch is beside the lens (the page scrolls)');
+  assert.deepEqual(here.at, [400, 250], 'control: and the lens stays');
+});
+
+test('where a later plugin shows nothing of the glass (context.localPoint gives null) a pointer move does not move the lens and a finger does not grab it: no frame asked for; control: the same events move it without that', async () => {
+  const { instance, listeners, frame, renders, last, touch } = await create({ x: 0.5, y: 0.5 }, { localPoint: () => null });
+  instance.render(frame());
+  const before = [...last()];
+  const asked = renders();
+  listeners.pointermove({ clientX: 600, clientY: 250, pointerType: 'mouse' });
+  assert.equal(instance.continuous, false, 'the target did not move');
+  assert.equal(renders(), asked, 'no frame asked for');
+  touch('touchstart', 400, 250, 100);
+  assert.equal(touch('touchmove', 450, 270, 116).prevented, false, 'a touch on the unseen lens starts no drag (the page scrolls)');
+  assert.equal(renders(), asked);
+  for (let k = 0; k < 30; k += 1) instance.render(frame());
+  assert.deepEqual([...last()], before, 'the lens stays at home, frame for frame');
+  assert.deepEqual((await followed(600, 250)).at(-1).slice(4, 6), [600, 250], 'control: seen, the same move takes the lens to the pointer');
+  assert.ok((await fingerDrag(400, 250)).claimed, 'control: seen, the same touch drags the lens');
+});
+
+test('whether the pointer has left the canvas is decided on the canvas itself, not through context.localPoint: a leave inside the canvas keeps the lens and one outside sends it home, also where the plugins after it shift the point or show nothing of the glass', async () => {
+  const DX = 120, DY = 60;
+  for (const [name, later, inside, outside] of /** @type {const} */ ([
+    // an inside point that is seen outside the glass, an outside point that is seen inside it
+    ['shifted', (p) => ({ x: p.x + DX, y: p.y + DY }), [750, 250], [-60, 250]],
+    ['nothing shown', () => null, [400, 250], [900, 250]],
+  ])) {
+    let seen = (p) => p;
+    const { instance, listeners, frame, last } = await create({ x: 0.5, y: 0.5 }, { localPoint: (p) => seen(p) });
+    instance.render(frame());
+    listeners.pointermove({ clientX: 700, clientY: 400, pointerType: 'mouse' });
+    for (let k = 0; k < 360; k += 1) instance.render(frame());
+    assert.deepEqual([last()[4], last()[5]], [700, 400], `${name}: the lens is under the pointer`);
+    seen = later;
+    listeners.pointerleave({ clientX: inside[0], clientY: inside[1], pointerType: 'mouse' });
+    assert.equal(instance.continuous, false, `${name}: a leave inside the canvas (to its live layer) moves nothing`);
+    for (let k = 0; k < 20; k += 1) instance.render(frame());
+    assert.deepEqual([last()[4], last()[5]], [700, 400], `${name}: the lens stays`);
+    listeners.pointerleave({ clientX: outside[0], clientY: outside[1], pointerType: 'mouse' });
+    assert.equal(instance.continuous, true, `${name}: a leave outside the canvas sends the lens home`);
+    for (let k = 0; k < 360; k += 1) instance.render(frame());
+    assert.deepEqual([last()[4], last()[5]], [400, 250], `${name}: home`);
+  }
 });
 
 /** a fake drawn page: elements with boxes (CSS px of an 800 x 500 source at the canvas origin) */

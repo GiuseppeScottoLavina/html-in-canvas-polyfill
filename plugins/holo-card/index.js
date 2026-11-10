@@ -21,6 +21,7 @@ import { clampTo } from '../_lib/number.js';
 import { fullscreenPass } from '../_lib/gpu.js';
 import { springSubsteps } from '../_lib/spring.js';
 import { injectStyle } from '../_lib/ui.js';
+import { pointerIn } from '../_lib/pointer.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -260,13 +261,15 @@ export const plugin = Object.freeze({
       return new Promise((resolve) => { settleWaiters.push(resolve); wake(); });
     }
 
-    /** @param {number} x @param {number} y  viewport css px @returns {{x: number, y: number}|null} */
-    function unitAt(x, y) {
+    /**
+     * -1..1 over the canvas content box. Through the plugins added after this one (the card tilts towards the pointer as the user sees the card; null where one
+     * of them shows none of it), except `onCanvas`: the point on the canvas itself (has the pointer left it?).
+     * @param {number} x @param {number} y  viewport css px @param {boolean} [onCanvas] @returns {{x: number, y: number}|null}
+     */
+    function unitAt(x, y, onCanvas) {
       if (!canvas?.getBoundingClientRect) return null;
-      const r = canvas.getBoundingClientRect();
-      const w = Math.max(1, canvas.clientWidth);
-      const h = Math.max(1, canvas.clientHeight);
-      return { x: ((x - r.left - canvas.clientLeft) / w) * 2 - 1, y: ((y - r.top - canvas.clientTop) / h) * 2 - 1 };
+      const p = pointerIn(onCanvas ? {} : context, canvas, x, y);
+      return p && { x: (p.x / Math.max(1, canvas.clientWidth)) * 2 - 1, y: (p.y / Math.max(1, canvas.clientHeight)) * 2 - 1 };
     }
     /** @param {{x: number, y: number}|null} p */
     function follow(p) {
@@ -289,7 +292,7 @@ export const plugin = Object.freeze({
     });
     context.listen?.('pointerleave', (/** @type {any} */ event) => {
       if (event.pointerType === 'touch') return;
-      const p = unitAt(event.clientX, event.clientY);
+      const p = unitAt(event.clientX, event.clientY, true);
       if (p && Math.abs(p.x) < 0.996 && Math.abs(p.y) < 0.996) return;   // moving between the canvas and its live layer
       release();
     });

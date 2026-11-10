@@ -6,9 +6,10 @@ import { createPluginSet } from '../../src/effects/effect-plugins.js';
 /**
  * @param {any} plugin  the definition
  * @param {Record<string, unknown>} options  addPlugin options
- * @param {{device: any, canvas: any, source: any, format?: string, reducedMotion?: boolean}} o  `canvas` needs add/removeEventListener (context.listen)
+ * @param {{device: any, canvas: any, source: any, format?: string, reducedMotion?: boolean, localPoint?: (point: {x: number, y: number}) => {x: number, y: number}|null}} o
+ *   `canvas` needs add/removeEventListener (context.listen); `localPoint` stands for the plugins added after this one (context.localPoint; without it, the point unchanged)
  */
-export async function nodeHandle(plugin, options, { device, canvas, source, format = 'bgra8unorm', reducedMotion = false }) {
+export async function nodeHandle(plugin, options, { device, canvas, source, format = 'bgra8unorm', reducedMotion = false, localPoint }) {
   /** @type {{error: unknown, phase: string}[]} */ const errors = [];
   let renders = 0;
   const set = createPluginSet(/** @type {any} */ ({ registry: { get: () => null } }), canvas, source, {
@@ -17,6 +18,7 @@ export async function nodeHandle(plugin, options, { device, canvas, source, form
     requestRender: () => { renders += 1; },
     reducedMotion: () => reducedMotion,
     reportError: (error, _slot, phase) => { errors.push({ error, phase }); },
+    ...(localPoint ? { localPoint: (/** @type {any} */ _slot, /** @type {{x: number, y: number}} */ point) => localPoint(point) } : {}),
   });
   const handle = await set.add(plugin, options);
   return {

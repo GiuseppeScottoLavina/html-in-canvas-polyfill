@@ -21,6 +21,7 @@ import { wgsl } from './wgsl.js';
 import { buildShards, crackedLayout, crackedSource, fallTime, HEAL, MAX_SHARDS, MAX_VERTICES, MAX_WALL_VERTICES, SHARD_FLOATS, SPAN, THICKNESS, VERTEX_FLOATS } from './shards.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor, sourcePointOnCanvas } from '../_lib/transition.js';
 import { injectStyle } from '../_lib/ui.js';
+import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -395,9 +396,11 @@ export const plugin = Object.freeze({
     context.listen('pointerdown', (event) => {
       takeOver();
       const e = /** @type {PointerEvent} */ (event);
-      const r = canvas.getBoundingClientRect();
-      pointer.x = e.clientX - r.left - canvas.clientLeft;
-      pointer.y = e.clientY - r.top - canvas.clientTop;
+      // through the plugins added after this one: the glass cracks where the user pressed it as seen (where one of them shows none of it: no point, the element decides)
+      const p = pointerIn(context, canvas, e.clientX, e.clientY);
+      if (!p) return;
+      pointer.x = p.x;
+      pointer.y = p.y;
       pointer.t = performance.now();
     });
     const onSubmit = (/** @type {Event} */ event) => {

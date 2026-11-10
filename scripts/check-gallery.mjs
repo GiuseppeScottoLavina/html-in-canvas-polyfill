@@ -21,6 +21,18 @@
 //   switch    a touch tap on the drawn switch, through the effect, selects another scene and comes back (the address follows)
 //   live      (the live scene) the drawn content changes about once a second and the effect presents it: frames arrive at rest, and the drawn clock
 //             moves on; back on the form, 0 effect frames over 2 s
+// A second effect over the first (examples/plugins/ `&then=<name>`, the second strip of chips), part `stack`:
+//   pick      (water; phone and iPad) a touch tap on a chip of the second strip adds that effect over the first: two plugins on the host, the address follows,
+//             the form shows its controls; a tap on "None" takes it away again
+//   tabs      with two effects the form has a switch between their controls: a touch tap on it, through both effects, shows the other effect's controls
+//   rest      as above, with both effects settled
+//   linked    (phone and short phone: the CRT monitor, the tallest controls, with water on top, from the address) both run; fit with either effect's controls shown; fold (phone)
+//   under     (iPad: water under the CRT monitor at full curvature) a tap on the curved picture drops a pebble where the finger is SEEN: the first effect reads
+//             the pointer through the second (EffectPluginContext.localPoint). The changed pixels are centred within UNDER_PX css px of the tap
+//   pairs     (iPad, one page) every ordered pair of the manifest's plugins: both run, enabled, a frame was presented, no effecterror
+//   map       (iPad: the CRT monitor at full curvature, `&map=1`) the input map: nothing drawn before a pointer arrives; a tap where the effect shows the email
+//             field (found with host.mapPoint over a grid) names that field, frames its real box, shows its value, and the field has the focus; the pointer and
+//             the place it is sent to are more than MAP_PX apart (the effect moved the field); a tap on the toggle takes the map away
 // Once, under prefers-reduced-motion (phone): no demo is played ('prefers-reduced-motion'). Once ('off', iPad): the frame cap defaults to
 // the display rate measured by the page (canvas.frameCap 0 = uncapped, the slider at its top = the rounded rate).
 // Positive controls (each must turn ITS check red; --no-control skips them), all on the template plugin unless said otherwise:
@@ -33,8 +45,12 @@
 //   C9 fit     (water, the daylight scene) a picture 900 px tall    C10 switch (water, the daylight scene) the switch takes no pointer input
 //   C11 live   (water, the live scene) the page's one-second timer never starts
 //   C12 fit    (page-curl, the daylight scene, the short phone) the scene's picture as a block under its title and a stage of 580 px
+//   C13 pick   (water) the second strip takes no pointer input         C14 tabs   (water, shatter on top) the switch takes no pointer input
+//   C15 under  (water under the CRT monitor) water gets a context whose localPoint returns the point on the canvas, as before the second effect
+//   C16 pairs  the glitch plugin throws in render when it is not the first plugin
+//   C17 map    the CRT monitor with an input mapper that returns the point as it is (the pointer is then sent to the place under it)
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
-// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes or the controls is a diagnostic run:
+// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes, the stack or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
 // Results: .scratch/results/gallery-<timestamp>.json (`pass`, `green`, `scope`, `selection`, `skipped`).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -58,6 +74,10 @@ const stepsFor = (/** @type {any} */ view, /** @type {string[]} */ steps) => (vi
 /** Plugins whose look does not depend on an input or an event, so they need no `demo` (EFFECTS-PLUGINS.md 15.1, rule 2). */
 const NO_DEMO = /** @type {Record<string, string>} */ ({ crt: 'a monitor look that is there at rest; it is continuous by design' });
 const DEMO_LIMIT_MS = 6000;
+/** `under`: how far from the tap the centre of the changed pixels may lie, css px (measured: 4.1; with the pointer read on the canvas, C15, 24.4) */
+const UNDER_PX = 12;
+/** `map`: how far apart the pointer and the place it is sent to must be at the email field under the CRT monitor at full curvature, css px (measured: 39.5; 0 with a mapper that returns the point as it is, C17) */
+const MAP_PX = 15;
 
 if (!existsSync(join(ROOT, 'dist/plugins/manifest.json'))) { console.error('dist/plugins/manifest.json is missing: run `npm run build` first.'); process.exit(2); }
 const { plugins: manifest } = JSON.parse(readFileSync(join(ROOT, 'dist/plugins/manifest.json'), 'utf8'));
@@ -94,10 +114,31 @@ const initScript = `${template.source}
     return new Response(JSON.stringify(j), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   window.__gc = { frames: 0, last: 0 };
+  window.__gcErrors = [];
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('stage')?.addEventListener('effectframe', () => { window.__gc.frames += 1; window.__gc.last = performance.now(); });
+    document.getElementById('stage')?.addEventListener('effecterror', (e) => { window.__gcErrors.push(String(e.detail && e.detail.type) + ': ' + String(e.detail && e.detail.error)); });
   });
 })();`;
+
+/** `map`: the CRT monitor at full curvature, nothing moving at rest, the input map on */
+const MAP_QUERY = '&demo=0&opt.crt.flicker=0&opt.crt.curvature=1&map=1';
+/** `under`: water under the CRT monitor at full curvature, nothing moving at rest */
+const UNDER_QUERY = '&then=crt&demo=0&opt.crt.flicker=0&opt.crt.curvature=1';
+
+/**
+ * A page script for a control: every plugin bundle that registers itself (window.HicLivePlugins.<name> = {meta, plugin}) goes through `body`, which may replace
+ * `entry` (the names `name` and `entry` are in scope).
+ * @param {string} body
+ */
+function wrapPlugins(body) {
+  return `{
+    const had = window.HicLivePlugins || {}, real = {};
+    const wrap = (name, entry) => { ${body} return entry; };
+    for (const k of Object.keys(had)) real[k] = had[k];
+    Object.defineProperty(window, 'HicLivePlugins', { configurable: true, value: new Proxy(real, { defineProperty(t, k, d) { return Reflect.defineProperty(t, k, d && d.value && d.value.plugin ? { ...d, value: wrap(String(k), d.value) } : d); } }) });
+  }`;
+}
 
 /** the effects bundle with a host that never idles (C4) */
 function neverIdleEffects() {
@@ -109,7 +150,8 @@ function neverIdleEffects() {
 
 /**
  * One gallery run. @param {any} browser @param {any} server @param {string} name @param {any} view
- * @param {{query?: string, css?: string, script?: string, effects?: string, reducedMotion?: boolean, fakeNoReduce?: boolean, steps?: string[], scene?: string}} [o]
+ * @param {{query?: string, css?: string, script?: string, effects?: string, reducedMotion?: boolean, fakeNoReduce?: boolean, steps?: string[], scene?: string, then?: string}} [o]
+ *   `then`: the second effect of a `stack` run (picked from the strip by `pick`, or already in `query`)
  */
 async function runOne(browser, server, name, view, o = {}) {
   const page = await browser.newPage({ reuseFirst: false });
@@ -117,6 +159,28 @@ async function runOne(browser, server, name, view, o = {}) {
   const check = (/** @type {string} */ step, /** @type {string} */ what, /** @type {unknown} */ ok, /** @type {unknown} */ detail) => { checks.push({ step, name: what, ok: !!ok, detail }); return !!ok; };
   const want = (/** @type {string} */ s) => !o.steps || o.steps.includes(s);
   const numbers = /** @type {Record<string, unknown>} */ ({});
+  /** a touch tap on the centre of an element, as it lies in the page (true: the element was there) @param {string} selector */
+  const tapOn = async (selector) => {
+    const at = await page.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; e.scrollIntoView({ block: 'nearest', inline: 'center' });
+      const r = e.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    if (!at) return false;
+    await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+    await H.sleep(60);
+    await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    return true;
+  };
+  const settle = () => page.evaluate(`Promise.race([Promise.all([window.__gallery.handle, window.__gallery.handle2].map((h) => (h && h.actions && h.actions.length ? h.settled() : null))), new Promise((r) => setTimeout(() => r('still in motion after 10 s'), 10000))])`);
+  const framesIn = async (/** @type {number} */ ms) => { const a = await page.evaluate('window.__gc.frames'); await H.sleep(ms); return (await page.evaluate('window.__gc.frames')) - a; };
+  const fits = () => page.evaluate(`(() => { const f = document.getElementById('demo-form'); return { scrollHeight: f.scrollHeight, clientHeight: f.clientHeight, controls: window.__gallery.controls }; })()`);
+  const stackState = () => page.evaluate(`(() => { const g = window.__gallery, c = document.getElementById('effect-controls'); return { then: g.then, count: g.host.pluginCount, enabled: [g.handle, g.handle2].map((h) => (h ? h.enabled : null)),
+    query: new URL(location.href).searchParams.get('then'), controls: g.controls, tabs: [...c.querySelectorAll('.fx-tabs:not([hidden]) button')].map((b) => b.dataset.fx), shown: [...c.querySelectorAll('.fx-ui')].filter((e) => !e.hidden).map((e) => e.dataset.fx),
+    about2: !document.getElementById('about-2').hidden, pressed: [...document.querySelectorAll('#stack button[aria-pressed="true"]')].map((b) => b.dataset.then) }; })()`);
+  /** the stage as presented (compositor pixels) @returns {Promise<{img: any, ratio: number}>} */
+  const stageShot = async () => {
+    const r = await page.evaluate(`(() => { const r = document.getElementById('stage').getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; })()`);
+    const img = H.decodePng(await page.screenshot({ clip: { ...r, scale: 1 } }));
+    return { img, ratio: img.width / r.width };
+  };
   try {
     await page.send('Emulation.setDeviceMetricsOverride', { width: view.width, height: view.height, deviceScaleFactor: view.dpr, mobile: true });
     await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
@@ -233,6 +297,143 @@ async function runOne(browser, server, name, view, o = {}) {
       check('live', 'back on the form scene: 0 effect frames over 2 s (the timer stopped)', atRest === 0, { framesIn2s: atRest });
     }
 
+    // a second effect from the address: both run
+    if (want('linked')) {
+      await settle();
+      const st = await stackState();
+      numbers.linked = st;
+      check('linked', `the address opens ${name} with ${o.then} on top: two plugins on the host, both enabled, the second strip shows it`,
+        st.then === o.then && st.count === 2 && st.enabled.every((e) => e === true) && st.pressed.join() === o.then && st.about2 && st.tabs.join() === `${name},${o.then}`, st);
+      const one = await fits();
+      await page.evaluate(`document.querySelector('.fx-tabs button[data-fx=${JSON.stringify(o.then)}]').click()`);
+      await H.sleep(300);
+      const two = await fits();
+      check('linked', 'the form fits the stage with either effect\'s controls shown', one.controls === name && two.controls === o.then && one.scrollHeight <= one.clientHeight + 1 && two.scrollHeight <= two.clientHeight + 1, { one, two });
+    }
+
+    // a touch tap on a chip of the second strip adds that effect over the first
+    if (want('pick')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await settle();
+      await H.sleep(400);
+      const tapped = await tapOn(`#stack button[data-then=${JSON.stringify(o.then)}]`);
+      const there = await H.until(() => page.evaluate(`window.__gallery.then === ${JSON.stringify(o.then)} && window.__gallery.handle2 ? 1 : null`), 6000);
+      await settle();
+      await H.sleep(400);
+      const st = await stackState();
+      numbers.pick = st;
+      check('pick', `a tap on "${o.then}" in the second strip adds it over ${name}: two plugins, both enabled, the address follows, the form shows its controls and a switch`,
+        tapped && !!there && st.count === 2 && st.enabled.every((e) => e === true) && st.query === o.then && st.pressed.join() === o.then && st.about2 && st.tabs.join() === `${name},${o.then}` && st.shown.join() === o.then, st);
+    }
+
+    // the switch between the two effects' controls, drawn in the canvas: a tap through both effects
+    if (want('tabs')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await settle();
+      await H.sleep(300);
+      const to = async (/** @type {string} */ fx) => { await tapOn(`.fx-tabs button[data-fx=${JSON.stringify(fx)}]`); return H.until(() => page.evaluate(`window.__gallery.controls === ${JSON.stringify(fx)} ? 1 : null`), 2000); };
+      const first = await to(name), a = await stackState(), fitA = await fits();
+      const second = await to(/** @type {string} */ (o.then)), b = await stackState(), fitB = await fits();
+      check('tabs', `a tap on the drawn switch shows the controls of ${name}, and one more those of ${o.then}`, !!first && a.shown.join() === name && !!second && b.shown.join() === o.then, { a: a.shown, b: b.shown, controls: b.controls });
+      check('tabs', 'the form fits the stage with either effect\'s controls shown', fitA.scrollHeight <= fitA.clientHeight + 1 && fitB.scrollHeight <= fitB.clientHeight + 1, { fitA, fitB });
+    }
+
+    // both effects at rest
+    if (want('rest2')) {
+      numbers.settled2 = await settle();
+      await H.sleep(1000);
+      const atRest = await framesIn(2000);
+      numbers.framesAtRest2s = atRest;
+      check('rest', 'with two effects, once both settled: 0 effect frames over 2 s (zero work at rest)', atRest === 0, { framesIn2s: atRest, settled: numbers.settled2 });
+    }
+
+    // "None" takes the second effect away
+    if (want('pick')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      const tapped = await tapOn('#stack button[data-then="off"]');
+      const gone = await H.until(() => page.evaluate(`window.__gallery.then === 'off' && window.__gallery.host.pluginCount === 1 ? 1 : null`), 3000);
+      const st = await stackState();
+      check('pick', `a tap on "None" takes ${o.then} away: one plugin, no switch, the address follows`, tapped && !!gone && st.query === null && !st.about2 && st.tabs.length === 0 && st.shown.join() === name && st.enabled[0] === true, st);
+    }
+
+    // the first effect reads the pointer through the second: a tap drops a pebble where the finger is seen
+    if (want('under')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await settle();
+      await H.sleep(1200);
+      const quiet = await framesIn(600);
+      const before = await stageShot();
+      // over the empty part of the hero, left of the middle and away from the centre of the screen (the curved picture is moved most there)
+      const at = await page.evaluate(`(() => { const r = document.getElementById('stage').getBoundingClientRect(); return { x: Math.round(r.left + r.width * 0.13), y: Math.round(r.top + r.height * 0.64), left: r.left, top: r.top }; })()`);
+      await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+      await H.sleep(40);
+      await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await H.sleep(120);
+      const after = await stageShot();
+      const diff = H.compareImages(before.img, after.img, { tolerance: 10, diffImage: false });
+      const box = diff.overBBox;
+      const centre = box && { x: (box.x + box.w / 2) / after.ratio, y: (box.y + box.h / 2) / after.ratio };
+      const off = centre && Math.hypot(centre.x - (at.x - at.left), centre.y - (at.y - at.top));
+      numbers.under = { tap: { x: at.x - at.left, y: at.y - at.top }, centre, offPx: off && Math.round(off * 10) / 10, changedPx: diff.countOver16, box, framesBefore600ms: quiet };
+      check('under', `still before the tap (0 frames in 0.6 s), and the tap changes the picture (a drop of ${name} under ${o.then})`, quiet === 0 && !!box && diff.countOver16 > 200 && box.w / after.ratio < 400 && box.h / after.ratio < 400, numbers.under);
+      check('under', `the drop is centred where the finger is seen, within ${UNDER_PX} css px (the first effect reads the pointer through the second)`, off !== null && off <= UNDER_PX, numbers.under);
+    }
+
+    // every ordered pair of plugins
+    if (want('pairs')) {
+      const names = manifest.map((/** @type {any} */ p) => p.name);
+      const bad = [];
+      let pairs = 0;
+      for (const a of names) {
+        await page.evaluate(`document.querySelector('#stack button[data-then="off"]').click(); document.querySelector('#picker button[data-effect=${JSON.stringify(a)}]').click()`);
+        await page.waitForFunction(`window.__gallery.active === ${JSON.stringify(a)} && !!window.__gallery.handle && window.__gallery.then === 'off'`, { timeout: 10000 });
+        for (const b of names) {
+          if (a === b) continue;
+          pairs += 1;
+          await page.evaluate(`window.__gcErrors.length = 0; window.__pairFrames = window.__gc.frames; document.querySelector('#stack button[data-then=${JSON.stringify(b)}]').click()`);
+          const ok = await page.waitForFunction(`window.__gallery.then === ${JSON.stringify(b)} && !!window.__gallery.handle2 && window.__gc.frames > window.__pairFrames + 1`, { timeout: 10000 }).then(() => true, () => false);
+          await H.sleep(250);
+          const st = await page.evaluate(`(() => { const g = window.__gallery; return { then: g.then, count: g.host.pluginCount, enabled: [g.handle, g.handle2].map((h) => (h ? h.enabled : null)), frames: window.__gc.frames - window.__pairFrames, errors: window.__gcErrors.splice(0) }; })()`);
+          if (!ok || st.count !== 2 || !st.enabled.every((e) => e === true) || st.errors.length) bad.push({ pair: `${a} then ${b}`, ...st });
+        }
+      }
+      numbers.pairs = { pairs, bad };
+      check('pairs', `every ordered pair of plugins runs stacked (${pairs} pairs): two plugins, both enabled, frames presented, no effecterror`, pairs === names.length * (names.length - 1) && bad.length === 0, bad.slice(0, 4));
+    }
+
+    // the input map: what the host does with the pointer, drawn over the stage
+    if (want('map')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await settle();
+      await H.sleep(500);
+      const before = await page.evaluate(`({ pressed: document.getElementById('map-toggle').getAttribute('aria-pressed'), hidden: document.getElementById('map').hidden, map: window.__gallery.map })`);
+      check('map', 'with &map=1 the toggle is pressed and nothing is drawn before a pointer arrives', before.pressed === 'true' && before.hidden === true && before.map === null, before);
+      // a point of the canvas where the effect shows the email field: the one whose place in the source is nearest to the field's centre
+      const at = await page.evaluate(`(() => { const c = document.getElementById('stage'), r = c.getBoundingClientRect(), ox = r.left + c.clientLeft, oy = r.top + c.clientTop; const e = document.getElementById('email').getBoundingClientRect();
+        const want = { x: e.left + e.width / 2 - ox, y: e.top + e.height / 2 - oy }; let best = null;
+        for (let y = 4; y < c.clientHeight; y += 4) for (let x = 4; x < c.clientWidth; x += 4) { const q = window.__gallery.host.mapPoint({ x, y }); if (!q) continue; const d = Math.hypot(q.x - want.x, q.y - want.y); if (!best || d < best.d) best = { x, y, d }; }
+        return best && { ...best, clientX: Math.round(ox + best.x), clientY: Math.round(oy + best.y), ox, oy, email: { x: e.left - ox, y: e.top - oy, width: e.width, height: e.height } }; })()`);
+      if (at) {
+        await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.clientX, y: at.clientY, id: 1 }] });
+        await H.sleep(60);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      }
+      await H.until(() => page.evaluate(`window.__gallery.map && document.activeElement && document.activeElement.id === 'email' ? 1 : null`), 2500);
+      const got = await page.evaluate(`(() => { const m = document.getElementById('map'), c = document.getElementById('stage'), r = c.getBoundingClientRect(), ox = r.left + c.clientLeft, oy = r.top + c.clientTop;
+        const rel = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - ox, y: b.top - oy, width: b.width, height: b.height }; };
+        return { state: window.__gallery.map, active: document.activeElement && document.activeElement.id, hidden: m.hidden, box: rel(m.querySelector('.box')), dot: rel(m.querySelector('.dot')), label: m.querySelector('.tag').textContent }; })()`);
+      const near = (/** @type {number} */ a, /** @type {number} */ b, tol = 1.5) => Math.abs(a - b) <= tol;
+      const e = at ? at.email : { x: NaN, y: NaN, width: NaN, height: NaN };
+      numbers.map = { at, ...got };
+      check('map', 'a tap where the effect shows the email field: the map names that field with its value, frames its real box, marks the tap, and the field has the focus',
+        !!at && at.d < 6 && got.active === 'email' && !!got.state && got.state.element === 'email' && !got.hidden && /^input#email "ada@example\.com"/.test(got.label)
+        && near(got.box.x, e.x) && near(got.box.y, e.y) && near(got.box.width, e.width) && near(got.box.height, e.height) && near(got.dot.x + got.dot.width / 2, at.x, 2) && near(got.dot.y + got.dot.height / 2, at.y, 2), numbers.map);
+      check('map', `the effect moved that field: the pointer and the place it is sent to are more than ${MAP_PX} css px apart`, !!got.state && got.state.moved > MAP_PX, { moved: got.state && got.state.moved, pointer: got.state && got.state.pointer, source: got.state && got.state.source });
+      const tapped = await tapOn('#map-toggle');
+      const off = await H.until(() => page.evaluate(`document.getElementById('map').hidden && window.__gallery.map === null && new URL(location.href).searchParams.get('map') === null ? 1 : null`), 2000);
+      check('map', 'a tap on the toggle takes the map away (the address follows)', tapped && !!off, await page.evaluate(`({ hidden: document.getElementById('map').hidden, pressed: document.getElementById('map-toggle').getAttribute('aria-pressed'), query: location.search })`));
+    }
+
     // the frame cap defaults to the display rate
     if (want('cap')) {
       const c = await H.until(() => page.evaluate(`window.__gallery.displayHz ? (() => { const r = document.getElementById('fps-cap'); return { hz: window.__gallery.displayHz, cap: document.getElementById('stage').frameCap, value: r.value, max: r.max, label: document.getElementById('fps-cap-value').textContent }; })() : null`), 6000);
@@ -251,7 +452,7 @@ async function runOne(browser, server, name, view, o = {}) {
 }
 
 const results = { script: 'scripts/check-gallery.mjs', startedAt: new Date().toISOString(), headless: true, scope: plan.scope, skipped: plan.skipped,
-  selection: { plugins: plan.plugins, views: plan.views, off: plan.off, controls: plan.controls }, views: VIEWS, runs: /** @type {any[]} */ ([]), controls: /** @type {any[]} */ ([]), pass: false, green: false };
+  selection: { plugins: plan.plugins, views: plan.views, off: plan.off, scenes: plan.scenes, stack: plan.stack, controls: plan.controls }, views: VIEWS, runs: /** @type {any[]} */ ([]), controls: /** @type {any[]} */ ([]), pass: false, green: false };
 const server = await startServer();
 let failed = 0;
 /** a new headless Chrome per group of runs: one browser at a time, and a crash costs one group, not the run */
@@ -298,6 +499,35 @@ try {
     });
   }
 
+  if (plan.stack) {
+    const log = (/** @type {string} */ what, /** @type {string} */ view, /** @type {any} */ r) => { for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${what.padEnd(13)} ${view.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; } };
+    await withBrowser(async (browser) => {
+      for (const view of VIEWS.filter((v) => v.name !== 'short')) {
+        const r = await runOne(browser, server, 'water', view, { query: '&demo=0', then: 'shatter', steps: ['pick', 'tabs', 'rest2'] });
+        results.runs.push({ plugin: 'water, shatter picked on top', view: view.name, ...r });
+        log('stack', view.name, r);
+      }
+      const ipad = VIEWS.find((v) => v.name === 'ipad');
+      for (const view of VIEWS.filter((v) => v.name !== 'ipad')) {
+        const r = await runOne(browser, server, 'crt', view, { query: '&then=water&demo=0&opt.crt.flicker=0', then: 'water', steps: view.name === 'short' ? ['linked'] : ['linked', 'fold', 'rest2'] });
+        results.runs.push({ plugin: 'crt, water on top (address)', view: view.name, ...r });
+        log('stack', view.name, r);
+      }
+      if (ipad) {
+        // (at a device pixel ratio of 1: headless Chrome 157 ends when the WebGPU canvas is captured at 2 under these metrics, measured twice)
+        const under = await runOne(browser, server, 'water', { ...ipad, dpr: 1 }, { query: UNDER_QUERY, then: 'crt', steps: ['under'] });
+        results.runs.push({ plugin: 'water under crt', view: 'ipad', ...under });
+        log('stack', 'ipad', under);
+        const pairs = await runOne(browser, server, 'water', ipad, { query: '&demo=0', steps: ['pairs'] });
+        results.runs.push({ plugin: 'every pair', view: 'ipad', ...pairs });
+        log('stack', 'ipad', pairs);
+        const map = await runOne(browser, server, 'crt', ipad, { query: MAP_QUERY, steps: ['map'] });
+        results.runs.push({ plugin: 'crt, the input map', view: 'ipad', ...map });
+        log('stack', 'ipad', map);
+      }
+    });
+  }
+
   if (withControl) {
     const phone = { name: 'phone', width: 390, height: 844, dpr: 3 }, ipad = { name: 'ipad', width: 1194, height: 748, dpr: 2 }, short = { name: 'short', width: 375, height: 667, dpr: 2 };
     const CONTROLS = [
@@ -313,6 +543,11 @@ try {
       { id: 'C10', step: 'switch', name: 'water', view: ipad, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .scenes { pointer-events: none !important; }', steps: ['switch'] } },
       { id: 'C11', step: 'live', name: 'water', view: ipad, o: { query: '&scene=live', scene: 'live', script: "{ const si = window.setInterval; window.setInterval = function (f, ms, ...a) { return f && f.name === 'liveTick' ? 0 : si.call(this, f, ms, ...a); }; }", steps: ['live'] } },
       { id: 'C12', step: 'fit', name: 'page-curl', view: short, o: { query: '&scene=daylight', scene: 'daylight', css: ':root { --fit: 580px !important; } #demo-form .scene[data-scene="daylight"] { display: block !important; } #demo-form .photo { height: 64px !important; margin-top: 8px !important; }', steps: ['fit'] } },
+      { id: 'C13', step: 'pick', name: 'water', view: ipad, o: { query: '&demo=0', then: 'shatter', css: '#stack { pointer-events: none !important; }', steps: ['pick'] } },
+      { id: 'C14', step: 'tabs', name: 'water', view: ipad, o: { query: '&then=shatter&demo=0', then: 'shatter', css: '#demo-form .fx-tabs { pointer-events: none !important; }', steps: ['tabs'] } },
+      { id: 'C15', step: 'under', name: 'water', view: { ...ipad, dpr: 1 }, o: { query: UNDER_QUERY, then: 'crt', script: wrapPlugins("if (name === 'water') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: (ctx, o) => create({ ...ctx, localPoint: (p) => ({ x: p.x, y: p.y }) }, o) } }; }"), steps: ['under'] } },
+      { id: 'C16', step: 'pairs', name: 'water', view: ipad, o: { query: '&demo=0', script: wrapPlugins("if (name === 'glitch') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); const render = inst.render; inst.render = function (frame) { if (frame.sourceTexture.label !== 'hic-source') throw new Error('control: not the first plugin'); return render.call(this, frame); }; return inst; } } }; }"), steps: ['pairs'] } },
+      { id: 'C17', step: 'map', name: 'crt', view: ipad, o: { query: MAP_QUERY, script: wrapPlugins("if (name === 'crt') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); inst.captureInputMapper = () => (p) => ({ x: p.x, y: p.y }); return inst; } } }; }"), steps: ['map'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {

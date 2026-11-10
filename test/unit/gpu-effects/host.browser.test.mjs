@@ -6,6 +6,7 @@ import { createPresenter } from '/src/effects/gpu-presenter.js';
 import { createEffects, createLateEffects, installEffectsGlobal } from '/src/effects/index.js';
 import { EXT } from '/src/contracts/events.js';
 import { definePlugin } from '/src/effects/plugin-abi.js';
+import { NO_TARGET as HTMLInCanvasEffectsNoTarget } from '/src/effects/no-target.js';
 import { plugin as WaterEffectPlugin } from '/plugins/water/index.js'; // the example plugin (plugins/water), used here as a real spatial plugin
 import { BUS, EVENTS } from '/src/contracts/events.js';
 
@@ -251,6 +252,73 @@ gtest('a plugin that throws AFTER taking the canvas texture does not blank the c
   const img = rig.snap();
   assert.ok(isRed(RED(img)), `source visible, got ${RED(img)}`);
   assert.equal(host.stats().pluginErrors, 1);
+});
+
+/** The invert plugin under another type, with an input mapper (spatial) or without; `out.ctx` is the context its create() got. */
+const mappedPlugin = (type, mapper, out = {}) => {
+  const base = invertPlugin();
+  return definePlugin({
+    type, apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true },
+    create(ctx) { out.ctx = ctx; const inst = base.create(ctx); return mapper ? { ...inst, spatial: true, captureInputMapper: () => mapper } : inst; },
+  });
+};
+
+gtest('context.localPoint: a point of the canvas through the mappers of the plugins added AFTER this one, in the newest presented frame', async (t) => {
+  const { rig, host } = await startHost(t);
+  const a = {}, b = {}, c = {};
+  const seen = [];
+  await host.addPlugin(mappedPlugin('first', null, a));                                             // not spatial: no mapper of its own
+  const second = await host.addPlugin(mappedPlugin('second', (p) => ({ x: p.x + 10, y: p.y }), b));
+  const third = await host.addPlugin(mappedPlugin('third', (p) => { seen.push([p.width, p.height]); return p.x > 300 ? HTMLInCanvasEffectsNoTarget : { x: p.x * 2, y: p.y + 1 }; }, c));
+  // no frame presented with them yet: the point itself
+  assert.deepEqual(a.ctx.localPoint({ x: 5, y: 7 }), { x: 5, y: 7 });
+  rig.tick();
+  assert.deepEqual(a.ctx.localPoint({ x: 5, y: 7 }), { x: 20, y: 8 }, 'the third plugin is undone first (x * 2), then the second (+ 10)');
+  assert.deepEqual(b.ctx.localPoint({ x: 5, y: 7 }), { x: 10, y: 8 }, 'the second plugin: through the third only, not through its own mapper');
+  assert.deepEqual(c.ctx.localPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'the last plugin: the point itself');
+  const vp = rig.canvas.getBoundingClientRect();
+  assert.ok(seen.length > 0 && seen.every(([w, h]) => w === rig.canvas.clientWidth && h === rig.canvas.clientHeight), `the mappers get the presented size in css px (${JSON.stringify(seen[0])}, canvas ${vp.width}x${vp.height})`);
+  // where a later plugin shows nothing of the picture: null for the plugins before it, the point for itself
+  assert.equal(a.ctx.localPoint({ x: 301, y: 7 }), null);
+  assert.equal(b.ctx.localPoint({ x: 301, y: 7 }), null);
+  assert.deepEqual(c.ctx.localPoint({ x: 301, y: 7 }), { x: 301, y: 7 });
+  assert.throws(() => a.ctx.localPoint({ x: NaN, y: 1 }), TypeError);
+  assert.throws(() => a.ctx.localPoint(null), TypeError);
+  // the chain follows the plugins of the frame presented last: a disabled plugin, then a removed one
+  second.setEnabled(false);
+  assert.deepEqual(a.ctx.localPoint({ x: 5, y: 7 }), { x: 20, y: 8 }, 'until the next frame is presented, the mapping of the frame on screen');
+  rig.tick();
+  assert.deepEqual(a.ctx.localPoint({ x: 5, y: 7 }), { x: 10, y: 8 }, 'through the third only');
+  second.setEnabled(true);
+  third.remove();
+  rig.tick();
+  assert.deepEqual(a.ctx.localPoint({ x: 5, y: 7 }), { x: 15, y: 7 }, 'through the second only');
+  assert.deepEqual(b.ctx.localPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'the second is the last plugin now');
+});
+
+gtest('host.mapPoint: a point of the canvas through every plugin, the point in the source; null where the plugins show nothing of it', async (t) => {
+  const { rig, host } = await startHost(t);
+  assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'no plugin: the point itself');
+  await host.addPlugin(mappedPlugin('first', null));
+  const second = await host.addPlugin(mappedPlugin('second', (p) => ({ x: p.x + 10, y: p.y })));
+  await host.addPlugin(mappedPlugin('third', (p) => (p.x > 300 ? HTMLInCanvasEffectsNoTarget : { x: p.x * 2, y: p.y + 1 })));
+  rig.tick();
+  assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 20, y: 8 }, 'the third plugin is undone first, then the second: what the host does with a click');
+  assert.equal(host.mapPoint({ x: 301, y: 7 }), null);
+  assert.throws(() => host.mapPoint({ x: NaN, y: 1 }), TypeError);
+  second.remove();
+  rig.tick();
+  assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 10, y: 8 });
+});
+
+gtest('context.localPoint, control: with one plugin, and for the last of several, the point is returned as it is (no mapper is called)', async (t) => {
+  const { rig, host } = await startHost(t);
+  const a = {};
+  let calls = 0;
+  await host.addPlugin(mappedPlugin('only', (p) => { calls += 1; return { x: p.x + 99, y: p.y }; }, a));
+  rig.tick();
+  assert.deepEqual(a.ctx.localPoint({ x: 5, y: 7 }), { x: 5, y: 7 });
+  assert.equal(calls, 0);
 });
 
 gtest('a spatial plugin without captureInputMapper is rejected by addPlugin and leaves the host usable', async (t) => {

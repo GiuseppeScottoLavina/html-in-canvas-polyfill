@@ -43,6 +43,7 @@ export function createEffects(env, deps) {
         get pluginCount() { return host.pluginCount; },
         addPlugin: host.addPlugin,
         stats: host.stats,
+        mapPoint: host.mapPoint,
         destroy() { hosts.delete(host); host.destroy(); },
       });
     },

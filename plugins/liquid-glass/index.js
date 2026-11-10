@@ -19,6 +19,7 @@ import { clampTo } from '../_lib/number.js';
 import { fullscreenPass } from '../_lib/gpu.js';
 import { springSubsteps } from '../_lib/spring.js';
 import { injectStyle } from '../_lib/ui.js';
+import { pointerIn } from '../_lib/pointer.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectPluginContext} EffectPluginContext */
@@ -450,13 +451,15 @@ export const plugin = Object.freeze({
       });
     }
 
-    /** @param {{clientX: number, clientY: number}} event @returns {{x: number, y: number}|null} as a fraction of the canvas content box */
-    function unit(event) {
+    /**
+     * As a fraction of the canvas content box. Through the plugins added after this one (the lens belongs under the pointer as the user sees the glass; null where
+     * one of them shows none of it), except `onCanvas`: the point on the canvas itself (has the pointer left it?).
+     * @param {{clientX: number, clientY: number}} event @param {boolean} [onCanvas] @returns {{x: number, y: number}|null}
+     */
+    function unit(event, onCanvas) {
       if (!canvas?.getBoundingClientRect) return null;
-      const r = canvas.getBoundingClientRect();
-      const w = Math.max(1, canvas.clientWidth);
-      const h = Math.max(1, canvas.clientHeight);
-      return { x: (event.clientX - r.left - canvas.clientLeft) / w, y: (event.clientY - r.top - canvas.clientTop) / h };
+      const p = pointerIn(onCanvas ? {} : context, canvas, event.clientX, event.clientY);
+      return p && { x: p.x / Math.max(1, canvas.clientWidth), y: p.y / Math.max(1, canvas.clientHeight) };
     }
 
     // mouse and pen: the lens follows the pointer, a hover magnifier (a click lands where its centre shows; nothing to grab)
@@ -477,7 +480,7 @@ export const plugin = Object.freeze({
     context.listen?.('pointerleave', (event) => {
       const e = /** @type {PointerEvent} */ (event);
       if (e.pointerType === 'touch' || o.pinned || drag || demo) return;
-      const p = unit(e);
+      const p = unit(e, true);
       if (p && p.x > 0.002 && p.x < 0.998 && p.y > 0.002 && p.y < 0.998) return;
       lens.tx = o.x;
       lens.ty = o.y;
