@@ -225,12 +225,12 @@ fn sheen_lobe(n : vec3<f32>, v : vec3<f32>, l : vec3<f32>) -> f32 {
   return (fuzz + thread) * nl / (4.0 * (nl + nv - nl * nv) + 1e-3);
 }
 
-/** the weave in the sheen: over and under, thread by thread; faded where a pixel covers more than half a thread (1 elsewhere) */
+/** the weave in the sheen: over and under, thread by thread; faded out where a pixel covers more than a third of a thread (then 1) */
 fn weave(uv : vec2<f32>) -> f32 {
   let t = uv * g.css / THREAD;
   let w = max(fwidth(t.x), fwidth(t.y));
   let pattern = sin(2.0 * PI * t.x) * sin(2.0 * PI * t.y);
-  return 1.0 + 0.45 * pattern * (1.0 - smoothstep(0.25, 0.6, w));
+  return 1.0 + 0.45 * pattern * (1.0 - smoothstep(0.15, 0.4, w));
 }
 
 /** the wall: matt plaster, lit by the lamp in a soft pool towards the side it hangs on */
@@ -377,7 +377,12 @@ fn fs_cloth(v : ClothOut, @builtin(front_facing) facing : bool) -> @location(0) 
     let light = (ROOM * room + (1.0 - ROOM) * lamp) / level;
     let sheen = sheen_lobe(n, view, g.light) * lit - sheen_lobe(rest_n, rest_view, g.light);
     let rim = pow(1.0 - max(dot(n, view), 0.0), 4.0) * room - pow(1.0 - rest_view.z, 4.0) * room_light(rest_n);
-    col = albedo * light + FABRIC * (light - 1.0) + tint * gloss * (sheen + 0.04 * rim);
+    // more light than the flat page has cannot be shown beyond white: what a bright page gains rolls off towards white instead of
+    // clipping (and is exactly the page at light 1); what it loses is plain shade
+    let gain = (albedo + vec3<f32>(FABRIC)) * max(light - 1.0, 0.0) + tint * gloss * max(sheen + 0.04 * rim, 0.0);
+    let room_left = max(vec3<f32>(1.0) - albedo, vec3<f32>(1e-3));
+    let loss = (albedo + vec3<f32>(FABRIC)) * min(light - 1.0, 0.0) + tint * gloss * min(sheen + 0.04 * rim, 0.0);
+    col = albedo + room_left * (vec3<f32>(1.0) - exp(-gain / room_left)) + loss;
     changed = clamp(abs(light - 1.0) * 40.0 + abs(sheen) * 40.0 + abs(rim) * 10.0, 0.0, 1.0);
   } else {
     // the back: the linen with the print soaked through it, lit by the room behind the cloth (dimmer: the wall is near) and by the

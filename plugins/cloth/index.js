@@ -113,6 +113,11 @@ const mapperStates = new WeakMap();
 /** The state a mapper of this plugin answers from (the frame it was captured for), or undefined; for tests. @param {Function} mapper */
 export const stateOf = (mapper) => mapperStates.get(mapper);
 
+/** @type {WeakMap<object, () => Float32Array|null>} */
+const presentedBy = new WeakMap();
+/** The state of the newest presented frame of the cloth on `canvas` (what its mapper answers from), or null; for tests. @param {object} canvas */
+export const presentedState = (canvas) => presentedBy.get(canvas)?.() ?? null;
+
 /** @param {Float32Array} state @returns {InputMapper} */
 function makeMapper(state) {
   /** @type {InputMapper} */
@@ -204,7 +209,7 @@ export const plugin = Object.freeze({
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     if (/** @type {any} */ (doc)?.createElement) injectStyle(doc, 'cloth', UI_CSS);   // the cursor rule (a test fake may have no DOM)
 
-    const o = { weight: 0.5, wind: 0, pins: /** @type {'top'|'corners'} */ ('top'), sheen: 0.5, shadow: 0.85, through: 0.35, backdrop: [0.05, 0.047, 0.052], back: [0.33, 0.31, 0.28] };
+    const o = { weight: 0.5, wind: 0, pins: /** @type {'top'|'corners'} */ ('top'), sheen: 0.5, shadow: 0.85, through: 0.35, backdrop: parseColor('#3f3d40', []), back: parseColor('#9b9790', []) };
     /** @param {Readonly<Record<string, unknown>>|undefined|null} next */
     function readOptions(next) {
       if (!next) return;
@@ -243,6 +248,7 @@ export const plugin = Object.freeze({
     let mapperSlot = 0;
     let shown = /** @type {Float32Array|null} */ (null);
     let serial = 0;
+    presentedBy.set(canvas, () => shown);
     /** @type {any} */ let pointsTexture = null;
     /** @type {any} */ let pointsView = null;
     /** @type {any} */ let shadowGroup = null;
@@ -328,7 +334,11 @@ export const plugin = Object.freeze({
           fade.now = fade.to = 1;   // the bare wall
           if (riseNext) rise(c);
         }
-      } else if (status === RISING && c.asleep) status = HANGING;
+      } else if (status === RISING && c.asleep) {
+        status = HANGING;
+        applyFabric(c);   // the breeze of the option `wind` blows again
+        if (c.wind > 0) wake(c);
+      }
       if (c.gusts.length === 0) demoBlows = false;
       if (c.asleep) { clock = NaN; return 1; }
       return Math.min(1, Math.max(0, (now - clock) / STEP_MS));
@@ -732,6 +742,7 @@ export const plugin = Object.freeze({
       mountUI,
       destroy() {
         for (const resolve of waiters.splice(0)) resolve(null);
+        presentedBy.delete(canvas);
         for (const [type, fn] of documentListeners) doc.removeEventListener?.(type, fn, true);
         if (press.held) { try { captureEl.releasePointerCapture(press.id); } catch { /* gone */ } }
         grabCursor(false);
