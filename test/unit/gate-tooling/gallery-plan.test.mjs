@@ -9,8 +9,8 @@ const known = { plugins: ['water', 'crt', 'template'], views: ['phone', 'ipad'] 
 test('--controls-only with --no-control is refused: it used to exit 0 with 0 checks (control: either flag alone runs something)', () => {
   assert.match(galleryPlan(['--controls-only', '--no-control'], known).error ?? '', /checks nothing/);
   assert.match(galleryPlan(['--no-control', '--controls-only'], known).error ?? '', /checks nothing/);
-  assert.deepEqual(galleryPlan(['--controls-only'], known), { error: null, plugins: [], views: ['phone', 'ipad'], off: false, controls: true, scope: 'diagnostic', skipped: ['plugins water, crt, template', 'off'] });
-  assert.deepEqual(galleryPlan(['--no-control'], known), { error: null, plugins: ['water', 'crt', 'template'], views: ['phone', 'ipad'], off: true, controls: false, scope: 'diagnostic', skipped: ['the controls (--no-control)'] });
+  assert.deepEqual(galleryPlan(['--controls-only'], known), { error: null, plugins: [], views: ['phone', 'ipad'], off: false, scenes: false, controls: true, scope: 'diagnostic', skipped: ['plugins water, crt, template', 'off', 'the scenes'] });
+  assert.deepEqual(galleryPlan(['--no-control'], known), { error: null, plugins: ['water', 'crt', 'template'], views: ['phone', 'ipad'], off: true, scenes: true, controls: false, scope: 'diagnostic', skipped: ['the controls (--no-control)'] });
 });
 
 test('an unknown plugin, view or argument is refused, never skipped silently', () => {
@@ -24,9 +24,9 @@ test('an unknown plugin, view or argument is refused, never skipped silently', (
 });
 
 test('a valid selection runs what it names: the plugins, "off", the views', () => {
-  assert.deepEqual(galleryPlan(['--only=crt,off', '--views=phone'], known), { error: null, plugins: ['crt'], views: ['phone'], off: true, controls: true, scope: 'diagnostic', skipped: ['plugins water, template', 'views ipad'] });
-  assert.deepEqual(galleryPlan(['--only=off', '--no-control'], known), { error: null, plugins: [], views: ['phone', 'ipad'], off: true, controls: false, scope: 'diagnostic', skipped: ['plugins water, crt, template', 'the controls (--no-control)'] });
-  assert.deepEqual(galleryPlan([], known), { error: null, plugins: ['water', 'crt', 'template'], views: ['phone', 'ipad'], off: true, controls: true, scope: 'full', skipped: [] });
+  assert.deepEqual(galleryPlan(['--only=crt,off', '--views=phone'], known), { error: null, plugins: ['crt'], views: ['phone'], off: true, scenes: false, controls: true, scope: 'diagnostic', skipped: ['plugins water, template', 'the scenes', 'views ipad'] });
+  assert.deepEqual(galleryPlan(['--only=off', '--no-control'], known), { error: null, plugins: [], views: ['phone', 'ipad'], off: true, scenes: false, controls: false, scope: 'diagnostic', skipped: ['plugins water, crt, template', 'the scenes', 'the controls (--no-control)'] });
+  assert.deepEqual(galleryPlan([], known), { error: null, plugins: ['water', 'crt', 'template'], views: ['phone', 'ipad'], off: true, scenes: true, controls: true, scope: 'full', skipped: [] });
 });
 
 test('the verdict: a failure fails, zero checks and zero controls fail, anything checked without a failure passes', () => {
@@ -55,7 +55,7 @@ test('a diagnostic selection (--no-control, controls only, some plugins or views
   // a diagnostic run that failed is a failure, as a full one
   assert.deepEqual(galleryVerdict({ failed: 1, checks: 3, controls: 0, scope: 'diagnostic', skipped: ['off'] }), { pass: false, green: false, line: 'G-gallery: FAILED (1 checks)' });
   // control: the full selection, also when --only names every plugin and "off", is the gate
-  for (const argv of [[], ['--only=water,crt,template,off', '--views=phone,ipad']]) {
+  for (const argv of [[], ['--only=water,crt,template,off,scenes', '--views=phone,ipad']]) {
     const plan = galleryPlan(argv, known);
     assert.equal(plan.error === null && plan.scope, 'full', argv.join(' '));
     assert.equal(galleryVerdict({ failed: 0, checks: 40, controls: 8, scope: 'full', skipped: [] }).green, true);

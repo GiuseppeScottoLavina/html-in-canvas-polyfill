@@ -94,6 +94,43 @@
   .try { margin: 0; padding: 14px 0 0; border-top: 1px solid rgba(178, 230, 255, .12); list-style: none; display: grid; gap: 6px; color: rgba(225, 246, 255, .62); font-size: 12px; }
   .try li::before { content: '\2192'; margin-right: 8px; color: #76f5ff; }
   .card h2 { margin: 0 0 12px; font-size: 24px; letter-spacing: -.03em; }
+  /* ---- scenes: the same drawable, other content beside the form ---- */
+  .scenes { display: flex; gap: 6px; }
+  .scenes button { min-height: 26px; padding: 0 11px; font: 700 11px/1 system-ui, sans-serif; letter-spacing: .04em; color: inherit; cursor: pointer;
+    border: 1px solid rgba(178, 230, 255, .28); border-radius: 999px; background: rgba(8, 25, 48, .35); }
+  .scenes button[aria-pressed="true"] { color: #03131e; border-color: transparent; background: #79efff; }
+  .scene { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .scene[hidden] { display: none; }
+  /* daylight: a bright stage and a paper panel; the form's card stays dark glass (the plugins' own controls are drawn light on dark) */
+  #demo-form[data-scene="daylight"] { color: #18233a; background: radial-gradient(circle at 16% 12%, #ffd79a, transparent 42%), radial-gradient(circle at 88% 84%, #ff9fcd, transparent 46%),
+    radial-gradient(circle at 70% 10%, #9fe3ff, transparent 40%), linear-gradient(165deg, #fff6e2, #d6ebff 58%, #bcd6ff); }
+  #demo-form[data-scene="daylight"] .hero { color: #18233a; border-color: rgba(24, 35, 58, .12); background: linear-gradient(150deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .62)); }
+  #demo-form[data-scene="daylight"] .card { color: #edfaff; background: linear-gradient(150deg, rgba(8, 25, 48, .94), rgba(4, 13, 28, .9)); }
+  #demo-form[data-scene="daylight"] .eyebrow { color: #0b6f96; }
+  #demo-form[data-scene="daylight"] .hero .lede { color: rgba(24, 35, 58, .78); }
+  #demo-form[data-scene="daylight"] .try { color: rgba(24, 35, 58, .7); border-top-color: rgba(24, 35, 58, .14); }
+  #demo-form[data-scene="daylight"] .try li::before { color: #0b6f96; }
+  #demo-form[data-scene="daylight"] .scenes button { border-color: rgba(24, 35, 58, .25); background: rgba(255, 255, 255, .6); }
+  #demo-form[data-scene="daylight"] .scenes button[aria-pressed="true"] { color: #fff; background: #0b6f96; }
+  .photo { position: relative; height: 150px; margin-top: 12px; overflow: hidden; border-radius: 16px; background: linear-gradient(#4aa8ff, #9fd8ff 44%, #ffe3b3 68%, #ffb58c); box-shadow: 0 10px 30px rgba(24, 35, 58, .22); }
+  .photo .sun { position: absolute; left: 58%; top: 34%; width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle, #fffbd6 0 34%, #ffd95e 62%, #ff9d3c); box-shadow: 0 0 56px 22px rgba(255, 217, 94, .55); }
+  .photo .cloud { position: absolute; height: 18px; border-radius: 99px; background: rgba(255, 255, 255, .92); box-shadow: 18px 8px 0 -3px rgba(255, 255, 255, .85), -14px 6px 0 -4px rgba(255, 255, 255, .8); }
+  .photo .c1 { left: 12%; top: 16%; width: 64px; }
+  .photo .c2 { left: 70%; top: 10%; width: 44px; opacity: .85; }
+  .photo .hill { position: absolute; left: -20%; width: 140%; height: 130%; border-radius: 50%; }
+  .photo .far { top: 58%; left: -45%; background: linear-gradient(#58c08f, #2f9e6b); }
+  .photo .mid { top: 66%; left: 5%; background: linear-gradient(#3aa776, #1f7a57); }
+  .photo .near { top: 78%; left: -25%; background: linear-gradient(#237a58, #124a3b); }
+  /* live data: a clock, bars and a feed that change once a second */
+  #demo-form[data-scene="live"] { background: radial-gradient(circle at 14% 16%, rgba(255, 86, 160, .2), transparent 40%), radial-gradient(circle at 86% 80%, rgba(88, 255, 190, .16), transparent 42%), #050b18; }
+  #live-clock { font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+  .bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; margin-top: 16px; padding: 10px; border-radius: 14px; background: rgba(255, 255, 255, .04); }
+  .bars i { flex: 1; min-height: 4px; border-radius: 6px 6px 2px 2px; background: linear-gradient(#ffd166, #ff5fa2 55%, #7b5cff); }
+  .bars i:nth-child(3n) { background: linear-gradient(#7dffcf, #29c7ff 55%, #3b6bff); }
+  .feed { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font: 12px/1.5 ui-monospace, monospace; color: rgba(225, 246, 255, .78); }
+  .feed li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 8px; border-radius: 8px; background: rgba(255, 255, 255, .05); white-space: nowrap; overflow: hidden; }
+  .feed li b { color: #7dffcf; font-weight: 600; }
+  .feed li:first-child { background: rgba(125, 255, 207, .14); }
   .fields { display: grid; gap: 10px; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   label.field { display: grid; gap: 5px; min-width: 0; color: rgba(232, 249, 255, .78); font-size: 11px; font-weight: 700; }
@@ -121,6 +158,8 @@
     #demo-form { padding: 16px; gap: 16px; }
     .hero, .card { padding: 20px; }
     .hero h1 { font-size: 50px; }
+    .photo { height: 120px; }
+    .bars { height: 96px; }
   }
   /* phones and narrow windows: one column; the form fits the stage without an inner scroll */
   @media (max-width: 760px) {
@@ -137,6 +176,12 @@
     .eyebrow { margin-bottom: 4px; font-size: 10px; }
     .hero h1 { max-width: none; font-size: 30px; line-height: 1; letter-spacing: -.04em; }
     .lede, .try { display: none; }
+    .scenes { margin-bottom: 8px; }
+    .photo { height: 64px; margin-top: 8px; border-radius: 12px; }
+    .photo .sun { width: 34px; height: 34px; top: 22%; }
+    .photo .cloud { display: none; }
+    .bars { height: 44px; margin-top: 8px; padding: 6px; }
+    .feed { display: none; }
     .bar h1 { font-size: .95rem; }
     .card h2 { margin-bottom: 8px; font-size: 18px; }
     .fields { gap: 8px; }
@@ -176,10 +221,26 @@
   <canvas id="stage" content="drawable" aria-label="Interactive form with the selected effect">
     <form id="demo-form" drawable autocomplete="off" novalidate>
       <section class="hero">
-        <div>
+        <!-- The scene: what the effect is applied to, beside the form. Ordinary HTML each; the switch is HTML in the canvas too. -->
+        <div class="scenes" role="group" aria-label="Scene">
+          <button type="button" data-scene="form" aria-pressed="true">Form</button><button type="button" data-scene="daylight" aria-pressed="false">Daylight</button><button type="button" data-scene="live" aria-pressed="false">Live data</button>
+        </div>
+        <div class="scene" data-scene="form">
           <p class="eyebrow">Real DOM, drawn into a canvas</p>
           <h1>Touch the interface.</h1>
           <p class="lede">Every field you see is ordinary HTML inside this canvas. The selected effect is a WebGPU plugin applied to the drawn result; the form keeps its layout, focus, typing and scrolling, and clicks are mapped through the effect to the field you see.</p>
+        </div>
+        <div class="scene" data-scene="daylight" hidden>
+          <p class="eyebrow">Any HTML, not only a form</p>
+          <h1>Light bends here.</h1>
+          <div class="photo" role="img" aria-label="A landscape painted with CSS gradients: two clouds and a low sun over three hills"><i class="cloud c1"></i><i class="cloud c2"></i><i class="sun"></i><i class="hill far"></i><i class="hill mid"></i><i class="hill near"></i></div>
+          <p class="lede">The picture is a handful of CSS gradients and the words are text: no image file. Bright content gives water, glass and foil something to refract.</p>
+        </div>
+        <div class="scene" data-scene="live" hidden>
+          <p class="eyebrow">Content that keeps changing</p>
+          <h1><time id="live-clock">00:00:00</time></h1>
+          <div class="bars" role="img" aria-label="Ten bars that change every second"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <ol class="feed" id="live-feed" aria-label="The latest events, newest first"></ol>
         </div>
         <ul class="try" aria-label="Things to try">
           <li>Click a field where the effect draws it, and type.</li>
@@ -225,7 +286,7 @@
   const hic = window.__HIC__;
   // window.__gallery: what the page shows, for its tests: the effects host, the effect handle of the selected plugin, the last action it ran
   // (an action button), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`)
-  const state = (window.__gallery = { ready: false, mode: null, active: null, plugins: [], host: null, handle: null, lastAction: null, demo: null, displayHz: null, hud: null });
+  const state = (window.__gallery = { ready: false, mode: null, active: null, scene: 'form', plugins: [], host: null, handle: null, lastAction: null, demo: null, displayHz: null, hud: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = matchMedia('(pointer: coarse)');
@@ -423,6 +484,45 @@
     feedback.dataset.state = bad ? 'error' : 'success';
     feedback.textContent = bad ? 'Please check the ' + bad + ' field.' : 'Thanks, ' + form.elements.name.value.trim() + '. (not sent)';
   });
+
+  // ---- scenes: other content beside the form, in the same drawable (?scene=daylight or live; the form is the default) -------------
+  // A scene is ordinary HTML in the canvas, and so is its switch: the effect is applied to whatever is there. `live` changes once a second (a clock, ten bars,
+  // a feed of five rows): content that keeps changing is drawn again each time, so with it the page is not at rest, by design.
+  const SCENES = ['form', 'daylight', 'live'];
+  let liveTimer = 0, liveSerial = 0;
+  const two = (n) => String(n).padStart(2, '0');
+  const EVENTS = ['deploy finished', 'cache warmed', 'user signed in', 'payment settled', 'report exported', 'backup stored', 'alert cleared', 'build queued'];
+  function liveTick() {
+    if (document.hidden) return;
+    const d = new Date(), n = ++liveSerial;
+    $('live-clock').textContent = two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+    const bars = form.querySelectorAll('.bars i');
+    for (let i = 0; i < bars.length; i++) bars[i].style.height = Math.round(18 + 78 * Math.abs(Math.sin(n * 0.7 + i * 1.3))) + '%';
+    const row = document.createElement('li');
+    row.append(Object.assign(document.createElement('span'), { textContent: EVENTS[n % EVENTS.length] }), Object.assign(document.createElement('b'), { textContent: two(d.getMinutes()) + ':' + two(d.getSeconds()) }));
+    const feed = $('live-feed');
+    feed.prepend(row);
+    while (feed.children.length > 5) feed.lastElementChild.remove();
+  }
+  function setScene(name, byUser) {
+    if (!SCENES.includes(name)) name = 'form';
+    form.dataset.scene = name;
+    for (const el of form.querySelectorAll('.scene')) el.hidden = el.dataset.scene !== name;
+    for (const b of form.querySelectorAll('.scenes button')) b.setAttribute('aria-pressed', String(b.dataset.scene === name));
+    clearInterval(liveTimer);
+    liveTimer = 0;
+    if (name === 'live') { liveTick(); liveTimer = setInterval(liveTick, 1000); }
+    state.scene = name;
+    if (!byUser) return;
+    const url = new URL(location.href);
+    if (name === 'form') url.searchParams.delete('scene'); else url.searchParams.set('scene', name);
+    history.replaceState(null, '', url);
+  }
+  form.querySelector('.scenes').addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('button[data-scene]') : null;
+    if (button) setScene(button.dataset.scene, true);
+  });
+  setScene(new URL(location.href).searchParams.get('scene') || 'form', false);
 
   // ---- the plugin list: dist/plugins/manifest.json, written by the build from every plugins/<name>/ (plugins/README.md) -----------
   const manifestRequest = fetch('../../dist/plugins/manifest.json').then((r) => (r.ok ? r.json() : Promise.reject(new Error('manifest ' + r.status))));

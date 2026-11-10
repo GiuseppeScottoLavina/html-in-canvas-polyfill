@@ -14,6 +14,12 @@
 //   rest      once the demo ended and handle.settled() resolved, after 1 s of grace: 0 effectframe events over 2 s, unless the plugin
 //             declares `meta.continuous` (then the rate at rest is printed); the HUD then reads 0 fx/s
 //   scroll    (phone) a vertical touch drag that starts on the stage, left of the middle and away from the corners, scrolls the page
+// Per scene other than the form (examples/plugins/ `?scene=daylight`, `?scene=live`) and view, with the water plugin:
+//   scene     the gallery shows that scene: its block is laid out, the others are not, and __gallery.scene names it
+//   fold, fit as above, with the scene's content
+//   switch    a touch tap on the drawn switch, through the effect, selects another scene and comes back (the address follows)
+//   live      (the live scene) the drawn content changes about once a second and the effect presents it: frames arrive at rest, and the drawn clock
+//             moves on; back on the form, 0 effect frames over 2 s
 // Once, under prefers-reduced-motion (phone): no demo is played ('prefers-reduced-motion'). Once ('off', iPad): the frame cap defaults to
 // the display rate measured by the page (canvas.frameCap 0 = uncapped, the slider at its top = the rounded rate).
 // Positive controls (each must turn ITS check red; --no-control skips them), all on the template plugin unless said otherwise:
@@ -23,8 +29,10 @@
 //   C5 demo    the gallery opened with ?demo=0                    C6 scroll  a non-passive touchstart listener that cancels every touch
 //   C7 reduced the page sees no reduced-motion preference while the emulation sets it
 //   C8 cap     the slider moved to 60 before the check ('off')
+//   C9 fit     (water, the daylight scene) a picture 900 px tall    C10 switch (water, the daylight scene) the switch takes no pointer input
+//   C11 live   (water, the live scene) the page's one-second timer never starts
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
-// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off' or the controls is a diagnostic run:
+// a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
 // Results: .scratch/results/gallery-<timestamp>.json (`pass`, `green`, `scope`, `selection`, `skipped`).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -96,7 +104,7 @@ function neverIdleEffects() {
 
 /**
  * One gallery run. @param {any} browser @param {any} server @param {string} name @param {any} view
- * @param {{query?: string, css?: string, script?: string, effects?: string, reducedMotion?: boolean, fakeNoReduce?: boolean, steps?: string[]}} [o]
+ * @param {{query?: string, css?: string, script?: string, effects?: string, reducedMotion?: boolean, fakeNoReduce?: boolean, steps?: string[], scene?: string}} [o]
  */
 async function runOne(browser, server, name, view, o = {}) {
   const page = await browser.newPage({ reuseFirst: false });
@@ -159,6 +167,14 @@ async function runOne(browser, server, name, view, o = {}) {
       if (!info.continuous && atRest === 0) check('rest', 'the HUD reads 0 effect frames per second at rest', hud.text === '0' || hud.text === '-', hud);
     }
 
+    // the scene the address asked for
+    if (want('scene')) {
+      const sc = await page.evaluate(`(() => { const f = document.getElementById('demo-form'); return { scene: window.__gallery.scene, attr: f.dataset.scene,
+        shown: [...f.querySelectorAll('.scene')].filter((e) => e.offsetHeight > 0).map((e) => e.dataset.scene), pressed: [...f.querySelectorAll('.scenes button[aria-pressed="true"]')].map((b) => b.dataset.scene) }; })()`);
+      numbers.scene = sc;
+      check('scene', `the gallery shows the ${o.scene} scene and no other`, sc.scene === o.scene && sc.attr === o.scene && sc.shown.join() === o.scene && sc.pressed.join() === o.scene, sc);
+    }
+
     // fold and fit, with the plugin's controls mounted
     if (want('fold') || want('fit')) {
       const m = await page.evaluate(`(() => { const s = document.getElementById('stage').getBoundingClientRect(); const f = document.getElementById('demo-form');
@@ -176,6 +192,40 @@ async function runOne(browser, server, name, view, o = {}) {
       await H.touchDrag(page, { x: Math.round(s.x), y: Math.round(s.y), dir: 1, step: 14, count: 14, intervalMs: 16, restMs: 30 });
       const scrolled = await H.until(() => page.evaluate('window.scrollY > 60 ? window.scrollY : null'), 1500);
       check('scroll', 'a vertical touch drag that starts on the stage (away from a handle) scrolls the page', !!scrolled, { scrollY: scrolled ?? (await page.evaluate('window.scrollY')), at: s });
+    }
+
+    // a touch tap on the drawn switch selects another scene, through the effect, and comes back
+    if (want('switch')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await H.sleep(150);
+      const tap = async (/** @type {string} */ scene) => {
+        const at = await page.evaluate(`(() => { const r = document.querySelector('.scenes button[data-scene=${JSON.stringify(scene)}]').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+        await H.sleep(60);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        return H.until(() => page.evaluate(`window.__gallery.scene === ${JSON.stringify(scene)} ? { scene: window.__gallery.scene, query: new URL(location.href).searchParams.get('scene') } : null`), 2000);
+      };
+      const there = await tap('form'), back = await tap(/** @type {string} */ (o.scene));
+      check('switch', `a tap on the drawn switch selects the form scene and one more comes back to ${o.scene} (the address follows)`,
+        !!there && there.query === null && !!back && back.query === o.scene, { there, back, now: await page.evaluate('window.__gallery.scene') });
+    }
+
+    // the live scene: content that changes once a second is presented; the form scene is at rest again
+    if (want('live')) {
+      if ((await page.evaluate('window.__gallery.handle && window.__gallery.handle.actions ? 1 : 0')) === 1) await page.evaluate(`Promise.race([Promise.resolve(window.__gallery.handle.settled()), new Promise((r) => setTimeout(r, 10000))])`);
+      await H.sleep(1200);
+      const a = await page.evaluate(`({ frames: window.__gc.frames, clock: document.getElementById('live-clock').textContent })`);
+      await H.sleep(3200);
+      const b = await page.evaluate(`({ frames: window.__gc.frames, clock: document.getElementById('live-clock').textContent })`);
+      numbers.live = { framesIn3s: b.frames - a.frames, from: a.clock, to: b.clock };
+      check('live', 'the live scene changes about once a second and the effect presents it (the clock moves on; 3 to 120 effect frames in 3.2 s)', b.clock !== a.clock && b.frames - a.frames >= 3 && b.frames - a.frames <= 120, numbers.live);
+      await page.evaluate(`document.querySelector('.scenes button[data-scene="form"]').click()`);
+      await H.sleep(1500);
+      const c = await page.evaluate('window.__gc.frames');
+      await H.sleep(2000);
+      const atRest = (await page.evaluate('window.__gc.frames')) - c;
+      numbers.liveThenForm2s = atRest;
+      check('live', 'back on the form scene: 0 effect frames over 2 s (the timer stopped)', atRest === 0, { framesIn2s: atRest });
     }
 
     // the frame cap defaults to the display rate
@@ -229,6 +279,18 @@ try {
     });
   }
 
+  if (plan.scenes) {
+    await withBrowser(async (browser) => {
+      for (const scene of ['daylight', 'live']) {
+        for (const view of VIEWS) {
+          const r = await runOne(browser, server, 'water', view, { query: `&scene=${scene}`, scene, steps: ['scene', 'fold', 'fit', 'switch', ...(scene === 'live' ? ['live'] : [])] });
+          results.runs.push({ plugin: `water, ${scene} scene`, view: view.name, ...r });
+          for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${scene.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
+        }
+      }
+    });
+  }
+
   if (withControl) {
     const phone = { name: 'phone', width: 390, height: 844, dpr: 3 }, ipad = { name: 'ipad', width: 1194, height: 748, dpr: 2 };
     const CONTROLS = [
@@ -240,6 +302,9 @@ try {
       { id: 'C6', step: 'scroll', name: 'template', view: phone, o: { script: "document.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false, capture: true });", steps: ['scroll'] } },
       { id: 'C7', step: 'demo', name: 'template', view: phone, o: { reducedMotion: true, fakeNoReduce: true, steps: ['demo'] } },
       { id: 'C8', step: 'cap', name: 'off', view: ipad, o: { script: "addEventListener('load', () => setTimeout(() => { const r = document.getElementById('fps-cap'); r.value = '60'; r.dispatchEvent(new Event('input')); }, 300));", steps: ['cap'] } },
+      { id: 'C9', step: 'fit', name: 'water', view: phone, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .photo { height: 900px !important; }', steps: ['fit'] } },
+      { id: 'C10', step: 'switch', name: 'water', view: ipad, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .scenes { pointer-events: none !important; }', steps: ['switch'] } },
+      { id: 'C11', step: 'live', name: 'water', view: ipad, o: { query: '&scene=live', scene: 'live', script: "{ const si = window.setInterval; window.setInterval = function (f, ms, ...a) { return f && f.name === 'liveTick' ? 0 : si.call(this, f, ms, ...a); }; }", steps: ['live'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {
