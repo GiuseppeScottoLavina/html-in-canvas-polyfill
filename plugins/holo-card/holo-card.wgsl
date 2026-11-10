@@ -7,6 +7,10 @@
 // diffraction bands); glitter flakes have their own tilted normals and glint only when they reflect the light to the eye; the bevelled
 // rim catches the light on the side that faces it. The print is supersampled (4 rotated-grid taps per pixel) so text does not shimmer
 // while the card moves, and the output is dithered so the dark gradients do not band.
+//
+// Extended range (HDR_PEAK > 1): the print, the foil over it, the sheen and the rim stay under white; the lamp is the light. The hot core
+// of its mirror image on the laminate (a far narrower lobe than the glare a standard target can show) and the flakes that mirror it squarely
+// go above white, towards HDR_PEAK. Both fade out as the card comes to rest in front of the lamp: a card at rest shows nothing above white.
 struct U {
   res : vec2<f32>,    // presented size, backing px
   css : vec2<f32>,    // presented size, CSS px
@@ -22,6 +26,24 @@ struct U {
 @group(0) @binding(2) var src : texture_2d<f32>;
 
 const CARD = vec3<f32>(0.03, 0.045, 0.08);
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
+// the lamp's own brightness over what a standard target shows of it: the hot core of the glare, and a flake that mirrors the lamp squarely
+const HOT_CORE : f32 = 6.0;
+const HOT_FLAKE : f32 = 0.6;
 
 @vertex
 fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> {
@@ -90,10 +112,20 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let s = c + vec2<f32>(dot(local, u.ex.xyz), dot(local, u.ey.xyz)) / u.ey.w;
   let sd = sd_box(s - c, c, u.nz.w);
   let px = u.ey.w * dpr;   // backing px per source px (about)
-  if (sd * px >= 0.34 || u.misc.y < 0.5) { return vec4<f32>(back + vec3<f32>(dither), 1.0); }
+  if (sd * px >= 0.34 || u.misc.y < 0.5) {
+    if (HDR_PEAK > 1.0) { return vec4<f32>(max(back + vec3<f32>(dither), vec3<f32>(0.0)), 1.0); }   // a float target keeps a negative: none is written
+    return vec4<f32>(back + vec3<f32>(dither), 1.0);
+  }
 
   let texel = print(s, 1.0 / px);
-  var col = mix(CARD, texel.rgb, texel.a);
+  var ink = texel.rgb;
+  // extended range: the print is at most white here; what a plugin before this one lit above white is carried to the output as it is
+  var lit_before = vec3<f32>(0.0);
+  if (HDR_PEAK > 1.0) {
+    lit_before = max(ink - vec3<f32>(1.0), vec3<f32>(0.0)) * texel.a;
+    ink = min(ink, vec3<f32>(1.0));
+  }
+  var col = mix(CARD, ink, texel.a);
   let cuv = s / u.css;
 
   // the light: a small lamp placed where the card mirrors it to the eye at the glare point (the pointer), so the highlight sits under the
@@ -155,5 +187,16 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   col = mix(col, (irid * 0.9 + vec3<f32>(0.25)) * rim_light, rim * (0.25 + 0.5 * foil));
 
   let cover = clamp(0.5 - 1.5 * sd * px, 0.0, 1.0);
+  if (HDR_PEAK > 1.0) {
+    // the lamp above white: the core of its image (the 12th power of the glare's core: a spot between a third and a quarter as wide) and the flakes that
+    // mirror it squarely (the square of the glint: a flake half aligned stays under white). `awake` is 0 with the glare point at the centre
+    // of the card, where it rests (no pointer, no sway, or reduced motion without a pointer), and 1 a little away from it
+    let awake = smoothstep(0.0, 0.16, length(u.fx.zw - vec2<f32>(0.5)) * 2.0);
+    let core2 = core * core;
+    let core4 = core2 * core2;
+    let hot = vec3<f32>(1.0, 0.97, 0.92) * (core4 * core4 * core4 * glare * HOT_CORE) + mix(vec3<f32>(1.0), irid, 0.45) * (glint * glint * mask * foil * HOT_FLAKE);
+    let lit = hdr_light(min(col, vec3<f32>(1.0)) + lit_before, hot * awake);
+    return vec4<f32>(max(mix(back, lit, cover) + vec3<f32>(dither), vec3<f32>(0.0)), 1.0);
+  }
   return vec4<f32>(mix(back, col, cover) + vec3<f32>(dither), 1.0);
 }
