@@ -30,6 +30,9 @@
 //   under     (iPad: water under the CRT monitor at full curvature) a tap on the curved picture drops a pebble where the finger is SEEN: the first effect reads
 //             the pointer through the second (EffectPluginContext.localPoint). The changed pixels are centred within UNDER_PX css px of the tap
 //   pairs     (iPad, one page) every ordered pair of the manifest's plugins: both run, enabled, a frame was presented, no effecterror
+//   map       (iPad: the CRT monitor at full curvature, `&map=1`) the input map: nothing drawn before a pointer arrives; a tap where the effect shows the email
+//             field (found with host.mapPoint over a grid) names that field, frames its real box, shows its value, and the field has the focus; the pointer and
+//             the place it is sent to are more than MAP_PX apart (the effect moved the field); a tap on the toggle takes the map away
 // Once, under prefers-reduced-motion (phone): no demo is played ('prefers-reduced-motion'). Once ('off', iPad): the frame cap defaults to
 // the display rate measured by the page (canvas.frameCap 0 = uncapped, the slider at its top = the rounded rate).
 // Positive controls (each must turn ITS check red; --no-control skips them), all on the template plugin unless said otherwise:
@@ -45,6 +48,7 @@
 //   C13 pick   (water) the second strip takes no pointer input         C14 tabs   (water, shatter on top) the switch takes no pointer input
 //   C15 under  (water under the CRT monitor) water gets a context whose localPoint returns the point on the canvas, as before the second effect
 //   C16 pairs  the glitch plugin throws in render when it is not the first plugin
+//   C17 map    the CRT monitor with an input mapper that returns the point as it is (the pointer is then sent to the place under it)
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
 // a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes, the stack or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
@@ -72,6 +76,8 @@ const NO_DEMO = /** @type {Record<string, string>} */ ({ crt: 'a monitor look th
 const DEMO_LIMIT_MS = 6000;
 /** `under`: how far from the tap the centre of the changed pixels may lie, css px (measured: 4.1; with the pointer read on the canvas, C15, 24.4) */
 const UNDER_PX = 12;
+/** `map`: how far apart the pointer and the place it is sent to must be at the email field under the CRT monitor at full curvature, css px (measured: 39.5; 0 with a mapper that returns the point as it is, C17) */
+const MAP_PX = 15;
 
 if (!existsSync(join(ROOT, 'dist/plugins/manifest.json'))) { console.error('dist/plugins/manifest.json is missing: run `npm run build` first.'); process.exit(2); }
 const { plugins: manifest } = JSON.parse(readFileSync(join(ROOT, 'dist/plugins/manifest.json'), 'utf8'));
@@ -115,6 +121,8 @@ const initScript = `${template.source}
   });
 })();`;
 
+/** `map`: the CRT monitor at full curvature, nothing moving at rest, the input map on */
+const MAP_QUERY = '&demo=0&opt.crt.flicker=0&opt.crt.curvature=1&map=1';
 /** `under`: water under the CRT monitor at full curvature, nothing moving at rest */
 const UNDER_QUERY = '&then=crt&demo=0&opt.crt.flicker=0&opt.crt.curvature=1';
 
@@ -393,6 +401,39 @@ async function runOne(browser, server, name, view, o = {}) {
       check('pairs', `every ordered pair of plugins runs stacked (${pairs} pairs): two plugins, both enabled, frames presented, no effecterror`, pairs === names.length * (names.length - 1) && bad.length === 0, bad.slice(0, 4));
     }
 
+    // the input map: what the host does with the pointer, drawn over the stage
+    if (want('map')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await settle();
+      await H.sleep(500);
+      const before = await page.evaluate(`({ pressed: document.getElementById('map-toggle').getAttribute('aria-pressed'), hidden: document.getElementById('map').hidden, map: window.__gallery.map })`);
+      check('map', 'with &map=1 the toggle is pressed and nothing is drawn before a pointer arrives', before.pressed === 'true' && before.hidden === true && before.map === null, before);
+      // a point of the canvas where the effect shows the email field: the one whose place in the source is nearest to the field's centre
+      const at = await page.evaluate(`(() => { const c = document.getElementById('stage'), r = c.getBoundingClientRect(), ox = r.left + c.clientLeft, oy = r.top + c.clientTop; const e = document.getElementById('email').getBoundingClientRect();
+        const want = { x: e.left + e.width / 2 - ox, y: e.top + e.height / 2 - oy }; let best = null;
+        for (let y = 4; y < c.clientHeight; y += 4) for (let x = 4; x < c.clientWidth; x += 4) { const q = window.__gallery.host.mapPoint({ x, y }); if (!q) continue; const d = Math.hypot(q.x - want.x, q.y - want.y); if (!best || d < best.d) best = { x, y, d }; }
+        return best && { ...best, clientX: Math.round(ox + best.x), clientY: Math.round(oy + best.y), ox, oy, email: { x: e.left - ox, y: e.top - oy, width: e.width, height: e.height } }; })()`);
+      if (at) {
+        await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.clientX, y: at.clientY, id: 1 }] });
+        await H.sleep(60);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      }
+      await H.until(() => page.evaluate(`window.__gallery.map && document.activeElement && document.activeElement.id === 'email' ? 1 : null`), 2500);
+      const got = await page.evaluate(`(() => { const m = document.getElementById('map'), c = document.getElementById('stage'), r = c.getBoundingClientRect(), ox = r.left + c.clientLeft, oy = r.top + c.clientTop;
+        const rel = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - ox, y: b.top - oy, width: b.width, height: b.height }; };
+        return { state: window.__gallery.map, active: document.activeElement && document.activeElement.id, hidden: m.hidden, box: rel(m.querySelector('.box')), dot: rel(m.querySelector('.dot')), label: m.querySelector('.tag').textContent }; })()`);
+      const near = (/** @type {number} */ a, /** @type {number} */ b, tol = 1.5) => Math.abs(a - b) <= tol;
+      const e = at ? at.email : { x: NaN, y: NaN, width: NaN, height: NaN };
+      numbers.map = { at, ...got };
+      check('map', 'a tap where the effect shows the email field: the map names that field with its value, frames its real box, marks the tap, and the field has the focus',
+        !!at && at.d < 6 && got.active === 'email' && !!got.state && got.state.element === 'email' && !got.hidden && /^input#email "ada@example\.com"/.test(got.label)
+        && near(got.box.x, e.x) && near(got.box.y, e.y) && near(got.box.width, e.width) && near(got.box.height, e.height) && near(got.dot.x + got.dot.width / 2, at.x, 2) && near(got.dot.y + got.dot.height / 2, at.y, 2), numbers.map);
+      check('map', `the effect moved that field: the pointer and the place it is sent to are more than ${MAP_PX} css px apart`, !!got.state && got.state.moved > MAP_PX, { moved: got.state && got.state.moved, pointer: got.state && got.state.pointer, source: got.state && got.state.source });
+      const tapped = await tapOn('#map-toggle');
+      const off = await H.until(() => page.evaluate(`document.getElementById('map').hidden && window.__gallery.map === null && new URL(location.href).searchParams.get('map') === null ? 1 : null`), 2000);
+      check('map', 'a tap on the toggle takes the map away (the address follows)', tapped && !!off, await page.evaluate(`({ hidden: document.getElementById('map').hidden, pressed: document.getElementById('map-toggle').getAttribute('aria-pressed'), query: location.search })`));
+    }
+
     // the frame cap defaults to the display rate
     if (want('cap')) {
       const c = await H.until(() => page.evaluate(`window.__gallery.displayHz ? (() => { const r = document.getElementById('fps-cap'); return { hz: window.__gallery.displayHz, cap: document.getElementById('stage').frameCap, value: r.value, max: r.max, label: document.getElementById('fps-cap-value').textContent }; })() : null`), 6000);
@@ -480,6 +521,9 @@ try {
         const pairs = await runOne(browser, server, 'water', ipad, { query: '&demo=0', steps: ['pairs'] });
         results.runs.push({ plugin: 'every pair', view: 'ipad', ...pairs });
         log('stack', 'ipad', pairs);
+        const map = await runOne(browser, server, 'crt', ipad, { query: MAP_QUERY, steps: ['map'] });
+        results.runs.push({ plugin: 'crt, the input map', view: 'ipad', ...map });
+        log('stack', 'ipad', map);
       }
     });
   }
@@ -503,6 +547,7 @@ try {
       { id: 'C14', step: 'tabs', name: 'water', view: ipad, o: { query: '&then=shatter&demo=0', then: 'shatter', css: '#demo-form .fx-tabs { pointer-events: none !important; }', steps: ['tabs'] } },
       { id: 'C15', step: 'under', name: 'water', view: { ...ipad, dpr: 1 }, o: { query: UNDER_QUERY, then: 'crt', script: wrapPlugins("if (name === 'water') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: (ctx, o) => create({ ...ctx, localPoint: (p) => ({ x: p.x, y: p.y }) }, o) } }; }"), steps: ['under'] } },
       { id: 'C16', step: 'pairs', name: 'water', view: ipad, o: { query: '&demo=0', script: wrapPlugins("if (name === 'glitch') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); const render = inst.render; inst.render = function (frame) { if (frame.sourceTexture.label !== 'hic-source') throw new Error('control: not the first plugin'); return render.call(this, frame); }; return inst; } } }; }"), steps: ['pairs'] } },
+      { id: 'C17', step: 'map', name: 'crt', view: ipad, o: { query: MAP_QUERY, script: wrapPlugins("if (name === 'crt') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); inst.captureInputMapper = () => (p) => ({ x: p.x, y: p.y }); return inst; } } }; }"), steps: ['map'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {

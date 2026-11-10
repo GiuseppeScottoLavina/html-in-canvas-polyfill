@@ -364,14 +364,15 @@ class HostRuntime {
   /**
    * EffectPluginContext.localPoint: where a point of the canvas is in the picture this plugin rendered, in the newest presented frame: the point through the
    * mappers of the plugins after it. The same point for the last plugin, and for a plugin that was not in that frame (just added: it runs last).
-   * @param {Slot} slot @param {{x: number, y: number}} point  canvas-relative css px of the content box
+   * EffectHost.mapPoint is the same from before the first plugin (`slot` null): the point in the source.
+   * @param {Slot|null} slot @param {{x: number, y: number}} point  canvas-relative css px of the content box
    * @returns {{x: number, y: number}|null}  null where a later plugin shows nothing of this plugin's picture
    */
   localPoint(slot, point) {
     const x = Number(point?.x), y = Number(point?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) throw typeError('localPoint: the point must have finite x and y (canvas-relative CSS pixels)');
-    const place = this.presentedOrder.indexOf(slot);
-    if (place < 0 || place === this.presentedOrder.length - 1) return { x, y };
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw typeError('the point must have finite x and y (canvas-relative CSS pixels)');
+    const place = slot ? this.presentedOrder.indexOf(slot) : -1;
+    if (slot && (place < 0 || place === this.presentedOrder.length - 1)) return { x, y };
     const vp = this.presenter.viewport();
     const q = this.chain.mapAfter(place, { x, y, width: vp.cssWidth, height: vp.cssHeight });
     return isNoTarget(q) ? null : q;
@@ -479,6 +480,7 @@ class HostRuntime {
       get pluginCount() { return rt.plugins.count; },
       addPlugin: (def, options) => rt.plugins.add(def, options),
       stats: () => rt.stats(),
+      mapPoint: (point) => rt.localPoint(null, point),
       destroy: () => rt.destroy(),
     };
   }

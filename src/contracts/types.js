@@ -830,5 +830,8 @@ export {};
  * @property {number} pluginCount
  * @property {(def: EffectPluginDefinition, options?: Record<string, unknown>) => Promise<EffectHandle>} addPlugin
  * @property {() => EffectHostStats} stats
+ * @property {(point: {x: number, y: number}) => {x: number, y: number}|null} mapPoint  where a point of the canvas is in the source: the point through every
+ *   plugin's input mapper, in the newest presented frame, which is what the host does with a pointer. Canvas-relative CSS pixels of the content box, in and
+ *   out; null where the plugins show nothing of the source. The same point without a spatial plugin
  * @property {() => void} destroy
  */

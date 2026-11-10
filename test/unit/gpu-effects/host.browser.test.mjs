@@ -296,6 +296,21 @@ gtest('context.localPoint: a point of the canvas through the mappers of the plug
   assert.deepEqual(b.ctx.localPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'the second is the last plugin now');
 });
 
+gtest('host.mapPoint: a point of the canvas through every plugin, the point in the source; null where the plugins show nothing of it', async (t) => {
+  const { rig, host } = await startHost(t);
+  assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'no plugin: the point itself');
+  await host.addPlugin(mappedPlugin('first', null));
+  const second = await host.addPlugin(mappedPlugin('second', (p) => ({ x: p.x + 10, y: p.y })));
+  await host.addPlugin(mappedPlugin('third', (p) => (p.x > 300 ? HTMLInCanvasEffectsNoTarget : { x: p.x * 2, y: p.y + 1 })));
+  rig.tick();
+  assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 20, y: 8 }, 'the third plugin is undone first, then the second: what the host does with a click');
+  assert.equal(host.mapPoint({ x: 301, y: 7 }), null);
+  assert.throws(() => host.mapPoint({ x: NaN, y: 1 }), TypeError);
+  second.remove();
+  rig.tick();
+  assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 10, y: 8 });
+});
+
 gtest('context.localPoint, control: with one plugin, and for the last of several, the point is returned as it is (no mapper is called)', async (t) => {
   const { rig, host } = await startHost(t);
   const a = {};

@@ -64,6 +64,20 @@
   #stack button:hover { border-color: rgba(121, 239, 255, .6); }
   #stack button[aria-pressed="true"] { border-color: var(--accent); background: #0b2a40; color: #fff; }
   #stack button:disabled { cursor: not-allowed; opacity: .4; }
+  /* the input map: where the host sends the pointer, drawn over the stage (outside the canvas: it is the page's, not part of the drawn form) */
+  #map-toggle { min-height: 24px; padding: 0 10px; font: 600 .76rem/1 system-ui, sans-serif; color: var(--ink-2); cursor: pointer; white-space: nowrap; border: 1px solid rgba(190, 237, 255, .24); border-radius: 999px; background: transparent; }
+  #map-toggle[aria-pressed="true"] { color: #1b0220; border-color: transparent; background: #ff7ad9; }
+  #map-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #map { position: absolute; z-index: 5; overflow: hidden; pointer-events: none; border-radius: 18px; font: 11px/1.35 ui-monospace, monospace; }
+  #map[hidden] { display: none; }
+  #map .box { position: absolute; box-sizing: border-box; border: 1.5px solid #ff7ad9; border-radius: 4px; background: rgba(255, 122, 217, .1); }
+  #map .dot, #map .at { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; }
+  #map .dot { border: 1.5px solid #fff; background: rgba(0, 0, 0, .35); }
+  #map .at { background: #ff7ad9; box-shadow: 0 0 0 2px rgba(27, 2, 32, .7); }
+  #map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #map line { stroke: #ff7ad9; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  #map .tag { position: absolute; max-width: min(440px, 92%); padding: 3px 7px; border-radius: 6px; color: #ffe9f8; background: rgba(27, 2, 32, .88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #map .tag b { color: #ff9be3; font-weight: 600; }
   #notice { display: none; box-sizing: border-box; margin: 8px 0 0; padding: .6rem .8rem; border: 1px solid #c9a24a; border-radius: 12px; background: #2a210c; color: #ffe7a8; font-size: .88rem; }
   #notice.shown { display: block; }
 
@@ -181,7 +195,8 @@
   @media (max-width: 760px) {
     :root { --gutter: 12px; --fit: 640px; --stage-max: 760px; }
     body { font-size: 14px; }
-    #hint { flex-basis: 100%; order: 3; }
+    #hint { flex: 1 1 60%; order: 3; }
+    #map-toggle { order: 4; }
     #hud { margin-left: auto; font-size: 11px; }
     #hud .mode, #hud .q { display: none; }   /* the mode is in "About this page"; the quantiles are named in the readout's title */
     #picker button { min-height: 36px; padding: 0 13px; }
@@ -232,6 +247,7 @@
   <header class="bar">
     <h1>Effect plugins</h1>
     <p id="hint">Live HTML drawn through a GPU effect: the form below stays usable.</p>
+    <button id="map-toggle" type="button" aria-pressed="false" title="Show where the pointer is sent: the element of the page under it as you see it, at its real place in the page">Input map</button>
     <p id="hud" aria-label="Frame readout" title="effect frames in the last second; frame interval median / 95th percentile; the frame cap; the mode of the polyfill"><span><b id="m-fps">-</b> fx/s</span><span><b id="m-iv">-</b> ms<span class="q"> p50/p95</span></span><span>cap <b id="m-cap">-</b></span><span class="mode"><b id="m-mode">starting</b></span></p>
   </header>
   <ul id="picker" aria-label="Effect"></ul>
@@ -288,6 +304,8 @@
     </form>
   </canvas>
 
+  <div id="map" hidden aria-hidden="true"><svg><line></line></svg><i class="box"></i><i class="at"></i><i class="dot"></i><span class="tag"></span></div>
+
   <aside id="panel" aria-label="About the selected effect">
     <section id="about" aria-live="polite" aria-label="The selected effect"><h2 id="about-title">Effect off</h2></section>
     <section id="about-2" aria-live="polite" aria-label="The second effect, applied on top" hidden></section>
@@ -295,6 +313,7 @@
       <summary>About this page</summary>
       <p>Pick an effect: it is applied to the same live HTML form drawn inside the canvas, and the form stays usable through it. An effect that has a <code>demo</code> action plays it once when you pick it (not when you prefer reduced motion); its actions are the buttons in the panel (<code>handle.trigger</code>).</p>
       <p>The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>; <code>&amp;demo=0</code> opens it without the showcase. A second effect can run over the first (<code>&amp;then=&lt;name&gt;</code>): it reads the picture the first one rendered, and a click is mapped back through both.</p>
+      <p><b>Input map</b> (<code>&amp;map=1</code>) shows what the host does with the pointer. An effect moves pixels, so the field you see under the pointer is elsewhere in the page: the host maps the pointer back through the effect (<code>host.mapPoint</code>) and sends it to the element there. The white ring is the pointer, the pink dot the place in the page it is sent to, the pink frame the real element at that place (in its true position, under the canvas), and the label says which element it is and what it holds now.</p>
       <p>The readout above the canvas counts the <code>effectframe</code> events of the last second: frames per second, and the interval between frames (median and 95th percentile). At rest an effect that is not continuous by design presents nothing, so it reads 0.</p>
       <p id="status">mode: <b id="m-mode-2">starting</b><br>effect: <b id="m-effect">starting</b><br>display: <b id="m-display">measuring</b><br>prefers-reduced-motion: <b id="m-motion">-</b></p>
     </details>
@@ -308,9 +327,9 @@
   const $ = (id) => document.getElementById(id);
   const hic = window.__HIC__;
   // window.__gallery: what the page shows, for its tests: the effects host, the effect handle of the selected plugin, the last action it ran
-  // (an action button), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`); with a second
+  // (an action button), what the input map shows (`map`, null while it shows nothing), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`); with a second
   // effect over the first, its name (`then`, 'off' without one), its handle (`handle2`) and whose controls the form shows (`controls`)
-  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, lastAction: null, demo: null, displayHz: null, hud: null });
+  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, map: null, lastAction: null, demo: null, displayHz: null, hud: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = matchMedia('(pointer: coarse)');
@@ -550,6 +569,62 @@
     if (button) setScene(button.dataset.scene, true);
   });
   setScene(new URL(location.href).searchParams.get('scene') || 'form', false);
+
+  // ---- the input map (&map=1): where the pointer is sent ---------------------------------------------------------------------------
+  // An effect moves pixels, so the host maps the pointer back through every plugin (host.mapPoint, the mappers of the frame on screen) and acts on the element
+  // of the page at that place. The map draws that over the stage: the pointer, the place it is sent to, and the frame of the real element there (the live element
+  // lies under the canvas where the page laid it out). It is drawn again when the pointer moves and when the effect presents a frame (the picture moved under a
+  // still pointer); nothing runs while neither happens.
+  const map = { on: false, x: 0, y: 0, inside: false };
+  const short = (text, n) => { const t = String(text).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '\u2026' : t; };
+  function drawMap() {
+    const root = $('map');
+    if (!map.on || !map.inside) { root.hidden = true; state.map = null; return; }
+    const r = canvas.getBoundingClientRect();
+    const ox = r.left + canvas.clientLeft, oy = r.top + canvas.clientTop;
+    const p = { x: map.x - ox, y: map.y - oy };
+    let q = p;
+    try { if (state.host) q = state.host.mapPoint(p); } catch (error) { q = null; }
+    const hit = q ? document.elementsFromPoint(ox + q.x, oy + q.y).find((e) => e !== form && form.contains(e)) || form : null;
+    Object.assign(root.style, { left: ox + scrollX + 'px', top: oy + scrollY + 'px', width: canvas.clientWidth + 'px', height: canvas.clientHeight + 'px' });
+    const [line, box, at, dot, tag] = [root.querySelector('line'), root.querySelector('.box'), root.querySelector('.at'), root.querySelector('.dot'), root.querySelector('.tag')];
+    Object.assign(dot.style, { left: p.x + 'px', top: p.y + 'px' });
+    at.hidden = box.hidden = !q;
+    line.setAttribute('visibility', q ? 'visible' : 'hidden');
+    let rect = null, name = 'nothing of the page here';
+    if (q && hit) {
+      const b = hit.getBoundingClientRect();
+      rect = { x: b.left - ox, y: b.top - oy, width: b.width, height: b.height };
+      Object.assign(box.style, { left: rect.x + 'px', top: rect.y + 'px', width: rect.width + 'px', height: rect.height + 'px' });
+      Object.assign(at.style, { left: q.x + 'px', top: q.y + 'px' });
+      for (const [k, v] of [['x1', p.x], ['y1', p.y], ['x2', q.x], ['y2', q.y]]) line.setAttribute(k, String(v));
+      name = hit.localName + (hit.id ? '#' + hit.id : hit.classList.length ? '.' + hit.classList[0] : '');
+    }
+    const holds = !hit ? '' : 'value' in hit && typeof hit.value === 'string' && hit.localName !== 'button' ? (hit.type === 'checkbox' ? (hit.checked ? 'checked' : 'not checked') : JSON.stringify(short(hit.value, 22))) : hit === form ? '' : JSON.stringify(short(hit.textContent, 22));
+    tag.replaceChildren(Object.assign(document.createElement('b'), { textContent: name }), holds ? ' ' + holds : '', q ? ' \u00b7 ' + Math.round(p.x) + ', ' + Math.round(p.y) + ' \u2192 ' + Math.round(q.x) + ', ' + Math.round(q.y) : '');
+    root.hidden = false;
+    // the label: beside the pointer, kept inside the stage
+    const tw = tag.offsetWidth, th = tag.offsetHeight;
+    Object.assign(tag.style, { left: Math.max(4, Math.min(canvas.clientWidth - tw - 4, p.x + 14)) + 'px', top: Math.max(4, p.y - th - 12 < 4 ? p.y + 16 : p.y - th - 12) + 'px' });
+    state.map = { pointer: p, source: q, element: hit ? hit.id || hit.localName : null, rect, moved: q ? Math.hypot(q.x - p.x, q.y - p.y) : null, label: tag.textContent };
+  }
+  function setMap(on, byUser) {
+    map.on = !!on;
+    $('map-toggle').setAttribute('aria-pressed', String(map.on));
+    drawMap();
+    if (!byUser) return;
+    const url = new URL(location.href);
+    if (map.on) url.searchParams.set('map', '1'); else url.searchParams.delete('map');
+    history.replaceState(null, '', url);
+  }
+  const mapAt = (event) => { if (!map.on) return; map.x = event.clientX; map.y = event.clientY; map.inside = true; drawMap(); };
+  // (EventTarget's own listener on the canvas and one on the page for the layer over it would hear an event twice: the canvas forwards the layer's events)
+  canvas.addEventListener('pointermove', mapAt, { passive: true });
+  canvas.addEventListener('pointerdown', mapAt, { passive: true });
+  canvas.addEventListener('pointerleave', (event) => { if (event.pointerType !== 'touch') { map.inside = false; drawMap(); } }, { passive: true });
+  canvas.addEventListener('effectframe', () => { if (map.on && map.inside) drawMap(); });
+  $('map-toggle').addEventListener('click', () => setMap(!map.on, true));
+  setMap(new URL(location.href).searchParams.get('map') === '1', false);
 
   // ---- the plugin list: dist/plugins/manifest.json, written by the build from every plugins/<name>/ (plugins/README.md) -----------
   const manifestRequest = fetch('../../dist/plugins/manifest.json').then((r) => (r.ok ? r.json() : Promise.reject(new Error('manifest ' + r.status))));

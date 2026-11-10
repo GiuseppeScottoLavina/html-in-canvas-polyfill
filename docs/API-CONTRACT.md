@@ -409,7 +409,9 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
 
 ### 7.3 Effect host
 `await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer})` -> `EffectHost`
-`{pluginCount, addPlugin(def, options) -> Promise<EffectHandle>, stats(), destroy()}`.
+`{pluginCount, addPlugin(def, options) -> Promise<EffectHandle>, stats(), mapPoint(point), destroy()}` (`mapPoint`: a point of the canvas, in
+canvas-relative CSS pixels of the content box, through every plugin's input mapper in the newest presented frame: the point in the source, or `null`
+where the plugins show nothing of it).
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the

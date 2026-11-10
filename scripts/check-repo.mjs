@@ -216,7 +216,9 @@ if (!docsOnly) {
   // anywhere in the page's CSS kept a spacer for every pruned row of every drawable, and a pruned group lost the margins that had collapsed through it
   // 17704 -> 17725 (2026-11-10, measured 17,725): EffectPluginContext.localPoint (+21: src/effects/effect-host.js localPoint and the place of each mapper,
   // src/effects/input-mapper.js mapAfter, src/effects/effect-plugins.js); before it the first of two stacked plugins read the pointer on the canvas
-  if (total > 17725) problems.push(`G-size: core is ${total} code lines (> 17725)`);
+  // 17725 -> 17727 (2026-11-10, measured 17,727): EffectHost.mapPoint (+2: src/effects/effect-host.js, src/effects/index.js), the host's own mapping of a pointer
+  // for a page to show (the gallery's input map)
+  if (total > 17727) problems.push(`G-size: core is ${total} code lines (> 17727)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
