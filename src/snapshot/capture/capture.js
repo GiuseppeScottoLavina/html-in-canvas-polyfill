@@ -32,6 +32,17 @@ import { planSteps, scrollRefusal } from './scroll-pages.js';
 const SHAKE_CACHE_SIZE = 8;
 
 /**
+ * The background colour of the cover check on a finished clone of the scroller (clone.js sets `background: <fill>` where it builds it). A classic bar painted
+ * as a background layer of the scroller comes after that and declares the scroller's own colour again with its layers (webkit-bars.js paintWebkitBars: the
+ * system's bar in Safari on macOS; scroll-emulation.js chromiumListboxBar): without this the first tile showed the page through the list, and every scroller with
+ * such a bar was refused (0.1.0-preview.23 to 1.0.0-rc.7).
+ * @param {HTMLElement} cover @param {string} fill
+ */
+export function setCoverFill(cover, fill) {
+  cover.style.setProperty('background-color', fill, 'important');
+}
+
+/**
  * Returns the CaptureFn. MUST NOT throw: any failure becomes result.unsupported + placeholder markup. Reuses one CssCollector and one ResourceCache per env.
  * Pipeline order: clone -> shakeCss(bundle, tokens) cached per (bundle.key, tokens.signature) -> svg build -> data: URL; fills result.layoutOffset (layer.borderBoxRectInLayer of the drawable) and result.caret; timings include shakeMs and bytes
  * (cost is per byte: encodeURIComponent ~2.6 ms/MB, decode ~6 ms/MB, a 96 KB base64 font ~2.6 ms per tile, so bytes are the lever, not node count alone).
@@ -120,13 +131,16 @@ export function createCapture(env) {
     const full = { x: f.x, y: f.y, width: f.width, height: f.height };
     const crop = (req.rect && intersectRect(req.rect, full)) || full;
     const cropRel = { x: crop.x - f.x, y: crop.y - f.y, width: crop.width, height: crop.height };
-    const { url, bytes } = buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale);
-    // the compositor's cover tiles (ScrollPlan.cover): the same clone with each further fill as the scroller's background colour, set in place of the first (the
-    // fill's other longhands, and whatever was declared after it, stay as they are): the tile a capture of its own with that fill makes, without its clone
-    const urls = [url];
+    // the compositor's cover tiles (ScrollPlan.cover): the same clone with each fill as the scroller's background colour, set on the finished clone (the fill's
+    // other longhands, and whatever was declared after it, stay as they are): each tile is the one a capture of its own with that fill makes, without its clone.
+    // The first fill too: the clone declares it where it builds the scroller, and a bar painted after that as a background layer declares the scroller's own
+    // colour again (setCoverFill)
     const fills = req.scroll?.shape === 'cover' ? req.scroll.fills ?? [] : [];
+    if (fills.length && clone.cover) setCoverFill(clone.cover, fills[0]);
+    const { url, bytes } = buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale);
+    const urls = [url];
     for (let i = 1; i < fills.length && clone.cover; i++) {
-      clone.cover.style.setProperty('background-color', fills[i], 'important');
+      setCoverFill(clone.cover, fills[i]);
       urls.push(buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale).url);
     }
     const t4 = env.now();
