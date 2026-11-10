@@ -62,8 +62,8 @@ const SEGMENT_QUEUE = 64;
 const MAPPER_SLOTS = 4;
 
 /** how hard the pointer pushes the water: the share of its own speed that the water under it takes up, at intensity 1 */
-export const HOVER_PUSH = 0.22;
-export const PRESS_PUSH = 1;
+export const HOVER_PUSH = 0.11;
+export const PRESS_PUSH = 0.5;
 /** the reach of the push, CSS px, and the fastest pointer it follows, CSS px/s */
 export const STIR_RADIUS = 32;
 const MAX_POINTER_SPEED = 2400;
@@ -77,7 +77,7 @@ const PROFILE_LINE = 32 / 35;
 export const WAKE_SWAY = 0.4;
 export const WAKE_PX = 5 * STIR_RADIUS;
 /** a press: the drop lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
-export const DROP_PUSH = 420;
+export const DROP_PUSH = 210;
 /** the pigment: the Gaussian radius of the pen and of a drop (CSS px), their reach in radii (advect.wgsl), the density at pigment 1 */
 export const PEN_RADIUS = 8;
 export const DROP_RADIUS = 13;
@@ -147,7 +147,7 @@ export function inkOptics(palette) {
     const ink = linearColor(pair[0]) ?? /** @type {number[]} */ (linearColor(base[i][0]));
     const sheen = linearColor(pair[1]) ?? linearColor(pair[0]) ?? /** @type {number[]} */ (linearColor(base[i][1]));
     for (let c = 0; c < 3; c += 1) {
-      out[i * 4 + c] = -ABSORB * Math.log(Math.min(1, Math.max(0.02, ink[c])));
+      out[i * 4 + c] = ABSORB * Math.log(1 / Math.min(1, Math.max(0.02, ink[c])));
       out[12 + i * 4 + c] = SCATTER * sheen[c];
     }
   }

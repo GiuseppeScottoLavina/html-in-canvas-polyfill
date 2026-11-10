@@ -312,15 +312,17 @@ function transport(f) {
  * Vorticity confinement (Fedkiw, Stam and Jensen 2001): the force eps h (N x w), with N the unit vector up the gradient of |w|, gives
  * back the rotation that the transport on a coarse grid smears out. The curl of that force is -div(w V) with V = eps h N: the vorticity
  * is carried up its own gradient at the speed eps h. It is applied in that form, as upwind fluxes through the cell faces (none through
- * the walls), which keep the sum of w (the circulation). Carried up its gradient, the vorticity gathers: a plane flow without friction
+ * the walls), which keep the sum of w. Carried up its gradient, the vorticity gathers: a plane flow without friction
  * keeps the vorticity of every drop of water, so its largest |w| never grows, and the result is limited to the largest |w| before the
- * step (`maxW`). Confinement then restores swirls that the grid smeared and cannot feed them, whatever eps.
+ * step (`maxW`; what the limit takes off is lost). Confinement then restores swirls that the grid smeared and cannot feed them,
+ * whatever eps (beyond 0.4 / dt it has no further effect).
  * @param {Fluid} f @param {number} eps  1/s
  */
 function confine(f, eps) {
   const { pw, gw, gh, w, cellX, cellY, tmp } = f;
   const fx = tmp[0], fy = tmp[1];
-  const h = Math.sqrt(cellX * cellY) * eps * DT, ix = 1 / cellX, iy = 1 / cellY, top = f.maxW;
+  // (at most 0.4 of a cell per step: the limit of the upwind fluxes)
+  const h = Math.sqrt(cellX * cellY) * Math.min(eps * DT, 0.4), ix = 1 / cellX, iy = 1 / cellY, top = f.maxW;
   for (let y = PAD; y < PAD + gh; y += 1) {
     for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) {
       // the face between this cell and the next one across, then the face between this cell and the next one down
@@ -346,10 +348,13 @@ function confine(f, eps) {
 
 // ---- 5. friction ---------------------------------------------------------------------------------------------------------------------
 
-/** The drag on the vorticity; `flowing` turns false, and the flow exactly zero, once no cell has any left. @param {Fluid} f @param {number} drag  1/s */
-function slow(f, drag) {
+/**
+ * The drag on the vorticity (times e^(-drag dt), less `friction` dt); `flowing` turns false, and the flow exactly zero, once no cell has
+ * any left. @param {Fluid} f @param {number} drag  1/s @param {number} friction  1/s^2
+ */
+function slow(f, drag, friction) {
   const { pw, gw, gh, w } = f;
-  const keep = Math.exp(-drag * DT), loss = W_FRICTION * DT;
+  const keep = Math.exp(-drag * DT), loss = friction * DT;
   let max = 0;
   for (let y = PAD; y < PAD + gh; y += 1) {
     for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) {
@@ -366,10 +371,13 @@ function slow(f, drag) {
   }
 }
 
-/** The page heals: the displacement relaxes to zero at `heal` per second and at least STICK_PX_S; `box` follows. @param {Fluid} f @param {number} heal  1/s */
-function healPage(f, heal) {
+/**
+ * The page heals: the displacement relaxes to zero at `heal` per second and at least `stick` CSS px/s; `box` follows.
+ * @param {Fluid} f @param {number} heal  1/s @param {number} stick  CSS px/s
+ */
+function healPage(f, heal, stick) {
   const { pw, gw, gh, dx, dy, box } = f;
-  const keep = Math.exp(-heal * DT), loss = STICK_PX_S * DT, loss2 = loss * loss;
+  const keep = Math.exp(-heal * DT), loss = stick * DT, loss2 = loss * loss;
   let x0 = pw, y0 = f.ph, x1 = -1, y1 = -1, max = 0;
   for (let y = PAD; y < PAD + gh; y += 1) {
     for (let x = PAD, i = y * pw + PAD; x < PAD + gw; x += 1, i += 1) {
@@ -396,25 +404,28 @@ function healPage(f, heal) {
 
 /**
  * One step of DT seconds. @param {Fluid} f
- * @param {{drag: number, heal: number, confine: number}} o  drag: decay of the flow, 1/s; heal: relaxation of the page, 1/s; confine: vorticity confinement, 1/s
+ * @param {{drag: number, heal: number, confine: number, friction?: number, stick?: number}} o  drag: decay of the flow, 1/s; heal:
+ *   relaxation of the page, 1/s; confine: vorticity confinement, 1/s; friction (W_FRICTION) and stick (STICK_PX_S): the constant losses
  */
 export function step(f, o) {
   f.traced = false;
+  const stick = o.stick ?? STICK_PX_S;
   if (f.flowing) {
     solve(f);
     velocity(f);
     transport(f);
     if (o.confine > 0) { mirror(f, f.w, -1, -1); confine(f, o.confine); }
-    slow(f, o.drag);
-    healPage(f, o.heal);
-  } else if (f.moved) healPage(f, o.heal);
+    slow(f, o.drag, o.friction ?? W_FRICTION);
+    healPage(f, o.heal, stick);
+  } else if (f.moved) healPage(f, o.heal, stick);
 }
 
 // ---- stirring ------------------------------------------------------------------------------------------------------------------------
 
 /**
- * Push the water at (x, y) CSS px: a velocity of (ax, ay) CSS px/s at the centre, falling to zero at `radius` as (1 - r^2/R^2)^3.
- * Added as its curl, a pair of counter-rotating swirls either side of the push. @param {Fluid} f
+ * Push the water at (x, y) CSS px so that it moves at (ax, ay) CSS px/s at the centre: the curl of twice that velocity under the
+ * profile (1 - r^2/R^2)^3 is added to w, a pair of counter-rotating swirls either side of the push (an incompressible fluid keeps
+ * half of a round push: the other half would have to compress it). @param {Fluid} f
  * @param {number} x @param {number} y @param {number} ax @param {number} ay @param {number} radius
  */
 export function stir(f, x, y, ax, ay, radius) {
@@ -423,7 +434,7 @@ export function stir(f, x, y, ax, ay, radius) {
   const gx = x / cellX - 0.5, gy = y / cellY - 0.5;
   const x0 = Math.max(0, Math.ceil(gx - r / cellX)), x1 = Math.min(gw - 1, Math.floor(gx + r / cellX));
   const y0 = Math.max(0, Math.ceil(gy - r / cellY)), y1 = Math.min(gh - 1, Math.floor(gy + r / cellY));
-  const k = -6 / (r * r);
+  const k = -12 / (r * r);
   for (let cy = y0; cy <= y1; cy += 1) {
     const ry = (cy - gy) * cellY;
     for (let cx = x0; cx <= x1; cx += 1) {
