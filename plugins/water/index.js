@@ -23,6 +23,7 @@
 import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
+import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 import { CAUSTIC_DEPTH_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, slopeBound, stamp, step, surfaceAt, swell } from './sim.js';
 
@@ -476,9 +477,10 @@ export const plugin = Object.freeze({
     if (!reducedMotion) {
       /** @type {{x: number, y: number, t: number}|null} */ let last = null;
       /** canvas css px of the field, from client px, with the canvas where it is NOW (it moves while the page scrolls) @param {number} cx @param {number} cy */
+      // (through the plugins added after the water: the dent belongs under the pointer as the user sees the water; null where one of them shows none of it)
       const local = (cx, cy) => {
-        const r = canvas.getBoundingClientRect();
-        return toField(cx - r.left - canvas.clientLeft, cy - r.top - canvas.clientTop);
+        const p = pointerIn(context, canvas, cx, cy);
+        return p && toField(p.x, p.y);
       };
       /**
        * A wake from (a) to (b), canvas css px of the field; `travel` is how far the pointer or finger moved over the screen (more than a -> b while the page
@@ -517,6 +519,7 @@ export const plugin = Object.freeze({
         lastDown = event;
         const e = /** @type {PointerEvent} */ (event);
         const p = local(e.clientX, e.clientY);
+        if (!p) return;
         takeOver();
         addDrop(p.x, p.y, DROP_DEPTH);
         last = { x: p.x, y: p.y, t: e.timeStamp || performance.now() };
@@ -527,6 +530,7 @@ export const plugin = Object.freeze({
         // a finger whose touch events arrive is followed by them (they go on while the page scrolls; pointer events stop there)
         if (e.pointerType === 'touch' && fingers.size) return;
         const p = local(e.clientX, e.clientY);
+        if (!p) { last = null; return; }
         const t = e.timeStamp || performance.now();
         const prev = last;
         last = { x: p.x, y: p.y, t };
@@ -543,7 +547,7 @@ export const plugin = Object.freeze({
       context.listen('touchstart', (event) => {
         for (const touch of touches(event)) {
           const p = local(touch.clientX, touch.clientY);
-          fingers.set(touch.identifier, { x: p.x, y: p.y, cx: touch.clientX, cy: touch.clientY, t: event.timeStamp || performance.now() });
+          if (p) fingers.set(touch.identifier, { x: p.x, y: p.y, cx: touch.clientX, cy: touch.clientY, t: event.timeStamp || performance.now() });
         }
       }, passive);
       context.listen('touchmove', (event) => {
@@ -551,6 +555,7 @@ export const plugin = Object.freeze({
         for (const touch of touches(event)) {
           const prev = fingers.get(touch.identifier);
           const p = local(touch.clientX, touch.clientY);
+          if (!p) { fingers.delete(touch.identifier); continue; }
           fingers.set(touch.identifier, { x: p.x, y: p.y, cx: touch.clientX, cy: touch.clientY, t });
           if (prev) wakeAlong(prev, p, Math.hypot(touch.clientX - prev.cx, touch.clientY - prev.cy), t - prev.t, 1);
         }

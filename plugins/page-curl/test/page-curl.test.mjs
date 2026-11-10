@@ -250,7 +250,8 @@ test('hot zones: corners only, `corner` restricts them, points off the page neve
 /** options without the rest-pose hints: the page lies flat at rest */
 const FLAT = { ...meta.defaults, dogEar: 0, autoPeek: 0 };
 
-function fakeEnv({ reduced = false, timers = false } = {}) {
+/** `localPoint` stands for the plugins added after this one (context.localPoint); without it the context has none @param {{reduced?: boolean, timers?: boolean, localPoint?: (point: {x: number, y: number}) => {x: number, y: number}|null}} [o] */
+function fakeEnv({ reduced = false, timers = false, localPoint } = {}) {
   Object.assign(globalThis, {
     GPUBufferUsage: { UNIFORM: 1, COPY_DST: 2, VERTEX: 4, INDEX: 8 },
     GPUShaderStage: { VERTEX: 1, FRAGMENT: 2 },
@@ -290,7 +291,8 @@ function fakeEnv({ reduced = false, timers = false } = {}) {
   const attrs = new Map();
   const layer = { setAttribute: (/** @type {string} */ k, /** @type {string} */ v) => attrs.set(k, v), removeAttribute: (/** @type {string} */ k) => attrs.delete(k),
     setPointerCapture: (/** @type {number} */ id) => captured.push(`layer${id}`), releasePointerCapture: (/** @type {number} */ id) => captured.push(`layer-${id}`) };
-  const context = { device, format: 'bgra8unorm', canvas, source: {}, requestRender() { renders += 1; }, listen: (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) => { layerListeners.set(type, fn); listenOptions.set(type, o); return () => {}; } };
+  const context = { device, format: 'bgra8unorm', canvas, source: {}, requestRender() { renders += 1; }, listen: (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) => { layerListeners.set(type, fn); listenOptions.set(type, o); return () => {}; },
+    ...(localPoint ? { localPoint } : {}) };
   const fire = (/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, o = {}) => {
     const e = {
       type, pointerId: 1, isPrimary: true, button: 0, detail: 1, clientX: 10 + x, clientY: 20 + y, prevented: false, stopped: false,
@@ -356,6 +358,42 @@ test('the corner follows the pointer on a spring (weight, no jump) and settles e
   const [cx, cy, cz] = cornerOf(s);
   const q = project(cx, cy, cz, W, H, s[11], { x: 0, y: 0 });
   assert.ok(Math.hypot(q.x - 200, q.y - 150) < 0.5, `settled: the corner is seen at ${q.x}, ${q.y}`);
+});
+
+/**
+ * A press at page (x0, y0) and a drag to (x1, y1), rendered for a second: whether the press grabbed a corner and the touch there is claimed, and the uniform
+ * block of the last frame. @param {any} t @param {any} env @param {number} x0 @param {number} y0 @param {number} x1 @param {number} y1
+ */
+async function dragged(t, env, x0, y0, x1, y1) {
+  const inst = await created(t, env, FLAT);
+  const touched = touchAt(env, x0, y0).prevented;
+  const grabbed = env.fire('pointerdown', x0, y0).prevented;
+  env.fire('pointermove', x1, y1);
+  for (let now = 0; now <= 1000; now += 16) inst.render(env.frame(now));
+  return { grabbed, touched, state: Array.from(last(env)) };
+}
+
+test('with plugins added after it, the pointer is read through context.localPoint: a corner is grabbed (pointer and touch) where it is seen and follows the pointer as seen; control: without them the same press grabs nothing', async (t) => {
+  const DX = 120, DY = 60;
+  // a press 120 x 60 px away from the bottom-right corner, where the plugins after this one show that corner
+  const shifted = await dragged(t, fakeEnv({ localPoint: (p) => ({ x: p.x + DX, y: p.y + DY }) }), 470 - DX, 312 - DY, 300 - DX, 200 - DY);
+  const there = await dragged(t, fakeEnv(), 470, 312, 300, 200);
+  const here = await dragged(t, fakeEnv(), 470 - DX, 312 - DY, 300 - DX, 200 - DY);
+  assert.ok(shifted.grabbed && shifted.touched, 'the press lands on the corner as seen: grabbed, and a finger there claims its touch');
+  assert.ok(shifted.state[9] > 100, 'curled');
+  assert.deepEqual(shifted.state, there.state, 'the same curl as a drag at those points with no plugin after it');
+  assert.equal(here.grabbed || here.touched, false, 'control: with no plugin after it that press is away from the corners');
+  assert.equal(here.state[9], 0, 'control: and the page stays flat');
+  assert.notDeepEqual(shifted.state, here.state);
+});
+
+test('where a later plugin shows nothing of the page (context.localPoint gives null) the point on the canvas is used: the same grab and curl as with no plugin after it', async (t) => {
+  let asked = 0;
+  const unseen = await dragged(t, fakeEnv({ localPoint: () => { asked += 1; return null; } }), 470, 312, 300, 200);
+  const plain = await dragged(t, fakeEnv(), 470, 312, 300, 200);
+  assert.ok(asked >= 3, 'context.localPoint was asked for the touch, the press and the move');
+  assert.ok(unseen.grabbed && unseen.touched && unseen.state[9] > 100, 'the corner is grabbed and curls');
+  assert.deepEqual(unseen.state, plain.state);
 });
 
 test('the release springs back on the frame clock: the same pose at the same time whatever the frame cap, flat (identity) at the end', async (t) => {

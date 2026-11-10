@@ -587,7 +587,13 @@ export const plugin = Object.freeze({
     function toPage(e) {
       const r = canvas.getBoundingClientRect();
       const [w, h] = size();
-      return [(e.clientX - r.left) * (r.width > 0 ? w / r.width : 1), (e.clientY - r.top) * (r.height > 0 ? h / r.height : 1)];
+      // through the plugins added after this one: the corner is grabbed where the user sees it (where one of them shows none of the page, the point on the canvas)
+      // (localPoint takes and gives points of the content box; the page is measured over the border box)
+      const bx = canvas.clientLeft || 0, by = canvas.clientTop || 0;
+      const cx = e.clientX - r.left - bx, cy = e.clientY - r.top - by;
+      const seen = Number.isFinite(cx) && Number.isFinite(cy) ? context.localPoint?.({ x: cx, y: cy }) : null;
+      const x = (seen ? seen.x : cx) + bx, y = (seen ? seen.y : cy) + by;
+      return [x * (r.width > 0 ? w / r.width : 1), y * (r.height > 0 ? h / r.height : 1)];
     }
     const onPage = (/** @type {Event} */ e) => { const path = e.composedPath(); return path.includes(canvas) || path.includes(source); };
     const swallow = (/** @type {Event} */ e) => { e.preventDefault(); e.stopImmediatePropagation(); };

@@ -214,7 +214,9 @@ if (!docsOnly) {
   // 17464 -> 17704 (2026-11-10, measured 17,704): selectors that count siblings tied to their containers (+240: src/snapshot/capture/css-shake.js splitCompounds,
   // readCompound, structureOf; src/snapshot/capture/clone.js siblingRules, throughMargin and the spacer margins of cloneChildList); before it one such selector
   // anywhere in the page's CSS kept a spacer for every pruned row of every drawable, and a pruned group lost the margins that had collapsed through it
-  if (total > 17704) problems.push(`G-size: core is ${total} code lines (> 17704)`);
+  // 17704 -> 17725 (2026-11-10, measured 17,725): EffectPluginContext.localPoint (+21: src/effects/effect-host.js localPoint and the place of each mapper,
+  // src/effects/input-mapper.js mapAfter, src/effects/effect-plugins.js); before it the first of two stacked plugins read the pointer on the canvas
+  if (total > 17725) problems.push(`G-size: core is ${total} code lines (> 17725)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

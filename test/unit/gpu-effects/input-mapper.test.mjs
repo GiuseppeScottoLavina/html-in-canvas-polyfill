@@ -106,3 +106,21 @@ test('NO_TARGET is recognised by its brand: a copy made by another bundle is the
   assert.equal(isNoTarget(null), false);
   assert.ok(Object.isFrozen(NO_TARGET) && Number.isFinite(NO_TARGET.x) && Number.isFinite(NO_TARGET.y), 'frozen, with finite coordinates far outside any viewport');
 });
+
+test('mapAfter: through the mappers of the plugins after a place only, in the newest frame; NO_TARGET stops it', () => {
+  const c = createMapperChain();
+  assert.deepEqual(c.mapAfter(0, P(3, 4)), { x: 3, y: 4 }, 'no frame presented: identity');
+  // a chain of four plugins; the second (place 1) and the fourth (place 3) are spatial
+  c.push(1, [shiftX(10), scaleX(2)], [1, 3]);
+  assert.deepEqual(c.mapAfter(0, P(5, 1)), { x: 20, y: 1 }, 'the first plugin: both mappers, the last one first');
+  assert.deepEqual(c.mapAfter(1, P(5, 1)), { x: 10, y: 1 }, 'the plugin at place 1: not its own mapper');
+  assert.deepEqual(c.mapAfter(2, P(5, 1)), { x: 10, y: 1 });
+  assert.deepEqual(c.mapAfter(3, P(5, 1)), { x: 5, y: 1 }, 'the last plugin: identity');
+  assert.deepEqual(c.map(P(5, 1)), { x: 20, y: 1 }, 'map is unchanged by the places');
+  c.push(2, [shiftX(10), () => NO_TARGET], [0, 1]);
+  assert.ok(isNoTarget(c.mapAfter(0, P(5, 1))));
+  assert.deepEqual(c.mapAfter(1, P(5, 1)), { x: 5, y: 1 });
+  // without places (the mappers alone): their index is their place
+  c.push(3, [shiftX(10), scaleX(2)]);
+  assert.deepEqual(c.mapAfter(0, P(5, 1)), { x: 10, y: 1 });
+});

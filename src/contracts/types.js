@@ -702,6 +702,10 @@ export {};
  * @property {() => void} requestRender
  * @property {() => EffectViewport} viewport
  * @property {(type: string, listener: EventListenerOrEventListenerObject, options?: AddEventListenerOptions|boolean) => () => void} listen  auto-removed on detach
+ * @property {(point: {x: number, y: number}) => {x: number, y: number}|null} localPoint  where a point of the canvas is in the picture THIS plugin rendered: the
+ *   point through the input mappers of the plugins added after this one, in the newest presented frame (the same point for the last plugin). Canvas-relative
+ *   CSS pixels of the content box, in and out; null where a later plugin shows nothing of this plugin's picture. A plugin that reacts to the pointer (a drop
+ *   under it, a lens that follows it) passes the pointer through it, so that the reaction is seen under the pointer with other plugins stacked on top
  * @property {(action: string, options?: Record<string, unknown>) => Promise<EffectActionState>} trigger  runs one of the plugin's own declared
  *   actions through the host, exactly as EffectHandle.trigger (a submit handler of the plugin uses it); a failure is reported as effecterror (phase 'action')
  */

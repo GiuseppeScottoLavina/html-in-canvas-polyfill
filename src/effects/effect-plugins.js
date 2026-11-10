@@ -48,6 +48,7 @@ import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi
  * @property {() => boolean} reducedMotion  prefers-reduced-motion: reduce, now
  * @property {(error: unknown, slot: Slot, phase: string) => void} reportError  effecterror + report entry; does not throw
  * @property {() => void} [onWait]  a trigger() or settled() promise started waiting (a paused host must keep advancing it)
+ * @property {(slot: Slot, point: {x: number, y: number}) => {x: number, y: number}|null} [localPoint]  EffectPluginContext.localPoint for the plugin of `slot`
  */
 
 const NO_ACTIONS = Object.freeze(/** @type {string[]} */ ([]));
@@ -74,6 +75,7 @@ export function createPluginSet(env, canvas, source, io) {
       requestRender: io.requestRender,
       trigger: (action, options) => ownTrigger(slot, action, options),
       viewport: io.viewport,
+      localPoint: (point) => (io.localPoint ? io.localPoint(slot, point) : { x: Number(point?.x), y: Number(point?.y) }),
       // Pointer events land on the live layer (a sibling of the canvas), not on the canvas, so listen on both. On the canvas through
       // EventTarget's own methods: the canvas's own addEventListener (live/event-bridge.js) would add a forwarding listener on the layer,
       // which delivered every event of the layer a second time and was not passive (a touch listener there blocks scrolling).

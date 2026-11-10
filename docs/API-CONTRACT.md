@@ -400,8 +400,10 @@ unique names matching `/^[a-z][a-z0-9-]{0,31}$/` (frozen copy), else `TypeError`
 turn true). Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial` plugin MUST provide
 `captureInputMapper`; a plugin whose definition declares `actions` MUST provide `runAction(action, options, info)` and `settled()`, and
 one without `actions` must not provide `runAction` (`addPlugin` rejects with `TypeError` otherwise, and destroys the instance). The context
-is `{apiVersion, canvas, source, adapter, device, format, requestRender(), viewport(), listen(type, listener, options), trigger(action,
-options?)}`; the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
+is `{apiVersion, canvas, source, adapter, device, format, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
+trigger(action, options?)}` (`localPoint`: a point of the canvas, in canvas-relative CSS pixels of the content box, through the input mappers
+of the plugins added after this one in the newest presented frame, so where that point is in the picture this plugin rendered; `null` where a
+later plugin shows nothing of it; the point itself for the last plugin); the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
 Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `EffectPluginInstance`, `EffectActionState`,
 `EffectActionInfo` in `contracts/types.js`.
 
