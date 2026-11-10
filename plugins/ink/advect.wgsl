@@ -17,7 +17,7 @@ struct Step {
   t : vec4<f32>,                   // dt (s), the life of the pigment (s), the largest density an ink may reach, layer of the field texture
   n : vec4<f32>,                   // number of segments, 1 when the water moves, unused, unused
   seg : array<vec4<f32>, 4>,       // a.xy, b.xy (CSS px)
-  shape : array<vec4<f32>, 4>,     // radius (CSS px), density at the centre of the path, unused, unused
+  shape : array<vec4<f32>, 4>,     // radius (CSS px), density at the centre of the path, sharpness of a drop's edge (1: Gaussian), unused
   ink : array<vec4<f32>, 4>,       // the share of each of the three inks (rgb)
 }
 
@@ -65,7 +65,8 @@ fn velocity(p : vec2<f32>) -> vec2<f32> {
   return vec2<f32>(grad.y * step.grid.w, -grad.x * step.grid.z);
 }
 
-// the pigment at uv: Catmull-Rom over 4 x 4 texels as 9 bilinear taps, limited to the four texels around the point
+// the pigment at uv: Catmull-Rom over 4 x 4 texels as 9 bilinear taps, limited to the four texels around the point. The age comes from
+// the bilinear read (a mean of the four ages weighted by density, so always one of theirs or between them), not from the sharper filter
 fn pigment_at(uv : vec2<f32>) -> vec4<f32> {
   let size = step.size.xy;
   let sp = uv * size;
@@ -94,7 +95,9 @@ fn pigment_at(uv : vec2<f32>) -> vec4<f32> {
   let b = textureLoad(pigment, clamp(c + vec2<i32>(1, 0), vec2<i32>(0), top), 0);
   let d = textureLoad(pigment, clamp(c + vec2<i32>(0, 1), vec2<i32>(0), top), 0);
   let e = textureLoad(pigment, clamp(c + vec2<i32>(1, 1), vec2<i32>(0), top), 0);
-  return clamp(sum, min(min(a, b), min(d, e)), max(max(a, b), max(d, e)));
+  let rgb = clamp(sum.rgb, min(min(a.rgb, b.rgb), min(d.rgb, e.rgb)), max(max(a.rgb, b.rgb), max(d.rgb, e.rgb)));
+  let soft = textureSampleLevel(pigment, linear_sampler, uv, 0.0);
+  return vec4<f32>(rgb, soft.a / max(soft.r + soft.g + soft.b, 1e-6) * (rgb.r + rgb.g + rgb.b));
 }
 
 // the error function (Abramowitz and Stegun 7.1.26, within 1.5e-7)
@@ -106,7 +109,8 @@ fn erf(x : f32) -> f32 {
 }
 
 // the density released at p by segment i: a Gaussian of the given radius across the path, integrated along the segment; it ends,
-// smoothly, three radii from the segment (index.js REACH)
+// smoothly, three radii from the segment (index.js REACH). A segment without length is a drop: exp(-(d^2 / r^2)^sharpness / 2), a disc
+// with a soft rim for a sharpness above 1
 fn released(p : vec2<f32>, i : i32) -> f32 {
   let a = step.seg[i].xy;
   let ab = step.seg[i].zw - a;
@@ -116,7 +120,9 @@ fn released(p : vec2<f32>, i : i32) -> f32 {
   var along = 1.0;
   var across = dot(pa, pa);
   var away = across;
+  var power = step.shape[i].z;
   if (len > 0.01) {
+    power = 1.0;
     let dir = ab / len;
     let s = dot(pa, dir);
     let k = 0.70710678 / r;
@@ -126,11 +132,12 @@ fn released(p : vec2<f32>, i : i32) -> f32 {
     away = dot(q, q);
   }
   let edge = max(1.0 - away / (9.0 * r * r), 0.0);
-  return step.shape[i].y * along * exp(-0.5 * across / (r * r)) * edge * edge;
+  return step.shape[i].y * along * exp(-0.5 * pow(across / (r * r), power)) * edge * edge;
 }
 
-// under this total density the pigment is dropped: it shows nothing, and the support of the pigment stays compact
-const LEAST : f32 = 0.002;
+// every ink loses this much density per second: the thinnest haze around a stroke (which shows nothing) is gone within a second, so
+// the pigment keeps a compact support with a soft rim; a stroke loses 0.03 over its life
+const LOSS : f32 = 0.012;
 
 @fragment
 fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
@@ -145,9 +152,12 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   } else {
     rho = textureLoad(pigment, vec2<i32>(position.xy), 0);
   }
-  let total = rho.r + rho.g + rho.b;
-  rho.a = rho.a + total * step.t.x;
-  if (total < LEAST || rho.a >= step.t.y * total) { rho = vec4<f32>(0.0); }
+  let before = rho.r + rho.g + rho.b;
+  let rgb = max(rho.rgb - vec3<f32>(LOSS * step.t.x), vec3<f32>(0.0));
+  let total = rgb.r + rgb.g + rgb.b;
+  // the age (a / total) of what is left, one step on
+  rho = vec4<f32>(rgb, rho.a * total / max(before, 1e-6) + total * step.t.x);
+  if (rho.a >= step.t.y * total) { rho = vec4<f32>(0.0); }
   var fresh = vec3<f32>(0.0);
   let count = i32(step.n.x);
   for (var i = 0; i < count; i = i + 1) {

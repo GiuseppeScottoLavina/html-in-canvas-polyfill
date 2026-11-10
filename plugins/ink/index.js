@@ -77,10 +77,12 @@ const PROFILE_LINE = 32 / 35;
 export const WAKE_SWAY = 0.4;
 export const WAKE_PX = 5 * STIR_RADIUS;
 /** a press: the drop lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
-export const DROP_PUSH = 260;
+export const DROP_PUSH = 420;
 /** the pigment: the Gaussian radius of the pen and of a drop (CSS px), their reach in radii (advect.wgsl), the density at pigment 1 */
 export const PEN_RADIUS = 8;
-export const DROP_RADIUS = 15;
+export const DROP_RADIUS = 13;
+/** the edge of a drop: exp(-(d^2 / r^2)^DROP_EDGE / 2), a disc with a soft rim (1 would be a Gaussian) */
+export const DROP_EDGE = 2.5;
 export const REACH = 3;
 export const INK_DENSITY = 1;
 /** no ink gets denser than this, however often the pen passes */
@@ -327,7 +329,7 @@ export const plugin = Object.freeze({
     /** resolves the running demo with null when the user takes over @type {((state: string|null) => void)|null} */
     let demoTakeover = null;
     /** @type {((state: string|null) => void)[]} */ const waiters = [];
-    /** pigment waiting for its step: [ax, ay, bx, by, radius, density, the shares of the inks (4 floats)], SEGMENT_QUEUE of them in a ring */
+    /** pigment waiting for its step: [ax, ay, bx, by, radius, density, the shares of the three inks, the sharpness of a drop], SEGMENT_QUEUE of them in a ring */
     const segments = new Float32Array(SEGMENT_QUEUE * 10);
     let segmentHead = 0, segmentCount = 0;
     /** where the hue is along the palette, and the direction of the last drop */
@@ -409,15 +411,16 @@ export const plugin = Object.freeze({
 
     /**
      * Pigment for the next step: along a - b (CSS px of the fluid), a Gaussian of `radius` across with `density` at its centre, in the
-     * inks at `phase` of the palette. @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} radius @param {number} density @param {number} phase
+     * inks at `phase` of the palette. @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} radius @param {number} density @param {number} phase @param {number} [edge]
      */
-    function release(ax, ay, bx, by, radius, density, phase) {
+    function release(ax, ay, bx, by, radius, density, phase, edge = 1) {
       if (density <= 0) return;
       // a full queue (no frame for a long time): the oldest segment gives way
       if (segmentCount === SEGMENT_QUEUE) { segmentHead = (segmentHead + 1) % SEGMENT_QUEUE; segmentCount -= 1; }
       const o = ((segmentHead + segmentCount) % SEGMENT_QUEUE) * 10;
       segments[o] = ax; segments[o + 1] = ay; segments[o + 2] = bx; segments[o + 3] = by; segments[o + 4] = radius; segments[o + 5] = density;
       inkMix(phase, segments, o + 6);
+      segments[o + 9] = edge;
       segmentCount += 1;
     }
 
@@ -467,8 +470,8 @@ export const plugin = Object.freeze({
       hue += HUE_STEP;
       if (!still) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
       if (pigment > 0) {
-        release(x, y, x, y, DROP_RADIUS, pigment * INK_DENSITY, hue);
-        release(x, y, x, y, 0.45 * DROP_RADIUS, pigment * INK_DENSITY, hue + 1 / 3);
+        release(x, y, x, y, DROP_RADIUS, pigment * INK_DENSITY, hue, DROP_EDGE);
+        release(x, y, x, y, 0.5 * DROP_RADIUS, pigment * INK_DENSITY, hue + 1 / 3, DROP_EDGE);
       }
       wake();
     }
@@ -486,8 +489,13 @@ export const plugin = Object.freeze({
 
     {
       /** @type {{x: number, y: number, t: number}|null} */ let last = null;
-      /** a pointer is pressed on the canvas */
-      let pressing = false;
+      /** a pointer is pressed on the canvas; `own`: the press began on a control of the page (a field, a button, a slider, a link, a label) */
+      let pressing = false, own = false;
+      const CONTROLS = 'input, textarea, select, button, a[href], label, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"]';
+      const onControl = (/** @type {Event} */ event) => {
+        const target = /** @type {any} */ (event.target);
+        return !!(target?.closest ? target : target?.parentElement)?.closest?.(CONTROLS);
+      };
       /** the direction the pointer last moved in (unit), and when */
       let headX = 0, headY = 0, headT = -1e9;
       /** @param {{x: number, y: number}} a @param {{x: number, y: number}} b @param {number} ms @param {boolean} pressed @param {number} t */
@@ -513,10 +521,14 @@ export const plugin = Object.freeze({
         takeOver();
         pressing = true;
         const t = e.timeStamp || performance.now();
+        last = { x: p.x, y: p.y, t };
+        // a press on a control of the page is the page's gesture: no drop falls on the field being focused, and a drag from it (a
+        // slider, a selection in a field) stirs as a hovering pointer does, without pigment
+        own = onControl(event);
+        if (own) return;
         // the drop keeps the pointer's heading; a press at rest sends each drop another way
         if (t - headT > 250) { dropAngle += GOLDEN_ANGLE; headX = Math.cos(dropAngle); headY = Math.sin(dropAngle); }
         drop(p.x, p.y, headX * DROP_PUSH, headY * DROP_PUSH, reducedMotion);
-        last = { x: p.x, y: p.y, t };
       }, passive);
       context.listen('pointermove', (event) => {
         if (!(event instanceof win.PointerEvent)) return;
@@ -529,7 +541,7 @@ export const plugin = Object.freeze({
         const prev = last;
         last = { x: p.x, y: p.y, t };
         if (e.buttons === 0) pressing = false;
-        if (prev) move(prev, p, t - prev.t, e.buttons !== 0 || e.pointerType === 'touch', t);
+        if (prev) move(prev, p, t - prev.t, (e.buttons !== 0 || e.pointerType === 'touch') && !own, t);
       }, passive);
       const end = () => { last = null; pressing = false; };
       context.listen('pointerleave', end, passive);
@@ -538,9 +550,7 @@ export const plugin = Object.freeze({
       // A pressed pointer that moves over the page stirs it; the browser would also select the text it crosses, and the selection would
       // be drawn into the ink. While a press lasts, a selection that starts outside a text field does not start (option selectText).
       context.listen('selectstart', (event) => {
-        const target = /** @type {any} */ (event.target);
-        const field = target?.closest ? target : target?.parentElement;
-        if (pressing && !selectText && !reducedMotion && intensity > 0 && !field?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) event.preventDefault();
+        if (pressing && !own && !selectText && !reducedMotion && intensity > 0 && !onControl(event)) event.preventDefault();
       });
       // touch events: passive (never preventDefault), and they keep arriving while the finger scrolls the page
       /** @type {Map<number, {x: number, y: number, t: number}>} */ const fingers = new Map();
@@ -559,7 +569,7 @@ export const plugin = Object.freeze({
           if (!p) { fingers.delete(touch.identifier); continue; }
           fingers.set(touch.identifier, { x: p.x, y: p.y, t });
           // the path over the canvas: a finger that scrolls the page stays over the same spot of it and stirs nothing
-          if (prev) move(prev, p, t - prev.t, true, t);
+          if (prev) move(prev, p, t - prev.t, !own, t);
         }
       }, passive);
       const lift = (/** @type {Event} */ event) => { for (const touch of touches(event)) fingers.delete(touch.identifier); };
@@ -602,8 +612,8 @@ export const plugin = Object.freeze({
       for (let i = 0; i < count; i += 1) {
         const o = segmentHead * 10, radius = segments[o + 4], density = segments[o + 5], reach = REACH * radius;
         stepData.set(segments.subarray(o, o + 4), S.SEG + 4 * i);
-        stepData[S.SHAPE + 4 * i] = radius; stepData[S.SHAPE + 4 * i + 1] = density;
-        stepData.set(segments.subarray(o + 6, o + 10), S.INK + 4 * i);
+        stepData[S.SHAPE + 4 * i] = radius; stepData[S.SHAPE + 4 * i + 1] = density; stepData[S.SHAPE + 4 * i + 2] = segments[o + 9];
+        stepData.set(segments.subarray(o + 6, o + 9), S.INK + 4 * i);
         const x0 = Math.min(segments[o], segments[o + 2]) - reach - 2, y0 = Math.min(segments[o + 1], segments[o + 3]) - reach - 2;
         const x1 = Math.max(segments[o], segments[o + 2]) + reach + 2, y1 = Math.max(segments[o + 1], segments[o + 3]) + reach + 2;
         if (inkBox[0] > inkBox[2]) { inkBox[0] = x0; inkBox[1] = y0; inkBox[2] = x1; inkBox[3] = y1; } else {
