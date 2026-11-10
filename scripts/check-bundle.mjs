@@ -227,7 +227,7 @@ const LIMITS = {
   // 366.75 -> 367.5 KB (+642 / +203 bytes, 2026-11-10, measured 367,253 / 124,990; gzip stays under 125 KB): the ancestor chain of a canvas follows every move
   // (the registry's tree-change signal, suspended canvases reconciled when a shadow host comes back) and the clone root takes the language the browser gives a
   // canvas in a shadow tree (clone.js shadowLanguageOf; external audit of 1.0.0-rc.7)
-  // 367.5 -> 368 KB, gzip 125 -> 125.5 KB (+697 / +359 bytes, 2026-11-10, measured 367,950 / 125,349): the cover check of the scroll compositor leaves out the
+  // 367.5 -> 368 KB, gzip 125 -> 125.5 KB (+734 / +368 bytes, 2026-11-10, measured 367,987 / 125,358): the cover check of the scroll compositor leaves out the
   // corner pixels of its tiles on WebKit (ScrollPlan.softCorners), renders those tiles with one pixel per css px there, reads a tile whole where a read costs by
   // the call (scroll-compose.js vet), and sets its first fill on the finished clone (capture.js setCoverFill); before it Safari on macOS composed no scroller since
   // 0.1.0-preview.23

@@ -450,11 +450,12 @@ Tick RUN(now), for each canvas record in reverse tree order:
     there, a quarter of the pixels at a scale of 2 and a ninth at 3. Chromium and Gecko lay the image out at the surface's scale, where a box under one css px
     may round away at another scale: their tiles keep it. (3) A read can cost by the call, not by the pixel: in Safari on macOS every `getImageData` that follows
     a drawing or comes in a later task waits 40 to 50 ms for a 716 x 860 px canvas, whatever the size of the rect read (a second read in the same task: 0.2 ms;
-    Chrome 156 and Safari on an iPad: 1 to 3 ms a band, under 0.3 ms for one pixel), so nine bands cost about 360 ms. The first read of a tile is one pixel, the
-    port's centre, and it is timed; once it took more than 5 ms (`VET_SLOW_MS`), that tile is read whole in the same task and every later tile in one read, in a
-    post-frame job of its own, never as it lands. One pixel is timed and not a band, which allocates a megabyte: a band read on a busy machine crossed 5 ms once
-    in a full run of the unit tests. Measured in Safari 27.0.1 with the system's classic bars, the list of the figures above: 58 updates a second, 168 to 171 of
-    about 175 steps composed, the longest frame 41 to 63 ms, and the first composed step 146 to 150 ms after the first scroll (66 to 68 ms before the check).
+    Chrome 156 and Safari on an iPad: 1 to 3 ms a band, under 0.3 ms for one pixel), so nine bands cost about 360 ms. At the first later band of a tile (a later task, nothing
+    drawn since) one pixel is read and timed, once; when it took more than 5 ms (`VET_SLOW_MS`), the rest of that tile is read in the same task, and from then on
+    every tile whole, in a post-frame job of its own, never as it lands. That pixel is timed and not a tile's first read, which waits for the picture to be drawn
+    in every browser, nor a band, which allocates a megabyte: each crossed 5 ms in Chrome on a busy machine, once in a full run of the unit tests. A tile that
+    fits one band (on WebKit, at one pixel per css px, a port up to about 512 x 512 css px) is read once, as it lands, either way. Measured in Safari 27.0.1, the list of the figures above: 58 updates a second, 172 to 174 of about 175 steps composed, the
+    longest frame 42 to 55 ms, and the first composed step 114 to 115 ms after the first scroll (66 to 68 ms before the check).
     The cover colours are set on the finished clone (`capture.js` `setCoverFill`), the first one too: the clone declares it where it builds the scroller, and a
     bar painted after that as a background layer of the scroller declares the scroller's own colour again with its layers (`webkit-bars.js` `paintWebkitBars`,
     the system's classic bar in Safari on macOS, which shows while a mouse is attached; Chromium's bar of a listbox). The first cover tile then showed the page

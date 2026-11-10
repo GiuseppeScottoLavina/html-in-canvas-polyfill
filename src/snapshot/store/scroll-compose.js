@@ -40,10 +40,11 @@ const MAX_PENDING_RECTS = 16;
 /** pixels of the cover checks read and tested per post-frame job (scroll-compose.js vet: about 1 ms each, headless Chrome 156): one band, of one tile or across them */
 const VET_PIXELS = 1 << 18;
 /**
- * a read of ONE pixel of a cover tile that takes longer than this: the read costs by the call, not by the pixel. Safari 27.0.1 on macOS waits for its GPU process in
- * every getImageData that follows a drawing or comes in a later task (a 716 x 860 px tile: 40 to 50 ms whatever the rect, for each band of 366 rows as for one
- * pixel, and 0.2 ms for a second read in the same task; Chrome 156 and Safari on an iPad: under 0.3 ms for a pixel, 1 to 3 ms a band). Such a tile is read whole,
- * in one task. One pixel is timed, not a band: a band allocates a megabyte, and its time on a busy machine says less
+ * a read of ONE pixel of a cover tile, in a later task than the tile's first read and with nothing drawn since, that takes longer than this: the read costs by the
+ * call, not by the pixel. Safari 27.0.1 on macOS waits for its GPU process in every getImageData that follows a drawing or comes in a later task (a 716 x 860 px
+ * tile: 40 to 50 ms whatever the rect, for each band of 366 rows as for one pixel, and 0.2 ms for a second read in the same task; Chrome 156 and Safari on an iPad:
+ * under 0.3 ms for such a pixel, 1 to 3 ms a band). Such a tile is read whole, in one task. Not the first read of a tile, which also waits for its picture to be
+ * drawn in every browser, and not a band, which allocates a megabyte: both crossed 5 ms on a busy machine in Chrome, once each in a full run of the unit tests
  */
 const VET_SLOW_MS = 5;
 /** pages a scroller planned ahead gets (prepare `ahead`): the one under its port and the next, enough for the first steps of a gesture either way */
@@ -298,8 +299,8 @@ export function createScrollCompositor(deps) {
   let epoch = 0;
   /** damage sequence: pages, dirty parts and tiles are ordered by it */
   let seq = 0;
-  /** a read of a cover tile took longer than VET_SLOW_MS in this browser (vet) */
-  let slowRead = false;
+  /** a read costs by the call in this browser (VET_SLOW_MS), and whether that was asked yet: once, at the first later band of a tile (vet) */
+  let slowRead = false, probed = false;
   /** diagnostics (SnapshotStats.scroll) */
   const counters = { plans: 0, refusals: 0, pages: 0, pins: 0, failed: 0, composed: 0, fallbacks: 0, dropped: 0, droppedGeometry: 0, kept: 0, dirtied: 0, patched: 0, dirtyMisses: 0, obstructed: 0, budget: 0, stale: 0 };
   /** `refusals` by reason (SnapshotStats.scroll.refusedBy): they add up to it */
@@ -411,7 +412,7 @@ export function createScrollCompositor(deps) {
    */
   function vet(entry, c, landed) {
     if (mapOf(entry).get(c.el) !== c) return;
-    // where a read is slow (VET_SLOW_MS), a tile that landed waits for the post-frame pump as the bands do: three tiles landing in one frame were read in that frame
+    // where a read is slow (VET_SLOW_MS, once known), a tile that landed waits for the post-frame pump as the bands do: three tiles landing in one frame were read in that frame
     if (landed && slowRead) c.checks.push(landed);
     else {
       const list = landed ? [landed] : c.checks;
@@ -422,15 +423,16 @@ export function createScrollCompositor(deps) {
         let ok = false;
         try {
           const ctx = /** @type {CanvasRenderingContext2D} */ (k.pad.getContext('2d'));
-          // the first read of a tile is the pixel at the port's centre (the colour a backdrop must have everywhere), timed: see VET_SLOW_MS
-          if (!k.y) {
+          // the first later band of a tile: one pixel, timed, once (VET_SLOW_MS)
+          if (k.y && !probed) {
+            probed = true;
             const t0 = now();
-            const centre = [...ctx.getImageData(k.at.x + (k.w >> 1), k.at.y + (k.h >> 1), 1, 1).data];
-            if (now() - t0 > VET_SLOW_MS) slowRead = true;
-            k.want ??= centre;
+            ctx.getImageData(k.at.x, k.at.y, 1, 1);
+            slowRead = now() - t0 > VET_SLOW_MS;
           }
-          // where a read is slow: the whole tile now, in this task (a second read costs no second wait there), and nothing more in this job
+          // where a read is slow: the rest of the tile now, in this task (a second read costs no second wait there), and nothing more in this job
           if (slowRead) { h = k.h - k.y; left = 0; }
+          k.want ??= [...ctx.getImageData(k.at.x + (k.w >> 1), k.at.y + (k.h >> 1), 1, 1).data];
           const d = ctx.getImageData(k.at.x, k.at.y + k.y, k.w, h).data;
           ok = vetPixels(d, k.w, h, /** @type {number[]} */ (k.want), k.skip.map((q) => ({ x: q.x, y: q.y - k.y, width: q.width, height: q.height })));
         } catch { /* not read back: not vouched for */ }
