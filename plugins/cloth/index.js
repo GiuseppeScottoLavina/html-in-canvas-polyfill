@@ -270,6 +270,9 @@ export const plugin = Object.freeze({
       applyFabric(c);
       if (pinsNow() === 'corners' && status !== DROPPED) setPins(c, 'corners');
       else if (c.wind > 0 && status === HANGING) wake(c);
+      // a gust that was asked for on the cloth of another size (an action before the first frame, a resize) blows at this one
+      if (cloth && status === HANGING) for (const g of cloth.gusts) gust(c, g.t0 - cloth.time, g.dx, g.dy, g.strength);
+      else if (status === DROPPING || status === RISING) status = HANGING;
       cloth = c;
       clock = NaN;
       const length = stateLength(c.cols, c.rows);
@@ -289,7 +292,11 @@ export const plugin = Object.freeze({
       return c;
     }
     /** the cloth, before the first frame too (then of the canvas's client size) */
-    const theCloth = () => cloth ?? ensureCloth(canvas.clientWidth || 1, canvas.clientHeight || 1);
+    const theCloth = () => {
+      if (cloth) return cloth;
+      const v = context.viewport?.();
+      return ensureCloth(v?.cssWidth || canvas.clientWidth || 1, v?.cssHeight || canvas.clientHeight || 1);
+    };
     /** Something moved the cloth: frames are needed until it rests again. */
     function stir() {
       if (Number.isNaN(clock) && Number.isNaN(wokeAt)) wokeAt = performance.now();

@@ -116,14 +116,22 @@ gpuTest('at rest the presented frame is the page, pixel for pixel, with the defa
   assert.deepEqual(again, { count: 0, most: 0 }, `after the gust ${again.count} pixels differ from the page (by up to ${again.most} levels)`);
 }, { timeout: 30000 });
 
-gpuTest('the cloth drawn as a mesh, a hair off its plane, is the page too: it differs from the page by at most a few levels at edges', async (t) => {
-  // through the mesh pipeline: a pointer that has moved 8 px has pushed the cloth, and 4 ms later the dent is a fraction of a pixel deep
+gpuTest('the cloth drawn as a mesh: away from a small dent the frame is still the page, to within one level (the sheet, its light and its filter leave the flat cloth alone)', async (t) => {
+  // through the mesh pipeline: a pointer that has moved 8 px has pushed the cloth at (204, 150), and 4 ms later the dent is a fraction of a pixel deep
   const nudge = (/** @type {any} */ rig) => { rig.tick(performance.now() - 20); pointer(rig, 'pointermove', [200, 150], 0); pointer(rig, 'pointermove', [208, 150], 0); };
   const { rig, img, mapper } = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (picture), before: nudge, offsetMs: 4 });
   assert.equal(stateOf(/** @type {any} */ (mapper))?.[S.MODE], CLOTH, 'this frame is drawn as cloth');
-  const d = difference(img, sourcePixels(rig));
-  console.error(`cloth flat mesh vs page: ${d.count} of ${W * H} pixels differ, by at most ${d.most} levels`);
-  assert.ok(d.most <= 3, `${d.count} pixels differ, by up to ${d.most} levels`);
+  const source = sourcePixels(rig);
+  let far = 0, farMost = 0, near = 0;
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+    const i = 4 * (y * W + x);
+    const d = Math.max(Math.abs(img.data[i] - source.data[i]), Math.abs(img.data[i + 1] - source.data[i + 1]), Math.abs(img.data[i + 2] - source.data[i + 2]));
+    if (d === 0) continue;
+    if (Math.hypot(x - 204, y - 150) > 110) { far += 1; farMost = Math.max(farMost, d); } else near += 1;
+  }
+  console.error(`cloth mesh vs page: ${near} pixels differ within 110 px of the dent; beyond it ${far} of ${W * H}, by at most ${farMost} levels`);
+  assert.ok(near > 0, 'control: the dent itself changes pixels (a shift of a fraction of a pixel over thin lines)');
+  assert.ok(farMost <= 1 && far < 0.01 * W * H, `away from the dent ${far} pixels differ, by up to ${farMost} levels`);
 });
 
 gpuTest('the action gust through the effect handle: the cloth billows, every checked frame agrees with its mapper, it resolves hanging on the page', async (t) => {
