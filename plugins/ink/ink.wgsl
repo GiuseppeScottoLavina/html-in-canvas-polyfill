@@ -11,6 +11,8 @@
 //     sits lower where the water is faster, and its slope (from the second derivatives of the same B-spline of the stream function) tilts
 //     the normal; the light added is the change of a broad specular lobe from that of the flat surface, in linear light (a faint glint on a
 //     dark page, a faint shading on a bright one; 0 where the water is still). With extended range the glint goes above white (hdr_light);
+//   - around a recent drop the ink ends in a crisp wet edge: cut where its density falls under WET_EDGE, with a coverage of one device pixel
+//     (the density over its screen-space derivative), and darker just inside that line (the ring of pigment at the edge of a wet stain);
 //   - half a level of dither where there is pigment or sheen (their gradients are slow);
 //   - where the field is zero and there is no pigment, the output is the source texel, untouched.
 
@@ -20,9 +22,10 @@ struct Globals {
   box : vec4<f32>,                 // the cells whose displacement may be non-zero (padded grid, x0 y0 x1 y1 inclusive)
   ink_box : vec4<f32>,             // CSS px (x0 y0 x1 y1) outside which there is no pigment
   state : vec4<f32>,               // layer of the field texture, 1: the field is not zero, 1: the source is ready, 1: there is pigment
-  look : vec4<f32>,                // the pigment is at full strength up to this age (s), gone at this age (s), unused, unused
+  look : vec4<f32>,                // the pigment is at full strength up to this age (s), gone at this age (s), 1: a drop has a wet edge, unused
   absorb : array<vec4<f32>, 3>,    // K of each ink per unit density, linear RGB
   scatter : array<vec4<f32>, 3>,   // S of each ink per unit density, linear RGB
+  drops : array<vec4<f32>, 4>,     // the recent drops: where they landed (CSS px), the reach of their wet edge (CSS px; 0: none)
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -44,6 +47,10 @@ const WET_SLOPE : f32 = 0.35;
 const SUN : vec3<f32> = vec3<f32>(-0.268, -0.358, 0.894);
 const LOBE : f32 = 24.0;
 const SHEEN : f32 = 0.12;
+// the wet edge of a drop: the density where it is cut, how much denser the line inside it is, and its width (CSS px)
+const WET_EDGE : f32 = 0.05;
+const RING : f32 = 0.8;
+const RING_PX : f32 = 1.2;
 
 // Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
 override HDR_PEAK : f32 = 1.0;
@@ -189,7 +196,22 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   let moved = s.live && any(s.d != vec2<f32>(0.0));
   // the densities that show: all of the pigment while it is young, none of it at the end of its life
   let total = rho.r + rho.g + rho.b;
-  let ink = rho.rgb * (1.0 - smoothstep(globals.look.x, globals.look.y, rho.a / max(total, 1e-6)));
+  let soft = rho.rgb * (1.0 - smoothstep(globals.look.x, globals.look.y, rho.a / max(total, 1e-6)));
+  // the wet edge, on the density before it fades (the stain fades as a whole) (in uniform control flow: the derivative of the density
+  // is that of the neighbouring pixels)
+  var inside = 0.0;
+  var wet_edge = 0.0;
+  if (globals.look.z > 0.5) {
+  inside = (total - WET_EDGE) / max(fwidth(total), 1e-5);
+  for (var i = 0; i < 4; i = i + 1) {
+    let d = globals.drops[i];
+    // (not in the middle of the drop, where its ink thins most: it would open a hole there)
+    let r = distance(at, d.xy) / max(d.z, 1.0);
+    if (d.z > 0.0) { wet_edge = max(wet_edge, smoothstep(0.08, 0.2, r) * (1.0 - smoothstep(0.75, 1.0, r))); }
+  }
+  }
+  let ring = 1.0 + RING * exp(-max(inside, 0.0) * css.x / (RING_PX * resolution.x));
+  let ink = soft * mix(1.0, clamp(inside + 0.5, 0.0, 1.0) * ring, wet_edge);
   let inked = any(ink > vec3<f32>(0.0));
   // nothing here: the source, untouched
   if (!moved && !inked) { return vec4<f32>(page_encoded(uv), 1.0); }
@@ -238,15 +260,17 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
     let mid = normalize(SUN + vec3<f32>(0.0, 0.0, 1.0));
     light = SHEEN * (pow(max(dot(n, mid), 0.0), LOBE) - pow(mid.z, LOBE));
   }
+  // (a surface that tilts away from the light darkens the page by at most half: on a dark page no black shadow)
+  let shade = max(vec3<f32>(light), -0.5 * color);
   let wet = abs(light) > 1e-3;
   if (HDR_PEAK > 1.0) {
     // extended range: the shading below white, the glint above it on the shoulder
-    let lit = to_srgb(max(color + vec3<f32>(light), vec3<f32>(0.0)));
+    let lit = to_srgb(max(color + shade, vec3<f32>(0.0)));
     var base = min(lit, vec3<f32>(1.0));
     if (inked || wet) { base = clamp(base + vec3<f32>(dither(position.xy) / 255.0), vec3<f32>(0.0), vec3<f32>(1.0)); }
     return vec4<f32>(hdr_light(base, lit - min(lit, vec3<f32>(1.0))), 1.0);
   }
-  var encoded = to_srgb(clamp(color + vec3<f32>(light), vec3<f32>(0.0), vec3<f32>(1.0)));
+  var encoded = to_srgb(clamp(color + shade, vec3<f32>(0.0), vec3<f32>(1.0)));
   if (inked || wet) { encoded = encoded + vec3<f32>(dither(position.xy) / 255.0); }
   return vec4<f32>(clamp(encoded, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

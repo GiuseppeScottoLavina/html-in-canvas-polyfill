@@ -19,12 +19,13 @@
  * Where the water moves slower than STICK_PX_S the page does not move at all (the constant loss holds it), so the displacement is exactly
  * zero outside a bounded region (`box`): there the picture is the source, pixel for pixel.
  * A drop of ink (`bloom`) adds to the velocity of steps 2 and 3, for BLOOM_S seconds, the radial flow of a drop that spreads over the
- * surface: u = U(t) (1 + s M(a)) (1 - s)^2 (p - c) / L within the reach L of its centre c, s = |p - c|^2 / L^2,
- * U(t) = U0 (1 - t / BLOOM_S)^2, where M(a) = 0.3 cos(k1 a + p1) + 0.2 cos(k2 a + p2) + 0.15 cos((k1 + k2) a + p1 + 2 p2) at the angle
- * a around c makes the front uneven (a few lobes and finer fingers) and leaves the middle round. It is not divergence free (the drop brings
- * its own liquid): its divergence is 2 U (1 - s) ((1 - 3 s) + 2 s (1 - 2 s) M) / L: it spreads out from the centre and slows down towards
- * its front, where it converges, so the page and the pigment it carries pile up there into a rim. Once it has slowed, pushes along the
- * front (`stir`) at the k1 lobes draw them out into tendrils.
+ * surface: u = U(t) (1 - s)^2 (p - c) / L within the reach of its centre c, s = |p - c|^2 / (L (1 + E(a)))^2, U(t) = U0 (1 - t / BLOOM_S)^2.
+ * E(a), at the angle a around c, makes the reach and so the front uneven: here only its low modes, E(a) = sum over k = 2, 3, 4 of
+ * e_k cos(k a + p_k), with amplitudes and phases drawn per drop (the grid of the fluid carries no finer ones; advect.wgsl adds the modes 5
+ * to 24 to the pigment alone). The flow is not divergence free (the drop brings its own liquid): its divergence is 2 U (1 - s)(1 - 3 s) / L
+ * whatever E(a) (the flow is radial): it spreads out from the centre and slows down towards its front, where it converges, so the page
+ * and the pigment it carries pile up there into a rim. Once it has slowed, one to three pushes of uneven strength at random places of the
+ * front (`stir`) draw the rim out into tendrils.
  */
 
 /** ghost cells on each side (the B-spline reads one cell beyond the border, and two at the far border) */
@@ -48,8 +49,12 @@ export const CONFINE_FLOOR = 0.02;
 export const MAX_BLOOMS = 4;
 export const BLOOM_S = 0.45;
 export const BREAK_STEP = 24;
-/** the push of a tendril, as a share of a drop's speed scale */
-export const TENDRIL = 0.09;
+/** the push of a tendril, as a share of a drop's speed scale (times 0.4 to 1, drawn per tendril) */
+export const TENDRIL = 0.07;
+/** floats per drop in `spread` */
+export const SPREAD_FLOATS = 12;
+/** the farthest a drop's uneven front may reach, in L (advect.wgsl: the low and the fine modes together) */
+export const REACH_MAX = 1.6;
 /** sweeps of the multigrid V cycle before and after the coarse correction, and on the coarsest grid */
 const SMOOTH = 2;
 const COARSEST = 16;
@@ -78,8 +83,8 @@ const COARSEST = 16;
  * @property {number} maxW  the largest |w| of any cell, 1/s
  * @property {boolean} traced  the last step moved the water
  * @property {Float64Array} blooms  per drop: x, y (CSS px), U0 (CSS px/s), L (CSS px), the steps it has spread, its seed
- * @property {Float32Array} spread  per drop, as the last step used it (what the pigment step reads): x, y, U (CSS px/s; 0: none), L, then
- *   k1, p1, k2, p2 of its front
+ * @property {Float32Array} spread  per drop, as the last step used it (what the pigment step reads), SPREAD_FLOATS each: x, y, U (CSS px/s;
+ *   0: none), L, the amplitudes a2 a3 a4 of its front, its seed, the phases p2 p3 p4, 0
  * @property {number} blooming  drops still spreading
  */
 
@@ -112,7 +117,7 @@ export function createFluid(cssWidth, cssHeight) {
     w: field(), psi: field(), dx: field(), dy: field(), uc: field(), vc: field(),
     tmp: [field(), field(), field(), field(), field(), field(), field(), field()],
     levels, flowing: false, moved: false, box: Int32Array.of(pw, ph, -1, -1), maxSpeed: 0, maxShift: 0, maxW: 0,
-    traced: false, blooms: new Float64Array(MAX_BLOOMS * 6), spread: new Float32Array(MAX_BLOOMS * 8), blooming: 0,
+    traced: false, blooms: new Float64Array(MAX_BLOOMS * 6), spread: new Float32Array(MAX_BLOOMS * SPREAD_FLOATS), blooming: 0,
   };
   setSize(f, cssWidth, cssHeight);
   return f;
@@ -250,17 +255,17 @@ function velocity(f) {
   }
   // the drops that spread: their radial flow, at the cell centres within their reach
   const sp = f.spread;
-  for (let b = 0; b < MAX_BLOOMS * 8; b += 8) {
+  for (let b = 0; b < MAX_BLOOMS * SPREAD_FLOATS; b += SPREAD_FLOATS) {
     const U = sp[b + 2], L = sp[b + 3];
     if (!U) continue;
-    const gx = sp[b] / cellX - 0.5 + PAD, gy = sp[b + 1] / cellY - 0.5 + PAD, k = (U * DT) / L;
-    const x0 = Math.max(PAD - 1, Math.ceil(gx - L / cellX)), x1 = Math.min(PAD + gw, Math.floor(gx + L / cellX));
-    const y0 = Math.max(PAD - 1, Math.ceil(gy - L / cellY)), y1 = Math.min(PAD + gh, Math.floor(gy + L / cellY));
+    const gx = sp[b] / cellX - 0.5 + PAD, gy = sp[b + 1] / cellY - 0.5 + PAD, k = (U * DT) / L, far = REACH_MAX * L;
+    const x0 = Math.max(PAD - 1, Math.ceil(gx - far / cellX)), x1 = Math.min(PAD + gw, Math.floor(gx + far / cellX));
+    const y0 = Math.max(PAD - 1, Math.ceil(gy - far / cellY)), y1 = Math.min(PAD + gh, Math.floor(gy + far / cellY));
     for (let y = y0; y <= y1; y += 1) {
       const ry = (y - gy) * cellY;
       for (let x = x0; x <= x1; x += 1) {
-        const rx = (x - gx) * cellX, q = 1 - (rx * rx + ry * ry) / (L * L);
-        if (q > 0) { const i = y * pw + x, m = k * q * q * (1 + (1 - q) * uneven(sp, b, rx, ry)); uc[i] += (m * rx) / cellX; vc[i] += (m * ry) / cellY; }
+        const rx = (x - gx) * cellX, e = L * (1 + uneven(sp, b, rx, ry)), q = 1 - (rx * rx + ry * ry) / (e * e);
+        if (q > 0) { const i = y * pw + x, m = k * q * q; uc[i] += (m * rx) / cellX; vc[i] += (m * ry) / cellY; }
       }
     }
   }
@@ -466,33 +471,36 @@ export function bloom(f, x, y, speed, reach, seed) {
   b.set([x, y, speed, reach, 0, seed], at * 6);
 }
 
-/** M(a) of a drop's front (the header) in the direction (rx, ry) from its centre (as advect.wgsl spread). @param {Float32Array} sp @param {number} b @param {number} rx @param {number} ry */
+/** E(a) of a drop's front (the header) in the direction (rx, ry) from its centre (advect.wgsl spread adds the finer modes). @param {Float32Array} sp @param {number} b @param {number} rx @param {number} ry */
 function uneven(sp, b, rx, ry) {
-  const a = rx || ry ? Math.atan2(ry, rx) : 0, k1 = sp[b + 4], p1 = sp[b + 5], k2 = sp[b + 6], p2 = sp[b + 7];
-  return 0.3 * Math.cos(k1 * a + p1) + 0.2 * Math.cos(k2 * a + p2) + 0.15 * Math.cos((k1 + k2) * a + p1 + 2 * p2);
+  const a = rx || ry ? Math.atan2(ry, rx) : 0;
+  return sp[b + 4] * Math.cos(2 * a + sp[b + 8]) + sp[b + 5] * Math.cos(3 * a + sp[b + 9]) + sp[b + 6] * Math.cos(4 * a + sp[b + 10]);
 }
 
-const frac = (/** @type {number} */ v) => v - Math.floor(v);
+/** The n-th number in [0, 1) drawn for the drop of this seed (a 32-bit integer hash). @param {number} seed @param {number} n */
+export function drawn(seed, n) {
+  let h = Math.imul((seed | 0) ^ Math.imul(n + 1, 0x9e3779b9), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 
 /** The drops of this step: their radial speed (at the middle of the step), and the tendrils of those whose front breaks up now. @param {Fluid} f */
 function spreadStep(f) {
   const b = f.blooms, sp = f.spread;
   for (let k = 0; k < MAX_BLOOMS; k += 1) {
-    const o = k * 6, U0 = b[o + 2], seed = b[o + 5], j = k * 8;
+    const o = k * 6, U0 = b[o + 2], seed = b[o + 5], j = k * SPREAD_FLOATS, L = b[o + 3];
     sp[j + 2] = 0;
     if (!U0) continue;
     const n = b[o + 4], t = 1 - ((n + 0.5) * DT) / BLOOM_S;
     if (t <= 0) { b[o + 2] = 0; f.blooming -= 1; continue; }
-    // the front: 3 to 5 lobes and 9 to 14 finer fingers, turned by the seed (low-discrepancy sequences: no two drops alike)
-    const k1 = 3 + Math.floor(3 * frac(seed * 0.618034 + 0.31)), p1 = 2 * Math.PI * frac(seed * 0.7548777);
-    sp[j] = b[o]; sp[j + 1] = b[o + 1]; sp[j + 2] = U0 * t * t; sp[j + 3] = b[o + 3];
-    sp[j + 4] = k1; sp[j + 5] = p1; sp[j + 6] = 9 + Math.floor(6 * frac(seed * 0.5698403 + 0.7)); sp[j + 7] = 2 * Math.PI * frac(seed * 0.381966);
+    sp[j] = b[o]; sp[j + 1] = b[o + 1]; sp[j + 2] = U0 * t * t; sp[j + 3] = L; sp[j + 7] = seed;
+    // the low modes of the front: amplitude 0.06 to 0.12 each (none dominates), any phase
+    for (let m = 0; m < 3; m += 1) { sp[j + 4 + m] = 0.06 * (1 + drawn(seed, m)); sp[j + 8 + m] = 2 * Math.PI * drawn(seed, m + 3); }
     if (n === BREAK_STEP) {
-      // the lobes are drawn out into tendrils of uneven strength: a push outwards at the tip of each (a cos(k1 a + p1) = 1)
-      for (let i = 0; i < k1; i += 1) {
-        const a = (2 * Math.PI * i - p1) / k1, c = Math.cos(a), s = Math.sin(a), r = 0.62 * b[o + 3];
-        const v = U0 * TENDRIL * (0.45 + frac(seed * 0.5698403 + i * 0.7548777 + 0.5));
-        stir(f, b[o] + r * c, b[o + 1] + r * s, v * c, v * s, 0.3 * b[o + 3]);
+      // one to three tendrils, anywhere along the front, of uneven strength
+      for (let i = 0, count = 1 + Math.floor(3 * drawn(seed, 6)); i < count; i += 1) {
+        const a = 2 * Math.PI * drawn(seed, 7 + 2 * i), c = Math.cos(a), s = Math.sin(a), v = U0 * TENDRIL * (0.4 + 0.6 * drawn(seed, 8 + 2 * i));
+        stir(f, b[o] + 0.62 * L * c, b[o + 1] + 0.62 * L * s, v * c, v * s, 0.3 * L);
       }
     }
     b[o + 4] = n + 1;

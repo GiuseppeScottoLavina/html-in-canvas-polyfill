@@ -53,8 +53,8 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['demo', 'stir', 'clear']));
 
 /** Offsets in the uniform block (ink.wgsl Globals), in floats. The mapper state is this block followed by the packed field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 36 });
-export const GLOBALS_LENGTH = 48;
+export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 36, DROPS: 48 });
+export const GLOBALS_LENGTH = 64;
 /** Offsets in the uniform block of one pigment step (advect.wgsl Step), in floats; STEP_FLOATS each (256 bytes, the offset alignment of uniform buffers). */
 export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, LIFE: 9, CAP: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48, BLOOM: 64 });
 export const STEP_FLOATS = 128;
@@ -93,6 +93,8 @@ export const DROP_PUSH = 210;
  * DROP_DENSITY times `pigment` (a drop is thick: its ink thins as it spreads), above INK_CAP.
  */
 export const BLOOM_REACH = 60;
+/** around a drop, within WET_REACH x BLOOM_REACH of where it landed and while its pigment lives, the ink ends in a crisp wet edge (ink.wgsl) */
+export const WET_REACH = 1.8;
 export const BLOOM_SPEED = 1500;
 export const DROP_DENSITY = 5;
 /** the pigment: the Gaussian radius of the pen and of a drop (CSS px), their reach in radii (advect.wgsl), the density at pigment 1 */
@@ -381,8 +383,9 @@ export const plugin = Object.freeze({
     let segmentHead = 0, segmentCount = 0;
     /** where the hue is along the palette, and the direction of the last drop */
     let hue = 0, dropAngle = 0.4;
-    /** drops so far (the seed of a drop's tendrils) */
+    /** drops so far (the seed of a drop's front and tendrils), and the last four: x, y (CSS px of the fluid), until (simulation clock) */
     let drops = 0;
+    const wetDiscs = new Float64Array(12);
     /** the length of all paths so far, CSS px (the phase of the wake's sway) */
     let travel = 0;
     /** mapper states: the uniform block followed by the packed field (reallocated with the fluid) @type {Float32Array[]} */
@@ -521,6 +524,11 @@ export const plugin = Object.freeze({
       hue += HUE_STEP;
       drops += 1;
       if (!still) {
+        wake();
+        // its wet edge, in the place of the drop whose pigment goes first
+        let at = 0;
+        for (let k = 3; k < 12; k += 3) if (wetDiscs[k + 2] < wetDiscs[at + 2]) at = k;
+        wetDiscs.set([x, y, simClock + INK_LIFE * 1000 + INK_SLACK_MS], at);
         bloom(f, x, y, BLOOM_SPEED * intensity, BLOOM_REACH, drops);
         if (jx || jy) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
       }
@@ -783,7 +791,7 @@ export const plugin = Object.freeze({
         const still = reducedMotion || info.reducedMotion;
         if (action === 'clear') {
           takeOver();
-          scripts = []; segmentCount = 0;
+          scripts = []; segmentCount = 0; wetDiscs.fill(0);
           if (fluid) { clear(fluid); wipe = true; inkLive = false; inkBox.set([1, 1, 0, 0]); }
           awake = false;
           // the frame that shows the clean page resolves it
@@ -840,6 +848,12 @@ export const plugin = Object.freeze({
         globals[G.MOVED] = f.moved ? 1 : 0;
         globals[G.READY] = frame.sourceReady ? 1 : 0;
         globals[G.INKED] = inked ? 1 : 0;
+        globals[G.LOOK + 2] = 0;
+        for (let k = 0; k < 4; k += 1) {
+          const live = inked && simClock < wetDiscs[3 * k + 2];
+          if (live) globals[G.LOOK + 2] = 1;
+          globals[G.DROPS + 4 * k] = wetDiscs[3 * k]; globals[G.DROPS + 4 * k + 1] = wetDiscs[3 * k + 1]; globals[G.DROPS + 4 * k + 2] = live ? WET_REACH * BLOOM_REACH : 0;
+        }
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         let groups = bindGroups.get(frame.sourceView);
         if (!groups) { groups = [null, null]; bindGroups.set(frame.sourceView, groups); }

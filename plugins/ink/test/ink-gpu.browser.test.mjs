@@ -136,37 +136,98 @@ gpuTest('a drop that blooms: every presented pixel samples the source point the 
   assert.ok(v.ok, v.why);
 });
 
-gpuTest('a drop over white paper: it lands as a full disc, its ink moves outwards and gathers in a rim denser than its middle (control: the disc at landing is not), then everything is gone and the frame is the source', async (t) => {
+/** 255 - the darkest channel of a 480 x 320 frame at (x, y) (CSS px = px): the ink over white paper @param {ImageData} img @param {number} x @param {number} y */
+const inkAt = (img, x, y) => {
+  const ink = (/** @type {number} */ px, /** @type {number} */ py) => { const i = (Math.min(319, Math.max(0, py)) * 480 + Math.min(479, Math.max(0, px))) * 4; return 255 - Math.min(img.data[i], img.data[i + 1], img.data[i + 2]); };
+  // bilinear between the pixel centres: an outline is not quantised to whole pixels
+  const fx = x - 0.5 - Math.floor(x - 0.5), fy = y - 0.5 - Math.floor(y - 0.5), x0 = Math.floor(x - 0.5), y0 = Math.floor(y - 0.5);
+  return (ink(x0, y0) * (1 - fx) + ink(x0 + 1, y0) * fx) * (1 - fy) + (ink(x0, y0 + 1) * (1 - fx) + ink(x0 + 1, y0 + 1) * fx) * fy;
+};
+/** the outline of a drop centred at (cx, cy): the outermost radius (0.25 px steps up to 90 px) with ink above 40, at 180 angles @param {ImageData} img @param {number} cx @param {number} cy */
+function outline(img, cx, cy) {
+  const r = [];
+  for (let k = 0; k < 180; k += 1) {
+    const a = (2 * Math.PI * k) / 180;
+    let last = 0;
+    for (let d = 0; d <= 90; d += 0.25) if (inkAt(img, cx + d * Math.cos(a), cy + d * Math.sin(a)) > 40) last = d;
+    r.push(last);
+  }
+  return r;
+}
+/** the share of the variance of an outline in each angular mode k = 1..40, its relative spread, and the mode that holds most @param {number[]} r */
+function modes(r) {
+  const mean = r.reduce((s, v) => s + v, 0) / r.length, power = [0];
+  for (let k = 1; k <= 40; k += 1) {
+    let c = 0, s = 0;
+    r.forEach((v, i) => { const a = (2 * Math.PI * k * i) / r.length; c += (v - mean) * Math.cos(a); s += (v - mean) * Math.sin(a); });
+    power.push(c * c + s * s);
+  }
+  const above1 = power.slice(2).reduce((s, v) => s + v, 0);
+  const top = power.slice(2).reduce((m, v, i) => (v > power[m] ? i + 2 : m), 2);
+  return { spread: Math.sqrt(r.reduce((s, v) => s + (v - mean) ** 2, 0) / r.length) / mean, top, topShare: power[top] / above1, fine: power.slice(5).reduce((s, v) => s + v, 0) / above1 };
+}
+/** the width (px) over which the ink falls from 90 % to 10 % of its largest value along a line, sampled every 0.25 px from (x0, y0) by (dx, dy) for n samples */
+function edgeWidth(/** @type {ImageData} */ img, /** @type {number} */ x0, /** @type {number} */ y0, /** @type {number} */ dx, /** @type {number} */ dy, /** @type {number} */ n) {
+  const v = Array.from({ length: n }, (_, i) => inkAt(img, x0 + 0.25 * i * dx, y0 + 0.25 * i * dy));
+  const top = Math.max(...v);
+  return 0.25 * v.filter((x) => x > 0.1 * top && x < 0.9 * top).length;
+}
+
+gpuTest('two drops over white paper: each lands as a full disc, its ink moves outwards and gathers in a rim denser than its middle, its outline is irregular (no angular mode holds half of it, the modes 5 and above a quarter) and unlike the other one, and it ends in a crisp edge; controls: the round full disc at landing, the soft edge of a stroke; then everything is gone and the frame is the source', async (t) => {
   const white = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 480, 320); } };
-  const { rig, host, at } = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (white), before: tap(240, 160), offsetMs: 16 });
-  /** the ink of a frame (255 - the darkest channel) around the drop: its mean radius, and the mean ink in rings 4 px wide @param {ImageData} img */
+  const both = (/** @type {any} */ rig) => { tap(130, 160)(rig); tap(350, 160)(rig); };
+  const { rig, host, at } = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (white), before: both, offsetMs: 16 });
+  /** the ink of a frame around the first drop: its mean radius, and the mean ink in rings 4 px wide @param {ImageData} img */
   const profile = (img) => {
-    const rings = new Float64Array(30), counts = new Float64Array(30);
+    const rings = new Float64Array(25), counts = new Float64Array(25);
     let mass = 0, moment = 0;
-    for (let y = 40; y < 280; y += 1) for (let x = 120; x < 360; x += 1) {
-      const i = (y * 480 + x) * 4, ink = 255 - Math.min(img.data[i], img.data[i + 1], img.data[i + 2]), r = Math.hypot(x + 0.5 - 240, y + 0.5 - 160);
+    for (let y = 60; y < 260; y += 1) for (let x = 30; x < 230; x += 1) {
+      const ink = inkAt(img, x, y), r = Math.hypot(x + 0.5 - 130, y + 0.5 - 160);
       mass += ink; moment += ink * r;
-      if (r < 120) { rings[Math.floor(r / 4)] += ink; counts[Math.floor(r / 4)] += 1; }
+      if (r < 100) { rings[Math.floor(r / 4)] += ink; counts[Math.floor(r / 4)] += 1; }
     }
     const ring = [...rings].map((v, k) => v / Math.max(1, counts[k]));
-    const middle = (ring[0] + ring[1]) / 2, rim = Math.max(...ring.slice(2));
-    return { radius: moment / Math.max(1, mass), mass, middle, rim };
+    return { radius: moment / Math.max(1, mass), mass, middle: (ring[0] + ring[1]) / 2, rim: Math.max(...ring.slice(2)) };
   };
-  const first = profile(rig.snap());
+  const landing = rig.snap(), first = profile(landing), round = modes(outline(landing, 130, 160));
   let now = at;
-  const until = (/** @type {number} */ ms) => { while (now < at + ms) { now += 1000 / 60; rig.tick(now); } return profile(rig.snap()); };
-  const mid = until(150), late = until(400);
-  console.error(`ink drop: mean radius ${first.radius.toFixed(1)} -> ${mid.radius.toFixed(1)} -> ${late.radius.toFixed(1)} px; middle / rim ${first.middle.toFixed(0)} / ${first.rim.toFixed(0)} at landing, ${mid.middle.toFixed(0)} / ${mid.rim.toFixed(0)} at 150 ms, ${late.middle.toFixed(0)} / ${late.rim.toFixed(0)} at 400 ms`);
+  const until = (/** @type {number} */ ms) => { while (now < at + ms) { now += 1000 / 60; rig.tick(now); } return rig.snap(); };
+  const mid = profile(until(150)), lateImg = until(400), late = profile(lateImg);
+  const ra = outline(lateImg, 130, 160), rb = outline(lateImg, 350, 160), a = modes(ra), b = modes(rb);
+  const ma = ra.reduce((s, v) => s + v, 0) / 180, mb = rb.reduce((s, v) => s + v, 0) / 180;
+  let cab = 0, caa = 0, cbb = 0;
+  ra.forEach((v, i) => { cab += (v - ma) * (rb[i] - mb); caa += (v - ma) ** 2; cbb += (rb[i] - mb) ** 2; });
+  const likeness = cab / Math.sqrt(caa * cbb);
+  // the edge: along each of 36 rays, from 8 px inside the outline to 6 px outside it
+  const widths = [];
+  for (let k = 0; k < 180; k += 5) { const c = Math.cos((2 * Math.PI * k) / 180), s = Math.sin((2 * Math.PI * k) / 180); widths.push(edgeWidth(lateImg, 130 + (ra[k] - 8) * c, 160 + (ra[k] - 8) * s, c, s, 56)); }
+  widths.sort((x, y) => x - y);
+  const crisp = widths[18];
+  console.error(`ink drops: mean radius ${first.radius.toFixed(1)} -> ${mid.radius.toFixed(1)} -> ${late.radius.toFixed(1)} px; middle / rim ${first.middle.toFixed(0)} / ${first.rim.toFixed(0)} at landing, ${late.middle.toFixed(0)} / ${late.rim.toFixed(0)} at 400 ms; outline spread ${(round.spread * 100).toFixed(1)} % at landing, ${(a.spread * 100).toFixed(1)} % and ${(b.spread * 100).toFixed(1)} % at 400 ms; largest mode k = ${a.top} (${(a.topShare * 100).toFixed(0)} %) and k = ${b.top} (${(b.topShare * 100).toFixed(0)} %), modes 5+ ${(a.fine * 100).toFixed(0)} % and ${(b.fine * 100).toFixed(0)} %; the two outlines correlate ${likeness.toFixed(2)}; edge 90-10 % over ${crisp} px (median)`);
   assert.ok(first.mass > 1000 && first.radius < 14, 'it lands as a small disc');
   assert.ok(mid.radius > 1.8 * first.radius && late.radius > mid.radius, 'its ink moves outwards');
   assert.ok(first.rim < 1.2 * first.middle, 'control: the disc at landing is full (its middle about as dark as its edge)');
   assert.ok(late.rim > 1.5 * late.middle, 'the spread drop has a rim denser than its middle');
+  assert.ok(round.spread < 0.02, 'control: the outline at landing is round (the measure sees no unevenness that is not there)');
+  for (const m of [a, b]) {
+    assert.ok(m.spread > 0.04, 'the outline is uneven');
+    assert.ok(m.topShare < 0.5, `no angular mode holds half of the unevenness (k = ${m.top}: ${(m.topShare * 100).toFixed(0)} %)`);
+    assert.ok(m.fine > 0.25, 'the modes 5 and above hold a quarter of it: a ragged edge, not a few lobes');
+  }
+  assert.ok(Math.abs(likeness) < 0.5, 'two drops have different outlines');
+  assert.ok(crisp <= 3, `a crisp edge (${crisp} px)`);
+  // control: a stroke (the action stir: no drop) has soft edges, which the same measure sees
+  const stroke = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (white) });
+  stroke.handle.trigger('stir', { point: { x: 240, y: 160 }, angle: 0 });
+  for (let k = 1; k <= 24; k += 1) stroke.rig.tick(stroke.at + (k * 1000) / 60);
+  const soft = edgeWidth(stroke.rig.snap(), 240, 130, 0, 1, 240);
+  console.error(`ink stroke edge (control): 90-10 % over ${soft} px on both sides`);
+  assert.ok(soft > 2 * 3, `control: a stroke's edges are soft (${soft} px for both)`);
   const frames = host.stats().frames;
   for (let i = 0; i < 400; i += 1) { const before = host.stats().frames; now += 1000 / 60; rig.tick(now); if (host.stats().frames === before) break; }
-  console.error(`ink drop: at rest after ${((host.stats().frames - frames) / 60 + 0.4).toFixed(2)} s`);
+  console.error(`ink drops: at rest after ${((host.stats().frames - frames) / 60 + 0.4).toFixed(2)} s`);
   assert.ok((host.stats().frames - frames) / 60 < INK_LIFE + 0.5, 'and comes to rest');
-  const clean = rig.snap();
-  assert.ok(clean.data.every((v) => v === 255), 'the frame at rest is the white page');
+  assert.ok(rig.snap().data.every((v) => v === 255), 'the frame at rest is the white page');
 }, { timeout: 30000 });
 
 gpuTest('the sheen of moving water: a hover over a uniform grey page lightens it where the surface tilts towards the light and darkens it where it tilts away, only where the page moves; at intensity 0 (control) the page stays uniform', async (t) => {

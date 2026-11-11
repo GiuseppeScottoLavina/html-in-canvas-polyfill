@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { CHANNELS, MAX_BLOOMS, MAX_STEPS_PER_FRAME, PAD, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
+import { CHANNELS, MAX_BLOOMS, MAX_STEPS_PER_FRAME, PAD, SPREAD_FLOATS, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
 import { ACTIONS, DEMO_MS, G, GLOBALS_LENGTH, INK_CAP, INK_HOLD, INK_LIFE, PALETTES, PIGMENT_TEXELS, S, SEGMENTS_PER_STEP, STEP_FLOATS, demoPath, inkMix, inkOptics, mapInkPoint, meta, pigmentGrid, plugin } from '../index.js';
 
 contractTest(import.meta.url);
@@ -83,9 +83,9 @@ test('meta and the definition: three actions, the gallery defaults, the reduced-
   assert.deepEqual({ ...meta.defaults }, { intensity: 0.6, flow: 0.5, pigment: 0.7 });
   assert.ok(meta.reducedMotion.length <= 160 && meta.touch.length <= 160 && meta.description.length <= 160);
   assert.equal(GLOBALS_LENGTH % 4, 0);
-  assert.equal(G.SCATTER + 12, GLOBALS_LENGTH);
+  assert.equal(G.DROPS + 16, GLOBALS_LENGTH);
   assert.equal(S.INK + 4 * SEGMENTS_PER_STEP, S.BLOOM);
-  assert.ok(S.BLOOM + 8 * MAX_BLOOMS <= STEP_FLOATS);
+  assert.ok(S.BLOOM + SPREAD_FLOATS * MAX_BLOOMS <= STEP_FLOATS);
   assert.equal((STEP_FLOATS * 4) % 256, 0, 'a step block starts at a uniform offset alignment');
 });
 

@@ -21,7 +21,7 @@ struct Step {
   seg : array<vec4<f32>, 4>,       // a.xy, b.xy (CSS px)
   shape : array<vec4<f32>, 4>,     // radius (CSS px), density at the centre of the path, sharpness of a drop's edge (1: Gaussian), unused
   ink : array<vec4<f32>, 4>,       // the share of each of the three inks (rgb)
-  bloom : array<vec4<f32>, 8>,     // per drop that spreads: centre (CSS px), speed scale U (CSS px/s; 0: none), reach L (CSS px); k1 p1 k2 p2 of its front
+  bloom : array<vec4<f32>, 12>,    // per drop that spreads: centre (CSS px), speed scale U (CSS px/s; 0: none), reach L (CSS px); a2 a3 a4 seed; p2 p3 p4 (sim.js)
 }
 
 @group(0) @binding(0) var<uniform> step : Step;
@@ -68,20 +68,45 @@ fn velocity(p : vec2<f32>) -> vec2<f32> {
   return vec2<f32>(grad.y * step.grid.w, -grad.x * step.grid.z);
 }
 
-// the radial flow of the drops that spread (sim.js velocity: u = U (1 + s M) (1 - s)^2 (p - c) / L, s = |p - c|^2 / L^2, M the
-// unevenness of the front at the angle around c), CSS px/s, and its divergence 2 U (1 - s) ((1 - 3 s) + 2 s (1 - 2 s) M) / L, 1/s
+// a 32-bit integer hash (PCG)
+fn pcg(v : u32) -> u32 {
+  let s = v * 747796405u + 2891336453u;
+  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+
+// the radial flow of the drops that spread (sim.js velocity), CSS px/s, and its divergence, 1/s: u = U (1 - s)^2 (p - c) / L,
+// s = r^2 / R^2 at the distance r from c, with the reach R = L (1 + E + F w(r)) at the angle a around c. E(a): the low modes 2 to 4 of
+// sim.js, which also move the page. F(a), for the pigment alone: the modes 5 to 24, each of amplitude up to 0.5 / k^0.8 and of any phase,
+// drawn per drop from its seed (the ragged edge of ink spreading on wet paper; the grid of the fluid could not carry them), weighted by
+// w(r) = smoothstep(0.35 L, 0.85 L, r) so that they shape the front and not the middle. The divergence of that radial flow is
+// 2 U (1 - s) ((1 - 3 s) + 2 s r R' / R) / L, R' = L F w'(r)
 fn spread(p : vec2<f32>) -> vec3<f32> {
   var out = vec3<f32>(0.0);
   for (var i = 0; i < 4; i = i + 1) {
-    let b = step.bloom[2 * i];
-    let c = step.bloom[2 * i + 1];
+    let b = step.bloom[3 * i];
+    let c = step.bloom[3 * i + 1];
+    let e = step.bloom[3 * i + 2];
     let q = p - b.xy;
-    let s = dot(q, q) / (b.w * b.w);
-    if (b.z > 0.0 && s < 1.0) {
+    if (b.z > 0.0 && dot(q, q) < 2.56 * b.w * b.w) {
       let a = atan2(q.y, select(q.x, 1.0, dot(q, q) == 0.0));
-      let m = 0.3 * cos(c.x * a + c.y) + 0.2 * cos(c.z * a + c.w) + 0.15 * cos((c.x + c.z) * a + c.y + 2.0 * c.w);
-      let k = b.z * (1.0 - s) / b.w;
-      out = out + vec3<f32>(k * (1.0 - s) * (1.0 + s * m) * q, 2.0 * k * (1.0 - 3.0 * s + 2.0 * s * (1.0 - 2.0 * s) * m));
+      let m = c.x * cos(2.0 * a + e.x) + c.y * cos(3.0 * a + e.y) + c.z * cos(4.0 * a + e.z);
+      var f = 0.0;
+      let seed = u32(c.w) * 64u;
+      for (var k = 5u; k <= 24u; k = k + 1u) {
+        let h = pcg(seed + k);
+        f = f + 0.5 * pow(f32(k), -0.8) * (f32(h & 65535u) / 65536.0) * cos(f32(k) * a + 6.2831853 * f32(h >> 16u) / 65536.0);
+      }
+      let r = length(q);
+      let t = clamp((r / b.w - 0.35) / 0.5, 0.0, 1.0);
+      let reach = b.w * max(1.0 + m + f * t * t * (3.0 - 2.0 * t), 0.45);
+      let s = r * r / (reach * reach);
+      if (s < 1.0) {
+        // r R' / R, with w'(r) = 6 t (1 - t) / (0.5 L)
+        let rr = r * f * 12.0 * t * (1.0 - t) / reach;
+        let k = b.z * (1.0 - s) / b.w;
+        out = out + vec3<f32>(k * (1.0 - s) * q, 2.0 * k * (1.0 - 3.0 * s + 2.0 * s * rr));
+      }
     }
   }
   return out;
