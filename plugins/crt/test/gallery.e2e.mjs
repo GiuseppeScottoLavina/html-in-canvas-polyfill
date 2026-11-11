@@ -7,7 +7,7 @@
 import { join } from 'node:path';
 import { UNIFORM_FLOATS, bezelWidth, cornerRadius, mapCrtPoint, meta, presets } from '../index.js';
 import { runGalleryClickThrough } from '../../_shared/gallery-click.mjs';
-import { ROOT, checklist, framesDuring, openGallery, rectOf, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, checklist, framesDuring, openGallery, rectOf, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 /** @type {Float32Array|null} */ let state = null;
 await runGalleryClickThrough({
@@ -63,11 +63,7 @@ try {
     const frames = await stop();
     // the form side at 1:1 (one CSS px per pixel), so the scanlines and the phosphor stripes survive the encoding; the thumbnail is the whole screen
     const near = { x: stage.x + stage.w - 600, y: stage.y + 24, w: 576, h: 324 };
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/crt/media/crt.webp'), near, { width: 576, fps: 10, quality: 58 });
-    const crop = { x: stage.x, y: stage.y, w: stage.w, h: stage.h };
-    c.check('recording: media/crt.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
-    const thumb = writeWebp(frames, join(ROOT, 'docs/media/plugins/crt.webp'), crop, { width: 264, fps: 6, quality: 60 });
-    c.check('recording: the README thumbnail docs/media/plugins/crt.webp under 80 KB', thumb < 80 * 1024, { bytes: thumb });
+    writePreview(frames, 'crt', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check, { near, nearWidth: 576 });
   }
   const errors = await page.evaluate('window.__e2e.errors');
   c.check('no effecterror', errors.length === 0, errors);

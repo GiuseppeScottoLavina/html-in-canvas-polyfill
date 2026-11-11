@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import * as H from '../../../test/harness/index.mjs';
 import { UNIFORM_FLOATS, mapLensPoint, meta, writeLensGeometry } from '../index.js';
 import { TARGETS, runGalleryClickThrough } from '../../_shared/gallery-click.mjs';
-import { ROOT, checklist, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, checklist, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 /** the mapper of the default lens at rest, centred on (cx, cy), on a w x h canvas */
 function lensMapper(/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ cx, /** @type {number} */ cy) {
@@ -192,8 +192,7 @@ try {
     await demo();
     await sleep(300);
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/liquid-glass/media/liquid-glass.webp'), { x: r.x, y: r.y, w: r.w, h: r.h }, { width: 660, fps: 30, quality: 60 });
-    c.check('recording: media/liquid-glass.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
+    writePreview(frames, 'liquid-glass', { x: r.x, y: r.y, w: r.w, h: r.h }, c.check);
   }
   const errors = await page.evaluate('window.__e2e.errors');
   c.check('no effecterror', errors.length === 0, errors);

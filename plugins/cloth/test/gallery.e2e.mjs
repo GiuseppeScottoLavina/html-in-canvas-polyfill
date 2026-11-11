@@ -10,7 +10,7 @@
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only]
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record') || process.argv.includes('--record-only');
 const c = checklist('cloth gallery e2e');
@@ -72,8 +72,7 @@ async function recording() {
     await page.evaluate(`window.__gallery.handle.trigger('in'); true`);
     await sleep(2300);                                          // hung again
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/cloth/media/cloth.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 500, fps: 15, quality: 28 });
-    c.check('recording: media/cloth.webp under 900 KB', bytes < 900 * 1024, { screencastFrames: frames.length, bytes });
+    writePreview(frames, 'cloth', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
   } finally {
     await rec.close();
   }

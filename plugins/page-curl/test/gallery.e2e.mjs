@@ -11,7 +11,7 @@
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/page-curl/test/gallery.e2e.mjs [--record]
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, drag, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, drag, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record');
 /** @type {{name: string, ok: boolean, detail: unknown}[]} */
@@ -280,8 +280,7 @@ async function main() {
       await page.mouseMove(c.cx, c.cy);
       await sleep(1200);
       const frames = await stop();
-      const bytes = writeWebp(frames, join(ROOT, 'plugins/page-curl/media/page-curl.webp'), { x: c.x, y: c.y, w: c.w, h: c.h }, { quality: 72 });
-      check('recording: media/page-curl.webp under 900 KB', bytes < 900 * 1024, { screencastFrames: frames.length, bytes });
+      writePreview(frames, 'page-curl', { x: c.x, y: c.y, w: c.w, h: c.h }, check);
     } finally {
       await rec.close();
     }

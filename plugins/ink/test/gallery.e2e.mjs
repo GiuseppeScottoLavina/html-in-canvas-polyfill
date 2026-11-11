@@ -7,7 +7,7 @@
 // settled(); the demo gives way to a press; reduced motion; no console error. `--record` also writes media/ink.webp.
 //   npm run build && node plugins/ink/test/gallery.e2e.mjs [--record]     (`npm run test:plugins` runs every gallery e2e)
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 import { CHANNELS } from '../sim.js';
 import { G, GLOBALS_LENGTH, INK_LIFE, mapInkPoint } from '../index.js';
 
@@ -207,8 +207,7 @@ try {
     await park();
     await sleep(2400);
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/ink/media/ink.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 560, fps: 20, quality: 50 });
-    c.check('recording: media/ink.webp under 1 MB', bytes < 1024 * 1024, { screencastFrames: frames.length, bytes });
+    writePreview(frames, 'ink', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
   }
   const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
   c.check('no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));

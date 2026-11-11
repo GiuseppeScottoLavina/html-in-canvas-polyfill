@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { compareImages, pixelStats, sleep } from '../../test/harness/index.mjs';
-import { ROOT, checklist, clickOn, idle, openGallery, rectOf, shot, startRecording, writeWebp } from './gallery-e2e.mjs';
+import { ROOT, checklist, clickOn, idle, openGallery, rectOf, shot, startRecording, writePreview } from './gallery-e2e.mjs';
 
 /**
  * @typedef {Object} TransitionPlan
@@ -98,8 +98,7 @@ export async function runTransitionGalleryE2E(plan) {
       const frames = await stop();
       const out = join(ROOT, 'plugins', plan.name, 'media', `${plan.name}.webp`);
       mkdirSync(join(out, '..'), { recursive: true });
-      const bytes = writeWebp(frames, out, { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 520, fps: 12, quality: 35 });
-      c.check(`recorded media/${plan.name}.webp (${frames.length} compositor frames)`, bytes < 500 * 1024, { kb: Math.round(bytes / 1024) });
+      writePreview(frames, plan.name, { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
     }
     const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
     c.check('no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));
