@@ -103,6 +103,10 @@ Measured on an Apple M1 Max, headless Chrome 157, 2026-11-11, one run on one mac
 - **CPU.** `render()` with the mapper capture, in Node over a fake device (the simulation and the control points are all of it), in a gust: median 0.91 ms per frame at 120 frames per second (4 steps; p95 1.34 ms), 1.80 ms at 60 (8 steps), 3.5 ms at 30 (16 steps). The simulation alone during brisk drags of the cloth across itself: median 0.92 ms per 120 Hz frame (p95 1.13 ms), of which the cloth against itself is 0.41 ms (0.1 ms a step). A step without it costs about 0.12 ms. At rest: nothing.
 - **Bundle.** `dist/plugins/cloth.iife.min.js`: 48,842 bytes (19,165 gzip), of which about 12 KB is WGSL and 11 KB the simulation.
 
+
+## Extended range
+
+With the host's `hdr` option the cloth writes nothing above white: it adds no light of its own above the page's white, and its output is clamped to the range of an 8-bit target (the dither went below 0 on black channels, which a float target would show). Measured in the gallery with `&hdr=1`, a pointer sweep and the demo: 0 pixels above white and none below 0, on the form and the daylight scene (before the clamp, up to 27,665 pixels below 0 on the form).
 ## Limitations
 
 - Where the cloth lies over itself, its layers are one spacing of the grid apart (26 CSS px on the gallery's canvas, about 15 on a phone): a fold over the sheet is that thick, and a crease is as round.

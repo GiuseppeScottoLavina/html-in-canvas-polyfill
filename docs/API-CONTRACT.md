@@ -400,7 +400,7 @@ unique names matching `/^[a-z][a-z0-9-]{0,31}$/` (frozen copy), else `TypeError`
 turn true). Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial` plugin MUST provide
 `captureInputMapper`; a plugin whose definition declares `actions` MUST provide `runAction(action, options, info)` and `settled()`, and
 one without `actions` must not provide `runAction` (`addPlugin` rejects with `TypeError` otherwise, and destroys the instance). The context
-is `{apiVersion, canvas, source, adapter, device, format, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
+is `{apiVersion, canvas, source, adapter, device, format, hdr, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
 trigger(action, options?)}` (`localPoint`: a point of the canvas, in canvas-relative CSS pixels of the content box, through the input mappers
 of the plugins added after this one in the newest presented frame, so where that point is in the picture this plugin rendered; `null` where a
 later plugin shows nothing of it; the point itself for the last plugin); the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
@@ -408,10 +408,14 @@ Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `Ef
 `EffectActionInfo` in `contracts/types.js`.
 
 ### 7.3 Effect host
-`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer})` -> `EffectHost`
+`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer, hdr})` -> `EffectHost`
 `{pluginCount, addPlugin(def, options) -> Promise<EffectHandle>, stats(), mapPoint(point), destroy()}` (`mapPoint`: a point of the canvas, in
 canvas-relative CSS pixels of the content box, through every plugin's input mapper in the newest presented frame: the point in the source, or `null`
 where the plugins show nothing of it).
+- `hdr: true` asks for extended range: the canvas and every target of the plugin chain are `rgba16float`, configured with the `extended` tone mapping, so a
+  value above 1 that a plugin writes is shown brighter than white as far as the display can. It is used only where the browser reports that configuration
+  back (`stats().hdr`, `context.hdr` of a plugin); elsewhere, and by default, the canvas has the browser's preferred 8-bit format and clamps at white.
+  Decided when the host is created and again after a device loss.
 - Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the

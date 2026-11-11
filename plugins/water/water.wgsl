@@ -11,6 +11,10 @@
 //   - absorption: a little more blue-green where the water is deeper (in the troughs);
 //   - a dither of half a level against banding.
 // Everything scales with the intensity: at 0 the output is the source.
+//
+// Extended range (HDR_PEAK > 1): the page under the water, the sky and the window it mirrors and the light it scatters stay under white, as
+// on a standard target. Two lights go above it: the sun's disc mirrored by the slope of a ripple (the glint), and the page under the
+// brightest caustic lines, where the focused sunlight makes a bright page brighter than white. Still water shows neither.
 
 struct Globals {
   resolution : vec2<f32>,   // device px
@@ -45,6 +49,27 @@ const PAD : f32 = 2.0;
 // the share of the page's light that comes from the sun (the rest from the sky), and how much of the focused light the water scatters
 const SUN_SHARE : f32 = 0.85;
 const SCATTER : f32 = 0.11;
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
+// the sun's disc over the sky (the radiance a standard target shows of it is 12): what its mirror image on a ripple adds above white
+const HOT_SUN : f32 = 250.0;
+// the caustic light (1 under still water) from which, and at which in full, the page under a caustic line goes above white
+const HOT_CAUSTIC : vec2<f32> = vec2<f32>(4.0, 10.0);
+// the slope of the surface (after the intensity) from which, and at which in full, it glints: still water and a faint swell do not
+const HOT_SLOPE : vec2<f32> = vec2<f32>(0.02, 0.08);
 
 struct VertexOut {
   @builtin(position) position : vec4<f32>,
@@ -258,7 +283,13 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   if (globals.form_ready > 0.5) {
     form_pixel = textureSample(form_texture, form_sampler, displaced_uv);
   }
-  let below = mix(pool, form_pixel.rgb, form_pixel.a);
+  var below = mix(pool, form_pixel.rgb, form_pixel.a);
+  // extended range: the page is at most white here; what a plugin before this one lit above white is carried to the output through the water
+  var lit_before = vec3<f32>(0.0);
+  if (HDR_PEAK > 1.0) {
+    lit_before = max(below - vec3<f32>(1.0), vec3<f32>(0.0));
+    below = min(below, vec3<f32>(1.0));
+  }
 
   let light = clamp(globals.light, 0.0, 1.0) * smoothstep(0.0, 0.35, intensity);
 
@@ -296,5 +327,14 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   color = color + 0.38 * (vec3<f32>(1.0) - exp(-added / 0.38));
 
   color = color + vec3<f32>(dither(position.xy) / 255.0) * step(0.001, intensity);
+  if (HDR_PEAK > 1.0) {
+    // the page under the brightest caustic lines: the part of its focused light that a standard target clips at white
+    let page = below * transmit * pow(lit, 1.0 / 2.2) * mix(vec3<f32>(1.0), vec3<f32>(1.0, 0.985, 0.95), step(1.0, lit));
+    let caustic = max(page - vec3<f32>(1.0), vec3<f32>(0.0)) * smoothstep(HOT_CAUSTIC.x, HOT_CAUSTIC.y, sunlight);
+    // the glint: the sun's disc (narrower than the one a standard target shows: its square) mirrored by a slope, with the water's Fresnel factor
+    let disc = pow(max(dot(reflect(-view, n), normalize(vec3<f32>(0.33, -0.25, 0.91))), 0.0), 1100.0);
+    let glint = vec3<f32>(1.0, 0.95, 0.86) * (fresnel * disc * disc * HOT_SUN * light * smoothstep(HOT_SLOPE.x, HOT_SLOPE.y, length(tilt)));
+    return vec4<f32>(hdr_light(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)) + lit_before * transmit, caustic + glint), 1.0);
+  }
   return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

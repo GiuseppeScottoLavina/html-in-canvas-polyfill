@@ -19,6 +19,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { clampTo } from '../_lib/number.js';
 import { fullscreenPass } from '../_lib/gpu.js';
+import { hdrConstants } from '../_lib/hdr.js';
 import { springSubsteps } from '../_lib/spring.js';
 import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
@@ -162,7 +163,7 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('holo-card.wgsl'), label: 'holo-card' });
-    const gpu = fullscreenPass(device, format, module, 'holo-card', UNIFORM_FLOATS);
+    const gpu = fullscreenPass(device, format, module, 'holo-card', UNIFORM_FLOATS, hdrConstants(context));
     const u = new Float32Array(UNIFORM_FLOATS);
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
     const mappers = states.map((s) => stateMapper(s, mapCardPoint));

@@ -470,7 +470,7 @@ class HostRuntime {
       const oldest = this.frameTimes[(this.counters.frames - n + 1) % FPS_WINDOW];
       fps = newest > oldest ? ((n - 1) * 1000) / (newest - oldest) : 0;
     }
-    return { ...this.counters, fps, paused: !this.isVisible(), sourceVersion: this.uploaded, ...(this.interposer?.stats() ?? { remapped: 0, passedThrough: 0 }) };
+    return { ...this.counters, fps, paused: !this.isVisible(), hdr: this.presenter?.hdr === true, sourceVersion: this.uploaded, ...(this.interposer?.stats() ?? { remapped: 0, passedThrough: 0 }) };
   }
 
   /** @returns {EffectHost} */

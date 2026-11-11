@@ -7,6 +7,8 @@ import { contractTest } from '../../_shared/contract-test.mjs';
 import { fakeGpu } from '../../_shared/fake-gpu.mjs';
 import { ACTIONS, DEMO_MS, SWAY_HZ, MOTION_RANGE, NO_TARGET, UNIFORM_FLOATS, demoTarget, mapCardPoint, meta, motionTarget, plugin, writeCardPose } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
+import { readFileSync } from 'node:fs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 
 contractTest(import.meta.url);
 
@@ -74,22 +76,26 @@ test('tilt towards the pointer: the side under the pointer comes closer (drawn l
 
 
 /** `localPoint` stands for the plugins added after this one (context.localPoint); without it the context has none */
-async function create(options = {}, { reduced = false, localPoint = undefined } = {}) {
+async function create(options = {}, { reduced = false, localPoint = undefined, hdr = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' });
   const gpu = fakeGpu();
+  /** the descriptors of the pipelines the plugin made */
+  const pipelines = [];
+  const makePipeline = gpu.device.createRenderPipeline;
+  gpu.device.createRenderPipeline = (d) => { pipelines.push(d); return makePipeline(d); };
   const listeners = {};
   const listenOptions = {};
   const win = Object.assign(new EventTarget(), { matchMedia: () => ({ matches: reduced }), screen: { orientation: { angle: 0 } } });
   const canvas = { ownerDocument: { defaultView: win }, getBoundingClientRect: () => ({ left: 0, top: 0 }), clientWidth: 1100, clientHeight: 620, clientLeft: 0, clientTop: 0 };
   let requests = 0;
-  const context = { apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, requestRender() { requests += 1; }, listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; }, ...(localPoint ? { localPoint } : {}) };
+  const context = { apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, requestRender() { requests += 1; }, listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; }, ...(localPoint ? { localPoint } : {}), ...(hdr === undefined ? {} : { hdr }) };
   try {
     const instance = await plugin.create(context, options);
     let now = performance.now();
     const frame = (delta = 1000 / 120) => { now += delta; return { now, delta, width: 2200, height: 1240, cssWidth: 1100, cssHeight: 620, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder }; };
-    return { instance, gpu, listeners, listenOptions, frame, win, requests: () => requests };
+    return { instance, gpu, listeners, listenOptions, frame, win, pipelines, requests: () => requests };
   } finally { globalThis.fetch = realFetch; }
 }
 
@@ -437,4 +443,19 @@ test('the idle sway alone is redrawn SWAY_HZ times a second from a timer (not at
   listeners.pointermove({ pointerType: 'mouse', clientX: 900, clientY: 100 });
   assert.equal(instance.continuous, true, 'the pointer: every frame again');
   instance.destroy();
+});
+
+test('extended range: the pipeline gets HDR_PEAK from context.hdr, 1 without it; the shader holds the shared shoulder', async () => {
+  const peaks = [];
+  for (const hdr of [true, false, undefined]) {
+    const { pipelines, instance } = await create({}, { hdr });
+    assert.equal(pipelines.length, 1);
+    peaks.push(pipelines[0].fragment.constants?.HDR_PEAK);
+    instance.destroy();
+  }
+  assert.deepEqual(peaks, [HDR_PEAK, 1, 1], 'extended range, standard range, a host that says nothing');
+  assert.ok(HDR_PEAK > 1);
+  const code = readFileSync(new URL('../holo-card.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'holo-card.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
 });

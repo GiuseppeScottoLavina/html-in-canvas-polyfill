@@ -329,7 +329,7 @@
       <p>The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>; <code>&amp;demo=0</code> opens it without the showcase. <b>Stack</b> runs up to three effects in a chain (<code>&amp;then=&lt;name&gt;,&lt;name&gt;</code>): each reads the picture the one before it rendered, the chain under the chips shows the order, and a click is mapped back through all of them.</p>
       <p><b>Input map</b> (<code>&amp;map=1</code>) shows what the host does with the pointer. An effect moves pixels, so the field you see under the pointer is elsewhere in the page: the host maps the pointer back through the effect (<code>host.mapPoint</code>) and sends it to the element there. The white ring is the pointer, the pink dot the place in the page it is sent to, the pink frame the real element at that place (in its true position, under the canvas), and the label says which element it is and what it holds now.</p>
       <p>The readout above the canvas counts the <code>effectframe</code> events of the last second: frames per second, and the interval between frames (median and 95th percentile). At rest an effect that is not continuous by design presents nothing, so it reads 0.</p>
-      <p id="status">mode: <b id="m-mode-2">starting</b><br>effect: <b id="m-effect">starting</b><br>display: <b id="m-display">measuring</b><br>prefers-reduced-motion: <b id="m-motion">-</b></p>
+      <p id="status">mode: <b id="m-mode-2">starting</b><br>effect: <b id="m-effect">starting</b><br>display: <b id="m-display">measuring</b><br>range: <b id="m-range">-</b><br>prefers-reduced-motion: <b id="m-motion">-</b></p>
     </details>
   </aside>
 </div>
@@ -344,7 +344,7 @@
   // (an action button), what the input map shows (`map`, null while it shows nothing), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`); with a second
   // chain of effects, their names in order (`chain`), the first and second of them (`active`, `then`: 'off' without one) and their handles (`handle`,
   // `handle2`), whether Stack is on (`stacking`) and whose controls the form shows (`controls`); `setChain(names)` runs a chain as the chips would
-  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, chain: [], stacking: false, map: null, lastAction: null, demo: null, displayHz: null, hud: null });
+  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, chain: [], stacking: false, map: null, hdr: false, lastAction: null, demo: null, displayHz: null, hud: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = matchMedia('(pointer: coarse)');
@@ -660,7 +660,10 @@
   else {
     try {
       // the host owns the canvas bitmap and its 'webgpu' context: it samples the drawn picture of `form` (the polyfill's, or the browser's own), runs the plugin, presents
-      host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true });
+      // extended range where the display has it (&hdr=1 asks for it anyway, &hdr=0 never): highlights above white, such as the sun on the water, are then shown
+      // brighter than the page's white. The host uses it only where the browser takes the configuration (host.stats().hdr)
+      const wantHdr = new URL(location.href).searchParams.get('hdr');
+      host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true, hdr: wantHdr === '1' || (wantHdr !== '0' && matchMedia('(dynamic-range: high)').matches) });
       canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
       canvas.addEventListener('effectframe', onEffectFrame);
     } catch (error) {
@@ -680,6 +683,8 @@
   }
   state.mode = host ? 'effect' : '2d';
   state.host = host;
+  state.hdr = !!host && host.stats().hdr === true;
+  $('m-range').textContent = !host ? 'n/a' : state.hdr ? 'extended (highlights above white, where the display can)' : matchMedia('(dynamic-range: high)').matches ? 'standard (this browser has no extended range for a WebGPU canvas, or &hdr=0)' : 'standard (the display reports no high dynamic range)';
 
   let plugins = [];
   try { plugins = (await manifestRequest).plugins; } catch (error) { notice('The plugin list could not be loaded (' + error.message + '). Run `npm run build` first.'); }

@@ -11,6 +11,7 @@ import { ACTIONS, BG_CELL, GLOW_COLOUR, GRAIN_BYTES, HOLD_MS, INTRO_FROM, LIFE, 
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { findInvalid, sourcePointOnCanvas } from '../../_lib/transition.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
+import { HDR_PEAK } from '../../_lib/hdr.js';
 
 contractTest(import.meta.url);
 
@@ -182,11 +183,15 @@ function fakeGpu() {
   /** @type {any[]} */ const writes = [];
   /** @type {number[]} */ const dispatches = [];
   /** @type {any[]} */ const buffers = [];
-  const pass = { setPipeline() {}, setBindGroup() {}, setVertexBuffer() {}, draw: (/** @type {number[]} */ ...a) => draws.push(a), end() {} };
+  /** the render pipelines the plugin made ({d: descriptor}), and the fragment entry point of each draw of a frame's passes */
+  /** @type {any[]} */ const pipelines = [];
+  /** @type {string[]} */ const drawn = [];
+  let bound = '';
+  const pass = { setPipeline(/** @type {any} */ p) { bound = p?.d?.fragment.entryPoint ?? ''; }, setBindGroup() {}, setVertexBuffer() {}, draw: (/** @type {number[]} */ ...a) => { draws.push(a); drawn.push(bound); }, end() {} };
   const computePass = { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups: (/** @type {number} */ n) => dispatches.push(n), end() {} };
   const device = {
     createShaderModule: () => ({}), createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
-    createRenderPipeline: () => { created.pipeline += 1; return {}; },
+    createRenderPipeline: (/** @type {any} */ d) => { created.pipeline += 1; const p = { d }; pipelines.push(p); return p; },
     createComputePipeline: () => { created.pipeline += 1; return {}; },
     createBuffer: (/** @type {any} */ d) => { created.buffer += 1; const b = { size: d.size, usage: d.usage, destroyed: false, destroy() { b.destroyed = true; } }; buffers.push(b); return b; },
     createTexture: (/** @type {any} */ d) => { created.texture += 1; return { width: d.size[0], height: d.size[1], createView: () => ({}), destroy() {} }; },
@@ -197,18 +202,20 @@ function fakeGpu() {
     beginRenderPass: (/** @type {any} */ d) => { if (d.depthStencilAttachment === undefined && d.colorAttachments[0].loadOp === 'clear' && d.timestampWrites === undefined && !('timestampWrites' in d)) estimates += 0.5; return pass; },
     beginComputePass: () => computePass,
   };
-  return { device, created, draws, writes, encoder, dispatches, buffers, estimates: () => estimates };
+  return { device, created, draws, writes, encoder, dispatches, buffers, pipelines, drawn, estimates: () => estimates };
 }
 
 /** The plugin behind the real effect handle, over the fake GPU. @param {Record<string, unknown>} options @param {{reducedMotion?: boolean}} [o] */
-async function instance(options, { reducedMotion = false } = {}) {
+async function instance(options, { reducedMotion = false, hdr = undefined } = {}) {
   const gpu = fakeGpu();
   const realFetch = globalThis.fetch;
   globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
   const source = Object.assign(new EventTarget(), { invalid: false, querySelectorAll() { return this.invalid ? [{ localName: 'input' }] : []; } });
   const canvas = /** @type {any} */ (Object.assign(new EventTarget(), { clientWidth: 400, clientHeight: 200, clientLeft: 0, clientTop: 0, getBoundingClientRect: () => ({ left: 0, top: 0 }), ownerDocument: { defaultView: { matchMedia: () => ({ matches: false }) } } }));
   try {
-    const h = await nodeHandle(plugin, { duration: 1000, durationIn: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion });
+    // `hdr`: the context says so (the node host has no extended range of its own)
+    const def = hdr === undefined ? plugin : { ...plugin, create: (/** @type {any} */ c, /** @type {any} */ o) => plugin.create({ ...c, hdr }, o) };
+    const h = await nodeHandle(def, { duration: 1000, durationIn: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion });
     const inst = h.inst;
     const sourceTexture = { width: 800, height: 400 };
     const sourceView = {}, destinationView = {};   // the host keeps its views across frames
@@ -541,4 +548,28 @@ test('play (not a demo) ignores user input; a press at rest does nothing; reduce
   calm.inst.render(calm.frame(10));
   assert.deepEqual(calm.gpu.draws.at(-1), [3], 'the passthrough: the page as it was');
   assert.equal(calm.gpu.dispatches.length, 0, 'no grain computed');
+});
+
+test('extended range: the shaders of the transition get HDR_PEAK from context.hdr (1 without it), and only then a last draw clamps the dust at white', async () => {
+  /** @param {boolean|undefined} hdr */
+  const run = async (hdr) => {
+    const { inst, gpu, handle, frame } = await instance({}, { hdr });
+    inst.render(frame(0));
+    handle.trigger('out');
+    gpu.drawn.length = 0;
+    inst.render(frame(100)); inst.render(frame(500));
+    const entries = Object.fromEntries(gpu.pipelines.map((/** @type {any} */ p) => [p.d.fragment.entryPoint, p.d.fragment.constants?.HDR_PEAK]));
+    const white = gpu.pipelines.find((/** @type {any} */ p) => p.d.fragment.entryPoint === 'fs_white');
+    handle.remove();
+    return { entries, drawn: gpu.drawn.slice(-3), blend: white?.d.fragment.targets[0].blend };
+  };
+  const on = await run(true);
+  assert.deepEqual(on.entries, { fs_full: undefined, fs_base: HDR_PEAK, fs_dust: HDR_PEAK, fs_white: undefined, fs_down: undefined, fs_bg: undefined });
+  assert.deepEqual(on.drawn, ['fs_base', 'fs_dust', 'fs_white'], 'the page, the dust, then white blended with min');
+  assert.deepEqual(on.blend, { color: { operation: 'min', srcFactor: 'one', dstFactor: 'one' }, alpha: { operation: 'min', srcFactor: 'one', dstFactor: 'one' } });
+  for (const hdr of [false, undefined]) {
+    const off = await run(hdr);
+    assert.deepEqual(off.entries, { fs_full: undefined, fs_base: 1, fs_dust: 1, fs_down: undefined, fs_bg: undefined }, `standard range (${hdr}): no clamping pipeline`);
+    assert.deepEqual(off.drawn.slice(-2), ['fs_base', 'fs_dust'], 'and no draw after the dust: an 8-bit target clamps by itself');
+  }
 });

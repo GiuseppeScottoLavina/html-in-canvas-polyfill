@@ -24,6 +24,7 @@
 import { wgsl } from './wgsl.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor } from '../_lib/transition.js';
 import { injectStyle } from '../_lib/ui.js';
+import { hdrConstants } from '../_lib/hdr.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectRenderFrame} EffectRenderFrame */
@@ -209,19 +210,24 @@ export const plugin = Object.freeze({
       color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
       alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' },
     };
-    /** @param {string} vs @param {string} fs @param {string} target @param {any} [withBlend] @param {string} [topology] @param {any[]} [buffers] */
-    const pipeline = (vs, fs, target, withBlend, topology = 'triangle-list', buffers = []) => device.createRenderPipeline({
+    // extended range (context.hdr): nothing of this effect goes above white (disintegrate.wgsl says why). The shaders that draw the transition
+    // read HDR_PEAK and clamp what they write, and one more draw clamps the sum of the grains (`whiten`, made only with extended range)
+    const constants = hdrConstants(context);
+    /** @param {string} vs @param {string} fs @param {string} target @param {any} [withBlend] @param {string} [topology] @param {any[]} [buffers] @param {boolean} [clamps]  the fragment shader reads HDR_PEAK */
+    const pipeline = (vs, fs, target, withBlend, topology = 'triangle-list', buffers = [], clamps = false) => device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module, entryPoint: vs, buffers },
-      fragment: { module, entryPoint: fs, targets: [{ format: target, ...(withBlend ? { blend: withBlend } : {}) }] },
+      fragment: { module, entryPoint: fs, targets: [{ format: target, ...(withBlend ? { blend: withBlend } : {}) }], ...(clamps ? { constants } : {}) },
       primitive: { topology },
     });
     const full = pipeline('vs_full', 'fs_full', format);
-    const base = pipeline('vs_full', 'fs_base', format);
+    const base = pipeline('vs_full', 'fs_base', format, undefined, 'triangle-list', [], true);
     const dust = pipeline('vs_dust', 'fs_dust', format, blend, 'triangle-strip', [{
       arrayStride: GRAIN_BYTES, stepMode: 'instance',
       attributes: [{ shaderLocation: 0, offset: 0, format: 'uint32x4' }, { shaderLocation: 1, offset: 16, format: 'uint32x2' }],
-    }]);
+    }], true);
+    const atMost = { operation: 'min', srcFactor: 'one', dstFactor: 'one' };
+    const whiten = constants.HDR_PEAK > 1 ? pipeline('vs_full', 'fs_white', format, { color: atMost, alpha: atMost }) : null;
     const grainsPipeline = device.createComputePipeline({
       layout: device.createPipelineLayout({ bindGroupLayouts: [layout, grainLayout] }),
       compute: { module, entryPoint: 'cs_grains' },
@@ -436,7 +442,10 @@ export const plugin = Object.freeze({
           if (assembledFrame) { pass.setPipeline(full); pass.draw(3); }
           else {
             pass.setPipeline(base); pass.draw(3);
-            if (rec && withDust) { pass.setPipeline(dust); pass.setVertexBuffer(0, rec.buffer); pass.draw(4, grid.count); }
+            if (rec && withDust) {
+              pass.setPipeline(dust); pass.setVertexBuffer(0, rec.buffer); pass.draw(4, grid.count);
+              if (whiten) { pass.setPipeline(whiten); pass.draw(3); }
+            }
           }
         }
         pass.end();

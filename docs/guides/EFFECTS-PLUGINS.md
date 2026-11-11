@@ -59,6 +59,7 @@ const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5,
 | `maxDpr` | the polyfill's `maxDpr` option (2.5; 3 on phones) | the canvas backing store is its CSS size times `min(devicePixelRatio, maxDpr)` |
 | `powerPreference` | the browser's | `'low-power'` or `'high-performance'`, passed to `requestAdapter` |
 | `interposer` | `true` | remap pointer input through the spatial plugins (section 14); `false` leaves input to the browser |
+| `hdr` | `false` | ask for extended range: the canvas and every target of the chain are `rgba16float` with the `extended` tone mapping, so a value above 1 that a plugin writes is shown brighter than white as far as the display can (white on a display without the headroom). In use only where the browser takes that configuration (`host.stats().hdr`); decided when the host is created. What the example plugins do with it: section 12.1 |
 
 `createHost` rejects with:
 
@@ -81,7 +82,7 @@ try {
 }
 ```
 
-`host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, paused, pauses, offscreenFrames, sourceVersion, remapped, passedThrough}`) `mapPoint(point)` and `destroy()`. `mapPoint` answers where a point of the canvas is in the source: the point through every plugin's input mapper in the frame on screen (canvas-relative CSS pixels of the content box, in and out; `null` where the plugins show nothing of the source). It is what the host does with a pointer; a page uses it to show or log what lies under the pointer as the user sees it (the gallery's "input map" does).
+`host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, paused, hdr, pauses, offscreenFrames, sourceVersion, remapped, passedThrough}`) `mapPoint(point)` and `destroy()`. `mapPoint` answers where a point of the canvas is in the source: the point through every plugin's input mapper in the frame on screen (canvas-relative CSS pixels of the content box, in and out; `null` where the plugins show nothing of the source). It is what the host does with a pointer; a page uses it to show or log what lies under the pointer as the user sees it (the gallery's "input map" does).
 
 The host does no work for a canvas nobody can see. While the canvas is more than half a viewport (or half its scroll container) out of view, or the document is hidden, it renders nothing, `continuous` plugins included, and uploads nothing; `stats().paused` is then `true`. It starts again before the canvas scrolls back in, so the first frame you see is current; a jump straight into view (`scrollTo`, an anchor) is rendered in the frame that shows it. The frame clock does not stop: on resume an effect shows what it shows at that time, nothing is replayed. An action you trigger, or a `settled()` you await, while the canvas is out of view still completes: the host renders about 10 frames per second until it settles (`stats().offscreenFrames`), and in a hidden document, where the browser runs no frames, on the first frame after the document is shown again. There is no option to turn the pause off: a paused canvas is out of sight.
 
@@ -301,7 +302,8 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 |---|---|
 | `apiVersion` | `2` |
 | `canvas`, `source` | the canvas and the drawable element the host samples |
-| `adapter`, `device`, `format` | the host's WebGPU adapter and device (a new one after a device loss: `create` runs again) and the canvas format |
+| `adapter`, `device`, `format` | the host's WebGPU adapter and device (a new one after a device loss: `create` runs again) and the canvas format (`rgba16float` with extended range) |
+| `hdr` | `true` when the host uses extended range: every target is a float texture and a value above 1 is shown brighter than white (section 12.1) |
 | `requestRender()` | asks for a frame (the host renders only when the source changed, on request, or every frame for a `continuous` instance) |
 | `viewport()` | `{width, height, cssWidth, cssHeight, dpr}` of the canvas now |
 | `listen(type, listener, options)` | adds a listener on the canvas AND on its live layer (pointer events land on the layer), with the options as given (a passive listener stays passive on both); an event reaches it once; removed when the plugin is removed |
@@ -309,6 +311,41 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 | `trigger(action, options?)` | runs one of the plugin's own actions through the host, exactly as `handle.trigger` (section 15) |
 
 **A plugin that reacts to the pointer** (a drop under it, a lens that follows it, a card that tilts towards it) must put its reaction where the user sees the pointer. With another plugin added after it, the user sees this plugin's picture moved by that one (tilted, curved, refracted), so the pointer's place on the canvas is no longer its place in this plugin's picture. Pass the canvas-relative point through `context.localPoint` and use what comes back; on `null` there is nothing of your picture under the pointer (treat it as the pointer having left). The host answers from the mappers of the frame on screen, the same ones it maps clicks with. The example plugins do it with `pointerIn(context, canvas, clientX, clientY)` of `plugins/_lib/pointer.js`; a test of whether the pointer left the canvas keeps the point on the canvas. What a plugin places from the DOM (the rectangle of the focused element, say) is in the source, and is not moved by the plugins before it: with a plugin that moves pixels added BEFORE yours, such a place is off by what that one moved.
+
+#### 12.1 Extended range (`context.hdr`)
+
+A host created with `{ hdr: true }` uses extended range where the browser supports it (`host.stats().hdr` says whether it does). The canvas and every target of the plugin chain are then `rgba16float`, with the `extended` tone mapping of a WebGPU canvas: what a plugin writes is not clamped, and a value above 1 is shown brighter than the page's white, as far as the display can (on a display without the headroom it is white). The values are sRGB-encoded, as on a standard target: an encoded value `v` above 1 has about `v ^ 2.4` times the luminance of white (1.5 is about 2.6 times, 2 about 5 times). `context.hdr` is `true` and `context.format` is `rgba16float`; without extended range nothing changes for a plugin.
+
+A plugin that does nothing about it still runs, but whatever its maths pushes past 1 (a tint, a diffuse light, a highlight over white text) is now shown above white, over whole areas. The rule the example plugins follow:
+
+- **The page stays under white.** The source as the effect shows it (moved, refracted, tinted, shaded, lit diffusely) is the page's own picture: clamp it to 1. A large bright part of the page (a white panel, a button, a headline) never goes above white as a whole.
+- **Added light may go above white.** Light that the effect adds as a light source or as a mirror-like reflection (a glint, a glare, the sun on water, the flash of an impact) may take the sum above 1, up to a peak, through a smooth shoulder: no flat clipped area, and the colour scaled as a whole, not clipped channel by channel (that shifts the hue).
+- **Keep it small.** At rest, with nothing moving and no pointer over the canvas, write nothing above white. While the effect plays, the pixels above white are a small part of the canvas (the example plugins stay under about 1.5 % of it), most of them just above white, the peak only in the core of a glint. A highlight that a standard target shows as a broad white patch needs a narrower lobe above white.
+- **Write finite values of 0 or more.** A float target keeps a negative value and a NaN, which an 8-bit target hid: a dither around 0, `pow` or `sqrt` of a negative number, a division by 0.
+- **The source may exceed 1.** With another plugin before yours, `frame.sourceView` holds what that one wrote, glints above white included. Clamp the source where your maths needs it (a `pow`, a threshold, a bicubic filter), and otherwise carry what is above 1 to your output, so the first plugin's glint is still a glint.
+- **Standard range does not change.** Branch on the range and keep the code a standard target always ran: its picture must be the same bit for bit.
+
+The helper `plugins/_lib/hdr.js` gives the example plugins one peak and one shoulder. `hdrConstants(context)` returns `{ HDR_PEAK: 2 }` with extended range and `{ HDR_PEAK: 1 }` without; pass it as `fragment.constants` of a pipeline whose fragment shader declares the pipeline-overridable constant (no uniform changes, and the branch costs nothing: the constant is known when the pipeline is compiled):
+
+```wgsl
+override HDR_PEAK : f32 = 1.0;   // 1 on a standard target; the peak on a float target
+
+@fragment
+fn fs(...) -> @location(0) vec4<f32> {
+  ...
+  if (HDR_PEAK > 1.0) {
+    // page: what the effect shows of the source; glint: the light it adds
+    return vec4<f32>(hdr_light(min(page, vec3<f32>(1.0)), glint), 1.0);
+  }
+  return vec4<f32>(page + glint, 1.0);   // the code of a standard target, unchanged (the 8-bit target clamps it)
+}
+```
+
+`hdr_light(base, light)` is `SHOULDER_WGSL` of the same module: up to white it returns `base + light` as it is; above, the sum bends towards `HDR_PEAK` on an exponential shoulder that starts with slope 1, scaled as one colour. Where `base` is already above white (the glint of the plugin before), the shoulder starts there, so that glint passes unchanged. A shader that adds light holds a copy of that text (a plugin's `.wgsl` files are self-contained), and the plugin's test compares the copy with the module's. The peak of 2 is about 5 times white: the headroom of a 1000 cd/m2 display that shows white at 200. The README of each example plugin says what it shows above white and how much, measured.
+
+A plugin that adds no light writes at most white: `glitch` and `disintegrate` clamp their output on a float target.
+
+To test it, add a stage after the plugin that turns "above white" into a visible pixel and count (the `extended range` tests of `plugins/*/test/*-gpu.browser.test.mjs`): a glint is above white, a large bright area of the source is not, nothing is at rest, and nothing is on a host without `hdr`.
 
 ### 13. The instance
 
@@ -576,6 +613,7 @@ The smoke test also runs its action: `handle.trigger('pulse')` resolves `'calm'`
 - Touch: a gesture is claimed (`preventDefault()` in its first `touchmove`, or in `touchstart` for a handle with nothing to tap through) only for a touch that starts on your handle; a whole-surface effect never blocks scrolling (section 15.1).
 - A plugin whose look depends on input has a `demo` action of at most about 4 s that ends at rest and gives way to user input.
 - At rest, 3 s after it settled, the canvas presents 0 effect frames, unless `meta.continuous` says what runs by design.
+- With extended range (`context.hdr`, section 12.1): the page stays under white and only added light goes above it, through a shoulder; nothing is above white at rest; every value written is finite and 0 or more; a source above 1 does not break the maths; the standard-range picture is unchanged.
 - You did not call `getContext` on the canvas.
 - A 2D fallback exists for browsers without WebGPU, and for a native implementation without the members the host needs (`createHost` rejects there, see the top of this guide).
 - You measured the cost on your own page: `docs/guides/PERFORMANCE.md` says which numbers exist and which do not.

@@ -5,6 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { fakeGpu } from '../../_shared/fake-gpu.mjs';
+import { readFileSync } from 'node:fs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 import { NO_TARGET, UNIFORM_FLOATS, bezelWidth, cornerRadius, mapCrtPoint, meta, plugin, presetOf, presets } from '../index.js';
 
 contractTest(import.meta.url);
@@ -70,19 +72,23 @@ test('the barrel: the centre is fixed, edge midpoints land on the edges of the s
 });
 
 
-async function create(options = {}, { reduced = false } = {}) {
+async function create(options = {}, { reduced = false, hdr = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   globalThis.GPUTextureUsage = { TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' });
   const gpu = fakeGpu();
+  /** the descriptors of the pipelines the plugin made */
+  const pipelines = [];
+  const makePipeline = gpu.device.createRenderPipeline;
+  gpu.device.createRenderPipeline = (/** @type {any} */ d) => { pipelines.push(d); return makePipeline(d); };
   const win = { matchMedia: () => ({ matches: reduced }) };
-  const context = { apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas: { ownerDocument: { defaultView: win } }, requestRender() {}, listen: () => () => {} };
+  const context = { apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas: { ownerDocument: { defaultView: win } }, requestRender() {}, listen: () => () => {}, ...(hdr === undefined ? {} : { hdr }) };
   try {
     const instance = await plugin.create(context, options);
     let now = performance.now();
     const frame = (/** @type {any} */ extra = {}) => { now += 1000 / 120; return { now, delta: 1000 / 120, width: 2200, height: 1240, cssWidth: 1100, cssHeight: 620, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder, ...extra }; };
-    return { instance, gpu, frame };
+    return { instance, gpu, frame, pipelines };
   } finally { globalThis.fetch = realFetch; }
 }
 
@@ -180,4 +186,18 @@ test('the effect changes no geometry: mask, warmth, scanlines, glow and flicker 
     const q = { ...p, width: 1100, height: 620 };
     assert.deepEqual(ma(q), mb(q));
   }
+});
+
+test('extended range: the pipeline gets HDR_PEAK from context.hdr, 1 without it; the shader holds the shared shoulder', async () => {
+  const peaks = [];
+  for (const hdr of [true, false, undefined]) {
+    const { pipelines, instance } = await create({}, { hdr });
+    assert.equal(pipelines.length, 1);
+    peaks.push(pipelines[0].fragment.constants?.HDR_PEAK);
+    instance.destroy();
+  }
+  assert.deepEqual(peaks, [HDR_PEAK, 1, 1], 'extended range, standard range, a host that says nothing');
+  const code = readFileSync(new URL('../crt.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'crt.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
 });

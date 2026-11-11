@@ -25,6 +25,7 @@ import { stateMapper } from '../_lib/mapper.js';
 import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
+import { hdrConstants } from '../_lib/hdr.js';
 import { CAUSTIC_DEPTH_PX, MAX_STEPS_PER_FRAME, PAD, REFRACT_PX, STEP_MS, ambientSlope, clear, createField, gridOf, mirror, quiet, setSize, slopeBound, stamp, step, surfaceAt, swell } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -248,8 +249,9 @@ export function lightGrid(w, h) {
  * The pipelines, compiled asynchronously where the device can (createRenderPipelineAsync: WebKit compiled the caustic pipeline at its
  * first draw otherwise, a 70 ms stall at the first tap on the iPad).
  * @param {any} device @param {string} code @param {string} format
+ * @param {Record<string, number>} [constants]  the pipeline constants of the picture's fragment shader (hdrConstants of ../_lib/hdr.js)
  */
-async function createPipeline(device, code, format) {
+async function createPipeline(device, code, format, constants) {
   const make = (/** @type {any} */ d) => (device.createRenderPipelineAsync ? device.createRenderPipelineAsync(d) : device.createRenderPipeline(d));
   const module = device.createShaderModule({ code, label: 'hic-water-effect-shader' });
   const stage = /** @type {any} */ (globalThis).GPUShaderStage?.FRAGMENT ?? 2;
@@ -269,7 +271,7 @@ async function createPipeline(device, code, format) {
     label: 'hic-water-effect-pipeline',
     layout: device.createPipelineLayout({ label: 'hic-water-effect-pipeline-layout', bindGroupLayouts: [layout] }),
     vertex: { module, entryPoint: 'vs' },
-    fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+    fragment: { module, entryPoint: 'fs', targets: [{ format }], ...(constants ? { constants } : {}) },
     primitive: { topology: 'triangle-list' },
   });
   // the caustics pass: the surface (the field) in the vertex stage, the light added up per texel of the page
@@ -312,7 +314,8 @@ export const plugin = Object.freeze({
     const shader = initialOptions?.shader;
     const code = typeof shader === 'string' && shader !== '' ? shader : await wgsl('water.wgsl');
     const { device, format } = context;
-    const { pipeline, layout, causticPipeline, causticLayout } = await createPipeline(device, code, format);
+    // extended range (context.hdr): the picture's shader reads HDR_PEAK (water.wgsl; a `shader` option without the constant gets none)
+    const { pipeline, layout, causticPipeline, causticLayout } = await createPipeline(device, code, format, code.includes('override HDR_PEAK') ? hdrConstants(context) : undefined);
     const gpu = /** @type {any} */ (globalThis);
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
