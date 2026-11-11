@@ -11,6 +11,11 @@
 // and blue to the other over five taps, like the dispersion of a cheap lens; green stays in place), the pixel-sort streaks (kind 1: a
 // pixel takes the brightest of the pixels above it), the corrupted macroblocks (kind 2: luma kept, chroma taken from the block's centre
 // and drifted, as a damaged video stream shows), the washed-out band with its dropout lines, grain and scanlines.
+//
+// Extended range: nothing here goes above white, on any target. A glitch is a fault of a digital picture signal, and a signal has no
+// code above white: the flash, the dropout dashes and the boosted chroma of a broken block saturate at white, as they would on the screen
+// the effect imitates. The output is clamped to 0..1 on every target (the last line of fs), so on a float target (context.hdr) the
+// picture is the one a standard target shows, and what a plugin before this one wrote above white comes out as white.
 const MAX_BLOCKS : u32 = 32u;
 const SORT_TAPS : i32 = 8;
 

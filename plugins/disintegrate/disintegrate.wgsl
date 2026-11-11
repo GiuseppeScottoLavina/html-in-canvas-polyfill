@@ -4,6 +4,11 @@
 // Passes (index.js): fs_down + fs_bg the background estimate (when a transition starts or the page changes); cs_grains one compute thread
 // per dust cell writes its grain's 24-byte record (or "none"); fs_base the page with its content eroded and heated at the front; vs_dust +
 // fs_dust one instanced, antialiased quad per record, premultiplied; fs_full the host's passthrough (bit for bit) at rest.
+//
+// Extended range (HDR_PEAK > 1): nothing of this effect goes above white. The dust IS the page (each grain is a pixel of it, carried away),
+// and the heat of the front is a glow of that matter along every edge of the content at once: above white it would light whole lines of
+// text and whole controls, not a glint. So the picture is what a standard target shows: fs_base and fs_dust write at most white, as an
+// 8-bit target would clamp them, and fs_white (drawn last, blended with `min`) brings the sum of overlapping grains back to white.
 
 struct Uniforms {
   resolution : vec2<f32>,  // backing px
@@ -43,6 +48,9 @@ struct Uniforms {
 @group(0) @binding(2) var source : texture_2d<f32>;
 @group(0) @binding(3) var background : texture_2d<f32>;   // fs_bg output (rgb), or fs_down output while fs_bg reads it
 @group(1) @binding(0) var<storage, read_write> grains : array<u32>;   // cs_grains: 6 words per dust cell (the vertex buffer of vs_dust)
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; above 1 on a float target, where this shader clamps what it writes to white.
+override HDR_PEAK : f32 = 1.0;
 
 struct FullOut {
   @builtin(position) position : vec4<f32>,
@@ -243,6 +251,7 @@ fn fs_base(v : FullOut) -> @location(0) vec4<f32> {
   let dpx = v.position.xy;
   if (u.fade < 1.0) {
     // reduced motion: no grain moves; the content fades into the page and back
+    if (HDR_PEAK > 1.0) { return vec4<f32>(clamp(mix(bg, src, mix(1.0, u.fade, k)) + dither(dpx), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0); }
     return vec4<f32>(mix(bg, src, mix(1.0, u.fade, k)) + dither(dpx), 1.0);
   }
   let t = erode_g(home);
@@ -258,6 +267,8 @@ fn fs_base(v : FullOut) -> @location(0) vec4<f32> {
   var col = mix(bg, heated, mix(1.0, shown, k));
   // the glowing edge: the content lights up as the front reaches it, the light stays a moment where it was
   col += u.glow_colour.rgb * (after * 0.5 + heat * heat * 0.9) * u.glow * k;
+  // extended range: the heated page is clamped as an 8-bit target clamps it (the header of this file says why)
+  if (HDR_PEAK > 1.0) { return vec4<f32>(clamp(col + dither(dpx), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0); }
   return vec4<f32>(col + dither(dpx), 1.0);
 }
 
@@ -422,5 +433,15 @@ fn fs_dust(v : DustOut) -> @location(0) vec4<f32> {
   let w = max(0.85 * px, r * v.shape.z);
   let cover = clamp((r - d) / w + 0.5, 0.0, 1.0);
   if (cover <= 0.0) { discard; }
+  // extended range: a grain with its heat and its glint is clamped before it is blended, as an 8-bit target clamps it
+  if (HDR_PEAK > 1.0) { return vec4<f32>(min(v.colour.rgb * cover + v.emit * cover * v.colour.a, vec3<f32>(1.0)), v.colour.a * cover); }
   return vec4<f32>(v.colour.rgb * cover + v.emit * cover * v.colour.a, v.colour.a * cover);
+}
+
+// Extended range only: white over the whole target, blended with `min`, after the dust. The sum of grains that overlap is then at most
+// white, as on an 8-bit target (which clamps after every grain; this clamps once, at the end: where a hot grain lies under another one the
+// pixel can be a little brighter than there, never above white).
+@fragment
+fn fs_white() -> @location(0) vec4<f32> {
+  return vec4<f32>(1.0);
 }
