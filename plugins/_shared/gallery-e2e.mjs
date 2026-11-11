@@ -210,7 +210,8 @@ export async function drag(/** @type {any} */ page, /** @type {number[][]} */ pa
 }
 
 /**
- * Record what the compositor shows (CDP screencast: a JPEG per new frame, at the display rate; screenshots are ~10 times slower here).
+ * Record what the compositor shows (CDP screencast: a PNG per new frame, at the display rate; screenshots are ~10 times slower here). PNG, not JPEG: the
+ * JPEG blocks of a dark gradient survived into the preview as visible squares.
  * @param {any} page
  * @returns {Promise<() => Promise<{data: string, t: number}[]>>}  call it to stop and get the frames
  */
@@ -220,7 +221,7 @@ export async function startRecording(page) {
     frames.push({ data: e.data, t: e.metadata.timestamp });
     page.send('Page.screencastFrameAck', { sessionId: e.sessionId }).catch(() => {});
   });
-  await page.send('Page.startScreencast', { format: 'jpeg', quality: 92, everyNthFrame: 1 });
+  await page.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
   return async () => { await page.send('Page.stopScreencast'); off(); return frames; };
 }
 
@@ -235,12 +236,12 @@ export function writeWebp(frames, out, crop, { width = 660, fps = 30, quality = 
   try {
     let list = '';
     frames.forEach((f, i) => {
-      const file = join(dir, `f${String(i).padStart(5, '0')}.jpg`);
+      const file = join(dir, `f${String(i).padStart(5, '0')}.png`);
       writeFileSync(file, Buffer.from(f.data, 'base64'));
       const next = frames[i + 1] ? frames[i + 1].t - f.t : 0.1;
       list += `file '${file}'\nduration ${Math.max(0.001, next).toFixed(4)}\n`;
     });
-    list += `file '${join(dir, `f${String(frames.length - 1).padStart(5, '0')}.jpg`)}'\n`;
+    list += `file '${join(dir, `f${String(frames.length - 1).padStart(5, '0')}.png`)}'\n`;
     writeFileSync(join(dir, 'list.txt'), list);
     const c = [crop.w, crop.h, crop.x, crop.y].map((v) => Math.round(v));
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', join(dir, 'list.txt'),
@@ -248,6 +249,29 @@ export function writeWebp(frames, out, crop, { width = 660, fps = 30, quality = 
       '-c:v', 'libwebp_anim', '-lossless', '0', '-q:v', String(quality), '-compression_level', '6', '-loop', '0', out], { stdio: 'pipe' });
     return statSync(out).size;
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+/**
+ * The encoding of every plugin's preview (`plugins/<name>/media/<name>.webp`, shown in its README) and of its thumbnail in the repository's README
+ * (`docs/media/plugins/<name>.webp`): the same for all ten, so that they compare. Measured 2026-11-11 on the cloth over the dark form (12 s): quality 72
+ * showed 8 px blocks in the dark gradients (3.8 MB), 85 still some (4.5 MB at 20 fps), 88 to 90 at 20 fps none that the eye finds (about 5 MB); the earlier
+ * 480 to 660 px at 10 to 30 fps and quality 28 to 72 lost text, glints and thin lines. The frames are PNG (startRecording). The media are not in the npm package.
+ */
+export const PREVIEW = Object.freeze({ width: 800, fps: 20, quality: 88, max: 5.5 * 1024 * 1024 });
+export const THUMB = Object.freeze({ width: 400, fps: 10, quality: 74, max: 700 * 1024 });
+
+/**
+ * Write a plugin's preview and its README thumbnail from one recording, and check their sizes.
+ * @param {{data: string, t: number}[]} frames @param {string} name the plugin @param {{x: number, y: number, w: number, h: number}} crop the stage
+ * @param {(name: string, ok: unknown, detail?: unknown) => unknown} check @param {{near?: {x: number, y: number, w: number, h: number}, nearWidth?: number}} [o]
+ *   `near`: the preview shows this part of the stage at `nearWidth` px instead (the CRT's scanlines at one CSS px per pixel); the thumbnail is the stage
+ */
+export function writePreview(frames, name, crop, check, o = {}) {
+  const bytes = writeWebp(frames, join(ROOT, 'plugins', name, 'media', `${name}.webp`), o.near ?? crop, { ...PREVIEW, width: o.nearWidth ?? PREVIEW.width });
+  check(`recording: media/${name}.webp under ${PREVIEW.max / 1024 / 1024} MB (${frames.length} compositor frames)`, bytes < PREVIEW.max, { kb: Math.round(bytes / 1024) });
+  const thumb = writeWebp(frames, join(ROOT, 'docs/media/plugins', `${name}.webp`), crop, THUMB);
+  check(`recording: the README thumbnail docs/media/plugins/${name}.webp under ${THUMB.max / 1024} KB`, thumb < THUMB.max, { kb: Math.round(thumb / 1024) });
+  return { bytes, thumb };
 }
 
 /** A list of named checks, printed as they are made; `finish()` prints the summary and sets the exit code. @param {string} title */

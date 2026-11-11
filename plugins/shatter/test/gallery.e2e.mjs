@@ -9,7 +9,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pixelStats } from '../../../test/harness/index.mjs';
-import { ROOT, actionChecks, checklist, clickOn, compareImages, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, checklist, clickOn, compareImages, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('shatter gallery e2e');
 const g = await openGallery('shatter', { width: 1100, height: 1000 });
@@ -167,8 +167,7 @@ try {
     const frames = await stop();
     const out = join(ROOT, 'plugins', 'shatter', 'media', 'shatter.webp');
     mkdirSync(join(out, '..'), { recursive: true });
-    const bytes = writeWebp(frames, out, { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 520, fps: 12, quality: 35 });
-    c.check(`recorded media/shatter.webp (${frames.length} compositor frames)`, bytes < 500 * 1024, { kb: Math.round(bytes / 1024) });
+    writePreview(frames, 'shatter', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
   }
   const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
   c.check('no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));

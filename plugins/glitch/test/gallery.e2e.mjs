@@ -8,7 +8,7 @@
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/glitch/test/gallery.e2e.mjs [--record]
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, clickOn, framesDuring, openGallery, rectOf, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record');
 /** @type {{name: string, ok: boolean, detail: unknown}[]} */
@@ -101,8 +101,7 @@ async function main() {
       await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sequence (resolves when it ends)
       await sleep(300);
       const frames = await stop();
-      const bytes = writeWebp(frames, join(ROOT, 'plugins/glitch/media/glitch.webp'), { x: c.x, y: c.y, w: c.w, h: c.h }, { width: 600, fps: 20, quality: 50 });
-      check('recording: media/glitch.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
+      writePreview(frames, 'glitch', { x: c.x, y: c.y, w: c.w, h: c.h }, check);
     }
   } finally {
     await g.close();

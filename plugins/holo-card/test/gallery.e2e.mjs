@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import * as H from '../../../test/harness/index.mjs';
 import { UNIFORM_FLOATS, mapCardPoint, meta, writeCardPose } from '../index.js';
 import { runGalleryClickThrough } from '../../_shared/gallery-click.mjs';
-import { ROOT, actionChecks, checklist, framesDuring, idle, openGallery, rectOf, scrollRoom, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, checklist, framesDuring, idle, openGallery, rectOf, scrollRoom, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 let size = { w: 1, h: 1 };
 const tilt = (meta.defaults.tilt * Math.PI) / 180;
@@ -95,8 +95,7 @@ try {
     await page.evaluate(`window.__gallery.handle.trigger('demo')`);   // the demo sweep
     await sleep(400);
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/holo-card/media/holo-card.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 480, fps: 15, quality: 40 });
-    c.check('recording: media/holo-card.webp under 500 KB', bytes < 500 * 1024, { screencastFrames: frames.length, bytes });
+    writePreview(frames, 'holo-card', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
   }
   const errors = await page.evaluate('window.__e2e.errors');
   c.check('no effecterror', errors.length === 0, errors);

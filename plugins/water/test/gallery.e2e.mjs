@@ -6,7 +6,7 @@
 // `--record` also writes media/water.webp; `--record --hero` also the README's hero, docs/media/hero.webp.
 //   npm run build && node plugins/water/test/gallery.e2e.mjs [--record [--hero]]     (`npm run test:plugins` runs every gallery e2e)
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
+import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writePreview, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('water gallery e2e');
 // the uniform block the water writes (its grid) and its field (the pebbles of the taps), read where the page writes them
@@ -123,8 +123,7 @@ try {
     await page.mouseMove(stage.x + 5, stage.y + stage.h - 5);
     await sleep(1800);
     const frames = await stop();
-    const bytes = writeWebp(frames, join(ROOT, 'plugins/water/media/water.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 560, fps: 20, quality: 50 });
-    c.check('recording: media/water.webp under 900 KB', bytes < 900 * 1024, { screencastFrames: frames.length, bytes });
+    writePreview(frames, 'water', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
     if (process.argv.includes('--hero')) {
       // the README's hero (docs/media/hero.webp): rain, the pointer stirs, a click through the ripples focuses the name field and the typing shows in the drawn form
       // the frame cap at the display rate (the slider at its max): the click checks before may have moved it, and the hero must not show a capped effect
@@ -141,8 +140,8 @@ try {
       await sweep(30, 30);
       await sleep(900);
       const heroFrames = await stopHero();
-      const hero = writeWebp(heroFrames, join(ROOT, 'docs/media/hero.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 800, fps: 15, quality: 45 });
-      c.check('recording: docs/media/hero.webp under 1.5 MB', hero < 1.5 * 1024 * 1024, { screencastFrames: heroFrames.length, bytes: hero });
+      const hero = writeWebp(heroFrames, join(ROOT, 'docs/media/hero.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 1000, fps: 20, quality: 84 });
+      c.check('recording: docs/media/hero.webp under 6 MB', hero < 6 * 1024 * 1024, { screencastFrames: heroFrames.length, bytes: hero });
     }
   }
   const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
