@@ -475,7 +475,7 @@ const OPEN = 4;
 export const plugin = Object.freeze({
   type: 'page-curl',
   apiVersion: /** @type {const} */ (2),
-  version: 3,
+  version: 4,
   actions: ACTIONS,
   // every pass that touches the destination only writes it as a colour attachment (the MSAA resolve); nothing samples it
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),

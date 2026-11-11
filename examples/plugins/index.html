@@ -254,10 +254,9 @@
     :root { --fit: 560px; }
     #hint { display: none; }
   }
-  /* ---- the page under the page: a second drawable, shown only to an effect that reveals it (meta.underPage: Page curl) ---- */
+  /* ---- the page under the page: a second drawable, which an effect that reveals it shows (meta.underPage: Page curl) ---- */
   #under-page { box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 26px 30px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; text-align: right;
     font: 14px/1.45 system-ui, sans-serif; color: #2b2418; background: radial-gradient(circle at 86% 14%, #fff7e6, transparent 46%), linear-gradient(160deg, #f4ecdc, #e6dcc8); }
-  #under-page[hidden] { display: none; }
   #under-page .eyebrow { margin: 0; color: #8a5a12; }
   #under-page h2 { margin: 0; font-size: 34px; line-height: 1; letter-spacing: -.03em; }
   #under-page .lede { margin: 0; max-width: 34ch; color: rgba(43, 36, 24, .72); font-size: 13px; }
@@ -329,8 +328,9 @@
       </section>
     </form>
     <!-- A second live page under the form (createHost `under`, experimental): an effect that lifts the form, such as Page curl, shows it there, and it is usable
-         where it is uncovered. Hidden while the chain has no such effect, so the other effects keep a host without a second page to draw. -->
-    <section id="under-page" drawable hidden aria-label="The page under the page">
+         where it is uncovered. It stays laid out for the other effects too, inert and unchanging (it ticks only while an effect uses it): a drawable kept with
+         display: none cost more main-thread time than one that is laid out (measured on the live scene, 68 against 33 ms a second). -->
+    <section id="under-page" drawable aria-label="The page under the page">
       <p class="eyebrow">Underneath, another live page</p>
       <h2>Under the sheet.</h2>
       <p class="lede">Ordinary HTML too, drawn beneath the form. Where the corner lifts, click and type here; a click elsewhere or Escape lets the sheet fall back.</p>
@@ -579,12 +579,12 @@
   // ---- scenes: other content beside the form, in the same drawable (?scene=daylight or live; the form is the default) -------------
   // A scene is ordinary HTML in the canvas, and so is its switch: the effect is applied to whatever is there. `live` changes once a second (a clock, ten bars,
   // a feed of five rows): content that keeps changing is drawn again each time, so with it the page is not at rest, by design.
-  // the page under the page: its value ticks once a second while it is shown and in use (its field has the focus) or on the live scene, never at rest
+  // the page under the page: its value ticks once a second while an effect uses it and it is in use (its field has the focus) or on the live scene, never at rest
   const underPage = $('under-page');
   let underTimer = 0, underTicks = 0, underClicks = 0;
   function underTick() { $('under-tick').textContent = String(++underTicks); }
   function syncUnderTicker() {
-    const run = !underPage.hidden && (state.scene === 'live' || underPage.contains(document.activeElement));
+    const run = state.under && (state.scene === 'live' || underPage.contains(document.activeElement));
     if (run && !underTimer) underTimer = setInterval(underTick, 1000);
     else if (!run && underTimer) { clearInterval(underTimer); underTimer = 0; }
   }
@@ -702,6 +702,7 @@
       // the page under the page where the host takes one (the polyfill; over a native implementation createHost refuses `under`: the host then has none)
       try { host = await HTMLInCanvasEffects.createHost(canvas, form, { ...hostOptions, under: underPage }); state.underHost = true; } catch (error) {
         if (!error || error.feature !== 'effects-under') throw error;
+        underPage.remove();
         host = await HTMLInCanvasEffects.createHost(canvas, form, hostOptions);
       }
       canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
@@ -711,6 +712,7 @@
     }
   }
   if (!host) {
+    underPage.remove();   // nothing draws the page under the page without the effects host
     // the plain 2D path of the standard: the same form, drawn without an effect
     const ctx = canvas.getContext('2d');
     canvas.onpaint = () => { ctx.reset(); ctx.drawElementImage(form, 0, 0); };
@@ -760,11 +762,10 @@
   let chain = [], stacking = false, serial = 0;
   const entryOf = (name) => plugins.find((x) => x.name === name);
   const metaOf = (name) => (window.HicLivePlugins && window.HicLivePlugins[name] && window.HicLivePlugins[name].meta) || null;
-  /** the page under the page is shown while the chain has an effect that reveals it (meta.underPage), on a host that has one */
+  /** the page under the page is in use while the chain has an effect that reveals it (meta.underPage), on a host that has one */
   function syncUnder() {
     const wanted = !!state.underHost && chain.some((n) => metaOf(n) && metaOf(n).underPage === true);
-    if (underPage.hidden === !wanted) return;
-    underPage.hidden = !wanted;
+    if (state.under === wanted) return;
     state.under = wanted;
     syncUnderTicker();
   }
