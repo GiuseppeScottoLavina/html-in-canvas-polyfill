@@ -195,8 +195,9 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
     let core2 = core * core;
     let core4 = core2 * core2;
     let hot = vec3<f32>(1.0, 0.97, 0.92) * (core4 * core4 * core4 * glare * HOT_CORE) + mix(vec3<f32>(1.0), irid, 0.45) * (glint * glint * mask * foil * HOT_FLAKE);
-    let lit = hdr_light(min(col, vec3<f32>(1.0)) + lit_before, hot * awake);
-    return vec4<f32>(max(mix(back, lit, cover) + vec3<f32>(dither), vec3<f32>(0.0)), 1.0);
+    // the card over the background exactly as a standard target shows it (composed, dithered, then clamped), and the light over that
+    let seen = clamp(mix(back, col, cover) + vec3<f32>(dither), vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(hdr_light(seen + lit_before * cover, hot * (awake * cover)), 1.0);
   }
   return vec4<f32>(mix(back, col, cover) + vec3<f32>(dither), 1.0);
 }

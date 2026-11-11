@@ -67,7 +67,7 @@ fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
 // the sun's disc over the sky (the radiance a standard target shows of it is 12): what its mirror image on a ripple adds above white
 const HOT_SUN : f32 = 250.0;
 // the caustic light (1 under still water) from which, and at which in full, the page under a caustic line goes above white
-const HOT_CAUSTIC : vec2<f32> = vec2<f32>(3.0, 8.0);
+const HOT_CAUSTIC : vec2<f32> = vec2<f32>(4.0, 10.0);
 // the slope of the surface (after the intensity) from which, and at which in full, it glints: still water and a faint swell do not
 const HOT_SLOPE : vec2<f32> = vec2<f32>(0.02, 0.08);
 

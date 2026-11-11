@@ -245,8 +245,10 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
     let rim = pow(max(dot(n, HALF_RIM), 0.0), 300.0);
     let band = steep * steep * smoothstep(HOT_FACING, 1.0, face) * min(1.0, 2.0 * u.refraction);
     let hot = (HOT_KEY * key * key + HOT_RIM * rim * rim + HOT_BAND * band) * u.highlight * awake;
-    // what the glass shows is at most white (the magnified picture is clamped where it is sampled), the glints add to it
-    return vec4<f32>(mix(back, hdr_light(min(glass, vec3<f32>(1.0)), vec3<f32>(hot)), cover), 1.0);
+    // the glass over the page exactly as a standard target shows it (composed, then clamped at white; what the page around the glass holds
+    // above white is passed on), and the glints over that
+    let seen = min(mix(min(back, vec3<f32>(1.0)), glass, cover), vec3<f32>(1.0)) + max(back - vec3<f32>(1.0), vec3<f32>(0.0)) * (1.0 - cover);
+    return vec4<f32>(hdr_light(seen, vec3<f32>(hot * cover)), 1.0);
   }
   return vec4<f32>(mix(back, glass, cover), 1.0);
 }

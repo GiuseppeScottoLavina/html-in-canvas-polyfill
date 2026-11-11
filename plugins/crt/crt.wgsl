@@ -165,8 +165,9 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   if (HDR_PEAK > 1.0) {
     // the bloom is light of the phosphor (warm with `warmth`), spread over lines and stripes, dimmed towards the rim as the picture is
     let glow_colour = mix(vec3<f32>(1.0), vec3<f32>(1.0, 0.92, 0.77), u.warmth);
-    let lit = hdr_light(min(col, vec3<f32>(1.0)), glow_colour * (hot * HOT_BLOOM * v));
-    return vec4<f32>(mix(max(bezel, vec3<f32>(0.0)), lit, cover), 1.0);
+    // the screen in its bezel exactly as a standard target shows it (composed, then clamped), and the bloom over that
+    let seen = clamp(mix(bezel, col, cover), vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(hdr_light(seen, glow_colour * (hot * HOT_BLOOM * v * cover)), 1.0);
   }
   return vec4<f32>(mix(bezel, col, cover), 1.0);
 }
