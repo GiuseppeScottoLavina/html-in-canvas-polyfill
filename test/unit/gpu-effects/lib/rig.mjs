@@ -14,13 +14,22 @@ export async function gpuAvailable() {
 }
 
 /**
- * @param {{w?: number, h?: number, html?: string, paint?: (ctx: CanvasRenderingContext2D, w: number, h: number) => void}} [opts]
+ * `under`: also an under page (EffectHostOptions.under), a second drawable beside the layer with its own surface, painted by `under` (rig.under, rig.commitUnder).
+ * @param {{w?: number, h?: number, html?: string, paint?: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, under?: (ctx: CanvasRenderingContext2D, w: number, h: number) => void}} [opts]
  */
-export function makeRig({ w = 480, h = 320, html = '', paint } = {}) {
+export function makeRig({ w = 480, h = 320, html = '', paint, under: paintUnder } = {}) {
   const root = fixture(`<canvas id="c" width="${w}" height="${h}" style="display:block;width:${w}px;height:${h}px"></canvas><div id="layer" style="position:absolute;left:0;top:0;width:${w}px;height:${h}px">${html}</div>`, { position: 'relative', width: `${w}px`, height: `${h}px` });
   const canvas = /** @type {HTMLCanvasElement} */ (root.querySelector('#c'));
   const layerEl = /** @type {HTMLElement} */ (root.querySelector('#layer'));
   const source = layerEl;
+  /** @type {HTMLElement|null} */
+  let underEl = null;
+  if (paintUnder) {
+    underEl = document.createElement('div');
+    underEl.id = 'under';
+    underEl.style.cssText = `position:absolute;left:0;top:0;width:${w}px;height:${h}px;z-index:-1`;
+    root.append(underEl);
+  }
   const surface = document.createElement('canvas');
   surface.width = w; surface.height = h;
   const ctx = /** @type {CanvasRenderingContext2D} */ (surface.getContext('2d'));
@@ -30,14 +39,15 @@ export function makeRig({ w = 480, h = 320, html = '', paint } = {}) {
   const layer = {
     element: layerEl,
     isMounted: () => true,
-    drawableElements: () => [source],
+    drawableElements: () => (underEl ? [source, underEl] : [source]),
     elementAtPoint: (p) => document.elementFromPoint(p.x, p.y)?.closest('#layer *') ?? null,
   };
   const record = { id: 1, canvas, layer, contentBox: { width: w, height: h, gridScaleX: 1, gridScaleY: 1 } };
   let version = null;
+  /** @type {any} */ let underVersion = null;
   let versionId = 0;
   const store = {
-    version: () => version,
+    version: (el) => (underEl && el === underEl ? underVersion : version),
     rasterSource: (v, r) => {
       const x0 = Math.max(0, r.sx), y0 = Math.max(0, r.sy), x1 = Math.min(v.width, r.sx + r.sw), y1 = Math.min(v.height, r.sy + r.sh);
       return x1 > x0 && y1 > y0 ? { source: v.surface, sx: x0, sy: y0, sw: x1 - x0, sh: y1 - y0 } : null;
@@ -66,7 +76,16 @@ export function makeRig({ w = 480, h = 320, html = '', paint } = {}) {
   const deps = { store, scheduler, geometry, tracker };
 
   const rig = {
-    root, canvas, layerEl, source, surface, ctx, bus, reports, record, store, env, deps, scheduler, geometry, tracker, w, h,
+    root, canvas, layerEl, source, under: underEl, surface, ctx, bus,
+    /** paint the under page again and publish its next SnapshotVersion */
+    commitUnder(draw = paintUnder) {
+      const s = document.createElement('canvas');
+      s.width = w; s.height = h;
+      draw?.(/** @type {CanvasRenderingContext2D} */ (s.getContext('2d')), w, h);
+      underVersion = { id: ++versionId, element: new WeakRef(underEl), width: w, height: h, surface: s, dirty: null };
+      bus.emit(BUS.SOURCE_VERSION, { record, version: underVersion });
+      return underVersion;
+    }, reports, record, store, env, deps, scheduler, geometry, tracker, w, h,
     /** repaint the surface and publish a new SnapshotVersion */
     commit(dirty = null, draw = paint) {
       if (dirty) { ctx.save(); ctx.beginPath(); ctx.rect(dirty.x, dirty.y, dirty.width, dirty.height); ctx.clip(); }

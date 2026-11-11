@@ -53,7 +53,7 @@ export const meta = Object.freeze({
  * [12] shadow, [13] ready, [14] ink, [15] rows of the strip, [16..19] page underneath, [20..23] paper, [24..27] towards the lamp,
  * [28..31] shadow offset, [32..35] the page in the fold's frame (s min, s max, w min, w max), [36..39] the cone (apex wA on the axis, gs,
  * k = sine of its half angle (0: a cylinder), its cosine), [40..43] the curl's reach from the apex (r0, r1, the last polar angle) and the
- * held corner's height, [44] the held corner's leaf y (0 or H).
+ * held corner's height, [44] the held corner's leaf y (0 or H), [45] 1 where the page underneath is the host's live under page (frame.under).
  */
 export const UNIFORM_FLOATS = 48;
 export { NO_TARGET, isNoTarget };
@@ -293,7 +293,7 @@ export function mapCurlPoint(st, point) {
   }
   // the flat part of the sheet is the page; beyond the fold lies the page underneath
   lx = localX(px); ly = py;
-  return (lx - ax) * nx + (ly - ay) * ny <= 0 ? { x: point.x, y: point.y } : NO_TARGET;
+  return (lx - ax) * nx + (ly - ay) * ny <= 0 ? { x: point.x, y: point.y } : beneath(st, point);
 }
 
 /**
@@ -367,7 +367,17 @@ function mapCone(st, point, px, py, sx, sy) {
     return { x: (m > 0 ? bx : W - bx) / sx, y: by / sy };
   }
   // the flat part of the sheet is the page; beyond the fold lies the page underneath
-  return (lx - ax) * nx + (py - ay) * ny <= 0 ? { x: point.x, y: point.y } : NO_TARGET;
+  return (lx - ax) * nx + (py - ay) * ny <= 0 ? { x: point.x, y: point.y } : beneath(st, point);
+}
+
+/**
+ * The page underneath at a presented point: the host's live under page at the same point (it fills the canvas, as the source does), or NO_TARGET
+ * where the page underneath is the plugin's own paper.
+ * @param {Float32Array} st @param {InputPoint} point
+ * @returns {{x: number, y: number, under?: true}}
+ */
+function beneath(st, point) {
+  return st[45] > 0 ? { x: point.x, y: point.y, under: true } : NO_TARGET;
 }
 
 /** @type {WeakMap<Function, Float32Array>} */
@@ -476,6 +486,7 @@ export const plugin = Object.freeze({
       { binding: 2, visibility: S.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 3, visibility: S.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 4, visibility: S.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 5, visibility: S.FRAGMENT, texture: { sampleType: 'float' } },
     ] });
     const occLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: 'uniform' } }] });
     const blurLayout = device.createBindGroupLayout({ entries: [
@@ -506,6 +517,10 @@ export const plugin = Object.freeze({
     const occGroup = device.createBindGroup({ layout: occLayout, entries: [{ binding: 0, resource: { buffer: uniforms } }] });
     const blurSteps = Array.from({ length: 6 }, () => device.createBuffer({ size: 16, usage: BU.UNIFORM | BU.COPY_DST }));
     const globals = new Float32Array(UNIFORM_FLOATS);
+    // bound where the host has no under page (or the plugin shows its own paper): the shader then never reads it
+    const blank = device.createTexture({ label: 'hic-page-curl-blank', size: [1, 1], format: 'rgba8unorm', usage: TU.TEXTURE_BINDING });
+    const blankView = blank.createView();
+    let revealing = false;
     const stepData = new Float32Array(4);
     const slots = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
     const mappers = slots.map(makeMapper);
@@ -552,6 +567,8 @@ export const plugin = Object.freeze({
     let autoPeek = 0;   // opt-in, as meta.defaults: a periodic peek is work at rest
     let under = parseColor(null, [0.82, 0.79, 0.735]);
     let paper = parseColor(null, [0.965, 0.95, 0.915]);
+    // on a host with an under page (context.under), it is the page underneath; false keeps the paper colour `under` there
+    let underPage = true;
     /** @param {Readonly<Record<string, unknown>>|undefined} o */
     function applyOptions(o) {
       if (!o) return;
@@ -563,6 +580,7 @@ export const plugin = Object.freeze({
       if (o.autoPeek !== undefined) autoPeek = clampNum(o.autoPeek === false ? 0 : o.autoPeek, 0, 600, autoPeek);
       if (o.under !== undefined) under = parseColor(o.under, under);
       if (o.paper !== undefined) paper = parseColor(o.paper, paper);
+      if (o.underPage !== undefined) underPage = o.underPage !== false;
     }
     applyOptions(initialOptions);
 
@@ -790,6 +808,8 @@ export const plugin = Object.freeze({
 
     return {
       spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift, a peek, the demo), none at rest
+      // the host's under page is shown wherever the sheet is lifted, the dog-ear included (the host keeps it inert otherwise)
+      get revealsUnder() { return revealing; },
       setOptions(next) { applyOptions(next); wake(); },
       runAction(action, _options, info) {
         // nothing moves with reduced motion or while a corner is held or springs back (or the demo plays): the state it rests in next
@@ -816,6 +836,8 @@ export const plugin = Object.freeze({
         poseState(globals, w, h, active, sx.x, sy.x, radius);
         globals[12] = shadow; globals[13] = frame.sourceReady ? 1 : 0; globals[14] = INK; globals[15] = ROWS;
         globals.set(under, 16); globals[19] = 1;
+        const live = underPage && context.under === true && frame.under?.ready === true;
+        globals[45] = live ? 1 : 0;
         globals.set(paper, 20); globals[23] = 1;
         globals[24] = LIGHT[0]; globals[25] = LIGHT[1]; globals[26] = LIGHT[2];
         // how far the corner is from its rest pose (the dog-ear of the hinted corner, or flat), 0 .. 1 over AWAY_PX: the lamp's highlight goes above
@@ -826,15 +848,18 @@ export const plugin = Object.freeze({
         foldSpan(globals, w, h);
         device.queue.writeBuffer(uniforms, 0, globals);
         const r = resources(frame.width, frame.height, w, h);
-        let group = r.groups.get(frame.sourceView);
-        if (!group) {
-          group = device.createBindGroup({ layout: mainLayout, entries: [
+        const underView = live ? frame.under.view : blankView;
+        let bound = r.groups.get(frame.sourceView);
+        if (!bound || bound.under !== underView) {
+          bound = { under: underView, group: device.createBindGroup({ layout: mainLayout, entries: [
             { binding: 0, resource: { buffer: uniforms } }, { binding: 1, resource: sampler }, { binding: 2, resource: frame.sourceView },
-            { binding: 3, resource: r.views.soft }, { binding: 4, resource: r.views.wide },
-          ] });
-          r.groups.set(frame.sourceView, group);
+            { binding: 3, resource: r.views.soft }, { binding: 4, resource: r.views.wide }, { binding: 5, resource: underView },
+          ] }) };
+          r.groups.set(frame.sourceView, bound);
         }
+        const group = bound.group;
         const curled = globals[9] > 0;
+        revealing = curled && live;
         if (curled) {
           // the lifted paper as the lamp sees it, and its soft copies; only when the fold moved
           const key = `${globals[4]},${globals[5]},${globals[6]},${globals[7]},${globals[8]},${globals[9]},${globals[10]}`;
@@ -881,7 +906,7 @@ export const plugin = Object.freeze({
         stopPeekTimer();
         setCursor('');
         if (sized) for (const t of sized.textures) t.destroy?.();
-        for (const b of [uniforms, ...blurSteps]) b.destroy?.();
+        for (const b of [uniforms, ...blurSteps, blank]) b.destroy?.();
       },
     };
   },

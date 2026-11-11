@@ -3,7 +3,7 @@
 // through, mirrored), the dog-ear at rest, the spring back to the plain source, the actions 'peek' and 'demo' through the effect handle, a device loss
 // mid-drag, and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, spyMappers, until } from '/plugins/_shared/gpu-check.mjs';
 import { UNIFORM_FLOATS, foldOf, foldPoint, heldCorner, isNoTarget, mapCurlPoint, meta, plugin, poseState, project, stateOf } from '/plugins/page-curl/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -111,6 +111,70 @@ gpuTest('at rest the top-right corner is a dog-ear: paper there (cream by defaul
   assert.ok(paper > 150, `${paper} paper-coloured px at the top-right corner`);
   assert.ok(real.wrong <= 5 && real.bright > 3000, `mapper wrong ${real.wrong}`);
   assert.ok(isNoTarget(/** @type {any} */ (mapper)({ x: W - 2, y: 2, width: W, height: H })), 'the dog-ear is not the page');
+});
+
+/**
+ * The host's live under page (EffectHostOptions.under) beneath the curl: markers of its own, between those of the source. The oracle of
+ * gpu-check.mjs (agreement) over both pages: a pixel is bright exactly where the mapper's point is inside a marker of the page it names (the
+ * source, or the under page for `under: true`). checkMapperAgainstGpu presents through a host without an under page, so the frame is built
+ * here with the same rig and the same oracle.
+ */
+const underScene = markerScene({ w: W, h: H, first: { x: 90, y: 70 } });
+const UNDER_OFFSET = 1e6;
+/** both scenes as one: a point on the under page is moved far right, where only the under scene answers */
+const bothScenes = { ...scene, distance: (/** @type {number} */ x, /** @type {number} */ y) => (x > UNDER_OFFSET / 2 ? underScene.distance(x - UNDER_OFFSET, y) : scene.distance(x, y)) };
+/** @param {any} mapper */
+const onBoth = (mapper) => (/** @type {any} */ p) => { const q = mapper(p); return q.under === true ? { x: q.x + UNDER_OFFSET, y: q.y } : q; };
+/** the same mapper as a host without an under page reads it: a point on the under page shows nothing @param {any} mapper */
+const withoutUnder = (mapper) => (/** @type {any} */ p) => { const q = mapper(p); return q.under === true ? { x: -1e5, y: -1e5 } : q; };
+
+/** @param {any} t @param {Record<string, unknown>} options */
+async function curlOverUnder(t, options) {
+  const rig = makeRig({ w: W, h: H, paint: scene.paint, under: (ctx) => underScene.paint(ctx) });
+  rig.commit();
+  rig.commitUnder();
+  const host = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, { interposer: false, under: rig.under });
+  t.cleanup(() => host.destroy());
+  const { def, mappers } = spyMappers(plugin);
+  const handle = await host.addPlugin(def, options);
+  dragged(POSE)(rig);
+  rig.tick(performance.now() + 400);
+  return { rig, host, handle, img: rig.snap(), mapper: mappers.at(-1) };
+}
+
+gpuTest('under page: where the sheet is lifted the host\'s live under page shows, and the mapper sends the pointer to it exactly (control: the same frame read without an under page)', async (t) => {
+  // shadow 0: the oracle reads "bright" as red > 110; the roll's shadow would darken white markers of the under page below it (it is checked by the stills)
+  const { rig, host, img, mapper } = await curlOverUnder(t, { ...DARK, shadow: 0 });
+  const real = agreement(img, onBoth(mapper), bothScenes);
+  const blind = agreement(img, withoutUnder(mapper), scene);
+  const id = agreement(img, identity, scene);
+  let shownUnder = 0;
+  for (let j = 0; j < H; j += 1) for (let i = 0; i < W; i += 1) {
+    const q = /** @type {any} */ (mapper)({ x: i + 0.5, y: j + 0.5, width: W, height: H });
+    if (q.under === true && img.data[(j * W + i) * 4] > 110) shownUnder += 1;
+  }
+  console.error(`page-curl under page vs GPU: decided=${real.decided} wrong=${real.wrong} | read without the under page wrong=${blind.wrong} | identity wrong=${id.wrong} | bright px of the under page ${shownUnder}`);
+  assert.ok(real.wrong <= 5, `the mapper disagrees with the GPU on ${real.wrong} px over both pages`);
+  assert.ok(shownUnder >= 250, `markers of the under page are shown beneath the sheet (${shownUnder} px)`);
+  assert.ok(blind.wrong >= 200, `control: read without the under page the same frame is wrong on ${blind.wrong} px`);
+  assert.equal(host.stats().underUploads, 1);
+  assert.equal(rig.under.inert, false, 'some of the under page is shown: not inert');
+  assert.deepEqual(/** @type {any} */ (mapper)({ x: W - 4, y: H - 4, width: W, height: H }), { x: W - 4, y: H - 4, under: true });
+});
+
+gpuTest('under page: with underPage false, and on a host without one, the page underneath is the paper and the mapper says no target there', async (t) => {
+  const { img, mapper, host } = await curlOverUnder(t, { ...DARK, shadow: 0, underPage: false });
+  const real = agreement(img, /** @type {any} */ (mapper), scene);
+  const under = agreement(img, onBoth(mapper), bothScenes);
+  let anyUnder = 0;
+  for (let j = 0; j < H; j += 2) for (let i = 0; i < W; i += 2) if (/** @type {any} */ (mapper)({ x: i + 0.5, y: j + 0.5, width: W, height: H }).under === true) anyUnder += 1;
+  assert.equal(anyUnder, 0, 'no point of the under page');
+  assert.ok(real.wrong <= 5 && under.wrong <= 5, `the mapper agrees with the paper frame (wrong ${real.wrong})`);
+  assert.ok(isNoTarget(/** @type {any} */ (mapper)({ x: W - 4, y: H - 4, width: W, height: H })), 'beneath the sheet: no target with underPage false');
+  // the plugin listens on the document: the held pointer of the first host would hold the second one's sheet too
+  host.destroy();
+  const plain = await presentOnce(t, plugin, DARK, { scene, before: dragged(POSE), offsetMs: 400 });
+  assert.ok(isNoTarget(/** @type {any} */ (plain.mapper)({ x: W - 4, y: H - 4, width: W, height: H })), 'beneath the sheet: no target without an under page');
 });
 
 gpuTest('released: the sheet springs back and the presented frame is the plain source again (identity)', async (t) => {

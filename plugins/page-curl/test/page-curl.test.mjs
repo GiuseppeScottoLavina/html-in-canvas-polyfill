@@ -117,6 +117,9 @@ test('the mapper answers what the forward rendering shows: the page point on the
     const st = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48), W, H);
     if (st[38] > 0) cones += 1;
     if (st[38] > 0 && Math.abs(st[36]) > 10000) farApex += 1;
+    // the same pose over the host's live under page ([45] = 1): beneath the sheet the same point of the under page, everything else unchanged
+    const stUnder = st.slice();
+    stUnder[45] = 1;
     const { kind, sx, sy, z } = splat(st);
     const f = coneOfState(st), m = st[10];
     const p = [0, 0, 0], q = { x: 0, y: 0 };
@@ -129,6 +132,10 @@ test('the mapper answers what the forward rendering shows: the page point on the
         for (let dj = -1; dj <= 1 && !mixed; dj += 1) for (let di = -1; di <= 1; di += 1) if (kind[k + dj * W + di] !== kind[k]) { mixed = true; break; }
         if (mixed) { counts.skipped += 1; continue; }
         const got = mapCurlPoint(st, { x: i + 0.5, y: j + 0.5, width: W, height: H });
+        const gotUnder = mapCurlPoint(stUnder, { x: i + 0.5, y: j + 0.5, width: W, height: H });
+        if (kind[k] === -1) assert.deepEqual(gotUnder, { x: i + 0.5, y: j + 0.5, under: true }, `${key} ${x},${y}: ${i},${j} lies on the under page`);
+        else if (isNoTarget(got)) assert.ok(isNoTarget(gotUnder), `${key} ${x},${y}: ${i},${j} the back stays no target over an under page`);
+        else assert.deepEqual(gotUnder, got);
         if (kind[k] === -1) { counts.under += 1; assert.ok(isNoTarget(got), `${key} ${x},${y}: ${i},${j} lies beneath the sheet`); }
         else if (kind[k] === 2) { counts.back += 1; assert.ok(isNoTarget(got), `${key} ${x},${y}: ${i},${j} shows the back`); }
         else {

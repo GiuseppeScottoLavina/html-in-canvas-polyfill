@@ -35,7 +35,7 @@ struct Uniforms {
   span : vec4<f32>,        // the page in the fold's frame: s from x to y (along n), w from z to w (along the axis)
   cone : vec4<f32>,        // the cone: x apex (a + t x on the axis), y gs (g = gs t points from the apex to the page), z k = sine of its half angle (0: a cylinder), w its cosine
   reach : vec4<f32>,       // the curled page from the apex: x r min, y r max, z its largest polar angle; w the held corner's height
-  extra : vec4<f32>,       // x the held corner's leaf y
+  extra : vec4<f32>,       // x the held corner's leaf y; y 1 where the page underneath is the host's live under page
 }
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -43,6 +43,7 @@ struct Uniforms {
 @group(0) @binding(2) var source : texture_2d<f32>;
 @group(0) @binding(3) var occS : texture_2d<f32>;   // the lifted paper seen from the lamp, a little blurred: r coverage, g height / ZMAX
 @group(0) @binding(4) var occL : texture_2d<f32>;   // the same, much blurred
+@group(0) @binding(5) var underTex : texture_2d<f32>;   // the host's live under page (read only where u.extra.y > 0)
 
 const PI : f32 = 3.14159265;
 const ZMAX : f32 = 600.0;
@@ -301,6 +302,7 @@ fn fs_pass(v : FullOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_under(v : FullOut) -> @location(0) vec4<f32> {
   let q = v.uv * u.css;
+  if (u.extra.y > 0.5) { return live_under(v, q); }
   var col = u.under.rgb * (1.0 + grain(q + 401.0));
   let rule = 1.0 - smoothstep(0.0, 0.9, abs(fract(q.y / 26.0 + 0.4) - 0.5) * 26.0 - 0.15);
   col = mix(col, col * vec3<f32>(0.78, 0.84, 0.95), rule * 0.35);
@@ -314,6 +316,23 @@ fn fs_under(v : FullOut) -> @location(0) vec4<f32> {
   // near the lamp above 1)
   if (HDR_PEAK > 1.0) { return vec4<f32>(clamp(col + dither(v.position.xy), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0); }
   return vec4<f32>(col + dither(v.position.xy), 1.0);
+}
+
+/** the host's live under page beneath the sheet: its own pixels wherever nothing shades it (the light relative to the flat, unshadowed page, as the
+    front's), darkened by the same roll shadow and occlusion as the paper; softened towards 0.25 so that its content stays readable in the shade */
+fn live_under(v : FullOut, q : vec2<f32>) -> vec4<f32> {
+  let c = textureSampleLevel(underTex, samp, v.uv, 0.0);
+  let page = c.rgb * c.a;
+  let p = vec3<f32>(q, 0.0);
+  let lt = light2(p, vec3<f32>(0.0, 0.0, 1.0));
+  let sh = shadow_at(p);
+  let ao = roll_ao(q);
+  let lit = (lt.x * sh.y * (1.0 - pow(ao, 1.2)) + lt.y * sh.x * (1.0 - 0.6 * ao * ao)) / max(lt.x + lt.y, 1e-4);
+  let k = clamp(lit, 0.0, 1.0);
+  let col = page * (0.25 + 0.75 * k);
+  // dither only what the shadow darkened: the unshaded page stays exactly its own pixels
+  let d = select(dither(v.position.xy), 0.0, k > 0.9995);
+  return vec4<f32>(clamp(col + d, vec3<f32>(0.0), vec3<f32>(HDR_PEAK)), 1.0);
 }
 
 // ---- the lifted paper seen from the lamp ---------------------------------------------------------------------------------------------
