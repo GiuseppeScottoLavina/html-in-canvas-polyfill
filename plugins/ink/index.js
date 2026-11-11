@@ -27,6 +27,7 @@ import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 import { clampNum } from '../_lib/number.js';
+import { hdrConstants } from '../_lib/hdr.js';
 import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, bloom, clear, createFluid, fieldAt, gridOf, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -227,9 +228,9 @@ const SLIDERS = /** @type {const} */ ([['intensity', 'Stir'], ['flow', 'Flow'], 
 
 /**
  * The two pipelines, compiled asynchronously where the device can.
- * @param {any} device @param {string} format @param {string} picture @param {string} advect
+ * @param {any} device @param {string} format @param {string} picture @param {string} advect @param {Record<string, number>} constants  of the picture (HDR_PEAK)
  */
-async function createPipelines(device, format, picture, advect) {
+async function createPipelines(device, format, picture, advect, constants) {
   // the shader modules first: the bundle check stops a fake device at the first other call, and wants to have seen the inlined WGSL by then
   const module = device.createShaderModule({ code: picture, label: 'hic-ink-shader' });
   const advectModule = device.createShaderModule({ code: advect, label: 'hic-ink-advect-shader' });
@@ -258,7 +259,7 @@ async function createPipelines(device, format, picture, advect) {
   const [pipeline, advectPipeline] = await Promise.all([
     make({
       label: 'hic-ink-pipeline', layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-      vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' },
+      vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }], constants }, primitive: { topology: 'triangle-list' },
     }),
     make({
       label: 'hic-ink-advect-pipeline', layout: device.createPipelineLayout({ bindGroupLayouts: [advectLayout] }),
@@ -293,7 +294,8 @@ export const plugin = Object.freeze({
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
     const { device, format } = context;
-    const pipelines = createPipelines(device, format, await wgsl('ink.wgsl'), await wgsl('advect.wgsl'));
+    // extended range (context.hdr): the picture's shader reads HDR_PEAK (the sheen of the water may go above white)
+    const pipelines = createPipelines(device, format, await wgsl('ink.wgsl'), await wgsl('advect.wgsl'), hdrConstants(context));
     // while the pipelines compile: 60 steps of a small fluid (about 10 ms), so that the first stroke does not meet uncompiled code
     for (let i = 0, f = rehearsal(160, 160); i < 60; i += 1) step(f, REHEARSAL);
     const { pipeline, layout, advectPipeline, advectLayout } = await pipelines;

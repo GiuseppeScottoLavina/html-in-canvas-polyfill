@@ -108,7 +108,7 @@ gpuTest('the pigment shows over a bright page and over a dark one: it darkens an
   const look = async (color, pigment) => {
     const { img } = await presentOnce(t, plugin, { intensity: 1, pigment }, { scene: /** @type {any} */ (flat(color)), before: press, offsetMs: 120 });
     let changed = 0, lo = 255, hi = 0, colour = 0;
-    const base = [img.data[0], img.data[1], img.data[2]];   // the corner: far from the stroke
+    const base = color === '#ffffff' ? [255, 255, 255] : [0, 0, 0];   // the paper (the water may move as far as the corners: its sheen is no pigment)
     for (let i = 0; i < img.data.length; i += 4) {
       const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2], l = Math.max(r, g, b);
       if (Math.abs(r - base[0]) > 16 || Math.abs(g - base[1]) > 16 || Math.abs(b - base[2]) > 16) { changed += 1; colour = Math.max(colour, l - Math.min(r, g, b)); }
@@ -116,12 +116,12 @@ gpuTest('the pigment shows over a bright page and over a dark one: it darkens an
     }
     return { changed, lo, hi, colour, base };
   };
-  const white = await look('#ffffff', 1), black = await look('#000000', 1), none = await look('#ffffff', 0);
-  console.error(`ink pigment: on white ${white.changed} px changed, darkest ${white.lo}, chroma up to ${white.colour}; on black ${black.changed} px changed, brightest ${black.hi}; without pigment ${none.changed} px`);
-  assert.deepEqual(white.base, [255, 255, 255]); assert.deepEqual(black.base, [0, 0, 0]);
+  const white = await look('#ffffff', 1), black = await look('#000000', 1), none = await look('#ffffff', 0), dark = await look('#000000', 0);
+  console.error(`ink pigment: on white ${white.changed} px changed, darkest ${white.lo}, chroma up to ${white.colour}; on black ${black.changed} px changed, brightest ${black.hi}; without pigment ${none.changed} px on white, brightest ${dark.hi} on black (the sheen alone)`);
   assert.ok(white.changed > 3000 && white.lo < 200 && white.colour > 120, 'ink on white paper: darker, and coloured');
   assert.ok(black.changed > 3000 && black.hi > 110, 'over black the scattered light of the pigment shows');
-  assert.equal(none.changed, 0, 'control: pigment 0 leaves a uniform page uniform (the displacement alone shows nothing there)');
+  assert.equal(none.changed, 0, 'control: pigment 0 leaves a uniform white page uniform (the displacement alone shows nothing there, the sheen less than 16 levels)');
+  assert.ok(dark.hi < 100 && dark.hi > 20, 'control: over black without pigment only the sheen of the water shows, dimmer than the light the pigment scatters');
 });
 
 /** A press at rest (no move before it) at (x, y) of the canvas: a drop. @param {number} x @param {number} y */
@@ -168,6 +168,29 @@ gpuTest('a drop over white paper: it lands as a full disc, its ink moves outward
   const clean = rig.snap();
   assert.ok(clean.data.every((v) => v === 255), 'the frame at rest is the white page');
 }, { timeout: 30000 });
+
+gpuTest('the sheen of moving water: a hover over a uniform grey page lightens it where the surface tilts towards the light and darkens it where it tilts away, only where the page moves; at intensity 0 (control) the page stays uniform', async (t) => {
+  const grey = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#808080'; ctx.fillRect(0, 0, 480, 320); } };
+  const hover = (/** @type {any} */ rig) => {
+    const r = rig.canvas.getBoundingClientRect();
+    for (let i = 0; i <= 30; i += 1) rig.layerEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 60 + 12 * i, clientY: r.top + 160 + 40 * Math.sin(i / 5), buttons: 0, pointerType: 'mouse' }));
+  };
+  /** @param {number} intensity */
+  const look = async (intensity) => {
+    const { img, mapper } = await presentOnce(t, plugin, { ...meta.defaults, intensity }, { scene: /** @type {any} */ (grey), before: hover, offsetMs: 100 });
+    let lighter = 0, darker = 0, outside = 0;
+    for (let y = 0; y < 320; y += 1) for (let x = 0; x < 480; x += 1) {
+      const v = img.data[(y * 480 + x) * 4], q = /** @type {any} */ (mapper)({ x: x + 0.5, y: y + 0.5, width: 480, height: 320 });
+      if (q.x === x + 0.5 && q.y === y + 0.5) { if (v !== 128) outside += 1; } else if (v >= 131) lighter += 1; else if (v <= 125) darker += 1;
+    }
+    return { lighter, darker, outside };
+  };
+  const wet = await look(meta.defaults.intensity), dry = await look(0);
+  console.error(`ink sheen on grey: ${wet.lighter} px lighter and ${wet.darker} px darker by 3 levels or more where the page moves, ${wet.outside} px changed where it does not; at intensity 0: ${dry.lighter + dry.darker + dry.outside} px`);
+  assert.ok(wet.lighter > 200 && wet.darker > 200, 'the moving water shows its surface');
+  assert.equal(wet.outside, 0, 'nothing where the page does not move');
+  assert.equal(dry.lighter + dry.darker + dry.outside, 0, 'control: intensity 0');
+});
 
 gpuTest('the action demo through the effect handle: the stroke changes the picture, every checked frame agrees with its mapper, it resolves still within 4.6 s and ends on the source', async (t) => {
   // without pigment, so that the markers keep their brightness and the mapper can be judged on every frame

@@ -7,7 +7,11 @@
 //     S of the three inks add up by their densities, and the layer's reflectance R and transmittance T over a page of reflectance Rg give
 //     R + T^2 Rg / (1 - R Rg) per channel. Over a bright page the ink glazes it (absorption); over a dark page it shows by the light its
 //     particles scatter. The pigment keeps its strength until it is `hold` seconds old and has faded out at `life` seconds;
-//   - half a level of dither where there is pigment (its gradients are slow);
+//   - where the water moves (and the page with it), its surface catches a soft overhead light: Bernoulli's free surface h = -|u|^2 / (2 g)
+//     sits lower where the water is faster, and its slope (from the second derivatives of the same B-spline of the stream function) tilts
+//     the normal; the light added is the change of a broad specular lobe from that of the flat surface, in linear light (a faint glint on a
+//     dark page, a faint shading on a bright one; 0 where the water is still). With extended range the glint goes above white (hdr_light);
+//   - half a level of dither where there is pigment or sheen (their gradients are slow);
 //   - where the field is zero and there is no pigment, the output is the source texel, untouched.
 
 struct Globals {
@@ -33,6 +37,28 @@ const CLEAR : vec3<f32> = vec3<f32>(0.004, 0.018, 0.034);
 // the most taps along the squeezed direction, and the largest squeeze they cover
 const MAX_TAPS : f32 = 6.0;
 const MAX_SQUEEZE : f32 = 8.0;
+// the sheen: the height of the surface per (CSS px/s)^2 of speed (CSS px), the steepest slope it reaches (a soft limit), the overhead
+// light (towards it: up, left, near the zenith), the sharpness of its lobe, and the strength of the light (linear)
+const WET : f32 = 0.012;
+const WET_SLOPE : f32 = 0.35;
+const SUN : vec3<f32> = vec3<f32>(-0.268, -0.358, 0.894);
+const LOBE : f32 = 24.0;
+const SHEEN : f32 = 0.12;
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
 
 @vertex
 fn vs(@builtin(vertex_index) index : u32) -> @builtin(position) vec4<f32> {
@@ -49,19 +75,23 @@ fn bs_d(t : f32) -> vec4<f32> {
   let o = 1.0 - t;
   return vec4<f32>(-0.5 * o * o, 1.5 * t * t - 2.0 * t, -1.5 * t * t + t + 0.5, 0.5 * t * t);
 }
+fn bs_dd(t : f32) -> vec4<f32> {
+  return vec4<f32>(1.0 - t, 3.0 * t - 2.0, 1.0 - 3.0 * t, t);
+}
 
 struct Field {
   d : vec2<f32>,       // displacement, CSS px
   ddx : vec2<f32>,     // its derivative across, per cell
   ddy : vec2<f32>,     // its derivative down, per cell
   flow : vec2<f32>,    // the gradient of the stream function, per cell
+  hess : vec3<f32>,    // its second derivatives xx, xy, yy, per cell^2
   live : bool,         // some of the 4 x 4 cells may be non-zero
 }
 
 // the B-spline surface of the field over 4 x 4 cells (sim.js fieldAt: the same cells, the same clamp at the border of the padded grid)
 fn field_at(uv : vec2<f32>) -> Field {
   var s : Field;
-  s.d = vec2<f32>(0.0); s.ddx = vec2<f32>(0.0); s.ddy = vec2<f32>(0.0); s.flow = vec2<f32>(0.0); s.live = false;
+  s.d = vec2<f32>(0.0); s.ddx = vec2<f32>(0.0); s.ddy = vec2<f32>(0.0); s.flow = vec2<f32>(0.0); s.hess = vec3<f32>(0.0); s.live = false;
   let g = uv * globals.grid.xy - vec2<f32>(0.5) + vec2<f32>(PAD);
   let base = floor(g);
   let size = vec2<i32>(textureDimensions(field));
@@ -76,15 +106,19 @@ fn field_at(uv : vec2<f32>) -> Field {
   let layer = i32(globals.state.x);
   let wx = bs_w(f.x); let wy = bs_w(f.y);
   let dx = bs_d(f.x); let dy = bs_d(f.y);
+  let ddx = bs_dd(f.x); let ddy = bs_dd(f.y);
   for (var j = 0; j < 4; j = j + 1) {
     let yy = clamp(b.y + j, 0, size.y - 1);
     var value = vec3<f32>(0.0);
     var slope = vec3<f32>(0.0);
+    var bend = 0.0;
     for (var i = 0; i < 4; i = i + 1) {
       let cell = textureLoad(field, vec2<i32>(clamp(b.x + i, 0, size.x - 1), yy), layer, 0).rgb;
       value = value + wx[i] * cell;
       slope = slope + dx[i] * cell;
+      bend = bend + ddx[i] * cell.z;
     }
+    s.hess = s.hess + vec3<f32>(wy[j] * bend, dy[j] * slope.z, ddy[j] * value.z);
     s.d = s.d + wy[j] * value.xy;
     s.ddx = s.ddx + wy[j] * slope.xy;
     s.ddy = s.ddy + dy[j] * value.xy;
@@ -194,7 +228,25 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
     let sc = ink.x * globals.scatter[0].rgb + ink.y * globals.scatter[1].rgb + ink.z * globals.scatter[2].rgb;
     color = layer_over(k, sc, page);
   }
-  var encoded = to_srgb(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)));
-  if (inked) { encoded = encoded + vec3<f32>(dither(position.xy) / 255.0); }
+  // the sheen of the moving water (where the page moves with it): the gradient of |u|^2, CSS px/s^2, from the B-spline of psi
+  var light = 0.0;
+  if (moved) {
+    let a = s.flow * globals.grid.zw;
+    let h = s.hess * vec3<f32>(globals.grid.z * globals.grid.z, globals.grid.z * globals.grid.w, globals.grid.w * globals.grid.w);
+    let tilt = -WET * 2.0 * vec2<f32>(a.x * h.x + a.y * h.y, a.x * h.y + a.y * h.z);
+    let n = normalize(vec3<f32>(-tilt / (1.0 + length(tilt) / WET_SLOPE), 1.0));
+    let mid = normalize(SUN + vec3<f32>(0.0, 0.0, 1.0));
+    light = SHEEN * (pow(max(dot(n, mid), 0.0), LOBE) - pow(mid.z, LOBE));
+  }
+  let wet = abs(light) > 1e-3;
+  if (HDR_PEAK > 1.0) {
+    // extended range: the shading below white, the glint above it on the shoulder
+    let lit = to_srgb(max(color + vec3<f32>(light), vec3<f32>(0.0)));
+    var base = min(lit, vec3<f32>(1.0));
+    if (inked || wet) { base = clamp(base + vec3<f32>(dither(position.xy) / 255.0), vec3<f32>(0.0), vec3<f32>(1.0)); }
+    return vec4<f32>(hdr_light(base, lit - min(lit, vec3<f32>(1.0))), 1.0);
+  }
+  var encoded = to_srgb(clamp(color + vec3<f32>(light), vec3<f32>(0.0), vec3<f32>(1.0)));
+  if (inked || wet) { encoded = encoded + vec3<f32>(dither(position.xy) / 255.0); }
   return vec4<f32>(clamp(encoded, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

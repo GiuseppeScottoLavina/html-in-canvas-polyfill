@@ -4,7 +4,9 @@
 // The fluid itself is tested in ink-sim.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { contractTest } from '../../_shared/contract-test.mjs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { CHANNELS, MAX_BLOOMS, MAX_STEPS_PER_FRAME, PAD, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
 import { ACTIONS, DEMO_MS, G, GLOBALS_LENGTH, INK_CAP, INK_HOLD, INK_LIFE, PALETTES, PIGMENT_TEXELS, S, SEGMENTS_PER_STEP, STEP_FLOATS, demoPath, inkMix, inkOptics, mapInkPoint, meta, pigmentGrid, plugin } from '../index.js';
@@ -43,7 +45,7 @@ const field = { closest: (selector) => (/\binput\b/.test(selector) ? field : nul
 const shift = (data) => { let m = 0; for (let k = 0; k < data.length; k += CHANNELS) m = Math.max(m, Math.hypot(data[k], data[k + 1])); return m; };
 
 /** The instance over the fake device. `localPoint` stands for the plugins added after this one (context.localPoint). */
-async function createInk(t, options = {}, { reduced = false, localPoint = undefined } = {}) {
+async function createInk(t, options = {}, { reduced = false, localPoint = undefined, hdr = undefined } = {}) {
   stubFetch(t);
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const gpu = fakeGpu();
@@ -56,13 +58,17 @@ async function createInk(t, options = {}, { reduced = false, localPoint = undefi
     listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; },
     viewport: () => ({}),
     ...(localPoint ? { localPoint } : {}),
+    ...(hdr === undefined ? {} : { hdr }),
   };
+  const pipelines = [];
+  const make = gpu.device.createRenderPipeline;
+  gpu.device.createRenderPipeline = (d) => { pipelines.push(d); return make(d); };
   const instance = await plugin.create(context, { ...meta.defaults, ...options });
   const frame = (now) => ({ now, width: W * 2, height: H * 2, cssWidth: W, cssHeight: H, dpr: 2, sourceReady: true, sourceView: gpu, destinationView: {}, encoder: gpu.encoder });
   const pointer = (type, x, y, extra = {}) => listeners[type](new win.PointerEvent({ clientX: x, clientY: y, buttons: 0, pointerType: 'mouse', timeStamp: performance.now(), target: page, ...extra }));
   /** render frames every `dt` ms from `from` until `done()` or `maxMs`; returns the frame time reached */
   const run = (from, maxMs, dt = 1000 / 120, done = () => false) => { let now = from; for (; now <= from + maxMs && !done(); now += dt) instance.render(frame(now)); return now; };
-  return { instance, gpu, frame, listeners, listenOptions, win, pointer, run, renders: () => renders };
+  return { instance, gpu, frame, listeners, listenOptions, win, pointer, run, renders: () => renders, pipelines };
 }
 
 /** a pressed stroke of the mouse from (x0, y) to (x1, y) in `n` moves 12 ms apart, starting at time t */
@@ -150,6 +156,18 @@ function stateOf(w, h, seed = 1) {
   pack(f, state, GLOBALS_LENGTH);
   return { state, f };
 }
+
+test('extended range: the picture pipeline gets HDR_PEAK from context.hdr, 1 without it (the pigment pass none); ink.wgsl holds the shared shoulder', async (t) => {
+  const peaks = [];
+  for (const hdr of [true, false, undefined]) {
+    const w = await createInk(t, {}, { hdr });
+    peaks.push(w.pipelines.map((d) => d.fragment.constants?.HDR_PEAK));
+  }
+  assert.deepEqual(peaks, [[HDR_PEAK, undefined], [1, undefined], [1, undefined]], 'extended range, standard range, a host that says nothing');
+  const code = readFileSync(new URL('../ink.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'ink.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
+});
 
 test('mapInkPoint equals the independent oracle (the B-spline basis over the packed field) on a grid, several sizes; at rest it is the identity; it never leaves the canvas', () => {
   let moved = 0;
