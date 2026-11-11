@@ -8,11 +8,11 @@
 // grabbed, a finger elsewhere scrolls the page); the cloth under and over another effect. `--record` also writes media/cloth.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
-//   node plugins/cloth/test/gallery.e2e.mjs [--record]
+//   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only]
 import { join } from 'node:path';
 import { ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
-const record = process.argv.includes('--record');
+const record = process.argv.includes('--record') || process.argv.includes('--record-only');
 const c = checklist('cloth gallery e2e');
 
 const FORM_PROBE = `(() => {
@@ -44,7 +44,44 @@ const drawnAt = (page, selector) => page.evaluate(`(() => {
   return { drawn: best, dom: { x: cx, y: cy }, domShows: P.isNoTarget(shows) ? null : shows, half: { w: e.width / 2, h: e.height / 2 }, ox, oy, mode: state && state[5] };
 })()`);
 
+/** The preview of the README: the demo, a pull by the hem with typing, the release, drop and in. */
+async function recording() {
+  const rec = await openGallery('cloth');
+  try {
+    const { page } = rec;
+    const stage = await rectOf(page, '#stage');
+    await page.evaluate(`document.getElementById('stage').frameCap = 120`);
+    await clickOn(page, '#message');
+    await settled(page);
+    const stop = await startRecording(page);
+    await sleep(300);                                           // the page, at rest
+    await page.evaluate(`window.__gallery.handle.trigger('demo'); true`);
+    await sleep(2300);                                          // a gust, and the cloth settles
+    const from = [stage.x + stage.w * 0.3, stage.y + stage.h - 30];
+    const arc = Array.from({ length: 56 }, (_, i) => [from[0] + (i / 55) * stage.w * 0.22, from[1] - (i / 55) * stage.h * 0.62 + Math.sin((i / 55) * Math.PI) * 30]);
+    await drag(page, arc, { stepMs: 18, release: false });
+    // (the press on the hem took the focus from the field, as a press on a page does: the field is focused again by script)
+    await page.evaluate(`document.getElementById('message').focus()`);
+    await page.typeText(' Still live.', { intervalMs: 45 });   // typed while the cloth is held
+    await sleep(300);
+    await page.mouseUp(arc[55][0], arc[55][1]);
+    await page.mouseMove(stage.x + stage.w + 5, stage.y + 5);
+    await sleep(1700);                                          // released, it swings back and settles
+    await page.evaluate(`window.__gallery.handle.trigger('drop'); true`);
+    await sleep(950);                                           // the pins let go
+    await page.evaluate(`window.__gallery.handle.trigger('in'); true`);
+    await sleep(2300);                                          // hung again
+    const frames = await stop();
+    const bytes = writeWebp(frames, join(ROOT, 'plugins/cloth/media/cloth.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 500, fps: 15, quality: 28 });
+    c.check('recording: media/cloth.webp under 900 KB', bytes < 900 * 1024, { screencastFrames: frames.length, bytes });
+  } finally {
+    await rec.close();
+  }
+}
+
 async function main() {
+  // `--record-only`: the preview alone, without the checks
+  if (process.argv.includes('--record-only')) { await recording(); c.finish(); process.exit(process.exitCode ?? 0); }
   // ------------------------------------------------------------------------------------------------------------- normal motion
   const g = await openGallery('cloth');
   const { page } = g;
@@ -326,42 +363,7 @@ async function main() {
     await tg.close();
   }
 
-  // ------------------------------------------------------------------------------------------------------------- the recording
-  if (record) {
-    const rec = await openGallery('cloth');
-    try {
-      const { page } = rec;
-      const stage = await rectOf(page, '#stage');
-      await page.evaluate(`document.getElementById('stage').frameCap = 120`);
-      await clickOn(page, '#message');
-      await settled(page);
-      const stop = await startRecording(page);
-      await sleep(500);                                           // the page, at rest
-      await page.evaluate(`window.__gallery.handle.trigger('demo'); true`);
-      await sleep(2700);                                          // a gust, and the cloth settles
-      for (let i = 0; i <= 40; i += 1) { await page.mouseMove(stage.x + stage.w * (0.15 + 0.5 * (i / 40)), stage.y + stage.h * (0.75 + 0.08 * Math.sin(i / 5))); await sleep(16); }
-      await sleep(250);                                           // a pointer pushes a dent along its way
-      const from = [stage.x + stage.w * 0.3, stage.y + stage.h - 30];
-      const arc = Array.from({ length: 56 }, (_, i) => [from[0] + (i / 55) * stage.w * 0.22, from[1] - (i / 55) * stage.h * 0.62 + Math.sin((i / 55) * Math.PI) * 30]);
-      await drag(page, arc, { stepMs: 18, release: false, hover: false });
-      // (the press on the hem took the focus from the field, as a press on a page does: the field is focused again by script)
-      await page.evaluate(`document.getElementById('message').focus()`);
-      await page.typeText(' Still live.', { intervalMs: 45 });   // typed while the cloth is held
-      await sleep(400);
-      await page.mouseUp(arc[55][0], arc[55][1]);
-      await page.mouseMove(stage.x + stage.w + 5, stage.y + 5);
-      await sleep(2000);                                          // released, it swings back and settles
-      await page.evaluate(`window.__gallery.handle.trigger('drop'); true`);
-      await sleep(1000);                                          // the pins let go
-      await page.evaluate(`window.__gallery.handle.trigger('in'); true`);
-      await sleep(2500);                                          // hung again
-      const frames = await stop();
-      const bytes = writeWebp(frames, join(ROOT, 'plugins/cloth/media/cloth.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 600, fps: 24, quality: 42 });
-      c.check('recording: media/cloth.webp under 1400 KB', bytes < 1400 * 1024, { screencastFrames: frames.length, bytes });
-    } finally {
-      await rec.close();
-    }
-  }
+  if (record) await recording();
   c.finish();
   process.exit(process.exitCode ?? 0);
 }
