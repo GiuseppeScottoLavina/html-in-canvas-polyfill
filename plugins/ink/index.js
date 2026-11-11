@@ -215,6 +215,9 @@ const SLIDERS = /** @type {const} */ ([['intensity', 'Stir'], ['flow', 'Flow'], 
  * @param {any} device @param {string} format @param {string} picture @param {string} advect
  */
 async function createPipelines(device, format, picture, advect) {
+  // the shader modules first: the bundle check stops a fake device at the first other call, and wants to have seen the inlined WGSL by then
+  const module = device.createShaderModule({ code: picture, label: 'hic-ink-shader' });
+  const advectModule = device.createShaderModule({ code: advect, label: 'hic-ink-advect-shader' });
   const make = (/** @type {any} */ d) => (device.createRenderPipelineAsync ? device.createRenderPipelineAsync(d) : device.createRenderPipeline(d));
   const stage = /** @type {any} */ (globalThis).GPUShaderStage?.FRAGMENT ?? 2;
   const layout = device.createBindGroupLayout({
@@ -237,8 +240,6 @@ async function createPipelines(device, format, picture, advect) {
       { binding: 3, visibility: stage, texture: { sampleType: 'float' } },
     ],
   });
-  const module = device.createShaderModule({ code: picture, label: 'hic-ink-shader' });
-  const advectModule = device.createShaderModule({ code: advect, label: 'hic-ink-advect-shader' });
   const [pipeline, advectPipeline] = await Promise.all([
     make({
       label: 'hic-ink-pipeline', layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
