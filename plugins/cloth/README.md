@@ -102,6 +102,10 @@ Measured on an Apple M1 Max, headless Chrome 157, 2026-11-11, one run on one mac
 - **CPU.** `render()` with the mapper capture, in Node over a fake device (the simulation and the control points are all of it): median 0.60 ms per frame at 120 frames per second (4 steps), 1.18 ms at 60 (8 steps), 2.5 ms at 30 (16 steps); a step costs about 0.14 ms. At rest: nothing.
 - **Bundle.** `dist/plugins/cloth.iife.min.js`: 46,720 bytes (18,146 gzip), of which about 12 KB is WGSL and 11 KB the simulation.
 
+
+## Extended range
+
+With the host's `hdr` option the cloth writes nothing above white: it adds no light of its own above the page's white, and its output is clamped to the range of an 8-bit target (the dither went below 0 on black channels, which a float target would show). Measured in the gallery with `&hdr=1`, a pointer sweep and the demo: 0 pixels above white and none below 0, on the form and the daylight scene (before the clamp, up to 27,665 pixels below 0 on the form).
 ## Limitations
 
 - The cloth does not collide with itself: pulled across itself it passes through.

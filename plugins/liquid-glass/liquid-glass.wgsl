@@ -1,6 +1,11 @@
 // Liquid glass: a slab of glass over the live HTML. Every length is in CSS px of the presented frame. index.js holds the JavaScript
 // twins: sdSquircle() = sd_squircle(), lensSurface() = surface(), bendThrough() = bend(), and mapLensPoint() is where the green
 // channel samples (the same constants: GLASS in index.js).
+//
+// Extended range (HDR_PEAK > 1): the page around the glass and through it, the studio light the surface reflects, the light along the rim
+// and the thin edge stay under white. The mirror images of the two lights go above it: the glints of the key and of the rim light, and
+// the brightest stretch of the rim where it faces the key light. They do so while the glass is deformed (it stretches as it moves and
+// swells under a press) and fade out as it comes to rest: a lens at rest shows nothing above white.
 struct U {
   res : vec2<f32>,        // presented size, backing px
   css : vec2<f32>,        // presented size, CSS px
@@ -36,6 +41,30 @@ const KEY = vec3<f32>(-0.5516, -0.7924, 0.2608);
 const KEY2 = vec2<f32>(-0.5713, -0.8207);
 const HALF_KEY = vec3<f32>(-0.3473, -0.4990, 0.7939);   // normalize(KEY + view)
 const HALF_RIM = vec3<f32>(0.3473, 0.4990, 0.7939);
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
+// what goes above white, over what a standard target shows of it: the glint of the key light and of the rim light (the square of their
+// lobes: narrower), and the stretch of the rim that faces the key light (from HOT_FACING, the cosine of about 33 degrees: the corner of
+// the slab nearest to the light, not its straight sides)
+const HOT_KEY : f32 = 8.0;
+const HOT_RIM : f32 = 2.5;
+const HOT_BAND : f32 = 1.2;
+const HOT_FACING : f32 = 0.84;
+// how far from the identity the deformation is (the sum of its differences) where the glints are at full strength
+const HOT_AWAKE : f32 = 0.06;
 
 struct Surf {
   sd : f32,          // signed distance, local units
@@ -172,6 +201,8 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let shade = drop * u.shadow;
   var back = tap(p);
   if (shade > 0.002) { back = back * (1.0 - shade) + (noise - 0.5) / 255.0; }
+  // extended range: a float target would keep the dither below 0 (the page around the glass is passed on as it is, above white too)
+  if (HDR_PEAK > 1.0) { back = max(back, vec3<f32>(0.0)); }
   // analytic coverage over 2/3 of a backing pixel; 0.5 exactly on sd = 0, where the mapper switches
   let cover = clamp(0.5 - 1.5 * px * dpr, 0.0, 1.0);
   if (cover <= 0.0) { return vec4<f32>(back, 1.0); }
@@ -208,5 +239,16 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let edge = (1.0 - smoothstep(0.0, 1.3, -px)) * (0.22 + 0.5 * abs(face));
   glass = glass + vec3<f32>((spec + edge) * u.highlight) + (noise - 0.5) / 255.0;
 
+  if (HDR_PEAK > 1.0) {
+    let awake = smoothstep(0.0, HOT_AWAKE, abs(u.inv_a - 1.0) + abs(u.inv_c - 1.0) + 2.0 * abs(u.inv_b));
+    let key = pow(max(dot(n, HALF_KEY), 0.0), 300.0);
+    let rim = pow(max(dot(n, HALF_RIM), 0.0), 300.0);
+    let band = steep * steep * smoothstep(HOT_FACING, 1.0, face) * min(1.0, 2.0 * u.refraction);
+    let hot = (HOT_KEY * key * key + HOT_RIM * rim * rim + HOT_BAND * band) * u.highlight * awake;
+    // the glass over the page exactly as a standard target shows it (composed, then clamped at white; what the page around the glass holds
+    // above white is passed on), and the glints over that
+    let seen = min(mix(min(back, vec3<f32>(1.0)), glass, cover), vec3<f32>(1.0)) + max(back - vec3<f32>(1.0), vec3<f32>(0.0)) * (1.0 - cover);
+    return vec4<f32>(hdr_light(seen, vec3<f32>(hot * cover)), 1.0);
+  }
   return vec4<f32>(mix(back, glass, cover), 1.0);
 }

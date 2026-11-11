@@ -9,6 +9,8 @@ import { ACTIONS, actionPoint, blockedMapper, CRACK_MS, crackFront, DEMO_FALL_MS
 import { nodeHandle } from '../../_shared/node-host.mjs';
 import { BEVEL, buildShards, crackedLayout, crackedSource, fallTime, HEAL, MAX_POLY, MAX_SHARDS, MAX_VERTICES, MAX_WALL_VERTICES, mulberry32, polygonCentroid, SHARD_FLOATS, shardPoint, SPAN, spiderweb, THICKNESS, VERTEX_FLOATS } from '../shards.js';
 import { isNoTarget } from '../../../src/effects/no-target.js';
+import { readFileSync } from 'node:fs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 
 contractTest(import.meta.url);
 
@@ -174,12 +176,13 @@ function fakeGpu() {
   /** the multisampled textures alive now (the targets of the fall) */
   const live = new Set();
   /** @type {any[]} */ const descriptors = [];
+  /** the descriptors of the pipelines the plugin made @type {any[]} */ const pipelines = [];
   /** @type {any[]} */ const writes = [];
   /** @type {any[]} */ const draws = [];
   const pass = { setPipeline() {}, setBindGroup() {}, setVertexBuffer() {}, draw: (/** @type {number[]} */ ...a) => draws.push(a), end() {} };
   const device = {
     createShaderModule: () => ({}), createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
-    createRenderPipeline: () => { created.pipeline += 1; return {}; },
+    createRenderPipeline: (/** @type {any} */ d) => { created.pipeline += 1; pipelines.push(d); return {}; },
     createBuffer: (/** @type {any} */ d) => { created.buffer += 1; return { size: d.size, destroy() {} }; },
     createTexture: (/** @type {any} */ d) => {
       created.texture += 1;
@@ -191,14 +194,14 @@ function fakeGpu() {
     createCommandEncoder: () => ({ beginRenderPass: () => pass, finish: () => ({}) }),
     queue: { writeBuffer: (/** @type {any} */ b, /** @type {number} */ offset, /** @type {Float32Array} */ d) => writes.push({ b, offset, impact: offset === 0 ? [d[8], d[9]] : null }), submit: () => { created.submit += 1; } },
   };
-  return { device, created, writes, draws, live, descriptors, encoder: { beginRenderPass: (/** @type {any} */ d) => { descriptors.push(d); draws.push(['pass', d.depthStencilAttachment ? '3d' : 'flat']); return pass; } } };
+  return { device, created, writes, draws, live, descriptors, pipelines, encoder: { beginRenderPass: (/** @type {any} */ d) => { descriptors.push(d); draws.push(['pass', d.depthStencilAttachment ? '3d' : 'flat']); return pass; } } };
 }
 
 /**
  * The plugin behind the real effect handle, over the fake GPU. `localPoint` stands for the plugins added after this one (context.localPoint).
  * @param {Record<string, unknown>} options @param {{reducedMotion?: boolean, localPoint?: (point: {x: number, y: number}) => {x: number, y: number}|null}} [o]
  */
-async function instance(options, { reducedMotion = false, localPoint } = {}) {
+async function instance(options, { reducedMotion = false, localPoint, hdr = undefined } = {}) {
   const gpu = fakeGpu();
   const realFetch = globalThis.fetch;
   globalThis.fetch = /** @type {any} */ (async () => ({ ok: true, text: async () => '// wgsl' }));
@@ -212,7 +215,9 @@ async function instance(options, { reducedMotion = false, localPoint } = {}) {
   /** a pointer press on the canvas, as context.listen hears it @param {number} clientX @param {number} clientY */
   const press = (clientX, clientY) => canvas.dispatchEvent(Object.assign(new Event('pointerdown'), { clientX, clientY }));
   try {
-    const h = await nodeHandle(plugin, { duration: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion, localPoint });
+    // `hdr`: the context says so (the node host has no extended range of its own)
+    const def = hdr === undefined ? plugin : { ...plugin, create: (/** @type {any} */ c, /** @type {any} */ o) => plugin.create({ ...c, hdr }, o) };
+    const h = await nodeHandle(def, { duration: 1000, ...options }, { device: gpu.device, canvas, source, reducedMotion, localPoint });
     const inst = h.inst;
     const sourceTexture = { width: 960, height: 640 };
     const sourceView = {}, destinationView = {};
@@ -614,4 +619,18 @@ test('demo: the user takes over at once (a pointer press or a key on the canvas)
   assert.equal(await calm.handle.trigger('demo'), 'intact', 'reduced motion: it resolves at once with the state it rests in');
   assert.equal(calm.inst.continuous, false, 'nothing moves');
   assert.equal(patterns(calm.gpu), 0);
+});
+
+test('extended range: the pipelines whose shader adds light get HDR_PEAK from context.hdr, 1 without it; the shader holds the shared shoulder', async () => {
+  /** @param {boolean|undefined} hdr */
+  const peaks = async (hdr) => { const { gpu, handle } = await instance({}, { hdr }); handle.remove(); return gpu.pipelines.map((/** @type {any} */ d) => [d.fragment.entryPoint, d.fragment.constants?.HDR_PEAK]); };
+  const lit = ['fs_shard', 'fs_debris', 'fs_backdrop', 'fs_wall'];
+  const on = await peaks(true);
+  assert.equal(on.length, 9);
+  for (const [entry, peak] of on) assert.equal(peak, lit.includes(entry) ? HDR_PEAK : undefined, `${entry} with extended range`);
+  for (const hdr of [false, undefined]) for (const [entry, peak] of await peaks(hdr)) assert.equal(peak, lit.includes(entry) ? 1 : undefined, `${entry} without (${hdr})`);
+  assert.deepEqual([...new Set(on.filter(([, peak]) => peak === undefined).map(([entry]) => entry))].sort(), ['fs_copy', 'fs_full', 'fs_shadow'], 'the passthrough, the frozen copy and the shadows do not read it');
+  const code = readFileSync(new URL('../shatter.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'shatter.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
 });

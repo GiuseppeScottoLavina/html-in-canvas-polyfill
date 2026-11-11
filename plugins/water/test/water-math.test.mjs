@@ -4,6 +4,8 @@ import { contractTest } from '../../_shared/contract-test.mjs';
 import { ACTIONS, AMBIENT_PX, DROP_DEPTH, G, LIGHT_GRACE_MS, LIGHT_INSET_PX, MESH_PX, POND_DEPTH, causticMesh, causticRegion, POND_RADIUS, dropDepth, GLOBALS_LENGTH, demoRain, mapWaterPoint, meta, plugin as WaterEffectPlugin } from '../index.js';
 import { AMBIENT_WAVES, CAUSTIC_DEPTH_PX, CAUSTIC_PX, DAMPING, PAD, VISCOSITY, REFRACT_PX, STEP_HZ, clear, createField, mirror, quiet, slopeBound, stamp, step, surfaceAt } from '../sim.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
+import { readFileSync } from 'node:fs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 
 contractTest(import.meta.url);
 
@@ -329,8 +331,10 @@ function fakeGpu() {
   const textures = [];
   const tables = [];
   const created = [];
+  /** the descriptors of the pipelines the plugin made */
+  const pipelines = [];
   const device = {
-    createShaderModule: () => ({}), createRenderPipeline: () => ({}), createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
+    createShaderModule: () => ({}), createRenderPipeline: (d) => { pipelines.push(d); return {}; }, createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
     createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: () => ({}),
     createTexture: (d) => { const t = { d, destroyed: false, createView: () => ({}), destroy() { t.destroyed = true; } }; created.push(t); return t; },
     queue: {
@@ -341,12 +345,12 @@ function fakeGpu() {
   };
   const pass = { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} };
   const encoder = { beginRenderPass: () => pass };
-  return { device, writes, textures, tables, created, encoder };
+  return { device, writes, textures, tables, created, pipelines, encoder };
 }
 
 const W = 400, H = 300;
 /** `localPoint` stands for the plugins added after the water (context.localPoint); without it the context has none */
-async function createWater(options = {}, { reduced = false, localPoint = undefined } = {}) {
+async function createWater(options = {}, { reduced = false, localPoint = undefined, hdr = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const gpu = fakeGpu();
   const listeners = {};
@@ -360,6 +364,7 @@ async function createWater(options = {}, { reduced = false, localPoint = undefin
     listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; },
     viewport: () => ({}),
     ...(localPoint ? { localPoint } : {}),
+    ...(hdr === undefined ? {} : { hdr }),
   };
   const instance = await WaterEffectPlugin.create(context, { shader: '// wgsl', ...options });
   const frame = (now) => ({ now, width: W * 2, height: H * 2, cssWidth: W, cssHeight: H, dpr: 2, sourceReady: true, sourceView: {}, destinationView: {}, encoder: gpu.encoder });
@@ -1020,4 +1025,16 @@ test('destroy: a pending demo and every waiter resolve null, the field texture i
   assert.equal(await demo, null);
   assert.equal(await waiting, null);
   assert.ok(w.gpu.created.every((t) => t.destroyed));
+});
+
+test('extended range: the picture pipeline gets HDR_PEAK from context.hdr, 1 without it; a `shader` option without the constant gets none; the shader holds the shared shoulder', async () => {
+  const code = readFileSync(new URL('../water.wgsl', import.meta.url), 'utf8');
+  /** @param {boolean|undefined} hdr @param {string} shader */
+  const peaks = async (hdr, shader) => { const { gpu, instance } = await createWater({ shader }, { hdr }); instance.destroy?.(); return Object.fromEntries(gpu.pipelines.map((d) => [d.fragment.entryPoint, d.fragment.constants?.HDR_PEAK])); };
+  assert.deepEqual(await peaks(true, code), { fs: HDR_PEAK, fs_caustics: undefined }, 'extended range: the picture; the caustic pass writes light ratios, not colours');
+  assert.deepEqual(await peaks(false, code), { fs: 1, fs_caustics: undefined });
+  assert.deepEqual(await peaks(undefined, code), { fs: 1, fs_caustics: undefined }, 'a host that says nothing');
+  assert.deepEqual(await peaks(true, '// a shader of the page, without the constant'), { fs: undefined, fs_caustics: undefined }, 'a constant the shader does not declare would fail the pipeline');
+  assert.ok(code.includes(SHOULDER_WGSL), 'water.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
 });

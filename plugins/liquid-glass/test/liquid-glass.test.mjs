@@ -5,6 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { fakeGpu } from '../../_shared/fake-gpu.mjs';
+import { readFileSync } from 'node:fs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 import { GLASS, SPRINGS, UNIFORM_FLOATS, demoStops, lensSurface, mapLensPoint, meta, plugin, sdSquircle, writeLensGeometry } from '../index.js';
 
 contractTest(import.meta.url);
@@ -181,11 +183,15 @@ test('a moving lens stretches along its velocity, also diagonally, and squashes 
 });
 
 /** `localPoint` stands for the plugins added after this one (context.localPoint); without it the context has none */
-async function create(options = {}, { reduced = false, source = null, localPoint = undefined } = {}) {
+async function create(options = {}, { reduced = false, source = null, localPoint = undefined, hdr = undefined } = {}) {
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, text: async () => '// wgsl' });
   const gpu = fakeGpu();
+  /** the descriptors of the pipelines the plugin made */
+  const pipelines = [];
+  const makePipeline = gpu.device.createRenderPipeline;
+  gpu.device.createRenderPipeline = (d) => { pipelines.push(d); return makePipeline(d); };
   const listeners = {};
   const listenOptions = {};
   let renders = 0;
@@ -195,6 +201,7 @@ async function create(options = {}, { reduced = false, source = null, localPoint
     apiVersion: 2, device: gpu.device, format: 'bgra8unorm', canvas, source, requestRender: () => { renders += 1; },
     listen: (type, fn, opts) => { listeners[type] = fn; listenOptions[type] = opts; return () => {}; },
     ...(localPoint ? { localPoint } : {}),
+    ...(hdr === undefined ? {} : { hdr }),
   };
   try {
     const instance = await plugin.create(context, options);
@@ -209,7 +216,7 @@ async function create(options = {}, { reduced = false, source = null, localPoint
       listeners[type](e);
       return e;
     };
-    return { instance, gpu, listeners, listenOptions, frame, renders: () => renders, last, touch };
+    return { pipelines, instance, gpu, listeners, listenOptions, frame, renders: () => renders, last, touch };
   } finally { globalThis.fetch = realFetch; }
 }
 
@@ -576,4 +583,18 @@ test('options are clamped; setOptions reaches the uniform block', async () => {
   instance.render(frame());
   u = last();
   assert.deepEqual([u[7], u[11], u[12], u[13], u[14], u[16]], [50, 0.5, 0.25, 0.5, 0, 0.5]);
+});
+
+test('extended range: the pipeline gets HDR_PEAK from context.hdr, 1 without it; the shader holds the shared shoulder', async () => {
+  const peaks = [];
+  for (const hdr of [true, false, undefined]) {
+    const { pipelines, instance } = await create({}, { hdr });
+    assert.equal(pipelines.length, 1);
+    peaks.push(pipelines[0].fragment.constants?.HDR_PEAK);
+    instance.destroy();
+  }
+  assert.deepEqual(peaks, [HDR_PEAK, 1, 1], 'extended range, standard range, a host that says nothing');
+  const code = readFileSync(new URL('../liquid-glass.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'liquid-glass.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
 });

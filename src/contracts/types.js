@@ -698,7 +698,9 @@ export {};
  * @property {Element} source   the drawable the host samples
  * @property {any} adapter
  * @property {any} device
- * @property {string} format
+ * @property {string} format   the format of every target the plugin renders into (the canvas format; `rgba16float` with `hdr`)
+ * @property {boolean} hdr   extended range is in use: the targets are float, what a plugin writes is not clamped, and a value above 1 is shown brighter than
+ *   white where the display can. A plugin writes finite values of 0 or more, and reads its source the same way (the plugin before it may have written above 1)
  * @property {() => void} requestRender
  * @property {() => EffectViewport} viewport
  * @property {(type: string, listener: EventListenerOrEventListenerObject, options?: AddEventListenerOptions|boolean) => () => void} listen  auto-removed on detach
@@ -793,6 +795,9 @@ export {};
  * @property {number} [maxDpr]
  * @property {'low-power'|'high-performance'} [powerPreference]
  * @property {boolean} [interposer]  remap pointer input through spatial plugins (default true)
+ * @property {boolean} [hdr]  ask for extended range (default false): the canvas and every target of the chain are `rgba16float`, and a value above 1 that a plugin
+ *   writes is shown brighter than white as far as the display can (white on a display without the headroom). In use only where the browser takes the
+ *   `extended` tone mapping of a WebGPU canvas (EffectHostStats.hdr, EffectPluginContext.hdr); decided when the host is created, and again after a device loss
  */
 /**
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
@@ -818,6 +823,7 @@ export {};
  * @property {number} pluginErrors
  * @property {number} deviceLosses
  * @property {boolean} paused  the canvas cannot be seen (off-screen or hidden document), so the host renders nothing (ADR-G)
+ * @property {boolean} hdr  extended range is in use (EffectHostOptions.hdr)
  * @property {number} pauses  times the host paused
  * @property {number} offscreenFrames  frames rendered while paused, only to advance an unsettled trigger()/settled()
  * @property {number|null} sourceVersion

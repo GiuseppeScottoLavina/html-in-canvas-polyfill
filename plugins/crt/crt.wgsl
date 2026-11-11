@@ -1,6 +1,11 @@
 // CRT arcade monitor. Lengths in CSS px of the presented frame. mapCrtPoint() in index.js is the JavaScript twin of the barrel and of
 // the screen mask below: same formula, same rounded screen corners. Everything after the barrel (beam, scanlines, aperture grille, glow,
 // warmth, flicker, glass) changes colours only, never which source point a pixel shows.
+//
+// Extended range (HDR_PEAK > 1): the picture of the tube (beam, scanlines, grille, the glass over it) stays under white, compressed by the
+// same shoulder as on a standard target. What goes above it, modestly, is the bloom of the phosphor where the beam is near white on a
+// thin stroke (bright text, a rule: far brighter than the ring of taps 4 px around it), and where the plugin before this one wrote above
+// white. A flat bright area (a white page, a panel, a button, the body of a large letter) does not bloom above white.
 struct U {
   res : vec2<f32>,     // presented size, backing px
   css : vec2<f32>,     // presented size, CSS px
@@ -23,6 +28,29 @@ struct U {
 @group(0) @binding(2) var src : texture_2d<f32>;
 
 const BG = vec3<f32>(0.008, 0.009, 0.010);
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
+// the bloom above white: its strength at full glow, the luminance of the beam from which, and at which in full, a stroke blooms, and how
+// much brighter than the ring 4 px around it a pixel is where the bloom starts, and where it is full (a stroke up to about 3 px wide
+// covers a quarter of that ring; the edge of a bright area has half of it bright and stays under the first value)
+const HOT_BLOOM : f32 = 0.5;
+const HOT_LEVEL : vec2<f32> = vec2<f32>(0.72, 0.95);
+const HOT_STROKE : vec2<f32> = vec2<f32>(0.5, 0.68);
+
+fn luma(c : vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.299, 0.587, 0.114)); }
 
 @vertex
 fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> {
@@ -81,9 +109,15 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
 
   // phosphor glow and bloom: three rings of taps. The light spills from bright parts into darker neighbours (a halo around text and
   // controls), and bright parts glow a little more; a flat bright area is not washed out, so its lines and stripes stay
+  var hot = 0.0;
+  if (HDR_PEAK > 1.0) { hot = smoothstep(0.0, 0.5, max(col.r, max(col.g, col.b)) - 1.0); }   // the beam driven above white by the plugin before
   if (u.glow > 0.0) {
     let near = ring(s, 1.5, false);
     let mid = ring(s, 4.0, true);
+    if (HDR_PEAK > 1.0) {
+      let l = luma(min(col, vec3<f32>(1.0)));
+      hot = max(hot, u.glow * smoothstep(HOT_LEVEL.x, HOT_LEVEL.y, l) * smoothstep(HOT_STROKE.x, HOT_STROKE.y, l - luma(min(mid, vec3<f32>(1.0)))));
+    }
     let far = ring(s, 9.0, false);
     let bloom = near * 0.45 + mid * 0.35 + far * 0.2;
     col = col + max(bloom - col, vec3<f32>(0.0)) * (1.1 * u.glow) + bloom * bloom * (0.45 * u.glow) + far * (0.16 * u.glow);
@@ -128,5 +162,12 @@ fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   col = col * v * (0.5 + 0.5 * smoothstep(0.0, 10.0, -sd)) + vec3<f32>(sheen);
 
   let cover = clamp(0.5 - 1.5 * sd * dpr, 0.0, 1.0);
+  if (HDR_PEAK > 1.0) {
+    // the bloom is light of the phosphor (warm with `warmth`), spread over lines and stripes, dimmed towards the rim as the picture is
+    let glow_colour = mix(vec3<f32>(1.0), vec3<f32>(1.0, 0.92, 0.77), u.warmth);
+    // the screen in its bezel exactly as a standard target shows it (composed, then clamped), and the bloom over that
+    let seen = clamp(mix(bezel, col, cover), vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(hdr_light(seen, glow_colour * (hot * HOT_BLOOM * v * cover)), 1.0);
+  }
   return vec4<f32>(mix(bezel, col, cover), 1.0);
 }

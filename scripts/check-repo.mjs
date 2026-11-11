@@ -221,7 +221,9 @@ if (!docsOnly) {
   // src/effects/input-mapper.js mapAfter, src/effects/effect-plugins.js); before it the first of two stacked plugins read the pointer on the canvas
   // 17741 -> 17743 (2026-11-10, measured 17,743): EffectHost.mapPoint (+2: src/effects/effect-host.js, src/effects/index.js), the host's own mapping of a pointer
   // for a page to show (the gallery's input map)
-  if (total > 17743) problems.push(`G-size: core is ${total} code lines (> 17743)`);
+  // 17743 -> 17752 (2026-11-11, measured 17,752): the effects host's option `hdr` (+9: src/effects/gpu-presenter.js, the context and the stats), a float canvas
+  // with the extended tone mapping for highlights above white
+  if (total > 17752) problems.push(`G-size: core is ${total} code lines (> 17752)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

@@ -26,6 +26,8 @@ Layers:
 
 A **burst** (520 ms; a new pattern every 45 ms, every fifth pattern clean so that it flickers; full strength for 60 % of the time, then fading) plays in either mode on the action `burst`, on the Burst button of `mountUI`, and on its own when an element of the drawn page starts to match `watch` (by default a validation error: `[aria-invalid="true"], .invalid, [data-state="error"]`; a `MutationObserver` on the source watches `class`, `aria-invalid` and `data-state`) or an `invalid` event fires in the page. In the plugin gallery a Submit with an invalid email sets `.invalid` and `data-state="error"`, so the form glitches without any change to the gallery page. All randomness is a hash of (seed, burst, pattern, index): the same instant gives the same picture and the same mapper at every frame cap.
 
+**Extended range.** On a host with `hdr: true` ([guide](../../docs/guides/EFFECTS-PLUGINS.md#121-extended-range-contexthdr)) nothing of this effect goes above white: a glitch is a fault of a digital picture signal, and a signal has no code above white. The shader clamps its output to 0..1 on every target, so the picture is the one a standard target shows, and what a plugin before this one wrote above white comes out as white. Measured in the plugin gallery (canvas 1100 x 640 at device pixel ratio 1, headless Chrome, a probe stage after the plugin; the demo, a pointer sweep and a click): at rest: nothing above white; on the form scene nothing above white; on the daylight scene nothing above white. Before the plugin told the page from the light, the same run gave nothing on the form and nothing on the daylight scene. On a standard target the picture is the one it always was, bit for bit.
+
 ## Usage
 
 ```html

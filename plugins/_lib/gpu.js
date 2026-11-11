@@ -5,14 +5,15 @@
 /**
  * One full-screen triangle (`vs` / `fs` of `module`) over the source: binding 0 a uniform block of `floats` floats, 1 a linear clamp
  * sampler, 2 the source view; it draws into the frame's destination, cleared to black. Bind groups are cached per source view and the
- * pass descriptor is reused, so a frame allocates nothing.
- * @param {any} device @param {string} format @param {any} module @param {string} label @param {number} floats
+ * pass descriptor is reused, so a frame allocates nothing. `constants`: the pipeline-overridable constants of the fragment shader (hdrConstants of
+ * ./hdr.js for a shader that declares `override HDR_PEAK`).
+ * @param {any} device @param {string} format @param {any} module @param {string} label @param {number} floats @param {Record<string, number>} [constants]
  */
-export function fullscreenPass(device, format, module, label, floats) {
+export function fullscreenPass(device, format, module, label, floats, constants) {
   const pipeline = device.createRenderPipeline({
     layout: 'auto', label,
     vertex: { module, entryPoint: 'vs' },
-    fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+    fragment: { module, entryPoint: 'fs', targets: [{ format }], ...(constants ? { constants } : {}) },
     primitive: { topology: 'triangle-list' },
   });
   const usage = /** @type {any} */ (globalThis).GPUBufferUsage;

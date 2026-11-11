@@ -25,7 +25,8 @@ import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
 
 /**
  * @typedef {Object} Presenter
- * @property {any} adapter @property {any} device @property {string} format
+ * @property {any} adapter @property {any} device @property {string} format  the canvas format: every target of the chain has it (`rgba16float` with `hdr`)
+ * @property {boolean} hdr  extended range is in use (EffectHostOptions.hdr, where the browser takes the configuration)
  * @property {any} context  the GPUCanvasContext
  * @property {() => EffectViewport} viewport
  * @property {() => boolean} syncSize  apply css size * min(dpr, maxDpr) to the canvas backing store; true when it changed (the bitmap was cleared: render now)
@@ -82,9 +83,21 @@ export async function createPresenter(canvas, options, hooks = {}) {
     device.destroy();
     throw invalidState('canvas-context-conflict: the canvas already has another context type; effects need a canvas without a 2D/WebGL context');
   }
-  const format = gpu.getPreferredCanvasFormat();
   const USAGE = win.GPUTextureUsage;
-  context.configure({ device, format, alphaMode: 'opaque', usage: USAGE.RENDER_ATTACHMENT | USAGE.COPY_DST | (hooks.extraCanvasUsage ?? 0) });
+  const config = { device, alphaMode: 'opaque', usage: USAGE.RENDER_ATTACHMENT | USAGE.COPY_DST | (hooks.extraCanvasUsage ?? 0) };
+  let format = gpu.getPreferredCanvasFormat();
+  // Extended range (options.hdr): a float canvas with the `extended` tone mapping, where a value above 1 is shown brighter than white as far as the display can
+  // (on a display without the headroom it is white, as in an 8-bit canvas). Used only where the browser reports the configuration back: one that does not know
+  // the member takes the float format and would tone-map it as before, for twice the memory.
+  let hdr = false;
+  if (options.hdr) {
+    try {
+      context.configure({ ...config, format: 'rgba16float', toneMapping: { mode: 'extended' } });
+      hdr = context.getConfiguration?.()?.toneMapping?.mode === 'extended';
+    } catch { /* the format or the member is not accepted here */ }
+    if (hdr) format = 'rgba16float';
+  }
+  if (!hdr) context.configure({ ...config, format });
 
   let disposed = false;
   /** @type {EffectViewport} */
@@ -145,7 +158,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
 
   /** @type {Presenter} */
   const presenter = {
-    adapter, device, format, context,
+    adapter, device, format, hdr, context,
     viewport: () => vp,
     syncSize() {
       const css = hooks.cssSize?.() ?? { width: canvas.clientWidth, height: canvas.clientHeight };

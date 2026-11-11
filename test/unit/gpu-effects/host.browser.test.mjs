@@ -296,6 +296,68 @@ gtest('context.localPoint: a point of the canvas through the mappers of the plug
   assert.deepEqual(b.ctx.localPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'the second is the last plugin now');
 });
 
+/** A plugin that writes one colour, and one that shows where its source is above 1 (white) or not (black): what a target keeps of a value above white. */
+const fillPlugin = (rgb, out = {}) => definePlugin({
+  type: 'fill', apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true },
+  create(ctx) {
+    out.ctx = ctx;
+    const { device, format } = ctx;
+    const module = device.createShaderModule({ code: `
+      @vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> { var p = array<vec2<f32>,3>(vec2(-1.,-1.), vec2(3.,-1.), vec2(-1.,3.)); return vec4(p[i], 0., 1.); }
+      @fragment fn fs() -> @location(0) vec4<f32> { return vec4(${rgb.map((v) => v.toFixed(3)).join(', ')}, 1.0); }` });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
+    return { render(frame) { const pass = frame.encoder.beginRenderPass({ colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store' }] }); pass.setPipeline(pipeline); pass.draw(3); pass.end(); } };
+  },
+});
+const aboveWhitePlugin = () => definePlugin({
+  type: 'above', apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true },
+  create(ctx) {
+    const { device, format } = ctx;
+    const module = device.createShaderModule({ code: `
+      @group(0) @binding(1) var tx : texture_2d<f32>;
+      @vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> { var p = array<vec2<f32>,3>(vec2(-1.,-1.), vec2(3.,-1.), vec2(-1.,3.)); return vec4(p[i], 0., 1.); }
+      @fragment fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
+        let c = textureLoad(tx, vec2<i32>(pos.xy), 0); return vec4(vec3(select(0.0, 1.0, max(c.r, max(c.g, c.b)) > 1.5)), 1.0); }` });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
+    return { render(frame) {
+      const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 1, resource: frame.sourceView }] });
+      const pass = frame.encoder.beginRenderPass({ colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store' }] });
+      pass.setPipeline(pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();
+    } };
+  },
+});
+
+gtest('hdr: the targets of the chain are float and keep a value above white; the context and the stats say so; without the option they are the canvas format and clamp', async (t) => {
+  for (const hdr of [true, false]) {
+    const { rig, host } = await startHost(t, {}, hdr ? { hdr: true } : {});
+    const a = {};
+    await host.addPlugin(fillPlugin([2, 0.5, 0], a));
+    await host.addPlugin(aboveWhitePlugin());
+    rig.tick();
+    const seen = RED(rig.snap()).slice(0, 3);
+    if (hdr && !host.stats().hdr) { console.error('this browser does not take the extended tone mapping: the option leaves the standard range'); assert.equal(a.ctx.hdr, false); assert.equal(a.ctx.format, navigator.gpu.getPreferredCanvasFormat()); continue; }
+    assert.equal(host.stats().hdr, hdr);
+    assert.equal(a.ctx.hdr, hdr);
+    assert.equal(a.ctx.format, hdr ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat());
+    assert.deepEqual(seen, hdr ? [255, 255, 255] : [0, 0, 0], hdr ? 'the 2 the first plugin wrote reaches the second' : 'control: an 8-bit target holds 1 at most');
+    host.destroy();
+  }
+});
+
+gtest('hdr: the presented picture of values up to white is the same with and without it', async (t) => {
+  const shots = [];
+  for (const hdr of [true, false]) {
+    const { rig, host } = await startHost(t, {}, { hdr });
+    await host.addPlugin(invertPlugin());
+    rig.tick();
+    const img = rig.snap();
+    shots.push([RED(img).slice(0, 3), px(img, 350, 230).slice(0, 3), px(img, 5, 5).slice(0, 3)]);
+    host.destroy();
+  }
+  assert.deepEqual(shots[0], shots[1]);
+  assert.deepEqual(shots[0][0], [0, 255, 255], 'the inverted red of the source');
+});
+
 gtest('host.mapPoint: a point of the canvas through every plugin, the point in the source; null where the plugins show nothing of it', async (t) => {
   const { rig, host } = await startHost(t);
   assert.deepEqual(host.mapPoint({ x: 5, y: 7 }), { x: 5, y: 7 }, 'no plugin: the point itself');

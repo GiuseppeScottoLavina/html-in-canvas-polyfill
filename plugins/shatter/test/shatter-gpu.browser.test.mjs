@@ -8,6 +8,9 @@ import { nonDominantShare } from '/test/unit/gpu-effects/lib/rig.mjs';
 import { CONTROLS, DURATION, H, W, diff, diffNear, transitionRig } from '/plugins/_shared/transition-gpu-rig.mjs';
 import { plugin } from '/plugins/shatter/index.js';
 import { isNoTarget } from '/src/effects/no-target.js';
+import { makeRig } from '/test/unit/gpu-effects/lib/rig.mjs';
+import { createEffectHost } from '/src/effects/effect-host.js';
+import { definePlugin } from '/src/effects/plugin-abi.js';
 
 console.error(`shatter-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'NOT available'}`);
 
@@ -249,3 +252,105 @@ gpuTest('after a play from an off-centre impact the last frame equals the source
   }
   assert.equal(wrong, 0);
 });
+
+// ---- extended range ---------------------------------------------------------------------------------------------------------------------
+
+/** a dark page with a large white panel */
+const PANEL = { x: 250, y: 60, w: 190, h: 200 };
+const paintPanel = (/** @type {CanvasRenderingContext2D} */ ctx) => {
+  ctx.fillStyle = '#101826'; ctx.fillRect(0, 0, 480, 320);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(PANEL.x, PANEL.y, PANEL.w, PANEL.h);
+};
+/** a stage of one full-screen pass over its source (`body`: the fragment's colour from the source texel `c`) */
+const stage = (/** @type {string} */ type, /** @type {string} */ body) => definePlugin({
+  type, apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true },
+  create(/** @type {any} */ ctx) {
+    const { device, format } = ctx;
+    const module = device.createShaderModule({ code: `
+      @group(0) @binding(1) var tx : texture_2d<f32>;
+      @vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> { var p = array<vec2<f32>,3>(vec2(-1.,-1.), vec2(3.,-1.), vec2(-1.,3.)); return vec4(p[i], 0., 1.); }
+      @fragment fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> { let c = textureLoad(tx, vec2<i32>(pos.xy), 0); return vec4(${body}, 1.0); }` });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
+    return { render(/** @type {any} */ frame) {
+      const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 1, resource: frame.sourceView }] });
+      const pass = frame.encoder.beginRenderPass({ colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store' }] });
+      pass.setPipeline(pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();
+    } };
+  },
+});
+/** after a plugin: white where it wrote above white (largest channel over 1.004), black elsewhere */
+const aboveWhite = () => stage('above-white', 'vec3(select(0.0, 1.0, max(c.r, max(c.g, c.b)) > 1.004))');
+/** the control of the area check: the whole picture a tenth brighter, so a white panel is above white as a whole */
+const lifted = () => stage('lifted', 'c.rgb * 1.1');
+
+/** the pixels above white in a frame of the aboveWhite stage: all of them, their centre, and those inside the white panel (its inner part: `inset` px in) */
+function litPixels(/** @type {ImageData} */ img, inset = 4) {
+  let all = 0, panel = 0, sx = 0, sy = 0;
+  const x0 = PANEL.x + inset, x1 = PANEL.x + PANEL.w - inset, y0 = PANEL.y + inset, y1 = PANEL.y + PANEL.h - inset;
+  for (let y = 0; y < img.height; y += 1) {
+    for (let x = 0; x < img.width; x += 1) {
+      if (img.data[(y * img.width + x) * 4] < 128) continue;
+      all += 1; sx += x; sy += y;
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) panel += 1;
+    }
+  }
+  return { all, panel, panelArea: (x1 - x0) * (y1 - y0), cx: all ? sx / all : NaN, cy: all ? sy / all : NaN };
+}
+
+/** the plugin over the panel page, then the aboveWhite stage, on a host with or without extended range; `first`: the stage before it instead of the plugin */
+async function rangeRig(/** @type {any} */ t, /** @type {boolean} */ hdr, /** @type {any} */ first = null) {
+  const rig = makeRig({ w: 480, h: 320, paint: paintPanel });
+  rig.commit();
+  const host = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, { interposer: false, hdr });
+  t.cleanup(() => host.destroy());
+  const handle = await host.addPlugin(first ?? plugin, first ? {} : { intro: false, onSubmit: 'off' });
+  await host.addPlugin(aboveWhite());
+  let now = performance.now() + 60;
+  const r = rig.canvas.getBoundingClientRect();
+  return {
+    rig, host, handle,
+    /** one frame `ms` later on the frame clock, and what it shows above white */
+    frame(ms = 16) { now += ms; rig.tick(now); return litPixels(rig.snap()); },
+    /** a pointer event at a canvas point */
+    pointer(/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, o = {}) { rig.layerEl.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, isPrimary: true, clientX: r.left + x, clientY: r.top + y, ...o })); },
+  };
+}
+const SKIP = ' extended range: SKIPPED, this browser does not take the extended tone mapping of a WebGPU canvas';
+
+gpuTest('extended range: the flash of the strike and its glints are above white, the white panel around the impact is not, as a whole; the intact and the cracked pane at rest show nothing; a falling shard flashes; on a standard target nothing is', async (t) => {
+  const on = await rangeRig(t, true);
+  if (!on.host.stats().hdr) { console.error('shatter' + SKIP); return; }
+  assert.equal(on.frame().all, 0, 'the intact pane: nothing above white');
+  // a strike inside the white panel
+  const at = { x: 345, y: 160 };
+  let state = '';
+  on.handle.trigger('crack', { point: at }).then((/** @type {any} */ s) => { state = s; });
+  let lit = on.frame();
+  for (let k = 0; k < 4; k += 1) lit = on.frame();   // 80 ms into the cracks: the flash is near its brightest
+  console.error(`shatter extended range, the strike: ${lit.all} px above white around ${lit.cx.toFixed(0)}, ${lit.cy.toFixed(0)}; ${lit.panel} of the ${lit.panelArea} px of the white panel`);
+  assert.ok(lit.all > 150, `the flash is above white: ${lit.all} px`);
+  assert.ok(Math.hypot(lit.cx - at.x, lit.cy - at.y) < 40, `around the impact: ${lit.cx.toFixed(0)}, ${lit.cy.toFixed(0)}`);
+  assert.ok(lit.panel < 0.25 * lit.panelArea, `the white panel is not above white as a whole: ${lit.panel} of ${lit.panelArea} px`);
+  for (let k = 0; k < 80 && !state; k += 1) { on.frame(); await new Promise((ok) => setTimeout(ok, 0)); }   // the cracks run out (450 ms on the frame clock)
+  assert.equal(state, 'cracked');
+  assert.equal(on.frame().all, 0, 'the cracked pane at rest: nothing above white (the white panel under its facets and crack lines included)');
+  // the fall: a face that mirrors the key light flashes above white; the falling panel never does as a whole
+  on.handle.trigger('out');
+  let most = 0;
+  for (let k = 0; k < 70; k += 1) most = Math.max(most, on.frame().all);
+  console.error(`shatter extended range, the fall: at most ${most} px above white in a frame`);
+  assert.ok(most > 20, `a falling shard flashes above white: ${most} px at most`);
+  assert.ok(most < 0.06 * 480 * 320, `a small part of the canvas in every frame: ${most} px at most`);
+  // control of the area check: a stage that lifts the whole picture puts the panel above white
+  const up = await rangeRig(t, true, lifted());
+  const all = up.frame();
+  assert.ok(all.panel > 0.9 * all.panelArea, `control: a lifted panel is counted (${all.panel} of ${all.panelArea} px)`);
+  // control of the range: the same strike on a standard target
+  const off = await rangeRig(t, false);
+  assert.equal(off.host.stats().hdr, false);
+  off.frame();
+  off.handle.trigger('crack', { point: at });
+  let dim = off.frame();
+  for (let k = 0; k < 4; k += 1) dim = off.frame();
+  assert.equal(dim.all, 0, 'standard range: an 8-bit target holds nothing above white');
+}, { timeout: 30000 });

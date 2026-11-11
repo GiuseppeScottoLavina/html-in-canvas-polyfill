@@ -14,6 +14,7 @@ import { NO_TARGET } from '../../src/effects/no-target.js';
 import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { fullscreenPass } from '../_lib/gpu.js';
+import { hdrConstants } from '../_lib/hdr.js';
 import { injectStyle } from '../_lib/ui.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
@@ -127,7 +128,7 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('crt.wgsl'), label: 'crt' });
-    const gpu = fullscreenPass(device, format, module, 'crt', UNIFORM_FLOATS);
+    const gpu = fullscreenPass(device, format, module, 'crt', UNIFORM_FLOATS, hdrConstants(context));
     const u = new Float32Array(UNIFORM_FLOATS);
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
     const mappers = states.map((s) => stateMapper(s, mapCrtPoint));

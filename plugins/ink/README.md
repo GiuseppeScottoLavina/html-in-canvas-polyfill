@@ -84,6 +84,10 @@ Measured on 2026-11-10 on an Apple M1 Max (macOS, headless Chrome), at 1280 x 80
 - **Memory.** The field: 8 layers of rgba32float at the grid's size (one per step of a frame; 116 x 68 cells, 1 MB for a 1100 x 620 canvas). The pigment: two rgba16float textures of at most 900,000 texels (14.4 MB together at that size). Four mapper states of 126 KB.
 - **Allocations.** A frame allocates nothing of its own: the uniform blocks, the pass descriptors, the segment queue and the packed field are reused (the browser makes its pass encoder objects).
 
+
+## Extended range
+
+With the host's `hdr` option the ink writes nothing above white and nothing below black: the pigment absorbs and scatters the page's own light and adds none. Measured in the gallery with `&hdr=1`, a pointer sweep and the demo: 0 pixels above white and none below 0, on the form and the daylight scene.
 ## Limitations
 
 - The fluid runs on the CPU (so that the input mapper reads exactly what the GPU draws) on cells of about 10 CSS px: swirls smaller than about 3 cells do not form, and the displacement is smooth at that scale. The pigment has about one texel per CSS px and no more detail than that.

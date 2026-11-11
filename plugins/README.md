@@ -23,7 +23,7 @@ Using plugins and writing them (ABI v2, actions, the test kit): [docs/guides/EFF
 
 The previews are recorded from the gallery in headless Chrome (each plugin's `test/gallery.e2e.mjs --record`). Each plugin's `meta.reducedMotion` says what it does when the user prefers reduced motion; the gallery shows it, and shows a button per action. Every plugin README has the same sections: what it does, a preview, usage, options, actions, input, reduced motion, performance, limitations, files and tests.
 
-Not built: [`_template`](_template/) (start a new plugin from a copy of it: a spatial plugin with two actions, `shift` and a `demo`, and no work at rest), [`_lib`](_lib/) (runtime code that more than one plugin uses, bundled into each: the transition timeline of disintegrate and shatter, the `point` option of actions, the WGSL loader, the UI stylesheet, the state mapper, option clamping, the full-screen WebGPU pass, the pointer spring and the pointer as seen through the plugins added after this one) and [`_shared`](_shared/) (test tooling).
+Not built: [`_template`](_template/) (start a new plugin from a copy of it: a spatial plugin with two actions, `shift` and a `demo`, and no work at rest), [`_lib`](_lib/) (runtime code that more than one plugin uses, bundled into each: the transition timeline of disintegrate and shatter, the `point` option of actions, the WGSL loader, the UI stylesheet, the state mapper, option clamping, the full-screen WebGPU pass, the pointer spring, the pointer as seen through the plugins added after this one, and extended range: the peak, the pipeline constants and the shoulder of the light above white) and [`_shared`](_shared/) (test tooling).
 
 ## Using a built plugin
 

@@ -30,6 +30,7 @@
 //   under     (iPad: water under the CRT monitor at full curvature) a tap on the curved picture drops a pebble where the finger is SEEN: the first effect reads
 //             the pointer through the second (EffectPluginContext.localPoint). The changed pixels are centred within UNDER_PX css px of the tap
 //   pairs     (iPad, one page) every ordered pair of the manifest's plugins: both run, enabled, a frame was presented, no effecterror
+//   hdr       (iPad: water, `&hdr=1`) the host uses extended range (a float canvas with the extended tone mapping), frames are presented and the page says so
 //   map       (iPad: the CRT monitor at full curvature, `&map=1`) the input map: nothing drawn before a pointer arrives; a tap where the effect shows the email
 //             field (found with host.mapPoint over a grid) names that field, frames its real box, shows its value, and the field has the focus; the pointer and
 //             the place it is sent to are more than MAP_PX apart (the effect moved the field); a tap on the toggle takes the map away
@@ -49,6 +50,7 @@
 //   C15 under  (water under the CRT monitor) water gets a context whose localPoint returns the point on the canvas, as before the second effect
 //   C16 pairs  the glitch plugin throws in render when it is not the first plugin
 //   C17 map    the CRT monitor with an input mapper that returns the point as it is (the pointer is then sent to the place under it)
+//   C18 hdr    the gallery opened with &hdr=0
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
 // a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes, the stack or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
@@ -434,6 +436,13 @@ async function runOne(browser, server, name, view, o = {}) {
       check('map', 'a tap on the toggle takes the map away (the address follows)', tapped && !!off, await page.evaluate(`({ hidden: document.getElementById('map').hidden, pressed: document.getElementById('map-toggle').getAttribute('aria-pressed'), query: location.search })`));
     }
 
+    // extended range, asked for in the address
+    if (want('hdr')) {
+      const h = await page.evaluate(`({ state: window.__gallery.hdr, stats: window.__gallery.host.stats().hdr, text: document.getElementById('m-range').textContent, frames: window.__gc.frames })`);
+      numbers.hdr = h;
+      check('hdr', 'with &hdr=1 the host uses extended range (a float canvas with the extended tone mapping), frames are presented and the page says so', h.state === true && h.stats === true && /^extended/.test(h.text) && h.frames > 0, h);
+    }
+
     // the frame cap defaults to the display rate
     if (want('cap')) {
       const c = await H.until(() => page.evaluate(`window.__gallery.displayHz ? (() => { const r = document.getElementById('fps-cap'); return { hz: window.__gallery.displayHz, cap: document.getElementById('stage').frameCap, value: r.value, max: r.max, label: document.getElementById('fps-cap-value').textContent }; })() : null`), 6000);
@@ -521,6 +530,9 @@ try {
         const pairs = await runOne(browser, server, 'water', ipad, { query: '&demo=0', steps: ['pairs'] });
         results.runs.push({ plugin: 'every pair', view: 'ipad', ...pairs });
         log('stack', 'ipad', pairs);
+        const hdr = await runOne(browser, server, 'water', ipad, { query: '&hdr=1', steps: ['hdr', 'demo', 'rest'] });
+        results.runs.push({ plugin: 'water, extended range', view: 'ipad', ...hdr });
+        log('stack', 'ipad', hdr);
         const map = await runOne(browser, server, 'crt', ipad, { query: MAP_QUERY, steps: ['map'] });
         results.runs.push({ plugin: 'crt, the input map', view: 'ipad', ...map });
         log('stack', 'ipad', map);
@@ -548,6 +560,7 @@ try {
       { id: 'C15', step: 'under', name: 'water', view: { ...ipad, dpr: 1 }, o: { query: UNDER_QUERY, then: 'crt', script: wrapPlugins("if (name === 'water') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: (ctx, o) => create({ ...ctx, localPoint: (p) => ({ x: p.x, y: p.y }) }, o) } }; }"), steps: ['under'] } },
       { id: 'C16', step: 'pairs', name: 'water', view: ipad, o: { query: '&demo=0', script: wrapPlugins("if (name === 'glitch') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); const render = inst.render; inst.render = function (frame) { if (frame.sourceTexture.label !== 'hic-source') throw new Error('control: not the first plugin'); return render.call(this, frame); }; return inst; } } }; }"), steps: ['pairs'] } },
       { id: 'C17', step: 'map', name: 'crt', view: ipad, o: { query: MAP_QUERY, script: wrapPlugins("if (name === 'crt') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); inst.captureInputMapper = () => (p) => ({ x: p.x, y: p.y }); return inst; } } }; }"), steps: ['map'] } },
+      { id: 'C18', step: 'hdr', name: 'water', view: ipad, o: { query: '&hdr=0', steps: ['hdr'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {
