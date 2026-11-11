@@ -37,7 +37,7 @@
   a { color: #9cf5ff; }
   code { font: 12px/1.5 ui-monospace, monospace; color: #9cf5ff; overflow-wrap: anywhere; }
 
-  /* ---- the chrome above the stage: one bar and two strips of chips (the effect, and a second one over it), so the stage starts within the first ~150 px ---- */
+  /* ---- the chrome above the stage: one bar, one strip of chips and, while stacking, the chain under it, so the stage starts within the first ~150 px ---- */
   #top { max-width: 1100px; margin: 0 auto; }
   .bar { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; min-height: 28px; }
   .bar h1 { margin: 0; font-size: 1.05rem; letter-spacing: -.01em; white-space: nowrap; }
@@ -54,16 +54,28 @@
   #picker button:hover { border-color: rgba(121, 239, 255, .6); }
   #picker button[aria-pressed="true"] { border-color: var(--accent); background: #0b2a40; color: #fff; box-shadow: 0 0 0 2px rgba(121, 239, 255, .22); }
   #picker button:disabled { cursor: not-allowed; opacity: .45; }
-  #picker button:focus-visible, #stack button:focus-visible, #panel button:focus-visible, #panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* a second effect over the first: a smaller strip under the first one */
-  #stack { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; }
-  #stack li { display: flex; }
-  #stack .lab { position: sticky; left: 0; z-index: 1; align-self: stretch; align-items: center; padding: 0 6px 0 2px; font: 600 .78rem/1 system-ui, sans-serif; color: var(--ink-3); white-space: nowrap; background: var(--bg); }
-  #stack button { min-height: 28px; padding: 0 9px; font: 600 .78rem/1 system-ui, sans-serif; color: var(--ink-2); cursor: pointer; white-space: nowrap;
-    border: 1px solid rgba(190, 237, 255, .18); border-radius: 999px; background: transparent; }
-  #stack button:hover { border-color: rgba(121, 239, 255, .6); }
-  #stack button[aria-pressed="true"] { border-color: var(--accent); background: #0b2a40; color: #fff; }
-  #stack button:disabled { cursor: not-allowed; opacity: .4; }
+  #picker button:focus-visible, #panel button:focus-visible, #panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* stacking: the toggle at the head of the strip turns the chips into an ordered selection (a number on each chosen chip, up to three), and the chain
+     under the strip shows the order the effects run in, page first */
+  #picker .stack-li { position: sticky; left: 0; z-index: 1; padding-right: 3px; background: var(--bg); box-shadow: 10px 0 8px -6px var(--bg); }
+  #stack-toggle { display: inline-flex; align-items: center; gap: 6px; }
+  #stack-toggle::before { content: ''; width: 10px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; box-shadow: 3px -3px 0 -1.5px var(--bg), 3px -3px 0 0 currentColor; opacity: .85; }
+  #picker #stack-toggle[aria-pressed="true"] { border-color: #ff9be3; background: #3a1036; color: #fff; box-shadow: 0 0 0 2px rgba(255, 155, 227, .2); }
+  #picker button .n { display: none; min-width: 17px; height: 17px; margin: 0 -4px 0 7px; border-radius: 50%; font: 700 .7rem/17px system-ui, sans-serif; text-align: center; color: #1b0220; background: #ff9be3; }
+  #picker.stacking button[aria-pressed="true"] .n { display: inline-block; }
+  #picker.stacking button[data-effect][aria-pressed="true"] { border-color: #ff9be3; background: #2a0f2b; }
+  #picker.stacking.full button[data-effect]:not([data-effect="off"])[aria-pressed="false"] { opacity: .45; }
+  #chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0 0; padding: 0; list-style: none; font: 600 .78rem/1 system-ui, sans-serif; color: var(--ink-3); }
+  #chain[hidden] { display: none; }
+  #chain .end { padding: 0 2px; }
+  #chain .arrow { color: rgba(190, 237, 255, .45); }
+  #chain li { flex: none; }
+  #chain .fx { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; white-space: nowrap; padding: 0 4px 0 10px; color: #fff; border: 1px solid rgba(255, 155, 227, .55); border-radius: 999px; background: #2a0f2b; }
+  #chain .fx b { color: #ff9be3; }
+  #chain .fx button { width: 20px; height: 20px; padding: 0; font: 600 13px/1 system-ui, sans-serif; color: var(--ink-2); cursor: pointer; border: 0; border-radius: 50%; background: transparent; }
+  #chain .fx button:hover { color: #fff; background: rgba(255, 255, 255, .12); }
+  #chain .fx button:focus-visible, #stack-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #chain .note { color: var(--ink-3); font-weight: 400; }
   /* the input map: where the host sends the pointer, drawn over the stage (outside the canvas: it is the page's, not part of the drawn form) */
   #map-toggle { min-height: 24px; padding: 0 10px; font: 600 .76rem/1 system-ui, sans-serif; color: var(--ink-2); cursor: pointer; white-space: nowrap; border: 1px solid rgba(190, 237, 255, .24); border-radius: 999px; background: transparent; }
   #map-toggle[aria-pressed="true"] { color: #1b0220; border-color: transparent; background: #ff7ad9; }
@@ -200,7 +212,7 @@
     #hud { margin-left: auto; font-size: 11px; }
     #hud .mode, #hud .q { display: none; }   /* the mode is in "About this page"; the quantiles are named in the readout's title */
     #picker button { min-height: 36px; padding: 0 13px; }
-    #stack button { min-height: 32px; }
+    #chain .fx { min-height: 30px; }
     /* the switch between two effects' controls takes no row here: it sits beside the card's heading */
     .card { position: relative; }
     .fx-tabs { position: absolute; top: 12px; right: 14px; }
@@ -232,8 +244,10 @@
   }
   /* phones, and every window narrower than the row of chips: one strip of chips that scrolls sideways (a vertical drag on it still scrolls the page) */
   @media (max-width: 1139px), (max-height: 500px) {
-    #picker, #stack { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-right: calc(-1 * var(--gutter)); padding-right: var(--gutter); }
-    #picker::-webkit-scrollbar, #stack::-webkit-scrollbar { display: none; }
+    #picker { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; margin-right: calc(-1 * var(--gutter)); padding-right: var(--gutter); }
+    #picker::-webkit-scrollbar { display: none; }
+    #chain { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    #chain .note { display: none; }
   }
   /* phones in landscape: the stage starts under the chips and keeps the form's height; the page scrolls */
   @media (max-height: 500px) and (min-width: 600px) {
@@ -251,7 +265,7 @@
     <p id="hud" aria-label="Frame readout" title="effect frames in the last second; frame interval median / 95th percentile; the frame cap; the mode of the polyfill"><span><b id="m-fps">-</b> fx/s</span><span><b id="m-iv">-</b> ms<span class="q"> p50/p95</span></span><span>cap <b id="m-cap">-</b></span><span class="mode"><b id="m-mode">starting</b></span></p>
   </header>
   <ul id="picker" aria-label="Effect"></ul>
-  <ul id="stack" aria-label="A second effect, applied to the picture of the first"></ul>
+  <ol id="chain" aria-label="The effects in the order they run, the page first" hidden></ol>
   <p id="notice" role="status"></p>
 </div>
 
@@ -312,7 +326,7 @@
     <details id="page-about">
       <summary>About this page</summary>
       <p>Pick an effect: it is applied to the same live HTML form drawn inside the canvas, and the form stays usable through it. An effect that has a <code>demo</code> action plays it once when you pick it (not when you prefer reduced motion); its actions are the buttons in the panel (<code>handle.trigger</code>).</p>
-      <p>The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>; <code>&amp;demo=0</code> opens it without the showcase. A second effect can run over the first (<code>&amp;then=&lt;name&gt;</code>): it reads the picture the first one rendered, and a click is mapped back through both.</p>
+      <p>The effects host, the plugins and the frame cap are extensions of this library, not part of the HTML-in-Canvas proposal; they run over the polyfill and over a browser's own implementation (<a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/guides/EFFECTS-PLUGINS.md">details</a>). Link to one effect with <code>?effect=&lt;name&gt;</code>; <code>&amp;demo=0</code> opens it without the showcase. <b>Stack</b> runs up to three effects in a chain (<code>&amp;then=&lt;name&gt;,&lt;name&gt;</code>): each reads the picture the one before it rendered, the chain under the chips shows the order, and a click is mapped back through all of them.</p>
       <p><b>Input map</b> (<code>&amp;map=1</code>) shows what the host does with the pointer. An effect moves pixels, so the field you see under the pointer is elsewhere in the page: the host maps the pointer back through the effect (<code>host.mapPoint</code>) and sends it to the element there. The white ring is the pointer, the pink dot the place in the page it is sent to, the pink frame the real element at that place (in its true position, under the canvas), and the label says which element it is and what it holds now.</p>
       <p>The readout above the canvas counts the <code>effectframe</code> events of the last second: frames per second, and the interval between frames (median and 95th percentile). At rest an effect that is not continuous by design presents nothing, so it reads 0.</p>
       <p id="status">mode: <b id="m-mode-2">starting</b><br>effect: <b id="m-effect">starting</b><br>display: <b id="m-display">measuring</b><br>prefers-reduced-motion: <b id="m-motion">-</b></p>
@@ -328,8 +342,9 @@
   const hic = window.__HIC__;
   // window.__gallery: what the page shows, for its tests: the effects host, the effect handle of the selected plugin, the last action it ran
   // (an action button), what the input map shows (`map`, null while it shows nothing), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`); with a second
-  // effect over the first, its name (`then`, 'off' without one), its handle (`handle2`) and whose controls the form shows (`controls`)
-  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, map: null, lastAction: null, demo: null, displayHz: null, hud: null });
+  // chain of effects, their names in order (`chain`), the first and second of them (`active`, `then`: 'off' without one) and their handles (`handle`,
+  // `handle2`), whether Stack is on (`stacking`) and whose controls the form shows (`controls`); `setChain(names)` runs a chain as the chips would
+  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, chain: [], stacking: false, map: null, lastAction: null, demo: null, displayHz: null, hud: null });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = matchMedia('(pointer: coarse)');
@@ -370,51 +385,57 @@
     $('hint').classList.toggle('touch', touch && text !== DEFAULT_HINT);
   }
 
-  // ---- what the selected effect is: its manifest entry (title, version, description, reduced-motion behaviour, defaults, source) ----
-  // `second`: the panel of the effect applied on top (#about-2, hidden without one); its ids end in -2.
+  // ---- what the shown effect is: its manifest entry (title, version, description, reduced-motion behaviour, defaults, source) ---------
+  // #about describes the effect whose controls the form shows (its actions act on its handle); with a chain, #about-2 names the whole chain.
   const SOURCE = 'https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/tree/main/plugins/';
-  function describe(p, second) {
-    const about = $(second ? 'about-2' : 'about');
+  function describe(p) {
+    const about = $('about');
     const line = (label, text, code) => {
       const el = document.createElement('p');
       el.append(Object.assign(document.createElement('b'), { textContent: label + ': ' }), code ? Object.assign(document.createElement('code'), { textContent: text }) : text);
       return el;
     };
-    const title = Object.assign(document.createElement('h2'), { id: second ? 'about-title-2' : 'about-title' });
-    if (second) about.hidden = !p;
+    const title = Object.assign(document.createElement('h2'), { id: 'about-title' });
     if (!p) {
       title.textContent = 'Effect off';
-      about.replaceChildren(...(second ? [] : [title, Object.assign(document.createElement('p'), { textContent: 'The form as the polyfill draws it, with no plugin: the plain HTML-in-Canvas picture.' })]));
+      about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: 'The form as the polyfill draws it, with no plugin: the plain HTML-in-Canvas picture.' }));
       return;
     }
-    title.append(second ? 'On top: ' + p.title : p.title, Object.assign(document.createElement('small'), { textContent: p.name + ' v' + p.version }));
+    title.append(p.title, Object.assign(document.createElement('small'), { textContent: p.name + ' v' + p.version }));
     const link = Object.assign(document.createElement('a'), { className: 'source', href: SOURCE + p.name, textContent: 'Source and README', target: '_blank', rel: 'noopener' });
-    about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: second ? 'Applied to the picture the first effect rendered. ' + p.description : p.description }));
-    if (p.actions && p.actions.length) about.append(actionButtons(p.actions, second));
+    about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: p.description }));
+    if (p.actions && p.actions.length) about.append(actionButtons(p.actions, p.name));
     about.append(line('Reduced motion', p.reducedMotion || 'not stated by the plugin'), line('Options passed here (meta.defaults)', JSON.stringify(p.defaults), true), link);
+  }
+  function describeChain(names) {
+    const about = $('about-2');
+    about.hidden = names.length < 2;
+    if (about.hidden) { about.replaceChildren(); return; }
+    const title = Object.assign(document.createElement('h2'), { id: 'about-title-2', textContent: 'Stacked: ' + names.map((n) => entryOf(n).title).join(' → ') });
+    about.replaceChildren(title, Object.assign(document.createElement('p'), { textContent: 'The host runs the effects in this order: the first reads the drawn page, each next one reads the picture of the one before it, and a click is mapped back through all of them to the element you see. The switch in the form shows the controls of each; the panel above describes the one shown.' }));
   }
 
   // ---- actions: handle.trigger(action) resolves with the state the plugin rests in afterwards, or null when a newer action superseded it ----
-  const showResult = (name, text, second) => { const out = $(second ? 'action-state-2' : 'action-state'); if (out) out.textContent = 'handle.trigger(' + JSON.stringify(name) + ')' + text; };
+  const showResult = (name, text) => { const out = $('action-state'); if (out) out.textContent = 'handle.trigger(' + JSON.stringify(name) + ')' + text; };
   const resultText = (s) => ' -> ' + (s === null ? 'null (superseded)' : JSON.stringify(s));
-  function actionButtons(names, second) {
+  function actionButtons(names, fx) {
     const row = Object.assign(document.createElement('p'), { className: 'actions' });
-    const result = Object.assign(document.createElement('output'), { id: second ? 'action-state-2' : 'action-state', textContent: 'handle.trigger(action) ->' });
+    const result = Object.assign(document.createElement('output'), { id: 'action-state', textContent: 'handle.trigger(action) ->' });
     row.append(Object.assign(document.createElement('b'), { textContent: 'Actions:' }));
     for (const name of names) {
       const button = Object.assign(document.createElement('button'), { type: 'button', textContent: name });
       button.dataset.action = name;
       button.addEventListener('click', async () => {
-        const handle = second ? over : current;
+        const handle = handles.get(fx);
         if (!handle) return;
         const run = (state.lastAction = { action: name, done: false, state: undefined, error: null });
-        showResult(name, ' running', second);
+        showResult(name, ' running');
         try {
           run.state = await handle.trigger(name);
-          showResult(name, resultText(run.state), second);
+          showResult(name, resultText(run.state));
         } catch (error) {
           run.error = error.message;
-          showResult(name, ' failed: ' + error.message, second);
+          showResult(name, ' failed: ' + error.message);
         }
         run.done = true;
       });
@@ -426,16 +447,16 @@
 
   // ---- the demo on selection: a plugin whose look depends on an input or an event has an action `demo` (docs/guides/EFFECTS-PLUGINS.md);
   // the gallery plays it once when the effect is selected, never under reduced motion. User input during it takes over (the plugin's part).
-  function playDemo(handle, name, second) {
+  function playDemo(handle, name) {
     const actions = handle && handle.actions ? [...handle.actions] : [];
     const skip = !autoDemo ? 'demo=0' : reduceMotion.matches ? 'prefers-reduced-motion' : !actions.includes('demo') ? 'no demo action' : '';
     const run = (state.demo = { name, played: !skip, skipped: skip || null, done: !!skip, state: undefined, error: null, ms: null });
     if (skip) return;
     const t0 = performance.now();
-    const shown = () => (second ? over : current) === handle;
-    showResult('demo', ' running (on selection)', second);
-    Promise.resolve().then(() => handle.trigger('demo')).then((s) => { run.state = s; if (shown()) showResult('demo', resultText(s), second); },
-      (error) => { run.error = error.message; if (shown()) showResult('demo', ' failed: ' + error.message, second); })
+    const shown = () => handles.get(state.controls) === handle;
+    showResult('demo', ' running (on selection)');
+    Promise.resolve().then(() => handle.trigger('demo')).then((s) => { run.state = s; if (shown()) showResult('demo', resultText(s)); },
+      (error) => { run.error = error.message; if (shown()) showResult('demo', ' failed: ' + error.message); })
       .finally(() => { run.done = true; run.ms = Math.round(performance.now() - t0); });
   }
 
@@ -681,12 +702,17 @@
     return loaded.get(p.name);
   }
 
-  // ---- the effect, and a second one over it ---------------------------------------------------------------------------------------
-  // The host runs its plugins in the order they were added: the first reads the drawn form, the second reads the picture of the first, and a pointer is mapped
-  // back through both. `choose(effect, then, changed)`: `changed` is the strip the user picked from ('effect' also at the start): that effect plays its demo,
-  // and the form shows its controls. A change of the second effect leaves the first one running as it is.
-  const buttons = new Map(), buttons2 = new Map();
-  let current = null, over = null, serial = 0;
+  // ---- the effects: one, or a chain of up to three ---------------------------------------------------------------------------------
+  // The host runs its plugins in the order they were added: the first reads the drawn form, each next one reads the picture of the one before it, and a
+  // pointer is mapped back through all of them. A click on a chip picks that effect alone; with Stack on, the chips are an ordered selection: a click adds
+  // the effect at the end of the chain (three at most) or takes it out, and the chain under the strip shows the order. Plugins are added in order, so a change
+  // keeps the effects before the first difference running as they are and adds the rest again; the effect just picked plays its demo and the form shows its
+  // controls.
+  const MAX_CHAIN = 3;
+  const buttons = new Map();
+  /** the running handles, by effect name */
+  const handles = new Map();
+  let chain = [], stacking = false, serial = 0;
   const entryOf = (name) => plugins.find((x) => x.name === name);
   const metaOf = (name) => (window.HicLivePlugins && window.HicLivePlugins[name] && window.HicLivePlugins[name].meta) || null;
   function showControls(name) {
@@ -694,8 +720,9 @@
     for (const el of root.querySelectorAll('.fx-ui')) el.hidden = el.dataset.fx !== name;
     for (const b of root.querySelectorAll('.fx-tabs button')) b.setAttribute('aria-pressed', String(b.dataset.fx === name));
     state.controls = name;
+    describe(entryOf(name) || null);
   }
-  /** the box an effect's controls are mounted in, and with two effects the switch between them (HTML in the canvas, like the rest of the form) */
+  /** the box an effect's controls are mounted in, and with two or more effects the switch between them (HTML in the canvas, like the rest of the form) */
   function controlsBox(p) {
     const root = $('effect-controls');
     let tabs = root.querySelector('.fx-tabs');
@@ -722,116 +749,138 @@
     const tabs = root.querySelector('.fx-tabs');
     if (tabs) tabs.hidden = tabs.children.length < 2;
   }
-  async function start(p) {
-    const entry = await loadPlugin(p);
-    const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions(p.name) });
-    return { entry, handle };
-  }
-  async function choose(effect, then, changed) {
-    const mine = ++serial;
-    if (!host || !entryOf(effect)) effect = 'off';
-    if (effect === 'off' || then === effect || !entryOf(then)) then = 'off';
-    const keep = changed === 'then' && !!current && state.active === effect;      // the first effect goes on as it is
-    for (const [key, button] of buttons) button.setAttribute('aria-pressed', String(key === effect));
-    for (const [key, button] of buttons2) {
-      button.setAttribute('aria-pressed', String(key === then));
-      button.disabled = !host || effect === 'off' || key === effect;
+  /** the chips, the chain line, the panel, the address and window.__gallery follow `chain` */
+  function showChain() {
+    const picker = $('picker');
+    picker.classList.toggle('stacking', stacking);
+    picker.classList.toggle('full', chain.length >= MAX_CHAIN);
+    $('stack-toggle').setAttribute('aria-pressed', String(stacking));
+    for (const [key, button] of buttons) {
+      const at = key === 'off' ? -1 : chain.indexOf(key);
+      button.setAttribute('aria-pressed', String(key === 'off' ? chain.length === 0 : at >= 0));
+      const n = button.querySelector('.n');
+      if (n) n.textContent = at >= 0 ? String(at + 1) : '';
     }
-    // removing a plugin also disposes its mounted UI
-    if (over) { over.remove(); dropControls(state.then); over = null; state.handle2 = null; state.then = 'off'; }
-    if (!keep) {
-      if (current) { current.remove(); current = null; state.handle = null; }
-      state.demo = null;
+    const list = $('chain');
+    list.hidden = !stacking && chain.length < 2;
+    const li = (className, textContent) => Object.assign(document.createElement('li'), { className, textContent });
+    const items = [li('end', 'Page')];
+    chain.forEach((name, i) => {
+      const item = li('fx', '');
+      item.dataset.fx = name;
+      const out = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Take ' + entryOf(name).title + ' out of the chain' });
+      out.setAttribute('aria-label', 'Remove ' + entryOf(name).title);
+      out.addEventListener('click', () => setChain(chain.filter((x) => x !== name), null));
+      item.append(Object.assign(document.createElement('b'), { textContent: String(i + 1) }), entryOf(name).title, out);
+      items.push(li('arrow', '→'), item);
+    });
+    items.push(li('arrow', '→'), li('end', 'Canvas'));
+    if (stacking) items.push(li('note', chain.length >= MAX_CHAIN ? 'three at most: take one out to add another' : 'pick up to three, in the order they should run'));
+    list.replaceChildren(...items);
+    const url = new URL(location.href);
+    if (chain.length) url.searchParams.set('effect', chain[0]); else url.searchParams.delete('effect');
+    if (chain.length > 1) url.searchParams.set('then', chain.slice(1).join(',')); else url.searchParams.delete('then');
+    history.replaceState(null, '', url);
+    describeChain(chain);
+    Object.assign(state, { chain: [...chain], stacking, active: chain[0] || 'off', then: chain[1] || 'off', handle: handles.get(chain[0]) || null, handle2: handles.get(chain[1]) || null });
+  }
+  /** run `next` on the host; `picked` is the effect the user just added (it plays its demo and shows its controls), null for a removal */
+  async function setChain(next, picked) {
+    const mine = ++serial;
+    next = host ? next.filter((n, i) => entryOf(n) && next.indexOf(n) === i).slice(0, MAX_CHAIN) : [];
+    let keep = 0;
+    while (keep < chain.length && keep < next.length && chain[keep] === next[keep] && handles.has(chain[keep])) keep += 1;
+    // removing a plugin also disposes its mounted UI; the ones after the first difference go
+    for (const name of [...handles.keys()]) if (!next.slice(0, keep).includes(name)) { handles.get(name).remove(); handles.delete(name); dropControls(name); }
+    if (picked) state.demo = null;
+    chain = next;
+    if (!chain.length) {
       $('effect-controls').replaceChildren();
       state.controls = null;
-    } else showControls(effect);
-    const url = new URL(location.href);
-    if (effect === 'off') url.searchParams.delete('effect'); else url.searchParams.set('effect', effect);
-    if (then === 'off') url.searchParams.delete('then'); else url.searchParams.set('then', then);
-    history.replaceState(null, '', url);
-    const p = entryOf(effect), q = entryOf(then);
-    if (!keep) describe(p || null, false);
-    describe(q || null, true);
-    if (!keep || !q) showHint(effect, metaOf(effect));
-    if (!p) {
-      state.active = 'off';
+      showChain();
+      describe(null);
+      showHint('off', null);
       $('m-effect').textContent = host ? 'off (the host shows the form unchanged)' : '2D, no effect';
       return;
     }
-    const running = () => (q && over ? p.title + ' and ' + q.title + ' on top: plugins running' : p.title + ' plugin running');
-    if (!keep) {
+    if (state.controls && !handles.has(state.controls)) state.controls = null;
+    showChain();
+    for (const name of chain.slice(keep)) {
+      const p = entryOf(name);
       $('m-effect').textContent = 'loading ' + p.title;
       try {
-        const { entry, handle } = await start(p);
-        if (mine !== serial) { handle.remove(); return; }                         // another choice was made meanwhile
-        current = state.handle = handle;
+        const entry = await loadPlugin(p);
+        if (mine !== serial) return;                                              // another choice was made meanwhile
+        const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions(p.name) });
+        if (mine !== serial) { handle.remove(); return; }
+        handles.set(name, handle);
         handle.mountUI(controlsBox(p));                                           // the plugin's own controls, as HTML inside the drawn form
-        showControls(effect);
-        state.active = effect;
-        showHint(effect, entry.meta);
-        $('m-effect').textContent = running() + (entry.meta && entry.meta.continuous ? ' (continuous by design: ' + entry.meta.continuous + ')' : '');
-        playDemo(handle, effect, false);
+        if (name === picked) { showControls(name); showHint(name, entry.meta); playDemo(handle, name); }
       } catch (error) {
         if (mine !== serial) return;
-        state.active = 'off';
-        $('m-effect').textContent = 'failed: ' + error.message;
         notice('The ' + p.title + ' effect could not start: ' + error.message);
-        return;
+        chain = chain.slice(0, chain.indexOf(name));
+        break;
       }
     }
-    if (!q) { $('m-effect').textContent = running(); return; }
-    try {
-      const { entry, handle } = await start(q);
-      if (mine !== serial) { handle.remove(); return; }
-      over = state.handle2 = handle;
-      state.then = then;
-      handle.mountUI(controlsBox(q));
-      if (changed === 'then') { showControls(then); showHint(then, entry.meta); playDemo(handle, then, true); }
-      $('m-effect').textContent = running();
-    } catch (error) {
-      if (mine !== serial) return;
-      buttons2.get(then)?.setAttribute('aria-pressed', 'false');
-      buttons2.get('off')?.setAttribute('aria-pressed', 'true');
-      describe(null, true);
-      url.searchParams.delete('then');
-      history.replaceState(null, '', url);
-      notice('The ' + q.title + ' effect could not start on top: ' + error.message);
-    }
+    if (chain.length && (!state.controls || !handles.has(state.controls))) { const last = chain[chain.length - 1]; showControls(last); showHint(last, metaOf(last)); }
+    showChain();
+    const one = chain.length === 1 ? metaOf(chain[0]) : null;
+    $('m-effect').textContent = chain.length ? chain.map((n) => entryOf(n).title).join(' then ') + (chain.length > 1 ? ': plugins running' : ' plugin running') + (one && one.continuous ? ' (continuous by design: ' + one.continuous + ')' : '') : 'off';
   }
-  const select = (name) => choose(name, state.then, 'effect');
+  function pick(name) {
+    if (name === 'off') return setChain([], null);
+    if (!stacking) return setChain([name], name);
+    if (chain.includes(name)) return setChain(chain.filter((x) => x !== name), null);
+    if (chain.length >= MAX_CHAIN) { $('chain').querySelector('.note')?.animate?.([{ color: '#ff9be3' }, { color: '' }], 900); return Promise.resolve(); }
+    return setChain([...chain, name], name);
+  }
+  function setStacking(on) {
+    stacking = !!on;
+    // leaving Stack keeps the first effect of the chain alone
+    if (!stacking && chain.length > 1) return setChain(chain.slice(0, 1), null);
+    showChain();
+    return Promise.resolve();
+  }
+  state.setChain = (names) => setChain(names, names[names.length - 1] || null);
 
-  const add = (list, map, key, name, title, description, pick) => {
+  const stackLi = Object.assign(document.createElement('li'), { className: 'stack-li' });
+  const stackButton = Object.assign(document.createElement('button'), { type: 'button', id: 'stack-toggle', textContent: 'Stack', title: 'Run several effects in a chain: each reads the picture of the one before it' });
+  stackButton.setAttribute('aria-pressed', 'false');
+  stackButton.disabled = !host;
+  stackButton.addEventListener('click', () => setStacking(!stacking));
+  stackLi.append(stackButton);
+  $('picker').append(stackLi);
+  const add = (name, title, description) => {
     const li = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.dataset[key] = name;
+    button.dataset.effect = name;
     button.title = description;   // the panel shows the full description of the selected effect
     button.setAttribute('aria-pressed', 'false');
     button.disabled = !host && name !== 'off';
-    button.textContent = title;
+    const n = Object.assign(document.createElement('span'), { className: 'n' });
+    n.setAttribute('aria-hidden', 'true');
+    button.append(title, n);
     button.addEventListener('click', () => pick(name));
     li.append(button);
-    list.append(li);
-    map.set(name, button);
+    $('picker').append(li);
+    buttons.set(name, button);
   };
-  add($('picker'), buttons, 'effect', 'off', 'Effect off', 'The form as drawn, with no plugin.', select);
-  for (const p of plugins) add($('picker'), buttons, 'effect', p.name, p.title, p.description, select);
-  // the second strip: the same effects, applied to the picture of the first
-  const pickThen = (name) => choose(state.active, name, 'then');
-  $('stack').append(Object.assign(document.createElement('li'), { className: 'lab', textContent: '+ on top' }));
-  add($('stack'), buttons2, 'then', 'off', 'None', 'One effect only.', pickThen);
-  for (const p of plugins) add($('stack'), buttons2, 'then', p.name, p.title, 'Over the first effect: ' + p.description, pickThen);
+  add('off', 'Effect off', 'The form as drawn, with no plugin.');
+  for (const p of plugins) add(p.name, p.title, p.description);
 
   const params = new URL(location.href).searchParams;
   const wanted = params.get('effect');
   const first = wanted && (wanted === 'off' || plugins.some((p) => p.name === wanted)) ? wanted : plugins.length ? plugins[0].name : 'off';
-  await choose(host ? first : 'off', params.get('then') || 'off', 'effect');
+  const more = (params.get('then') || '').split(',').filter((n) => n && n !== 'off');
+  stacking = more.length > 0;
+  await setChain(host && first !== 'off' ? [first, ...more] : [], host && first !== 'off' ? first : null);
   await calibrateCap();
   state.ready = true;
   // a narrow strip of chips scrolls sideways: bring the selected one into it (no vertical scroll of the page)
-  for (const [strip, chip] of [[$('picker'), buttons.get(state.active)], [$('stack'), buttons2.get(state.then)]]) {
-    if (chip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = Math.max(0, chip.offsetLeft - strip.offsetLeft - 24);
-  }
+  const strip = $('picker'), chip = buttons.get(chain[0] || 'off');
+  if (chip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = Math.max(0, chip.offsetLeft - strip.offsetLeft - 96);
 })();
 </script>
 </body>
