@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { CHANNELS, MAX_STEPS_PER_FRAME, PAD, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
+import { CHANNELS, MAX_BLOOMS, MAX_STEPS_PER_FRAME, PAD, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
 import { ACTIONS, DEMO_MS, G, GLOBALS_LENGTH, INK_CAP, INK_HOLD, INK_LIFE, PALETTES, PIGMENT_TEXELS, S, SEGMENTS_PER_STEP, STEP_FLOATS, demoPath, inkMix, inkOptics, mapInkPoint, meta, pigmentGrid, plugin } from '../index.js';
 
 contractTest(import.meta.url);
@@ -78,8 +78,9 @@ test('meta and the definition: three actions, the gallery defaults, the reduced-
   assert.ok(meta.reducedMotion.length <= 160 && meta.touch.length <= 160 && meta.description.length <= 160);
   assert.equal(GLOBALS_LENGTH % 4, 0);
   assert.equal(G.SCATTER + 12, GLOBALS_LENGTH);
-  assert.equal(S.INK + 4 * SEGMENTS_PER_STEP, STEP_FLOATS);
-  assert.equal(STEP_FLOATS * 4, 256, 'a step block is one uniform offset alignment long');
+  assert.equal(S.INK + 4 * SEGMENTS_PER_STEP, S.BLOOM);
+  assert.ok(S.BLOOM + 8 * MAX_BLOOMS <= STEP_FLOATS);
+  assert.equal((STEP_FLOATS * 4) % 256, 0, 'a step block starts at a uniform offset alignment');
 });
 
 test('the inks: absorption from the colour on white (-ln), scattering from the sheen; every palette has three; bad entries fall back to marbling', () => {

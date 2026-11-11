@@ -2,6 +2,8 @@
 // of the palette (r, g, b) and their age, as density x seconds (a), carried by the same flow that sim.js steps on the CPU.
 //   - the velocity is the curl of the cubic B-spline of the stream function (the field texture, channel b): divergence free at every
 //     point, so the flow neither gathers nor thins the pigment;
+//   - a drop that spreads adds its radial flow (sim.js bloom), which is not divergence free: there the pigment is scaled by
+//     exp(-div dt), so that it thins where the drop spreads out and gathers into a rim where its front slows down;
 //   - each texel traces back one step (a midpoint step, RK2, where the water is fast enough to bend the path) and reads the pigment there with a Catmull-Rom filter (9 bilinear taps),
 //     limited to the four texels around that point: a third-order read that keeps filaments a few texels wide over hundreds of steps and
 //     cannot ring or go negative;
@@ -19,6 +21,7 @@ struct Step {
   seg : array<vec4<f32>, 4>,       // a.xy, b.xy (CSS px)
   shape : array<vec4<f32>, 4>,     // radius (CSS px), density at the centre of the path, sharpness of a drop's edge (1: Gaussian), unused
   ink : array<vec4<f32>, 4>,       // the share of each of the three inks (rgb)
+  bloom : array<vec4<f32>, 8>,     // per drop that spreads: centre (CSS px), speed scale U (CSS px/s; 0: none), reach L (CSS px); k1 p1 k2 p2 of its front
 }
 
 @group(0) @binding(0) var<uniform> step : Step;
@@ -63,6 +66,25 @@ fn velocity(p : vec2<f32>) -> vec2<f32> {
     grad = grad + vec2<f32>(wy[j] * dot(dx, row), dy[j] * dot(wx, row));
   }
   return vec2<f32>(grad.y * step.grid.w, -grad.x * step.grid.z);
+}
+
+// the radial flow of the drops that spread (sim.js velocity: u = U (1 + s M) (1 - s)^2 (p - c) / L, s = |p - c|^2 / L^2, M the
+// unevenness of the front at the angle around c), CSS px/s, and its divergence 2 U (1 - s) ((1 - 3 s) + 2 s (1 - 2 s) M) / L, 1/s
+fn spread(p : vec2<f32>) -> vec3<f32> {
+  var out = vec3<f32>(0.0);
+  for (var i = 0; i < 4; i = i + 1) {
+    let b = step.bloom[2 * i];
+    let c = step.bloom[2 * i + 1];
+    let q = p - b.xy;
+    let s = dot(q, q) / (b.w * b.w);
+    if (b.z > 0.0 && s < 1.0) {
+      let a = atan2(q.y, select(q.x, 1.0, dot(q, q) == 0.0));
+      let m = 0.3 * cos(c.x * a + c.y) + 0.2 * cos(c.z * a + c.w) + 0.15 * cos((c.x + c.z) * a + c.y + 2.0 * c.w);
+      let k = b.z * (1.0 - s) / b.w;
+      out = out + vec3<f32>(k * (1.0 - s) * (1.0 + s * m) * q, 2.0 * k * (1.0 - 3.0 * s + 2.0 * s * (1.0 - 2.0 * s) * m));
+    }
+  }
+  return out;
 }
 
 // the pigment at uv: Catmull-Rom over 4 x 4 texels as 9 bilinear taps, limited to the four texels around the point. The age comes from
@@ -147,11 +169,12 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   var rho : vec4<f32>;
   if (step.n.y > 0.5) {
     let dt = step.t.x;
-    var way = dt * velocity(p);
+    let here = spread(p);
+    var way = dt * (velocity(p) + here.xy);
     // where the water moves more than a quarter of a CSS px in the step, the velocity half a step back (the midpoint rule); slower
     // water bends its path by less than a hundredth of a texel
-    if (dot(way, way) > 0.0625) { way = dt * velocity(clamp(p - 0.5 * way, vec2<f32>(0.0), css)); }
-    rho = pigment_at(clamp(p - way, vec2<f32>(0.0), css) / css);
+    if (dot(way, way) > 0.0625) { let m = clamp(p - 0.5 * way, vec2<f32>(0.0), css); way = dt * (velocity(m) + spread(m).xy); }
+    rho = pigment_at(clamp(p - way, vec2<f32>(0.0), css) / css) * exp(-here.z * dt);
   } else {
     rho = textureLoad(pigment, vec2<i32>(position.xy), 0);
   }
@@ -166,5 +189,6 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   for (var i = 0; i < count; i = i + 1) {
     fresh = fresh + step.ink[i].rgb * released(p, i);
   }
-  return vec4<f32>(min(rho.rgb + fresh, vec3<f32>(step.t.z)), rho.a);
+  // (a drop may be released denser than the cap, and the pen does not thin it)
+  return vec4<f32>(min(rho.rgb + fresh, max(vec3<f32>(step.t.z), max(rho.rgb, fresh))), rho.a);
 }

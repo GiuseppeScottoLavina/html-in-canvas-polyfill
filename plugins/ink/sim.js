@@ -18,6 +18,13 @@
  *      small constant amount per second, so they reach exactly zero in finite time instead of approaching it forever.
  * Where the water moves slower than STICK_PX_S the page does not move at all (the constant loss holds it), so the displacement is exactly
  * zero outside a bounded region (`box`): there the picture is the source, pixel for pixel.
+ * A drop of ink (`bloom`) adds to the velocity of steps 2 and 3, for BLOOM_S seconds, the radial flow of a drop that spreads over the
+ * surface: u = U(t) (1 + s M(a)) (1 - s)^2 (p - c) / L within the reach L of its centre c, s = |p - c|^2 / L^2,
+ * U(t) = U0 (1 - t / BLOOM_S)^2, where M(a) = 0.3 cos(k1 a + p1) + 0.2 cos(k2 a + p2) + 0.15 cos((k1 + k2) a + p1 + 2 p2) at the angle
+ * a around c makes the front uneven (a few lobes and finer fingers) and leaves the middle round. It is not divergence free (the drop brings
+ * its own liquid): its divergence is 2 U (1 - s) ((1 - 3 s) + 2 s (1 - 2 s) M) / L: it spreads out from the centre and slows down towards
+ * its front, where it converges, so the page and the pigment it carries pile up there into a rim. Once it has slowed, pushes along the
+ * front (`stir`) at the k1 lobes draw them out into tendrils.
  */
 
 /** ghost cells on each side (the B-spline reads one cell beyond the border, and two at the far border) */
@@ -37,6 +44,12 @@ export const STICK_PX_S = 4;
 export const W_FRICTION = 2;
 /** the vorticity gradient (1/s per CSS px) under which confinement fades out: it sharpens swirls, not the noise of water nearly at rest */
 export const CONFINE_FLOOR = 0.02;
+/** drops that may spread at once (a new one takes the place of the oldest), how long one spreads (s), and when its rim breaks up (steps) */
+export const MAX_BLOOMS = 4;
+export const BLOOM_S = 0.45;
+export const BREAK_STEP = 24;
+/** the push of a tendril, as a share of a drop's speed scale */
+export const TENDRIL = 0.09;
 /** sweeps of the multigrid V cycle before and after the coarse correction, and on the coarsest grid */
 const SMOOTH = 2;
 const COARSEST = 16;
@@ -64,6 +77,10 @@ const COARSEST = 16;
  * @property {number} maxShift  the largest displacement after the last step, CSS px
  * @property {number} maxW  the largest |w| of any cell, 1/s
  * @property {boolean} traced  the last step moved the water
+ * @property {Float64Array} blooms  per drop: x, y (CSS px), U0 (CSS px/s), L (CSS px), the steps it has spread, its seed
+ * @property {Float32Array} spread  per drop, as the last step used it (what the pigment step reads): x, y, U (CSS px/s; 0: none), L, then
+ *   k1, p1, k2, p2 of its front
+ * @property {number} blooming  drops still spreading
  */
 
 /** The grid of a canvas of this CSS size: multiples of 8 cells each way (three coarser grids for the solver). @param {number} cssWidth @param {number} cssHeight */
@@ -95,7 +112,7 @@ export function createFluid(cssWidth, cssHeight) {
     w: field(), psi: field(), dx: field(), dy: field(), uc: field(), vc: field(),
     tmp: [field(), field(), field(), field(), field(), field(), field(), field()],
     levels, flowing: false, moved: false, box: Int32Array.of(pw, ph, -1, -1), maxSpeed: 0, maxShift: 0, maxW: 0,
-    traced: false,
+    traced: false, blooms: new Float64Array(MAX_BLOOMS * 6), spread: new Float32Array(MAX_BLOOMS * 8), blooming: 0,
   };
   setSize(f, cssWidth, cssHeight);
   return f;
@@ -108,10 +125,11 @@ export function clear(f) {
   f.flowing = false; f.moved = false; f.maxSpeed = 0; f.maxShift = 0; f.maxW = 0;
   f.traced = false;
   f.box.set([f.pw, f.ph, -1, -1]);
+  f.blooms.fill(0); f.spread.fill(0); f.blooming = 0;
 }
 
 /** Nothing moves and nothing is displaced: every field is exactly zero. @param {Fluid} f */
-export const quiet = (f) => !f.flowing && !f.moved;
+export const quiet = (f) => !f.flowing && !f.moved && !f.blooming;
 
 /**
  * The ghost cells of a field, mirrored about the walls: `sx` is the sign across the left and right walls (-1: the field is zero on them),
@@ -228,7 +246,28 @@ function velocity(f) {
       const u = s * (psi[i + pw - 1] - psi[i - pw - 1] + 4 * (psi[i + pw] - psi[i - pw]) + psi[i + pw + 1] - psi[i - pw + 1]);
       const v = -s * (psi[i - pw + 1] - psi[i - pw - 1] + 4 * (psi[i + 1] - psi[i - 1]) + psi[i + pw + 1] - psi[i + pw - 1]);
       uc[i] = u; vc[i] = v;
-      const px = u * cellX, py = v * cellY, q = px * px + py * py;
+    }
+  }
+  // the drops that spread: their radial flow, at the cell centres within their reach
+  const sp = f.spread;
+  for (let b = 0; b < MAX_BLOOMS * 8; b += 8) {
+    const U = sp[b + 2], L = sp[b + 3];
+    if (!U) continue;
+    const gx = sp[b] / cellX - 0.5 + PAD, gy = sp[b + 1] / cellY - 0.5 + PAD, k = (U * DT) / L;
+    const x0 = Math.max(PAD - 1, Math.ceil(gx - L / cellX)), x1 = Math.min(PAD + gw, Math.floor(gx + L / cellX));
+    const y0 = Math.max(PAD - 1, Math.ceil(gy - L / cellY)), y1 = Math.min(PAD + gh, Math.floor(gy + L / cellY));
+    for (let y = y0; y <= y1; y += 1) {
+      const ry = (y - gy) * cellY;
+      for (let x = x0; x <= x1; x += 1) {
+        const rx = (x - gx) * cellX, q = 1 - (rx * rx + ry * ry) / (L * L);
+        if (q > 0) { const i = y * pw + x, m = k * q * q * (1 + (1 - q) * uneven(sp, b, rx, ry)); uc[i] += (m * rx) / cellX; vc[i] += (m * ry) / cellY; }
+      }
+    }
+  }
+  for (let y = PAD - 1; y <= PAD + gh; y += 1) {
+    const end = y * pw + PAD + gw;
+    for (let i = y * pw + PAD - 1; i <= end; i += 1) {
+      const px = uc[i] * cellX, py = vc[i] * cellY, q = px * px + py * py;
       if (q > max) max = q;
     }
   }
@@ -351,7 +390,9 @@ function slow(f, drag, friction) {
   else {
     f.w.fill(0); f.psi.fill(0); f.uc.fill(0); f.vc.fill(0);
     for (const l of f.levels) l.p.fill(0);
-    f.flowing = false; f.maxSpeed = 0;
+    // (a drop that spreads keeps its speed: the pigment may still move that fast)
+    f.flowing = false;
+    if (!f.blooming) f.maxSpeed = 0;
   }
 }
 
@@ -394,7 +435,8 @@ function healPage(f, heal, stick) {
 export function step(f, o) {
   f.traced = false;
   const stick = o.stick ?? STICK_PX_S;
-  if (f.flowing) {
+  if (f.blooming) spreadStep(f);
+  if (f.flowing || f.blooming) {
     solve(f);
     velocity(f);
     transport(f);
@@ -405,6 +447,57 @@ export function step(f, o) {
 }
 
 // ---- stirring ------------------------------------------------------------------------------------------------------------------------
+
+/**
+ * A drop of ink lands at (x, y) CSS px: for BLOOM_S seconds it spreads over the surface with the radial flow of the reach `reach` CSS px
+ * and the speed scale `speed` CSS px/s (the header); at step BREAK_STEP its front breaks up into tendrils. `seed` sets their directions.
+ * @param {Fluid} f @param {number} x @param {number} y @param {number} speed @param {number} reach @param {number} seed
+ */
+export function bloom(f, x, y, speed, reach, seed) {
+  if (!(speed > 0 && reach > 0)) return;
+  const b = f.blooms;
+  // a free place, or the drop that has spread longest
+  let at = 0;
+  for (let k = 0; k < MAX_BLOOMS; k += 1) {
+    if (!b[k * 6 + 2]) { at = k; break; }
+    if (b[k * 6 + 4] > b[at * 6 + 4]) at = k;
+  }
+  if (!b[at * 6 + 2]) f.blooming += 1;
+  b.set([x, y, speed, reach, 0, seed], at * 6);
+}
+
+/** M(a) of a drop's front (the header) in the direction (rx, ry) from its centre (as advect.wgsl spread). @param {Float32Array} sp @param {number} b @param {number} rx @param {number} ry */
+function uneven(sp, b, rx, ry) {
+  const a = rx || ry ? Math.atan2(ry, rx) : 0, k1 = sp[b + 4], p1 = sp[b + 5], k2 = sp[b + 6], p2 = sp[b + 7];
+  return 0.3 * Math.cos(k1 * a + p1) + 0.2 * Math.cos(k2 * a + p2) + 0.15 * Math.cos((k1 + k2) * a + p1 + 2 * p2);
+}
+
+const frac = (/** @type {number} */ v) => v - Math.floor(v);
+
+/** The drops of this step: their radial speed (at the middle of the step), and the tendrils of those whose front breaks up now. @param {Fluid} f */
+function spreadStep(f) {
+  const b = f.blooms, sp = f.spread;
+  for (let k = 0; k < MAX_BLOOMS; k += 1) {
+    const o = k * 6, U0 = b[o + 2], seed = b[o + 5], j = k * 8;
+    sp[j + 2] = 0;
+    if (!U0) continue;
+    const n = b[o + 4], t = 1 - ((n + 0.5) * DT) / BLOOM_S;
+    if (t <= 0) { b[o + 2] = 0; f.blooming -= 1; continue; }
+    // the front: 3 to 5 lobes and 9 to 14 finer fingers, turned by the seed (low-discrepancy sequences: no two drops alike)
+    const k1 = 3 + Math.floor(3 * frac(seed * 0.618034 + 0.31)), p1 = 2 * Math.PI * frac(seed * 0.7548777);
+    sp[j] = b[o]; sp[j + 1] = b[o + 1]; sp[j + 2] = U0 * t * t; sp[j + 3] = b[o + 3];
+    sp[j + 4] = k1; sp[j + 5] = p1; sp[j + 6] = 9 + Math.floor(6 * frac(seed * 0.5698403 + 0.7)); sp[j + 7] = 2 * Math.PI * frac(seed * 0.381966);
+    if (n === BREAK_STEP) {
+      // the lobes are drawn out into tendrils of uneven strength: a push outwards at the tip of each (a cos(k1 a + p1) = 1)
+      for (let i = 0; i < k1; i += 1) {
+        const a = (2 * Math.PI * i - p1) / k1, c = Math.cos(a), s = Math.sin(a), r = 0.62 * b[o + 3];
+        const v = U0 * TENDRIL * (0.45 + frac(seed * 0.5698403 + i * 0.7548777 + 0.5));
+        stir(f, b[o] + r * c, b[o + 1] + r * s, v * c, v * s, 0.3 * b[o + 3]);
+      }
+    }
+    b[o + 4] = n + 1;
+  }
+}
 
 /**
  * Push the water at (x, y) CSS px so that it moves at (ax, ay) CSS px/s at the centre: the curl of twice that velocity under the

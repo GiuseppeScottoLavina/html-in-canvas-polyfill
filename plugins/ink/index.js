@@ -27,7 +27,7 @@ import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 import { clampNum } from '../_lib/number.js';
-import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, clear, createFluid, fieldAt, gridOf, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
+import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, bloom, clear, createFluid, fieldAt, gridOf, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -54,8 +54,8 @@ export const ACTIONS = Object.freeze(/** @type {const} */ (['demo', 'stir', 'cle
 export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 36 });
 export const GLOBALS_LENGTH = 48;
 /** Offsets in the uniform block of one pigment step (advect.wgsl Step), in floats; STEP_FLOATS each (256 bytes, the offset alignment of uniform buffers). */
-export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, LIFE: 9, CAP: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48 });
-export const STEP_FLOATS = 64;
+export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, LIFE: 9, CAP: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48, BLOOM: 64 });
+export const STEP_FLOATS = 128;
 /** segments of pigment released per step (advect.wgsl), and how many may wait for their step */
 export const SEGMENTS_PER_STEP = 4;
 const SEGMENT_QUEUE = 64;
@@ -83,16 +83,24 @@ const PROFILE_LINE = 32 / 35;
  */
 export const WAKE_SWAY = 0.4;
 export const WAKE_PX = 5 * STIR_RADIUS;
-/** a press: the drop lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
+/** a press on a moving pointer: the drop also lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
 export const DROP_PUSH = 210;
+/**
+ * A drop spreads over the water (sim.js `bloom`): within BLOOM_REACH CSS px of where it landed, at the speed scale BLOOM_SPEED CSS px/s
+ * at intensity 1 (the fastest water, at 0.45 of the reach, moves at 0.29 of it), for BLOOM_S seconds. Its pigment is released as dense as
+ * DROP_DENSITY times `pigment` (a drop is thick: its ink thins as it spreads), above INK_CAP.
+ */
+export const BLOOM_REACH = 60;
+export const BLOOM_SPEED = 1500;
+export const DROP_DENSITY = 5;
 /** the pigment: the Gaussian radius of the pen and of a drop (CSS px), their reach in radii (advect.wgsl), the density at pigment 1 */
 export const PEN_RADIUS = 8;
 export const DROP_RADIUS = 13;
 /** the edge of a drop: exp(-(d^2 / r^2)^DROP_EDGE / 2), a disc with a soft rim (1 would be a Gaussian) */
-export const DROP_EDGE = 2.5;
+export const DROP_EDGE = 4;
 export const REACH = 3;
 export const INK_DENSITY = 1;
-/** no ink gets denser than this, however often the pen passes */
+/** no ink gets denser than this, however often the pen passes (a drop may be released denser) */
 export const INK_CAP = 1.2;
 /**
  * The pigment keeps its full strength until it is INK_HOLD seconds old, then fades, and is gone at INK_LIFE seconds (ink.wgsl,
@@ -370,6 +378,8 @@ export const plugin = Object.freeze({
     let segmentHead = 0, segmentCount = 0;
     /** where the hue is along the palette, and the direction of the last drop */
     let hue = 0, dropAngle = 0.4;
+    /** drops so far (the seed of a drop's tendrils) */
+    let drops = 0;
     /** the length of all paths so far, CSS px (the phase of the wake's sway) */
     let travel = 0;
     /** mapper states: the uniform block followed by the packed field (reallocated with the fluid) @type {Float32Array[]} */
@@ -498,18 +508,24 @@ export const plugin = Object.freeze({
     }
 
     /**
-     * A drop of ink at (x, y) CSS px of the fluid, landing with the speed (jx, jy) CSS px/s: the water takes it as a puff (a pair of swirls
-     * that roll the drop into a mushroom). The drop is one ink around a core of the next.
-     * @param {number} x @param {number} y @param {number} jx @param {number} jy @param {boolean} still
+     * A drop of ink at (x, y) CSS px of the fluid: it spreads over the water (a bloom whose front gathers a rim and then breaks up into
+     * tendrils), and, landing with the speed (jx, jy) CSS px/s, the water also takes it as a puff (a pair of swirls). The drop is one ink
+     * around a core of the next. @param {number} x @param {number} y @param {number} jx @param {number} jy @param {boolean} still
      */
     function drop(x, y, jx, jy, still) {
       if (intensity <= 0) return;
       const f = currentFluid();
       hue += HUE_STEP;
-      if (!still) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
+      drops += 1;
+      if (!still) {
+        bloom(f, x, y, BLOOM_SPEED * intensity, BLOOM_REACH, drops);
+        if (jx || jy) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
+      }
       if (pigment > 0) {
-        release(x, y, x, y, DROP_RADIUS, pigment * INK_DENSITY, hue, DROP_EDGE);
-        release(x, y, x, y, 0.5 * DROP_RADIUS, pigment * INK_DENSITY, hue + 1 / 3, DROP_EDGE);
+        // with reduced motion nothing spreads: the tint stays as dense as a stroke
+        const density = pigment * (still ? INK_DENSITY : DROP_DENSITY);
+        release(x, y, x, y, DROP_RADIUS, density, hue, DROP_EDGE);
+        release(x, y, x, y, 0.5 * DROP_RADIUS, density, hue + 1 / 3, DROP_EDGE);
       }
       wake();
     }
@@ -564,9 +580,9 @@ export const plugin = Object.freeze({
         // slider, a selection in a field) stirs as a hovering pointer does, without pigment
         own = onControl(event);
         if (own) return;
-        // the drop keeps the pointer's heading; a press at rest sends each drop another way
-        if (t - headT > 250) { dropAngle += GOLDEN_ANGLE; headX = Math.cos(dropAngle); headY = Math.sin(dropAngle); }
-        drop(p.x, p.y, headX * DROP_PUSH, headY * DROP_PUSH, reducedMotion);
+        // the drop spreads where it lands; a pointer that was moving also throws it the way it was heading
+        const moving = t - headT <= 250;
+        drop(p.x, p.y, moving ? headX * DROP_PUSH : 0, moving ? headY * DROP_PUSH : 0, reducedMotion);
       }, passive);
       context.listen('pointermove', (event) => {
         if (!(event instanceof win.PointerEvent)) return;
@@ -647,6 +663,7 @@ export const plugin = Object.freeze({
       stepData[S.GRID] = f.gw; stepData[S.GRID + 1] = f.gh; stepData[S.INV_CELL] = 1 / f.cellX; stepData[S.INV_CELL + 1] = 1 / f.cellY;
       stepData[S.DT] = DT; stepData[S.LIFE] = INK_LIFE; stepData[S.CAP] = INK_CAP; stepData[S.LAYER] = index;
       stepData[S.COUNT] = count; stepData[S.FLOWING] = moving ? 1 : 0;
+      stepData.set(f.spread, S.BLOOM);
       for (let i = 0; i < count; i += 1) {
         const o = segmentHead * 10, radius = segments[o + 4], density = segments[o + 5], reach = REACH * radius;
         stepData.set(segments.subarray(o, o + 4), S.SEG + 4 * i);
