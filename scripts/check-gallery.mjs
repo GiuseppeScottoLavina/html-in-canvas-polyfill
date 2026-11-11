@@ -21,9 +21,10 @@
 //   switch    a touch tap on the drawn switch, through the effect, selects another scene and comes back (the address follows)
 //   live      (the live scene) the drawn content changes about once a second and the effect presents it: frames arrive at rest, and the drawn clock
 //             moves on; back on the form, 0 effect frames over 2 s
-// A second effect over the first (examples/plugins/ `&then=<name>`, the second strip of chips), part `stack`:
-//   pick      (water; phone and iPad) a touch tap on a chip of the second strip adds that effect over the first: two plugins on the host, the address follows,
-//             the form shows its controls; a tap on "None" takes it away again
+// A chain of effects (examples/plugins/ `&then=<name>,<name>`, the Stack toggle at the head of the chips), part `stack`:
+//   pick      (water; phone and iPad) a tap on Stack, then on a chip, runs that effect after the first: two plugins on the host, the chips numbered, the
+//             chain and the address follow; a third joins, a fourth is refused while three run, the x in the chain takes one out; Stack off picks one alone;
+//             the form shows the controls of the effect just added
 //   tabs      with two effects the form has a switch between their controls: a touch tap on it, through both effects, shows the other effect's controls
 //   rest      as above, with both effects settled
 //   linked    (phone and short phone: the CRT monitor, the tallest controls, with water on top, from the address) both run; fit with either effect's controls shown; fold (phone)
@@ -46,7 +47,7 @@
 //   C9 fit     (water, the daylight scene) a picture 900 px tall    C10 switch (water, the daylight scene) the switch takes no pointer input
 //   C11 live   (water, the live scene) the page's one-second timer never starts
 //   C12 fit    (page-curl, the daylight scene, the short phone) the scene's picture as a block under its title and a stage of 580 px
-//   C13 pick   (water) the second strip takes no pointer input         C14 tabs   (water, shatter on top) the switch takes no pointer input
+//   C13 pick   (water) the strip of chips takes no pointer input         C14 tabs   (water, shatter on top) the switch takes no pointer input
 //   C15 under  (water under the CRT monitor) water gets a context whose localPoint returns the point on the canvas, as before the second effect
 //   C16 pairs  the glitch plugin throws in render when it is not the first plugin
 //   C17 map    the CRT monitor with an input mapper that returns the point as it is (the pointer is then sent to the place under it)
@@ -176,7 +177,8 @@ async function runOne(browser, server, name, view, o = {}) {
   const fits = () => page.evaluate(`(() => { const f = document.getElementById('demo-form'); return { scrollHeight: f.scrollHeight, clientHeight: f.clientHeight, controls: window.__gallery.controls }; })()`);
   const stackState = () => page.evaluate(`(() => { const g = window.__gallery, c = document.getElementById('effect-controls'); return { then: g.then, count: g.host.pluginCount, enabled: [g.handle, g.handle2].map((h) => (h ? h.enabled : null)),
     query: new URL(location.href).searchParams.get('then'), controls: g.controls, tabs: [...c.querySelectorAll('.fx-tabs:not([hidden]) button')].map((b) => b.dataset.fx), shown: [...c.querySelectorAll('.fx-ui')].filter((e) => !e.hidden).map((e) => e.dataset.fx),
-    about2: !document.getElementById('about-2').hidden, pressed: [...document.querySelectorAll('#stack button[aria-pressed="true"]')].map((b) => b.dataset.then) }; })()`);
+    about2: !document.getElementById('about-2').hidden, stacking: g.stacking, chainShown: !document.getElementById('chain').hidden, chain: [...document.querySelectorAll('#chain .fx')].map((e) => e.dataset.fx),
+    pressed: [...document.querySelectorAll('#picker button[data-effect][aria-pressed="true"]')].filter((b) => b.dataset.effect !== 'off').sort((x, y) => Number(x.querySelector('.n').textContent) - Number(y.querySelector('.n').textContent)).map((b) => b.dataset.effect) }; })()`);
   /** the stage as presented (compositor pixels) @returns {Promise<{img: any, ratio: number}>} */
   const stageShot = async () => {
     const r = await page.evaluate(`(() => { const r = document.getElementById('stage').getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; })()`);
@@ -304,8 +306,8 @@ async function runOne(browser, server, name, view, o = {}) {
       await settle();
       const st = await stackState();
       numbers.linked = st;
-      check('linked', `the address opens ${name} with ${o.then} on top: two plugins on the host, both enabled, the second strip shows it`,
-        st.then === o.then && st.count === 2 && st.enabled.every((e) => e === true) && st.pressed.join() === o.then && st.about2 && st.tabs.join() === `${name},${o.then}`, st);
+      check('linked', `the address opens ${name} with ${o.then} after it: two plugins on the host, both enabled, Stack on, the chips numbered and the chain in that order`,
+        st.then === o.then && st.count === 2 && st.enabled.every((e) => e === true) && st.stacking === true && st.pressed.join() === `${name},${o.then}` && st.chain.join() === `${name},${o.then}` && st.about2 && st.tabs.join() === `${name},${o.then}`, st);
       const one = await fits();
       await page.evaluate(`document.querySelector('.fx-tabs button[data-fx=${JSON.stringify(o.then)}]').click()`);
       await H.sleep(300);
@@ -313,19 +315,34 @@ async function runOne(browser, server, name, view, o = {}) {
       check('linked', 'the form fits the stage with either effect\'s controls shown', one.controls === name && two.controls === o.then && one.scrollHeight <= one.clientHeight + 1 && two.scrollHeight <= two.clientHeight + 1, { one, two });
     }
 
-    // a touch tap on a chip of the second strip adds that effect over the first
+    // Stack on, then a touch tap on a chip adds that effect after the first
     if (want('pick')) {
       await page.evaluate('window.scrollTo(0, 0)');
       await settle();
       await H.sleep(400);
-      const tapped = await tapOn(`#stack button[data-then=${JSON.stringify(o.then)}]`);
+      const toggled = await tapOn('#stack-toggle');
+      const on = await H.until(() => page.evaluate(`window.__gallery.stacking && !document.getElementById('chain').hidden ? 1 : null`), 2000);
+      const tapped = await tapOn(`#picker button[data-effect=${JSON.stringify(o.then)}]`);
       const there = await H.until(() => page.evaluate(`window.__gallery.then === ${JSON.stringify(o.then)} && window.__gallery.handle2 ? 1 : null`), 6000);
       await settle();
       await H.sleep(400);
       const st = await stackState();
       numbers.pick = st;
-      check('pick', `a tap on "${o.then}" in the second strip adds it over ${name}: two plugins, both enabled, the address follows, the form shows its controls and a switch`,
-        tapped && !!there && st.count === 2 && st.enabled.every((e) => e === true) && st.query === o.then && st.pressed.join() === o.then && st.about2 && st.tabs.join() === `${name},${o.then}` && st.shown.join() === o.then, st);
+      check('pick', `a tap on Stack, then on "${o.then}", runs it after ${name}: two plugins, both enabled, the chips numbered 1 and 2, the chain and the address follow, the form shows its controls and a switch`,
+        toggled && !!on && tapped && !!there && st.count === 2 && st.enabled.every((e) => e === true) && st.query === o.then && st.pressed.join() === `${name},${o.then}` && st.chain.join() === `${name},${o.then}` && st.about2 && st.tabs.join() === `${name},${o.then}` && st.shown.join() === o.then, st);
+      // a third effect joins the chain; a fourth is refused while three run; the x of the third takes it out
+      const [third, fourth] = manifest.map((/** @type {any} */ p) => p.name).filter((n) => n !== name && n !== o.then);
+      await tapOn(`#picker button[data-effect=${JSON.stringify(third)}]`);
+      const three = await H.until(() => page.evaluate(`window.__gallery.host.pluginCount === 3 && window.__gallery.chain.length === 3 ? 1 : null`), 6000);
+      await tapOn(`#picker button[data-effect=${JSON.stringify(fourth)}]`);
+      await H.sleep(800);
+      const full = await stackState();
+      await tapOn(`#chain .fx[data-fx=${JSON.stringify(third)}] button`);
+      const back = await H.until(() => page.evaluate(`window.__gallery.host.pluginCount === 2 ? 1 : null`), 3000);
+      const after = await stackState();
+      numbers.chain = { full, after };
+      check('pick', `a third effect (${third}) joins the chain; a fourth (${fourth}) is refused while three run; the x of the third in the chain takes it out`,
+        !!three && full.count === 3 && full.chain.join() === `${name},${o.then},${third}` && full.pressed.join() === `${name},${o.then},${third}` && !!back && after.chain.join() === `${name},${o.then}` && after.query === o.then, numbers.chain);
     }
 
     // the switch between the two effects' controls, drawn in the canvas: a tap through both effects
@@ -349,13 +366,18 @@ async function runOne(browser, server, name, view, o = {}) {
       check('rest', 'with two effects, once both settled: 0 effect frames over 2 s (zero work at rest)', atRest === 0, { framesIn2s: atRest, settled: numbers.settled2 });
     }
 
-    // "None" takes the second effect away
+    // the x in the chain takes the second effect away; Stack off leaves one effect, a tap on a chip picks it alone again
     if (want('pick')) {
       await page.evaluate('window.scrollTo(0, 0)');
-      const tapped = await tapOn('#stack button[data-then="off"]');
+      const tapped = await tapOn(`#chain .fx[data-fx=${JSON.stringify(o.then)}] button`);
       const gone = await H.until(() => page.evaluate(`window.__gallery.then === 'off' && window.__gallery.host.pluginCount === 1 ? 1 : null`), 3000);
       const st = await stackState();
-      check('pick', `a tap on "None" takes ${o.then} away: one plugin, no switch, the address follows`, tapped && !!gone && st.query === null && !st.about2 && st.tabs.length === 0 && st.shown.join() === name && st.enabled[0] === true, st);
+      check('pick', `the x of "${o.then}" in the chain takes it away: one plugin, no switch, the address follows`, tapped && !!gone && st.query === null && !st.about2 && st.tabs.length === 0 && st.shown.join() === name && st.enabled[0] === true, st);
+      await tapOn('#stack-toggle');
+      await tapOn(`#picker button[data-effect=${JSON.stringify(o.then)}]`);
+      const alone = await H.until(() => page.evaluate(`!window.__gallery.stacking && window.__gallery.chain.join() === ${JSON.stringify(o.then)} && window.__gallery.host.pluginCount === 1 ? 1 : null`), 6000);
+      const off = await stackState();
+      check('pick', `with Stack off a tap on a chip picks that effect alone, and the chain is not shown`, !!alone && !off.chainShown && off.pressed.join() === o.then, off);
     }
 
     // the first effect reads the pointer through the second: a tap drops a pebble where the finger is seen
@@ -387,12 +409,12 @@ async function runOne(browser, server, name, view, o = {}) {
       const bad = [];
       let pairs = 0;
       for (const a of names) {
-        await page.evaluate(`document.querySelector('#stack button[data-then="off"]').click(); document.querySelector('#picker button[data-effect=${JSON.stringify(a)}]').click()`);
+        await page.evaluate(`window.__gallery.setChain([${JSON.stringify(a)}])`);
         await page.waitForFunction(`window.__gallery.active === ${JSON.stringify(a)} && !!window.__gallery.handle && window.__gallery.then === 'off'`, { timeout: 10000 });
         for (const b of names) {
           if (a === b) continue;
           pairs += 1;
-          await page.evaluate(`window.__gcErrors.length = 0; window.__pairFrames = window.__gc.frames; document.querySelector('#stack button[data-then=${JSON.stringify(b)}]').click()`);
+          await page.evaluate(`window.__gcErrors.length = 0; window.__pairFrames = window.__gc.frames; window.__gallery.setChain([${JSON.stringify(a)}, ${JSON.stringify(b)}])`);
           const ok = await page.waitForFunction(`window.__gallery.then === ${JSON.stringify(b)} && !!window.__gallery.handle2 && window.__gc.frames > window.__pairFrames + 1`, { timeout: 10000 }).then(() => true, () => false);
           await H.sleep(250);
           const st = await page.evaluate(`(() => { const g = window.__gallery; return { then: g.then, count: g.host.pluginCount, enabled: [g.handle, g.handle2].map((h) => (h ? h.enabled : null)), frames: window.__gc.frames - window.__pairFrames, errors: window.__gcErrors.splice(0) }; })()`);
@@ -555,7 +577,7 @@ try {
       { id: 'C10', step: 'switch', name: 'water', view: ipad, o: { query: '&scene=daylight', scene: 'daylight', css: '#demo-form .scenes { pointer-events: none !important; }', steps: ['switch'] } },
       { id: 'C11', step: 'live', name: 'water', view: ipad, o: { query: '&scene=live', scene: 'live', script: "{ const si = window.setInterval; window.setInterval = function (f, ms, ...a) { return f && f.name === 'liveTick' ? 0 : si.call(this, f, ms, ...a); }; }", steps: ['live'] } },
       { id: 'C12', step: 'fit', name: 'page-curl', view: short, o: { query: '&scene=daylight', scene: 'daylight', css: ':root { --fit: 580px !important; } #demo-form .scene[data-scene="daylight"] { display: block !important; } #demo-form .photo { height: 64px !important; margin-top: 8px !important; }', steps: ['fit'] } },
-      { id: 'C13', step: 'pick', name: 'water', view: ipad, o: { query: '&demo=0', then: 'shatter', css: '#stack { pointer-events: none !important; }', steps: ['pick'] } },
+      { id: 'C13', step: 'pick', name: 'water', view: ipad, o: { query: '&demo=0', then: 'shatter', css: '#picker { pointer-events: none !important; }', steps: ['pick'] } },
       { id: 'C14', step: 'tabs', name: 'water', view: ipad, o: { query: '&then=shatter&demo=0', then: 'shatter', css: '#demo-form .fx-tabs { pointer-events: none !important; }', steps: ['tabs'] } },
       { id: 'C15', step: 'under', name: 'water', view: { ...ipad, dpr: 1 }, o: { query: UNDER_QUERY, then: 'crt', script: wrapPlugins("if (name === 'water') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: (ctx, o) => create({ ...ctx, localPoint: (p) => ({ x: p.x, y: p.y }) }, o) } }; }"), steps: ['under'] } },
       { id: 'C16', step: 'pairs', name: 'water', view: ipad, o: { query: '&demo=0', script: wrapPlugins("if (name === 'glitch') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); const render = inst.render; inst.render = function (frame) { if (frame.sourceTexture.label !== 'hic-source') throw new Error('control: not the first plugin'); return render.call(this, frame); }; return inst; } } }; }"), steps: ['pairs'] } },

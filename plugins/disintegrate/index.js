@@ -170,10 +170,11 @@ export function fillUniforms(data, frame, s, g, grid, fade, time = 0, turning = 
 }
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `.hic-dis-ui{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
-    + `.hic-dis-ui label{display:grid}.hic-dis-ui input{width:100%;margin:0;accent-color:#ffb06b}.hic-dis-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#1b0d02;background:#ffb06b}`
+    + `.hic-dis-ui label{display:grid}.hic-dis-ui input{width:100%;margin:0;accent-color:light-dark(#b35f00, #ffb06b)}.hic-dis-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:light-dark(#fff4e8, #1b0d02);background:light-dark(#b35f00, #ffb06b)}`
     + `.hic-dis-live{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin-top:4px}.hic-dis-live label{display:flex;align-items:center;gap:6px}.hic-dis-live input{width:15px;height:15px}`
-    + `.hic-dis-counter{font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:#ffd7a8}.hic-dis-counter[hidden]{display:none}`;
+    + `.hic-dis-counter{font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:light-dark(#7a4a00, #ffd7a8)}.hic-dis-counter[hidden]{display:none}`;
 
 /**
  * The plugin's definition (effect plugin ABI v2).

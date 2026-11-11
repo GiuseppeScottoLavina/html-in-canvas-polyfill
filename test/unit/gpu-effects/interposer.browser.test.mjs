@@ -296,3 +296,59 @@ test('the interposer asks the tracker again when the tracker dropped a mapped ho
   s.fire('pointermove', 24, 20);
   assert.deepEqual(s.rig.tracker.mapped, [s.el('b'), s.el('b')]);
 });
+
+/** A drop-down select at B's place (and a list box, a multiple and a disabled select beside it); `opened` records every showPicker() call. */
+function withSelects(t) {
+  const s = setup(t, shiftRight);
+  const add = (id, attrs, left) => {
+    const el = Object.assign(document.createElement('select'), { innerHTML: '<option>one</option><option>two</option>' });
+    el.dataset.id = id;
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    el.style.cssText = `position:absolute;left:${left}px;top:200px;width:80px;height:24px;margin:0`;
+    s.rig.layerEl.append(el);
+    return el;
+  };
+  s.el('b').remove();
+  const sel = add('b', {}, 200);
+  sel.style.top = '10px';
+  add('lb', { size: '3' }, 200);
+  add('mu', { multiple: '' }, 290);
+  add('di', { disabled: '' }, 380);
+  /** @type {string[]} */ const opened = [];
+  const real = HTMLSelectElement.prototype.showPicker;
+  HTMLSelectElement.prototype.showPicker = function () { opened.push(this.dataset.id); };
+  t.cleanup(() => { HTMLSelectElement.prototype.showPicker = real; });
+  return { ...s, sel, opened };
+}
+
+test('a press drawn on a drop-down select opens its list (showPicker) and focuses it; a mouse release and a finger tap alike', (t) => {
+  const s = withSelects(t);
+  s.press(20, 20); // native A, mapped to the select at B's place
+  assert.deepEqual(s.opened, ['b'], 'the list was asked to open once');
+  assert.equal(document.activeElement, s.sel);
+  s.sel.blur();
+  s.fire('pointerdown', 20, 20, { pointerType: 'touch' });
+  assert.deepEqual(s.opened, ['b'], 'not while the finger is down');
+  s.fire('pointerup', 20, 20, { pointerType: 'touch' });
+  assert.deepEqual(s.opened, ['b', 'b'], 'a tap opens it when the finger lifts');
+  assert.equal(document.activeElement, s.sel);
+});
+
+test('select, controls: no list for a press released elsewhere, a finger that dragged, a list box, a multiple or a disabled select, or a select under the pointer natively', (t) => {
+  const s = withSelects(t);
+  s.fire('pointerdown', 20, 20);
+  s.fire('pointerup', 20, 130); // released on the background
+  s.fire('pointerdown', 20, 20, { pointerType: 'touch' });
+  s.fire('pointermove', 60, 20, { pointerType: 'touch' });
+  s.fire('pointerup', 60, 20, { pointerType: 'touch' });
+  for (const x of [20, 110, 200]) s.press(x, 200); // mapped to the list box, the multiple and the disabled select
+  assert.deepEqual(s.opened, [], 'none of them');
+  // the select drawn where it is (no mapping that moves it): the native press opens it, the interposer stays out
+  const plain = setup(t, (p) => ({ x: p.x, y: p.y }));
+  const sel = Object.assign(document.createElement('select'), { innerHTML: '<option>one</option>' });
+  sel.style.cssText = 'position:absolute;left:300px;top:250px;width:80px;height:24px;margin:0';
+  plain.rig.layerEl.append(sel);
+  const d = plain.press(320, 260);
+  assert.equal(d.ev.defaultPrevented, false, 'passed through untouched');
+  assert.deepEqual(s.opened, []);
+});

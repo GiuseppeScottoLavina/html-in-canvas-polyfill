@@ -202,11 +202,12 @@ export function pigmentGrid(w, h, dpr) {
 }
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
     .hic-ink-ui { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:4px 12px; align-items:end; }
     .hic-ink-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
-    .hic-ink-ui output { color:#9cf5ff; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .hic-ink-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#8fb4ff; cursor:ew-resize; }
+    .hic-ink-ui output { color:light-dark(#006b80, #9cf5ff); font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .hic-ink-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:light-dark(#2a4fb0, #8fb4ff); cursor:ew-resize; }
   `;
 const SLIDERS = /** @type {const} */ ([['intensity', 'Stir'], ['flow', 'Flow'], ['pigment', 'Pigment']]);
 

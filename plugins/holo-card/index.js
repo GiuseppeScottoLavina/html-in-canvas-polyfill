@@ -131,14 +131,15 @@ export function motionTarget(gamma, beta, angle) {
 }
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
     .hic-holo-ui { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)) auto; gap:4px 12px; align-items:end; }
     .hic-holo-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
-    .hic-holo-ui output { color:#ffc8f4; font-variant-numeric:tabular-nums; }
-    .hic-holo-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#e7a6ff; cursor:ew-resize; }
+    .hic-holo-ui output { color:light-dark(#8a1f6e, #ffc8f4); font-variant-numeric:tabular-nums; }
+    .hic-holo-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:light-dark(#7a1fa0, #e7a6ff); cursor:ew-resize; }
     .hic-holo-ui .toggles { display:flex; flex-direction:column; gap:2px; }
     .hic-holo-ui label.toggle { display:flex; align-items:center; gap:6px; padding-bottom:4px; white-space:nowrap; }
-    .hic-holo-ui label.toggle input { width:15px; height:15px; margin:0; accent-color:#e7a6ff; }
+    .hic-holo-ui label.toggle input { width:15px; height:15px; margin:0; accent-color:light-dark(#7a1fa0, #e7a6ff); }
   `;
 
 const SLIDERS = /** @type {const} */ ([

@@ -17,7 +17,8 @@
  *   4. the tethers (Kim et al., "Long Range Attachments", 2012): no particle is further from a pin than the cloth between them is long.
  *      They rarely act (the threads already hold), and make the flat hanging pose an exact fixed point of the step;
  *   5. the wall behind the cloth, with friction;
- *   6. the velocities follow from the positions.
+ *   6. the cloth against itself (`collide`), last, so that every step ends with no part of the sheet through another;
+ *   7. the velocities follow from the positions.
  */
 
 /** simulation steps per second (fixed time step) */
@@ -46,9 +47,13 @@ export const SQUASH = 0.25;
 export const CORNER_SLACK = 0.02;
 /** s: a pin that is moved (the cloth hung again, the pins changed) follows its place with this time constant */
 export const PIN_TAU = 0.11;
-/** the hand: natural frequency (rad/s) and the largest acceleration of the spring that holds the cloth, in gravities */
+/**
+ * the hand: natural frequency (rad/s) and the largest acceleration of the spring that holds the cloth, in gravities. The bound is what
+ * lets the cloth keep its layers apart (`collide`): in one step the hand moves what it holds by at most GRAB_MAX_G g h^2 beyond where it
+ * was going (4.2 css px on a canvas 620 px tall, a sixth of the gap); twice that pressed a crumpled patch through itself under a fast flick.
+ */
 export const GRAB_OMEGA = 250;
-export const GRAB_MAX_G = 240;
+export const GRAB_MAX_G = 120;
 /** s over which the hand leans into the pull, and how far at most (a share of the canvas height) */
 export const GRAB_LEAN = 0.2;
 export const GRAB_REACH_PX = 0.25;
@@ -71,6 +76,16 @@ export const STICK_SPEED = 14;
 export const STICK = 0.9;
 /** how much a displacement towards or away from the viewer counts against one across the canvas (it moves a pixel that much less) */
 const DEPTH_SHARE = 0.4;
+/**
+ * The cloth against itself (`collide`): two particles that are not the two ends of one link of the weave stay at least SELF_GAP times the
+ * larger spacing of the grid apart, and the two ends of a link at least SELF_LINK times its length (a thread buckles before it is squashed
+ * that far). A part of the sheet then cannot pass through another: a particle is never in a cell of another part (each point of a cell is
+ * within 0.71 of the spacing of one of its corners), and neither is a link, whose middle is half a spacing from its two ends (a link
+ * through the middle of a cell has its ends 0.87 of the spacing from the corners); the drawn surface, an average of the particles, keeps
+ * its layers apart too. The cloth is then about one spacing thick where it lies over itself (26 css px on a canvas of 1100 x 620).
+ */
+export const SELF_GAP = 1;
+export const SELF_LINK = 0.6;
 
 /** @typedef {'top'|'corners'|'none'} Pins */
 /**
@@ -108,6 +123,8 @@ const DEPTH_SHARE = 0.4;
  * @property {boolean} asleep  nothing moves; `step` does nothing until `wake`
  * @property {boolean} flat  asleep in the flat pose exactly
  * @property {number} speed  the largest speed of a particle at the last step (css px/s) @property {number} away  the largest distance from the flat pose
+ * @property {{gap: number, calm: number, on: boolean, col: Int32Array, row: Int32Array, mask: number, cell: Int32Array, start: Int32Array, next: Int32Array, order: Int32Array, seen: Int32Array, at: Int32Array}} self
+ *   the cloth against itself (`collide`): the least distance of two particles, how far a particle can move from its place before two can be that close, whether it acts (always, but for a test's control), the column and row of each particle, the buckets
  */
 
 /**
@@ -147,6 +164,10 @@ export function createCloth(width, height) {
   for (let j = 0; j < rows - 1; j += 1) for (let i = 0; i < nx; i += 1) link(i, j, i, j + 2);
   for (let j = 0; j < ny; j += 1) for (let i = 0; i < cols - 1; i += 1) link(i, j, i + 2, j);
   const reach = Math.ceil(GRAB_REACH) * 2 + 2;
+  let buckets = 1024;
+  while (buckets < 2 * n) buckets *= 2;
+  const col = new Int32Array(n), row = new Int32Array(n);
+  for (let k = 0; k < n; k += 1) { col[k] = k % nx; row[k] = (k - col[k]) / nx; }
   /** @type {Cloth} */
   const c = {
     width, height, cols, rows, nx, ny, n, lx, ly,
@@ -157,6 +178,7 @@ export function createCloth(width, height) {
     gravity: GRAVITY * height, wall: -WALL_GAP * Math.min(width, height), dragN: 3.5, dragT: 3.7, bend: 2100, wind: 0, gusts: [],
     grab: { idx: new Int32Array(reach * reach), wt: new Float64Array(reach * reach), count: 0, sum: 0, x: 0, y: 0, z: 0, ox: 0, oy: 0, oz: 0, on: false },
     peel: null, lower: null, time: 0, quiet: 0, asleep: true, flat: true, speed: 0, away: 0,
+    self: { gap: SELF_GAP * Math.max(lx, ly), calm: 0.5 * Math.min((1 - SELF_LINK) * Math.min(lx, ly), Math.hypot(lx, ly) - SELF_GAP * Math.max(lx, ly)), on: true, col, row, mask: buckets - 1, cell: new Int32Array(n), start: new Int32Array(buckets + 1), next: new Int32Array(buckets), order: new Int32Array(n), seen: new Int32Array(n), at: new Int32Array(2 * n) },
   };
   for (let k = 0; k < n; k += 1) c.nrm[3 * k + 2] = 1;
   setPins(c, 'top');
@@ -435,6 +457,55 @@ function flatten(x, w, a, b, k0, k1, soft) {
   }
 }
 
+/** the hash of the column (i, j) of `collide` (masked to a bucket there) @param {number} i @param {number} j */
+const bucket = (i, j) => Math.imul(i, 73856093) ^ Math.imul(j, 19349663);
+/** a column and the 4 columns around it that come after it (down, then across): with them every two neighbouring columns meet once */
+const AHEAD = Int32Array.from([0, 0, 1, 0, -1, 1, 0, 1, 1, 1]);
+
+/**
+ * The cloth against itself, once (SELF_GAP, SELF_LINK): every two particles closer than self.gap (the two ends of a link: closer than
+ * SELF_LINK times its length) are moved apart along the line between them, by their inverse masses, to that distance. The particles are
+ * sorted into columns of the gap across and down the canvas, whatever their depth (the cloth is a sheet: a column holds one or two
+ * particles, and a few more where it lies in folds), by counting into a table of buckets (a hash of the column); each particle looks into
+ * its own column (at the particles after it) and into the 4 columns after it, so that each pair is solved once.
+ * @param {Cloth} c
+ */
+function collide(c) {
+  const { x, w, n, self } = c;
+  const { gap, col, row, mask, cell, start, next, order, seen, at } = self;
+  const inv = 1 / gap, gap2 = gap * gap, across = SELF_LINK * c.lx, down = SELF_LINK * c.ly;
+  start.fill(0);
+  for (let k = 0, k3 = 0; k < n; k += 1, k3 += 3) {
+    const i = Math.floor(x[k3] * inv), j = Math.floor(x[k3 + 1] * inv);
+    at[2 * k] = i; at[2 * k + 1] = j;
+    const b = bucket(i, j) & mask;
+    cell[k] = b; start[b + 1] += 1;
+  }
+  for (let b = 0; b <= mask; b += 1) { start[b + 1] += start[b]; next[b] = start[b]; }
+  for (let k = 0; k < n; k += 1) { order[next[cell[k]]] = k; next[cell[k]] += 1; }
+  seen.fill(-1);
+  for (let k = 0, k3 = 0; k < n; k += 1, k3 += 3) {
+    const i = at[2 * k], j = at[2 * k + 1], ck = col[k], rk = row[k], wk = w[k];
+    for (let a = 0; a < AHEAD.length; a += 2) {
+      const own = a === 0, b = own ? cell[k] : bucket(i + AHEAD[a], j + AHEAD[a + 1]) & mask;
+      for (let o = start[b], end = start[b + 1]; o < end; o += 1) {
+        const m = order[o];
+        // in its own column a particle meets those after it; a bucket that two columns share is read once per particle
+        if ((own && m <= k) || m === k || seen[m] === k) continue;
+        seen[m] = k;
+        const m3 = 3 * m, dx = x[m3] - x[k3], dy = x[m3 + 1] - x[k3 + 1], dz = x[m3 + 2] - x[k3 + 2];
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= gap2 || d2 < 1e-12) continue;
+        const ws = wk + w[m], link = Math.abs(col[m] - ck) + Math.abs(row[m] - rk) === 1, least = !link ? gap : row[m] === rk ? across : down;
+        if (ws === 0 || d2 >= least * least) continue;
+        const d = Math.sqrt(d2), s = (least - d) / (d * ws), sk = wk * s, sm = w[m] * s;
+        x[k3] -= sk * dx; x[k3 + 1] -= sk * dy; x[k3 + 2] -= sk * dz;
+        x[m3] += sm * dx; x[m3 + 1] += sm * dy; x[m3 + 2] += sm * dz;
+      }
+    }
+  }
+}
+
 /**
  * One step of STEP_S seconds. Does nothing while the cloth is asleep.
  * @param {Cloth} c
@@ -541,14 +612,21 @@ export function step(c) {
       if (d2 > L * L) { const s = L / Math.sqrt(d2); x[k3] = x[q] + dx * s; x[k3 + 1] = x[q + 1] + dy * s; x[k3 + 2] = x[q + 2] + dz * s; }
     }
   }
-  // ---- 5. the wall, 6. the velocities; how fast and how far from flat the cloth is ----
+  // ---- 5. the wall ----
   const wall = c.wall, keep = 1 - WALL_FRICTION, ih = 1 / h, sticky = c.pins === 'corners' || c.grab.on;
-  let fast = 0, far = 0;
   for (let k = 0, k3 = 0; k < n; k += 1, k3 += 3) {
     if (x[k3 + 2] < wall && w[k] !== 0) {
       x[k3 + 2] = wall;
       x[k3] = p[k3] + (x[k3] - p[k3]) * keep; x[k3 + 1] = p[k3 + 1] + (x[k3 + 1] - p[k3 + 1]) * keep;
     }
+  }
+  // ---- 6. the cloth against itself, last, so that every step ends with its layers apart: only once two particles can have come that
+  // close (on the flat cloth the ends of a link are their length apart, any other two at least a cell's diagonal, and no particle has
+  // moved further from its place than `away` / DEPTH_SHARE and this step) ----
+  if (c.self.on && c.away / DEPTH_SHARE + c.speed * h > c.self.calm) collide(c);
+  // ---- 7. the velocities; how fast and how far from flat the cloth is ----
+  let fast = 0, far = 0;
+  for (let k = 0, k3 = 0; k < n; k += 1, k3 += 3) {
     const vx = (x[k3] - p[k3]) * ih, vy = (x[k3 + 1] - p[k3 + 1]) * ih, vz = (x[k3 + 2] - p[k3 + 2]) * ih;
     const s2 = vx * vx + vy * vy + vz * vz;
     // a cloth that hangs in folds comes to rest by the friction of its threads: what only creeps, stops

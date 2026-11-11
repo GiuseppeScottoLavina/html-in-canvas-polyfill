@@ -335,11 +335,12 @@ export function mapGlitchPoint(state, point) {
 
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
-    .hic-glitch-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:rgba(224,247,255,.72); font-size:11px; font-weight:700; }
-    .hic-glitch-ui output { color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
-    .hic-glitch-ui input[type=range] { width:100%; height:24px; margin:0; accent-color:#ff5c8a; cursor:ew-resize; }
-    .hic-glitch-ui select, .hic-glitch-ui button { font:inherit; color:#effcff; background:rgba(1,10,23,.55); border:1px solid rgba(173,226,255,.18); border-radius:8px; padding:3px 8px; }
+    .hic-glitch-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:light-dark(rgba(16,32,46,.8), rgba(224,247,255,.72)); font-size:11px; font-weight:700; }
+    .hic-glitch-ui output { color:light-dark(#006b80, #9cf5ff); text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
+    .hic-glitch-ui input[type=range] { width:100%; height:24px; margin:0; accent-color:light-dark(#c21a4c, #ff5c8a); cursor:ew-resize; }
+    .hic-glitch-ui select, .hic-glitch-ui button { font:inherit; color:light-dark(#10202e, #effcff); background:light-dark(rgba(255,255,255,.75), rgba(1,10,23,.55)); border:1px solid light-dark(rgba(16,32,46,.25), rgba(173,226,255,.18)); border-radius:8px; padding:3px 8px; }
     .hic-glitch-ui button { cursor:pointer; }
   `;
 
