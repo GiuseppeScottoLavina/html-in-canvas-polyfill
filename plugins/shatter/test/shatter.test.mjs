@@ -192,7 +192,7 @@ function fakeGpu() {
     },
     createSampler: () => ({}), createBindGroup: () => { created.bindGroup += 1; return {}; },
     createCommandEncoder: () => ({ beginRenderPass: () => pass, finish: () => ({}) }),
-    queue: { writeBuffer: (/** @type {any} */ b, /** @type {number} */ offset, /** @type {Float32Array} */ d) => writes.push({ b, offset, impact: offset === 0 ? [d[8], d[9]] : null }), submit: () => { created.submit += 1; } },
+    queue: { writeBuffer: (/** @type {any} */ b, /** @type {number} */ offset, /** @type {Float32Array} */ d) => writes.push({ b, offset, impact: offset === 0 ? [d[8], d[9]] : null, shards: offset === HEADER_FLOATS * 4 ? Float32Array.from(d) : null }), submit: () => { created.submit += 1; } },
   };
   return { device, created, writes, draws, live, descriptors, pipelines, encoder: { beginRenderPass: (/** @type {any} */ d) => { descriptors.push(d); draws.push(['pass', d.depthStencilAttachment ? '3d' : 'flat']); return pass; } } };
 }
@@ -576,6 +576,52 @@ test('demo: crack at the submit control, a rest, the break, the stop in the air,
   assert.equal(x.inst.continuous, true, `a full fall (1600 ms) is still running after 1000 ms (${reached - now - 100} ms rendered)`);
   await renderFor(x, reached, 800);
   assert.equal(await out, 'gone');
+});
+
+test('the intro joins the pane where the demo strikes, and the demo cracks it from there along the same lines; control: a strike elsewhere draws a new pattern', async () => {
+  /** the crack patterns built, in order (the shards part of the uniform buffer) @param {any} x */
+  const built = (x) => x.gpu.writes.filter((/** @type {any} */ w) => w.shards).map((/** @type {any} */ w) => w.shards);
+  const near = (/** @type {number[]} */ a, /** @type {number[]} */ b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.01;
+  // no submit control in this source: the demo strikes right of and below the centre (0.62, 0.6 of the canvas)
+  const strike = [480 * 0.62, 320 * 0.6];
+  const x = await instance({ intro: true });
+  const t = await renderFor(x, 0, 2000);
+  assert.equal(await x.handle.settled(), 'intact', 'the intro ends with the pane in place');
+  assert.equal(built(x).length, 1, 'the intro flew in along one pattern');
+  assert.ok(near(impactOf(x), strike), `the intro joined at the demo's point ${strike}, not at the centre: ${impactOf(x)}`);
+  assert.ok(!near(impactOf(x), [240, 160]), 'control: the centre is another point');
+  const demo = x.handle.trigger('demo');
+  await renderFor(x, t + 10, CRACK_MS + 50);
+  const [intro, crack] = built(x);
+  assert.ok(crack, 'the demo cracked the pane');
+  assert.ok(near(impactOf(x), strike), `the demo cracks from the same point: ${impactOf(x)}`);
+  assert.deepEqual(crack, intro, 'along the lines the pane joined at');
+  x.press(1, 1);
+  assert.equal(await demo, null, 'a press ends the demo');
+  // control: a strike at another point after the intro is a new pattern there
+  const y = await instance({ intro: true });
+  const ty = await renderFor(y, 0, 2000);
+  y.handle.trigger('crack', { point: { x: 100, y: 80 } });
+  await renderFor(y, ty + 10, CRACK_MS + 50);
+  const [introY, other] = built(y);
+  assert.deepEqual(introY, intro, 'the same intro (the same seed and point)');
+  assert.deepEqual(impactOf(y), [100, 80]);
+  assert.notDeepEqual(other, introY, 'elsewhere the cracks are new');
+  // a fall from the centre (out with no point) and back: the demo then strikes the centre, along the cracks the pane came back with
+  const z = await instance({ intro: false });
+  z.inst.render(z.frame(0));
+  z.handle.trigger('out');
+  let tz = await renderFor(z, 10, 1600);
+  z.handle.trigger('in');
+  tz = await renderFor(z, tz + 10, 1600);
+  assert.equal(await z.handle.settled(), 'intact');
+  const demoZ = z.handle.trigger('demo');
+  await renderFor(z, tz + 10, CRACK_MS + 50);
+  const [fallZ, crackZ] = built(z);
+  assert.deepEqual(impactOf(z), [240, 160], 'the demo strikes where the pane came together (the centre), not the submit control');
+  assert.deepEqual(crackZ, fallZ, 'along the same lines');
+  z.press(1, 1);
+  assert.equal(await demoZ, null);
 });
 
 test('demo: the user takes over at once (a pointer press or a key on the canvas); a newer action supersedes it; reduced motion does nothing', async () => {
