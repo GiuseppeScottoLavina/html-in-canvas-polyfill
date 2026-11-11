@@ -117,6 +117,9 @@ test('the mapper answers what the forward rendering shows: the page point on the
     const st = foldSpan(poseState(new Float32Array(UNIFORM_FLOATS), W, H, key, x, y, 48), W, H);
     if (st[38] > 0) cones += 1;
     if (st[38] > 0 && Math.abs(st[36]) > 10000) farApex += 1;
+    // the same pose over the host's live under page ([45] = 1): beneath the sheet the same point of the under page, everything else unchanged
+    const stUnder = st.slice();
+    stUnder[45] = 1;
     const { kind, sx, sy, z } = splat(st);
     const f = coneOfState(st), m = st[10];
     const p = [0, 0, 0], q = { x: 0, y: 0 };
@@ -129,6 +132,10 @@ test('the mapper answers what the forward rendering shows: the page point on the
         for (let dj = -1; dj <= 1 && !mixed; dj += 1) for (let di = -1; di <= 1; di += 1) if (kind[k + dj * W + di] !== kind[k]) { mixed = true; break; }
         if (mixed) { counts.skipped += 1; continue; }
         const got = mapCurlPoint(st, { x: i + 0.5, y: j + 0.5, width: W, height: H });
+        const gotUnder = mapCurlPoint(stUnder, { x: i + 0.5, y: j + 0.5, width: W, height: H });
+        if (kind[k] === -1) assert.deepEqual(gotUnder, { x: i + 0.5, y: j + 0.5, under: true }, `${key} ${x},${y}: ${i},${j} lies on the under page`);
+        else if (isNoTarget(got)) assert.ok(isNoTarget(gotUnder), `${key} ${x},${y}: ${i},${j} the back stays no target over an under page`);
+        else assert.deepEqual(gotUnder, got);
         if (kind[k] === -1) { counts.under += 1; assert.ok(isNoTarget(got), `${key} ${x},${y}: ${i},${j} lies beneath the sheet`); }
         else if (kind[k] === 2) { counts.back += 1; assert.ok(isNoTarget(got), `${key} ${x},${y}: ${i},${j} shows the back`); }
         else {
@@ -802,4 +809,56 @@ test('extended range: the uniform block says how far the corner is from its rest
   for (let k = 61; k <= 140; k += 1) inst.render(env.frame(1000 + k * 16));
   assert.equal(last(env)[27], 1, 'the corner pulled over the page');
   inst.destroy();
+});
+
+test('over a live under page: a press where the sheet uncovers it keeps the sheet open (settled: open, nothing renders); Escape or a press elsewhere lets it spring back; control: without an under page the same press lets it go', async (t) => {
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  /** a demo stopped mid-turn by a press beneath the sheet @param {boolean} under */
+  async function pressBeneath(under) {
+    const env = fakeEnv();
+    if (under) /** @type {any} */ (env.context).under = true;
+    const inst = await created(t, env, { ...meta.defaults, autoPeek: 0 });
+    const frame = (/** @type {number} */ now) => { inst.render({ ...env.frame(now), under: under ? { texture: {}, view: {}, ready: true } : null }); inst.captureInputMapper(); };
+    frame(0);
+    inst.runAction('demo', {}, { reducedMotion: false });
+    for (let now = 16; now <= 1300; now += 16) frame(now);
+    const mid = Array.from(last(env));
+    // a point beneath the sheet: on the under page over one, nowhere without
+    let at = null;
+    for (let y = 4; y < H && !at; y += 8) for (let x = 4; x < W && !at; x += 8) {
+      const q = /** @type {any} */ (mapCurlPoint(last(env), { x, y, width: W, height: H }));
+      if (under ? q.under === true : isNoTarget(q)) at = [x, y];
+    }
+    assert.ok(at, 'the turning sheet uncovers the page underneath');
+    assert.equal(last(env)[45], under ? 1 : 0, 'the uniform block says which page lies beneath');
+    assert.equal(inst.revealsUnder, under, 'revealsUnder while lifted over an under page');
+    const e = env.fire('pointerdown', at[0], at[1]);
+    assert.equal(e.prevented || e.stopped, false, 'the press itself belongs to the page');
+    for (let now = 1316; now <= 4000; now += 16) frame(now);
+    return { env, inst, frame, mid, state: await Promise.race([inst.settled(), new Promise((r) => setTimeout(() => r('moving'), 20))]) };
+  }
+  const open = await pressBeneath(true);
+  assert.equal(open.state, 'open');
+  assert.ok(Math.abs(last(open.env)[9] - open.mid[9]) < 0.25 * open.mid[9], `the sheet stays near where it was pressed: pull ${last(open.env)[9].toFixed(1)} (then ${open.mid[9].toFixed(1)})`);
+  const r0 = open.env.renders();
+  for (let now = 4016; now <= 6000; now += 16) open.frame(now);
+  assert.equal(open.env.renders(), r0, 'open and still: nothing is asked for');
+  open.env.fire('keydown', 0, 0, { key: 'Escape' });
+  for (let now = 6016; now <= 9000; now += 16) open.frame(now);
+  await flush();
+  assert.equal(await open.inst.settled(), 'rest', 'Escape: it springs back');
+  assert.ok(last(open.env)[9] < 0.25 * open.mid[9], 'back near the dog-ear');
+  // at rest the dog-ear still draws the under page ([46]) but it is not usable: no point of it for the mapper, revealsUnder false (the host makes it inert)
+  assert.deepEqual([last(open.env)[45], last(open.env)[46], open.inst.revealsUnder], [0, 1, false]);
+  assert.ok(isNoTarget(mapCurlPoint(last(open.env), { x: W - 3, y: 3, width: W, height: H })), 'the dog-ear at rest is no target');
+  // control: the same press on a host without an under page lets the sheet go back
+  const plain = await pressBeneath(false);
+  assert.equal(plain.state, 'rest');
+  assert.ok(last(plain.env)[9] < 0.25 * plain.mid[9]);
+  // a press on the page itself while open lets it spring back too
+  const again = await pressBeneath(true);
+  assert.equal(again.state, 'open');
+  again.env.fire('pointerdown', 60, H / 2);
+  for (let now = 4016; now <= 7000; now += 16) again.frame(now);
+  assert.equal(await again.inst.settled(), 'rest', 'a press on the page closes it');
 });

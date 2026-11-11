@@ -396,22 +396,31 @@ Global `window.HTMLInCanvasEffects` (`EffectsApi`): `{version: 2, definePlugin(d
 {directCanvasRenderAttachment?: true}, actions?: string[], create(context, options)}`. `actions`, when present, is a non-empty array of
 unique names matching `/^[a-z][a-z0-9-]{0,31}$/` (frozen copy), else `TypeError`. `create` may be async and returns an `EffectPluginInstance`:
 `render(frame)` (required), `resize?`, `setOptions?`, `captureInputMapper?`, `mountUI?`, `runAction?`, `settled?`, `destroy?`, `spatial?`,
-`continuous?` (`continuous` is read after every frame and may change at runtime; an idle host needs `context.requestRender()` to see it
-turn true). Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial` plugin MUST provide
+`continuous?`, `revealsUnder?` (`continuous` is read after every frame and may change at runtime; an idle host needs `context.requestRender()` to see it
+turn true; `revealsUnder`, a boolean, is read after every presented frame on a host with an under page: 7.3). Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial` plugin MUST provide
 `captureInputMapper`; a plugin whose definition declares `actions` MUST provide `runAction(action, options, info)` and `settled()`, and
 one without `actions` must not provide `runAction` (`addPlugin` rejects with `TypeError` otherwise, and destroys the instance). The context
-is `{apiVersion, canvas, source, adapter, device, format, hdr, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
-trigger(action, options?)}` (`localPoint`: a point of the canvas, in canvas-relative CSS pixels of the content box, through the input mappers
+is `{apiVersion, canvas, source, adapter, device, format, hdr, under, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
+trigger(action, options?)}` (`under`: the host has an under page, 7.3) (`localPoint`: a point of the canvas, in canvas-relative CSS pixels of the content box, through the input mappers
 of the plugins added after this one in the newest presented frame, so where that point is in the picture this plugin rendered; `null` where a
-later plugin shows nothing of it; the point itself for the last plugin); the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
+later plugin shows nothing of it; `{x, y, under: true}` where a later plugin shows the under page there; the point itself for the last plugin); the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
 Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `EffectPluginInstance`, `EffectActionState`,
 `EffectActionInfo` in `contracts/types.js`.
 
 ### 7.3 Effect host
-`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer, hdr})` -> `EffectHost`
+`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer, hdr, under})` -> `EffectHost`
 `{pluginCount, addPlugin(def, options) -> Promise<EffectHandle>, stats(), mapPoint(point), destroy()}` (`mapPoint`: a point of the canvas, in
 canvas-relative CSS pixels of the content box, through every plugin's input mapper in the newest presented frame: the point in the source, or `null`
-where the plugins show nothing of it).
+where the plugins show nothing of it; `{x, y, under: true}` where they show the under page).
+- `under` (experimental, polyfill mode only) is a second live page beneath the source: another eligible drawable of the same canvas, neither `source`, nor
+  inside it, nor around it (else `InvalidStateError`; not an `Element`: `TypeError`). Over a native implementation (7.6) `createHost` rejects with
+  `HicUnsupportedError('effects-under')` and reports it (feature row `effects-under`). The host reads it through a second `SourceProvider` into a texture of its
+  own, uploaded only when its own version advanced, and renders a frame when either version advanced. Every plugin's render frame carries it as
+  `frame.under = {texture, view, ready}` (the same for every plugin of the chain: earlier plugins do not process it; `null` on a host without `under`), and
+  `EffectPresentationFrame.underVersion` names its version; `stats()` adds `underUploads` and `underVersion`. Both elements get the fill geometry, the source
+  last, so that the source stays above the under page in the hit-test order. The under element is `inert` while no plugin of the newest presented frame
+  reports `revealsUnder: true`, and loses it while one does; a focused element inside it is blurred first; an `inert` the author set is left alone, and
+  `destroy()` removes the one the host set. Without `under` none of this exists: no second provider, texture, upload or geometry.
 - `hdr: true` asks for extended range: the canvas and every target of the plugin chain are `rgba16float`, configured with the `extended` tone mapping, so a
   value above 1 that a plugin writes is shown brighter than white as far as the display can. It is used only where the browser reports that configuration
   back (`stats().hdr`, `context.hdr` of a plugin); elsewhere, and by default, the canvas has the browser's preferred 8-bit format and clamps at white.
@@ -482,6 +491,10 @@ at `pointerdown` so a drag keeps one mapping). The host composes the mappers of 
 recognises a registered-symbol brand so that copies from other bundles count) is what a mapper returns where the presented pixel shows no
 element of the source. The composition stops at it (earlier mappers never see it), and the interposer swallows that gesture: `pointerdown`
 default prevented, no focus change, no activation, the following `click` swallowed, hover on no element of the page.
+A mapper may return `{x, y, under: true}` where the presented pixel shows the host's under page (7.3) at `(x, y)` of the under element (canvas-relative CSS
+pixels of the content box, as the source). It ends the composition too (the under page is drawn from its own texture, not from the picture of the earlier
+plugins); on a host without an under page it counts as `NO_TARGET`. The interposer hit-tests such a point inside the under element only (`elementAtPoint(point,
+under)`: the under page lies below the source, where the native hit test lands on the source) and always re-targets the press.
 Interposer (`options.interposer`, default true): capture-phase listeners on the live layer. For `pointermove/down/up/click`, it maps the
 pointer through the gesture mapper and, because live elements sit where the source pixels are drawn, finds the intended element with the
 layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `pointerdown`, if the mapped element's control differs from

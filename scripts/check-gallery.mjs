@@ -15,6 +15,11 @@
 //   rest      once the demo ended and handle.settled() resolved, after 1 s of grace: 0 effectframe events over 2 s, unless the plugin
 //             declares `meta.continuous` (then the rate at rest is printed); the HUD then reads 0 fx/s
 //   scroll    (phone) a vertical touch drag that starts on the stage, left of the middle and away from the corners, scrolls the page
+//   beneath   (page-curl, iPad) the page under the page (createHost `under`): the gallery shows it to Page curl; while the demo turns the sheet, a touch tap where
+//             the sheet uncovers the under page's field (found with host.mapPoint: a point with `under: true`) focuses that field and keeps the sheet open,
+//             typing shows up in it; a tap on a field of the top page lets the sheet fall back, that field takes the focus and the under page turns inert
+//             (a trusted Escape key is not used: in this emulation it stalled the headless renderer); control in the step: the same tap with the
+//             curl at rest lands on the top page (a field of the form takes the focus, the under field's value is unchanged)
 // Per scene other than the form (examples/plugins/ `?scene=daylight`, `?scene=live`) and view, with the water plugin:
 //   scene     the gallery shows that scene: its block is laid out, the others are not, and __gallery.scene names it
 //   fold, fit as above, with the scene's content
@@ -52,6 +57,7 @@
 //   C16 pairs  the glitch plugin throws in render when it is not the first plugin
 //   C17 map    the CRT monitor with an input mapper that returns the point as it is (the pointer is then sent to the place under it)
 //   C18 hdr    the gallery opened with &hdr=0
+//   C19 beneath (page-curl) the option underPage false: the page under the page is never uncovered for the pointer
 // A selection that checks nothing (--controls-only with --no-control), or an unknown plugin, view or argument, is refused (exit 2) before a browser starts, and
 // a run with 0 checks and 0 controls fails (scripts/gallery-plan.mjs). A selection that leaves out a plugin, a view, 'off', the scenes, the stack or the controls is a diagnostic run:
 // it prints "DIAGNOSTIC PASS, not the gate" with what it left out, and its results say `scope: 'diagnostic'` and `green: false`; only the full run is green.
@@ -458,6 +464,53 @@ async function runOne(browser, server, name, view, o = {}) {
       check('map', 'a tap on the toggle takes the map away (the address follows)', tapped && !!off, await page.evaluate(`({ hidden: document.getElementById('map').hidden, pressed: document.getElementById('map-toggle').getAttribute('aria-pressed'), query: location.search })`));
     }
 
+    // the page under the page (Page curl over createHost `under`)
+    if (want('beneath')) {
+      await page.evaluate('window.scrollTo(0, 0)');
+      await settle();
+      const shown = await H.until(() => page.evaluate('window.__gallery.under === true && window.__gallery.host.stats().underUploads > 0 ? 1 : null'), 5000);
+      check('beneath', 'Page curl gets the page under the page: shown, and uploaded by the host', !!shown, await page.evaluate('({ under: window.__gallery.under, underHost: window.__gallery.underHost, stats: window.__gallery.host.stats() })'));
+      const inertAtRest = await page.evaluate("document.getElementById('under-page').inert");
+      check('beneath', 'at rest (the dog-ear) the under page is inert: out of the tab order and the accessibility tree', inertAtRest === true, inertAtRest);
+      // a point of the canvas where the effect shows the under page's field, as the mappers say (its place there is the same point)
+      const FIND = `(() => { const g = window.__gallery, c = document.getElementById('stage'), r = c.getBoundingClientRect(), ox = r.left + c.clientLeft, oy = r.top + c.clientTop;
+        const f = document.getElementById('under-note').getBoundingClientRect(), fx = f.left - ox, fy = f.top - oy;
+        for (let y = fy + 6; y < fy + f.height - 6; y += 4) for (let x = fx + 12; x < fx + f.width - 12; x += 6) { const q = g.host.mapPoint({ x, y }); if (q && q.under === true && Math.abs(q.x - x) < 0.5) return { x: Math.round(ox + x), y: Math.round(oy + y) }; }
+        return null; })()`;
+      const tapAt = async (/** @type {{x: number, y: number}} */ p) => {
+        await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] });
+        await H.sleep(60);
+        await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      };
+      const fieldState = () => page.evaluate(`(() => { const a = document.activeElement, n = document.getElementById('under-note');
+        return { active: a && (a.id || a.name || a.localName), inForm: !!a && document.getElementById('demo-form').contains(a), value: n.value, inert: document.getElementById('under-page').inert }; })()`);
+      page.evaluate('window.__gallery.handle.trigger("demo")').catch(() => {});
+      let at = null;
+      for (let i = 0; i < 160 && !at; i += 1) { at = await page.evaluate(FIND); if (!at) await H.sleep(20); }
+      if (at) {
+        await tapAt(at);
+        await H.until(() => page.evaluate("document.activeElement && document.activeElement.id === 'under-note' ? 1 : null"), 2000);
+        await page.send('Input.insertText', { text: 'beneath' });
+        await H.sleep(300);
+      }
+      const open = await fieldState();
+      const settled = await page.evaluate(`Promise.race([window.__gallery.handle.settled(), new Promise((r) => setTimeout(() => r('still moving'), 4000))])`);
+      numbers.beneath = { at, open, settled };
+      check('beneath', 'while the demo turns the sheet, a tap where it uncovers the under page\'s field focuses that field, typing shows up in it, and the sheet stays open',
+        !!at && open.active === 'under-note' && open.value === 'beneath' && open.inert === false && settled === 'open', numbers.beneath);
+      const tappedName = await tapOn('#name');
+      const back = await H.until(() => page.evaluate("document.getElementById('under-page').inert && document.activeElement && document.activeElement.id === 'name' ? 1 : null"), 4000);
+      check('beneath', 'a tap on a field of the top page: the sheet falls back, that field takes the focus and the under page turns inert', tappedName && !!back, await fieldState());
+      await settle();
+      await page.evaluate('document.activeElement && document.activeElement.blur()');
+      await H.sleep(300);
+      if (at) await tapAt(at);
+      await H.sleep(400);
+      const rest = await fieldState();
+      check('beneath', 'control: the same tap with the curl at rest lands on the top page (nothing focused before it, a field of the form takes the focus; the under field keeps its value)',
+        !!at && rest.inForm && rest.active !== 'under-note' && rest.value === 'beneath', { at, ...rest });
+    }
+
     // extended range, asked for in the address
     if (want('hdr')) {
       const h = await page.evaluate(`({ state: window.__gallery.hdr, stats: window.__gallery.host.stats().hdr, text: document.getElementById('m-range').textContent, frames: window.__gc.frames })`);
@@ -499,6 +552,12 @@ try {
         const r = await runOne(browser, server, name, view, { steps: stepsFor(view, ['demo', 'rest', 'fold', 'fit', 'scroll']) });
         results.runs.push({ plugin: name, view: view.name, ...r });
         for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${name.padEnd(13)} ${view.name.padEnd(6)} [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
+      }
+      // (page-curl, iPad) the page under the page
+      if (name === 'page-curl' && VIEWS.some((v) => v.name === 'ipad')) {
+        const r = await runOne(browser, server, name, VIEWS.find((v) => v.name === 'ipad'), { query: '&demo=0', steps: ['beneath'] });
+        results.runs.push({ plugin: 'page-curl, the page under the page', view: 'ipad', ...r });
+        for (const c of r.checks) { console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${name.padEnd(13)} ipad   [${c.step}] ${c.name}${c.ok ? '' : '  ' + JSON.stringify(c.detail)}`); if (!c.ok) failed += 1; }
       }
       if (VIEWS.some((v) => v.name === 'phone')) {
         const r = await runOne(browser, server, name, VIEWS.find((v) => v.name === 'phone'), { reducedMotion: true, steps: ['demo'] });
@@ -583,6 +642,7 @@ try {
       { id: 'C16', step: 'pairs', name: 'water', view: ipad, o: { query: '&demo=0', script: wrapPlugins("if (name === 'glitch') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); const render = inst.render; inst.render = function (frame) { if (frame.sourceTexture.label !== 'hic-source') throw new Error('control: not the first plugin'); return render.call(this, frame); }; return inst; } } }; }"), steps: ['pairs'] } },
       { id: 'C17', step: 'map', name: 'crt', view: ipad, o: { query: MAP_QUERY, script: wrapPlugins("if (name === 'crt') { const create = entry.plugin.create; entry = { ...entry, plugin: { ...entry.plugin, create: async (ctx, o) => { const inst = await create(ctx, o); inst.captureInputMapper = () => (p) => ({ x: p.x, y: p.y }); return inst; } } }; }"), steps: ['map'] } },
       { id: 'C18', step: 'hdr', name: 'water', view: ipad, o: { query: '&hdr=0', steps: ['hdr'] } },
+      { id: 'C19', step: 'beneath', name: 'page-curl', view: ipad, o: { query: '&demo=0&opt.page-curl.underPage=false', steps: ['beneath'] } },
     ];
     await withBrowser(async (browser) => {
       for (const c of CONTROLS) {

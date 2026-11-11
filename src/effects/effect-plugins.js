@@ -48,7 +48,8 @@ import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi
  * @property {() => boolean} reducedMotion  prefers-reduced-motion: reduce, now
  * @property {(error: unknown, slot: Slot, phase: string) => void} reportError  effecterror + report entry; does not throw
  * @property {() => void} [onWait]  a trigger() or settled() promise started waiting (a paused host must keep advancing it)
- * @property {(slot: Slot, point: {x: number, y: number}) => {x: number, y: number}|null} [localPoint]  EffectPluginContext.localPoint for the plugin of `slot`
+ * @property {(slot: Slot, point: {x: number, y: number}) => {x: number, y: number, under?: true}|null} [localPoint]  EffectPluginContext.localPoint for the plugin of `slot`
+ * @property {boolean} [under]  the host has an under page (EffectPluginContext.under)
  */
 
 const NO_ACTIONS = Object.freeze(/** @type {string[]} */ ([]));
@@ -71,7 +72,7 @@ export function createPluginSet(env, canvas, source, io) {
   function makeContext(slot) {
     const { adapter, device, format, hdr } = io.gpu();
     return buildPluginContext(slot.def, {
-      canvas, source, adapter, device, format, hdr: hdr === true,
+      canvas, source, adapter, device, format, hdr: hdr === true, under: io.under === true,
       requestRender: io.requestRender,
       trigger: (action, options) => ownTrigger(slot, action, options),
       viewport: io.viewport,

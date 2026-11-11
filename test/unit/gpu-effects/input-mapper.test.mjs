@@ -124,3 +124,28 @@ test('mapAfter: through the mappers of the plugins after a place only, in the ne
   c.push(3, [shiftX(10), scaleX(2)]);
   assert.deepEqual(c.mapAfter(0, P(5, 1)), { x: 10, y: 1 });
 });
+
+test('under: a point on the under page ends the chain, passed on with under: true; NO_TARGET on a host without an under page', () => {
+  let earlierSaw = 0;
+  const earlier = (p) => { earlierSaw += 1; return { x: p.x + 1000, y: p.y }; };
+  const lift = (p) => (p.x < 50 ? { x: p.x * 2, y: p.y, under: true } : { x: p.x, y: p.y });
+  const withUnder = createMapperChain({ under: true });
+  withUnder.push(1, [earlier, lift]);
+  // the earlier plugin never sees a point of the under page: its picture is not shown there
+  assert.deepEqual(withUnder.map(P(10, 3)), { x: 20, y: 3, under: true });
+  assert.equal(earlierSaw, 0);
+  assert.deepEqual(withUnder.map(P(60, 3)), { x: 1060, y: 3 });
+  assert.equal(earlierSaw, 1);
+  assert.deepEqual(withUnder.mapAfter(0, P(10, 3)), { x: 20, y: 3, under: true });
+  assert.deepEqual(withUnder.captureGesture()(P(10, 3)), { x: 20, y: 3, under: true });
+  // control: the same mappers on a host without an under page
+  const without = createMapperChain();
+  without.push(1, [earlier, lift]);
+  assert.ok(isNoTarget(without.map(P(10, 3))));
+  assert.ok(isNoTarget(without.captureGesture()(P(10, 3))));
+  assert.deepEqual(without.map(P(60, 3)), { x: 1060, y: 3 });
+  // under: false or a truthy non-true value is an ordinary point
+  const loose = createMapperChain({ under: true });
+  loose.push(1, [(p) => ({ x: p.x, y: p.y, under: 1 })]);
+  assert.deepEqual(loose.map(P(4, 4)), { x: 4, y: 4 });
+});

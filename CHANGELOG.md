@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- Effects (experimental): a second live page beneath the source, `createHost(canvas, source, { under })`, over the polyfill. The under page is another drawable of the canvas, uploaded into a texture of its own when it changes (`frame.under`); a plugin's input mapper returns `{x, y, under: true}` where it shows it, and the host sends the pointer there (a click focuses its field, typing shows up in it). The host keeps the under page `inert` while no plugin reports `revealsUnder`, blurring a focused field of it first. Over a native implementation `createHost` rejects `under` with `HicUnsupportedError('effects-under')` (new row in SUPPORT-MATRIX). Without `under` nothing changes.
+- Plugin `page-curl`: on a host with an under page, the page underneath the sheet is that live page (option `underPage`, on by default), shaded by the roll and the lamp; a press on it keeps the sheet open (`settled()` resolves `'open'`) until a press elsewhere or Escape. The plugin's version is 4. The gallery gives Page curl a short live page underneath, and G-gallery checks it (step `beneath`, control C19).
+
 ### Changed
 - Build: the WGSL a plugin bundle inlines is now written without any blank that separates nothing (`scripts/wgsl-strip.mjs` `minifyWgsl`): tokens follow each other, with one space only where two of them, or a comment start, would form without it. The build checks that the result reads as the source's token stream; names are kept. The ten plugin bundles are 0.6 to 2.7 KB smaller minified (16 KB together; 0.15 to 0.4 KB gzipped; for example page-curl 38,556 -> 35,911 bytes, ink 39,216 -> 37,017), and their ceilings in G-bundle are lowered to match. A browser test compiles every shipped shader from source and minified on a real WebGPU device, with no error and the same entry points.
 - Plugin `ink`: a hovering pointer drives the water to a bounded speed, so a hover moves the page by at most 3 CSS px at the default options (it was 5 to 90 px, more when hovering in circles); a pressed stroke pushes as before.

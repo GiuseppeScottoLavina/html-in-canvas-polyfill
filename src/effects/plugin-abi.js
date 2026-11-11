@@ -87,7 +87,7 @@ export function validateInstance(instance, def) {
   for (const name of OPTIONAL_METHODS) {
     if (inst[name] !== undefined && typeof inst[name] !== 'function') throw typeError(`plugin "${def.type}": \`${name}\` must be a function when present`);
   }
-  for (const flag of ['spatial', 'continuous']) {
+  for (const flag of ['spatial', 'continuous', 'revealsUnder']) {
     if (inst[flag] !== undefined && typeof inst[flag] !== 'boolean') throw typeError(`plugin "${def.type}": \`${flag}\` must be a boolean when present`);
   }
   if (inst.spatial === true && typeof inst.captureInputMapper !== 'function') {

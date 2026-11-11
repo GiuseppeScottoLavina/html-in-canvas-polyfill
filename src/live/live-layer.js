@@ -378,8 +378,8 @@ export function createLiveLayer(env, record) {
       if (on) scrollSync?.mark(el); else scrollSync?.unmark(el);
     },
     scrollAuthorStyle: (el) => scrollSync?.author(el) ?? null,
-    elementAtPoint(point) {
-      for (const el of record.root.elementsFromPoint(point.x, point.y)) if (el !== layerEl && layerEl.contains(el)) return el;
+    elementAtPoint(point, within) {
+      for (const el of record.root.elementsFromPoint(point.x, point.y)) if (el !== layerEl && layerEl.contains(el) && (!within || within.contains(el))) return el;
       return null;
     },
     dispose() {
