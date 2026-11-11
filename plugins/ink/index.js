@@ -62,8 +62,14 @@ const SEGMENT_QUEUE = 64;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
 
-/** how hard the pointer pushes the water: the share of its own speed that the water under it takes up, at intensity 1 */
+/**
+ * How hard the pointer pushes the water. A pressed pointer pushes the water under it towards its own velocity by PRESS_PUSH of the
+ * difference per pass (times intensity). A hovering pointer only sets the water under it moving at HOVER_PUSH of its own speed, at most
+ * HOVER_WATER CSS px/s (both times intensity): the water it drives never outruns that, however often it passes, so the page under a
+ * hover sweep moves by at most 3 CSS px at the defaults (test/ink.test.mjs), and text stays readable.
+ */
 export const HOVER_PUSH = 0.11;
+export const HOVER_WATER = 26;
 export const PRESS_PUSH = 0.5;
 /** the reach of the push, CSS px, and the fastest pointer it follows, CSS px/s */
 export const STIR_RADIUS = 32;
@@ -455,11 +461,12 @@ export const plugin = Object.freeze({
     }
 
     /**
-     * The pointer (or a stroke of the plugin) went from a to b (CSS px of the fluid) in `ms`: it pushes the water along its path with
-     * `push` of its speed relative to the water there, and, `inked`, releases pigment. With reduced motion only the pigment.
-     * @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} ms @param {number} push @param {boolean} inked @param {boolean} still
+     * The pointer (or a stroke of the plugin) went from a to b (CSS px of the fluid) in `ms`: it pushes the water along its path (pressed:
+     * PRESS_PUSH of its speed relative to the water there; hovering: towards the bounded speed of HOVER_PUSH and HOVER_WATER), and, `inked`,
+     * releases pigment. With reduced motion only the pigment.
+     * @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} ms @param {boolean} pressed @param {boolean} inked @param {boolean} still
      */
-    function stroke(ax, ay, bx, by, ms, push, inked, still) {
+    function stroke(ax, ay, bx, by, ms, pressed, inked, still) {
       if (intensity <= 0) return;
       const f = currentFluid();
       const dist = Math.hypot(bx - ax, by - ay);
@@ -469,12 +476,13 @@ export const plugin = Object.freeze({
       const ex = (bx - ax) / dist, ey = (by - ay) / dist;
       if (!still) {
         const n = Math.max(1, Math.ceil((3 * dist) / STIR_RADIUS));
-        const gain = (push * intensity * dist) / (n * PROFILE_LINE * STIR_RADIUS);
+        const gain = ((pressed ? PRESS_PUSH * intensity : 1) * dist) / (n * PROFILE_LINE * STIR_RADIUS);
+        const drive = pressed ? speed : Math.min(HOVER_PUSH * speed, HOVER_WATER) * intensity;
         for (let k = 0; k < n; k += 1) {
           const t = (k + 0.5) / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-          const sway = speed * WAKE_SWAY * Math.sin((2 * Math.PI * (travel + dist * t)) / WAKE_PX);
+          const sway = drive * WAKE_SWAY * Math.sin((2 * Math.PI * (travel + dist * t)) / WAKE_PX);
           velocityAt(f, x, y, water);
-          stir(f, x, y, (ex * speed - ey * sway - water.x) * gain, (ey * speed + ex * sway - water.y) * gain, STIR_RADIUS);
+          stir(f, x, y, (ex * drive - ey * sway - water.x) * gain, (ey * drive + ex * sway - water.y) * gain, STIR_RADIUS);
         }
       }
       travel += dist;
@@ -536,7 +544,7 @@ export const plugin = Object.freeze({
         headX = (b.x - a.x) / dist; headY = (b.y - a.y) / dist; headT = t;
         if (reducedMotion) return;
         takeOver();
-        stroke(a.x, a.y, b.x, b.y, ms, pressed ? PRESS_PUSH : HOVER_PUSH, pressed, false);
+        stroke(a.x, a.y, b.x, b.y, ms, pressed, pressed, false);
       };
       // passive: the ink never claims a gesture (a finger keeps scrolling the page; the browser then cancels the pointer)
       const passive = { passive: true };
@@ -614,7 +622,7 @@ export const plugin = Object.freeze({
         const k = Math.min(1, (simClock - s.t0) / s.ms);
         if (k < 0) continue;
         s.at(k, point);
-        if (s.has) stroke(s.x, s.y, point.x, point.y, STEP_MS, PRESS_PUSH, true, false);
+        if (s.has) stroke(s.x, s.y, point.x, point.y, STEP_MS, true, true, false);
         else { hue += HUE_STEP; s.has = true; }
         s.x = point.x; s.y = point.y;
         if (k >= 1) { scripts.splice(i, 1); i -= 1; }

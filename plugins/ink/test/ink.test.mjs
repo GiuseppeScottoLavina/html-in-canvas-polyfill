@@ -303,6 +303,35 @@ test('the pointer: a hovering mouse stirs without pigment, a pressed one release
   assert.equal(dry.gpu.globals.at(-1)[G.MOVED], 1);
 });
 
+/**
+ * A sweep of the mouse to and fro across the canvas at `speed` CSS px/s for `ms`, one event every 8 ms, the frames at 120 per second in
+ * between, then frames until rest; returns the largest displacement of any cell of the uploaded fields (CSS px: the B-spline is a convex
+ * combination of the cells, so neither the mapper nor the pixels show more).
+ */
+function sweep(w, speed, { pressed = false, ms = 1200 } = {}) {
+  const t0 = performance.now() + 10;
+  let now = t0 + 4;
+  for (let i = 0; i * 8 <= ms; i += 1) {
+    const s = speed * i * 0.008, lap = s % (2 * 380), x = 50 + (lap < 380 ? lap : 760 - lap), y = 160 + 60 * Math.sin(s / 140);
+    for (; now < t0 + 8 * i; now += 1000 / 120) w.instance.render(w.frame(now));
+    w.pointer(i === 0 && pressed ? 'pointerdown' : 'pointermove', x, y, { timeStamp: t0 + 8 * i, buttons: pressed ? 1 : 0 });
+  }
+  for (let i = 0; i < 1500 && w.instance.continuous; i += 1, now += 1000 / 120) w.instance.render(w.frame(now));
+  assert.equal(w.instance.continuous, false, 'it came to rest');
+  return Math.max(0, ...w.gpu.fields.map((f) => shift(f.data)));
+}
+
+test('a hover sweep moves the page by at most 3 CSS px at the defaults, at any speed (text stays readable); it still stirs (control); a pressed sweep moves it by far more, as before (control)', async (t) => {
+  const hovers = [];
+  for (const speed of [400, 800, 2400, 4000]) hovers.push(sweep(await createInk(t), speed));
+  assert.ok(hovers.every((d) => d <= 3), `hover: ${hovers.map((d) => d.toFixed(2)).join(', ')} px`);
+  assert.ok(hovers.every((d) => d > 0.5), 'control: every hover moves the page a little');
+  const pressed = sweep(await createInk(t, { pigment: 0 }), 800, { pressed: true });
+  assert.ok(pressed > 20, `control: a pressed sweep moves the page by ${pressed.toFixed(1)} px`);
+  const strong = sweep(await createInk(t, { intensity: 1 }), 2400);
+  assert.ok(strong > hovers[2] * 1.3, `intensity scales the hover (${strong.toFixed(2)} px at 1)`);
+});
+
 test('a press on a control of the page is the page\'s gesture: no drop on the field, and a drag from it stirs like a hover, without pigment; text is selectable there, and not where a pressed pointer stirs the page', async (t) => {
   const w = await createInk(t);
   const t0 = performance.now();
