@@ -115,6 +115,8 @@ function liftPlugin(seen = {}) {
       const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
       return {
         spatial: true,
+        // shows the under page unless the test says otherwise
+        get revealsUnder() { return seen.reveals !== false; },
         render(frame) {
           seen.frameUnder = frame.under;
           const underView = frame.under ? frame.under.view : frame.sourceView;
@@ -131,8 +133,7 @@ function liftPlugin(seen = {}) {
 const RED = [230, 20, 20], GREEN = [20, 200, 40], BLUE = [20, 40, 220];
 const near = (c, rgb) => Math.abs(c[0] - rgb[0]) < 8 && Math.abs(c[1] - rgb[1]) < 8 && Math.abs(c[2] - rgb[2]) < 8;
 
-async function start(t, { withUnder, interposer = true }) {
-  const rig = makeUnderRig();
+async function start(t, { withUnder, interposer = true, rig = makeUnderRig() }) {
   rig.commit(rig.main, RED);
   rig.commit(rig.under, GREEN);
   const host = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.main, { interposer, ...(withUnder ? { under: rig.under } : {}) });
@@ -242,4 +243,53 @@ gtest('`under` must be another drawable of the canvas: not the source, not insid
   // positive control: the real under page is accepted
   const host = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.main, { under: rig.under });
   host.destroy();
+});
+
+gtest('the under page is inert while the newest frame shows none of it; a focused field of it is blurred before it turns inert', async (t) => {
+  const { rig, host, seen } = await start(t, { withUnder: true, interposer: false });
+  assert.equal(rig.under.inert, true, 'inert before the first frame');
+  seen.reveals = false;
+  rig.tick();
+  assert.equal(rig.under.inert, true, 'a frame that shows none of it keeps it inert');
+  rig.uf.focus();
+  assert.notEqual(document.activeElement, rig.uf, 'an inert field cannot take the focus (Tab, a screen reader, script)');
+  seen.reveals = true;
+  rig.commit(rig.main, BLUE);
+  rig.tick();
+  assert.equal(rig.under.inert, false, 'a frame that shows some of it lifts inert');
+  rig.uf.focus();
+  assert.equal(document.activeElement, rig.uf, 'control: the shown field takes the focus');
+  const blurs = [];
+  rig.uf.addEventListener('blur', () => blurs.push(rig.under.inert));
+  seen.reveals = false;
+  rig.commit(rig.main, RED);
+  rig.tick();
+  assert.deepEqual(blurs, [false], 'blurred once, while the page was not inert yet');
+  assert.equal(rig.under.inert, true);
+  assert.notEqual(document.activeElement, rig.uf);
+  host.destroy();
+  assert.equal(rig.under.inert, false, 'destroy gives the attribute back');
+});
+
+gtest('an inert the author set is left alone; without `under` the host sets inert nowhere', async (t) => {
+  {
+    const rig = makeUnderRig();
+    rig.under.setAttribute('inert', '');
+    const { host, seen } = await start(t, { withUnder: true, interposer: false, rig });
+    rig.tick();
+    assert.equal(rig.under.inert, true);
+    seen.reveals = true;
+    rig.commit(rig.main, BLUE);
+    rig.tick();
+    assert.equal(rig.under.inert, true, 'the author\'s inert stays while the page is shown');
+    host.destroy();
+    assert.equal(rig.under.inert, true, 'and after destroy');
+  }
+  {
+    const { rig, host } = await start(t, { withUnder: false, interposer: false });
+    rig.tick();
+    assert.equal(rig.under.inert, false);
+    assert.equal(rig.main.inert, false);
+    host.destroy();
+  }
 });

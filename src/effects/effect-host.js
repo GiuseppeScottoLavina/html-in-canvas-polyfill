@@ -50,6 +50,9 @@ const SETTLE_MS = 100;
  * THE UNDER PAGE (EffectHostOptions.under, experimental): a second drawable of the canvas with a provider and a texture of its own (frame.under),
  * uploaded when its own version advanced; a frame renders when either version advanced. Both elements get the fill geometry, the source last, so
  * that the source stays above the under page in the hit-test order of the live layer. Without `under` none of this exists.
+ * ACCESSIBILITY: the under element is `inert` (out of the tab order and of the accessibility tree) while the newest presented frame shows none of it,
+ * which a plugin reports with `instance.revealsUnder` (read after each presented frame; absent = nothing shown). Before it becomes inert, a focused
+ * element inside it is blurred, as a page does when it hides a dialog. An `inert` the author set is left alone.
  * @param {HicEnv} env
  * @param {{store: SnapshotStore, scheduler: Scheduler, geometry: GeometryApi, tracker: InteractionTracker}} deps
  * @param {HTMLCanvasElement} canvas
@@ -161,6 +164,10 @@ class HostRuntime {
     /** @type {number|null} version id in the under texture */
     this.underUploaded = null;
     this.lastUnderFill = { x: NaN, y: NaN };
+    /** the newest presented frame shows some of the under page (null before the host decided) @type {boolean|null} */
+    this.underShown = null;
+    /** the author made the under page inert: the host never touches the attribute then */
+    this.underAuthorInert = !!this.under?.hasAttribute('inert');
     this.frameIndex = 0;
     this.lastNow = 0;
     /** @type {EffectViewport|null} */ this.lastViewport = null;
@@ -219,6 +226,8 @@ class HostRuntime {
       this.cleanups.push(() => interposer.dispose());
     }
     if (!this.record) this.cleanups.push(this.watchNativeSize());
+    // nothing of the under page is shown before the first frame that a plugin says reveals it
+    if (this.under) this.setUnderShown(false);
     this.frames.wake();
   }
 
@@ -366,6 +375,7 @@ class HostRuntime {
     this.frameTimes[this.counters.frames % FPS_WINDOW] = now;
     const captured = this.captureMappers(presented, frame);
     this.presentedOrder = presented.map((s) => s.slot);
+    if (this.under) this.setUnderShown(presented.some((s) => s.instance.revealsUnder === true));
     this.chain.push(frame.frameIndex, captured.mappers, captured.places);
     this.canvas.dispatchEvent(new CustomEvent(EVENTS.EFFECT_FRAME, { detail: Object.freeze({ ...frame }) }));
   }
@@ -421,6 +431,22 @@ class HostRuntime {
     const vp = this.presenter.viewport();
     const q = this.chain.mapAfter(place, { x, y, width: vp.cssWidth, height: vp.cssHeight });
     return isNoTarget(q) ? null : q;
+  }
+
+  /**
+   * The under page leaves the tab order and the accessibility tree while nothing of it is shown, and comes back while some of it is (`inert`).
+   * @param {boolean} shown
+   */
+  setUnderShown(shown) {
+    const el = this.under;
+    if (!el || shown === this.underShown) return;
+    this.underShown = shown;
+    if (this.underAuthorInert) return;
+    if (shown) { el.removeAttribute('inert'); return; }
+    // blurred first: a field that stays focused while its page turns inert would keep the keyboard of a page nobody sees
+    const active = el.ownerDocument.activeElement;
+    if (active && el.contains(active)) /** @type {HTMLElement} */ (active).blur();
+    el.setAttribute('inert', '');
   }
 
   /** @param {EffectViewport} vp */
@@ -558,6 +584,7 @@ class HostRuntime {
     this.plugins.destroy();
     this.provider.dispose();
     this.underProvider?.dispose();
+    if (this.under && !this.underAuthorInert && this.underShown === false) this.under.removeAttribute('inert');
     if (this.fillApplied && this.record) this.deps.geometry.clear(this.record, this.source);
     if (this.under && this.record && Number.isFinite(this.lastUnderFill.x)) this.deps.geometry.clear(this.record, this.under);
     this.nativeGeometry?.dispose();
