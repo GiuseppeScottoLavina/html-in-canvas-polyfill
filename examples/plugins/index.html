@@ -643,7 +643,9 @@
     const p = { x: map.x - ox, y: map.y - oy };
     let q = p;
     try { if (state.host) q = state.host.mapPoint(p); } catch (error) { q = null; }
-    const hit = q ? document.elementsFromPoint(ox + q.x, oy + q.y).find((e) => e !== form && form.contains(e)) || form : null;
+    // a point on the page under the page (`under: true`) is sent to that page, as the host does
+    const page = q && q.under ? underPage : form;
+    const hit = q ? document.elementsFromPoint(ox + q.x, oy + q.y).find((e) => e !== page && page.contains(e)) || page : null;
     Object.assign(root.style, { left: ox + scrollX + 'px', top: oy + scrollY + 'px', width: canvas.clientWidth + 'px', height: canvas.clientHeight + 'px' });
     const [line, box, at, dot, tag] = [root.querySelector('line'), root.querySelector('.box'), root.querySelector('.at'), root.querySelector('.dot'), root.querySelector('.tag')];
     Object.assign(dot.style, { left: p.x + 'px', top: p.y + 'px' });
