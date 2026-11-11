@@ -67,8 +67,8 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 |---|---|---|
 | `hic-live-polyfill.iife.js` | 737,766 | 187,147 |
 | `hic-live-polyfill.iife.min.js` | 374,275 | 127,677 |
-| `hic-live-effects.iife.js` | 84,056 | 22,061 |
-| `hic-live-effects.iife.min.js` | 40,999 | 14,486 |
+| `hic-live-effects.iife.js` | 84,479 | 22,186 |
+| `hic-live-effects.iife.min.js` | 41,238 | 14,581 |
 | `hic-live-native-bridge.iife.js` | 31,359 | 8,203 |
 | `hic-live-native-bridge.iife.min.js` | 14,011 | 5,082 |
 | `hic-live-engines.iife.js` | 76,503 | 22,782 |
@@ -80,34 +80,34 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-loader.iife.js` | 30,422 | 9,106 |
 | `hic-live-loader.iife.min.js` | 17,459 | 6,325 |
 | `esm/index.js` | 40,693 | 14,107 |
-| `esm/effects.js` | 72,064 | 19,368 |
+| `esm/effects.js` | 72,463 | 19,494 |
 | `esm/native-bridge.js` | 23,215 | 6,078 |
 | `esm/worker.js` | 6,977 | 2,402 |
 | `esm/loader.js` | 4,931 | 1,814 |
-| `plugins/crt.iife.js` | 17,245 | 6,175 |
-| `plugins/crt.iife.min.js` | 11,121 | 4,886 |
-| `plugins/crt.esm.js` | 15,947 | 5,926 |
-| `plugins/disintegrate.iife.js` | 43,372 | 13,279 |
-| `plugins/disintegrate.iife.min.js` | 27,576 | 10,518 |
-| `plugins/disintegrate.esm.js` | 40,809 | 12,905 |
+| `plugins/crt.iife.js` | 18,628 | 6,617 |
+| `plugins/crt.iife.min.js` | 12,360 | 5,311 |
+| `plugins/crt.esm.js` | 17,320 | 6,367 |
+| `plugins/disintegrate.iife.js` | 44,478 | 13,506 |
+| `plugins/disintegrate.iife.min.js` | 28,354 | 10,699 |
+| `plugins/disintegrate.esm.js` | 41,891 | 13,134 |
 | `plugins/glitch.iife.js` | 28,953 | 9,199 |
 | `plugins/glitch.iife.min.js` | 15,785 | 6,927 |
 | `plugins/glitch.esm.js` | 26,726 | 8,885 |
-| `plugins/holo-card.iife.js` | 29,273 | 9,325 |
-| `plugins/holo-card.iife.min.js` | 17,222 | 7,335 |
-| `plugins/holo-card.esm.js` | 27,303 | 9,044 |
-| `plugins/liquid-glass.iife.js` | 34,224 | 10,986 |
-| `plugins/liquid-glass.iife.min.js` | 19,913 | 8,473 |
-| `plugins/liquid-glass.esm.js` | 31,981 | 10,651 |
-| `plugins/page-curl.iife.js` | 62,777 | 18,184 |
-| `plugins/page-curl.iife.min.js` | 36,921 | 14,417 |
-| `plugins/page-curl.esm.js` | 59,235 | 17,772 |
-| `plugins/shatter.iife.js` | 61,114 | 17,544 |
-| `plugins/shatter.iife.min.js` | 35,910 | 13,542 |
-| `plugins/shatter.esm.js` | 57,954 | 17,060 |
-| `plugins/water.iife.js` | 50,642 | 14,388 |
-| `plugins/water.iife.min.js` | 28,965 | 11,229 |
-| `plugins/water.esm.js` | 47,733 | 13,995 |
+| `plugins/holo-card.iife.js` | 30,683 | 9,748 |
+| `plugins/holo-card.iife.min.js` | 18,488 | 7,723 |
+| `plugins/holo-card.esm.js` | 28,703 | 9,469 |
+| `plugins/liquid-glass.iife.js` | 35,638 | 11,410 |
+| `plugins/liquid-glass.iife.min.js` | 21,183 | 8,882 |
+| `plugins/liquid-glass.esm.js` | 33,385 | 11,079 |
+| `plugins/page-curl.iife.js` | 64,474 | 18,640 |
+| `plugins/page-curl.iife.min.js` | 38,374 | 14,835 |
+| `plugins/page-curl.esm.js` | 60,916 | 18,224 |
+| `plugins/shatter.iife.js` | 63,212 | 18,025 |
+| `plugins/shatter.iife.min.js` | 37,835 | 13,998 |
+| `plugins/shatter.esm.js` | 60,040 | 17,545 |
+| `plugins/water.iife.js` | 52,181 | 14,813 |
+| `plugins/water.iife.min.js` | 30,353 | 11,636 |
+| `plugins/water.esm.js` | 49,262 | 14,424 |
 <!-- sizes:end -->
 
 Size target: the design target for the minified core was 150 KB (gate G-bundle), and **the core in the table above is over it**. `npm run check:bundle` therefore prints the target as KNOWN RED and fails on any growth above a recorded ceiling (`scripts/check-bundle.mjs`), which is raised only deliberately, with a measured reason.
@@ -174,7 +174,7 @@ Native bridge, with the evidence for "separate script, not lazy":
 ## Checks
 
 - `npm run build`: the artifacts above plus `dist/sizes.json`; it fails when a plugin folder breaks the contract of `plugins/README.md`.
-- `npm run check:bundle` (`npm test` and CI run it with `--allow-size`): `dist/sizes.json` against the files in `dist/` (so `--no-build` never judges a file rebuilt or edited since by its old size); sizes against the size budget, the measured size plus a small margin (min files; core 374.5 KB, effects 41 KB, bridge 14.25 KB, engines 46.375 KB, GPU 11.5 KB, worker 9.25 KB, loader 17.5 KB; gzip level 9: core 127.75 KB, effects 14.5 KB, bridge 5.25 KB, engines 17.75 KB, GPU 4.5 KB, worker 3.75 KB, loader 6.5 KB; each plugin its measured size plus a small margin (`PLUGIN_LIMITS`: crt 11.5, disintegrate 27.75, glitch 16, holo-card 17.25, liquid-glass 19.95, page-curl 37, shatter 36, water 29 KB) and 16 KB for a plugin not listed there; 1 KB = 1000 bytes, as in the target) and the 150 KB target; each IIFE parses as a classic script and has no dynamic `import()`; no file under `dist/` contains a path of the build machine; in headless Chrome, for the readable and the minified files: core alone, core + effects (including `createHost` rejecting after `uninstall()`), core + effects + each plugin of `dist/plugins/manifest.json` (it registers, `definePlugin` accepts it, its shader modules receive inlined WGSL strings), bridge + core, core + engines, core + GPU, the loader alone and the loader with the core it loads (ten concurrent `load()` calls: one request, one install, `whenPainted`; a core slower than `timeout`: status `error`, and once it arrives no install, no layer, no patched prototype; a 404; a nonce-only CSP without and with `nonce`), each with ZERO requests beyond the declared scripts and each declared script requested exactly once (server log and Resource Timing) and no page error (on a machine without a WebGPU adapter the documented `effect-plugins` report of `createHost` is the one console error allowed in core + effects); the ESM build as native modules, and the ESM loader (ten concurrent calls, its core module `chunks/loader-core-*.js` requested once, neither the package entry nor, on Chromium, the engines; a classic-only option rejects); an app that imports only `load` from `dist/esm/loader.js`, bundled by esbuild with code splitting, keeps the `FEATURES` prose and the engines out of its Chromium polyfill path and stays within its gzip ceilings (start 8.1 KB, polyfill path on Chromium 139.25 KB, on Firefox / Safari 156.25 KB). Its controls: a module is not a classic script, a dynamic import and an oversize bundle are seen, the loader app whose loader imports the package entry carries the prose and the engines, an undeclared script is an unexpected request, a script requested twice is reported, a missing global is reported, and in the timeout case an explicit `install()` of the late core is seen by the same patch check.
+- `npm run check:bundle` (`npm test` and CI run it with `--allow-size`): `dist/sizes.json` against the files in `dist/` (so `--no-build` never judges a file rebuilt or edited since by its old size); sizes against the size budget, the measured size plus a small margin (min files; core 374.5 KB, effects 41.25 KB, bridge 14.25 KB, engines 46.375 KB, GPU 11.5 KB, worker 9.25 KB, loader 17.5 KB; gzip level 9: core 127.75 KB, effects 14.75 KB, bridge 5.25 KB, engines 17.75 KB, GPU 4.5 KB, worker 3.75 KB, loader 6.5 KB; each plugin its measured size plus a small margin (`PLUGIN_LIMITS`: crt 12.5, disintegrate 28.5, glitch 16, holo-card 18.5, liquid-glass 21.25, page-curl 38.5, shatter 38, water 30.5 KB) and 16 KB for a plugin not listed there; 1 KB = 1000 bytes, as in the target) and the 150 KB target; each IIFE parses as a classic script and has no dynamic `import()`; no file under `dist/` contains a path of the build machine; in headless Chrome, for the readable and the minified files: core alone, core + effects (including `createHost` rejecting after `uninstall()`), core + effects + each plugin of `dist/plugins/manifest.json` (it registers, `definePlugin` accepts it, its shader modules receive inlined WGSL strings), bridge + core, core + engines, core + GPU, the loader alone and the loader with the core it loads (ten concurrent `load()` calls: one request, one install, `whenPainted`; a core slower than `timeout`: status `error`, and once it arrives no install, no layer, no patched prototype; a 404; a nonce-only CSP without and with `nonce`), each with ZERO requests beyond the declared scripts and each declared script requested exactly once (server log and Resource Timing) and no page error (on a machine without a WebGPU adapter the documented `effect-plugins` report of `createHost` is the one console error allowed in core + effects); the ESM build as native modules, and the ESM loader (ten concurrent calls, its core module `chunks/loader-core-*.js` requested once, neither the package entry nor, on Chromium, the engines; a classic-only option rejects); an app that imports only `load` from `dist/esm/loader.js`, bundled by esbuild with code splitting, keeps the `FEATURES` prose and the engines out of its Chromium polyfill path and stays within its gzip ceilings (start 8.1 KB, polyfill path on Chromium 139.25 KB, on Firefox / Safari 156.25 KB). Its controls: a module is not a classic script, a dynamic import and an oversize bundle are seen, the loader app whose loader imports the package entry carries the prose and the engines, an undeclared script is an unexpected request, a script requested twice is reported, a missing global is reported, and in the timeout case an explicit `install()` of the late core is seen by the same patch check.
 - `node test/native-effects/g-native-loader.mjs --chrome=<Chrome 157+>` (stage `loader` of `npm run test:native-effects`): on a browser that ships the API, the classic loader (`.js`, `.min.js`) and the module loader settle `status: 'native'` with ZERO requests for the core, the engines bundle or the bridge and no member carrying the polyfill's patch mark; control: the same pages with the native API disabled download the core and install.
 - `npm run test:examples` (`scripts/check-examples.mjs`) loads the minified bundles from `dist/` in the seven pages of `examples/` (the plugin gallery, `effect-plugin` and the playground's sandboxed preview included) and in the two smoke pages of `test/examples-smoke/` (the ESM entry `dist/esm/index.js` and a plugin written against `hic-live-effects.iife.min.js`), in headless Chrome, with a control that breaks the `dist/` path.
 - The browser gates (`test/gates/`) load the core, and the effects bundle and `dist/plugins/water.iife.js` for the effect gates, from `dist/` through `--bundle-file`, `--effects-file` and `--water-file`; the mutant suite mutates the core, the effects file (`bundle: 'effects'`) or the engines file (`bundle: 'engines'`, served to G-xbrowser through `--engines-file`) and runs the gates on it.

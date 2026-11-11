@@ -59,6 +59,7 @@ const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5,
 | `maxDpr` | the polyfill's `maxDpr` option (2.5; 3 on phones) | the canvas backing store is its CSS size times `min(devicePixelRatio, maxDpr)` |
 | `powerPreference` | the browser's | `'low-power'` or `'high-performance'`, passed to `requestAdapter` |
 | `interposer` | `true` | remap pointer input through the spatial plugins (section 14); `false` leaves input to the browser |
+| `hdr` | `false` | ask for extended range: the canvas and every target of the chain are `rgba16float` with the `extended` tone mapping, so a value above 1 that a plugin writes is shown brighter than white as far as the display can (white on a display without the headroom). In use only where the browser takes that configuration (`host.stats().hdr`); decided when the host is created. What the example plugins do with it: section 12.1 |
 
 `createHost` rejects with:
 
@@ -81,7 +82,7 @@ try {
 }
 ```
 
-`host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, paused, pauses, offscreenFrames, sourceVersion, remapped, passedThrough}`) `mapPoint(point)` and `destroy()`. `mapPoint` answers where a point of the canvas is in the source: the point through every plugin's input mapper in the frame on screen (canvas-relative CSS pixels of the content box, in and out; `null` where the plugins show nothing of the source). It is what the host does with a pointer; a page uses it to show or log what lies under the pointer as the user sees it (the gallery's "input map" does).
+`host` has `pluginCount`, `addPlugin(definition, options)`, `stats()` (`{frames, fps, uploads, pluginErrors, deviceLosses, paused, hdr, pauses, offscreenFrames, sourceVersion, remapped, passedThrough}`) `mapPoint(point)` and `destroy()`. `mapPoint` answers where a point of the canvas is in the source: the point through every plugin's input mapper in the frame on screen (canvas-relative CSS pixels of the content box, in and out; `null` where the plugins show nothing of the source). It is what the host does with a pointer; a page uses it to show or log what lies under the pointer as the user sees it (the gallery's "input map" does).
 
 The host does no work for a canvas nobody can see. While the canvas is more than half a viewport (or half its scroll container) out of view, or the document is hidden, it renders nothing, `continuous` plugins included, and uploads nothing; `stats().paused` is then `true`. It starts again before the canvas scrolls back in, so the first frame you see is current; a jump straight into view (`scrollTo`, an anchor) is rendered in the frame that shows it. The frame clock does not stop: on resume an effect shows what it shows at that time, nothing is replayed. An action you trigger, or a `settled()` you await, while the canvas is out of view still completes: the host renders about 10 frames per second until it settles (`stats().offscreenFrames`), and in a hidden document, where the browser runs no frames, on the first frame after the document is shown again. There is no option to turn the pause off: a paused canvas is out of sight.
 
