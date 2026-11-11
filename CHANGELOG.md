@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 - Build: the WGSL a plugin bundle inlines is now written without any blank that separates nothing (`scripts/wgsl-strip.mjs` `minifyWgsl`): tokens follow each other, with one space only where two of them, or a comment start, would form without it. The build checks that the result reads as the source's token stream; names are kept. The ten plugin bundles are 0.6 to 2.7 KB smaller minified (16 KB together; 0.15 to 0.4 KB gzipped; for example page-curl 38,556 -> 35,911 bytes, ink 39,216 -> 37,017), and their ceilings in G-bundle are lowered to match. A browser test compiles every shipped shader from source and minified on a real WebGPU device, with no error and the same entry points.
+- Plugin `ink`: a hovering pointer drives the water to a bounded speed, so a hover moves the page by at most 3 CSS px at the default options (it was 5 to 90 px, more when hovering in circles); a pressed stroke pushes as before.
+- Plugin `ink`: a tap lets a drop fall that spreads over the water with a radial flow, gathers its pigment into a darker rim, and ends in an irregular, ragged outline of its own (its reach drawn per drop: the gentle low modes move the page and are what the input mapper inverts, the fine modes live only in the pigment) with a crisp, anti-aliased wet edge and a few small tendrils; it comes to rest in about 3 s. A drop at rest no longer picks a direction. Reduced motion is unchanged.
+- Plugin `ink`: moving water shows a faint sheen (the free surface of the flow lit by a soft overhead light, in linear light); with extended range its glint goes above white; nothing changes where the water is still. The plugin's version is 2. Minified bundle 42,119 bytes (ceiling 42.25 KB). GPU time in the demo 1.19 ms per frame at 120 fps on the reference Mac (it was 1.02).
 
 ## [1.0.0-rc.8] - 2026-11-11
 

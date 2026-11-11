@@ -291,7 +291,7 @@ const REHEARSAL = Object.freeze({ drag: 0.2, heal: 1, confine: CONFINE });
 export const plugin = Object.freeze({
   type: 'ink',
   apiVersion: /** @type {const} */ (2),
-  version: 1,
+  version: 2,
   actions: ACTIONS,
   // The picture pass only writes its destination as a same-format colour attachment; it never samples or reads it back.
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
