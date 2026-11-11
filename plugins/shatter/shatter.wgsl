@@ -4,6 +4,11 @@
 // under gravity and spin seen in perspective, lit by a studio environment (a softbox and a strip light) with Fresnel reflection, a bevel
 // that catches the light along every edge, and a soft shadow on the backdrop behind the pane (vs_shadow). The fall is drawn with 4x MSAA
 // and a depth buffer. Debris is one instanced triangle per chip, with the same glass shading.
+//
+// Extended range (HDR_PEAK > 1): the picture in the glass, its diffuse shading along the cracks, the crack lines, the reflected room and the
+// backdrop stay under white. Light goes above it: the flash of the strike at the impact and its glints on the fresh fractures (both
+// gone once the cracks have run: a cracked pane at rest shows nothing above white), the key light mirrored squarely by a falling face, its
+// bevel or its edge wall (a far narrower lobe than the highlight of a standard target), and the chips that flash.
 
 struct Uniforms {
   resolution : vec2<f32>,  // backing px
@@ -36,6 +41,30 @@ const BEVEL : f32 = 7.0;
 // the backdrop: a plane SHADOW_DEPTH css px behind the pane, lit from LIGHT (towards the light: up, left, in front of the screen)
 const SHADOW_DEPTH : f32 = 36.0;
 const LIGHT : vec3<f32> = vec3<f32>(-0.33, -0.56, 0.76);
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
+// what goes above white, over what a standard target shows of it: the key light mirrored squarely by a face or a wall of a falling shard
+// (HOT_SHARP times the exponent of the highlight: a lobe about a quarter as wide), a chip (the part of its flash a standard target clips),
+// the flash of the strike (a core HOT_FLASH_PX css px wide at the impact) and the fractures that glint in it
+const HOT_SHARP : f32 = 14.0;
+const HOT_FACE : f32 = 4.0;
+const HOT_CHIP : f32 = 2.0;
+const HOT_FLASH : f32 = 2.0;
+const HOT_FLASH_PX : f32 = 12.0;
+const HOT_FRACTURE : f32 = 1.6;
 
 struct FullOut {
   @builtin(position) position : vec4<f32>,
@@ -216,7 +245,7 @@ fn vs_shard(@builtin(instance_index) face : u32, @location(0) home : vec2<f32>, 
  * A falling face of glass: the picture seen through it, the environment reflected with Fresnel, and a bevel along its real edges that
  * catches the light. `w`: the screen derivative of the distance to the edge (taken in uniform control flow).
  */
-fn glass_face(v : ShardOut, picture : vec3<f32>, w : f32) -> vec3<f32> {
+fn glass_face(v : ShardOut, picture : vec3<f32>, w : f32, lit_before : vec3<f32>) -> vec3<f32> {
   let to_eye = normalize(eye() - v.world);
   var n = normalize(v.normal);
   // perspective can show a face from its other side near grazing: shade the side that is seen
@@ -233,6 +262,11 @@ fn glass_face(v : ShardOut, picture : vec3<f32>, w : f32) -> vec3<f32> {
   let body = select(picture, picture * vec3<f32>(0.62, 0.7, 0.68), v.back > 0.5);
   var rgb = body * (1.0 - f) * (1.0 - 0.35 * chamfer) + environment(r) * f * (0.6 + 0.8 * u.glint) + u.edge.rgb * spec * u.glint;
   rgb = rgb + u.edge.rgb * chamfer * 0.12 * u.edge_amount;
+  if (HDR_PEAK > 1.0) {
+    // the face (or its bevel) mirrors the key light squarely to the eye: a flash above white as the shard turns through it
+    let hot = pow(max(dot(nb, half_v), 0.0), 260.0 * HOT_SHARP) * HOT_FACE * u.glint;
+    return max(hdr_light(min(rgb, vec3<f32>(1.0)) + lit_before, u.edge.rgb * hot) + (hash2(v.position.xy) - 0.5) / 255.0, vec3<f32>(0.0));
+  }
   // dither: the smooth gradients of the reflections do not band
   return rgb + (hash2(v.position.xy) - 0.5) / 255.0;
 }
@@ -249,8 +283,14 @@ fn fs_shard(v : ShardOut) -> @location(0) vec4<f32> {
   }
   let c = textureSampleLevel(source, source_sampler, (v.home + bend) / u.css, 0.0);
   var rgb = mix(u.backdrop.rgb, c.rgb, c.a);
+  // extended range: the picture is at most white here; what a plugin before this one lit above white is carried to the output as it is
+  var lit_before = vec3<f32>(0.0);
+  if (HDR_PEAK > 1.0) {
+    lit_before = max(rgb - vec3<f32>(1.0), vec3<f32>(0.0));
+    rgb = min(rgb, vec3<f32>(1.0));
+  }
   if (v.moving > 0.5) {
-    return vec4<f32>(glass_face(v, rgb, w), v.alpha);
+    return vec4<f32>(glass_face(v, rgb, w, lit_before), v.alpha);
   }
   let di = distance(v.home, u.impact);
   // the cracked pane: each piece, at its own slight tilt, catches a far light (a window above the screen) its own way
@@ -276,6 +316,12 @@ fn fs_shard(v : ShardOut) -> @location(0) vec4<f32> {
   let crush = (1.0 - smoothstep(4.0, 22.0, di)) * u.edge_amount * v.k * (0.4 + 0.6 * hash2(v.home / 1.5));
   rgb = mix(rgb, vec3<f32>(0.86, 0.94, 1.0), crush * 0.5);
   rgb = rgb + u.edge.rgb * u.flash * exp(-di / 38.0);
+  if (HDR_PEAK > 1.0) {
+    // the strike is the light: the core of its flash at the impact, and the fractures that glint in it. u.flash is 0 once the cracks have
+    // run, so the cracked pane at rest shows nothing above white (its facets and crack lines are the picture's own shading)
+    let hot = u.flash * (HOT_FLASH * exp(-di * di / (HOT_FLASH_PX * HOT_FLASH_PX)) + HOT_FRACTURE * sparkle * (0.5 + 0.5 * u.glint));
+    return vec4<f32>(hdr_light(min(rgb, vec3<f32>(1.0)) + lit_before, u.edge.rgb * hot), v.alpha);
+  }
   return vec4<f32>(rgb, v.alpha);
 }
 
@@ -330,6 +376,11 @@ fn fs_wall(v : WallOut) -> @location(0) vec4<f32> {
   // the two arrises (where the wall meets the faces) catch a thin line of light
   let arris = max(1.0 - smoothstep(0.0, w * 1.5, v.across), smoothstep(1.0 - w * 1.5, 1.0, v.across));
   rgb = rgb + u.edge.rgb * arris * 0.35 * u.edge_amount;
+  if (HDR_PEAK > 1.0) {
+    // the broken edge mirrors the key light squarely: a thin flash above white
+    let hot = pow(max(dot(n, half_v), 0.0), 120.0 * HOT_SHARP) * HOT_FACE * u.glint;
+    return vec4<f32>(max(hdr_light(min(rgb, vec3<f32>(1.0)), u.edge.rgb * hot) + (hash2(v.position.xy) - 0.5) / 255.0, vec3<f32>(0.0)), v.alpha);
+  }
   return vec4<f32>(rgb + (hash2(v.position.xy) - 0.5) / 255.0, v.alpha);
 }
 
@@ -344,6 +395,10 @@ fn fs_backdrop(v : FullOut) -> @location(0) vec4<f32> {
   let d = (p - u.css * vec2<f32>(0.3, 0.18)) / (0.75 * span);
   let pool = exp(-dot(d, d));
   let light = mix(u.edge.rgb, vec3<f32>(0.42, 0.6, 0.85), 0.6) * 0.12 * (0.4 + 0.6 * pool) * u.alpha;   // a cool softbox
+  if (HDR_PEAK > 1.0) {
+    // the backdrop is lit diffusely: it stays between black and white (a float target would keep the dither below 0 and a light backdrop above 1)
+    return vec4<f32>(clamp(u.backdrop.rgb + light + (hash2(v.position.xy) - 0.5) / 255.0 * u.alpha, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+  }
   return vec4<f32>(u.backdrop.rgb + light + (hash2(v.position.xy) - 0.5) / 255.0 * u.alpha, 1.0);
 }
 
@@ -427,5 +482,10 @@ fn vs_debris(@builtin(vertex_index) vertex : u32, @builtin(instance_index) chip 
 
 @fragment
 fn fs_debris(v : DebrisOut) -> @location(0) vec4<f32> {
+  if (HDR_PEAK > 1.0) {
+    // a chip is all reflected light: what a standard target clips of its flash goes above white
+    let seen = min(v.colour.rgb, vec3<f32>(1.0));
+    return vec4<f32>(hdr_light(seen, (v.colour.rgb - seen) * HOT_CHIP), v.colour.a);
+  }
   return v.colour;
 }
