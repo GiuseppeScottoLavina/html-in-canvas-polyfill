@@ -8,9 +8,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { ACTIONS, FADE_MS, GRAB_SLOP, HEM, fabric, gustDirection, isNoTarget, meta, parseColor, plugin, stateOf } from '../index.js';
-import { ASSIST_PX, GRAVITY, STEP_HZ, STEP_MS, STEP_S, WALL_GAP, createCloth, drop, gridOf, gust, hangFrom, holdAt, letGo, lowerSeconds, push, setPins, step, stretch, take, wake } from '../sim.js';
+import { ACTIONS, FADE_MS, GRAB_SLOP, HEM, LIFT, LIFT_TRAVEL, fabric, gustDirection, isNoTarget, meta, parseColor, plugin, stateOf } from '../index.js';
+import { ASSIST_PX, GRAVITY, STEP_HZ, STEP_MS, STEP_S, WALL_GAP, createCloth, drop, gridOf, gust, hangFrom, heldPoint, holdAt, letGo, lowerSeconds, push, setPins, step, stretch, take, wake } from '../sim.js';
 import { CAMERA, CLOTH, FLAT, GONE, HEAD, S, SUB, castCloth, mapClothPoint, stateLength, surfacePoint, writeControlPoints } from '../surface.js';
+import { drawnSurface, selfCrossings } from './self-crossing.mjs';
 
 contractTest(import.meta.url);
 
@@ -332,6 +333,116 @@ test('a state that is written again is seen again: the cache of castCloth follow
     if (isNoTarget(now) !== isNoTarget(first[i]) || Math.hypot(now.x - first[i].x, now.y - first[i].y) > 0.5) differ += 1;
   });
   assert.ok(differ > 10, `control: ${differ} of ${points.length} points map elsewhere than before`);
+});
+
+// ---------------------------------------------------------------------------------------------------------------- the cloth against itself
+
+/**
+ * Brisk mouse paths over a canvas of w x h css px, a point every `eventMs`: wide pulls back and forth, each leg eased in and out, as a hand
+ * pulls fast (the legs cover up to 0.8 of the width in 240 ms: about 4000 css px/s at their fastest on a canvas 1100 px wide).
+ * @param {number} w @param {number} h @param {number} [eventMs]
+ * @returns {[string, number[][]][]}
+ */
+function briskPaths(w, h, eventMs = 1000 / 120) {
+  const path = (/** @type {number[]} */ from, /** @type {number[][]} */ to, /** @type {number} */ legMs) => {
+    const points = [from];
+    let a = from;
+    for (const b of to) {
+      const n = Math.max(1, Math.round(legMs / eventMs));
+      for (let i = 1; i <= n; i += 1) { const s = i / n, e = s * s * (3 - 2 * s); points.push([a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e]); }
+      a = b;
+    }
+    return points;
+  };
+  return [
+    ['the lower third, sideways three times', path([0.4 * w, 0.72 * h], [[0.9 * w, 0.6 * h], [0.1 * w, 0.75 * h], [0.9 * w, 0.6 * h], [0.1 * w, 0.75 * h], [0.9 * w, 0.6 * h], [0.4 * w, 0.7 * h]], 240)],
+    ['the hem, up and across', path([0.6 * w, 0.95 * h], [[0.2 * w, 0.25 * h], [0.85 * w, 0.4 * h], [0.15 * w, 0.2 * h], [0.8 * w, 0.5 * h]], 300)],
+    ['a lower corner, diagonally twice', path([0.92 * w, 0.9 * h], [[0.15 * w, 0.2 * h], [0.9 * w, 0.85 * h], [0.1 * w, 0.15 * h], [0.85 * w, 0.8 * h]], 280)],
+  ];
+}
+
+/**
+ * A pressed mouse along `path`, as index.js turns it into the hand: the cloth is taken where the path starts, then held on the pointer's
+ * line of sight, lifted off its plane as the drag goes on; let go at the end, and 0.5 s more. `frame` sees the state of a frame every 4
+ * steps (120 frames a second) and its number.
+ * @param {any} c @param {number[][]} path @param {(state: Float32Array, n: number) => void} frame @param {number} [eventMs]
+ */
+function dragAlong(c, path, frame, eventMs = 1000 / 120) {
+  const D = CAMERA * Math.max(c.width, c.height), state = new Float32Array(stateLength(c.cols, c.rows));
+  state[S.W] = c.width; state[S.H] = c.height; state[S.CAMERA] = D; state[S.COLS] = c.cols; state[S.ROWS] = c.rows; state[S.MODE] = CLOTH;
+  const [x0, y0] = path[0];
+  take(c, (x0 / c.width) * c.cols, (y0 / c.height) * c.rows, 0, 0, 0);
+  const held = heldPoint(c, [0, 0, 0]);
+  holdAt(c, held[0], held[1], held[2]);
+  let travel = 0, steps = 0, frames = 0, clock = 0;
+  const until = (/** @type {number} */ ms) => {
+    while (clock + STEP_MS <= ms) {
+      step(c); clock += STEP_MS; steps += 1;
+      if (steps % 4 === 0) { writeControlPoints(state, c, 1); state[S.SERIAL] = frames; frame(state, frames); frames += 1; }
+    }
+  };
+  path.forEach(([x, y], i) => {
+    until(i * eventMs);
+    travel = Math.max(travel, Math.hypot(x - x0, y - y0));
+    const z = held[2] + LIFT * c.height * (1 - Math.exp(-travel / LIFT_TRAVEL)), k = (D - z) / D;
+    holdAt(c, c.width / 2 + (x - c.width / 2) * k, c.height / 2 + (y - c.height / 2) * k, z);
+  });
+  letGo(c);
+  until(path.length * eventMs + 500);
+  return frames;
+}
+
+test('the cloth against itself: in brisk wide drags the drawn sheet never passes through itself, at 120 and at 30 events a second (control: switched off, it does in most frames)', () => {
+  for (const eventMs of [1000 / 120, 1000 / 30]) {
+    for (const [name, path] of briskPaths(800, 500, eventMs)) {
+      const c = createCloth(800, 500);
+      let checked = 0, crossed = 0, worst = 0, closest = Infinity;
+      dragAlong(c, path, (state, n) => {
+        if (n % 4) return;   // every 33 ms: a crossing lasts longer than that (and is checked frame by frame through the handle below)
+        checked += 1;
+        const x = selfCrossings(drawnSurface(state));
+        if (x.length) { crossed += 1; worst = Math.max(worst, x.length); }
+      }, eventMs);
+      assert.ok(checked > 30, `${name}: ${checked} frames checked`);
+      assert.equal(crossed, 0, `${name}, events every ${eventMs.toFixed(1)} ms: ${crossed} of ${checked} frames show the sheet through itself (up to ${worst} edges of the drawn grid)`);
+      // the layers keep their distance: no two particles that are not linked are much closer than the gap at the end
+      for (let a = 0; a < c.n; a += 1) for (let b = a + 1; b < c.n; b += 1) {
+        if (Math.abs((a % c.nx) - (b % c.nx)) + Math.abs(Math.floor(a / c.nx) - Math.floor(b / c.nx)) <= 1) continue;
+        closest = Math.min(closest, Math.hypot(c.x[3 * a] - c.x[3 * b], c.x[3 * a + 1] - c.x[3 * b + 1], c.x[3 * a + 2] - c.x[3 * b + 2]));
+      }
+      assert.ok(closest > 0.85 * Math.max(c.lx, c.ly), `${name}: two particles ${closest.toFixed(1)} px apart after the drag`);
+    }
+  }
+  // control: the same drags with the cloth against itself switched off (the solver before it)
+  for (const [name, path] of briskPaths(800, 500)) {
+    const c = createCloth(800, 500);
+    c.self.on = false;
+    let checked = 0, crossed = 0;
+    dragAlong(c, path, (state, n) => { if (n % 4) return; checked += 1; if (selfCrossings(drawnSurface(state)).length) crossed += 1; });
+    assert.ok(crossed > 0.3 * checked, `control, ${name}: switched off, ${crossed} of ${checked} frames show the sheet through itself`);
+  }
+});
+
+test('the cloth against itself, through the handle: a brisk mouse drag of the real plugin presents no frame in which the sheet passes through itself', async (t) => {
+  for (const fps of [120, 30]) {
+    const k = await rig(t);
+    k.run(1000, 1000);
+    const [, path] = briskPaths(k.w, k.h, 1000 / fps)[1];
+    k.fire('pointerdown', path[0][0], path[0][1], { buttons: 1 });
+    let crossed = 0, checked = 0, cloth = 0;
+    path.slice(1).forEach(([x, y], i) => {
+      k.fire('pointermove', x, y, { buttons: 1 });
+      const m = k.run(1016 + (i * 1000) / fps, 1016 + (i * 1000) / fps);
+      const s = /** @type {Float32Array} */ (stateOf(m));
+      if (s[S.MODE] !== CLOTH) return;
+      cloth += 1; checked += 1;
+      if (selfCrossings(drawnSurface(s)).length) crossed += 1;
+    });
+    k.fire('pointerup', path.at(-1)[0], path.at(-1)[1]);
+    assert.ok(cloth > 15, `${fps} fps: ${cloth} frames drawn as cloth`);
+    assert.equal(crossed, 0, `${fps} fps: ${crossed} of ${checked} presented frames show the sheet through itself`);
+    k.handle.remove();
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------- the plugin behind the handle

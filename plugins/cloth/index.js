@@ -64,8 +64,8 @@ export const TOUCH_SLOP = 8;
 /** css px of the cloth's lower edge that a finger can take hold of (measured on the cloth, from its hem) */
 export const HEM = 44;
 /** the hand lifts the cloth it holds this far off its plane, as a share of the canvas height, over the first LIFT_TRAVEL css px of the drag */
-const LIFT = 0.07;
-const LIFT_TRAVEL = 70;
+export const LIFT = 0.07;
+export const LIFT_TRAVEL = 70;
 /** a moving pointer: css px/s of push per css px of travel (at most HOVER_STEP css px per event count), over a Gaussian of HOVER_RADIUS css px (shares of the canvas height) */
 const HOVER_PUSH = 11;
 const HOVER_STEP = 48;
