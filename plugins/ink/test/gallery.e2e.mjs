@@ -78,8 +78,8 @@ try {
   await page.evaluate(`window.__gallery.handle.setOptions({ heal: 0, flow: 0, pigment: 0, intensity: 1 })`);
   const box = await rectOf(page, '#consent');
   const canvas = await page.evaluate(`(() => { const e = document.getElementById('stage'); const r = e.getBoundingClientRect(); return { x: r.left + e.clientLeft, y: r.top + e.clientTop, w: e.clientWidth, h: e.clientHeight }; })()`);
-  // a pressed drag downwards just left of the checkbox (plain page there)
-  const pushPath = Array.from({ length: 16 }, (_, i) => [box.x - 22, box.y - 70 + 9 * i]);
+  // a pressed drag from the plain page left of the checkbox, down and to the right across it
+  const pushPath = Array.from({ length: 13 }, (_, i) => [box.x - 30 + 6 * i, box.y - 30 + 6 * i]);
   await drag(page, pushPath, { stepMs: 12 });
   await park();
   await sleep(650);
@@ -91,47 +91,50 @@ try {
   };
   const state = await read();
   const map = (/** @type {number} */ x, /** @type {number} */ y) => { const m = mapInkPoint(state, { x: x - canvas.x, y: y - canvas.y, width: canvas.w, height: canvas.h }); return { x: m.x + canvas.x, y: m.y + canvas.y }; };
-  const inBox = (/** @type {{x: number, y: number}} */ p, /** @type {number} */ m) => p.x >= box.x + m && p.x <= box.x + box.w - m && p.y >= box.y + m && p.y <= box.y + box.h - m;
-  // the drawn point of the checkbox that is farthest outside its DOM box
-  let aim = null;
-  for (let y = box.y - 60; y <= box.y + box.h + 60; y += 1) for (let x = box.x - 60; x <= box.x + box.w + 60; x += 1) {
-    if (inBox({ x, y }, -3)) continue;
-    const m = map(x, y);
-    if (!inBox(m, 4)) continue;
-    const out = Math.max(box.x - x, x - box.x - box.w, box.y - y, y - box.y - box.h);
-    if (!aim || out > aim.out) aim = { x, y, out, drawn: m };
-  }
-  const active = state[G.MOVED] > 0.5 && state.length === GLOBALS_LENGTH + (state[G.GRID] + 4) * (state[G.GRID + 1] + 4) * CHANNELS;
-  if (c.check('the checkbox is drawn where a click natively reaches something else (found with the plugin mapper over the uploaded field)', active && !!aim && aim.out >= 3, aim)) {
-    const natively = await page.evaluate(`(() => { const e = document.elementFromPoint(${aim.x}, ${aim.y}); return e && (e.id || e.localName); })()`);
-    const before = await page.evaluate(`document.getElementById('consent').checked`);
-    // control first: a point of the checkbox's DOM box where the ink draws something else
-    let miss = null;
-    for (let y = box.y + 2; y <= box.y + box.h - 2 && !miss; y += 1) for (let x = box.x + 2; x <= box.x + box.w - 2; x += 1) { const m = map(x, y); if (!inBox(m, -5)) { miss = { x, y, drawn: m }; break; } }
-    if (miss) {
-      await page.mouseMove(miss.x, miss.y); await page.mouseDown(miss.x, miss.y); await page.mouseUp(miss.x, miss.y);
-      await sleep(150);
-      const after = await page.evaluate(`document.getElementById('consent').checked`);
-      c.check('control: a click at the DOM position of the checkbox, where the ink draws something else, does not toggle it', after === before, { at: miss, before, after });
-      await park(); await sleep(650);
-    } else c.check('control skipped: the ink draws the checkbox over its whole DOM box', true);
-    // (the control's press pushed the water again: aim anew on the newest field)
-    const state2 = await read();
-    state.set(state2);
-    let aim2 = null;
-    for (let y = box.y - 60; y <= box.y + box.h + 60; y += 1) for (let x = box.x - 60; x <= box.x + box.w + 60; x += 1) {
-      if (inBox({ x, y }, -3)) continue;
-      const m = map(x, y);
-      if (!inBox(m, 4)) continue;
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  /** the point outside the checkbox's DOM box (by 3 CSS px or more) that shows the middle of the checkbox best */
+  const findAim = () => {
+    let best = null;
+    for (let y = box.y - 70; y <= box.y + box.h + 70; y += 1) for (let x = box.x - 70; x <= box.x + box.w + 70; x += 1) {
       const out = Math.max(box.x - x, x - box.x - box.w, box.y - y, y - box.y - box.h);
-      if (!aim2 || out > aim2.out) aim2 = { x, y, out, drawn: m };
+      if (out < 3) continue;
+      const m = map(x, y), off = Math.hypot(m.x - cx, m.y - cy);
+      if (off < 3 && (!best || off < best.off)) best = { x, y, out, off, drawn: m };
     }
-    const target = aim2 ?? aim;
-    const was = await page.evaluate(`document.getElementById('consent').checked`);
-    await page.mouseMove(target.x, target.y); await page.mouseDown(target.x, target.y); await page.mouseUp(target.x, target.y);
-    await sleep(150);
-    const now = await page.evaluate(`document.getElementById('consent').checked`);
-    c.check('a trusted click on the DRAWN position of the checkbox toggles it', now !== was, { at: target, nativelyUnder: natively, before: was, after: now });
+    return best;
+  };
+  /** the point of the checkbox's DOM box where the ink shows something farthest from the checkbox */
+  const findMiss = () => {
+    let best = null;
+    for (let y = box.y + 3; y <= box.y + box.h - 3; y += 1) for (let x = box.x + 3; x <= box.x + box.w - 3; x += 1) {
+      const m = map(x, y), away = Math.max(box.x - m.x, m.x - box.x - box.w, box.y - m.y, m.y - box.y - box.h);
+      if (away >= 6 && (!best || away > best.away)) best = { x, y, away, drawn: m };
+    }
+    return best;
+  };
+  const click = async (/** @type {{x: number, y: number}} */ p) => { await page.mouseMove(p.x, p.y); await page.mouseDown(p.x, p.y); await page.mouseUp(p.x, p.y); await sleep(150); };
+  const checked = () => page.evaluate(`document.getElementById('consent').checked`);
+  const active = state[G.MOVED] > 0.5 && state.length === GLOBALS_LENGTH + (state[G.GRID] + 4) * (state[G.GRID + 1] + 4) * CHANNELS;
+  // control first: a click in the checkbox's DOM box, where the ink draws something else
+  const miss = active ? findMiss() : null;
+  const shiftAt = (() => { const m = map(cx, cy); return Math.round(Math.hypot(m.x - cx, m.y - cy) * 10) / 10; })();
+  if (c.check('the ink draws something else over the DOM box of the checkbox (found with the plugin mapper over the uploaded field)', !!miss, { miss, active, displacedByPx: shiftAt })) {
+    const before = await checked();
+    await click(miss);
+    const after = await checked();
+    c.check('control: a click at the DOM position of the checkbox, where the ink draws something else, does not toggle it', after === before, { before, after });
+    // (that press pushed the water again: let it stop, and aim on the newest field)
+    await park();
+    await sleep(650);
+    state.set(await read());
+  }
+  const aim = findAim();
+  if (c.check('the checkbox is drawn where a click natively reaches something else', !!aim, aim)) {
+    const natively = await page.evaluate(`(() => { const e = document.elementFromPoint(${aim.x}, ${aim.y}); return e && (e.id || e.localName); })()`);
+    const was = await checked();
+    await click(aim);
+    const now = await checked();
+    c.check('a trusted click on the DRAWN position of the checkbox toggles it', natively !== 'consent' && now !== was, { nativelyUnder: natively, before: was, after: now });
   }
   await page.evaluate(`(window.__gallery.handle.setOptions({ heal: 0.5, flow: 0.5, pigment: 0.7, intensity: 0.6 }), window.__gallery.handle.trigger('clear'))`);
   await park();
@@ -172,9 +175,12 @@ try {
     { action: 'clear', state: 'still', moves: false },
   ], { older: 'demo', newer: 'stir', state: 'still' });
   await idle(page, 400, 9000);
+  await park();
+  await idle(page, 400, 9000);
+  const beforeDemo = (await shot(page)).img;
   const demo = await page.evaluate(`(async () => { const t = performance.now(); const state = await window.__gallery.handle.trigger('demo'); return { state, ms: Math.round(performance.now() - t) }; })()`);
   c.check('the demo resolves still within 4.6 s', demo.state === 'still' && demo.ms < 4600 && demo.ms > 1300 + INK_LIFE * 1000, demo);
-  c.check('and ends on the still picture, pixel for pixel', changed((await shot(page)).img, calm, 0).px === 0);
+  c.check('and ends on the picture it started from, pixel for pixel', changed((await shot(page)).img, beforeDemo, 0).px === 0);
   // user input takes over: a press during the demo
   await page.evaluate(`window.__taken = undefined; window.__gallery.handle.trigger('demo').then((s) => { window.__taken = s; }); 0`);
   await sleep(300);

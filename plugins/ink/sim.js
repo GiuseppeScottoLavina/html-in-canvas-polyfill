@@ -248,17 +248,16 @@ function transport(f) {
   const w0 = f.w, x0 = f.dx, y0 = f.dy;
   const [w1, x1, y1, qx, qy, w2, x2, y2] = tmp;
   const lox = PAD - 0.5, hix = PAD + gw - 0.5, loy = PAD - 0.5, hiy = PAD + gh - 0.5;
+  const { min, max } = Math;
   for (let y = PAD; y < PAD + gh; y += 1) {
     for (let x = PAD, i = y * pw + PAD; x < PAD + gw; x += 1, i += 1) {
       // the velocity half a step back
-      let mx = x - 0.5 * uc[i], my = y - 0.5 * vc[i];
-      mx = mx < lox ? lox : mx > hix ? hix : mx; my = my < loy ? loy : my > hiy ? hiy : my;
+      const mx = min(hix, max(lox, x - 0.5 * uc[i])), my = min(hiy, max(loy, y - 0.5 * vc[i]));
       let ix = mx | 0, iy = my | 0, tx = mx - ix, ty = my - iy, k = iy * pw + ix;
       const um = (uc[k] + (uc[k + 1] - uc[k]) * tx) * (1 - ty) + (uc[k + pw] + (uc[k + pw + 1] - uc[k + pw]) * tx) * ty;
       const vm = (vc[k] + (vc[k + 1] - vc[k]) * tx) * (1 - ty) + (vc[k + pw] + (vc[k + pw + 1] - vc[k + pw]) * tx) * ty;
       // where this cell's water was a step ago
-      let px = x - um, py = y - vm;
-      px = px < lox ? lox : px > hix ? hix : px; py = py < loy ? loy : py > hiy ? hiy : py;
+      const px = min(hix, max(lox, x - um)), py = min(hiy, max(loy, y - vm));
       qx[i] = px; qy[i] = py;
       ix = px | 0; iy = py | 0; tx = px - ix; ty = py - iy; k = iy * pw + ix;
       const a = (1 - tx) * (1 - ty), b = tx * (1 - ty), c = (1 - tx) * ty, d = tx * ty;
@@ -272,33 +271,18 @@ function transport(f) {
     for (let x = PAD, i = y * pw + PAD; x < PAD + gw; x += 1, i += 1) {
       const px = qx[i], py = qy[i];
       // the estimate traced forward again: where it differs from the field before the step, half of the difference is the error
-      let rx = 2 * x - px, ry = 2 * y - py;
-      rx = rx < lox ? lox : rx > hix ? hix : rx; ry = ry < loy ? loy : ry > hiy ? hiy : ry;
-      let ix = rx | 0, iy = ry | 0, tx = rx - ix, ty = ry - iy, k = iy * pw + ix;
+      const rx = min(hix, max(lox, 2 * x - px)), ry = min(hiy, max(loy, 2 * y - py));
+      const ix = rx | 0, iy = ry | 0, tx = rx - ix, ty = ry - iy, k = iy * pw + ix;
       const a = (1 - tx) * (1 - ty), b = tx * (1 - ty), c = (1 - tx) * ty, d = tx * ty;
-      let wn = w1[i] + 0.5 * (w0[i] - (a * w1[k] + b * w1[k + 1] + c * w1[k + pw] + d * w1[k + pw + 1]));
-      let xn = x1[i] + 0.5 * (x0[i] - (a * x1[k] + b * x1[k + 1] + c * x1[k + pw] + d * x1[k + pw + 1]));
-      let yn = y1[i] + 0.5 * (y0[i] - (a * y1[k] + b * y1[k + 1] + c * y1[k + pw] + d * y1[k + pw + 1]));
+      const wn = w1[i] + 0.5 * (w0[i] - (a * w1[k] + b * w1[k + 1] + c * w1[k + pw] + d * w1[k + pw + 1]));
+      const xn = x1[i] + 0.5 * (x0[i] - (a * x1[k] + b * x1[k + 1] + c * x1[k + pw] + d * x1[k + pw + 1]));
+      const yn = y1[i] + 0.5 * (y0[i] - (a * y1[k] + b * y1[k + 1] + c * y1[k + pw] + d * y1[k + pw + 1]));
       // the limiter: within the four values around the departure point
-      ix = px | 0; iy = py | 0; k = iy * pw + ix;
-      let p = w0[k], q = w0[k + 1], r = w0[k + pw], s = w0[k + pw + 1];
-      let lo = p < q ? p : q, hi = p < q ? q : p;
-      if (r < lo) lo = r; else if (r > hi) hi = r;
-      if (s < lo) lo = s; else if (s > hi) hi = s;
-      w2[i] = wn < lo ? lo : wn > hi ? hi : wn;
-      p = x0[k]; q = x0[k + 1]; r = x0[k + pw]; s = x0[k + pw + 1];
-      lo = p < q ? p : q; hi = p < q ? q : p;
-      if (r < lo) lo = r; else if (r > hi) hi = r;
-      if (s < lo) lo = s; else if (s > hi) hi = s;
-      xn = xn < lo ? lo : xn > hi ? hi : xn;
-      p = y0[k]; q = y0[k + 1]; r = y0[k + pw]; s = y0[k + pw + 1];
-      lo = p < q ? p : q; hi = p < q ? q : p;
-      if (r < lo) lo = r; else if (r > hi) hi = r;
-      if (s < lo) lo = s; else if (s > hi) hi = s;
-      yn = yn < lo ? lo : yn > hi ? hi : yn;
+      const j = (py | 0) * pw + (px | 0);
+      w2[i] = min(max(max(w0[j], w0[j + 1]), max(w0[j + pw], w0[j + pw + 1])), max(min(min(w0[j], w0[j + 1]), min(w0[j + pw], w0[j + pw + 1])), wn));
       // the page moved with the water over this step
-      x2[i] = xn + (x - px) * cellX;
-      y2[i] = yn + (y - py) * cellY;
+      x2[i] = min(max(max(x0[j], x0[j + 1]), max(x0[j + pw], x0[j + pw + 1])), max(min(min(x0[j], x0[j + 1]), min(x0[j + pw], x0[j + pw + 1])), xn)) + (x - px) * cellX;
+      y2[i] = min(max(max(y0[j], y0[j + 1]), max(y0[j + pw], y0[j + pw + 1])), max(min(min(y0[j], y0[j + 1]), min(y0[j + pw], y0[j + pw + 1])), yn)) + (y - py) * cellY;
     }
   }
   f.w = w2; f.dx = x2; f.dy = y2;
@@ -320,30 +304,30 @@ function transport(f) {
  */
 function confine(f, eps) {
   const { pw, gw, gh, w, cellX, cellY, tmp } = f;
-  const fx = tmp[0], fy = tmp[1];
+  const nx = tmp[0], ny = tmp[1];
   // (at most 0.4 of a cell per step: the limit of the upwind fluxes)
-  const h = Math.sqrt(cellX * cellY) * Math.min(eps * DT, 0.4), ix = 1 / cellX, iy = 1 / cellY, top = f.maxW;
+  const h = 0.5 * Math.sqrt(cellX * cellY) * Math.min(eps * DT, 0.4), ix = 0.5 / cellX, iy = 0.5 / cellY, top = f.maxW;
+  const { abs } = Math;
+  // the speed up the gradient at the cell centres, halved (a face takes the sum of its two cells); it changes sign across a wall, so
+  // nothing flows through the walls
   for (let y = PAD; y < PAD + gh; y += 1) {
     for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) {
-      // the face between this cell and the next one across, then the face between this cell and the next one down
-      const a = Math.abs(w[i]), up = Math.abs(w[i - pw]), down = Math.abs(w[i + pw]), left = Math.abs(w[i - 1]), right = Math.abs(w[i + 1]);
-      let gx = (right - a) * ix, gy = (down - up + Math.abs(w[i + pw + 1]) - Math.abs(w[i - pw + 1])) * 0.25 * iy;
-      let v = (h * gx) / (Math.sqrt(gx * gx + gy * gy) + CONFINE_FLOOR);
-      fx[i] = v * (v > 0 ? w[i] : w[i + 1]);
-      gy = (down - a) * iy; gx = (right - left + Math.abs(w[i + pw + 1]) - Math.abs(w[i + pw - 1])) * 0.25 * ix;
-      v = (h * gy) / (Math.sqrt(gx * gx + gy * gy) + CONFINE_FLOOR);
-      fy[i] = v * (v > 0 ? w[i] : w[i + pw]);
+      const gx = (abs(w[i + 1]) - abs(w[i - 1])) * ix, gy = (abs(w[i + pw]) - abs(w[i - pw])) * iy;
+      const k = h / (Math.sqrt(gx * gx + gy * gy) + CONFINE_FLOOR);
+      nx[i] = gx * k; ny[i] = gy * k;
     }
   }
-  // no flux through the walls
-  for (let y = PAD; y < PAD + gh; y += 1) { fx[y * pw + PAD - 1] = 0; fx[y * pw + PAD + gw - 1] = 0; }
-  for (let x = PAD; x < PAD + gw; x += 1) { fy[(PAD - 1) * pw + x] = 0; fy[(PAD + gh - 1) * pw + x] = 0; }
+  mirror(f, nx, -1, 1); mirror(f, ny, 1, -1);
+  const out = tmp[2], cx = 1 / cellX, cy = 1 / cellY;
   for (let y = PAD; y < PAD + gh; y += 1) {
     for (let i = y * pw + PAD, end = i + gw; i < end; i += 1) {
-      const v = w[i] - ix * (fx[i] - fx[i - 1]) - iy * (fy[i] - fy[i - pw]);
-      w[i] = v > top ? top : v < -top ? -top : v;
+      // the fluxes through the four faces of the cell, each carrying the vorticity of the cell it comes from
+      const c = w[i], e = nx[i] + nx[i + 1], o = nx[i - 1] + nx[i], s = ny[i] + ny[i + pw], n = ny[i - pw] + ny[i];
+      const v = c - cx * (e * (e > 0 ? c : w[i + 1]) - o * (o > 0 ? w[i - 1] : c)) - cy * (s * (s > 0 ? c : w[i + pw]) - n * (n > 0 ? w[i - pw] : c));
+      out[i] = v > top ? top : v < -top ? -top : v;
     }
   }
+  f.w = out; tmp[2] = w;
 }
 
 // ---- 5. friction ---------------------------------------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // of the palette (r, g, b) and their age, as density x seconds (a), carried by the same flow that sim.js steps on the CPU.
 //   - the velocity is the curl of the cubic B-spline of the stream function (the field texture, channel b): divergence free at every
 //     point, so the flow neither gathers nor thins the pigment;
-//   - each texel traces back one step (a midpoint step, RK2) and reads the pigment there with a Catmull-Rom filter (9 bilinear taps),
+//   - each texel traces back one step (a midpoint step, RK2, where the water is fast enough to bend the path) and reads the pigment there with a Catmull-Rom filter (9 bilinear taps),
 //     limited to the four texels around that point: a third-order read that keeps filaments a few texels wide over hundreds of steps and
 //     cannot ring or go negative;
 //   - the pigment ages by the step; it is removed once it is `life` seconds old (ink.wgsl has faded it out by then), so all of it is
@@ -136,7 +136,8 @@ fn released(p : vec2<f32>, i : i32) -> f32 {
 }
 
 // every ink loses this much density per second: the thinnest haze around a stroke (which shows nothing) is gone within a second, so
-// the pigment keeps a compact support with a soft rim; a stroke loses 0.03 over its life
+// the pigment keeps a compact support with a soft rim. Only thin pigment feels it: above a density of about 0.2 the loss of one step
+// is less than half a unit of the half floats of the texture and rounds away
 const LOSS : f32 = 0.012;
 
 @fragment
@@ -146,9 +147,11 @@ fn fs(@builtin(position) position : vec4<f32>) -> @location(0) vec4<f32> {
   var rho : vec4<f32>;
   if (step.n.y > 0.5) {
     let dt = step.t.x;
-    let mid = clamp(p - 0.5 * dt * velocity(p), vec2<f32>(0.0), css);
-    let origin = clamp(p - dt * velocity(mid), vec2<f32>(0.0), css);
-    rho = pigment_at(origin / css);
+    var way = dt * velocity(p);
+    // where the water moves more than a quarter of a CSS px in the step, the velocity half a step back (the midpoint rule); slower
+    // water bends its path by less than a hundredth of a texel
+    if (dot(way, way) > 0.0625) { way = dt * velocity(clamp(p - 0.5 * way, vec2<f32>(0.0), css)); }
+    rho = pigment_at(clamp(p - way, vec2<f32>(0.0), css) / css);
   } else {
     rho = textureLoad(pigment, vec2<i32>(position.xy), 0);
   }

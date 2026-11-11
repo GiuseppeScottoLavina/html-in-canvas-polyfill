@@ -3,16 +3,17 @@
  *
  * The live page as wet ink on a thin layer of water. sim.js steps an incompressible 2D fluid on the CPU (vorticity and stream function
  * on cells of about 10 CSS px, 120 steps per second) together with the displacement of the page that the flow carries and that relaxes
- * back to zero; the pointer pushes the water (a pair of swirls either side of its path), and a pressed pointer or a finger also releases
- * pigment. The pigment lives on the GPU at about one texel per CSS px (advect.wgsl: carried by the same flow, fading); ink.wgsl draws
- * the displaced page (a cubic B-spline of the field per device pixel) under the pigment (a Kubelka-Munk layer in linear light).
+ * back to zero; the pointer pushes the water (a pair of swirls either side of its path, swaying as a wake does), and a pressed pointer
+ * or a finger also releases pigment. The pigment lives on the GPU at about one texel per CSS px (advect.wgsl: three inks and their age,
+ * carried by the same flow); ink.wgsl draws the displaced page (a cubic B-spline of the field per device pixel) under the pigment (a
+ * Kubelka-Munk layer in linear light).
  *
  * Input: the input mapper (`mapInkPoint`) evaluates the very field that was uploaded for the presented frame (copied into one of four
- * slots) with the same B-spline as the shader, so clicks and typing reach the element the user sees mid-swirl. Every listener is
- * passive: a finger keeps scrolling the page.
+ * slots) with the same B-spline as the shader, so clicks and typing reach the element the user sees mid-swirl. The pointer and touch
+ * listeners are passive: a finger keeps scrolling the page.
  *
- * Zero work at rest: vorticity, displacement and pigment each reach exactly zero in finite time (sim.js); the instance is `continuous`
- * only until then, and the frame at rest is the source, texel for texel.
+ * Zero work at rest: the vorticity and the displacement reach exactly zero in finite time (sim.js) and the pigment is gone INK_LIFE
+ * seconds after its release; the instance is `continuous` only until then, and the frame at rest is the source, texel for texel.
  *
  * Actions: 'demo' (one S-shaped stroke across the page), 'stir' (a short stroke at `point`), 'clear' (wipes the ink at once); each
  * resolves 'still' once nothing moves and no pigment is left. With reduced motion nothing flows: a press leaves a tint that fades in place.
@@ -252,6 +253,17 @@ async function createPipelines(device, format, picture, advect) {
 }
 
 /**
+ * A stirred fluid of this CSS size that nothing shows: stepping it lets the engine compile the step before the first stroke needs it
+ * (cold, the first step of a 1100 x 620 canvas took 18 ms and the second 5 ms, where a step takes 0.6 ms). @param {number} w @param {number} h
+ */
+function rehearsal(w, h) {
+  const f = createFluid(w, h);
+  for (let i = 0; i < 12; i += 1) stir(f, f.cssWidth * (0.2 + 0.05 * i), f.cssHeight * (0.5 + 0.2 * Math.sin(i)), 300, 200 * Math.cos(i), STIR_RADIUS);
+  return f;
+}
+const REHEARSAL = Object.freeze({ drag: 0.2, heal: 1, confine: CONFINE });
+
+/**
  * The plugin's definition (effect plugin ABI v2).
  * @experimental an example plugin of the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @type {EffectPluginDefinition}
@@ -265,7 +277,10 @@ export const plugin = Object.freeze({
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
     const { device, format } = context;
-    const { pipeline, layout, advectPipeline, advectLayout } = await createPipelines(device, format, await wgsl('ink.wgsl'), await wgsl('advect.wgsl'));
+    const pipelines = createPipelines(device, format, await wgsl('ink.wgsl'), await wgsl('advect.wgsl'));
+    // while the pipelines compile: 60 steps of a small fluid (about 10 ms), so that the first stroke does not meet uncompiled code
+    for (let i = 0, f = rehearsal(160, 160); i < 60; i += 1) step(f, REHEARSAL);
+    const { pipeline, layout, advectPipeline, advectLayout } = await pipelines;
     const gpu = /** @type {any} */ (globalThis);
     const bufferUsage = gpu.GPUBufferUsage;
     const textureUsage = gpu.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
@@ -279,6 +294,19 @@ export const plugin = Object.freeze({
     const win = /** @type {any} */ (canvas.ownerDocument.defaultView);
     // prefers-reduced-motion (read now, and by the host at every trigger): nothing flows, the page never moves, a press leaves a tint
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    // and, in idle moments after that, 30 steps of a fluid of the canvas's size (the loops of the full grid), at most 3 ms at a time
+    let rehearsing = 30;
+    {
+      const idle = win.requestIdleCallback?.bind(win) ?? ((/** @type {() => void} */ fn) => setTimeout(fn, 50));
+      const f = rehearsal(canvas.clientWidth || 1, canvas.clientHeight || 1);
+      const some = () => {
+        const t = performance.now();
+        while (rehearsing > 0 && performance.now() - t < 3) { step(f, REHEARSAL); rehearsing -= 1; }
+        if (rehearsing > 0) idle(some);
+      };
+      idle(some);
+    }
 
     let intensity = clampNum(initialOptions?.intensity, 0, 1, meta.defaults.intensity);
     let flow = clampNum(initialOptions?.flow, 0, 1, meta.defaults.flow);
@@ -846,7 +874,7 @@ export const plugin = Object.freeze({
         };
       },
       destroy() {
-        scripts = []; segmentCount = 0; awake = false;
+        scripts = []; segmentCount = 0; awake = false; rehearsing = 0;
         const demo = demoTakeover;
         demoTakeover = null;
         demo?.(null);
