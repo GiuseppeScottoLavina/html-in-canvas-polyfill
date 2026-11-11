@@ -3,10 +3,11 @@
  *
  * The live page as wet ink on a thin layer of water. sim.js steps an incompressible 2D fluid on the CPU (vorticity and stream function
  * on cells of about 10 CSS px, 120 steps per second) together with the displacement of the page that the flow carries and that relaxes
- * back to zero; the pointer pushes the water (a pair of swirls either side of its path, swaying as a wake does), and a pressed pointer
- * or a finger also releases pigment. The pigment lives on the GPU at about one texel per CSS px (advect.wgsl: three inks and their age,
- * carried by the same flow); ink.wgsl draws the displaced page (a cubic B-spline of the field per device pixel) under the pigment (a
- * Kubelka-Munk layer in linear light).
+ * back to zero; the pointer pushes the water (a pair of swirls either side of its path, swaying as a wake does: gently while it hovers,
+ * hard while it is pressed), a pressed pointer or a finger also releases pigment, and a press lets a drop fall that spreads over the water
+ * (sim.js bloom). The pigment lives on the GPU at about one texel per CSS px (advect.wgsl: three inks and their age, carried by the same
+ * flow); ink.wgsl draws the displaced page (a cubic B-spline of the field per device pixel) under the pigment (a Kubelka-Munk layer in
+ * linear light) and the sheen of the moving water.
  *
  * Input: the input mapper (`mapInkPoint`) evaluates the very field that was uploaded for the presented frame (copied into one of four
  * slots) with the same B-spline as the shader, so clicks and typing reach the element the user sees mid-swirl. The pointer and touch
