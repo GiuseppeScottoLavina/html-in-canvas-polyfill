@@ -12,12 +12,16 @@ console.error(`ink-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'N
 const scene = markerScene({ w: 480, h: 320 });
 const later = () => new Promise((r) => setTimeout(r, 0));
 
-/** Two strokes of a hovering mouse across the canvas, by the plugin's own listeners (no pigment: the markers keep their brightness). @param {any} rig */
+/** Two strokes of a pressed mouse across the canvas, by the plugin's own listeners (the tests that use them set pigment 0, so that the markers keep their brightness, and intensity 0.25, so that no marker is squeezed past recognition). @param {any} rig */
 function strokes(rig) {
   const r = rig.canvas.getBoundingClientRect();
-  const at = (/** @type {number} */ x, /** @type {number} */ y) => rig.layerEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + x, clientY: r.top + y, buttons: 0, pointerType: 'mouse' }));
-  for (let i = 0; i <= 30; i += 1) at(60 + 12 * i, 100 + 60 * Math.sin(i / 5));
-  for (let i = 0; i <= 30; i += 1) at(420 - 12 * i, 220 - 50 * Math.sin(i / 4));
+  const at = (/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y) => rig.layerEl.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: r.left + x, clientY: r.top + y, buttons: type === 'pointerup' ? 0 : 1, pointerType: 'mouse' }));
+  at('pointerdown', 60, 100);
+  for (let i = 0; i <= 30; i += 1) at('pointermove', 60 + 12 * i, 100 + 60 * Math.sin(i / 5));
+  at('pointerup', 420, 220);
+  at('pointerdown', 420, 220);
+  for (let i = 0; i <= 30; i += 1) at('pointermove', 420 - 12 * i, 220 - 50 * Math.sin(i / 4));
+  at('pointerup', 60, 220);
 }
 
 /** What the host presents for a scene with no plugin at all. @param {any} t @param {any} s */
@@ -40,15 +44,15 @@ function exact(a, b) {
 }
 
 gpuTest('every presented pixel samples the source point the ink mapper says (pixel-exact, 150k pixels), the identity does not (positive control)', async (t) => {
-  const v = await checkMapperAgainstGpu(t, plugin, { intensity: 1, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
+  const v = await checkMapperAgainstGpu(t, plugin, { intensity: 0.25, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
   console.error(`ink mapper vs GPU: decided=${v.real.decided} wrong=${v.real.wrong} (${(v.real.share * 100).toFixed(4)}%) brightPx=${v.real.bright} | identity wrong=${v.identity.wrong} (${(v.identity.share * 100).toFixed(3)}%)`);
   assert.ok(v.ok, v.why);
   assert.ok(v.real.wrong * 40 < v.identity.wrong);
 });
 
 gpuTest('a mapper of another instant disagrees measurably: the oracle is sensitive to the simulated field', async (t) => {
-  const { img, mapper } = await presentOnce(t, plugin, { intensity: 1, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
-  const { rig, mappers, at } = await presentOnce(t, plugin, { intensity: 1, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
+  const { img, mapper } = await presentOnce(t, plugin, { intensity: 0.25, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
+  const { rig, mappers, at } = await presentOnce(t, plugin, { intensity: 0.25, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
   for (let k = 1; k <= 6; k += 1) rig.tick(at + k * 50);
   const good = agreement(img, /** @type {any} */ (mapper), scene).wrong;
   const wrong = agreement(img, /** @type {any} */ (mappers.at(-1)), scene).wrong;
@@ -104,7 +108,7 @@ gpuTest('the pigment shows over a bright page and over a dark one: it darkens an
   const look = async (color, pigment) => {
     const { img } = await presentOnce(t, plugin, { intensity: 1, pigment }, { scene: /** @type {any} */ (flat(color)), before: press, offsetMs: 120 });
     let changed = 0, lo = 255, hi = 0, colour = 0;
-    const base = [img.data[0], img.data[1], img.data[2]];   // the corner: far from the stroke
+    const base = color === '#ffffff' ? [255, 255, 255] : [0, 0, 0];   // the paper (the water may move as far as the corners: its sheen is no pigment)
     for (let i = 0; i < img.data.length; i += 4) {
       const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2], l = Math.max(r, g, b);
       if (Math.abs(r - base[0]) > 16 || Math.abs(g - base[1]) > 16 || Math.abs(b - base[2]) > 16) { changed += 1; colour = Math.max(colour, l - Math.min(r, g, b)); }
@@ -112,12 +116,141 @@ gpuTest('the pigment shows over a bright page and over a dark one: it darkens an
     }
     return { changed, lo, hi, colour, base };
   };
-  const white = await look('#ffffff', 1), black = await look('#000000', 1), none = await look('#ffffff', 0);
-  console.error(`ink pigment: on white ${white.changed} px changed, darkest ${white.lo}, chroma up to ${white.colour}; on black ${black.changed} px changed, brightest ${black.hi}; without pigment ${none.changed} px`);
-  assert.deepEqual(white.base, [255, 255, 255]); assert.deepEqual(black.base, [0, 0, 0]);
+  const white = await look('#ffffff', 1), black = await look('#000000', 1), none = await look('#ffffff', 0), dark = await look('#000000', 0);
+  console.error(`ink pigment: on white ${white.changed} px changed, darkest ${white.lo}, chroma up to ${white.colour}; on black ${black.changed} px changed, brightest ${black.hi}; without pigment ${none.changed} px on white, brightest ${dark.hi} on black (the sheen alone)`);
   assert.ok(white.changed > 3000 && white.lo < 200 && white.colour > 120, 'ink on white paper: darker, and coloured');
   assert.ok(black.changed > 3000 && black.hi > 110, 'over black the scattered light of the pigment shows');
-  assert.equal(none.changed, 0, 'control: pigment 0 leaves a uniform page uniform (the displacement alone shows nothing there)');
+  assert.equal(none.changed, 0, 'control: pigment 0 leaves a uniform white page uniform (the displacement alone shows nothing there, the sheen less than 16 levels)');
+  assert.ok(dark.hi < 100 && dark.hi > 20, 'control: over black without pigment only the sheen of the water shows, dimmer than the light the pigment scatters');
+});
+
+/** A press at rest (no move before it) at (x, y) of the canvas: a drop. @param {number} x @param {number} y */
+const tap = (x, y) => (/** @type {any} */ rig) => {
+  const r = rig.canvas.getBoundingClientRect();
+  for (const type of ['pointerdown', 'pointerup']) rig.layerEl.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: r.left + x, clientY: r.top + y, buttons: type === 'pointerdown' ? 1 : 0, pointerType: 'mouse' }));
+};
+
+gpuTest('a drop that blooms: every presented pixel samples the source point the mapper says while the drop pushes the page outwards (pixel-exact), the identity does not (control)', async (t) => {
+  const v = await checkMapperAgainstGpu(t, plugin, { ...meta.defaults, pigment: 0 }, { scene, before: tap(240, 160), offsetMs: 180 });
+  console.error(`ink bloom mapper vs GPU: decided=${v.real.decided} wrong=${v.real.wrong} | identity wrong=${v.identity.wrong}`);
+  assert.ok(v.ok, v.why);
+});
+
+/** 255 - the darkest channel of a 480 x 320 frame at (x, y) (CSS px = px): the ink over white paper @param {ImageData} img @param {number} x @param {number} y */
+const inkAt = (img, x, y) => {
+  const ink = (/** @type {number} */ px, /** @type {number} */ py) => { const i = (Math.min(319, Math.max(0, py)) * 480 + Math.min(479, Math.max(0, px))) * 4; return 255 - Math.min(img.data[i], img.data[i + 1], img.data[i + 2]); };
+  // bilinear between the pixel centres: an outline is not quantised to whole pixels
+  const fx = x - 0.5 - Math.floor(x - 0.5), fy = y - 0.5 - Math.floor(y - 0.5), x0 = Math.floor(x - 0.5), y0 = Math.floor(y - 0.5);
+  return (ink(x0, y0) * (1 - fx) + ink(x0 + 1, y0) * fx) * (1 - fy) + (ink(x0, y0 + 1) * (1 - fx) + ink(x0 + 1, y0 + 1) * fx) * fy;
+};
+/** the outline of a drop centred at (cx, cy): the outermost radius (0.25 px steps up to 90 px) with ink above 40, at 180 angles @param {ImageData} img @param {number} cx @param {number} cy */
+function outline(img, cx, cy) {
+  const r = [];
+  for (let k = 0; k < 180; k += 1) {
+    const a = (2 * Math.PI * k) / 180;
+    let last = 0;
+    for (let d = 0; d <= 90; d += 0.25) if (inkAt(img, cx + d * Math.cos(a), cy + d * Math.sin(a)) > 40) last = d;
+    r.push(last);
+  }
+  return r;
+}
+/** the share of the variance of an outline in each angular mode k = 1..40, its relative spread, and the mode that holds most @param {number[]} r */
+function modes(r) {
+  const mean = r.reduce((s, v) => s + v, 0) / r.length, power = [0];
+  for (let k = 1; k <= 40; k += 1) {
+    let c = 0, s = 0;
+    r.forEach((v, i) => { const a = (2 * Math.PI * k * i) / r.length; c += (v - mean) * Math.cos(a); s += (v - mean) * Math.sin(a); });
+    power.push(c * c + s * s);
+  }
+  const above1 = power.slice(2).reduce((s, v) => s + v, 0);
+  const top = power.slice(2).reduce((m, v, i) => (v > power[m] ? i + 2 : m), 2);
+  return { spread: Math.sqrt(r.reduce((s, v) => s + (v - mean) ** 2, 0) / r.length) / mean, top, topShare: power[top] / above1, fine: power.slice(5).reduce((s, v) => s + v, 0) / above1 };
+}
+/** the width (px) over which the ink falls from 90 % to 10 % of its largest value along a line, sampled every 0.25 px from (x0, y0) by (dx, dy) for n samples */
+function edgeWidth(/** @type {ImageData} */ img, /** @type {number} */ x0, /** @type {number} */ y0, /** @type {number} */ dx, /** @type {number} */ dy, /** @type {number} */ n) {
+  const v = Array.from({ length: n }, (_, i) => inkAt(img, x0 + 0.25 * i * dx, y0 + 0.25 * i * dy));
+  const top = Math.max(...v);
+  return 0.25 * v.filter((x) => x > 0.1 * top && x < 0.9 * top).length;
+}
+
+gpuTest('two drops over white paper: each lands as a full disc, its ink moves outwards and gathers in a rim denser than its middle, its outline is irregular (no angular mode holds half of it, the modes 5 and above a quarter) and unlike the other one, and it ends in a crisp edge; controls: the round full disc at landing, the soft edge of a stroke; then everything is gone and the frame is the source', async (t) => {
+  const white = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 480, 320); } };
+  const both = (/** @type {any} */ rig) => { tap(130, 160)(rig); tap(350, 160)(rig); };
+  const { rig, host, at } = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (white), before: both, offsetMs: 16 });
+  /** the ink of a frame around the first drop: its mean radius, and the mean ink in rings 4 px wide @param {ImageData} img */
+  const profile = (img) => {
+    const rings = new Float64Array(25), counts = new Float64Array(25);
+    let mass = 0, moment = 0;
+    for (let y = 60; y < 260; y += 1) for (let x = 30; x < 230; x += 1) {
+      const ink = inkAt(img, x, y), r = Math.hypot(x + 0.5 - 130, y + 0.5 - 160);
+      mass += ink; moment += ink * r;
+      if (r < 100) { rings[Math.floor(r / 4)] += ink; counts[Math.floor(r / 4)] += 1; }
+    }
+    const ring = [...rings].map((v, k) => v / Math.max(1, counts[k]));
+    return { radius: moment / Math.max(1, mass), mass, middle: (ring[0] + ring[1]) / 2, rim: Math.max(...ring.slice(2)) };
+  };
+  const landing = rig.snap(), first = profile(landing), round = modes(outline(landing, 130, 160));
+  let now = at;
+  const until = (/** @type {number} */ ms) => { while (now < at + ms) { now += 1000 / 60; rig.tick(now); } return rig.snap(); };
+  const mid = profile(until(150)), lateImg = until(400), late = profile(lateImg);
+  const ra = outline(lateImg, 130, 160), rb = outline(lateImg, 350, 160), a = modes(ra), b = modes(rb);
+  const ma = ra.reduce((s, v) => s + v, 0) / 180, mb = rb.reduce((s, v) => s + v, 0) / 180;
+  let cab = 0, caa = 0, cbb = 0;
+  ra.forEach((v, i) => { cab += (v - ma) * (rb[i] - mb); caa += (v - ma) ** 2; cbb += (rb[i] - mb) ** 2; });
+  const likeness = cab / Math.sqrt(caa * cbb);
+  // the edge: along each of 36 rays, from 8 px inside the outline to 6 px outside it
+  const widths = [];
+  for (let k = 0; k < 180; k += 5) { const c = Math.cos((2 * Math.PI * k) / 180), s = Math.sin((2 * Math.PI * k) / 180); widths.push(edgeWidth(lateImg, 130 + (ra[k] - 8) * c, 160 + (ra[k] - 8) * s, c, s, 56)); }
+  widths.sort((x, y) => x - y);
+  const crisp = widths[18];
+  console.error(`ink drops: mean radius ${first.radius.toFixed(1)} -> ${mid.radius.toFixed(1)} -> ${late.radius.toFixed(1)} px; middle / rim ${first.middle.toFixed(0)} / ${first.rim.toFixed(0)} at landing, ${late.middle.toFixed(0)} / ${late.rim.toFixed(0)} at 400 ms; outline spread ${(round.spread * 100).toFixed(1)} % at landing, ${(a.spread * 100).toFixed(1)} % and ${(b.spread * 100).toFixed(1)} % at 400 ms; largest mode k = ${a.top} (${(a.topShare * 100).toFixed(0)} %) and k = ${b.top} (${(b.topShare * 100).toFixed(0)} %), modes 5+ ${(a.fine * 100).toFixed(0)} % and ${(b.fine * 100).toFixed(0)} %; the two outlines correlate ${likeness.toFixed(2)}; edge 90-10 % over ${crisp} px (median)`);
+  assert.ok(first.mass > 1000 && first.radius < 14, 'it lands as a small disc');
+  assert.ok(mid.radius > 1.8 * first.radius && late.radius > mid.radius, 'its ink moves outwards');
+  assert.ok(first.rim < 1.2 * first.middle, 'control: the disc at landing is full (its middle about as dark as its edge)');
+  assert.ok(late.rim > 1.5 * late.middle, 'the spread drop has a rim denser than its middle');
+  assert.ok(round.spread < 0.02, 'control: the outline at landing is round (the measure sees no unevenness that is not there)');
+  for (const m of [a, b]) {
+    assert.ok(m.spread > 0.04, 'the outline is uneven');
+    assert.ok(m.topShare < 0.5, `no angular mode holds half of the unevenness (k = ${m.top}: ${(m.topShare * 100).toFixed(0)} %)`);
+    assert.ok(m.fine > 0.25, 'the modes 5 and above hold a quarter of it: a ragged edge, not a few lobes');
+  }
+  assert.ok(Math.abs(likeness) < 0.5, 'two drops have different outlines');
+  assert.ok(crisp <= 3, `a crisp edge (${crisp} px)`);
+  // control: a stroke (the action stir: no drop) has soft edges, which the same measure sees
+  const stroke = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (white) });
+  stroke.handle.trigger('stir', { point: { x: 240, y: 160 }, angle: 0 });
+  for (let k = 1; k <= 24; k += 1) stroke.rig.tick(stroke.at + (k * 1000) / 60);
+  const soft = edgeWidth(stroke.rig.snap(), 240, 130, 0, 1, 240);
+  console.error(`ink stroke edge (control): 90-10 % over ${soft} px on both sides`);
+  assert.ok(soft > 2 * 3, `control: a stroke's edges are soft (${soft} px for both)`);
+  const frames = host.stats().frames;
+  for (let i = 0; i < 400; i += 1) { const before = host.stats().frames; now += 1000 / 60; rig.tick(now); if (host.stats().frames === before) break; }
+  console.error(`ink drops: at rest after ${((host.stats().frames - frames) / 60 + 0.4).toFixed(2)} s`);
+  assert.ok((host.stats().frames - frames) / 60 < INK_LIFE + 0.5, 'and comes to rest');
+  assert.ok(rig.snap().data.every((v) => v === 255), 'the frame at rest is the white page');
+}, { timeout: 30000 });
+
+gpuTest('the sheen of moving water: a hover over a uniform grey page lightens it where the surface tilts towards the light and darkens it where it tilts away, only where the page moves; at intensity 0 (control) the page stays uniform', async (t) => {
+  const grey = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#808080'; ctx.fillRect(0, 0, 480, 320); } };
+  const hover = (/** @type {any} */ rig) => {
+    const r = rig.canvas.getBoundingClientRect();
+    for (let i = 0; i <= 30; i += 1) rig.layerEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 60 + 12 * i, clientY: r.top + 160 + 40 * Math.sin(i / 5), buttons: 0, pointerType: 'mouse' }));
+  };
+  /** @param {number} intensity */
+  const look = async (intensity) => {
+    const { img, mapper } = await presentOnce(t, plugin, { ...meta.defaults, intensity }, { scene: /** @type {any} */ (grey), before: hover, offsetMs: 100 });
+    let lighter = 0, darker = 0, outside = 0;
+    for (let y = 0; y < 320; y += 1) for (let x = 0; x < 480; x += 1) {
+      const v = img.data[(y * 480 + x) * 4], q = /** @type {any} */ (mapper)({ x: x + 0.5, y: y + 0.5, width: 480, height: 320 });
+      if (q.x === x + 0.5 && q.y === y + 0.5) { if (v !== 128) outside += 1; } else if (v >= 131) lighter += 1; else if (v <= 125) darker += 1;
+    }
+    return { lighter, darker, outside };
+  };
+  const wet = await look(meta.defaults.intensity), dry = await look(0);
+  console.error(`ink sheen on grey: ${wet.lighter} px lighter and ${wet.darker} px darker by 3 levels or more where the page moves, ${wet.outside} px changed where it does not; at intensity 0: ${dry.lighter + dry.darker + dry.outside} px`);
+  assert.ok(wet.lighter > 200 && wet.darker > 200, 'the moving water shows its surface');
+  assert.equal(wet.outside, 0, 'nothing where the page does not move');
+  assert.equal(dry.lighter + dry.darker + dry.outside, 0, 'control: intensity 0');
 });
 
 gpuTest('the action demo through the effect handle: the stroke changes the picture, every checked frame agrees with its mapper, it resolves still within 4.6 s and ends on the source', async (t) => {
@@ -206,7 +339,7 @@ gpuTest('zero work at rest: no frame without a change; a stroke renders every ti
   assert.deepEqual(exact(rig.snap(), still), { n: 0, max: 0 });
 }, { timeout: 30000 });
 
-gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while the demo plays: GPU time by throughput against a pass that only clears, and the CPU time of render()', async () => {
+gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while the demo plays and while drops bloom: GPU time by throughput against a pass that only clears, and the CPU time of render()', async () => {
   const adapter = await navigator.gpu.requestAdapter();
   const device = await /** @type {any} */ (adapter).requestDevice();
   const format = navigator.gpu.getPreferredCanvasFormat();
@@ -224,9 +357,10 @@ gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while th
   canvas.style.cssText = `position:fixed;left:0;top:0;width:${cssW}px;height:${cssH}px`;
   document.body.append(canvas);
   try {
-    /** @param {number} hz  frames per second of the frame clock @param {boolean} demo @param {boolean} clearOnly */
-    const run = async (hz, demo, clearOnly) => {
-      const context = { apiVersion: 2, adapter, device, format, canvas, source: canvas, requestRender() {}, listen: () => () => {}, viewport: () => ({}) };
+    /** @param {number} hz  frames per second of the frame clock @param {boolean} demo @param {boolean} clearOnly @param {boolean} [drops]  a drop every 0.2 s along the demo's path */
+    const run = async (hz, demo, clearOnly, drops = false) => {
+      /** @type {Record<string, Function>} */ const on = {};
+      const context = { apiVersion: 2, adapter, device, format, canvas, source: canvas, requestRender() {}, listen: (/** @type {string} */ type, /** @type {Function} */ fn) => { on[type] = fn; return () => {}; }, viewport: () => ({}) };
       const instance = await plugin.create(/** @type {any} */ (context), { ...meta.defaults });
       if (demo) instance.runAction('demo', {}, { reducedMotion: false });
       const frames = Math.round(1.5 * hz), t0 = performance.now() + 4;
@@ -234,6 +368,10 @@ gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while th
       const cpu = [];
       const start = performance.now();
       for (let k = 0; k < frames; k += 1) {
+        if (drops && k % Math.round(0.2 * hz) === 0) {
+          const x = 0.15 + (0.7 * k) / frames, y = 0.5 + 0.25 * Math.sin(9 * x);
+          for (const type of ['pointerdown', 'pointerup']) on[type](new PointerEvent(type, { clientX: x * cssW, clientY: y * cssH, buttons: 1, pointerType: 'mouse' }));
+        }
         const encoder = device.createCommandEncoder();
         const a = performance.now();
         if (clearOnly) encoder.beginRenderPass({ colorAttachments: [{ view: destinationView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] }).end();
@@ -252,11 +390,14 @@ gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while th
     const rest = await run(120, false, false);
     const d120 = await run(120, true, false);
     const d60 = await run(60, true, false);
+    // (a press takes over from the demo: these runs are the drops alone, each spreading for 0.45 s)
+    const b120 = await run(120, false, false, true);
+    const b60 = await run(60, false, false, true);
     const f = (/** @type {number} */ v) => v.toFixed(3);
-    console.error(`ink cost at ${w} x ${h}: GPU throughput per frame: clear only ${f(clear.ms)} ms, at rest ${f(rest.ms)} ms, demo at 120 fps (1 step a frame) ${f(d120.ms)} ms, demo at 60 fps (2 steps a frame) ${f(d60.ms)} ms`);
-    console.error(`ink cost: CPU in render(): at rest mean ${f(rest.cpuMean)} ms; demo at 120 fps mean ${f(d120.cpuMean)} p95 ${f(d120.cpuP95)} max ${f(d120.cpuMax)} ms; demo at 60 fps mean ${f(d60.cpuMean)} p95 ${f(d60.cpuP95)} max ${f(d60.cpuMax)} ms`);
-    assert.ok(d120.ms < 8.33 && d60.ms < 16.67, 'the GPU keeps up with the frame clock');
-    assert.ok(d120.cpuMean < 1.5 && d60.cpuMean < 3, `the CPU time of a frame: ${f(d120.cpuMean)} ms at 120 fps, ${f(d60.cpuMean)} ms at 60 fps`);
+    console.error(`ink cost at ${w} x ${h}: GPU throughput per frame: clear only ${f(clear.ms)} ms, at rest ${f(rest.ms)} ms, demo at 120 fps (1 step a frame) ${f(d120.ms)} ms, demo at 60 fps (2 steps a frame) ${f(d60.ms)} ms; drops every 0.2 s at 120 fps ${f(b120.ms)} ms, at 60 fps ${f(b60.ms)} ms`);
+    console.error(`ink cost: CPU in render(): at rest mean ${f(rest.cpuMean)} ms; demo at 120 fps mean ${f(d120.cpuMean)} p95 ${f(d120.cpuP95)} max ${f(d120.cpuMax)} ms; demo at 60 fps mean ${f(d60.cpuMean)} p95 ${f(d60.cpuP95)} max ${f(d60.cpuMax)} ms; drops every 0.2 s at 120 fps mean ${f(b120.cpuMean)} p95 ${f(b120.cpuP95)} max ${f(b120.cpuMax)} ms, at 60 fps mean ${f(b60.cpuMean)} p95 ${f(b60.cpuP95)} max ${f(b60.cpuMax)} ms`);
+    assert.ok(d120.ms < 8.33 && d60.ms < 16.67 && b120.ms < 8.33 && b60.ms < 16.67, 'the GPU keeps up with the frame clock');
+    assert.ok(d120.cpuMean < 1.5 && d60.cpuMean < 3 && b120.cpuMean < 1.5 && b60.cpuMean < 3, `the CPU time of a frame: ${f(b120.cpuMean)} ms at 120 fps, ${f(b60.cpuMean)} ms at 60 fps`);
     assert.ok(rest.cpuMean < 0.2, 'a frame at rest steps nothing');
   } finally {
     canvas.remove(); source.destroy(); target.destroy(); device.destroy();

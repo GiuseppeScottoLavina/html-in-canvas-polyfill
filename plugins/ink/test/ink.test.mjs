@@ -4,9 +4,11 @@
 // The fluid itself is tested in ink-sim.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { contractTest } from '../../_shared/contract-test.mjs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { CHANNELS, MAX_STEPS_PER_FRAME, PAD, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
+import { CHANNELS, MAX_BLOOMS, MAX_STEPS_PER_FRAME, PAD, SPREAD_FLOATS, STEP_MS, createFluid, pack, step, stir } from '../sim.js';
 import { ACTIONS, DEMO_MS, G, GLOBALS_LENGTH, INK_CAP, INK_HOLD, INK_LIFE, PALETTES, PIGMENT_TEXELS, S, SEGMENTS_PER_STEP, STEP_FLOATS, demoPath, inkMix, inkOptics, mapInkPoint, meta, pigmentGrid, plugin } from '../index.js';
 
 contractTest(import.meta.url);
@@ -43,7 +45,7 @@ const field = { closest: (selector) => (/\binput\b/.test(selector) ? field : nul
 const shift = (data) => { let m = 0; for (let k = 0; k < data.length; k += CHANNELS) m = Math.max(m, Math.hypot(data[k], data[k + 1])); return m; };
 
 /** The instance over the fake device. `localPoint` stands for the plugins added after this one (context.localPoint). */
-async function createInk(t, options = {}, { reduced = false, localPoint = undefined } = {}) {
+async function createInk(t, options = {}, { reduced = false, localPoint = undefined, hdr = undefined } = {}) {
   stubFetch(t);
   globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2 };
   const gpu = fakeGpu();
@@ -56,13 +58,17 @@ async function createInk(t, options = {}, { reduced = false, localPoint = undefi
     listen: (type, fn, o) => { listeners[type] = fn; listenOptions[type] = o; return () => {}; },
     viewport: () => ({}),
     ...(localPoint ? { localPoint } : {}),
+    ...(hdr === undefined ? {} : { hdr }),
   };
+  const pipelines = [];
+  const make = gpu.device.createRenderPipeline;
+  gpu.device.createRenderPipeline = (d) => { pipelines.push(d); return make(d); };
   const instance = await plugin.create(context, { ...meta.defaults, ...options });
   const frame = (now) => ({ now, width: W * 2, height: H * 2, cssWidth: W, cssHeight: H, dpr: 2, sourceReady: true, sourceView: gpu, destinationView: {}, encoder: gpu.encoder });
   const pointer = (type, x, y, extra = {}) => listeners[type](new win.PointerEvent({ clientX: x, clientY: y, buttons: 0, pointerType: 'mouse', timeStamp: performance.now(), target: page, ...extra }));
   /** render frames every `dt` ms from `from` until `done()` or `maxMs`; returns the frame time reached */
   const run = (from, maxMs, dt = 1000 / 120, done = () => false) => { let now = from; for (; now <= from + maxMs && !done(); now += dt) instance.render(frame(now)); return now; };
-  return { instance, gpu, frame, listeners, listenOptions, win, pointer, run, renders: () => renders };
+  return { instance, gpu, frame, listeners, listenOptions, win, pointer, run, renders: () => renders, pipelines };
 }
 
 /** a pressed stroke of the mouse from (x0, y) to (x1, y) in `n` moves 12 ms apart, starting at time t */
@@ -77,9 +83,10 @@ test('meta and the definition: three actions, the gallery defaults, the reduced-
   assert.deepEqual({ ...meta.defaults }, { intensity: 0.6, flow: 0.5, pigment: 0.7 });
   assert.ok(meta.reducedMotion.length <= 160 && meta.touch.length <= 160 && meta.description.length <= 160);
   assert.equal(GLOBALS_LENGTH % 4, 0);
-  assert.equal(G.SCATTER + 12, GLOBALS_LENGTH);
-  assert.equal(S.INK + 4 * SEGMENTS_PER_STEP, STEP_FLOATS);
-  assert.equal(STEP_FLOATS * 4, 256, 'a step block is one uniform offset alignment long');
+  assert.equal(G.DROPS + 16, GLOBALS_LENGTH);
+  assert.equal(S.INK + 4 * SEGMENTS_PER_STEP, S.BLOOM);
+  assert.ok(S.BLOOM + SPREAD_FLOATS * MAX_BLOOMS <= STEP_FLOATS);
+  assert.equal((STEP_FLOATS * 4) % 256, 0, 'a step block starts at a uniform offset alignment');
 });
 
 test('the inks: absorption from the colour on white (-ln), scattering from the sheen; every palette has three; bad entries fall back to marbling', () => {
@@ -149,6 +156,18 @@ function stateOf(w, h, seed = 1) {
   pack(f, state, GLOBALS_LENGTH);
   return { state, f };
 }
+
+test('extended range: the picture pipeline gets HDR_PEAK from context.hdr, 1 without it (the pigment pass none); ink.wgsl holds the shared shoulder', async (t) => {
+  const peaks = [];
+  for (const hdr of [true, false, undefined]) {
+    const w = await createInk(t, {}, { hdr });
+    peaks.push(w.pipelines.map((d) => d.fragment.constants?.HDR_PEAK));
+  }
+  assert.deepEqual(peaks, [[HDR_PEAK, undefined], [1, undefined], [1, undefined]], 'extended range, standard range, a host that says nothing');
+  const code = readFileSync(new URL('../ink.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'ink.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
+});
 
 test('mapInkPoint equals the independent oracle (the B-spline basis over the packed field) on a grid, several sizes; at rest it is the identity; it never leaves the canvas', () => {
   let moved = 0;
@@ -301,6 +320,70 @@ test('the pointer: a hovering mouse stirs without pigment, a pressed one release
   dry.run(performance.now() + 4, 100);
   assert.equal(dry.gpu.steps.length, 0);
   assert.equal(dry.gpu.globals.at(-1)[G.MOVED], 1);
+});
+
+/**
+ * A sweep of the mouse to and fro across the canvas at `speed` CSS px/s for `ms`, one event every 8 ms, the frames at 120 per second in
+ * between, then frames until rest; returns the largest displacement of any cell of the uploaded fields (CSS px: the B-spline is a convex
+ * combination of the cells, so neither the mapper nor the pixels show more).
+ */
+function sweep(w, speed, { pressed = false, ms = 1200 } = {}) {
+  const t0 = performance.now() + 10;
+  let now = t0 + 4;
+  for (let i = 0; i * 8 <= ms; i += 1) {
+    const s = speed * i * 0.008, lap = s % (2 * 380), x = 50 + (lap < 380 ? lap : 760 - lap), y = 160 + 60 * Math.sin(s / 140);
+    for (; now < t0 + 8 * i; now += 1000 / 120) w.instance.render(w.frame(now));
+    w.pointer(i === 0 && pressed ? 'pointerdown' : 'pointermove', x, y, { timeStamp: t0 + 8 * i, buttons: pressed ? 1 : 0 });
+  }
+  for (let i = 0; i < 1500 && w.instance.continuous; i += 1, now += 1000 / 120) w.instance.render(w.frame(now));
+  assert.equal(w.instance.continuous, false, 'it came to rest');
+  return Math.max(0, ...w.gpu.fields.map((f) => shift(f.data)));
+}
+
+test('a hover sweep moves the page by at most 3 CSS px at the defaults, at any speed (text stays readable); it still stirs (control); a pressed sweep moves it by far more, as before (control)', async (t) => {
+  const hovers = [];
+  for (const speed of [400, 800, 2400, 4000]) hovers.push(sweep(await createInk(t), speed));
+  assert.ok(hovers.every((d) => d <= 3), `hover: ${hovers.map((d) => d.toFixed(2)).join(', ')} px`);
+  assert.ok(hovers.every((d) => d > 0.5), 'control: every hover moves the page a little');
+  const pressed = sweep(await createInk(t, { pigment: 0 }), 800, { pressed: true });
+  assert.ok(pressed > 20, `control: a pressed sweep moves the page by ${pressed.toFixed(1)} px`);
+  const strong = sweep(await createInk(t, { intensity: 1 }), 2400);
+  assert.ok(strong > hovers[2] * 1.3, `intensity scales the hover (${strong.toFixed(2)} px at 1)`);
+});
+
+test('a drop at rest blooms: the same fields and pigment steps (its spreading included) at 30, 60 and 120 frames per second; it pushes the page outwards on every side, and all comes to rest; another intensity (control) blooms otherwise', async (t) => {
+  /** a press at rest at (240, 160), then frames at `fps` until rest */
+  const record = async (fps, options = {}) => {
+    const w = await createInk(t, options);
+    w.pointer('pointerdown', 240, 160, { buttons: 1, timeStamp: performance.now() });
+    w.pointer('pointerup', 240, 160);
+    const from = performance.now() + 4;
+    let mapper = null;
+    const end = w.run(from, 6000, 1000 / fps, () => { if (!mapper && w.gpu.fields.length >= 18) mapper = w.instance.captureInputMapper(); return !w.instance.continuous; });
+    return { fields: w.gpu.fields.map((f) => f.data), steps: w.gpu.steps.map((s) => s.data), mapper, ms: end - from, w };
+  };
+  const a = await record(120), b = await record(60), c = await record(30);
+  const n = Math.min(a.fields.length, b.fields.length, c.fields.length, 90);
+  assert.ok(n >= 90, `${n} steps compared`);
+  const spreading = a.steps.filter((s) => s[S.BLOOM + 2] > 0).length;
+  assert.ok(spreading > 40 && spreading <= 0.45 * 120 + 1, `the drop spreads for ${spreading} steps`);
+  for (let i = 0; i < n; i += 1) {
+    assert.ok(a.fields[i].every((v, k) => v === b.fields[i][k] && v === c.fields[i][k]), `the field of step ${i} is the same at 120, 60 and 30 fps`);
+    for (const other of [b, c]) assert.ok(a.steps[i].every((v, k) => k === S.LAYER || v === other.steps[i][k]), `the pigment step ${i} is the same`);
+  }
+  // about 150 ms after the press: the page around the drop shows what was nearer to its centre (it was pushed outwards)
+  for (const [dx, dy] of [[25, 0], [-25, 0], [0, 25], [0, -25]]) {
+    const q = a.mapper({ x: 240 + dx, y: 160 + dy, width: W, height: H });
+    const inward = ((240 + dx - q.x) * dx + (160 + dy - q.y) * dy) / 25;
+    assert.ok(inward > 3, `(${dx}, ${dy}) from the drop shows the page ${inward.toFixed(1)} px nearer the centre`);
+  }
+  for (const r of [a, b, c]) {
+    assert.ok(r.ms < INK_LIFE * 1000 + 600, `at rest ${Math.round(r.ms)} ms after the press`);
+    const g = r.w.gpu.globals.at(-1);
+    assert.equal(g[G.MOVED], 0); assert.equal(g[G.INKED], 0);
+  }
+  const d = await record(120, { intensity: 0.3 });
+  assert.ok(d.steps[10][S.BLOOM + 2] < a.steps[10][S.BLOOM + 2] * 0.6 && Math.abs(shift(d.fields[20]) - shift(a.fields[20])) > 1, 'control: a gentler drop at another intensity');
 });
 
 test('a press on a control of the page is the page\'s gesture: no drop on the field, and a drag from it stirs like a hover, without pigment; text is selectable there, and not where a pressed pointer stirs the page', async (t) => {

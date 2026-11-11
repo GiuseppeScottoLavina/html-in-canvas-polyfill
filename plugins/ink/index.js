@@ -3,10 +3,11 @@
  *
  * The live page as wet ink on a thin layer of water. sim.js steps an incompressible 2D fluid on the CPU (vorticity and stream function
  * on cells of about 10 CSS px, 120 steps per second) together with the displacement of the page that the flow carries and that relaxes
- * back to zero; the pointer pushes the water (a pair of swirls either side of its path, swaying as a wake does), and a pressed pointer
- * or a finger also releases pigment. The pigment lives on the GPU at about one texel per CSS px (advect.wgsl: three inks and their age,
- * carried by the same flow); ink.wgsl draws the displaced page (a cubic B-spline of the field per device pixel) under the pigment (a
- * Kubelka-Munk layer in linear light).
+ * back to zero; the pointer pushes the water (a pair of swirls either side of its path, swaying as a wake does: gently while it hovers,
+ * hard while it is pressed), a pressed pointer or a finger also releases pigment, and a press lets a drop fall that spreads over the water
+ * (sim.js bloom). The pigment lives on the GPU at about one texel per CSS px (advect.wgsl: three inks and their age, carried by the same
+ * flow); ink.wgsl draws the displaced page (a cubic B-spline of the field per device pixel) under the pigment (a Kubelka-Munk layer in
+ * linear light) and the sheen of the moving water.
  *
  * Input: the input mapper (`mapInkPoint`) evaluates the very field that was uploaded for the presented frame (copied into one of four
  * slots) with the same B-spline as the shader, so clicks and typing reach the element the user sees mid-swirl. The pointer and touch
@@ -27,7 +28,8 @@ import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 import { clampNum } from '../_lib/number.js';
-import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, clear, createFluid, fieldAt, gridOf, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
+import { hdrConstants } from '../_lib/hdr.js';
+import { CHANNELS, DT, MAX_STEPS_PER_FRAME, PAD, STEP_MS, bloom, clear, createFluid, fieldAt, gridOf, pack, quiet, setSize, step, stir, velocityAt } from './sim.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -51,19 +53,25 @@ export const meta = Object.freeze({
 export const ACTIONS = Object.freeze(/** @type {const} */ (['demo', 'stir', 'clear']));
 
 /** Offsets in the uniform block (ink.wgsl Globals), in floats. The mapper state is this block followed by the packed field. */
-export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 36 });
-export const GLOBALS_LENGTH = 48;
+export const G = Object.freeze({ RES: 0, CSS: 2, GRID: 4, INV_CELL: 6, BOX: 8, INK_BOX: 12, LAYER: 16, MOVED: 17, READY: 18, INKED: 19, LOOK: 20, ABSORB: 24, SCATTER: 36, DROPS: 48 });
+export const GLOBALS_LENGTH = 64;
 /** Offsets in the uniform block of one pigment step (advect.wgsl Step), in floats; STEP_FLOATS each (256 bytes, the offset alignment of uniform buffers). */
-export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, LIFE: 9, CAP: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48 });
-export const STEP_FLOATS = 64;
+export const S = Object.freeze({ SIZE: 0, CSS: 2, GRID: 4, INV_CELL: 6, DT: 8, LIFE: 9, CAP: 10, LAYER: 11, COUNT: 12, FLOWING: 13, SEG: 16, SHAPE: 32, INK: 48, BLOOM: 64 });
+export const STEP_FLOATS = 128;
 /** segments of pigment released per step (advect.wgsl), and how many may wait for their step */
 export const SEGMENTS_PER_STEP = 4;
 const SEGMENT_QUEUE = 64;
 /** mapper states kept alive: the mapper chain keeps the last 3 presented frames, plus the one being written */
 const MAPPER_SLOTS = 4;
 
-/** how hard the pointer pushes the water: the share of its own speed that the water under it takes up, at intensity 1 */
+/**
+ * How hard the pointer pushes the water. A pressed pointer pushes the water under it towards its own velocity by PRESS_PUSH of the
+ * difference per pass (times intensity). A hovering pointer only sets the water under it moving at HOVER_PUSH of its own speed, at most
+ * HOVER_WATER CSS px/s (both times intensity): the water it drives never outruns that, however often it passes, so the page under a
+ * hover sweep moves by at most 3 CSS px at the defaults (test/ink.test.mjs), and text stays readable.
+ */
 export const HOVER_PUSH = 0.11;
+export const HOVER_WATER = 26;
 export const PRESS_PUSH = 0.5;
 /** the reach of the push, CSS px, and the fastest pointer it follows, CSS px/s */
 export const STIR_RADIUS = 32;
@@ -77,16 +85,26 @@ const PROFILE_LINE = 32 / 35;
  */
 export const WAKE_SWAY = 0.4;
 export const WAKE_PX = 5 * STIR_RADIUS;
-/** a press: the drop lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
+/** a press on a moving pointer: the drop also lands with this speed (CSS px/s at intensity 1) in the direction the pointer was moving */
 export const DROP_PUSH = 210;
+/**
+ * A drop spreads over the water (sim.js `bloom`): within BLOOM_REACH CSS px of where it landed, at the speed scale BLOOM_SPEED CSS px/s
+ * at intensity 1 (the fastest water, at 0.45 of the reach, moves at 0.29 of it), for BLOOM_S seconds. Its pigment is released as dense as
+ * DROP_DENSITY times `pigment` (a drop is thick: its ink thins as it spreads), above INK_CAP.
+ */
+export const BLOOM_REACH = 60;
+/** around a drop, within WET_REACH x BLOOM_REACH of where it landed and while its pigment lives, the ink ends in a crisp wet edge (ink.wgsl) */
+export const WET_REACH = 1.8;
+export const BLOOM_SPEED = 1500;
+export const DROP_DENSITY = 5;
 /** the pigment: the Gaussian radius of the pen and of a drop (CSS px), their reach in radii (advect.wgsl), the density at pigment 1 */
 export const PEN_RADIUS = 8;
 export const DROP_RADIUS = 13;
 /** the edge of a drop: exp(-(d^2 / r^2)^DROP_EDGE / 2), a disc with a soft rim (1 would be a Gaussian) */
-export const DROP_EDGE = 2.5;
+export const DROP_EDGE = 4;
 export const REACH = 3;
 export const INK_DENSITY = 1;
-/** no ink gets denser than this, however often the pen passes */
+/** no ink gets denser than this, however often the pen passes (a drop may be released denser) */
 export const INK_CAP = 1.2;
 /**
  * The pigment keeps its full strength until it is INK_HOLD seconds old, then fades, and is gone at INK_LIFE seconds (ink.wgsl,
@@ -213,9 +231,9 @@ const SLIDERS = /** @type {const} */ ([['intensity', 'Stir'], ['flow', 'Flow'], 
 
 /**
  * The two pipelines, compiled asynchronously where the device can.
- * @param {any} device @param {string} format @param {string} picture @param {string} advect
+ * @param {any} device @param {string} format @param {string} picture @param {string} advect @param {Record<string, number>} constants  of the picture (HDR_PEAK)
  */
-async function createPipelines(device, format, picture, advect) {
+async function createPipelines(device, format, picture, advect, constants) {
   // the shader modules first: the bundle check stops a fake device at the first other call, and wants to have seen the inlined WGSL by then
   const module = device.createShaderModule({ code: picture, label: 'hic-ink-shader' });
   const advectModule = device.createShaderModule({ code: advect, label: 'hic-ink-advect-shader' });
@@ -244,7 +262,7 @@ async function createPipelines(device, format, picture, advect) {
   const [pipeline, advectPipeline] = await Promise.all([
     make({
       label: 'hic-ink-pipeline', layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-      vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' },
+      vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }], constants }, primitive: { topology: 'triangle-list' },
     }),
     make({
       label: 'hic-ink-advect-pipeline', layout: device.createPipelineLayout({ bindGroupLayouts: [advectLayout] }),
@@ -273,13 +291,14 @@ const REHEARSAL = Object.freeze({ drag: 0.2, heal: 1, confine: CONFINE });
 export const plugin = Object.freeze({
   type: 'ink',
   apiVersion: /** @type {const} */ (2),
-  version: 1,
+  version: 2,
   actions: ACTIONS,
   // The picture pass only writes its destination as a same-format colour attachment; it never samples or reads it back.
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
   async create(context, initialOptions) {
     const { device, format } = context;
-    const pipelines = createPipelines(device, format, await wgsl('ink.wgsl'), await wgsl('advect.wgsl'));
+    // extended range (context.hdr): the picture's shader reads HDR_PEAK (the sheen of the water may go above white)
+    const pipelines = createPipelines(device, format, await wgsl('ink.wgsl'), await wgsl('advect.wgsl'), hdrConstants(context));
     // while the pipelines compile: 60 steps of a small fluid (about 10 ms), so that the first stroke does not meet uncompiled code
     for (let i = 0, f = rehearsal(160, 160); i < 60; i += 1) step(f, REHEARSAL);
     const { pipeline, layout, advectPipeline, advectLayout } = await pipelines;
@@ -364,6 +383,9 @@ export const plugin = Object.freeze({
     let segmentHead = 0, segmentCount = 0;
     /** where the hue is along the palette, and the direction of the last drop */
     let hue = 0, dropAngle = 0.4;
+    /** drops so far (the seed of a drop's front and tendrils), and the last four: x, y (CSS px of the fluid), until (simulation clock) */
+    let drops = 0;
+    const wetDiscs = new Float64Array(12);
     /** the length of all paths so far, CSS px (the phase of the wake's sway) */
     let travel = 0;
     /** mapper states: the uniform block followed by the packed field (reallocated with the fluid) @type {Float32Array[]} */
@@ -455,11 +477,12 @@ export const plugin = Object.freeze({
     }
 
     /**
-     * The pointer (or a stroke of the plugin) went from a to b (CSS px of the fluid) in `ms`: it pushes the water along its path with
-     * `push` of its speed relative to the water there, and, `inked`, releases pigment. With reduced motion only the pigment.
-     * @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} ms @param {number} push @param {boolean} inked @param {boolean} still
+     * The pointer (or a stroke of the plugin) went from a to b (CSS px of the fluid) in `ms`: it pushes the water along its path (pressed:
+     * PRESS_PUSH of its speed relative to the water there; hovering: towards the bounded speed of HOVER_PUSH and HOVER_WATER), and, `inked`,
+     * releases pigment. With reduced motion only the pigment.
+     * @param {number} ax @param {number} ay @param {number} bx @param {number} by @param {number} ms @param {boolean} pressed @param {boolean} inked @param {boolean} still
      */
-    function stroke(ax, ay, bx, by, ms, push, inked, still) {
+    function stroke(ax, ay, bx, by, ms, pressed, inked, still) {
       if (intensity <= 0) return;
       const f = currentFluid();
       const dist = Math.hypot(bx - ax, by - ay);
@@ -469,12 +492,13 @@ export const plugin = Object.freeze({
       const ex = (bx - ax) / dist, ey = (by - ay) / dist;
       if (!still) {
         const n = Math.max(1, Math.ceil((3 * dist) / STIR_RADIUS));
-        const gain = (push * intensity * dist) / (n * PROFILE_LINE * STIR_RADIUS);
+        const gain = ((pressed ? PRESS_PUSH * intensity : 1) * dist) / (n * PROFILE_LINE * STIR_RADIUS);
+        const drive = pressed ? speed : Math.min(HOVER_PUSH * speed, HOVER_WATER) * intensity;
         for (let k = 0; k < n; k += 1) {
           const t = (k + 0.5) / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-          const sway = speed * WAKE_SWAY * Math.sin((2 * Math.PI * (travel + dist * t)) / WAKE_PX);
+          const sway = drive * WAKE_SWAY * Math.sin((2 * Math.PI * (travel + dist * t)) / WAKE_PX);
           velocityAt(f, x, y, water);
-          stir(f, x, y, (ex * speed - ey * sway - water.x) * gain, (ey * speed + ex * sway - water.y) * gain, STIR_RADIUS);
+          stir(f, x, y, (ex * drive - ey * sway - water.x) * gain, (ey * drive + ex * sway - water.y) * gain, STIR_RADIUS);
         }
       }
       travel += dist;
@@ -490,18 +514,29 @@ export const plugin = Object.freeze({
     }
 
     /**
-     * A drop of ink at (x, y) CSS px of the fluid, landing with the speed (jx, jy) CSS px/s: the water takes it as a puff (a pair of swirls
-     * that roll the drop into a mushroom). The drop is one ink around a core of the next.
-     * @param {number} x @param {number} y @param {number} jx @param {number} jy @param {boolean} still
+     * A drop of ink at (x, y) CSS px of the fluid: it spreads over the water (a bloom whose front gathers a rim and then breaks up into
+     * tendrils), and, landing with the speed (jx, jy) CSS px/s, the water also takes it as a puff (a pair of swirls). The drop is one ink
+     * around a core of the next. @param {number} x @param {number} y @param {number} jx @param {number} jy @param {boolean} still
      */
     function drop(x, y, jx, jy, still) {
       if (intensity <= 0) return;
       const f = currentFluid();
       hue += HUE_STEP;
-      if (!still) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
+      drops += 1;
+      if (!still) {
+        wake();
+        // its wet edge, in the place of the drop whose pigment goes first
+        let at = 0;
+        for (let k = 3; k < 12; k += 3) if (wetDiscs[k + 2] < wetDiscs[at + 2]) at = k;
+        wetDiscs.set([x, y, simClock + INK_LIFE * 1000 + INK_SLACK_MS], at);
+        bloom(f, x, y, BLOOM_SPEED * intensity, BLOOM_REACH, drops);
+        if (jx || jy) stir(f, x, y, jx * intensity, jy * intensity, STIR_RADIUS);
+      }
       if (pigment > 0) {
-        release(x, y, x, y, DROP_RADIUS, pigment * INK_DENSITY, hue, DROP_EDGE);
-        release(x, y, x, y, 0.5 * DROP_RADIUS, pigment * INK_DENSITY, hue + 1 / 3, DROP_EDGE);
+        // with reduced motion nothing spreads: the tint stays as dense as a stroke
+        const density = pigment * (still ? INK_DENSITY : DROP_DENSITY);
+        release(x, y, x, y, DROP_RADIUS, density, hue, DROP_EDGE);
+        release(x, y, x, y, 0.5 * DROP_RADIUS, density, hue + 1 / 3, DROP_EDGE);
       }
       wake();
     }
@@ -536,7 +571,7 @@ export const plugin = Object.freeze({
         headX = (b.x - a.x) / dist; headY = (b.y - a.y) / dist; headT = t;
         if (reducedMotion) return;
         takeOver();
-        stroke(a.x, a.y, b.x, b.y, ms, pressed ? PRESS_PUSH : HOVER_PUSH, pressed, false);
+        stroke(a.x, a.y, b.x, b.y, ms, pressed, pressed, false);
       };
       // passive: the ink never claims a gesture (a finger keeps scrolling the page; the browser then cancels the pointer)
       const passive = { passive: true };
@@ -556,9 +591,9 @@ export const plugin = Object.freeze({
         // slider, a selection in a field) stirs as a hovering pointer does, without pigment
         own = onControl(event);
         if (own) return;
-        // the drop keeps the pointer's heading; a press at rest sends each drop another way
-        if (t - headT > 250) { dropAngle += GOLDEN_ANGLE; headX = Math.cos(dropAngle); headY = Math.sin(dropAngle); }
-        drop(p.x, p.y, headX * DROP_PUSH, headY * DROP_PUSH, reducedMotion);
+        // the drop spreads where it lands; a pointer that was moving also throws it the way it was heading
+        const moving = t - headT <= 250;
+        drop(p.x, p.y, moving ? headX * DROP_PUSH : 0, moving ? headY * DROP_PUSH : 0, reducedMotion);
       }, passive);
       context.listen('pointermove', (event) => {
         if (!(event instanceof win.PointerEvent)) return;
@@ -614,7 +649,7 @@ export const plugin = Object.freeze({
         const k = Math.min(1, (simClock - s.t0) / s.ms);
         if (k < 0) continue;
         s.at(k, point);
-        if (s.has) stroke(s.x, s.y, point.x, point.y, STEP_MS, PRESS_PUSH, true, false);
+        if (s.has) stroke(s.x, s.y, point.x, point.y, STEP_MS, true, true, false);
         else { hue += HUE_STEP; s.has = true; }
         s.x = point.x; s.y = point.y;
         if (k >= 1) { scripts.splice(i, 1); i -= 1; }
@@ -639,6 +674,7 @@ export const plugin = Object.freeze({
       stepData[S.GRID] = f.gw; stepData[S.GRID + 1] = f.gh; stepData[S.INV_CELL] = 1 / f.cellX; stepData[S.INV_CELL + 1] = 1 / f.cellY;
       stepData[S.DT] = DT; stepData[S.LIFE] = INK_LIFE; stepData[S.CAP] = INK_CAP; stepData[S.LAYER] = index;
       stepData[S.COUNT] = count; stepData[S.FLOWING] = moving ? 1 : 0;
+      stepData.set(f.spread, S.BLOOM);
       for (let i = 0; i < count; i += 1) {
         const o = segmentHead * 10, radius = segments[o + 4], density = segments[o + 5], reach = REACH * radius;
         stepData.set(segments.subarray(o, o + 4), S.SEG + 4 * i);
@@ -755,7 +791,7 @@ export const plugin = Object.freeze({
         const still = reducedMotion || info.reducedMotion;
         if (action === 'clear') {
           takeOver();
-          scripts = []; segmentCount = 0;
+          scripts = []; segmentCount = 0; wetDiscs.fill(0);
           if (fluid) { clear(fluid); wipe = true; inkLive = false; inkBox.set([1, 1, 0, 0]); }
           awake = false;
           // the frame that shows the clean page resolves it
@@ -812,6 +848,12 @@ export const plugin = Object.freeze({
         globals[G.MOVED] = f.moved ? 1 : 0;
         globals[G.READY] = frame.sourceReady ? 1 : 0;
         globals[G.INKED] = inked ? 1 : 0;
+        globals[G.LOOK + 2] = 0;
+        for (let k = 0; k < 4; k += 1) {
+          const live = inked && simClock < wetDiscs[3 * k + 2];
+          if (live) globals[G.LOOK + 2] = 1;
+          globals[G.DROPS + 4 * k] = wetDiscs[3 * k]; globals[G.DROPS + 4 * k + 1] = wetDiscs[3 * k + 1]; globals[G.DROPS + 4 * k + 2] = live ? WET_REACH * BLOOM_REACH : 0;
+        }
         device.queue.writeBuffer(uniformBuffer, 0, globals);
         let groups = bindGroups.get(frame.sourceView);
         if (!groups) { groups = [null, null]; bindGroups.set(frame.sourceView, groups); }
