@@ -157,11 +157,12 @@ export function demoRain() {
 }
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
-    .hic-water-control { display:grid; grid-template-columns:1fr auto; gap:6px 10px; align-items:center; padding-top:2px; color:rgba(224,247,255,.62); font-size:9px; font-weight:700; }
+    .hic-water-control { display:grid; grid-template-columns:1fr auto; gap:6px 10px; align-items:center; padding-top:2px; color:light-dark(rgba(16,32,46,.72), rgba(224,247,255,.62)); font-size:9px; font-weight:700; }
     .hic-water-control > span { grid-column:1; }
-    .hic-water-control output { grid-column:2; color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; }
-    .hic-water-control input[type=range] { grid-column:1 / -1; width:100%; height:28px; margin:0; padding:3px 0; border:0; border-radius:0; background:transparent; box-shadow:none; accent-color:#79efff; cursor:ew-resize; }
+    .hic-water-control output { grid-column:2; color:light-dark(#006b80, #9cf5ff); text-align:right; font-variant-numeric:tabular-nums; }
+    .hic-water-control input[type=range] { grid-column:1 / -1; width:100%; height:28px; margin:0; padding:3px 0; border:0; border-radius:0; background:transparent; box-shadow:none; accent-color:light-dark(#007a94, #79efff); cursor:ew-resize; }
   `;
 
 /**

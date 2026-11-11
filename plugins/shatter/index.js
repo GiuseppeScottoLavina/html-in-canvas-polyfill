@@ -137,8 +137,9 @@ function smoothstep(a, b, x) {
 }
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `.hic-shatter-ui{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:end;font-size:11px;font-weight:700}`
-    + `.hic-shatter-ui label{display:grid}.hic-shatter-ui input{width:100%;margin:0;accent-color:#bfe9ff}.hic-shatter-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:#06202c;background:#bfe9ff}`;
+    + `.hic-shatter-ui label{display:grid}.hic-shatter-ui input{width:100%;margin:0;accent-color:light-dark(#0b5f85, #bfe9ff)}.hic-shatter-ui button{padding:7px 14px;font:inherit;border:0;border-radius:10px;cursor:pointer;color:light-dark(#eaf7fd, #06202c);background:light-dark(#0b5f85, #bfe9ff)}`;
 
 /**
  * The plugin's definition (effect plugin ABI v2).

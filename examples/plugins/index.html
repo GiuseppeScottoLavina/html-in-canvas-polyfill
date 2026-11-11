@@ -125,11 +125,11 @@
   .scenes button[aria-pressed="true"] { color: #03131e; border-color: transparent; background: #79efff; }
   .scene { flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .scene[hidden] { display: none; }
-  /* daylight: a bright stage and a paper panel; the form's card stays dark glass (the plugins' own controls are drawn light on dark) */
-  #demo-form[data-scene="daylight"] { color: #18233a; background: radial-gradient(circle at 16% 12%, #ffd79a, transparent 42%), radial-gradient(circle at 88% 84%, #ff9fcd, transparent 46%),
+  /* daylight: a light page as a whole. color-scheme: light switches every light-dark() below, the native controls and the plugins' own controls
+     (their colours are light-dark() too) */
+  #demo-form[data-scene="daylight"] { color-scheme: light; color: #18233a; background: radial-gradient(circle at 16% 12%, #ffd79a, transparent 42%), radial-gradient(circle at 88% 84%, #ff9fcd, transparent 46%),
     radial-gradient(circle at 70% 10%, #9fe3ff, transparent 40%), linear-gradient(165deg, #fff6e2, #d6ebff 58%, #bcd6ff); }
-  #demo-form[data-scene="daylight"] .hero { color: #18233a; border-color: rgba(24, 35, 58, .12); background: linear-gradient(150deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .62)); }
-  #demo-form[data-scene="daylight"] .card { color: #edfaff; background: linear-gradient(150deg, rgba(8, 25, 48, .94), rgba(4, 13, 28, .9)); }
+  #demo-form[data-scene="daylight"] .hero, #demo-form[data-scene="daylight"] .card { color: #18233a; border-color: rgba(24, 35, 58, .12); background: linear-gradient(150deg, rgba(255, 255, 255, .86), rgba(255, 255, 255, .62)); }
   #demo-form[data-scene="daylight"] .eyebrow { color: #0b6f96; }
   #demo-form[data-scene="daylight"] .hero .lede { color: rgba(24, 35, 58, .78); }
   #demo-form[data-scene="daylight"] .try { color: rgba(24, 35, 58, .7); border-top-color: rgba(24, 35, 58, .14); }
@@ -157,30 +157,30 @@
   .feed li:first-child { background: rgba(125, 255, 207, .14); }
   .fields { display: grid; gap: 10px; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  label.field { display: grid; gap: 5px; min-width: 0; color: rgba(232, 249, 255, .78); font-size: 11px; font-weight: 700; }
-  input[type=text], input[type=email], textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 11px; font: inherit; font-weight: 400; color: #effcff; caret-color: #83f6ff;
-    border: 1px solid rgba(173, 226, 255, .18); border-radius: 12px; outline: 0; background: rgba(1, 10, 23, .55); }
-  input:focus, textarea:focus { border-color: rgba(112, 244, 255, .75); box-shadow: 0 0 0 3px rgba(85, 232, 255, .1); }
+  label.field { display: grid; gap: 5px; min-width: 0; color: light-dark(rgba(24, 35, 58, .8), rgba(232, 249, 255, .78)); font-size: 11px; font-weight: 700; }
+  input[type=text], input[type=email], textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 11px; font: inherit; font-weight: 400; color: light-dark(#10202e, #effcff); caret-color: light-dark(#0b6f96, #83f6ff);
+    border: 1px solid light-dark(rgba(24, 35, 58, .22), rgba(173, 226, 255, .18)); border-radius: 12px; outline: 0; background: light-dark(rgba(255, 255, 255, .8), rgba(1, 10, 23, .55)); }
+  input:focus, textarea:focus { border-color: light-dark(#0b6f96, rgba(112, 244, 255, .75)); box-shadow: 0 0 0 3px light-dark(rgba(11, 111, 150, .18), rgba(85, 232, 255, .1)); }
   textarea { height: 64px; resize: none; line-height: 1.4; }
-  .consent { display: flex; align-items: center; gap: 8px; color: rgba(220, 244, 255, .7); font-size: 12px; }
-  .consent input { width: 15px; height: 15px; margin: 0; accent-color: #79efff; }
-  .control { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; color: rgba(224, 247, 255, .72); font-size: 11px; font-weight: 700; }
-  .control output { color: #9cf5ff; text-align: right; font-variant-numeric: tabular-nums; min-width: 6ch; white-space: nowrap; }
-  .control input[type=range] { grid-column: 1 / -1; width: 100%; height: 26px; margin: 0; accent-color: #79efff; cursor: ew-resize; }
-  #effect-controls { display: grid; gap: 6px; min-height: 1.2em; color: rgba(224, 247, 255, .72); font-size: 11px; font-weight: 700; }
-  #effect-controls:empty::before, .fx-ui:empty::before { content: attr(data-empty); color: rgba(224, 247, 255, .45); font-weight: 400; }
+  .consent { display: flex; align-items: center; gap: 8px; color: light-dark(rgba(24, 35, 58, .78), rgba(220, 244, 255, .7)); font-size: 12px; }
+  .consent input { width: 15px; height: 15px; margin: 0; accent-color: light-dark(#0b6f96, #79efff); }
+  .control { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; color: light-dark(rgba(24, 35, 58, .8), rgba(224, 247, 255, .72)); font-size: 11px; font-weight: 700; }
+  .control output { color: light-dark(#006b80, #9cf5ff); text-align: right; font-variant-numeric: tabular-nums; min-width: 6ch; white-space: nowrap; }
+  .control input[type=range] { grid-column: 1 / -1; width: 100%; height: 26px; margin: 0; accent-color: light-dark(#007a94, #79efff); cursor: ew-resize; }
+  #effect-controls { display: grid; gap: 6px; min-height: 1.2em; color: light-dark(rgba(24, 35, 58, .8), rgba(224, 247, 255, .72)); font-size: 11px; font-weight: 700; }
+  #effect-controls:empty::before, .fx-ui:empty::before { content: attr(data-empty); color: light-dark(rgba(24, 35, 58, .55), rgba(224, 247, 255, .45)); font-weight: 400; }
   /* one box of controls per effect; with two effects, a switch chooses whose controls are shown */
   .fx-ui { display: grid; gap: 6px; min-width: 0; }
   .fx-ui[hidden], .fx-tabs[hidden] { display: none; }
   .fx-tabs { display: flex; gap: 5px; }
-  .fx-tabs button { min-height: 22px; padding: 0 9px; font: 700 10px/1 system-ui, sans-serif; letter-spacing: .04em; color: inherit; cursor: pointer; border: 1px solid rgba(178, 230, 255, .28); border-radius: 999px; background: rgba(8, 25, 48, .35); }
-  .fx-tabs button[aria-pressed="true"] { color: #03131e; border-color: transparent; background: #79efff; }
-  #effect-controls input[type=range] { width: 100%; accent-color: #79efff; }
+  .fx-tabs button { min-height: 22px; padding: 0 9px; font: 700 10px/1 system-ui, sans-serif; letter-spacing: .04em; color: inherit; cursor: pointer; border: 1px solid light-dark(rgba(24, 35, 58, .25), rgba(178, 230, 255, .28)); border-radius: 999px; background: light-dark(rgba(255, 255, 255, .6), rgba(8, 25, 48, .35)); }
+  .fx-tabs button[aria-pressed="true"] { color: light-dark(#fff, #03131e); border-color: transparent; background: light-dark(#0b6f96, #79efff); }
+  #effect-controls input[type=range] { width: 100%; accent-color: light-dark(#007a94, #79efff); }
   .actions { display: flex; align-items: center; gap: 12px; }
   button.submit { padding: 10px 18px; font: inherit; font-weight: 800; color: #03131e; border: 1px solid rgba(139, 240, 255, .5); border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, #78f7ff, #c5fbff 55%, #bba8ff); }
-  #form-feedback { min-height: 1.4em; color: rgba(222, 246, 255, .65); font-size: 12px; }
-  #form-feedback[data-state="error"] { color: #ffc0c9; }
-  #form-feedback[data-state="success"] { color: #a8ffd7; }
+  #form-feedback { min-height: 1.4em; color: light-dark(rgba(24, 35, 58, .7), rgba(222, 246, 255, .65)); font-size: 12px; }
+  #form-feedback[data-state="error"] { color: light-dark(#b3122e, #ffc0c9); }
+  #form-feedback[data-state="success"] { color: light-dark(#0a7a4a, #a8ffd7); }
   .invalid { border-color: rgba(255, 111, 138, .8) !important; }
 
   /* short screens (an iPad in landscape, a laptop): the same two columns, tighter */

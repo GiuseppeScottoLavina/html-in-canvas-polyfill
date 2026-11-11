@@ -94,13 +94,14 @@ export function mapCrtPoint(s, point) {
 
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
     .hic-crt-ui { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px 12px; }
     .hic-crt-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
-    .hic-crt-ui output { color:#ffcf7a; font-variant-numeric:tabular-nums; }
-    .hic-crt-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#ffb347; cursor:ew-resize; }
+    .hic-crt-ui output { color:light-dark(#8a5200, #ffcf7a); font-variant-numeric:tabular-nums; }
+    .hic-crt-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:light-dark(#b35f00, #ffb347); cursor:ew-resize; }
     .hic-crt-ui label.preset { grid-template-columns:auto; }
-    .hic-crt-ui select { width:100%; height:22px; margin:0; padding:0 4px; font:inherit; font-weight:700; color:#ffcf7a; background:#14161c; border:1px solid #5a4a30; border-radius:4px; }
+    .hic-crt-ui select { width:100%; height:22px; margin:0; padding:0 4px; font:inherit; font-weight:700; color:light-dark(#8a5200, #ffcf7a); background:light-dark(#ffffff, #14161c); border:1px solid light-dark(#c9a871, #5a4a30); border-radius:4px; }
   `;
 
 const LABELS = /** @type {Record<string, string>} */ ({ curvature: 'Curvature', scanlines: 'Scanlines', mask: 'Mask', glow: 'Glow', warmth: 'Warmth', flicker: 'Flicker', misconvergence: 'Convergence' });

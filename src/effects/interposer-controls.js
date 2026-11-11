@@ -67,6 +67,18 @@ export function activate(control) {
 }
 
 /**
+ * A drop-down select (not `multiple`, not a list box) opens its list on a press natively, which a re-targeted press cannot reach: open it with showPicker(),
+ * which needs the user activation of the gesture. The list opens at the select's own place in the page, under the canvas. Without showPicker(), or where the
+ * browser refuses it, the select keeps the focus that the press gave it, and the keyboard changes it.
+ * @param {Element} control @returns {boolean} the list was asked to open
+ */
+export function openPicker(control) {
+  const select = /** @type {HTMLSelectElement} */ (control);
+  if (control.localName !== 'select' || select.multiple || select.size > 1 || select.disabled || typeof select.showPicker !== 'function') return false;
+  try { select.showPicker(); return true; } catch { return false; }
+}
+
+/**
  * A range input being dragged: value from the mapped x, `input` per change, one `change` at the end.
  * @param {Window & typeof globalThis} win
  * @param {HTMLInputElement} input

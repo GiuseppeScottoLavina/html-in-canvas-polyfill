@@ -134,12 +134,13 @@ function makeMapper(state) {
 
 let uiSerial = 0;
 /** CSS of the plugin UI (mountUI) and of the cursor while the cloth is held */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
     .hic-cloth-ui { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:4px 12px; align-items:end; }
     .hic-cloth-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
-    .hic-cloth-ui output { color:#ffd9a8; font-variant-numeric:tabular-nums; }
-    .hic-cloth-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#ffc27a; cursor:ew-resize; }
-    .hic-cloth-ui select, .hic-cloth-ui button { grid-column:1 / -1; min-height:24px; font:inherit; font-size:11px; color:#effcff; background:rgba(1,10,23,.55); border:1px solid rgba(255,214,170,.3); border-radius:8px; padding:2px 8px; }
+    .hic-cloth-ui output { color:light-dark(#7a4a00, #ffd9a8); font-variant-numeric:tabular-nums; }
+    .hic-cloth-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:light-dark(#b35f00, #ffc27a); cursor:ew-resize; }
+    .hic-cloth-ui select, .hic-cloth-ui button { grid-column:1 / -1; min-height:24px; font:inherit; font-size:11px; color:light-dark(#10202e, #effcff); background:light-dark(rgba(255,255,255,.75), rgba(1,10,23,.55)); border:1px solid light-dark(rgba(122,74,0,.35), rgba(255,214,170,.3)); border-radius:8px; padding:2px 8px; }
     .hic-cloth-ui button { cursor:pointer; font-weight:700; }
     [data-hic-cloth-cursor=grabbing], [data-hic-cloth-cursor=grabbing] * { cursor:grabbing !important; }
   `;

@@ -311,13 +311,14 @@ export function tourPoint(points, t, out) {
 }
 
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
     .hic-lg-ui { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)) auto; gap:4px 12px; align-items:end; }
     .hic-lg-ui label { display:grid; grid-template-columns:1fr auto; gap:2px 6px; min-width:0; font-size:10px; font-weight:700; }
-    .hic-lg-ui output { color:#9cf5ff; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .hic-lg-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:#9fd8ff; cursor:ew-resize; }
+    .hic-lg-ui output { color:light-dark(#006b80, #9cf5ff); font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .hic-lg-ui input[type=range] { grid-column:1 / -1; width:100%; height:22px; margin:0; accent-color:light-dark(#005f99, #9fd8ff); cursor:ew-resize; }
     .hic-lg-ui label.pin { display:flex; align-items:center; gap:6px; padding-bottom:4px; white-space:nowrap; }
-    .hic-lg-ui label.pin input { width:15px; height:15px; margin:0; accent-color:#9fd8ff; }
+    .hic-lg-ui label.pin input { width:15px; height:15px; margin:0; accent-color:light-dark(#005f99, #9fd8ff); }
     @media (max-width: 560px) { .hic-lg-ui { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
   `;
 

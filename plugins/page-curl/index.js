@@ -383,12 +383,13 @@ function makeMapper(state) {
 
 let uiSerial = 0;
 /** CSS of the plugin UI (mountUI) */
+// (each colour is light-dark(on a light page, on a dark page): the controls follow the page's color-scheme)
 const UI_CSS = `
-    .hic-curl-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:rgba(224,247,255,.72); font-size:11px; font-weight:700; }
-    .hic-curl-ui p { grid-column:1 / -1; margin:0 0 2px; font-size:13px; font-weight:800; color:#9cf5ff; }
-    .hic-curl-ui output { color:#9cf5ff; text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
-    .hic-curl-ui input[type=range] { width:100%; height:24px; margin:0; accent-color:#79efff; cursor:ew-resize; }
-    .hic-curl-ui select { font:inherit; color:#effcff; background:rgba(1,10,23,.55); border:1px solid rgba(173,226,255,.18); border-radius:8px; padding:3px 6px; }
+    .hic-curl-ui { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; color:light-dark(rgba(16,32,46,.8), rgba(224,247,255,.72)); font-size:11px; font-weight:700; }
+    .hic-curl-ui p { grid-column:1 / -1; margin:0 0 2px; font-size:13px; font-weight:800; color:light-dark(#006b80, #9cf5ff); }
+    .hic-curl-ui output { color:light-dark(#006b80, #9cf5ff); text-align:right; font-variant-numeric:tabular-nums; min-width:4ch; }
+    .hic-curl-ui input[type=range] { width:100%; height:24px; margin:0; accent-color:light-dark(#007a94, #79efff); cursor:ew-resize; }
+    .hic-curl-ui select { font:inherit; color:light-dark(#10202e, #effcff); background:light-dark(rgba(255,255,255,.75), rgba(1,10,23,.55)); border:1px solid light-dark(rgba(16,32,46,.25), rgba(173,226,255,.18)); border-radius:8px; padding:3px 6px; }
     [data-hic-curl-cursor=grab], [data-hic-curl-cursor=grab] * { cursor:grab !important; }
     [data-hic-curl-cursor=grabbing], [data-hic-curl-cursor=grabbing] * { cursor:grabbing !important; }
   `;

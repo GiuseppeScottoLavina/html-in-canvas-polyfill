@@ -13,7 +13,7 @@
  */
 
 import { invalidState } from '../contracts/errors.js';
-import { activate, controlOf, focusControl, isActivatable, isRange, startRangeDrag } from './interposer-controls.js';
+import { activate, controlOf, focusControl, isActivatable, isRange, openPicker, startRangeDrag } from './interposer-controls.js';
 import { isNoTarget } from './no-target.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -197,6 +197,7 @@ export function createInterposer(env, record, chain, tracker) {
     if (g.tap) focusAt(g.control, g.tap.point);
     // Click semantics: the release must land on the control the press started on.
     if (g.control && !g.drag && isActivatable(g.control) && controlOf(layerEl, element) === g.control) activate(g.control);
+    else if (g.control && !g.drag && controlOf(layerEl, element) === g.control) openPicker(g.control);
     swallowClick = true;
   }
 
