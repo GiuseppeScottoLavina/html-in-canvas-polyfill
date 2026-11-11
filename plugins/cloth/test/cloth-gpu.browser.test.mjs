@@ -38,11 +38,19 @@ const pull = (from, to, ms = 640) => (/** @type {any} */ rig) => {
 };
 const CORNER = [470, 312];
 const LIFTED = [300, 150];
+/** the corner carried across the cloth, to the left of its middle: the flap lies over the sheet, its back towards the viewer */
+const FOLDED = [150, 200];
 
 gpuTest('held and pulled: the mapper predicts every presented pixel (the page point on the printed side, no target on the back and on the wall); identity does not', async (t) => {
   // minBrightShare 0.5: the lifted corner shows its back, and the wall shows where it was
   const v = await checkMapperAgainstGpu(t, plugin, PLAIN, { scene, before: pull(CORNER, LIFTED), minBrightShare: 0.5 });
   console.error(`cloth mapper vs GPU (pulled): decided=${v.real.decided} wrong=${v.real.wrong} bright=${v.real.bright} | identity wrong=${v.identity.wrong}`);
+  assert.ok(v.ok, v.why);
+});
+
+gpuTest('folded over itself: the lower right corner carried across the cloth lies over it; the mapper predicts every presented pixel, the layer in front included; identity does not', async (t) => {
+  const v = await checkMapperAgainstGpu(t, plugin, PLAIN, { scene, before: pull(CORNER, FOLDED, 560), minBrightShare: 0.4 });
+  console.error(`cloth mapper vs GPU (folded): decided=${v.real.decided} wrong=${v.real.wrong} bright=${v.real.bright} | identity wrong=${v.identity.wrong}`);
   assert.ok(v.ok, v.why);
 });
 
