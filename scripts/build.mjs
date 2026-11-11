@@ -14,7 +14,7 @@
 //     dist/plugins/<name>.esm.js                  the module, for bundlers
 //     dist/plugins/manifest.json                  name, title, description, reducedMotion, continuous, touch, version, defaults, actions and files of every plugin (the gallery reads it)
 //     dist/types/plugins/<name>/index.d.ts
-//   The .wgsl files of a plugin are inlined: its wgsl.js loader is replaced by a module that returns them as strings. What a plugin imports
+//   The .wgsl files of a plugin are inlined, minified (wgsl-strip.mjs minifyWgsl: no comment, no blank between tokens): its wgsl.js loader is replaced by a module that returns them as strings. What a plugin imports
 //   from plugins/_lib/ and src/effects/no-target.js is bundled into it.
 //
 //   node scripts/build.mjs [--no-esm] [--quiet] [--analyze]     writes dist/ and dist/sizes.json; --analyze prints the minified core's bytes per module group and module
@@ -26,7 +26,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { LIB_DIR, checkPluginFolder, discoverPlugins } from '../plugins/_shared/contract.mjs';
-import { stripWgsl } from './wgsl-strip.mjs';
+import { minifyWgsl } from './wgsl-strip.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const quiet = process.argv.includes('--quiet');
@@ -48,7 +48,7 @@ const inlineWgsl = (p) => ({
   setup(/** @type {any} */ b) {
     b.onResolve({ filter: /^\.\/wgsl\.js$/ }, (/** @type {any} */ a) => (a.importer.startsWith(p.dir + sep) ? { path: `plugins/${p.name}/wgsl.js`, namespace: 'plugin-wgsl' } : undefined));
     b.onLoad({ filter: /.*/, namespace: 'plugin-wgsl' }, () => ({
-      contents: `const files = { ${p.wgsl.map((f) => `${JSON.stringify(f)}: ${JSON.stringify(stripWgsl(readFileSync(join(p.dir, f), 'utf8')))}`).join(', ')} };\n`
+      contents: `const files = { ${p.wgsl.map((f) => `${JSON.stringify(f)}: ${JSON.stringify(minifyWgsl(readFileSync(join(p.dir, f), 'utf8')))}`).join(', ')} };\n`
         + `export async function wgsl(file) { if (!Object.hasOwn(files, file)) throw new Error('${p.name}: no ' + file + ' in the plugin folder'); return files[file]; }\n`,
       loader: 'js',
     }));
