@@ -223,7 +223,9 @@ if (!docsOnly) {
   // for a page to show (the gallery's input map)
   // 17743 -> 17752 (2026-11-11, measured 17,752): the effects host's option `hdr` (+9: src/effects/gpu-presenter.js, the context and the stats), a float canvas
   // with the extended tone mapping for highlights above white
-  if (total > 17752) problems.push(`G-size: core is ${total} code lines (> 17752)`);
+  // 17752 -> 17758 (2026-11-11, measured 17,758): the interposer opens the list of a re-targeted drop-down select (+6: src/effects/interposer-controls.js
+  // openPicker, src/effects/interposer.js); before it a select drawn elsewhere than the live one (under a curved or tilted effect) could not be opened
+  if (total > 17758) problems.push(`G-size: core is ${total} code lines (> 17758)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
