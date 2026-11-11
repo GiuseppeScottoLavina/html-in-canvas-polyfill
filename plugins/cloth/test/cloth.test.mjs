@@ -3,7 +3,7 @@
 // mapper against an oracle written another way (the B-spline from its basis function, Moller-Trumbore in 3D over every triangle); and the
 // plugin behind the real effect handle (plugins/_shared/node-host.mjs): the same motion at 30, 60 and 120 frames per second, zero work at
 // rest, the actions and their states, reduced motion, the pointer through context.localPoint, and the gestures (a press that does not
-// move stays the page's, a press that moves is the cloth's, a slider is never taken, a finger takes hold by the hem only).
+// move stays the page's, a press that moves is the cloth's, a slider is never taken, a finger takes the cloth by a sideways move or by its hem).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
@@ -509,8 +509,8 @@ async function rig(t, options = {}, { reducedMotion = false, media = reducedMoti
       return e;
     },
     /** deliver a touch event to the listeners of context.listen */
-    touch(/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y) {
-      const e = { type, touches: [{ clientX: x, clientY: y }], cancelable: true, prevented: false, preventDefault() { this.prevented = true; } };
+    touch(/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, { cancelable = true } = {}) {
+      const e = { type, touches: [{ identifier: 0, clientX: x, clientY: y }], cancelable, prevented: false, preventDefault() { this.prevented = true; } };
       for (const fn of own.get(type) ?? []) fn(e);
       return e;
     },
@@ -792,28 +792,60 @@ test('gestures: a press that does not move is the page\'s click (a poke, nothing
   assert.equal(flat.state.cursor, '');
 });
 
-test('touch: a finger takes hold of the cloth by its hem only (claimed at its first move); anywhere else nothing is claimed and the page scrolls', async (t) => {
+test('touch: the first move of a finger decides. Sideways anywhere on the cloth, or any way from its hem, takes the cloth (claimed); vertical elsewhere scrolls the page; a tap taps; a slider keeps its drag', async (t) => {
   const k = await rig(t);
   k.run(1000, 1000);
-  // in the middle of the cloth
+  const touch = { pointerType: 'touch', buttons: 1 };
+  // vertical, in the middle of the cloth: the page's, and it stays the page's when the finger then turns sideways
   k.touch('touchstart', 300, 250);
-  assert.equal(k.touch('touchmove', 300, 230).prevented, false, 'a finger in the middle scrolls the page');
-  k.fire('pointerdown', 300, 250, { pointerType: 'touch', buttons: 1 });
-  let e = k.fire('pointermove', 300, 200, { pointerType: 'touch', buttons: 1 });
-  assert.ok(!e.stopped && k.state.cursor === '', 'and does not take the cloth');
+  assert.equal(k.touch('touchmove', 302, 238).prevented, false, 'a vertical drag in the middle scrolls the page');
+  assert.equal(k.touch('touchmove', 340, 236).prevented, false, 'decided at the first move');
+  k.fire('pointerdown', 300, 250, touch);
+  let e = k.fire('pointermove', 300, 200, touch);
+  assert.ok(!e.stopped && k.state.cursor === '', 'the finger does not take the cloth');
   k.fire('pointercancel', 300, 200, { pointerType: 'touch' });
-  // on the hem
-  const y = k.h - HEM / 2;
-  assert.equal(k.touch('touchstart', 300, y).prevented, false, 'the touchstart is never prevented: a tap on the hem still taps');
-  assert.equal(k.touch('touchmove', 300, y - 12).prevented, true, 'the first move claims the gesture');
-  k.fire('pointerdown', 300, y, { pointerType: 'touch', buttons: 1 });
-  e = k.fire('pointermove', 300, y - 30, { pointerType: 'touch', buttons: 1 });
+  // sideways, in the middle: the cloth's
+  assert.equal(k.touch('touchstart', 300, 250).prevented, false, 'the touchstart is never prevented: a tap still taps');
+  k.fire('pointerdown', 300, 250, touch);
+  e = k.fire('pointermove', 312, 254, touch);
+  assert.ok(!e.stopped, 'the pointermove before the first touchmove decides nothing');
+  assert.equal(k.touch('touchmove', 312, 254).prevented, true, 'a sideways first move claims the gesture');
+  e = k.fire('pointermove', 340, 256, touch);
   assert.ok(e.stopped && k.state.cursor === 'grabbing', 'the finger holds the cloth');
-  k.fire('pointerup', 300, y - 30, { pointerType: 'touch' });
+  assert.equal(k.touch('touchmove', 340, 320).prevented, true, 'and keeps it whatever way it then moves');
+  k.fire('pointerup', 340, 320, { pointerType: 'touch' });
   assert.equal(k.state.cursor, '');
-  // control: just above the hem
+  // control: a first move only a little wider than tall stays the page's
+  k.touch('touchstart', 300, 250);
+  assert.equal(k.touch('touchmove', 312, 241).prevented, false, 'dx = 1.33 dy: the page scrolls');
+  // the hem: any direction
+  const y = k.h - HEM / 2;
+  k.touch('touchstart', 300, y);
+  assert.equal(k.touch('touchmove', 300, y - 12).prevented, true, 'from the hem a vertical first move claims the gesture');
+  k.fire('pointerdown', 300, y, touch);
+  e = k.fire('pointermove', 300, y - 30, touch);
+  assert.ok(e.stopped && k.state.cursor === 'grabbing', 'the finger holds the cloth by its hem');
+  k.fire('pointerup', 300, y - 30, { pointerType: 'touch' });
+  // control: just above the hem a vertical move scrolls
   k.touch('touchstart', 300, k.h - HEM - 6);
   assert.equal(k.touch('touchmove', 300, k.h - HEM - 20).prevented, false);
+  // a move that can no longer be prevented (the browser scrolls already) is the page's, and so are the ones after it
+  k.touch('touchstart', 300, 250);
+  const late = k.touch('touchmove', 330, 250, { cancelable: false });
+  assert.equal(late.prevented, false);
+  assert.equal(k.touch('touchmove', 360, 250).prevented, false);
+  // a tap: no move, nothing claimed, the click is the page's
+  k.touch('touchstart', 500, 300);
+  assert.ok(!k.fire('pointerdown', 500, 300, touch).stopped);
+  assert.ok(!k.fire('pointerup', 500, 300, { pointerType: 'touch' }).stopped);
+  assert.ok(!k.fire('click', 500, 300).stopped, 'the tap reaches the page');
+  // a slider (a control that is dragged itself) keeps a sideways drag
+  k.state.under = { closest: (/** @type {string} */ sel) => (/input/.test(sel) ? {} : null) };
+  k.touch('touchstart', 300, 250);
+  assert.equal(k.touch('touchmove', 330, 250).prevented, false, 'a sideways drag on a slider is the slider\'s');
+  k.fire('pointerdown', 300, 250, touch);
+  e = k.fire('pointermove', 340, 250, touch);
+  assert.ok(!e.stopped && k.state.cursor === '');
 });
 
 test('a press takes over from the demo: its gust stops at once; a press on the bare wall hangs the cloth again', async (t) => {

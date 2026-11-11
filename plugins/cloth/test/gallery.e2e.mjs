@@ -5,7 +5,7 @@
 // activates it, typing shows on the folded cloth, and nothing is rendered between two key strokes; a press that moves takes the cloth
 // (nothing of the gesture reaches the form: no click, no selection), a press on a slider drags the slider, a click on the button clicks;
 // the actions from the gallery's buttons (handle.trigger), superseding, settled(); the frame cap; reduced motion; touch (the hem is
-// grabbed, a finger elsewhere scrolls the page); the cloth under and over another effect. `--record` also writes media/cloth.webp.
+// grabbed, a sideways drag anywhere on the cloth grabs it, a vertical drag elsewhere scrolls the page); the cloth under and over another effect. `--record` also writes media/cloth.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
 //   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only]
@@ -359,6 +359,34 @@ async function main() {
     const t2 = await page.evaluate('window.__touch');
     c.check('touch: a finger anywhere else scrolls the page as usual (control: the same kind of drag from the middle of the stage)', y2 > y1 + 40 && t2.cancel >= 1, { scrolled: y2 - y1, cancel: t2.cancel });
     c.check('touch: after the scroll the cloth comes to rest', (await settled(page)) === 'hanging');
+    // a sideways drag from the middle of the cloth takes it; control: a vertical drag from the same place scrolls the page
+    await idle(page);
+    stage = await rectOf(page, '#stage');
+    const flat = (await shot(page)).img;
+    const y3 = await page.evaluate('scrollY');
+    const t3 = await page.evaluate('({ ...window.__touch })');
+    const from = [stage.x + stage.w * 0.35, stage.y + stage.h * 0.5];
+    const sideways = await finger(Array.from({ length: 30 }, (_, i) => [from[0] + i * 10, from[1] + i * 2]));
+    await sleep(300);
+    const swept = changed((await shot(page)).img, flat, 8);
+    const y4 = await page.evaluate('scrollY');
+    const t4 = await page.evaluate('window.__touch');
+    await sideways();
+    c.check('touch: a sideways drag from the middle of the cloth takes it and pulls it; the page does not scroll and the pointer is not cancelled', t4.down - t3.down === 1 && t4.cancel === t3.cancel && y4 === y3 && swept.px > 0.05 * stage.w * stage.h,
+      { down: t4.down - t3.down, cancel: t4.cancel - t3.cancel, scrolled: y4 - y3, ...swept });
+    await settled(page);
+    await idle(page);
+    stage = await rectOf(page, '#stage');
+    const y5 = await page.evaluate('scrollY');
+    const t5 = await page.evaluate('({ ...window.__touch })');
+    const start = [stage.x + stage.w * 0.35, stage.y + stage.h * 0.5];
+    const upwards = await finger(Array.from({ length: 30 }, (_, i) => [start[0] + i * 0.5, start[1] - i * 6]));
+    await upwards();
+    await sleep(800);
+    const y6 = await page.evaluate('scrollY');
+    const t6 = await page.evaluate('window.__touch');
+    c.check('touch: control: a vertical drag from the same place scrolls the page (the browser cancels the pointer)', y6 > y5 + 40 && t6.cancel > t5.cancel, { scrolled: y6 - y5, cancel: t6.cancel - t5.cancel });
+    c.check('touch: after the sideways pull and the scroll the cloth comes to rest', (await settled(page)) === 'hanging');
   } finally {
     await tg.close();
   }

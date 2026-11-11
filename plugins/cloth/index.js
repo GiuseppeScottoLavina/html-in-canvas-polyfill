@@ -14,8 +14,9 @@
  *
  * Gestures. Mouse: a press that does not move is the page's click; once it has moved GRAB_SLOP css px it is the cloth's gesture (the
  * pointer is captured, the form sees no more of it and no click follows), unless it started on a control that is itself dragged (a
- * slider, a text field, a select). Touch: only a finger that lands on the lower edge of the cloth takes hold of it (claimed at its first
- * touchmove, so a tap there still taps); everywhere else a finger scrolls the page.
+ * slider, a text field, a select). Touch: the first touchmove of a finger decides. A mostly sideways move anywhere on the cloth, or a move
+ * in any direction of a finger that landed on the cloth's lower edge, is the cloth's gesture (claimed: no scroll, no pointercancel); a
+ * mostly vertical move elsewhere scrolls the page; a tap stays a tap.
  */
 
 import { NO_TARGET, isNoTarget } from '../../src/effects/no-target.js';
@@ -40,7 +41,7 @@ export const meta = Object.freeze({
   description: 'The live page printed on a sheet of fabric: it hangs from its top edge, takes a push, a pull or a gust, and settles; input is ray-cast through it.',
   defaults: Object.freeze({ weight: 0.5, wind: 0, pins: 'top', sheen: 0.5 }),
   reducedMotion: 'With reduced motion the cloth hangs flat and still: no push, pull, gust or breeze; drop and in crossfade; demo and gust resolve at once.',
-  touch: 'Drag the lower edge of the cloth with a finger; elsewhere a finger scrolls the page.',
+  touch: 'Drag the cloth sideways with a finger, or its lower edge any way; a vertical drag elsewhere scrolls the page, and a tap taps.',
 });
 
 export { NO_TARGET, isNoTarget, mapClothPoint };
@@ -61,8 +62,10 @@ const SHADOW_MARGIN = 0.3;
 /** css px a pressed mouse travels before the press is the cloth's gesture and no longer the page's click; a finger's */
 export const GRAB_SLOP = 6;
 export const TOUCH_SLOP = 8;
-/** css px of the cloth's lower edge that a finger can take hold of (measured on the cloth, from its hem) */
+/** css px of the cloth's lower edge that a finger takes hold of whatever way it moves (measured on the cloth, from its hem) */
 export const HEM = 44;
+/** a finger's first move is the cloth's when it is this many times wider than it is tall (elsewhere than on the hem) */
+export const SIDEWAYS = 1.5;
 /** the hand lifts the cloth it holds this far off its plane, as a share of the canvas height, over the first LIFT_TRAVEL css px of the drag */
 export const LIFT = 0.07;
 export const LIFT_TRAVEL = 70;
@@ -392,8 +395,8 @@ export const plugin = Object.freeze({
     const press = { id: -1, x: 0, y: 0, u: 0, v: 0, z: 0, held: false, touch: false, travel: 0 };
     /** where the pointer last was (canvas css px), for the push of its motion */
     const last = { x: NaN, y: NaN };
-    /** the touch that began on the hem: it is claimed at its first move */
-    let touchMine = false;
+    /** the finger on the cloth, from its touchstart: where it landed, whether on the hem, and what its first move made of it (0 undecided, 1 the cloth's, -1 the page's) */
+    const finger = { id: -1, x: 0, y: 0, hem: false, claim: -1 };
     let swallowClick = false;
     /** @type {Element|null} */ let cursorOn = null;
     /** @type {Element} */ let captureEl = canvas;
@@ -461,8 +464,8 @@ export const plugin = Object.freeze({
       // the poke of the press: into the cloth along the line of sight
       push(c, hit.u * c.cols, hit.v * c.rows, POKE_RADIUS * c.height, 0, 0, (hit.front ? -1 : 1) * POKE * c.height * fabric(o.weight).push);
       stir();
-      // a press on a control that is dragged itself stays the page's; a finger takes hold only by the hem
-      if (touch ? !onHem() : !!elementAt(hit.u, hit.v)?.closest?.(DRAGGED)) return;
+      // a press on a control that is dragged itself stays the page's (a finger's press becomes the cloth's only if its touch is claimed)
+      if (elementAt(hit.u, hit.v)?.closest?.(DRAGGED)) return;
       press.id = e.pointerId; press.x = e.clientX; press.y = e.clientY; press.u = hit.u; press.v = hit.v; press.z = hit.z; press.held = false; press.touch = touch; press.travel = 0;
     }
     /** the hit is on the lower edge of the cloth, on its printed side */
@@ -474,7 +477,7 @@ export const plugin = Object.freeze({
         const travel = Math.hypot(e.clientX - press.x, e.clientY - press.y);
         const c = /** @type {Cloth} */ (cloth);
         if (!press.held) {
-          if (travel < (press.touch ? TOUCH_SLOP : GRAB_SLOP) || !interactive()) return;
+          if (travel < (press.touch ? TOUCH_SLOP : GRAB_SLOP) || !interactive() || (press.touch && finger.claim !== 1)) return;
           // the press has become the cloth's gesture: the hand takes the cloth where it was pressed
           press.held = true;
           take(c, press.u * c.cols, press.v * c.rows, 0, 0, 0);
@@ -532,13 +535,31 @@ export const plugin = Object.freeze({
       ['selectstart', onSelect], ['dragstart', onSelect], ['mousemove', onMouse], ['mouseup', onMouse]];
     for (const [type, fn] of documentListeners) doc.addEventListener?.(type, fn, true);
     if (!reducedMotion) {
-      // touch: passive unless the finger landed on the hem; then its first move claims the gesture (no scroll, no pointercancel)
+      // touch: the touchstart is passive (a tap stays a tap); the first touchmove of a finger on the cloth decides whose the gesture is.
+      // Mostly sideways, or from the hem, it is the cloth's: that move and the next ones are prevented (no scroll, and the pointer is not
+      // cancelled, so its pointermove takes the cloth); mostly vertical, the page scrolls. A move that can no longer be prevented (the
+      // browser scrolls already) leaves it to the page.
       context.listen('touchstart', (event) => {
         const e = /** @type {TouchEvent} */ (event);
-        const p = e.touches?.length === 1 && interactive() ? local(e.touches[0]) : null;
-        touchMine = !!p && see(p) && onHem();
+        const t = e.touches?.length === 1 ? e.touches[0] : null;
+        const p = t && interactive() ? local(t) : null;
+        finger.claim = p && see(p) && !elementAt(hit.u, hit.v)?.closest?.(DRAGGED) ? 0 : -1;
+        if (!t || finger.claim) return;
+        finger.id = t.identifier ?? 0; finger.x = t.clientX; finger.y = t.clientY; finger.hem = onHem();
       }, { passive: true });
-      context.listen('touchmove', (event) => { if (touchMine && event.cancelable) event.preventDefault(); }, { passive: false });
+      context.listen('touchmove', (event) => {
+        const e = /** @type {TouchEvent} */ (event);
+        if (finger.claim === 0) {
+          const t = e.touches?.length === 1 ? e.touches[0] : null;
+          if (!t || !e.cancelable || (t.identifier ?? 0) !== finger.id) { finger.claim = -1; return; }
+          const dx = Math.abs(t.clientX - finger.x), dy = Math.abs(t.clientY - finger.y);
+          finger.claim = finger.hem || dx > SIDEWAYS * dy ? 1 : -1;
+        }
+        if (finger.claim === 1 && e.cancelable) e.preventDefault();
+      }, { passive: false });
+      const lift = (/** @type {Event} */ e) => { if (!(/** @type {TouchEvent} */ (e).touches?.length)) finger.claim = -1; };
+      context.listen('touchend', lift, { passive: true });
+      context.listen('touchcancel', lift, { passive: true });
       context.listen('pointerleave', () => { last.x = NaN; }, { passive: true });
     }
 
