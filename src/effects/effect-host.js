@@ -61,7 +61,13 @@ const SETTLE_MS = 100;
 export async function createEffectHost(env, deps, canvas, source, options = {}) {
   const record = env.registry.get(canvas) ?? null;
   assertEligible(canvas, source, record);
-  if (options.under != null) assertUnder(env, canvas, source, options.under, record);
+  if (options.under != null) {
+    try { assertUnder(env, canvas, source, options.under, record); } catch (error) {
+      const e = /** @type {any} */ (error);
+      if (e && e.feature) env.reporter.unsupported({ feature: e.feature, message: e.message, hint: e.hint }, canvas);
+      throw error;
+    }
+  }
   if (!record) assertNativeApi(env, canvas, source);
   const runtime = new HostRuntime(env, deps, canvas, source, record, { ...options, maxDpr: options.maxDpr ?? env.options.maxDpr });
   try {
@@ -99,7 +105,9 @@ function assertUnder(env, canvas, source, under, record) {
   if (!(under instanceof /** @type {any} */ (env.window).Element)) throw typeError('createHost: `under` must be an Element when present');
   const el = /** @type {Element} */ (under);
   if (el === source || source.contains(el) || el.contains(source)) throw invalidState('createHost: `under` must be another drawable of the canvas, neither the source, nor inside it, nor around it');
-  if (!record) throw new HicUnsupportedError('effects-under', 'createHost: `under` is not available over a native HTML-in-Canvas implementation yet', { hint: 'Create the host without `under`: the plugin then shows its own background where the page is lifted.' });
+  // Native mode: the browser draws both elements and orders their hit testing (measured, Chrome Canary 159), but the native interposer aims the
+  // hit-test geometry of one element only; a point on the under page would need a second one, parked and aimed per pointer event. Refused until then.
+  if (!record) throw new HicUnsupportedError('effects-under', 'createHost: `under` is not available over a native HTML-in-Canvas implementation yet (the pointer cannot be re-targeted to a second page there)', { hint: 'Create the host without `under` where createHost rejects with this feature: the plugin then shows its own background where the page is lifted.' });
   assertEligible(canvas, el, record);
 }
 

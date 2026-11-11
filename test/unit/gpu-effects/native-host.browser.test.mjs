@@ -9,6 +9,7 @@ import { gpuAvailable } from './lib/rig.mjs';
 import { createEffectHost } from '/src/effects/effect-host.js';
 import { definePlugin } from '/src/effects/plugin-abi.js';
 import { createBus } from '/src/util/bus.js';
+import { HicUnsupportedError } from '/src/contracts/errors.js';
 
 const GPU = await gpuAvailable();
 console.error(`native-mode host tests: WebGPU ${GPU ? 'available' : 'NOT available'}`);
@@ -135,4 +136,21 @@ gtest('native mode: the framecap attribute bounds the effect frames; a source wi
   await assert.rejects(createEffectHost(rig.env, rig.deps, rig.canvas, other, {}), /not an eligible drawable/);
   delete rig.canvas.updateElementGeometry;
   await assert.rejects(createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, {}), /lacks updateElementGeometry/);
+});
+
+gtest('native mode: `under` is refused with HicUnsupportedError effects-under and reported; control: the same host without it is created', async (t) => {
+  const rig = await nativeRig(t);
+  const under = document.createElement('div');
+  rig.source.after(under);
+  let error = null;
+  try { (await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, { under })).destroy(); } catch (e) { error = e; }
+  assert.ok(error instanceof HicUnsupportedError, `HicUnsupportedError, got ${error?.name}`);
+  assert.equal(error?.feature, 'effects-under');
+  assert.ok(rig.reports.some((r) => r.unsupported?.feature === 'effects-under'), 'reported as unsupported');
+  // the source itself as `under` is an InvalidStateError before the native question
+  let same = null;
+  try { await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source, { under: rig.source }); } catch (e) { same = e; }
+  assert.equal(same?.name, 'InvalidStateError');
+  const host = await createEffectHost(rig.env, rig.deps, rig.canvas, rig.source);
+  host.destroy();
 });
