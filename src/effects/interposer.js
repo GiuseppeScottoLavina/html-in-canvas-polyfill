@@ -10,6 +10,8 @@
  * A finger hovers as on a page without effects (interaction-tracker.js): a press activates the element drawn under it but hovers nothing, a pan or a drag (a scroll,
  * a lens moved by its handle) moves no :hover across what it passes, and a tap leaves the element drawn where it landed under :hover until the next tap. Mouse and pen
  * hover what is drawn under them at every move.
+ * THE UNDER PAGE (EffectHostOptions.under): a point that the mappers place on it (`under: true`) is hit-tested inside the under element only (it is painted
+ * below the source in the live layer, so the native hit test lands on the source there), and a press on it is always re-targeted.
  */
 
 import { invalidState } from '../contracts/errors.js';
@@ -36,9 +38,10 @@ const TYPES = /** @type {const} */ (['pointermove', 'pointerdown', 'pointerup', 
  * @param {CanvasRecord} record
  * @param {import('./input-mapper.js').MapperChain} chain
  * @param {InteractionTracker} tracker
+ * @param {Element|null} [under]  the under page of the host
  * @returns {{dispose: () => void, stats: () => {remapped: number, passedThrough: number}}}
  */
-export function createInterposer(env, record, chain, tracker) {
+export function createInterposer(env, record, chain, tracker, under = null) {
   const layer = record.layer;
   if (!layer) throw invalidState('the interposer needs the live layer of a managed canvas');
   const layerEl = layer.element;
@@ -63,14 +66,16 @@ export function createInterposer(env, record, chain, tracker) {
   /**
    * @param {PointerEvent} e
    * @param {Mapper} map
-   * @returns {{point: {x: number, y: number}|null, element: Element|null}}  `point` in viewport css px; null when the mapper returned NO_TARGET
+   * @returns {{point: {x: number, y: number}|null, element: Element|null, under: boolean}}  `point` in viewport css px; null when the mapper returned NO_TARGET;
+   *   `under`: the point lies on the under page
    */
   function resolve(e, map) {
     const f = frameOf();
-    const m = map({ x: (e.clientX - f.left) * f.sx, y: (e.clientY - f.top) * f.sy, width: f.width, height: f.height });
-    if (isNoTarget(m)) return { point: null, element: null };
+    const m = /** @type {{x: number, y: number, under?: true}} */ (map({ x: (e.clientX - f.left) * f.sx, y: (e.clientY - f.top) * f.sy, width: f.width, height: f.height }));
+    if (isNoTarget(m)) return { point: null, element: null, under: false };
     const point = { x: f.left + m.x / f.sx, y: f.top + m.y / f.sy };
-    return { point, element: layer?.elementAtPoint(point) ?? null };
+    const onUnder = m.under === true && !!under;
+    return { point, element: layer?.elementAtPoint(point, onUnder ? under : null) ?? null, under: onUnder };
   }
 
   /**
@@ -135,7 +140,7 @@ export function createInterposer(env, record, chain, tracker) {
     if (!e.isPrimary || e.button !== 0) return;
     if (!chain.active()) { counts.passedThrough += 1; follow(null); return; }
     const map = chain.captureGesture();
-    const { point, element } = resolve(e, map);
+    const { point, element, under: onUnder } = resolve(e, map);
     const finger = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, moved: false } : undefined;
     // a finger's press activates what is drawn under it and hovers nothing (its tap does, in onUp)
     if (finger) tracker.setMappedPress?.(record, point ? element : layerEl);
@@ -151,7 +156,8 @@ export function createInterposer(env, record, chain, tracker) {
     const intended = controlOf(layerEl, element);
     const first = e.composedPath()[0];
     const range = isRange(intended);
-    if (intended === controlOf(layerEl, first instanceof Element ? first : null) && !range) {
+    // a point on the under page is always re-targeted: what the browser hit natively there is the page above it
+    if (!onUnder && intended === controlOf(layerEl, first instanceof Element ? first : null) && !range) {
       counts.passedThrough += 1;
       gesture = { pointerId: e.pointerId, map, retargeted: false, control: intended, drag: null, finger };
       return;

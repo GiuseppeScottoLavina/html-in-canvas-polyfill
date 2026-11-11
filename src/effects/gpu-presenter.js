@@ -21,6 +21,7 @@ import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
  * @property {(info: {reason: string, message: string}) => void} [onLost]  the device was lost (not called after dispose())
  * @property {(error: unknown) => void} [onError]  uncaptured GPU error
  * @property {number} [extraCanvasUsage]  GPUTextureUsage bits added to the canvas configuration (tests add COPY_SRC for readback)
+ * @property {boolean} [under]  the host has an under page (EffectHostOptions.under): a second source texture, handed to every stage as `frame.under`
  */
 
 /**
@@ -31,6 +32,7 @@ import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
  * @property {() => EffectViewport} viewport
  * @property {() => boolean} syncSize  apply css size * min(dpr, maxDpr) to the canvas backing store; true when it changed (the bitmap was cleared: render now)
  * @property {(provider: SourceProvider) => number} uploadSource  returns the version uploaded (0 = nothing to upload yet)
+ * @property {(provider: SourceProvider) => number} uploadUnder  the same for the under page (0 also on a presenter without `hooks.under`)
  * @property {(plugins: ChainStage[], frame: EffectPresentationFrame) => ({plugin: ChainStage, error: unknown, acquired: boolean}|null)} renderChain  null = submitted; otherwise the plugin whose render() threw and NOTHING was submitted. `acquired`: the canvas texture of this frame was already taken (then the canvas would present an empty frame unless something is drawn again)
  * @property {(keepContext?: boolean) => void} dispose  keepContext: do not unconfigure the canvas (a replacement presenter already configured it)
  */
@@ -105,15 +107,19 @@ export async function createPresenter(canvas, options, hooks = {}) {
   let ready = false;
   const mid = /** @type {{texture: any, view: any}[]} */ ([]);
   let src = makeSource(1, 1);
+  // the under page: a texture of its own, only on a host that has one (without it nothing is allocated and frame.under is null)
+  /** @type {{texture: any, view: any}|null} */
+  let under = hooks.under ? makeSource(1, 1, 'hic-under') : null;
+  let underReady = false;
   /** @type {{stage: ChainStage, pipeline: any, sampler: any, groups: WeakMap<object, any>}|null} */
   let pass = null;
 
   device.lost.then((/** @type {{reason: string, message: string}} */ info) => { if (!disposed) hooks.onLost?.(info); });
   device.addEventListener('uncapturederror', (/** @type {any} */ e) => { if (!disposed) hooks.onError?.(e.error); });
 
-  /** @param {number} w @param {number} h */
-  function makeSource(w, h) {
-    const texture = device.createTexture({ label: 'hic-source', size: [w, h], format: 'rgba8unorm', usage: USAGE.TEXTURE_BINDING | USAGE.COPY_DST | USAGE.RENDER_ATTACHMENT });
+  /** @param {number} w @param {number} h @param {string} [label] */
+  function makeSource(w, h, label = 'hic-source') {
+    const texture = device.createTexture({ label, size: [w, h], format: 'rgba8unorm', usage: USAGE.TEXTURE_BINDING | USAGE.COPY_DST | USAGE.RENDER_ATTACHMENT });
     return { texture, view: texture.createView() };
   }
 
@@ -184,6 +190,17 @@ export async function createPresenter(canvas, options, hooks = {}) {
       ready = version !== 0;
       return version;
     },
+    uploadUnder(provider) {
+      const size = under && provider.size();
+      if (!under || !size) return 0;
+      if (under.texture.width !== size.width || under.texture.height !== size.height) {
+        under.texture.destroy();
+        under = makeSource(size.width, size.height, 'hic-under');
+      }
+      const version = provider.upload(device, under.texture, true);
+      underReady = version !== 0;
+      return version;
+    },
     renderChain(plugins, frame) {
       const stages = plugins.length > 0 ? plugins : [passthroughStage()];
       const last = stages[stages.length - 1];
@@ -192,6 +209,8 @@ export async function createPresenter(canvas, options, hooks = {}) {
       const encoder = device.createCommandEncoder();
       let input = src;
       let inputReady = ready;
+      // the same under page for every stage: it is not part of the picture the earlier plugins render
+      const underFrame = under ? { texture: under.texture, view: under.view, ready: underReady } : null;
       /** @type {any} */ let canvasTexture = null;
       for (let i = 0; i < stages.length; i += 1) {
         const stage = stages[i];
@@ -202,7 +221,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
         }
         const renderFrame = {
           ...vp, ...frame, sourceReady: inputReady, encoder,
-          sourceTexture: input.texture, sourceView: input.view, destinationTexture: out.texture, destinationView: out.view,
+          sourceTexture: input.texture, sourceView: input.view, destinationTexture: out.texture, destinationView: out.view, under: underFrame,
         };
         try {
           stage.instance.render(renderFrame);
@@ -224,6 +243,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
       disposed = true;
       fitMid(0);
       src.texture.destroy();
+      under?.texture.destroy();
       if (!keepContext) { try { context.unconfigure(); } catch { /* context already gone */ } }
       device.destroy();
     },

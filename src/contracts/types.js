@@ -330,7 +330,7 @@ export {};
  * @property {() => void} revalidateGeometry  re-measure layout offsets of every geometry-applied drawable and rewrite its CSS correction (called after structural commits)
  * @property {(order: Element[]) => void} setHitTestOrder  z-order for hit testing (bottom to top); elements not in `order` lose BUS HIT_ATTR (pointer-events:none)
  * @property {(cb: (c: ChildrenChange) => void) => () => void} onChildrenChanged  logical child list changes (facade writes + relocated MutationObserver)
- * @property {(point: {x:number,y:number}) => Element|null} elementAtPoint  hit test in viewport css px honoring slots (interposer + tests)
+ * @property {(point: {x:number,y:number}, within?: Element|null) => Element|null} elementAtPoint  hit test in viewport css px honoring slots (interposer + tests); `within`: only an element inside it (inclusive) counts, also where another drawable is painted above it (the under page of an effect host)
  * @property {(el: Element, on: boolean) => void} [syncScroll]  a live scroller inside a drawable starts (true) or stops (false) scrolling: while on, the compositor waits for the main frame of each scroll step (live/scroll-sync.js; Chromium only, a no-op elsewhere)
  * @property {(el: Element) => {boxShadow: string, backgroundImage: string, backgroundAttachment: string}|null} [scrollAuthorStyle]  the author's computed values of the properties syncScroll overrides, while it overrides them; null otherwise
  * @property {() => void} dispose
@@ -662,9 +662,10 @@ export {};
  */
 /**
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
- * @typedef {((p: InputPoint) => {x:number, y:number}) & {captureGestureSnapshot?: () => InputMapper}} InputMapper
+ * @typedef {((p: InputPoint) => {x:number, y:number, under?: boolean}) & {captureGestureSnapshot?: () => InputMapper}} InputMapper
  *   output -> source map for exactly the pixels of one presentation. Pure. Returns NO_TARGET (effects/no-target.js) where the presented
- *   pixel shows no element of the source. See API-CONTRACT 7.4.
+ *   pixel shows no element of the source, and `{x, y, under: true}` where it shows the under page (EffectHostOptions.under) at (x, y) of the
+ *   under element; that ends the chain, and is NO_TARGET on a host without an under page. See API-CONTRACT 7.4.
  */
 /**
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
@@ -683,10 +684,19 @@ export {};
  * @property {number} frameIndex
  * @property {number} frameCap
  * @property {number|null} sourceVersion  SnapshotVersion.id sampled by sourceTexture, null before the first source upload
+ * @property {number|null} [underVersion]  on a host with an under page: the version id in `under.texture`, null before its first upload
+ */
+/**
+ * @experimental the under page of an effect host (EffectHostOptions.under), an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
+ * @typedef {Object} EffectUnderTexture
+ * @property {any} texture  the under page, rgba8unorm, sRGB-encoded, sized like a source texture (the element's raster size)
+ * @property {any} view
+ * @property {boolean} ready  false before its first upload (the texture is then 1x1 and blank)
  */
 /**
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
- * @typedef {EffectViewport & EffectPresentationFrame & {sourceReady:boolean, encoder:any, sourceTexture:any, sourceView:any, destinationTexture:any, destinationView:any, profiling?:any}} EffectRenderFrame
+ * @typedef {EffectViewport & EffectPresentationFrame & {sourceReady:boolean, encoder:any, sourceTexture:any, sourceView:any, destinationTexture:any, destinationView:any, under?: EffectUnderTexture|null, profiling?:any}} EffectRenderFrame
+ *   `under`: the under page (the same for every plugin of the chain: it is not part of the picture the earlier plugins render); null on a host without one
  *   `profiling` is never set by the host: a measurement harness that renders a plugin directly may pass
  *   `{timestampWrites(label) -> GPURenderPassTimestampWrites}`, which the example plugins add to their own passes
  */
@@ -701,12 +711,13 @@ export {};
  * @property {string} format   the format of every target the plugin renders into (the canvas format; `rgba16float` with `hdr`)
  * @property {boolean} hdr   extended range is in use: the targets are float, what a plugin writes is not clamped, and a value above 1 is shown brighter than
  *   white where the display can. A plugin writes finite values of 0 or more, and reads its source the same way (the plugin before it may have written above 1)
+ * @property {boolean} [under]  the host has an under page (EffectHostOptions.under): `frame.under` carries its texture, and a mapper may return `{x, y, under: true}`
  * @property {() => void} requestRender
  * @property {() => EffectViewport} viewport
  * @property {(type: string, listener: EventListenerOrEventListenerObject, options?: AddEventListenerOptions|boolean) => () => void} listen  auto-removed on detach
- * @property {(point: {x: number, y: number}) => {x: number, y: number}|null} localPoint  where a point of the canvas is in the picture THIS plugin rendered: the
+ * @property {(point: {x: number, y: number}) => {x: number, y: number, under?: boolean}|null} localPoint  where a point of the canvas is in the picture THIS plugin rendered: the
  *   point through the input mappers of the plugins added after this one, in the newest presented frame (the same point for the last plugin). Canvas-relative
- *   CSS pixels of the content box, in and out; null where a later plugin shows nothing of this plugin's picture. A plugin that reacts to the pointer (a drop
+ *   CSS pixels of the content box, in and out; null where a later plugin shows nothing of this plugin's picture, `under: true` where a later plugin shows the under page there. A plugin that reacts to the pointer (a drop
  *   under it, a lens that follows it) passes the pointer through it, so that the reaction is seen under the pointer with other plugins stacked on top
  * @property {(action: string, options?: Record<string, unknown>) => Promise<EffectActionState>} trigger  runs one of the plugin's own declared
  *   actions through the host, exactly as EffectHandle.trigger (a submit handler of the plugin uses it); a failure is reported as effecterror (phase 'action')
@@ -736,6 +747,8 @@ export {};
  * @typedef {Object} EffectPluginInstance
  * @property {boolean} [spatial]     true: output pixels are displaced; the host then REQUIRES captureInputMapper
  * @property {boolean} [continuous]  true: needs a render every capped frame even without source changes
+ * @property {boolean} [revealsUnder]  read after each presented frame on a host with an under page: true while the frame shows some of it (the host keeps the
+ *   under element `inert` otherwise)
  * @property {(frame: EffectRenderFrame) => void} render
  * @property {(viewport: EffectViewport) => void} [resize]
  * @property {(options: Readonly<Record<string, unknown>>) => void} [setOptions]
@@ -798,6 +811,9 @@ export {};
  * @property {boolean} [hdr]  ask for extended range (default false): the canvas and every target of the chain are `rgba16float`, and a value above 1 that a plugin
  *   writes is shown brighter than white as far as the display can (white on a display without the headroom). In use only where the browser takes the
  *   `extended` tone mapping of a WebGPU canvas (EffectHostStats.hdr, EffectPluginContext.hdr); decided when the host is created, and again after a device loss
+ * @property {Element} [under]  a second live page beneath the source (experimental): another eligible drawable of the same canvas, neither the source nor
+ *   inside it nor around it. Its texture is `frame.under`; a mapper's `{x, y, under: true}` sends the pointer to it. Polyfill mode only (HicUnsupportedError
+ *   'effects-under' over a native implementation)
  */
 /**
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
@@ -820,6 +836,8 @@ export {};
  * @property {number} frames  presented frames
  * @property {number} fps  presentation rate over the last frames
  * @property {number} uploads
+ * @property {number} underUploads  uploads of the under page (0 without one)
+ * @property {number|null} underVersion  the version id in the under texture (null without one, or before its first upload)
  * @property {number} pluginErrors
  * @property {number} deviceLosses
  * @property {boolean} paused  the canvas cannot be seen (off-screen or hidden document), so the host renders nothing (ADR-G)
@@ -836,8 +854,8 @@ export {};
  * @property {number} pluginCount
  * @property {(def: EffectPluginDefinition, options?: Record<string, unknown>) => Promise<EffectHandle>} addPlugin
  * @property {() => EffectHostStats} stats
- * @property {(point: {x: number, y: number}) => {x: number, y: number}|null} mapPoint  where a point of the canvas is in the source: the point through every
+ * @property {(point: {x: number, y: number}) => {x: number, y: number, under?: boolean}|null} mapPoint  where a point of the canvas is in the source: the point through every
  *   plugin's input mapper, in the newest presented frame, which is what the host does with a pointer. Canvas-relative CSS pixels of the content box, in and
- *   out; null where the plugins show nothing of the source. The same point without a spatial plugin
+ *   out; null where the plugins show nothing of the source. The same point without a spatial plugin. `under: true` where the point lies on the under page
  * @property {() => void} destroy
  */

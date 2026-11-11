@@ -47,6 +47,9 @@ const SETTLE_MS = 100;
  * NATIVE MODE (no record: the browser implements HTML-in-Canvas and the polyfill stepped aside): the source comes from the standard
  * GPUQueue.drawElementImageToTexture (source-provider.js), frames from a rAF loop plus the canvas's paint event (frame-source.js), the
  * stretch and the pointer remap from the standard updateElementGeometry (native-geometry.js, native-interposer.js).
+ * THE UNDER PAGE (EffectHostOptions.under, experimental): a second drawable of the canvas with a provider and a texture of its own (frame.under),
+ * uploaded when its own version advanced; a frame renders when either version advanced. Both elements get the fill geometry, the source last, so
+ * that the source stays above the under page in the hit-test order of the live layer. Without `under` none of this exists.
  * @param {HicEnv} env
  * @param {{store: SnapshotStore, scheduler: Scheduler, geometry: GeometryApi, tracker: InteractionTracker}} deps
  * @param {HTMLCanvasElement} canvas
@@ -58,6 +61,7 @@ const SETTLE_MS = 100;
 export async function createEffectHost(env, deps, canvas, source, options = {}) {
   const record = env.registry.get(canvas) ?? null;
   assertEligible(canvas, source, record);
+  if (options.under != null) assertUnder(env, canvas, source, options.under, record);
   if (!record) assertNativeApi(env, canvas, source);
   const runtime = new HostRuntime(env, deps, canvas, source, record, { ...options, maxDpr: options.maxDpr ?? env.options.maxDpr });
   try {
@@ -81,6 +85,22 @@ function assertEligible(canvas, source, record) {
     ? !!record.layer?.isMounted() && record.layer.drawableElements().includes(source)
     : source !== canvas && canvas.contains(source);
   if (!eligible) throw invalidState('createHost: `source` is not an eligible drawable of this canvas (it must be a drawable child, or a descendant marked drawable)');
+}
+
+/**
+ * `under`: another eligible drawable of the same canvas, neither the source, nor inside it, nor around it.
+ * @param {HicEnv} env
+ * @param {HTMLCanvasElement} canvas
+ * @param {Element} source
+ * @param {unknown} under
+ * @param {import('../contracts/types.js').CanvasRecord|null} record
+ */
+function assertUnder(env, canvas, source, under, record) {
+  if (!(under instanceof /** @type {any} */ (env.window).Element)) throw typeError('createHost: `under` must be an Element when present');
+  const el = /** @type {Element} */ (under);
+  if (el === source || source.contains(el) || el.contains(source)) throw invalidState('createHost: `under` must be another drawable of the canvas, neither the source, nor inside it, nor around it');
+  if (!record) throw new HicUnsupportedError('effects-under', 'createHost: `under` is not available over a native HTML-in-Canvas implementation yet', { hint: 'Create the host without `under`: the plugin then shows its own background where the page is lifted.' });
+  assertEligible(canvas, el, record);
 }
 
 /**
@@ -128,6 +148,11 @@ class HostRuntime {
     this.renderRequested = true;
     /** @type {number|null} source version id in the source texture */
     this.uploaded = null;
+    /** the under page (EffectHostOptions.under), or null @type {Element|null} */
+    this.under = opts.under ?? null;
+    /** @type {number|null} version id in the under texture */
+    this.underUploaded = null;
+    this.lastUnderFill = { x: NaN, y: NaN };
     this.frameIndex = 0;
     this.lastNow = 0;
     /** @type {EffectViewport|null} */ this.lastViewport = null;
@@ -136,17 +161,19 @@ class HostRuntime {
     this.sizeChecked = false;
     /** @type {number[]} */ this.lossTimes = [];
     /** @type {Float64Array} */ this.frameTimes = new Float64Array(FPS_WINDOW);
-    this.counters = { frames: 0, uploads: 0, pluginErrors: 0, deviceLosses: 0, pauses: 0, offscreenFrames: 0 };
+    this.counters = { frames: 0, uploads: 0, underUploads: 0, pluginErrors: 0, deviceLosses: 0, pauses: 0, offscreenFrames: 0 };
     /** @type {import('../util/visibility.js').VisibilityWatch|null} */ this.visibility = null;
     /** @type {any} */ this.settleTimer = 0;
     /** a paused host may render one frame to advance an unsettled action */
     this.settleDue = false;
     /** @type {Array<() => void>} */ this.cleanups = [];
-    this.chain = createMapperChain();
+    this.chain = createMapperChain({ under: !!this.under });
     /** the plugins of the newest presented frame, in chain order @type {Slot[]} */ this.presentedOrder = [];
     /** @type {{stats: () => {remapped: number, passedThrough: number}}|null} */ this.interposer = null;
     /** @type {Presenter} */ this.presenter = /** @type {any} */ (null);
     this.provider = record ? createStoreSourceProvider(env, record, source) : createNativeSourceProvider(env, canvas, source);
+    /** the provider of the under page: none without one @type {import('../contracts/types.js').SourceProvider|null} */
+    this.underProvider = this.under && record ? createStoreSourceProvider(env, record, this.under) : null;
     /** native mode: the content box of the canvas from a ResizeObserver (css px), null before its first report */
     /** @type {{width: number, height: number}|null} */ this.nativeCss = null;
     /** native mode: the hit-test geometry of the source (the stretch, and the interposer's shift under the pointer) */
@@ -159,6 +186,7 @@ class HostRuntime {
       reportError: (error, slot, phase) => this.reportPluginError(error, slot, phase),
       onWait: () => { if (!this.isVisible()) this.armSettle(); },
       localPoint: (slot, point) => this.localPoint(slot, point),
+      under: !!this.under,
     });
     const hook = (/** @type {number} */ now, /** @type {{frameCap: number, due: boolean, repeat?: boolean}} */ info) => this.onFrame(now, info);
     this.frames = record ? schedulerFrameSource(deps.scheduler, record, hook) : nativeFrameSource(env, canvas, hook);
@@ -177,7 +205,7 @@ class HostRuntime {
     this.cleanups.push(() => visibility.dispose(), () => this.clearSettle());
     if (this.opts.interposer !== false && (this.record?.layer || this.nativeGeometry)) {
       const interposer = this.record?.layer
-        ? createInterposer(this.env, this.record, this.chain, this.deps.tracker)
+        ? createInterposer(this.env, this.record, this.chain, this.deps.tracker, this.under)
         : createNativeInterposer(this.env, this.canvas, this.source, this.chain, /** @type {import('./native-geometry.js').NativeGeometry} */ (this.nativeGeometry));
       this.interposer = interposer;
       this.cleanups.push(() => interposer.dispose());
@@ -216,6 +244,7 @@ class HostRuntime {
       devicePixelRatio: () => env.window.devicePixelRatio || 1,
       onLost: (info) => { void this.onDeviceLost(info); },
       onError: (error) => env.reporter.caught(error, 'effects:gpu-error'),
+      under: !!this.under,
     });
   }
 
@@ -268,7 +297,8 @@ class HostRuntime {
     if (this.destroyed || this.recovering || !this.presenter) return false;
     try {
       const v = this.provider.version();
-      const sourceChanged = v !== null && v !== this.uploaded;
+      const uv = this.underProvider ? this.underProvider.version() : null;
+      const sourceChanged = (v !== null && v !== this.uploaded) || (uv !== null && uv !== this.underUploaded);
       if (info.repeat && this.counters.frames > 0 && this.lastNow === now) {
         // native: the paint event after this frame's rAF render. The frame stays as rendered (one render per frame: what is presented is what the
         // frame's input mappers describe); the source is uploaded now, while the element image is fresh, and the next frame shows it.
@@ -309,10 +339,17 @@ class HostRuntime {
       const uploaded = p.uploadSource(this.provider);
       if (uploaded) { this.uploaded = uploaded; this.counters.uploads += 1; }
     }
+    const under = this.underProvider;
+    const uv = under ? under.version() : null;
+    if (under && uv !== null && uv !== this.underUploaded) {
+      const uploaded = p.uploadUnder(under);
+      if (uploaded) { this.underUploaded = uploaded; this.counters.underUploads += 1; }
+    }
     this.notifyResize(vp);
     this.syncGeometry(vp);
     /** @type {EffectPresentationFrame} */
     const frame = { now, delta: this.lastNow ? now - this.lastNow : 0, frameIndex: this.frameIndex, frameCap, sourceVersion: this.uploaded };
+    if (under) frame.underVersion = this.underUploaded;
     const presented = this.present(frame);
     if (!presented) return;
     this.lastNow = now;
@@ -366,7 +403,7 @@ class HostRuntime {
    * mappers of the plugins after it. The same point for the last plugin, and for a plugin that was not in that frame (just added: it runs last).
    * EffectHost.mapPoint is the same from before the first plugin (`slot` null): the point in the source.
    * @param {Slot|null} slot @param {{x: number, y: number}} point  canvas-relative css px of the content box
-   * @returns {{x: number, y: number}|null}  null where a later plugin shows nothing of this plugin's picture
+   * @returns {{x: number, y: number, under?: true}|null}  null where a later plugin shows nothing of this plugin's picture; `under: true` on the under page
    */
   localPoint(slot, point) {
     const x = Number(point?.x), y = Number(point?.y);
@@ -397,12 +434,31 @@ class HostRuntime {
     if (!this.sizeChecked) this.warnSizeMismatch(vp, size);
     const x = vp.cssWidth / size.cssWidth;
     const y = vp.cssHeight / size.cssHeight;
-    if (Math.abs(x - this.lastFill.x) < 1e-6 && Math.abs(y - this.lastFill.y) < 1e-6) return;
+    const underFill = this.syncUnderFill(vp);
+    if (!underFill && Math.abs(x - this.lastFill.x) < 1e-6 && Math.abs(y - this.lastFill.y) < 1e-6) return;
     this.lastFill = { x, y };
+    // the under page first: the element updated last is the top of the hit-test order, and the source must stay above the under page
+    if (record && this.under && Number.isFinite(this.lastUnderFill.x)) {
+      this.deps.geometry.update(record, this.under, { canvasTransform: { a: this.lastUnderFill.x, d: this.lastUnderFill.y } });
+    }
     // Always applied, also for an identity fill: an element is hit-testable only while it is in the canvas's drawn list (a source that exactly fills the canvas still has to be there).
     if (record) this.deps.geometry.update(record, source, { canvasTransform: { a: x, d: y } });
     else this.nativeGeometry?.setFill(x, y);
     this.fillApplied = true;
+  }
+
+  /**
+   * The fill of the under page (its own size over the canvas), kept in lastUnderFill. @param {EffectViewport} vp
+   * @returns {boolean}  it changed (both elements are then placed again, in order)
+   */
+  syncUnderFill(vp) {
+    const size = this.underProvider?.size();
+    if (!size || size.cssWidth <= 0 || size.cssHeight <= 0) return false;
+    const x = vp.cssWidth / size.cssWidth;
+    const y = vp.cssHeight / size.cssHeight;
+    if (Math.abs(x - this.lastUnderFill.x) < 1e-6 && Math.abs(y - this.lastUnderFill.y) < 1e-6) return false;
+    this.lastUnderFill = { x, y };
+    return true;
   }
 
   /**
@@ -446,6 +502,7 @@ class HostRuntime {
       this.presenter = next;
       old.dispose(true);
       this.uploaded = null;
+      this.underUploaded = null;
       this.lastViewport = null;
       await this.plugins.recreate();
     } catch (error) {
@@ -470,7 +527,7 @@ class HostRuntime {
       const oldest = this.frameTimes[(this.counters.frames - n + 1) % FPS_WINDOW];
       fps = newest > oldest ? ((n - 1) * 1000) / (newest - oldest) : 0;
     }
-    return { ...this.counters, fps, paused: !this.isVisible(), hdr: this.presenter?.hdr === true, sourceVersion: this.uploaded, ...(this.interposer?.stats() ?? { remapped: 0, passedThrough: 0 }) };
+    return { ...this.counters, fps, paused: !this.isVisible(), hdr: this.presenter?.hdr === true, sourceVersion: this.uploaded, underVersion: this.underUploaded, ...(this.interposer?.stats() ?? { remapped: 0, passedThrough: 0 }) };
   }
 
   /** @returns {EffectHost} */
@@ -492,7 +549,9 @@ class HostRuntime {
     this.frames.remove();
     this.plugins.destroy();
     this.provider.dispose();
+    this.underProvider?.dispose();
     if (this.fillApplied && this.record) this.deps.geometry.clear(this.record, this.source);
+    if (this.under && this.record && Number.isFinite(this.lastUnderFill.x)) this.deps.geometry.clear(this.record, this.under);
     this.nativeGeometry?.dispose();
     this.presenter?.dispose();
   }
