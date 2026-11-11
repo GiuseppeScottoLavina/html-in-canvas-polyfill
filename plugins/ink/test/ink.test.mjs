@@ -333,6 +333,41 @@ test('a hover sweep moves the page by at most 3 CSS px at the defaults, at any s
   assert.ok(strong > hovers[2] * 1.3, `intensity scales the hover (${strong.toFixed(2)} px at 1)`);
 });
 
+test('a drop at rest blooms: the same fields and pigment steps (its spreading included) at 30, 60 and 120 frames per second; it pushes the page outwards on every side, and all comes to rest; another intensity (control) blooms otherwise', async (t) => {
+  /** a press at rest at (240, 160), then frames at `fps` until rest */
+  const record = async (fps, options = {}) => {
+    const w = await createInk(t, options);
+    w.pointer('pointerdown', 240, 160, { buttons: 1, timeStamp: performance.now() });
+    w.pointer('pointerup', 240, 160);
+    const from = performance.now() + 4;
+    let mapper = null;
+    const end = w.run(from, 6000, 1000 / fps, () => { if (!mapper && w.gpu.fields.length >= 18) mapper = w.instance.captureInputMapper(); return !w.instance.continuous; });
+    return { fields: w.gpu.fields.map((f) => f.data), steps: w.gpu.steps.map((s) => s.data), mapper, ms: end - from, w };
+  };
+  const a = await record(120), b = await record(60), c = await record(30);
+  const n = Math.min(a.fields.length, b.fields.length, c.fields.length, 90);
+  assert.ok(n >= 90, `${n} steps compared`);
+  const spreading = a.steps.filter((s) => s[S.BLOOM + 2] > 0).length;
+  assert.ok(spreading > 40 && spreading <= 0.45 * 120 + 1, `the drop spreads for ${spreading} steps`);
+  for (let i = 0; i < n; i += 1) {
+    assert.ok(a.fields[i].every((v, k) => v === b.fields[i][k] && v === c.fields[i][k]), `the field of step ${i} is the same at 120, 60 and 30 fps`);
+    for (const other of [b, c]) assert.ok(a.steps[i].every((v, k) => k === S.LAYER || v === other.steps[i][k]), `the pigment step ${i} is the same`);
+  }
+  // about 150 ms after the press: the page around the drop shows what was nearer to its centre (it was pushed outwards)
+  for (const [dx, dy] of [[25, 0], [-25, 0], [0, 25], [0, -25]]) {
+    const q = a.mapper({ x: 240 + dx, y: 160 + dy, width: W, height: H });
+    const inward = ((240 + dx - q.x) * dx + (160 + dy - q.y) * dy) / 25;
+    assert.ok(inward > 3, `(${dx}, ${dy}) from the drop shows the page ${inward.toFixed(1)} px nearer the centre`);
+  }
+  for (const r of [a, b, c]) {
+    assert.ok(r.ms < INK_LIFE * 1000 + 600, `at rest ${Math.round(r.ms)} ms after the press`);
+    const g = r.w.gpu.globals.at(-1);
+    assert.equal(g[G.MOVED], 0); assert.equal(g[G.INKED], 0);
+  }
+  const d = await record(120, { intensity: 0.3 });
+  assert.ok(d.steps[10][S.BLOOM + 2] < a.steps[10][S.BLOOM + 2] * 0.6 && Math.abs(shift(d.fields[20]) - shift(a.fields[20])) > 1, 'control: a gentler drop at another intensity');
+});
+
 test('a press on a control of the page is the page\'s gesture: no drop on the field, and a drag from it stirs like a hover, without pigment; text is selectable there, and not where a pressed pointer stirs the page', async (t) => {
   const w = await createInk(t);
   const t0 = performance.now();

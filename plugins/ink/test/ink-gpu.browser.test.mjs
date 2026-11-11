@@ -12,12 +12,16 @@ console.error(`ink-gpu tests: WebGPU ${(await gpuAvailable()) ? 'available' : 'N
 const scene = markerScene({ w: 480, h: 320 });
 const later = () => new Promise((r) => setTimeout(r, 0));
 
-/** Two strokes of a hovering mouse across the canvas, by the plugin's own listeners (no pigment: the markers keep their brightness). @param {any} rig */
+/** Two strokes of a pressed mouse across the canvas, by the plugin's own listeners (the tests that use them set pigment 0, so that the markers keep their brightness, and intensity 0.25, so that no marker is squeezed past recognition). @param {any} rig */
 function strokes(rig) {
   const r = rig.canvas.getBoundingClientRect();
-  const at = (/** @type {number} */ x, /** @type {number} */ y) => rig.layerEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + x, clientY: r.top + y, buttons: 0, pointerType: 'mouse' }));
-  for (let i = 0; i <= 30; i += 1) at(60 + 12 * i, 100 + 60 * Math.sin(i / 5));
-  for (let i = 0; i <= 30; i += 1) at(420 - 12 * i, 220 - 50 * Math.sin(i / 4));
+  const at = (/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y) => rig.layerEl.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: r.left + x, clientY: r.top + y, buttons: type === 'pointerup' ? 0 : 1, pointerType: 'mouse' }));
+  at('pointerdown', 60, 100);
+  for (let i = 0; i <= 30; i += 1) at('pointermove', 60 + 12 * i, 100 + 60 * Math.sin(i / 5));
+  at('pointerup', 420, 220);
+  at('pointerdown', 420, 220);
+  for (let i = 0; i <= 30; i += 1) at('pointermove', 420 - 12 * i, 220 - 50 * Math.sin(i / 4));
+  at('pointerup', 60, 220);
 }
 
 /** What the host presents for a scene with no plugin at all. @param {any} t @param {any} s */
@@ -40,15 +44,15 @@ function exact(a, b) {
 }
 
 gpuTest('every presented pixel samples the source point the ink mapper says (pixel-exact, 150k pixels), the identity does not (positive control)', async (t) => {
-  const v = await checkMapperAgainstGpu(t, plugin, { intensity: 1, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
+  const v = await checkMapperAgainstGpu(t, plugin, { intensity: 0.25, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
   console.error(`ink mapper vs GPU: decided=${v.real.decided} wrong=${v.real.wrong} (${(v.real.share * 100).toFixed(4)}%) brightPx=${v.real.bright} | identity wrong=${v.identity.wrong} (${(v.identity.share * 100).toFixed(3)}%)`);
   assert.ok(v.ok, v.why);
   assert.ok(v.real.wrong * 40 < v.identity.wrong);
 });
 
 gpuTest('a mapper of another instant disagrees measurably: the oracle is sensitive to the simulated field', async (t) => {
-  const { img, mapper } = await presentOnce(t, plugin, { intensity: 1, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
-  const { rig, mappers, at } = await presentOnce(t, plugin, { intensity: 1, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
+  const { img, mapper } = await presentOnce(t, plugin, { intensity: 0.25, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
+  const { rig, mappers, at } = await presentOnce(t, plugin, { intensity: 0.25, pigment: 0 }, { scene, before: strokes, offsetMs: 200 });
   for (let k = 1; k <= 6; k += 1) rig.tick(at + k * 50);
   const good = agreement(img, /** @type {any} */ (mapper), scene).wrong;
   const wrong = agreement(img, /** @type {any} */ (mappers.at(-1)), scene).wrong;
@@ -119,6 +123,51 @@ gpuTest('the pigment shows over a bright page and over a dark one: it darkens an
   assert.ok(black.changed > 3000 && black.hi > 110, 'over black the scattered light of the pigment shows');
   assert.equal(none.changed, 0, 'control: pigment 0 leaves a uniform page uniform (the displacement alone shows nothing there)');
 });
+
+/** A press at rest (no move before it) at (x, y) of the canvas: a drop. @param {number} x @param {number} y */
+const tap = (x, y) => (/** @type {any} */ rig) => {
+  const r = rig.canvas.getBoundingClientRect();
+  for (const type of ['pointerdown', 'pointerup']) rig.layerEl.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: r.left + x, clientY: r.top + y, buttons: type === 'pointerdown' ? 1 : 0, pointerType: 'mouse' }));
+};
+
+gpuTest('a drop that blooms: every presented pixel samples the source point the mapper says while the drop pushes the page outwards (pixel-exact), the identity does not (control)', async (t) => {
+  const v = await checkMapperAgainstGpu(t, plugin, { ...meta.defaults, pigment: 0 }, { scene, before: tap(240, 160), offsetMs: 180 });
+  console.error(`ink bloom mapper vs GPU: decided=${v.real.decided} wrong=${v.real.wrong} | identity wrong=${v.identity.wrong}`);
+  assert.ok(v.ok, v.why);
+});
+
+gpuTest('a drop over white paper: it lands as a full disc, its ink moves outwards and gathers in a rim denser than its middle (control: the disc at landing is not), then everything is gone and the frame is the source', async (t) => {
+  const white = { w: 480, h: 320, paint(/** @type {CanvasRenderingContext2D} */ ctx) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 480, 320); } };
+  const { rig, host, at } = await presentOnce(t, plugin, { ...meta.defaults }, { scene: /** @type {any} */ (white), before: tap(240, 160), offsetMs: 16 });
+  /** the ink of a frame (255 - the darkest channel) around the drop: its mean radius, and the mean ink in rings 4 px wide @param {ImageData} img */
+  const profile = (img) => {
+    const rings = new Float64Array(30), counts = new Float64Array(30);
+    let mass = 0, moment = 0;
+    for (let y = 40; y < 280; y += 1) for (let x = 120; x < 360; x += 1) {
+      const i = (y * 480 + x) * 4, ink = 255 - Math.min(img.data[i], img.data[i + 1], img.data[i + 2]), r = Math.hypot(x + 0.5 - 240, y + 0.5 - 160);
+      mass += ink; moment += ink * r;
+      if (r < 120) { rings[Math.floor(r / 4)] += ink; counts[Math.floor(r / 4)] += 1; }
+    }
+    const ring = [...rings].map((v, k) => v / Math.max(1, counts[k]));
+    const middle = (ring[0] + ring[1]) / 2, rim = Math.max(...ring.slice(2));
+    return { radius: moment / Math.max(1, mass), mass, middle, rim };
+  };
+  const first = profile(rig.snap());
+  let now = at;
+  const until = (/** @type {number} */ ms) => { while (now < at + ms) { now += 1000 / 60; rig.tick(now); } return profile(rig.snap()); };
+  const mid = until(150), late = until(400);
+  console.error(`ink drop: mean radius ${first.radius.toFixed(1)} -> ${mid.radius.toFixed(1)} -> ${late.radius.toFixed(1)} px; middle / rim ${first.middle.toFixed(0)} / ${first.rim.toFixed(0)} at landing, ${mid.middle.toFixed(0)} / ${mid.rim.toFixed(0)} at 150 ms, ${late.middle.toFixed(0)} / ${late.rim.toFixed(0)} at 400 ms`);
+  assert.ok(first.mass > 1000 && first.radius < 14, 'it lands as a small disc');
+  assert.ok(mid.radius > 1.8 * first.radius && late.radius > mid.radius, 'its ink moves outwards');
+  assert.ok(first.rim < 1.2 * first.middle, 'control: the disc at landing is full (its middle about as dark as its edge)');
+  assert.ok(late.rim > 1.5 * late.middle, 'the spread drop has a rim denser than its middle');
+  const frames = host.stats().frames;
+  for (let i = 0; i < 400; i += 1) { const before = host.stats().frames; now += 1000 / 60; rig.tick(now); if (host.stats().frames === before) break; }
+  console.error(`ink drop: at rest after ${((host.stats().frames - frames) / 60 + 0.4).toFixed(2)} s`);
+  assert.ok((host.stats().frames - frames) / 60 < INK_LIFE + 0.5, 'and comes to rest');
+  const clean = rig.snap();
+  assert.ok(clean.data.every((v) => v === 255), 'the frame at rest is the white page');
+}, { timeout: 30000 });
 
 gpuTest('the action demo through the effect handle: the stroke changes the picture, every checked frame agrees with its mapper, it resolves still within 4.6 s and ends on the source', async (t) => {
   // without pigment, so that the markers keep their brightness and the mapper can be judged on every frame
@@ -206,7 +255,7 @@ gpuTest('zero work at rest: no frame without a change; a stroke renders every ti
   assert.deepEqual(exact(rig.snap(), still), { n: 0, max: 0 });
 }, { timeout: 30000 });
 
-gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while the demo plays: GPU time by throughput against a pass that only clears, and the CPU time of render()', async () => {
+gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while the demo plays and while drops bloom: GPU time by throughput against a pass that only clears, and the CPU time of render()', async () => {
   const adapter = await navigator.gpu.requestAdapter();
   const device = await /** @type {any} */ (adapter).requestDevice();
   const format = navigator.gpu.getPreferredCanvasFormat();
@@ -224,9 +273,10 @@ gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while th
   canvas.style.cssText = `position:fixed;left:0;top:0;width:${cssW}px;height:${cssH}px`;
   document.body.append(canvas);
   try {
-    /** @param {number} hz  frames per second of the frame clock @param {boolean} demo @param {boolean} clearOnly */
-    const run = async (hz, demo, clearOnly) => {
-      const context = { apiVersion: 2, adapter, device, format, canvas, source: canvas, requestRender() {}, listen: () => () => {}, viewport: () => ({}) };
+    /** @param {number} hz  frames per second of the frame clock @param {boolean} demo @param {boolean} clearOnly @param {boolean} [drops]  a drop every 0.2 s along the demo's path */
+    const run = async (hz, demo, clearOnly, drops = false) => {
+      /** @type {Record<string, Function>} */ const on = {};
+      const context = { apiVersion: 2, adapter, device, format, canvas, source: canvas, requestRender() {}, listen: (/** @type {string} */ type, /** @type {Function} */ fn) => { on[type] = fn; return () => {}; }, viewport: () => ({}) };
       const instance = await plugin.create(/** @type {any} */ (context), { ...meta.defaults });
       if (demo) instance.runAction('demo', {}, { reducedMotion: false });
       const frames = Math.round(1.5 * hz), t0 = performance.now() + 4;
@@ -234,6 +284,10 @@ gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while th
       const cpu = [];
       const start = performance.now();
       for (let k = 0; k < frames; k += 1) {
+        if (drops && k % Math.round(0.2 * hz) === 0) {
+          const x = 0.15 + (0.7 * k) / frames, y = 0.5 + 0.25 * Math.sin(9 * x);
+          for (const type of ['pointerdown', 'pointerup']) on[type](new PointerEvent(type, { clientX: x * cssW, clientY: y * cssH, buttons: 1, pointerType: 'mouse' }));
+        }
         const encoder = device.createCommandEncoder();
         const a = performance.now();
         if (clearOnly) encoder.beginRenderPass({ colorAttachments: [{ view: destinationView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] }).end();
@@ -252,11 +306,14 @@ gpuTest('the cost of a frame at 1280 x 800 CSS px, DPR 2 (2560 x 1600), while th
     const rest = await run(120, false, false);
     const d120 = await run(120, true, false);
     const d60 = await run(60, true, false);
+    // (a press takes over from the demo: these runs are the drops alone, each spreading for 0.45 s)
+    const b120 = await run(120, false, false, true);
+    const b60 = await run(60, false, false, true);
     const f = (/** @type {number} */ v) => v.toFixed(3);
-    console.error(`ink cost at ${w} x ${h}: GPU throughput per frame: clear only ${f(clear.ms)} ms, at rest ${f(rest.ms)} ms, demo at 120 fps (1 step a frame) ${f(d120.ms)} ms, demo at 60 fps (2 steps a frame) ${f(d60.ms)} ms`);
-    console.error(`ink cost: CPU in render(): at rest mean ${f(rest.cpuMean)} ms; demo at 120 fps mean ${f(d120.cpuMean)} p95 ${f(d120.cpuP95)} max ${f(d120.cpuMax)} ms; demo at 60 fps mean ${f(d60.cpuMean)} p95 ${f(d60.cpuP95)} max ${f(d60.cpuMax)} ms`);
-    assert.ok(d120.ms < 8.33 && d60.ms < 16.67, 'the GPU keeps up with the frame clock');
-    assert.ok(d120.cpuMean < 1.5 && d60.cpuMean < 3, `the CPU time of a frame: ${f(d120.cpuMean)} ms at 120 fps, ${f(d60.cpuMean)} ms at 60 fps`);
+    console.error(`ink cost at ${w} x ${h}: GPU throughput per frame: clear only ${f(clear.ms)} ms, at rest ${f(rest.ms)} ms, demo at 120 fps (1 step a frame) ${f(d120.ms)} ms, demo at 60 fps (2 steps a frame) ${f(d60.ms)} ms; drops every 0.2 s at 120 fps ${f(b120.ms)} ms, at 60 fps ${f(b60.ms)} ms`);
+    console.error(`ink cost: CPU in render(): at rest mean ${f(rest.cpuMean)} ms; demo at 120 fps mean ${f(d120.cpuMean)} p95 ${f(d120.cpuP95)} max ${f(d120.cpuMax)} ms; demo at 60 fps mean ${f(d60.cpuMean)} p95 ${f(d60.cpuP95)} max ${f(d60.cpuMax)} ms; drops every 0.2 s at 120 fps mean ${f(b120.cpuMean)} p95 ${f(b120.cpuP95)} max ${f(b120.cpuMax)} ms, at 60 fps mean ${f(b60.cpuMean)} p95 ${f(b60.cpuP95)} max ${f(b60.cpuMax)} ms`);
+    assert.ok(d120.ms < 8.33 && d60.ms < 16.67 && b120.ms < 8.33 && b60.ms < 16.67, 'the GPU keeps up with the frame clock');
+    assert.ok(d120.cpuMean < 1.5 && d60.cpuMean < 3 && b120.cpuMean < 1.5 && b60.cpuMean < 3, `the CPU time of a frame: ${f(b120.cpuMean)} ms at 120 fps, ${f(b60.cpuMean)} ms at 60 fps`);
     assert.ok(rest.cpuMean < 0.2, 'a frame at rest steps nothing');
   } finally {
     canvas.remove(); source.destroy(); target.destroy(); device.destroy();
