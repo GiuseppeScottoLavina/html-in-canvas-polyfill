@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- Build: the WGSL a plugin bundle inlines is now written without any blank that separates nothing (`scripts/wgsl-strip.mjs` `minifyWgsl`): tokens follow each other, with one space only where two of them, or a comment start, would form without it. The build checks that the result reads as the source's token stream; names are kept. The ten plugin bundles are 0.6 to 2.7 KB smaller minified (16 KB together; 0.15 to 0.4 KB gzipped; for example page-curl 38,556 -> 35,911 bytes, ink 39,216 -> 37,017), and their ceilings in G-bundle are lowered to match. A browser test compiles every shipped shader from source and minified on a real WebGPU device, with no error and the same entry points.
+
 ## [1.0.0-rc.8] - 2026-11-11
 
 The eighth release candidate of 1.0.0. No change to the stable API; the effects extension, experimental, gains extended range (`createHost(..., { hdr: true })`), `context.localPoint` and `host.mapPoint`. An external audit of `1.0.0-rc.7` found a regression of that release: a canvas inserted again under another parent after a suspension stopped following the attributes of its new ancestors. The ancestor-move matrix built for it (69 cases, in Chrome, Firefox and Safari) found four older defects of the same family, fixed here too. A check of the whole project on Safari, on an iPad and on Firefox then found that Safari on macOS had composed no inner scrolling since 0.1.0-preview.23, fixed here as well. The plugin gallery was then reworked for an audience of graphics developers: three scenes (a form, a daylight page, live data), a chain of up to three effects, an input map that shows where the pointer is sent, extended range on an HDR display, previews recorded again, and two new plugins, `ink` (the page as wet ink in a fluid) and `cloth` (the page on a sheet of fabric).
