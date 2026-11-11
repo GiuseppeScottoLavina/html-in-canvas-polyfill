@@ -35,7 +35,7 @@ struct Uniforms {
   span : vec4<f32>,        // the page in the fold's frame: s from x to y (along n), w from z to w (along the axis)
   cone : vec4<f32>,        // the cone: x apex (a + t x on the axis), y gs (g = gs t points from the apex to the page), z k = sine of its half angle (0: a cylinder), w its cosine
   reach : vec4<f32>,       // the curled page from the apex: x r min, y r max, z its largest polar angle; w the held corner's height
-  extra : vec4<f32>,       // x the held corner's leaf y; y 1 where the page underneath is the host's live under page
+  extra : vec4<f32>,       // x the held corner's leaf y; y 1 where the live under page is usable (the mapper's); z 1 where it is drawn
 }
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -43,7 +43,7 @@ struct Uniforms {
 @group(0) @binding(2) var source : texture_2d<f32>;
 @group(0) @binding(3) var occS : texture_2d<f32>;   // the lifted paper seen from the lamp, a little blurred: r coverage, g height / ZMAX
 @group(0) @binding(4) var occL : texture_2d<f32>;   // the same, much blurred
-@group(0) @binding(5) var underTex : texture_2d<f32>;   // the host's live under page (read only where u.extra.y > 0)
+@group(0) @binding(5) var underTex : texture_2d<f32>;   // the host's live under page (read only where u.extra.z > 0)
 
 const PI : f32 = 3.14159265;
 const ZMAX : f32 = 600.0;
@@ -302,7 +302,7 @@ fn fs_pass(v : FullOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_under(v : FullOut) -> @location(0) vec4<f32> {
   let q = v.uv * u.css;
-  if (u.extra.y > 0.5) { return live_under(v, q); }
+  if (u.extra.z > 0.5) { return live_under(v, q); }
   var col = u.under.rgb * (1.0 + grain(q + 401.0));
   let rule = 1.0 - smoothstep(0.0, 0.9, abs(fract(q.y / 26.0 + 0.4) - 0.5) * 26.0 - 0.15);
   col = mix(col, col * vec3<f32>(0.78, 0.84, 0.95), rule * 0.35);

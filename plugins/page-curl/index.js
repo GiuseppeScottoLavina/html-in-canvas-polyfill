@@ -44,6 +44,8 @@ export const meta = Object.freeze({
   description: 'Grab a corner, with a mouse or a finger, and the live page rolls up under your hand in 3D, lit and shadowed, still updating; it springs back on release.',
   defaults: Object.freeze({ corner: 'any', radius: 48, shadow: 0.85, dogEar: 36, autoPeek: 0 }),
   touch: 'Drag a corner with a finger to turn the page.',
+  // the gallery gives this plugin the page under the page (createHost `under`): it shows it where the sheet is lifted
+  underPage: true,
   reducedMotion: 'With reduced motion the drag follows the hand without lag; the dog-ear stays still; release and hover lift are instant; peek and demo resolve at once.',
 });
 
@@ -53,7 +55,8 @@ export const meta = Object.freeze({
  * [12] shadow, [13] ready, [14] ink, [15] rows of the strip, [16..19] page underneath, [20..23] paper, [24..27] towards the lamp,
  * [28..31] shadow offset, [32..35] the page in the fold's frame (s min, s max, w min, w max), [36..39] the cone (apex wA on the axis, gs,
  * k = sine of its half angle (0: a cylinder), its cosine), [40..43] the curl's reach from the apex (r0, r1, the last polar angle) and the
- * held corner's height, [44] the held corner's leaf y (0 or H), [45] 1 where the page underneath is the host's live under page (frame.under).
+ * held corner's height, [44] the held corner's leaf y (0 or H), [45] 1 where the page underneath is the host's live under page and usable (the
+ * sheet is away from its rest pose: the mapper sends the pointer there), [46] 1 where the page underneath is drawn from it (the dog-ear at rest too).
  */
 export const UNIFORM_FLOATS = 48;
 export { NO_TARGET, isNoTarget };
@@ -461,6 +464,8 @@ const IDLE = 0;
 const DRAGGING = 1;
 const RELEASING = 2;
 const DEMO = 3;
+/** the sheet stays where it is: a press landed on the host's live under page, which is in use until a press elsewhere or Escape */
+const OPEN = 4;
 
 /**
  * The plugin's definition (effect plugin ABI v2).
@@ -597,6 +602,7 @@ export const plugin = Object.freeze({
     let hover = /** @type {'tl'|'tr'|'bl'|'br'|null} */ (null);
     let born = -1;
     let dragged = false;
+    let openX = 0, openY = 0;              // where the corner stays while OPEN (page css px)
     let peekTimer = 0;
     /** the peek of the action: -1 none, -2 asked for (it starts at the next frame), else its first frame's time */
     let peekFrom = -1;
@@ -653,7 +659,14 @@ export const plugin = Object.freeze({
       const [x, y] = toPage(e);
       const [w, h] = size();
       const key = hotCorner(x, y, w, h, corner, hotZone);
-      if (!key) return;
+      if (!key) {
+        // a press on the live under page where the sheet uncovers it keeps the sheet there (the press itself reaches that page through the host); a press
+        // anywhere else lets an open sheet spring back
+        const q = slots[mapperSlot][45] > 0 ? mapCurlPoint(slots[mapperSlot], { x, y, width: w, height: h }) : null;
+        if (q && /** @type {any} */ (q).under === true && globals[9] > 0) { phase = OPEN; openX = sx.x; openY = sy.x; wake(); }
+        else if (phase === OPEN) { phase = RELEASING; wake(); }
+        return;
+      }
       swallow(e);   // the grab is this plugin's gesture: neither the interposer nor the form see it
       if (key !== active) { active = key; [sx.x, sy.x] = cornerAt(key, w, h); sx.v = 0; sy.v = 0; }
       phase = DRAGGING;
@@ -696,7 +709,10 @@ export const plugin = Object.freeze({
       swallowClick = false;
       swallow(e);
     }
-    const onKey = (/** @type {Event} */ e) => { if (onPage(e)) endDemo(); };
+    const onKey = (/** @type {Event} */ e) => {
+      if (phase === OPEN && /** @type {KeyboardEvent} */ (e).key === 'Escape') { phase = RELEASING; wake(); return; }
+      if (onPage(e)) endDemo();
+    };
     /**
      * A finger that lands on a corner (or holds one: the pointerdown came first) claims its touch: prevented, the browser neither scrolls
      * nor cancels the pointer. Any other touch stays the page's. @param {Event} event
@@ -746,6 +762,8 @@ export const plugin = Object.freeze({
       if (held) {
         aimAt(dragX, dragY, w, h);
         gx = aim.x; gy = aim.y; spring = DRAG;
+      } else if (phase === OPEN) {
+        gx = openX; gy = openY; spring = REST;
       } else {
         const hint = hintCorner(corner);
         const want = phase === RELEASING ? active : hover ?? hint;
@@ -802,13 +820,14 @@ export const plugin = Object.freeze({
       peekTimer = win.setTimeout(() => { peekTimer = 0; wake(); }, Math.max(16, wait));
     }
 
-    /** nothing moves: the last frame rested and no peek is asked for or playing */
-    const still = () => resting && phase === IDLE && peekFrom === -1;
-    const wait = () => (still() ? 'rest' : new Promise((resolve) => { waiters.push(resolve); }));
+    /** nothing moves: the last frame rested and no peek is asked for or playing (an open sheet rests too, in the state 'open') */
+    const still = () => resting && (phase === IDLE || phase === OPEN) && peekFrom === -1;
+    const restState = () => (phase === OPEN ? 'open' : 'rest');
+    const wait = () => (still() ? restState() : new Promise((resolve) => { waiters.push(resolve); }));
 
     return {
       spatial: true,   // not `continuous`: frames are requested while something moves (drag, release, hover lift, a peek, the demo), none at rest
-      // the host's under page is shown wherever the sheet is lifted, the dog-ear included (the host keeps it inert otherwise)
+      // the host's under page is usable while the sheet is lifted away from its rest pose (the host keeps it inert otherwise, the dog-ear at rest included)
       get revealsUnder() { return revealing; },
       setOptions(next) { applyOptions(next); wake(); },
       runAction(action, _options, info) {
@@ -831,24 +850,27 @@ export const plugin = Object.freeze({
         pageWidth = w; pageHeight = h;
         const moving = step(frame.now, w, h);
         if (moving) { stopPeekTimer(); context.requestRender(); } else schedulePeek(frame.now);
-        if (waiters.length && still()) for (const resolve of waiters.splice(0)) resolve('rest');
+        if (waiters.length && still()) for (const resolve of waiters.splice(0)) resolve(restState());
         globals[0] = frame.width; globals[1] = frame.height;
         poseState(globals, w, h, active, sx.x, sy.x, radius);
         globals[12] = shadow; globals[13] = frame.sourceReady ? 1 : 0; globals[14] = INK; globals[15] = ROWS;
         globals.set(under, 16); globals[19] = 1;
         const live = underPage && context.under === true && frame.under?.ready === true;
-        globals[45] = live ? 1 : 0;
+        globals[46] = live ? 1 : 0;
         globals.set(paper, 20); globals[23] = 1;
         globals[24] = LIGHT[0]; globals[25] = LIGHT[1]; globals[26] = LIGHT[2];
         // how far the corner is from its rest pose (the dog-ear of the hinted corner, or flat), 0 .. 1 over AWAY_PX: the lamp's highlight goes above
         // white (extended range) only once the corner has left it
         const restAt = liftedTo(active, active === hintCorner(corner) ? dogEar : 0, w, h);
         globals[27] = Math.min(1, Math.max(0, (Math.hypot(sx.x - restAt[0], sy.x - restAt[1]) - 2) / AWAY_PX));
+        // the under page is drawn in the dog-ear at rest, but usable (and out of `inert`) only once the sheet is lifted away from it: a page seen in a
+        // corner of 36 px is not one to type into, and an open sheet that falls back takes the focus of its field with it
+        globals[45] = live && globals[27] > 0 ? 1 : 0;
         globals[28] = -LIGHT[0] / LIGHT[2]; globals[29] = -LIGHT[1] / LIGHT[2]; globals[30] = 0; globals[31] = 0;
         foldSpan(globals, w, h);
         device.queue.writeBuffer(uniforms, 0, globals);
         const r = resources(frame.width, frame.height, w, h);
-        const underView = live ? frame.under.view : blankView;
+        const underView = live && frame.under ? frame.under.view : blankView;
         let bound = r.groups.get(frame.sourceView);
         if (!bound || bound.under !== underView) {
           bound = { under: underView, group: device.createBindGroup({ layout: mainLayout, entries: [
@@ -859,7 +881,7 @@ export const plugin = Object.freeze({
         }
         const group = bound.group;
         const curled = globals[9] > 0;
-        revealing = curled && live;
+        revealing = curled && globals[45] > 0;
         if (curled) {
           // the lifted paper as the lamp sees it, and its soft copies; only when the fold moved
           const key = `${globals[4]},${globals[5]},${globals[6]},${globals[7]},${globals[8]},${globals[9]},${globals[10]}`;

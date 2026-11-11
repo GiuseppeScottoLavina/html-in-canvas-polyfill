@@ -254,6 +254,18 @@
     :root { --fit: 560px; }
     #hint { display: none; }
   }
+  /* ---- the page under the page: a second drawable, shown only to an effect that reveals it (meta.underPage: Page curl) ---- */
+  #under-page { box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 26px 30px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; text-align: right;
+    font: 14px/1.45 system-ui, sans-serif; color: #2b2418; background: radial-gradient(circle at 86% 14%, #fff7e6, transparent 46%), linear-gradient(160deg, #f4ecdc, #e6dcc8); }
+  #under-page[hidden] { display: none; }
+  #under-page .eyebrow { margin: 0; color: #8a5a12; }
+  #under-page h2 { margin: 0; font-size: 34px; line-height: 1; letter-spacing: -.03em; }
+  #under-page .lede { margin: 0; max-width: 34ch; color: rgba(43, 36, 24, .72); font-size: 13px; }
+  #under-page label { display: grid; gap: 4px; justify-items: end; font-size: 12px; font-weight: 700; color: #5c4a2c; }
+  #under-page input { width: 210px; padding: 7px 10px; font: 14px system-ui, sans-serif; color: #2b2418; border: 1px solid #bfa77a; border-radius: 8px; background: #fffaf0; }
+  #under-page .row { display: flex; gap: 10px; align-items: center; }
+  #under-page button { padding: 7px 14px; font: 700 13px system-ui, sans-serif; color: #fffaf0; border: 0; border-radius: 8px; background: #8a5a12; cursor: pointer; }
+  #under-page output, #under-page time { font: 700 15px ui-monospace, monospace; color: #8a5a12; }
 </style>
 </head>
 <body>
@@ -316,6 +328,16 @@
         </div>
       </section>
     </form>
+    <!-- A second live page under the form (createHost `under`, experimental): an effect that lifts the form, such as Page curl, shows it there, and it is usable
+         where it is uncovered. Hidden while the chain has no such effect, so the other effects keep a host without a second page to draw. -->
+    <section id="under-page" drawable hidden aria-label="The page under the page">
+      <p class="eyebrow">Underneath, another live page</p>
+      <h2>Under the sheet.</h2>
+      <p class="lede">Ordinary HTML too, drawn beneath the form. Where the corner lifts, click and type here; a click elsewhere or Escape lets the sheet fall back.</p>
+      <label for="under-note">A note<input id="under-note" type="text" placeholder="Type under the page" autocomplete="off"></label>
+      <div class="row"><button type="button" id="under-count-button">Count</button><output id="under-count" for="under-count-button">0</output></div>
+      <p class="row">ticks <time id="under-tick">0</time></p>
+    </section>
   </canvas>
 
   <div id="map" hidden aria-hidden="true"><svg><line></line></svg><i class="box"></i><i class="at"></i><i class="dot"></i><span class="tag"></span></div>
@@ -344,7 +366,7 @@
   // (an action button), what the input map shows (`map`, null while it shows nothing), the demo it played on selection (`demo`), the display rate it measured (`displayHz`) and the HUD's numbers (`hud`); with a second
   // chain of effects, their names in order (`chain`), the first and second of them (`active`, `then`: 'off' without one) and their handles (`handle`,
   // `handle2`), whether Stack is on (`stacking`) and whose controls the form shows (`controls`); `setChain(names)` runs a chain as the chips would
-  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, chain: [], stacking: false, map: null, hdr: false, lastAction: null, demo: null, displayHz: null, hud: null });
+  const state = (window.__gallery = { ready: false, mode: null, active: null, then: 'off', scene: 'form', plugins: [], host: null, handle: null, handle2: null, controls: null, chain: [], stacking: false, map: null, hdr: false, lastAction: null, demo: null, displayHz: null, hud: null, underHost: false, under: false });
   const notice = (text) => { $('notice').textContent = text; $('notice').classList.toggle('shown', !!text); };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = matchMedia('(pointer: coarse)');
@@ -557,6 +579,18 @@
   // ---- scenes: other content beside the form, in the same drawable (?scene=daylight or live; the form is the default) -------------
   // A scene is ordinary HTML in the canvas, and so is its switch: the effect is applied to whatever is there. `live` changes once a second (a clock, ten bars,
   // a feed of five rows): content that keeps changing is drawn again each time, so with it the page is not at rest, by design.
+  // the page under the page: its value ticks once a second while it is shown and in use (its field has the focus) or on the live scene, never at rest
+  const underPage = $('under-page');
+  let underTimer = 0, underTicks = 0, underClicks = 0;
+  function underTick() { $('under-tick').textContent = String(++underTicks); }
+  function syncUnderTicker() {
+    const run = !underPage.hidden && (state.scene === 'live' || underPage.contains(document.activeElement));
+    if (run && !underTimer) underTimer = setInterval(underTick, 1000);
+    else if (!run && underTimer) { clearInterval(underTimer); underTimer = 0; }
+  }
+  underPage.addEventListener('focusin', syncUnderTicker);
+  underPage.addEventListener('focusout', () => setTimeout(syncUnderTicker, 0));
+  $('under-count-button').addEventListener('click', () => { $('under-count').textContent = String(++underClicks); });
   const SCENES = ['form', 'daylight', 'live'];
   let liveTimer = 0, liveSerial = 0;
   const two = (n) => String(n).padStart(2, '0');
@@ -582,6 +616,7 @@
     liveTimer = 0;
     if (name === 'live') { liveTick(); liveTimer = setInterval(liveTick, 1000); }
     state.scene = name;
+    syncUnderTicker();
     if (!byUser) return;
     const url = new URL(location.href);
     if (name === 'form') url.searchParams.delete('scene'); else url.searchParams.set('scene', name);
@@ -663,7 +698,12 @@
       // extended range where the display has it (&hdr=1 asks for it anyway, &hdr=0 never): highlights above white, such as the sun on the water, are then shown
       // brighter than the page's white. The host uses it only where the browser takes the configuration (host.stats().hdr)
       const wantHdr = new URL(location.href).searchParams.get('hdr');
-      host = await HTMLInCanvasEffects.createHost(canvas, form, { maxDpr: 2.5, interposer: true, hdr: wantHdr === '1' || (wantHdr !== '0' && matchMedia('(dynamic-range: high)').matches) });
+      const hostOptions = { maxDpr: 2.5, interposer: true, hdr: wantHdr === '1' || (wantHdr !== '0' && matchMedia('(dynamic-range: high)').matches) };
+      // the page under the page where the host takes one (the polyfill; over a native implementation createHost refuses `under`: the host then has none)
+      try { host = await HTMLInCanvasEffects.createHost(canvas, form, { ...hostOptions, under: underPage }); state.underHost = true; } catch (error) {
+        if (!error || error.feature !== 'effects-under') throw error;
+        host = await HTMLInCanvasEffects.createHost(canvas, form, hostOptions);
+      }
       canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
       canvas.addEventListener('effectframe', onEffectFrame);
     } catch (error) {
@@ -720,6 +760,14 @@
   let chain = [], stacking = false, serial = 0;
   const entryOf = (name) => plugins.find((x) => x.name === name);
   const metaOf = (name) => (window.HicLivePlugins && window.HicLivePlugins[name] && window.HicLivePlugins[name].meta) || null;
+  /** the page under the page is shown while the chain has an effect that reveals it (meta.underPage), on a host that has one */
+  function syncUnder() {
+    const wanted = !!state.underHost && chain.some((n) => metaOf(n) && metaOf(n).underPage === true);
+    if (underPage.hidden === !wanted) return;
+    underPage.hidden = !wanted;
+    state.under = wanted;
+    syncUnderTicker();
+  }
   function showControls(name) {
     const root = $('effect-controls');
     for (const el of root.querySelectorAll('.fx-ui')) el.hidden = el.dataset.fx !== name;
@@ -787,6 +835,7 @@
     if (chain.length > 1) url.searchParams.set('then', chain.slice(1).join(',')); else url.searchParams.delete('then');
     history.replaceState(null, '', url);
     describeChain(chain);
+    syncUnder();
     Object.assign(state, { chain: [...chain], stacking, active: chain[0] || 'off', then: chain[1] || 'off', handle: handles.get(chain[0]) || null, handle2: handles.get(chain[1]) || null });
   }
   /** run `next` on the host; `picked` is the effect the user just added (it plays its demo and shows its controls), null for a removal */
@@ -819,6 +868,7 @@
         const handle = await host.addPlugin(entry.plugin, { ...p.defaults, ...urlOptions(p.name) });
         if (mine !== serial) { handle.remove(); return; }
         handles.set(name, handle);
+        syncUnder();                                                              // before its demo: the page under the page is drawn from the first frames
         handle.mountUI(controlsBox(p));                                           // the plugin's own controls, as HTML inside the drawn form
         if (name === picked) { showControls(name); showHint(name, entry.meta); playDemo(handle, name); }
       } catch (error) {
