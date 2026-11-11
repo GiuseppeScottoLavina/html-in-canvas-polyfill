@@ -61,12 +61,14 @@ fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
   let m = max(max(c.r, max(c.g, c.b)), k);
   return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
 }
-// the lamp's highlight above white: its strength on the back of the sheet and on its front, and the exponent of its lobe (far narrower
-// than the sheen of a standard target, 40 and 16: on a roll of radius 48 a band about 10 px wide where it lies over paper that is
-// already white, not the whole side of the roll that faces the lamp)
+// the lamp's highlight above white: its strength on the back of the sheet and on its front, and the part of the sheen's lobe (exponent
+// HOT_LOBE, that of the back's sheen on a standard target) that it takes: from HOT_FROM of the lobe's peak up, rising smoothly. The top
+// of a broad lobe, not a narrow one: it is there for any direction of the pull, as a band about 10 px wide on a roll of radius 48, and
+// it is exactly 0 beside that band (no faint light over the whole side of the roll that faces the lamp)
 const HOT_BACK : f32 = 0.9;
 const HOT_FRONT : f32 = 0.6;
-const HOT_LOBE : f32 = 900.0;
+const HOT_LOBE : f32 = 40.0;
+const HOT_FROM : f32 = 0.8;
 
 // ---- the fold (fold.js foldPoint / foldNormal) ---------------------------------------------------------------------------------------
 
@@ -416,7 +418,7 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     let level = light2(vec3<f32>(v.page.xy, 0.0), vec3<f32>(0.0, 0.0, 1.0));
     let lit = (lt.x * sh.y + lt.y * sh.x) * cav / (level.x + level.y);
     col = base * (0.5 + 0.5 * lit) + gloss(v.page, nUp, 0.12, 16.0) * smoothstep(0.0, 0.25 * PI, b) * cav;
-    if (HDR_PEAK > 1.0) { hot = gloss(v.page, nUp, HOT_FRONT, HOT_LOBE) * smoothstep(0.0, 0.25 * PI, b) * cav; }
+    if (HDR_PEAK > 1.0) { hot = HOT_FRONT * smoothstep(HOT_FROM, 1.0, gloss(v.page, nUp, 1.0, HOT_LOBE)) * smoothstep(0.0, 0.25 * PI, b) * cav; }
   } else {
     // the back of the sheet: paper with its own relief, lit by its real normal across the roll (bright where it faces the lamp, a highlight
     // band where it mirrors it, darker towards the rolled edge, which sees only half the room), and the front's content showing through it,
@@ -438,7 +440,7 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     // the highlight of paper is partly its own colour (light scattered in its fibres): weaker on a dark paper
     let tone = 0.3 + 0.7 * luma(u.paper.rgb);
     col = paper * light + paper * through * vec3<f32>(1.0, 0.84, 0.62) + gloss(v.page, nb, 0.2, 40.0) * sh.x * tone;
-    if (HDR_PEAK > 1.0) { hot = gloss(v.page, nb, HOT_BACK, HOT_LOBE) * sh.x * tone; lit_before = vec3<f32>(0.0); }
+    if (HDR_PEAK > 1.0) { hot = HOT_BACK * smoothstep(HOT_FROM, 1.0, gloss(v.page, nb, 1.0, HOT_LOBE)) * sh.x * tone; lit_before = vec3<f32>(0.0); }
   }
   // the cut edge of the lifted sheet shows the paper's thickness: a darker outer line (the cut face, turned away) and a lit lip just inside
   let lifted = smoothstep(0.3, 2.5, v.page.z);

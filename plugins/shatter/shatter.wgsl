@@ -57,9 +57,10 @@ fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
   return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
 }
 // what goes above white, over what a standard target shows of it: the key light mirrored squarely by a face or a wall of a falling shard
-// (HOT_SHARP times the exponent of the highlight: a lobe about a quarter as wide), a chip (the part of its flash a standard target clips),
+// (HOT_SHARP times the exponent of the highlight: a lobe about a sixth as wide, a spot that crosses a face as it turns rather than the
+// whole face at once), a chip (the part of its flash a standard target clips),
 // the flash of the strike (a core HOT_FLASH_PX css px wide at the impact) and the fractures that glint in it
-const HOT_SHARP : f32 = 14.0;
+const HOT_SHARP : f32 = 40.0;
 const HOT_FACE : f32 = 4.0;
 const HOT_CHIP : f32 = 2.0;
 const HOT_FLASH : f32 = 2.0;
