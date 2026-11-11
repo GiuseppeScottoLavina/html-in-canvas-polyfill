@@ -9,6 +9,8 @@ import { contractTest } from '../../_shared/contract-test.mjs';
 import { constrainCorner, foldFor, foldNormal, foldPoint, project } from '../fold.js';
 import { ACTIONS, DEMO_RELEASE_MS, NO_TARGET, PEEK_MS, UNIFORM_FLOATS, demoHand, foldOf, foldSpan, heldCorner, hintCorner, hintText, hotCorner, isNoTarget, mapCurlPoint, meta, parseColor, peekAt, peekOnce, plugin, poseState } from '../index.js';
 import { nodeHandle } from '../../_shared/node-host.mjs';
+import { readFileSync } from 'node:fs';
+import { HDR_PEAK, SHOULDER_WGSL } from '../../_lib/hdr.js';
 
 const W = 480;
 const H = 320;
@@ -251,7 +253,7 @@ test('hot zones: corners only, `corner` restricts them, points off the page neve
 const FLAT = { ...meta.defaults, dogEar: 0, autoPeek: 0 };
 
 /** `localPoint` stands for the plugins added after this one (context.localPoint); without it the context has none @param {{reduced?: boolean, timers?: boolean, localPoint?: (point: {x: number, y: number}) => {x: number, y: number}|null}} [o] */
-function fakeEnv({ reduced = false, timers = false, localPoint } = {}) {
+function fakeEnv({ reduced = false, timers = false, localPoint, hdr = undefined } = {}) {
   Object.assign(globalThis, {
     GPUBufferUsage: { UNIFORM: 1, COPY_DST: 2, VERTEX: 4, INDEX: 8 },
     GPUShaderStage: { VERTEX: 1, FRAGMENT: 2 },
@@ -259,10 +261,11 @@ function fakeEnv({ reduced = false, timers = false, localPoint } = {}) {
   });
   /** @type {any[]} */ const writes = [];
   /** @type {any[]} */ const passes = [];
+  /** the descriptors of the pipelines the plugin made @type {any[]} */ const pipelines = [];
   let draws = 0;
   const device = {
     createShaderModule: () => ({ getCompilationInfo: async () => ({ messages: [] }) }),
-    createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}), createRenderPipeline: () => ({}),
+    createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}), createRenderPipeline: (/** @type {any} */ d) => { pipelines.push(d); return {}; },
     createBuffer: () => ({ destroy() {} }), createSampler: () => ({}), createBindGroup: () => ({}),
     createTexture: () => ({ createView: () => ({}), destroy() {} }),
     queue: { writeBuffer: (/** @type {any} */ _b, /** @type {any} */ _o, /** @type {any} */ d) => writes.push(d) },
@@ -292,7 +295,7 @@ function fakeEnv({ reduced = false, timers = false, localPoint } = {}) {
   const layer = { setAttribute: (/** @type {string} */ k, /** @type {string} */ v) => attrs.set(k, v), removeAttribute: (/** @type {string} */ k) => attrs.delete(k),
     setPointerCapture: (/** @type {number} */ id) => captured.push(`layer${id}`), releasePointerCapture: (/** @type {number} */ id) => captured.push(`layer-${id}`) };
   const context = { device, format: 'bgra8unorm', canvas, source: {}, requestRender() { renders += 1; }, listen: (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ o) => { layerListeners.set(type, fn); listenOptions.set(type, o); return () => {}; },
-    ...(localPoint ? { localPoint } : {}) };
+    ...(localPoint ? { localPoint } : {}), ...(hdr === undefined ? {} : { hdr }) };
   const fire = (/** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, o = {}) => {
     const e = {
       type, pointerId: 1, isPrimary: true, button: 0, detail: 1, clientX: 10 + x, clientY: 20 + y, prevented: false, stopped: false,
@@ -303,7 +306,7 @@ function fakeEnv({ reduced = false, timers = false, localPoint } = {}) {
   };
   const frame = (/** @type {number} */ now) => ({ now, width: W, height: H, cssWidth: W, cssHeight: H, sourceReady: true, sourceView: {}, destinationView: {}, encoder });
   const atLayer = (/** @type {string} */ type) => layerListeners.get(type)?.({ type, currentTarget: layer });
-  return { context, writes, passes, docListeners, fire, frame, captured, renders: () => renders, draws: () => draws, pending, atLayer, attrs,
+  return { context, writes, passes, pipelines, docListeners, fire, frame, captured, renders: () => renders, draws: () => draws, pending, atLayer, attrs,
     layerListeners: (/** @type {string} */ type) => layerListeners.get(type), listenOptions: (/** @type {string} */ type) => listenOptions.get(type) };
 }
 
@@ -774,4 +777,29 @@ test('the action demo, through the effect handle: the page turns most of the way
   for (let now = 16; now <= 1000; now += 16) calm.h.inst.render(calm.env.frame(now));
   assert.equal(last(calm.env)[9], calm.rest[5], 'the dog-ear stays still');
   for (const x of [h, slow.h, g.h, calm.h]) x.handle.remove();
+});
+
+test('extended range: the pipelines of the page underneath and of the sheet get HDR_PEAK from context.hdr, 1 without it; the shader holds the shared shoulder', async (t) => {
+  /** @param {boolean|undefined} hdr */
+  const peaks = async (hdr) => { const env = fakeEnv({ hdr }); (await created(t, env)).destroy(); return Object.fromEntries(env.pipelines.map((/** @type {any} */ d) => [d.fragment.entryPoint, d.fragment.constants?.HDR_PEAK])); };
+  const none = { fs_pass: undefined, fs_occ: undefined, fs_blur: undefined };   // the passthrough, the occlusion and its blur do not read it
+  assert.deepEqual(await peaks(true), { ...none, fs_under: HDR_PEAK, fs_leaf: HDR_PEAK });
+  assert.deepEqual(await peaks(false), { ...none, fs_under: 1, fs_leaf: 1 });
+  assert.deepEqual(await peaks(undefined), { ...none, fs_under: 1, fs_leaf: 1 }, 'a host that says nothing');
+  const code = readFileSync(new URL('../page-curl.wgsl', import.meta.url), 'utf8');
+  assert.ok(code.includes(SHOULDER_WGSL), 'page-curl.wgsl holds SHOULDER_WGSL of plugins/_lib/hdr.js, character for character');
+  assert.ok(!code.replace(SHOULDER_WGSL, '').includes('override HDR_PEAK'), 'and declares the constant once');
+});
+
+test('extended range: the uniform block says how far the corner is from its rest pose (0 at rest with the dog-ear, 1 well away): the highlight above white follows it', async (t) => {
+  const env = fakeEnv();
+  const inst = await created(t, env);
+  for (let k = 0; k <= 60; k += 1) inst.render(env.frame(1000 + k * 16));
+  assert.equal(last(env)[27], 0, 'the dog-ear at rest');
+  assert.ok(last(env)[9] > 0, 'and it is curled (L > 0): a curl at rest shows nothing above white');
+  env.fire('pointerdown', W - 6, 8);
+  env.fire('pointermove', W - 220, 180);
+  for (let k = 61; k <= 140; k += 1) inst.render(env.frame(1000 + k * 16));
+  assert.equal(last(env)[27], 1, 'the corner pulled over the page');
+  inst.destroy();
 });

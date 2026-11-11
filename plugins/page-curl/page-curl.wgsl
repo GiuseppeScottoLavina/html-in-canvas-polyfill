@@ -3,6 +3,11 @@
 // the thin paper), with a soft shadow that widens with the height of the paper above what it falls on; the paper has a lit relief, and
 // what the effect shades is dithered so that its gradients do not band.
 //
+// Extended range (HDR_PEAK > 1): the page, the paper and their diffuse light (room, lamp, the light through the sheet) stay under white.
+// The lamp's mirror highlight goes above it, modestly (paper is not a mirror): a band along the roll, on the back of the sheet where it
+// reflects the lamp to the eye and on the glossy front where it turns over. It rises as the corner leaves its rest pose (u.light.w): the
+// dog-ear at rest shows nothing above white.
+//
 // Passes of a curled frame (index.js):
 //   vs_occ / fs_occ     the lifted paper as the lamp sees it: coverage and height, half resolution (max blending)
 //   blur.wgsl (x6)      two soft copies of it (separable Gaussian): the penumbra of a low and of a high sheet
@@ -25,7 +30,7 @@ struct Uniforms {
   rows : f32,              // rows of the strip across the roll
   under : vec4<f32>,       // the page underneath
   paper : vec4<f32>,       // the back of the sheet
-  light : vec4<f32>,       // xyz: towards the lamp
+  light : vec4<f32>,       // xyz: towards the lamp; w: 0 with the corner in its rest pose .. 1 lifted away from it (extended range)
   lightK : vec4<f32>,      // xy: a point at height z casts its shadow at xy + lightK * z
   span : vec4<f32>,        // the page in the fold's frame: s from x to y (along n), w from z to w (along the axis)
   cone : vec4<f32>,        // the cone: x apex (a + t x on the axis), y gs (g = gs t points from the apex to the page), z k = sine of its half angle (0: a cylinder), w its cosine
@@ -41,6 +46,27 @@ struct Uniforms {
 
 const PI : f32 = 3.14159265;
 const ZMAX : f32 = 600.0;
+
+// Extended range (plugins/_lib/hdr.js): 1 on a standard target; on a float target the largest value to write (sRGB-encoded, above 1).
+override HDR_PEAK : f32 = 1.0;
+
+// `base`: the picture, at most white, or what a plugin before this one lit above it. `light`: what this effect adds as a light source or
+// a mirror reflection. Up to white the sum is kept as it is; above, it bends towards HDR_PEAK on an exponential shoulder (slope 1 where it
+// starts, no plateau), and the colour is scaled as a whole (no channel clips before another: no hue shift). Called only if HDR_PEAK > 1.
+fn hdr_light(base : vec3<f32>, light : vec3<f32>) -> vec3<f32> {
+  let b = max(base, vec3<f32>(0.0));
+  let c = b + max(light, vec3<f32>(0.0));
+  let k = clamp(max(b.r, max(b.g, b.b)), 1.0, HDR_PEAK);   // where the shoulder starts: white, or the light that is there already
+  let h = max(HDR_PEAK - k, 1e-4);
+  let m = max(max(c.r, max(c.g, c.b)), k);
+  return c * ((k + h * (1.0 - exp((k - m) / h))) / m);
+}
+// the lamp's highlight above white: its strength on the back of the sheet and on its front, and the exponents of its lobes (far narrower
+// than the sheen of a standard target, 40 and 16: a band a few px wide along the roll, not the whole of a white area on it)
+const HOT_BACK : f32 = 0.9;
+const HOT_FRONT : f32 = 0.6;
+const HOT_BACK_LOBE : f32 = 320.0;
+const HOT_FRONT_LOBE : f32 = 480.0;
 
 // ---- the fold (fold.js foldPoint / foldNormal) ---------------------------------------------------------------------------------------
 
@@ -282,6 +308,9 @@ fn fs_under(v : FullOut) -> @location(0) vec4<f32> {
   // the dome's light hidden by the roll; the lamp is not a point either, and loses part of its own close to the roll
   let ao = roll_ao(q);
   col = col * (lt.x * sh.y * (1.0 - pow(ao, 1.2)) * ROOM + lt.y * sh.x * (1.0 - 0.6 * ao * ao) * WARM);
+  // extended range: paper lit diffusely stays between black and white (a float target would keep the dither below 0, and a light paper
+  // near the lamp above 1)
+  if (HDR_PEAK > 1.0) { return vec4<f32>(clamp(col + dither(v.position.xy), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0); }
   return vec4<f32>(col + dither(v.position.xy), 1.0);
 }
 
@@ -360,7 +389,14 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
   // the sheet's shadow falls on the parts of it that lie on the page; the lifted paper is shaded by its own curvature (a shadow map of
   // half resolution would draw its own texels on it)
   let sh = mix(shadow_at(v.page), vec2<f32>(1.0, 1.0), smoothstep(0.75, 4.0, v.page.z));
-  let base = front_color(src_uv);
+  var base = front_color(src_uv);
+  // extended range: the page is at most white here; what a plugin before this one lit above white is carried to the front as it is
+  var lit_before = vec3<f32>(0.0);
+  var hot = 0.0;
+  if (HDR_PEAK > 1.0) {
+    lit_before = max(base - vec3<f32>(1.0), vec3<f32>(0.0));
+    base = min(base, vec3<f32>(1.0));
+  }
   let s = dot(v.local - u.a, u.n);
   let curled = u.L > 0.0;
   var col : vec3<f32>;
@@ -380,6 +416,7 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     let level = light2(vec3<f32>(v.page.xy, 0.0), vec3<f32>(0.0, 0.0, 1.0));
     let lit = (lt.x * sh.y + lt.y * sh.x) * cav / (level.x + level.y);
     col = base * (0.5 + 0.5 * lit) + gloss(v.page, nUp, 0.12, 16.0) * smoothstep(0.0, 0.25 * PI, b) * cav;
+    if (HDR_PEAK > 1.0) { hot = gloss(v.page, nUp, HOT_FRONT, HOT_FRONT_LOBE) * smoothstep(0.0, 0.25 * PI, b) * cav; }
   } else {
     // the back of the sheet: paper with its own relief, lit by its real normal across the roll (bright where it faces the lamp, a highlight
     // band where it mirrors it, darker towards the rolled edge, which sees only half the room), and the front's content showing through it,
@@ -401,6 +438,7 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
     // the highlight of paper is partly its own colour (light scattered in its fibres): weaker on a dark paper
     let tone = 0.3 + 0.7 * luma(u.paper.rgb);
     col = paper * light + paper * through * vec3<f32>(1.0, 0.84, 0.62) + gloss(v.page, nb, 0.2, 40.0) * sh.x * tone;
+    if (HDR_PEAK > 1.0) { hot = gloss(v.page, nb, HOT_BACK, HOT_BACK_LOBE) * sh.x * tone; lit_before = vec3<f32>(0.0); }
   }
   // the cut edge of the lifted sheet shows the paper's thickness: a darker outer line (the cut face, turned away) and a lit lip just inside
   let lifted = smoothstep(0.3, 2.5, v.page.z);
@@ -409,5 +447,10 @@ fn fs_leaf(v : MeshOut, @builtin(front_facing) facing : bool) -> @location(0) ve
   col = mix(col, col * 0.6, rim) + col * lip * 0.08;
   // dither what the effect lit or shaded; the flat, unshadowed front stays the page's own pixels
   let d = select(1.0, max(lifted, 1.0 - sh.x), front);
+  if (HDR_PEAK > 1.0) {
+    // the lamp mirrored by the sheet (not by its cut edge), once the corner has left its rest pose
+    let lit = hdr_light(min(col, vec3<f32>(1.0)) + lit_before, WARM * (hot * (1.0 - rim) * clamp(u.light.w, 0.0, 1.0)));
+    return vec4<f32>(max(lit + dither(v.position.xy) * d, vec3<f32>(0.0)), cover);
+  }
   return vec4<f32>(col + dither(v.position.xy) * d, cover);
 }

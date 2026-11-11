@@ -28,6 +28,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { clampNum } from '../_lib/number.js';
 import { injectStyle } from '../_lib/ui.js';
+import { hdrConstants } from '../_lib/hdr.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -443,6 +444,8 @@ async function shaderModule(device, code, label) {
   return module;
 }
 
+/** css px the corner is away from its rest pose where the lamp's highlight is at full strength above white (extended range) */
+const AWAY_PX = 40;
 const IDLE = 0;
 const DRAGGING = 1;
 const RELEASING = 2;
@@ -482,12 +485,14 @@ export const plugin = Object.freeze({
     const msaa = { count: 4 };
     const flatDepth = { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'always' };
     const pipe = (/** @type {any} */ o) => device.createRenderPipeline({ primitive: { topology: 'triangle-list' }, ...o });
+    // extended range (context.hdr): the shaders of the page underneath and of the sheet read HDR_PEAK (page-curl.wgsl); 1 on a standard target
+    const constants = hdrConstants(context);
     const mainPL = device.createPipelineLayout({ bindGroupLayouts: [mainLayout] });
     const passPipe = pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_pass', targets: [{ format }] }, multisample: msaa, depthStencil: flatDepth });
-    const underPipe = pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_under', targets: [{ format }] }, multisample: msaa, depthStencil: flatDepth });
+    const underPipe = pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_under', targets: [{ format }], constants }, multisample: msaa, depthStencil: flatDepth });
     // the sheet is a triangle strip in the fold's frame (no vertex buffer); its cut edges are antialiased by alpha to coverage
     const strip = { topology: 'triangle-strip' };
-    const leafPipe = pipe({ layout: mainPL, primitive: strip, vertex: { module, entryPoint: 'vs_mesh' }, fragment: { module, entryPoint: 'fs_leaf', targets: [{ format, blend: { color: { srcFactor: 'one', dstFactor: 'zero' }, alpha: { srcFactor: 'zero', dstFactor: 'one' } } }] },
+    const leafPipe = pipe({ layout: mainPL, primitive: strip, vertex: { module, entryPoint: 'vs_mesh' }, fragment: { module, entryPoint: 'fs_leaf', targets: [{ format, blend: { color: { srcFactor: 'one', dstFactor: 'zero' }, alpha: { srcFactor: 'zero', dstFactor: 'one' } } }], constants },
       multisample: { count: 4, alphaToCoverageEnabled: true }, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less-equal' } });
     const max = { operation: 'max', srcFactor: 'one', dstFactor: 'one' };
     const occPipe = pipe({ layout: device.createPipelineLayout({ bindGroupLayouts: [occLayout] }), primitive: strip, vertex: { module, entryPoint: 'vs_occ' },
@@ -811,7 +816,11 @@ export const plugin = Object.freeze({
         globals[12] = shadow; globals[13] = frame.sourceReady ? 1 : 0; globals[14] = INK; globals[15] = ROWS;
         globals.set(under, 16); globals[19] = 1;
         globals.set(paper, 20); globals[23] = 1;
-        globals[24] = LIGHT[0]; globals[25] = LIGHT[1]; globals[26] = LIGHT[2]; globals[27] = 0;
+        globals[24] = LIGHT[0]; globals[25] = LIGHT[1]; globals[26] = LIGHT[2];
+        // how far the corner is from its rest pose (the dog-ear of the hinted corner, or flat), 0 .. 1 over AWAY_PX: the lamp's highlight goes above
+        // white (extended range) only once the corner has left it
+        const restAt = liftedTo(active, active === hintCorner(corner) ? dogEar : 0, w, h);
+        globals[27] = Math.min(1, Math.max(0, (Math.hypot(sx.x - restAt[0], sy.x - restAt[1]) - 2) / AWAY_PX));
         globals[28] = -LIGHT[0] / LIGHT[2]; globals[29] = -LIGHT[1] / LIGHT[2]; globals[30] = 0; globals[31] = 0;
         foldSpan(globals, w, h);
         device.queue.writeBuffer(uniforms, 0, globals);
