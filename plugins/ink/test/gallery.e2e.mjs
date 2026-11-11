@@ -38,7 +38,8 @@ try {
   };
   const during = framesDuring(page, 700);
   await sweep(24, 16);
-  const stirred = changed((await shot(page)).img, calm, 16);
+  // (a hover moves the page by at most 3 CSS px and lights it faintly: changes of more than 4 levels, not 16)
+  const stirred = changed((await shot(page)).img, calm, 4);
   c.check('a hovering pointer stirs the page: the presented pixels change', stirred.px > 1500, stirred);
   const movingFrames = await during;
   c.check('while the ink moves the host renders it (more than 20 frames in 0.7 s)', movingFrames > 20, { effectFrames: movingFrames });
