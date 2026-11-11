@@ -150,7 +150,7 @@ const UI_CSS = `.hic-shatter-ui{display:grid;grid-template-columns:auto 1fr;gap:
 export const plugin = Object.freeze({
   type: 'shatter',
   apiVersion: /** @type {const} */ (2),
-  version: 3,
+  version: 4,
   actions: ACTIONS,
   // every pass only writes its destination as a same-format colour attachment (the shard and debris blending never samples it)
   outputCapabilities: Object.freeze({ directCanvasRenderAttachment: /** @type {const} */ (true) }),
@@ -266,7 +266,9 @@ export const plugin = Object.freeze({
     let spanEnd = SPAN;
     /** the serial of the demo in progress (0: none), and of the last one */
     let demoRun = 0, demoSerial = 0;
-    let strikes = 0;
+    let strikes = 0, seed = 0;
+    /** the pattern the pane last came together along (a fall that ended in place): a strike at its impact cracks it along the same lines */
+    /** @type {{x: number, y: number, seed: number}|null} */ let healedFrom = null;
     const impact = { x: 0, y: 0 };
     let far = 1;
     /** the impact of the next crack pattern, built by the next frame (it needs the frame's css size); null: the default point */
@@ -346,7 +348,7 @@ export const plugin = Object.freeze({
       context.requestRender();
       return done;
     }
-    /** where the demo strikes: the `impact` option, else the first submit control of the source, else a point right of and below the centre */
+    /** where the demo strikes a pane that did not just come together, and where the intro joins it: the `impact` option, else the first submit control of the source, else a point right of and below the centre */
     const demoPoint = () => {
       if (s.impact) return s.impact;
       const cw = canvas.clientWidth, ch = canvas.clientHeight;
@@ -373,9 +375,11 @@ export const plugin = Object.freeze({
       demoRun = mine;
       fall.setDuration(DEMO_FALL_MS);
       const live = () => demoRun === mine && !destroyed;
-      const at = point ?? demoPoint();
       return (async () => {
         if (!fall.assembled && !(await start('in', null, false))) return false;
+        // the strike: where the pane last came together, along those cracks (read once it is in place), unless the `impact` option says
+        // where; else the submit control
+        const at = point ?? (!s.impact && healedFrom ? { x: healedFrom.x, y: healedFrom.y } : demoPoint());
         if (live() && !cracked()) {
           if (!(await start('crack', at, false))) return false;
           await new Promise((resolve) => { setTimeout(resolve, DEMO_PAUSE_MS); });
@@ -392,7 +396,8 @@ export const plugin = Object.freeze({
     const moving = () => cracks.animating || fall.animating;
     /** resolves once nothing moves, after the frame that draws the end state was rendered; at once when nothing moves */
     const wait = () => (moving() ? new Promise((resolve) => { waiters.push(resolve); }) : Promise.resolve(restingState()));
-    if (fall.phase === 'gone' && s.state === 'in') { crossfade = reduced(); request('in'); }   // the intro: the shards fly into place
+    // the intro: the shards fly into place, joining where the demo will strike (so its cracks open from there, along the same lines)
+    if (fall.phase === 'gone' && s.state === 'in') { crossfade = reduced(); pendingImpact = demoPoint(); request('in'); }
 
     // the user takes over from the demo: the pane comes back into place (the press itself is mapped as usual)
     const takeOver = () => { if (demoRun) { endDemo(); context.trigger('in'); } };
@@ -443,7 +448,10 @@ export const plugin = Object.freeze({
         const gFall = frame.sourceReady ? fall.advance(frame.now) : fall.g;
         let gCrack = frame.sourceReady ? cracks.advance(frame.now) : cracks.g;
         const falling = !fall.assembled;
-        if (wasFalling && !falling) { cracks.jump('in'); gCrack = 0; precracked = false; crossfade = false; }   // back in place, cracks closed
+        if (wasFalling && !falling) {   // back in place, cracks closed
+          if (pattern) healedFrom = { x: impact.x, y: impact.y, seed };
+          cracks.jump('in'); gCrack = 0; precracked = false; crossfade = false;
+        }
         wasFalling = falling;
         if (!falling && cracks.assembled) { pattern = null; crackedMapper = null; }
         // the copy is left once the pane is fully gone (the way back is live); a demo fall stops in the air and comes back with its copy
@@ -456,7 +464,11 @@ export const plugin = Object.freeze({
           impact.x = Math.min(frame.cssWidth, Math.max(0, at.x));
           impact.y = Math.min(frame.cssHeight, Math.max(0, at.y));
           far = Math.max(Math.hypot(impact.x, impact.y), Math.hypot(frame.cssWidth - impact.x, impact.y), Math.hypot(impact.x, frame.cssHeight - impact.y), Math.hypot(frame.cssWidth - impact.x, frame.cssHeight - impact.y));
-          const built = buildShards(impact, frame.cssWidth, frame.cssHeight, s.cracks, s.seed + strikes++, vertices, shardData, wallVertices);
+          // a strike where the pane last came together breaks it along the cracks it joined at; elsewhere a new pattern
+          const again = healedFrom && Math.abs(healedFrom.x - impact.x) < 0.5 && Math.abs(healedFrom.y - impact.y) < 0.5;
+          seed = again && healedFrom ? healedFrom.seed : s.seed + strikes++;
+          healedFrom = null;
+          const built = buildShards(impact, frame.cssWidth, frame.cssHeight, s.cracks, seed, vertices, shardData, wallVertices);
           vertexCount = built.vertexCount;
           wallCount = built.wallCount;
           device.queue.writeBuffer(vertexBuffer, 0, vertices, 0, vertexCount * VERTEX_FLOATS);

@@ -108,9 +108,9 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `plugins/page-curl.iife.js` | 62,011 | 18,507 |
 | `plugins/page-curl.iife.min.js` | 35,911 | 14,528 |
 | `plugins/page-curl.esm.js` | 58,453 | 18,079 |
-| `plugins/shatter.iife.js` | 60,574 | 17,857 |
-| `plugins/shatter.iife.min.js` | 35,197 | 13,680 |
-| `plugins/shatter.esm.js` | 57,402 | 17,370 |
+| `plugins/shatter.iife.js` | 61,013 | 17,970 |
+| `plugins/shatter.iife.min.js` | 35,369 | 13,756 |
+| `plugins/shatter.esm.js` | 57,829 | 17,479 |
 | `plugins/water.iife.js` | 50,536 | 14,735 |
 | `plugins/water.iife.min.js` | 28,708 | 11,393 |
 | `plugins/water.esm.js` | 47,617 | 14,348 |
