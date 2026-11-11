@@ -266,7 +266,7 @@ fn fs_flat(v : FullOut) -> @location(0) vec4<f32> {
   let src = c.rgb * c.a * g.ready;
   if (g.fade <= 0.0) { return vec4<f32>(src, 1.0); }
   let col = mix(to_linear(src), wall_color(v.uv * g.css), g.fade);
-  return vec4<f32>(to_srgb(col) + vec3<f32>((ign(v.position.xy) - 0.5) / 255.0), 1.0);
+  return vec4<f32>(clamp(to_srgb(col) + vec3<f32>((ign(v.position.xy) - 0.5) / 255.0), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 
 @fragment
@@ -282,7 +282,7 @@ fn fs_wall(v : FullOut) -> @location(0) vec4<f32> {
   let cover = smoothstep(0.0, 1.0, wide.x * HEIGHT_SCALE / max(-g.wall, 1.0));
   let light = ROOM * (1.0 - 0.45 * g.shade * cover) + (1.0 - ROOM) * mix(1.0, lit, g.shade);
   let col = wall_color(q) * light;
-  return vec4<f32>(to_srgb(col) + vec3<f32>((ign(v.position.xy) - 0.5) / 255.0), 1.0);
+  return vec4<f32>(clamp(to_srgb(col) + vec3<f32>((ign(v.position.xy) - 0.5) / 255.0), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 
 /** a separable Gaussian of 9 texels (5 bilinear taps), along g.blur */
@@ -395,5 +395,7 @@ fn fs_cloth(v : ClothOut, @builtin(front_facing) facing : bool) -> @location(0) 
     changed = 1.0;
   }
   // dithered where the effect lit or shaded the page; the page's own pixels where it did not
-  return vec4<f32>(to_srgb(col) + vec3<f32>((ign(v.position.xy) - 0.5) / 255.0 * changed), 1.0);
+  // (clamped: the dither goes below 0 on a black channel; an 8-bit target clamps it anyway, a float one with extended range would show it, and the
+  // cloth adds no light of its own above the page's white)
+  return vec4<f32>(clamp(to_srgb(col) + vec3<f32>((ign(v.position.xy) - 0.5) / 255.0 * changed), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
