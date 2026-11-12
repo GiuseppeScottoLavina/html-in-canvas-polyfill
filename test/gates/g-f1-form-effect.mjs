@@ -17,7 +17,9 @@ import { PRESENT_SRC, presentedHz } from './lib/present.mjs';
 import { checkEdgeHits } from './lib/hit.mjs';
 
 const SELECTORS = ['#hic-surface', '#name', '#email', '#project', '#consent', '#submit-button'];
-const TRIAL_ATTEMPTS = 26;
+// at most this many drops until MIN_TRIALS + 6 discriminating trials: runs of 2026-11-12 found 5 to 16 in at most 26 drops (rc.9 and rc.10 alike,
+// every one of them correct), so 26 left a run short of MIN_TRIALS by chance; the thresholds are unchanged
+const TRIAL_ATTEMPTS = 60;
 const MIN_TRIALS = 10;
 const MIN_CORRECT_SHARE = 0.8;
 

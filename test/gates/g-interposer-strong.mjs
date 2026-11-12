@@ -13,7 +13,7 @@
 import { runGate, H, EFFECTS_BUNDLE, WATER_BUNDLE } from './lib/gate.mjs';
 import { openRef, rectsOf } from './lib/f1.mjs';
 import { compositorShot, assertLayerHidden } from './lib/pixel.mjs';
-import { MARKS, MARK_CSS, MIN_TRIALS, MIN_SHARE, candidates, clickTrials } from './lib/displaced.mjs';
+import { MARKS, MARK_CSS, MIN_TRIALS, MIN_SHARE, candidates, clickTrials, frozenShot, fieldClip, touchesBorder } from './lib/displaced.mjs';
 
 const CRT_BUNDLE = '/dist/plugins/crt.iife.js';
 /** F1 with the polyfill, the effects host and one example plugin over the form; the page draws nothing itself (painter=none). */
@@ -149,12 +149,15 @@ runGate('G-interposer-strong', async (ctx) => {
   await setup(ctx, page, 'water', { intensity: 1 }, !ctx.control);
   const water = { discriminating: 0, correct: 0, notDiscriminating: 0, missing: [], trials: [], spots: 0 };
   const twin = await rectsOf(ref, Object.keys(MARKS));
-  for (let s = 0; s < 40 && water.discriminating < MIN_TRIALS + 10; s++) {
+  // one click per frozen frame (below), so up to 100 drops: a frozen frame stays ~1 s, and a loaded Mac takes ~0.8 s of it for the screenshot
+  for (let s = 0; s < 100 && water.discriminating < MIN_TRIALS + 10; s++) {
     const sel = Object.keys(MARKS)[s % 4];
     const r = twin[sel];
     // a strong drop (the water plugin's action, strength 2, `swell: true`: one broad crater with a crown on the wake field; a tap's pebble rings in narrow bands that
     // move an edge by +-4 px only, 2026-11-05) 40 css px below the field: its crown pushes the field's visual bottom edge down
-    const cx = r.x + r.width * (0.3 + 0.1 * (s % 4)), cy = r.y + r.height + 40;
+    // the drop's column moves along the field with every round of the four fields (golden-ratio steps over 20 % to 80 % of its width): with one click per frozen
+    // frame, four fixed columns repeated the same click from the fifth drop on
+    const cx = r.x + r.width * (0.2 + 0.6 * (((s % 4) * 0.25 + Math.floor(s / 4) * 0.618) % 1)), cy = r.y + r.height + 40;
     await ctx.focus(page);
     await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
     await H.sleep(50);
@@ -166,12 +169,19 @@ runGate('G-interposer-strong', async (ctx) => {
       const shown = new Promise((r) => { const on = () => { if (performance.now() - t >= 170) { c.setAttribute('framecap', 1); c.removeEventListener('effectframe', on); r(); } }; c.addEventListener('effectframe', on); });
       window.__fx.trigger('drop', { point: { x: ${cx - origin.x}, y: ${cy - origin.y} }, strength: 2, swell: true }).catch(() => {});
       return shown; })()`);
-    const shot = (await compositorShot(page, '#hic-surface')).img;
+    // the oracle is the frame still presented at each click (frozenShot, clickTrials): a shot or a click across a frame change is not a trial
+    // only the field's neighbourhood is captured (fieldClip): a shot of the whole canvas took ~0.9 s of the ~1 s the frame stays
+    const clip = fieldClip(rects['#hic-surface'], r);
+    const frozen = await frozenShot(page, async () => (await compositorShot(page, '#hic-surface', { clip })).img);
+    if (!frozen) { water.staleShots = (water.staleShots ?? 0) + 1; continue; }
+    const shot = frozen.img;
+    if (touchesBorder(shot, MARKS[sel])) { water.clipped = (water.clipped ?? 0) + 1; continue; }
     water.spots++;
     // the candidates nearest the ripples first (the most displaced), three per frozen frame
-    const cands = candidates(shot, [sel], origin, dpr, water.missing).sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
-    // two per frozen frame: the frame cap of 1 holds the frame ~1 s, and a third click can outlast it (each click is also a drop, shown by the next frame)
-    await clickTrials(ctx, page, ref, cands, water, 2);
+    const cands = candidates(shot, [sel], { x: clip.x, y: clip.y }, dpr, water.missing).sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+    // one per frozen frame: the frame cap of 1 holds it ~1 s, the screenshot can take most of that on a loaded Mac, and each click is also a drop, shown by the next
+    // frame (until 2026-11-12 two were made, and the second was often judged against a frame no longer presented)
+    await clickTrials(ctx, page, ref, cands, water, 1, frozen.frame);
   }
   await page.evaluate('document.querySelector("#hic-surface").removeAttribute("framecap")');
   numbers.water = water;

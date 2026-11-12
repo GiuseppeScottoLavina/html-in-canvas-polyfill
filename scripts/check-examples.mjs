@@ -151,7 +151,7 @@ async function staticSelectionShows(page, selector, kind, word, { effect = false
   await page.evaluate(`(() => { const layer = document.querySelector('hic-layer') ?? document.querySelector(${q(selector)}); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
     while ((t = tw.nextNode())) if (t.data.includes(${q(word)})) { t.parentElement.scrollIntoView({ block: 'center' }); break; }
     getSelection().removeAllRanges();
-    window.__selSource = null; if (!window.__selSourceListener) { window.__selSourceListener = true; document.querySelector(${q(selector)}).addEventListener('effectframe', (e) => { window.__selSource = e.detail.sourceVersion; }); } })()`);
+    window.__selSource = null; if (!window.__selSourceListener) { window.__selSourceListener = true; document.querySelector(${q(selector)}).addEventListener('effectframe', (e) => { window.__selSource = e.detail.sourceVersion; window.__selFrameAt = performance.now(); }); } })()`);
   await sleep(400);
   const target = await page.evaluate(`(() => { const layer = document.querySelector('hic-layer') ?? document.querySelector(${q(selector)}); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
     while ((t = tw.nextNode())) { const i = t.data.indexOf(${q(word)}); if (i < 0) continue;
@@ -160,7 +160,20 @@ async function staticSelectionShows(page, selector, kind, word, { effect = false
     return null; })()`);
   if (!target) return { ok: false, reason: `no text "${word}" in the layer` };
   const source = () => page.evaluate('window.__selSource');
-  const before = await canvasImage(page, selector, kind);
+  // with an effect, the picture before the double click is taken while the effect is still (no effect frame for 250 ms, none during the read): an effect that plays
+  // on its own (glitch in mode 'ambient': a short event every ~1.4 s) otherwise leaves its frame in it, and the selection never reads as gone (until 2026-11-12,
+  // a third of the runs: 480 px of the word's 7,680 left)
+  let before = null;
+  for (let i = 0; i < 40 && !before; i++) {
+    const quiet = await page.evaluate(`!window.__selFrameAt || performance.now() - window.__selFrameAt >= 250`);
+    if (!effect || quiet) {
+      const t0 = await page.evaluate('performance.now()');
+      const img = await canvasImage(page, selector, kind);
+      if (!effect || (await page.evaluate(`!window.__selFrameAt || window.__selFrameAt < ${t0}`))) before = img;
+    }
+    if (!before) await sleep(50);
+  }
+  if (!before) return { ok: false, reason: 'the effect never stayed still for 250 ms (2 s)' };
   const sx = before.width / target.canvas.w, sy = before.height / target.canvas.h;
   const x0 = Math.max(0, Math.floor(target.box.x * sx)), y0 = Math.max(0, Math.floor(target.box.y * sy));
   const x1 = Math.min(before.width, Math.ceil((target.box.x + target.box.w) * sx)), y1 = Math.min(before.height, Math.ceil((target.box.y + target.box.h) * sy));
