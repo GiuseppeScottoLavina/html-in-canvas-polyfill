@@ -174,6 +174,44 @@ test('display:none (not laid out) drops the snapshot; showing it again builds a 
   assert.deepEqual(rig.css(a, 50, 30), RGBA.lime);
 });
 
+test('a drawable without a box is watched, not polled: its damage does not keep the canvas ticking, and the bus wakes the canvas when it gets a box', async (t) => {
+  const rig = await makeRig(t);
+  const a = rig.add('a', 100, 60);
+  await rig.build(a);
+  const woken = [];
+  const off = rig.bus.on(rig.BUS.DRAWABLE_BOXED, (e) => woken.push(e.record));
+  t.cleanup(off);
+  a.style.display = 'none';
+  rig.hide(a);
+  rig.store.markDamage(a, null, 'mutation');
+  assert.equal(rig.store.isSettled(a), false, 'control: damage of a drawable not yet known to have no box keeps the canvas ticking');
+  assert.equal(rig.pump().started, 0);
+  assert.deepEqual(rig.store.commitLanded(), { changed: [], removed: [a] });
+  assert.equal(rig.store.isSettled(a), true, 'its damage waits for a box (or new damage), which wake the scheduler');
+  assert.equal(rig.store.needsPump(), true, 'a pump of the canvas still looks at it');
+  await sleep(120);
+  assert.equal(woken.length, 0, 'no wake while it has no box');
+  a.style.display = '';
+  rig.show(a);
+  await until(() => woken.length > 0, 2000, 'DRAWABLE_BOXED');
+  assert.equal(woken[0], rig.record);
+  rig.color = 'lime';
+  assert.equal(rig.pump().started, 1, 'built once it has a box');
+  assert.equal(rig.store.isSettled(a), false, 'a drawable with a box is no longer exempt: its build keeps the canvas ticking');
+  await until(() => rig.store.hasLanded(), 2000, 'the tile');
+  assert.deepEqual(rig.store.commitLanded(), { changed: [a], removed: [] });
+  assert.deepEqual(rig.css(a, 50, 30), RGBA.lime);
+  // shown again, the box watch is gone: hiding it once more starts a new one, and showing it wakes again
+  woken.length = 0;
+  a.style.display = 'none';
+  rig.hide(a);
+  rig.store.markDamage(a, null, 'mutation');
+  rig.pump();
+  a.style.display = '';
+  rig.show(a);
+  await until(() => woken.length > 0, 2000, 'DRAWABLE_BOXED (second time)');
+});
+
 test('forget(record) releases everything silently', async (t) => {
   const rig = await makeRig(t);
   const a = rig.add('a', 100, 60);

@@ -137,7 +137,8 @@ export function createScheduler(env, store, hooks) {
     if (entry?.registered && e.state === 'active') resume(entry, 'content-attr');
   });
   // A drawable added to / removed from a mounted canvas: the store tracks it (forced damage) but only the scheduler can arm a tick to build, commit and paint it.
-  // ... and so is a drawable that the surface budget held back once memory is freed (an ElementImage closed): it does not tick while it waits for that.
+  // ... and so is a drawable that the surface budget held back once memory is freed (an ElementImage closed), or one without a CSS box once it has one: neither
+  // ticks while it waits for that.
   const onStoreWork = (/** @type {{record: CanvasRecord}} */ e) => {
     const entry = entries.get(e.record);
     if (!entry?.registered) return;
@@ -146,6 +147,7 @@ export function createScheduler(env, store, hooks) {
   };
   const offDrawables = env.bus.on(BUS.DRAWABLES_CHANGED, onStoreWork);
   const offFreed = env.bus.on(BUS.MEMORY_FREED, onStoreWork);
+  const offBoxed = env.bus.on(BUS.DRAWABLE_BOXED, onStoreWork);
   /**
    * Called by the scheduler of the parent document, inside its own tick (the parent's rendering update runs before this document's): run this document's tick now when one
    * is armed. Returns true while a paint of this document is still owed (held), so the parent holds the canvas that contains the iframe too.
@@ -851,6 +853,7 @@ export function createScheduler(env, store, hooks) {
       offState();
       offDrawables();
       offFreed();
+      offBoxed();
       env.document.removeEventListener('visibilitychange', onVisibility);
       env.window.removeEventListener?.('resize', onWindowResize);
       try {

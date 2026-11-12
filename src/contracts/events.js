@@ -35,6 +35,8 @@ export const BUS = /* @__PURE__ */ Object.freeze({
   SURFACE_RESTORED: 'surface:restored',
   /** {record} options.maxTotalSurfaceBytes has room again for a drawable of the canvas that it held back: the scheduler wakes. Emitted by the store only. */
   MEMORY_FREED: 'surface:freed',
+  /** {record} a drawable of the canvas that the pump skipped for lack of a CSS box has one again: the scheduler wakes. Emitted by the store only. */
+  DRAWABLE_BOXED: 'drawable:boxed',
 });
 
 /**
