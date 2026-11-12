@@ -229,7 +229,8 @@ if (!docsOnly) {
   // its provider, upload, fill geometry and inert handling; gpu-presenter.js its texture; input-mapper.js and interposer.js a point on it; the feature row)
   // 17836 -> 17864 (2026-11-12, measured 17,864): a drawable without a CSS box is watched by a ResizeObserver instead of being checked every frame (+28:
   // src/snapshot/store/store.js watchBox, src/snapshot/store/pump.js, the bus event and its listener)
-  if (total > 17864) problems.push(`G-size: core is ${total} code lines (> 17864)`);
+  // 17864 -> 17865 (2026-11-12, measured 17,865): a descendant's backdrop-filter gets a transparent background layer in the clone (+1: src/snapshot/capture/clone.js)
+  if (total > 17865) problems.push(`G-size: core is ${total} code lines (> 17865)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

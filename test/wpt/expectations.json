@@ -1,16 +1,6 @@
 {
  "note": "Reasons for every subtest that passes natively and fails in the polyfill (category: deviation | impossible | flaky | bug; reason: the feature id of docs/SUPPORT-MATRIX.md or a bug id). `pass`, `partial` and `stable` are rewritten by `npm run test:wpt -- --update-expectations`.",
  "tests": {
-  "backdrop-filter-nested.tentative.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
-  },
-  "backdrop-filter-rounded-bounds.tentative.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
-  },
   "canvas-transform-get-bounding-client-rect.tentative.html": {
    "subtests": {
     "updateElementGeometry() affects getBoundingClientRect() on an inline": {
@@ -39,11 +29,6 @@
      "note": "passes alone (its own steps are met): it follows the ancestor subtest above, which fails before its cleanup (clearElementGeometry) and leaves #target and #nested-block transformed"
     }
    }
-  },
-  "css-backdrop-filter-image.tentative.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
   },
   "css-object-fit-nested-canvas.tentative.html": {
    "category": "deviation",
@@ -120,15 +105,10 @@
    "reason": "paint-timing",
    "note": "passes every subtest since 2026-10-16 (the first snapshot uses no credit of the snapshot-rate gate, so the rebuild after the first paint is in the next frame); before, the test's one-frame waits (rAF + setTimeout(0)) caught the paint only on a cold first load, and the file passed 4/4 or 0/4 by turns. Kept for the paint-timing deviation should a slower machine miss the single frame"
   },
-  "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
-  },
   "privacy/filtered-outside-subtree-ignored.tentative.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "the first failing assertion is a backdrop-filter of a DESCENDANT of the drawable (#backdrop-internal inside #backdrop-wrapper): a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). The filter assertions themselves are met: with the four backdrop assertions removed (probe, 3 runs each), native and the polyfill pass every check before the move (an SVG filter inside the canvas applies with its unvisited style, one outside is ignored, on HTML and SVG content); after the atomic move the polyfill repaints the drawables that refer to the moved filter, but its single waitForCanvasPaint can see the paint of the two moved-in drawables before all five rebuilt tiles land (paint-timing: at most two rebuilds per canvas in flight); with a 500 ms wait every check passes"
+   "category": "deviation",
+   "reason": "paint-timing",
+   "note": "every assertion before the move passes since 2026-11-12 (a descendant's backdrop-filter is painted: clone.js gives an element that paints nothing a transparent background layer, without which Chrome 157's SVG image renderer skips its backdrop-filter). The first failing one is the first after the move: the test moves two drawables into the canvas and the filter out of it, then waits for one paint. The polyfill rebuilds the five drawables that change in rounds (at most 2 builds in flight per canvas; coherentPaint holds a paint for the builds of one round only), so that paint shows the two drawables moved in and the three others still filtered; the second paint shows div-internal and the backdrop unfiltered, the third the SVG (measured on Chrome 157 with a copy of the page that logs every paint). Native paints all five in the rendering update of the move"
   },
   "privacy/selection-alone-with-decorations-painted.tentative.html": {
    "category": "deviation",
@@ -175,6 +155,8 @@
   "animated-gif-pinned-to-element-image.tentative.html",
   "animated-gif.tentative.html",
   "backdrop-filter-bounds-expansion.tentative.html",
+  "backdrop-filter-nested.tentative.html",
+  "backdrop-filter-rounded-bounds.tentative.html",
   "basic-rect-zoom.tentative.html",
   "basic-rect.tentative.html",
   "broken-image.tentative.html",
@@ -193,6 +175,7 @@
   "content-drawable-no-hit-test.tentative.html",
   "content-not-culled.tentative.html",
   "css-backdrop-filter-and-mask.tentative.html",
+  "css-backdrop-filter-image.tentative.html",
   "css-backdrop-filter-on-div.tentative.html",
   "css-backdrop-filter-with-blend-mode-over-content.tentative.html",
   "css-backdrop-filter-with-mix-blend-mode-and-opacity.tentative.html",
@@ -273,6 +256,7 @@
   "opacity-zero-ancestor.tentative.html",
   "percent-sizing.tentative.html",
   "position-anchor-crash.tentative.html",
+  "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html",
   "privacy/background-image-in-iframe-ignored.tentative.https.sub.html",
   "privacy/background-image-in-iframe-moved-ignored.tentative.https.sub.html",
   "privacy/background-image-on-body-in-iframe-ignored.tentative.https.sub.html",

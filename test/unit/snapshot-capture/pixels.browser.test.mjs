@@ -355,6 +355,19 @@ test('filter: url(#id) naming an SVG <filter> outside the drawable and inside th
   assert.deepEqual([red[0], red[1], red[2]], [255, 0, 0], 'positive control');
 });
 
+test('a backdrop-filter of a descendant is painted: the clone gives an element that paints nothing a transparent background layer, without which Chromium\'s SVG image renderer skips its backdrop-filter (WPT backdrop-filter-nested, -rounded-bounds, css-backdrop-filter-image); positive controls: the same SVG image without the layer, and the drawable without the filter', async () => {
+  const css = '.w{width:60px;height:40px;background:red;position:relative}.b{width:100%;height:100%;backdrop-filter:invert(1)}';
+  const at = (/** @type {CanvasRenderingContext2D} */ x) => [...x.getImageData(30, 20, 1, 1).data].slice(0, 3);
+  // the engine: a layer of the element's own makes its backdrop-filter paint inside an SVG image (Chrome 157 and later; 156 painted none either way)
+  const layered = at(await reference('<div class="w"><div class="b" style="background-image:linear-gradient(#0000,#0000)"><div class="b" style="background-image:linear-gradient(#0000,#0000)"></div></div></div>', css, 60, 40));
+  assert.deepEqual(layered, [0, 255, 255], 'this Chrome paints a backdrop-filter inside an SVG image when its element paints something (157 and later)');
+  assert.deepEqual(at(await reference('<div class="w"><div class="b"><div class="b"></div></div></div>', css, 60, 40)), [255, 0, 0], 'positive control: without a layer of its own the renderer skips it');
+  const m = mount('<div class="w" drawable><div class="b"><div class="b"></div></div></div>', { css });
+  assert.deepEqual(at(await rasterize(m.capture(m.request(m.layerEl.firstElementChild)))), [0, 255, 255], 'the outer filter inverts the red; the inner one, in the backdrop root of the outer, inverts nothing');
+  const plain = mount('<div class="w" drawable><div></div></div>', { css });
+  assert.deepEqual(at(await rasterize(plain.capture(plain.request(plain.layerEl.firstElementChild)))), [255, 0, 0], 'positive control: without the filter the box stays red');
+});
+
 test('a filter whose feImage is a same-origin URL that does not load keeps applying with an empty image (the platform does the same; measured on the native oracle)', async () => {
   const m = mount('<div class="d" drawable></div>', { css: '.d{width:40px;height:40px;background:red;filter:url(#hic-img)}' });
   m.layerEl.insertAdjacentHTML('beforeend', '<svg width="1" height="1"><filter id="hic-img"><feImage href="/test/unit/snapshot-capture/assets/missing.png" result="i"/><feFlood flood-color="blue"/></filter></svg>');
