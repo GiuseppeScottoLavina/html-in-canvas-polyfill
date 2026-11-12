@@ -88,6 +88,12 @@ test('admission: an outside box over the port that blends (itself, an element ar
   assert.ok(scene({ own: fill, wrap: { mixBlendMode: 'saturation', opacity: '0' } }).plan, 'control: under a blended wrapper of opacity 0');
   assert.ok(scene({ own: { ...fill, mixBlendMode: 'saturation' }, at: new Rect(20, 430, 400, 30) }).plan, 'control: blended, below the port');
   assert.equal(scene({ own: { ...fill, mixBlendMode: 'saturation' }, at: new Rect(20, 400, 400, 40) }).plan, null, 'blended, half over the port');
+  // a backdrop-filter: the snapshot paints it (Chrome 157), and a blur keeps the cover colours uniform while it blurs the content under it
+  assert.equal(scene({ own: { backdropFilter: 'blur(8px)' } }).plan, null, 'a backdrop-filter over the port, with nothing else painted');
+  assert.equal(scene({ own: fill, wrap: { backdropFilter: 'blur(8px)' } }).plan, null, 'a backdrop-filter on an element around it');
+  assert.equal(scene({ pseudo: { content: '""', position: 'absolute', backdropFilter: 'blur(8px)' } }).plan, null, 'a backdrop-filter on its ::before');
+  assert.ok(scene({ own: { backdropFilter: 'blur(8px)', opacity: '0' } }).plan, 'control: a backdrop-filter of opacity 0');
+  assert.ok(scene({ own: { backdropFilter: 'blur(8px)' }, at: new Rect(20, 430, 400, 30) }).plan, 'control: a backdrop-filter below the port');
 });
 
 test('admission: a blended box over the port clipped whole by a wrapper of no size (overflow hidden or clip) is planned; anything not proven refuses', () => {

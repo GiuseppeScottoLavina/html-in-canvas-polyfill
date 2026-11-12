@@ -315,6 +315,9 @@ function cloneElement(ctx, src, known) {
   applyInteractionClasses(src, clone, ctx.ix);
   if (!replaced && (!scoped || styledByShadow(src))) inlineComputed(src, clone, cs);
   if (src.namespaceURI === 'http://www.w3.org/2000/svg') svgContentMask(src, clone, cs, ctx.req.resources);
+  // Chromium's SVG image renderer skips the backdrop-filter of an element that paints nothing of its own (measured, 157: an invert over the drawable's background
+  // left it as it was); a transparent background layer paints nothing and is enough. The drawable's own backdrop-filter is applied by the draw.
+  if (src !== ctx.drawable && (cs.backdropFilter ?? 'none') !== 'none' && cs.backgroundImage === 'none') appendInlineStyle(clone, 'background-image:linear-gradient(#0000,#0000)!important');
   // backdrop of the optimistic text overlay (text-overlay.js): the field without its text
   if (src === ctx.req.hideText) appendInlineStyle(clone, 'color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important');
   // a page of the scroll compositor: pinned (sticky) elements are drawn from their own tile

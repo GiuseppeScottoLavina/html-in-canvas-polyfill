@@ -457,7 +457,7 @@ function unlayered(win, s, rects, layer, inside) {
 const generated = (style, e) => ['::before', '::after'].filter((p) => !/^(none|normal)$/.test(style(e, p).content));
 
 /** @param {CSSStyleDeclaration} cs @returns {boolean} composited with what lies under it by a blend mode other than normal */
-const blending = (cs) => (cs.mixBlendMode ?? 'normal') !== 'normal';
+const blending = (cs) => (cs.mixBlendMode ?? 'normal') !== 'normal' || (cs.backdropFilter ?? 'none') !== 'none';
 
 /**
  * One check of the elements outside the scroller `s` (unblended, quietOutside): every computed style is read once in it, an element's own and its generated boxes',
@@ -479,8 +479,11 @@ function outsideCheck(win, s) {
 /** @param {string} v a computed shadow list @returns {number} css px it may reach beyond the box: every length of it added up (offsets, blur and spread), twice */
 const shadowReach = (v) => (v === 'none' ? 0 : 2 * (v.match(/-?[\d.]+px/g) ?? []).reduce((a, n) => a + Math.abs(parseFloat(n)), 0));
 
-/** @param {CSSStyleDeclaration} cs @returns {number} css px its shadows and outline reach beyond the box; a filter or a border image: anywhere */
-const inkReach = (cs) => (cs.filter !== 'none' || (cs.backdropFilter ?? 'none') !== 'none' || (/** @type {any} */ (cs).borderImageSource ?? 'none') !== 'none' ? Infinity
+/**
+ * @param {CSSStyleDeclaration} cs @returns {number} css px its shadows and outline reach beyond the box; a filter or a border image: anywhere. A backdrop-filter paints
+ *   inside the border box only (Filter Effects 2: its result is clipped to it): painting counts it as the box's own paint
+ */
+const inkReach = (cs) => (cs.filter !== 'none' || (/** @type {any} */ (cs).borderImageSource ?? 'none') !== 'none' ? Infinity
   : Math.max(shadowReach(cs.boxShadow), shadowReach(cs.textShadow), cs.outlineStyle === 'none' ? 0 : px(cs.outlineWidth) + Math.max(0, px(cs.outlineOffset))));
 
 /**
@@ -493,7 +496,7 @@ function painting(style, e) {
   const h = /** @type {HTMLElement} */ (e), cs = style(e);
   const shown = cs.visibility === 'visible';
   let self = !!e.shadowRoot || e.localName.includes('-') || e.namespaceURI !== 'http://www.w3.org/1999/xhtml' || (shown && (PAINTERS.test(e.localName)
-    || (parseColor(cs.backgroundColor)?.[3] ?? 1) > 0 || cs.backgroundImage !== 'none' || cs.display === 'list-item'
+    || (parseColor(cs.backgroundColor)?.[3] ?? 1) > 0 || cs.backgroundImage !== 'none' || (cs.backdropFilter ?? 'none') !== 'none' || cs.display === 'list-item'
     || px(cs.borderTopWidth) + px(cs.borderRightWidth) + px(cs.borderBottomWidth) + px(cs.borderLeftWidth) > 0 || [...e.childNodes].some((n) => n.nodeType === 3 && /\S/.test(/** @type {Text} */ (n).data))));
   let r = shown ? inkReach(cs) : cs.filter !== 'none' ? Infinity : 0, mix = false;
   for (const p of generated(style, e)) {
@@ -582,7 +585,8 @@ const paints = (c, e) => ((!e.getClientRects().length && !generated(c.style, e).
  * saturated row (15,878 of 104,000 pixels, up to 72 levels in the first composed step; Chrome 156 and iPad Safari 27.2). No set of colours tells that for every
  * blend mode, so an element painted over the port with a blend mode other than normal, on itself, on an ancestor below the first one it shares with the scroller or
  * on its ::before or ::after, refuses the plan. Nothing else outside is refused here (the covers see a normal overlay; one of opacity 0, of visibility: hidden or
- * with nothing to paint passes). A backdrop-filter outside is not painted by the snapshot (the engines paint none inside an SVG image). In steps, as the scan.
+ * with nothing to paint passes). A backdrop-filter refuses it as a blend does: the snapshot paints it where the SVG image renderer does (Chrome 157, clone.js), and a
+ * blur leaves a uniform colour as it was while it changes the content under it. In steps, as the scan.
  * @param {Window} win @param {Element} s @param {DOMRect} port viewport rect @param {number} k css px to viewport px @param {Element[]} outside
  * @param {() => number} now @param {number} t0 @param {() => boolean} still
  * @returns {Generator<void, boolean, void>}
