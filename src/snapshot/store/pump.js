@@ -89,6 +89,8 @@ const LAND_DEVS = 2;
  * @property {number} failures
  * @property {boolean} refused     surface does not fit the budget: no builds until the next structural damage
  * @property {boolean} lost        2D context of the surface is lost
+ * @property {boolean} unboxed     skipped by the pump for lack of a CSS box (display:none, or under display:none) and watched for one (store.js watchBox): its damage waits for that
+ *                                 or for new damage, which wake the scheduler, and does not keep the canvas ticking
  * @property {boolean} reducedReported
  * @property {boolean} sizeRefused  `refused` by the surface budget: tried again when an ElementImage frees a surface
  * @property {number} budgetNoted  causes of options.maxTotalSurfaceBytes already reported for it (store.overBudget, bit mask)
@@ -144,6 +146,7 @@ const LAND_DEVS = 2;
  * @property {() => Iterable<Entry>} entries
  * @property {(entry: Entry) => number} usedBytes  bytes of every retained surface but the drawable's own (counted too while an ElementImage pins it: it outlives a new one)
  * @property {(entry: Entry) => void} notLaidOut
+ * @property {(entry: Entry) => void} boxed  a drawable that was `unboxed` has a CSS box again
  * @property {(entry: Entry, size: Size, now: number) => void} empty  a laid-out drawable whose border box has no area: publish an EMPTY snapshot
  * @property {(entry: Entry, err: unknown) => void} refuse
  * @property {(entry: Entry, geo: Geometry) => void} reduced
@@ -409,7 +412,7 @@ export function runPump(env, deps, now, budget) {
 /**
  * PumpResult.quietUntil: the pump started nothing, every drawable with damage waits for a known time (frame cap, cost bucket, node budget, failure backoff), and
  * nothing is building, decoding or landed, so nothing can change before nextDueAt unless something outside wakes the scheduler. Any other skip (refused, lost,
- * not laid out, in the top layer, a canvas not active) keeps it null: those wait for an event the scheduler may not get, and are polled as before.
+ * in the top layer, a canvas not active, not laid out without a box watch) keeps it null: those wait for an event the scheduler may not get, and are polled as before.
  * Only for a wait of QUIET_MIN_MS or more (the scheduler does not stop for less), so host.busy() is not asked in every frame of a capped stream.
  * @param {PumpDeps} deps @param {PumpResult} out @param {number} now @returns {PumpResult}
  */
@@ -446,7 +449,11 @@ function pumpRecord(env, deps, record, list, now, budget, out) {
     if (entry.refused || entry.lost) { pumpHeld = true; continue; }
     // a drawable in the top layer below the canvas (a modal dialog, an open popover) has no snapshot, like one without a box (util/top-layer.js)
     entry.topLayer = inTopLayerBelow(entry.el, record.layer.element);
-    if (entry.topLayer || !record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); pumpHeld = true; continue; }
+    if (entry.topLayer) { deps.host.notLaidOut(entry); pumpHeld = true; continue; }
+    // without a box the drawable waits for one: the store watches it (entry.unboxed) and wakes the scheduler when it gets one, so it is not polled (a hidden page
+    // whose content kept changing held a 120 Hz frame loop of box checks: ~37 ms of main thread per second). Without a ResizeObserver it is polled as before.
+    if (!record.layer.isLaidOut(entry.el)) { deps.host.notLaidOut(entry); pumpHeld ||= !entry.unboxed; continue; }
+    if (entry.unboxed) deps.host.boxed(entry);
     if (entry.decoding >= deps.maxPerDrawable) continue;
     const scrollOnly = scrollDue && deps.damage.pendingScroll(entry.el, SCROLL_RIDERS, env.options.inkMargin + 1);
     const wait = Math.max(entry.notBefore - now, entry.lastNodes > hard && !scrollOnly ? entry.lastTakeAt + DEGRADED_INTERVAL_MS - now : 0);

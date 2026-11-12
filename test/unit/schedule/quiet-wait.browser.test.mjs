@@ -56,3 +56,43 @@ test('quiet wait (control): changes within the node budget are built at once and
   assert.ok(paints >= 3, `painted at once: ${paints} paints`);
   assert.ok(during >= 5, `the frame loop ran: ${during} rAF requests`);
 });
+
+// A drawable without a CSS box (store.js watchBox): the pump skips it and its damage used to keep the frame loop polling it every frame for as long as it stayed hidden
+// (a hidden page whose content kept changing: ~37 ms of main thread per second at 120 Hz). Shown by a change that no observer reports (a rule's selectorText set through CSSOM), it is still
+// built: the store's ResizeObserver wakes the scheduler.
+/** @param {any} t @param {(rule: CSSStyleRule) => void} show */
+async function hiddenThenShown(t, show) {
+  const style = document.createElement('style');
+  style.textContent = '#a.hic-test-hidden { display: none }';
+  document.head.append(style);
+  t.cleanup(() => style.remove());
+  const rule = /** @type {CSSStyleRule} */ (/** @type {CSSStyleSheet} */ (style.sheet).cssRules[0]);
+  const raf = rafCounter(t);
+  const i = inst(t);
+  const c = await mk(t, i, { inner: '<div id="a" class="hic-test-hidden" drawable style="width:100px;height:50px;background:rgb(255,0,0)"><span>x</span></div><div id="b" drawable style="width:50px;height:50px;background:rgb(0,0,255)"></div>' });
+  const a = /** @type {HTMLElement} */ (c.querySelector('#a'));
+  /** @type {Element[][]} */ const changed = [];
+  c.addEventListener('paint', (e) => { changed.push([.../** @type {any} */ (e).changedElements ?? []]); });
+  await frames(4);
+  a.firstElementChild.textContent = 'y';
+  await frames(4);
+  raf.start();
+  await sleep(300);
+  const during = raf.stop();
+  changed.length = 0;
+  show(rule);
+  const t0 = performance.now();
+  while (!changed.some((list) => list.includes(a)) && performance.now() - t0 < 1000) await frames(1);
+  return { during, painted: changed.some((list) => list.includes(a)), changed: changed.map((l) => l.map((e) => e.id)) };
+}
+
+test('a hidden drawable whose content changed does not poll the frame loop; shown by a selectorText edit no observer reports, it is built and painted', async t => {
+  const r = await hiddenThenShown(t, (rule) => { rule.selectorText = '#a.hic-test-not-this'; });
+  assert.ok(r.during <= 6, `rAF requests in 300 ms while the hidden drawable had damage: ${r.during} (it was polled every frame: about two per frame)`);
+  assert.ok(r.painted, `shown again, it is built and painted: ${JSON.stringify(r.changed)}`);
+});
+
+test('a hidden drawable (control): left hidden, nothing paints it', async t => {
+  const r = await hiddenThenShown(t, () => {});
+  assert.equal(r.painted, false, `still hidden: ${JSON.stringify(r.changed)}`);
+});

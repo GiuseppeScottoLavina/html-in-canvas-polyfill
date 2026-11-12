@@ -189,7 +189,7 @@ export function createSnapshotStore(env, capture, extras = {}) {
     /** @type {Entry} */
     const entry = {
       el, record, incarnation: 0, topLayer: false, surface: null, geo: null, version: null, blend: 'normal', backdrop: 'none', decoding: 0, costEma: null, landRate: null, landDev: 0, lastNodes: 0, lastTakeAt: 0, firstTakeAt: null,
-      notBefore: 0, failures: 0, refused: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
+      notBefore: 0, failures: 0, refused: false, unboxed: false, lost: false, reducedReported: false, patch: createCaretPatch(), caret: null, phase: true, caretToggles: 0,
       unwatch: null, failureReported: false, verifyGeometry: false, geometryRetries: 0, budgetNoted: 0, sizeRefused: false, ovSeq: 0, ovShown: 0, ovControl: null, ovQueued: false, ovEpoch: 0, ovTileSeq: 0, caretAsk: undefined, caretLiveAt: -Infinity, ovOk: null, ovDeferred: false,
       scrollers: new Set(),
     };
@@ -229,9 +229,34 @@ export function createSnapshotStore(env, capture, extras = {}) {
     if (old && !pinned(old)) memoryFreed();
   }
 
+  /**
+   * Drawables the pump skipped for lack of a CSS box (Entry.unboxed): one ResizeObserver tells when one gets a box again (its border box leaves 0 x 0) and wakes the
+   * scheduler of its canvas (BUS.DRAWABLE_BOXED). Showing it by a DOM change inside the canvas damages it anyway; the observer covers what is not a mutation there (a
+   * stylesheet, a class outside the canvas, a media query). A box of no area reports nothing: it is built at the next pump of its canvas, as it is drawn empty.
+   * Without ResizeObserver, watchBox() returns false and the pump polls the drawable as before.
+   */
+  /** @type {ResizeObserver|null} */
+  let boxes = null;
+  /** @param {Element} el @returns {boolean} false without ResizeObserver */
+  function watchBox(el) {
+    const RO = /** @type {any} */ (env.window).ResizeObserver;
+    if (typeof RO !== 'function') return false;
+    boxes ??= new RO((/** @type {ResizeObserverEntry[]} */ list) => {
+      const woken = new Set();
+      for (const { target } of list) {
+        const entry = entries.get(target);
+        if (entry?.unboxed && entry.record.layer?.isLaidOut(target)) woken.add(entry.record);
+      }
+      for (const record of woken) env.bus.emit(BUS.DRAWABLE_BOXED, { record });
+    });
+    /** @type {ResizeObserver} */ (boxes).observe(el, { box: 'border-box' });
+    return true;
+  }
+
   /** @param {Entry} entry @param {boolean} announce  list the element in ChangeSet.removed when it had a snapshot */
   function dropEntry(entry, announce) {
     entry.incarnation++;
+    if (entry.unboxed) boxes?.unobserve(entry.el);
     entries.delete(entry.el);
     // its side builds go now, not at the next pump (runSide would skip them): queued, they held its scroll pages and cover tiles, and a disposed store is never pumped
     for (let i = side.length; i--;) if (side[i].entry === entry) side.splice(i, 1);
@@ -419,6 +444,11 @@ export function createSnapshotStore(env, capture, extras = {}) {
       if (entry.version) pendingRemoved.set(entry.el, entry.record);
       pendingChanged.delete(entry.el);
       release(entry);
+      if (!entry.unboxed && !entry.topLayer) entry.unboxed = watchBox(entry.el);
+    },
+    boxed(entry) {
+      entry.unboxed = false;
+      boxes?.unobserve(entry.el);
     },
     empty(entry, size, now) {
       // A drawable whose box has no area has an EMPTY snapshot, not none: drawing it paints nothing and must not throw (WPT draw-element-image-empty, drawElementImage-zero-size).
@@ -1153,8 +1183,9 @@ export function createSnapshotStore(env, capture, extras = {}) {
     isSettled(el) {
       const entry = entries.get(el);
       if (!entry) return true;
-      // a refused drawable's damage waits for freed memory or a retry cause (markDamage), which wake the scheduler: it does not keep the canvas ticking
-      return (entry.refused || !damage.hasPending(el)) && entry.decoding === 0 && entry.caretToggles === 0 && !entry.ovQueued && entry.caretAsk === undefined && !backdrops.busy(entry)
+      // a refused drawable's damage waits for freed memory or a retry cause (markDamage), and an unboxed one's for a box or new damage, which wake the scheduler:
+      // neither keeps the canvas ticking
+      return (entry.refused || entry.unboxed || !damage.hasPending(el)) && entry.decoding === 0 && entry.caretToggles === 0 && !entry.ovQueued && entry.caretAsk === undefined && !backdrops.busy(entry)
         && !compositor.queued(entry) && !compositor.busy(entry) && !side.some((j) => j.entry === entry) && !landed.some((l) => l.entry === entry);
     },
     isFresh(record) {
@@ -1199,6 +1230,8 @@ export function createSnapshotStore(env, capture, extras = {}) {
       for (const off of offs) off();
       for (const l of landed.splice(0, landed.length)) releaseImage(l.image);
       for (const entry of [...entries.values()]) dropEntry(entry, false);
+      boxes?.disconnect();
+      boxes = null;
       side.length = 0;
       pendingChanged.clear();
       pendingRemoved.clear();
