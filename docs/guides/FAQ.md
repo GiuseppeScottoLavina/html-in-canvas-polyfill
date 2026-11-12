@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0-rc.8`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0-rc.9`) unless dated.
 
 ## What is this?
 
@@ -30,20 +30,20 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
-## Why is the core about 374 KB minified (128 KB gzipped)?
+## Why is the core about 375 KB minified (128 KB gzipped)?
 
-In the current build, 374,275 bytes minified and 127,677 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 374,944 bytes minified and 127,926 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
-Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 365 KB, so they are approximate.
+Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 375 KB, so they are approximate.
 
 | part | share | about |
 |---|---|---|
-| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 83 KB |
-| API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 61 KB |
-| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 49 KB |
-| scrolling: scroll offsets and classic scrollbars in snapshots, the scroll compositor and its planner | 12.7 % | 46 KB |
-| change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 41 KB |
-| snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 36 KB |
+| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 85 KB |
+| API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 63 KB |
+| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 50 KB |
+| scrolling: scroll offsets and classic scrollbars in snapshots, the scroll compositor and its planner | 12.7 % | 48 KB |
+| change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 42 KB |
+| snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 37 KB |
 | caret, text selection and typed text | 5.4 % | 20 KB |
 | scheduler and frame cap | 3.5 % | 13 KB |
 | native detection | 2.4 % | 9 KB |
@@ -77,7 +77,7 @@ Two caveats:
 
 ## Does Chrome 157 download the polyfill?
 
-With the core's script tag, yes: 374,275 bytes (127,677 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,459 bytes, 6,324 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
+With the core's script tag, yes: 374,944 bytes (127,926 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,459 bytes, 6,324 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 
@@ -97,7 +97,7 @@ On the official web-platform-tests for HTML-in-Canvas (248 files at the WPT comm
 What cannot be done in userland, by the tests' own categories:
 
 - **Paint timing** (20 subtests in 11 files): native fires `paint` inside the rendering step. The polyfill fires it at the end of its own frame and draws a snapshot that lags the DOM.
-- **Backdrop filters and blend modes inside a drawable** (7 subtests): browsers paint no `backdrop-filter` inside an SVG image, the only way page script can rasterise HTML.
+- **Backdrop filters and blend modes inside a drawable** (5 subtests): Chrome up to 156 paints no `backdrop-filter` inside an SVG image, the only way page script can rasterise HTML. Chrome 157 paints it, and two tests of this group pass there now; why these five still fail on 157 is not measured yet.
 - **Single cases:** wide-gamut colour (snapshots are sRGB), the layout of `display: contents` children of the canvas, the geometry of inline drawables, DOM writes inside a `paint` handler, and drawing a nested canvas from its current bitmap.
 
 Some deviations, such as the moved children, are not covered by WPT at all: see [SUPPORT-MATRIX.md](../SUPPORT-MATRIX.md).
@@ -136,11 +136,11 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a release candidate of a proposed standard (`1.0.0-rc.8` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a release candidate of a proposed standard (`1.0.0-rc.9` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
-- 746 unit tests in Node and 1,091 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 853 unit tests in Node and 1,299 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 17 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence, the accessibility tree), each with a positive control;
 - a gate that runs mode `native-bridged` end to end over the earlier draft of Chrome 154 and 155 (G-bridged-translation);
 - a mutation suite of 94 seeded bugs, every one of which must be caught;

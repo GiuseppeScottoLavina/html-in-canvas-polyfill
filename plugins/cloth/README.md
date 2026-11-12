@@ -101,7 +101,7 @@ Measured on an Apple M1 Max, headless Chrome 157, 2026-11-11, one run on one mac
 
 - **GPU.** `test/cloth-gpu.browser.test.mjs`, 2560 x 1600 backing pixels (1280 x 800 CSS px at DPR 2), the cloth in a gust: 0.37 ms per frame submitted back to back (the one-sample template pass: 0.09 ms), 4 % of the 8.33 ms frame at 120 Hz; at rest, the full-screen copy: 0.09 ms, and only when the page changes. Per moving frame: the cloth as the lamp sees it at a third of the CSS resolution and four separable blur passes over it, then the tessellated sheet (about 33,000 triangles, 16 texture loads per vertex) and the wall behind it in one 4x MSAA pass with depth. Nothing is allocated per frame.
 - **CPU.** `render()` with the mapper capture, in Node over a fake device (the simulation and the control points are all of it), in a gust: median 0.91 ms per frame at 120 frames per second (4 steps; p95 1.34 ms), 1.80 ms at 60 (8 steps), 3.5 ms at 30 (16 steps). The simulation alone during brisk drags of the cloth across itself: median 0.92 ms per 120 Hz frame (p95 1.13 ms), of which the cloth against itself is 0.41 ms (0.1 ms a step). A step without it costs about 0.12 ms. At rest: nothing.
-- **Bundle.** `dist/plugins/cloth.iife.min.js`: 48,842 bytes (19,165 gzip), of which about 12 KB is WGSL and 11 KB the simulation.
+- **Bundle.** `dist/plugins/cloth.iife.min.js`: 46,808 bytes (18,846 gzip), of which about 10 KB is WGSL (minified by the build) and 11 KB the simulation.
 
 
 ## Extended range

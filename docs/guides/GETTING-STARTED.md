@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `1.0.0-rc.8`, a release candidate on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `1.0.0-rc.9`, a release candidate on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 What is stable, experimental or unqualified (Safari on the iPhone is unqualified, the frame cap and the effects are experimental): [STABILITY.md](../STABILITY.md).
 
@@ -81,7 +81,7 @@ Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 
 ### Loading the polyfill only where it runs
 
-Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (374 KB minified, 128 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run (over an earlier native build that the native bridge completes, the bridge and the core):
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (375 KB minified, 128 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run (over an earlier native build that the native bridge completes, the bridge and the core):
 
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->
