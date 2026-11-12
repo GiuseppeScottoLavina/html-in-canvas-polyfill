@@ -102,7 +102,7 @@ With the host's `hdr` option the page and the pigment stay at or under white (th
 - The sheen is a reflection of one soft light by the slope of a model surface (Bernoulli's), not of the room or of the page: on a bright page in a standard range it can only shade (light added to white is still white), so a hover over a white page shows little of it.
 - Below 15 frames per second the fluid takes at most 8 steps a frame: the motion runs slower than real time instead of jumping.
 - With reduced motion a drag draws nothing: only presses leave tints.
-- The largest bundle of the example plugins: about a third of it is the two shaders, inlined.
+- The second largest bundle of the example plugins, after cloth: about a third of it is the two shaders, inlined (minified by the build).
 - A resize to another grid starts at rest (a resize by a fraction of a cell keeps the flow); the pigment is dropped whenever its texture changes size.
 - WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`).
 

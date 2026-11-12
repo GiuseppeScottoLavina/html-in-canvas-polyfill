@@ -64,10 +64,10 @@ ES modules: `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-poly
 
 | action | | resolves with |
 |---|---|---|
-| `peek` | the dog-eared corner opens and closes once now (1.8 s, the motion of the auto-peek), also after the first drag stopped the auto-peek | `'rest'`, once the sheet lies still again |
-| `demo` | a hand takes the dog-eared corner, sweeps it along an arc most of the way to the bound edge (the page turns over, the page underneath shows) and lets go at 2 s; the sheet springs back to the dog-ear (about 2.9 s in all). A press on the page, a key, or a grab of a corner takes over at once: the hand lets go (a grabbed corner stays in the user's hand), and the press itself still reaches the page | `'rest'`, once the sheet lies still again |
+| `peek` | the dog-eared corner opens and closes once now (1.8 s, the motion of the auto-peek), also after the first drag stopped the auto-peek | `'rest'`, once the sheet lies still again (`'open'` at once while the sheet is held open, below) |
+| `demo` | a hand takes the dog-eared corner, sweeps it along an arc most of the way to the bound edge (the page turns over, the page underneath shows) and lets go at 2 s; the sheet springs back to the dog-ear (about 2.9 s in all). A press on the page, a key, or a grab of a corner takes over at once: the hand lets go (a grabbed corner stays in the user's hand), and the press itself still reaches the page | `'rest'`, once the sheet lies still again (`'open'` at once while the sheet is held open, below) |
 
-`handle.settled()` resolves with `'rest'` once nothing moves (no drag, no spring, no peek, no demo). While a corner is held or springs back, or the demo plays, an action starts nothing and resolves at the next rest; a newer trigger resolves a pending one with `null`.
+`handle.settled()` resolves with `'rest'` once nothing moves (no drag, no spring, no peek, no demo), and with `'open'` while a press on the host's under page holds the sheet open (until a press elsewhere or Escape). While a corner is held or springs back, or the demo plays, an action starts nothing and resolves at the next rest; while the sheet is held open, an action starts nothing and resolves `'open'`; a newer trigger resolves a pending one with `null`.
 
 ## Input
 
@@ -82,7 +82,7 @@ Every other pointer goes through the host's interposer and this plugin's input m
 | the flat part of the page | the same point (identity) |
 | the front of the roll, where it faces the reader | the exact page point it shows (the line of sight is intersected with the cone, a quadratic written relative to the fold line so that a far apex stays exact, or with the cylinder; the nearest crossing inside the sheet is the one seen) |
 | the back of the sheet (the roll, the folded flap, the dog-ear) | `NO_TARGET` |
-| the page underneath | `NO_TARGET`; on a host with an under page (and `underPage` on), the same point with `under: true`: the point of the under page |
+| the page underneath | `NO_TARGET`; on a host with an under page (and `underPage` on), once the sheet is lifted away from its rest pose, the same point with `under: true`: the point of the under page (the dog-ear at rest shows the under page but stays `NO_TARGET`) |
 
 `NO_TARGET` is the effects ABI value for "no element here" (re-exported by this plugin): the host swallows a press there and the mapper chain stops at it. `{x, y, under: true}` ends the chain too: the host hit-tests the point inside the under page.
 

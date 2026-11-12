@@ -111,10 +111,10 @@ From `1.0.0` the package follows [Semantic Versioning](https://semver.org/) for 
 
 ## 3. Known gaps against the native implementation
 
-On the WPT revision of 2026-10-28, 40 subtests pass natively and fail with the polyfill. Each has a written reason in [CONFORMANCE.md, "Native passes, polyfill fails"](CONFORMANCE.md#native-passes-polyfill-fails-subtest-level), and no polyfill bug is open:
+On the WPT revision of 2026-10-28, 38 subtests pass natively and fail with the polyfill. Each has a written reason in [CONFORMANCE.md, "Native passes, polyfill fails"](CONFORMANCE.md#native-passes-polyfill-fails-subtest-level), and no polyfill bug is open:
 
 - **Paint timing (21):** the picture is taken after the DOM change and decoded asynchronously, so `paint` fires one frame or more later than natively and some invalidations across frames are not seen in the same frame (`paint-timing`, `paint-dom-write-timing`).
-- **Backdrop filters (7):** a `backdrop-filter` of a descendant of a drawable is not drawn, which also fails the two privacy tests of what such a filter may read (`backdrop-isolation`).
+- **Backdrop filters (5):** a `backdrop-filter` of a descendant of a drawable is not drawn in Chrome up to 156, which also fails the two privacy tests of what such a filter may read (`backdrop-isolation`). Chrome 157 draws it, and two tests of this group pass there now; why these five still fail on 157 is not measured yet.
 - **Nested geometry (5):** `getBoundingClientRect()` after `updateElementGeometry` does not reflect the canvas transform of a nested or inline drawable, or the one a descendant inherits (`nested-geometry`, `inline-drawable-geometry`).
 - **A canvas inside a drawable (3):** a nested canvas drawn with `object-fit`, under a filter or scaled is drawn from the bitmap of its last snapshot (`drawable-canvas-element`).
 - **Selections (2), layout (1), colour (1):** two privacy reftests of how a selection is painted, a `display` change between flex and contents, and the pixel values read back after a draw (`caret-selection`, `children-layout`, `color-space`).

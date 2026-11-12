@@ -4,12 +4,12 @@
   "backdrop-filter-nested.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
   },
   "backdrop-filter-rounded-bounds.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes)"
   },
   "canvas-transform-get-bounding-client-rect.tentative.html": {
    "subtests": {
@@ -43,17 +43,7 @@
   "css-backdrop-filter-image.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
-  },
-  "css-backdrop-filter-with-mix-blend-mode-and-opacity.tentative.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Here the descendant `.foreground` has `backdrop-filter: blur(20px)` and `mix-blend-mode: multiply`: the blend is drawn, the blur of its backdrop is not (7500 pixels within 71-79 levels)"
-  },
-  "css-backdrop-filter-with-mix-blend-mode.tentative.html": {
-   "category": "impossible",
-   "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Here the descendant `.foreground` has `backdrop-filter: blur(20px)` and `mix-blend-mode: multiply`: the blend is drawn, the blur of its backdrop is not (7500 pixels within 71-79 levels)"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
   },
   "css-object-fit-nested-canvas.tentative.html": {
    "category": "deviation",
@@ -133,12 +123,12 @@
   "privacy/backdrop-filter-png-images-ignored.tentative.https.sub.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
+   "note": "a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). Since WPT 98fef2da (2026-10-24) the filter is defined inside the canvas, and the oracle passes it"
   },
   "privacy/filtered-outside-subtree-ignored.tentative.html": {
    "category": "impossible",
    "reason": "backdrop-isolation",
-   "note": "the first failing assertion is a backdrop-filter of a DESCENDANT of the drawable (#backdrop-internal inside #backdrop-wrapper): a backdrop-filter of a DESCENDANT of the drawable: the engines paint no backdrop-filter inside an SVG image (measured, Chrome 155), the only userland rasteriser of the DOM; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). The filter assertions themselves are met: with the four backdrop assertions removed (probe, 3 runs each), native and the polyfill pass every check before the move (an SVG filter inside the canvas applies with its unvisited style, one outside is ignored, on HTML and SVG content); after the atomic move the polyfill repaints the drawables that refer to the moved filter, but its single waitForCanvasPaint can see the paint of the two moved-in drawables before all five rebuilt tiles land (paint-timing: at most two rebuilds per canvas in flight); with a 500 ms wait every check passes"
+   "note": "the first failing assertion is a backdrop-filter of a DESCENDANT of the drawable (#backdrop-internal inside #backdrop-wrapper): a backdrop-filter of a DESCENDANT of the drawable: Chrome up to 156 paints no backdrop-filter inside an SVG image (measured on 155 and 156), the only userland rasteriser of the DOM; Chrome 157 paints it (measured 2026-11-12: a descendant's blur in an SVG image matches the plain page within 12 levels, and the two tests of one under mix-blend-mode pass), and why this test still fails there is not measured yet; the drawable's own backdrop-filter is applied by the draw (WPT css-backdrop-filter passes). The filter assertions themselves are met: with the four backdrop assertions removed (probe, 3 runs each), native and the polyfill pass every check before the move (an SVG filter inside the canvas applies with its unvisited style, one outside is ignored, on HTML and SVG content); after the atomic move the polyfill repaints the drawables that refer to the moved filter, but its single waitForCanvasPaint can see the paint of the two moved-in drawables before all five rebuilt tiles land (paint-timing: at most two rebuilds per canvas in flight); with a 500 ms wait every check passes"
   },
   "privacy/selection-alone-with-decorations-painted.tentative.html": {
    "category": "deviation",
@@ -205,6 +195,8 @@
   "css-backdrop-filter-and-mask.tentative.html",
   "css-backdrop-filter-on-div.tentative.html",
   "css-backdrop-filter-with-blend-mode-over-content.tentative.html",
+  "css-backdrop-filter-with-mix-blend-mode-and-opacity.tentative.html",
+  "css-backdrop-filter-with-mix-blend-mode.tentative.html",
   "css-backdrop-filter-with-sibling.tentative.html",
   "css-backdrop-filter.tentative.html",
   "css-blend-mode-over-both.tentative.html",
