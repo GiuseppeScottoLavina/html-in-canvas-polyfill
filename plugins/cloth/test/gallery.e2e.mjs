@@ -5,12 +5,13 @@
 // activates it, typing shows on the folded cloth, and nothing is rendered between two key strokes; a press that moves takes the cloth
 // (nothing of the gesture reaches the form: no click, no selection), a press on a slider drags the slider, a click on the button clicks;
 // the actions from the gallery's buttons (handle.trigger), superseding, settled(); the frame cap; reduced motion; touch (the hem is
-// grabbed, a sideways drag anywhere on the cloth grabs it, a vertical drag elsewhere scrolls the page); the cloth under and over another effect. `--record` also writes media/cloth.webp.
+// grabbed, a sideways drag anywhere on the cloth grabs it, a vertical drag elsewhere scrolls the page); the cloth under and over another effect. `--record` also writes media/cloth.webp;
+// with `--hero` it also writes the README's hero, docs/media/hero.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
-//   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only]
+//   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only] [--hero]
 import { join } from 'node:path';
-import { ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
+import { PREVIEW, ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writePreview, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
 const record = process.argv.includes('--record') || process.argv.includes('--record-only');
 const c = checklist('cloth gallery e2e');
@@ -73,9 +74,47 @@ async function recording() {
     await sleep(2300);                                          // hung again
     const frames = await stop();
     writePreview(frames, 'cloth', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
+    if (process.argv.includes('--hero')) await heroRecording(page, stage);
   } finally {
     await rec.close();
   }
+}
+
+/**
+ * The README's hero (docs/media/hero.webp), what the polyfill is for in a few seconds: the page at rest; a hand lifts the cloth by its hem
+ * and lets go; as it swings back, a click where the name field is DRAWN (found with the plugin's mapper over the presented frame, not where
+ * the field is in the DOM; by then the two are a few px apart) focuses the real <input>; the typing shows on the fabric while a gust billows
+ * it; it settles flat, the page with the typed name. The encoding of the previews at 1000 px and quality 92: at 88 the dark gradients of a cloth
+ * near rest showed 8 px blocks.
+ * @param {any} page @param {{x: number, y: number, w: number, h: number}} stage
+ */
+async function heroRecording(page, stage) {
+  await page.evaluate(`(() => { document.getElementById('name').value = 'Ada'; document.activeElement && document.activeElement.blur(); })()`);
+  await page.mouseMove(stage.x + stage.w + 5, stage.y + 5);
+  await settled(page);
+  await idle(page);
+  const stop = await startRecording(page);
+  await sleep(500);                                           // the page, at rest
+  const from = [stage.x + stage.w * 0.62, stage.y + stage.h - 24];
+  const arc = Array.from({ length: 44 }, (_, i) => [from[0] - (i / 43) * stage.w * 0.2, from[1] - (i / 43) * stage.h * 0.55 + Math.sin((i / 43) * Math.PI) * 26]);
+  await drag(page, arc, { stepMs: 18 });                      // lifted by the hem, and let go
+  await page.mouseMove(stage.x + stage.w + 5, stage.y + 5);
+  await sleep(420);                                           // it swings back
+  const at = await drawnAt(page, '#name');
+  const ok = !!at.drawn && at.drawn.d < 3;
+  if (ok) await page.click(at.ox + at.drawn.x, at.oy + at.drawn.y);   // where the field is drawn on the moving cloth
+  await sleep(120);
+  await page.evaluate(`window.__gallery.handle.trigger('gust', { direction: 0, strength: 2 }); true`);
+  await page.typeText(' Lovelace', { intervalMs: 80 });       // typed while the cloth billows
+  await page.mouseMove(stage.x + stage.w + 5, stage.y + 5);
+  const rest = await settled(page);
+  await sleep(700);                                           // flat again: the page, with the typed name
+  const frames = await stop();
+  const state = await page.evaluate(`({ active: document.activeElement && document.activeElement.id, name: document.getElementById('name').value })`);
+  c.check('hero: a click where the name field is drawn focuses it, the typing reaches it while a gust billows the cloth, and the cloth comes to rest',
+    ok && state.active === 'name' && state.name === 'Ada Lovelace' && rest === 'hanging', { drawn: at.drawn, dom: at.dom, ...state, rest });
+  const bytes = writeWebp(frames, join(ROOT, 'docs/media/hero.webp'), stage, { width: 1000, fps: PREVIEW.fps, quality: 92 });
+  c.check('recording: docs/media/hero.webp under 6 MB', bytes < 6 * 1024 * 1024, { screencastFrames: frames.length, bytes });
 }
 
 async function main() {

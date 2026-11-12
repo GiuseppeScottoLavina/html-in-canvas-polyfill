@@ -3,10 +3,9 @@
 // renders nothing; pointer moves raise a wake (the presented pixels change) and the surface comes back to rest by itself; a click through
 // the ripples focuses the drawn name field and typing reaches it; the frame cap bounds the effect frames while the water moves; the
 // actions drop and demo from the gallery's buttons (handle.trigger), superseding, settled(); reduced motion; no console error.
-// `--record` also writes media/water.webp; `--record --hero` also the README's hero, docs/media/hero.webp.
-//   npm run build && node plugins/water/test/gallery.e2e.mjs [--record [--hero]]     (`npm run test:plugins` runs every gallery e2e)
-import { join } from 'node:path';
-import { ROOT, actionChecks, changed, checklist, clickOn, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writePreview, writeWebp } from '../../_shared/gallery-e2e.mjs';
+// `--record` also writes media/water.webp.
+//   npm run build && node plugins/water/test/gallery.e2e.mjs [--record]     (`npm run test:plugins` runs every gallery e2e)
+import { actionChecks, changed, checklist, clickOn, framesDuring, idle, openGallery, rectOf, shot, sleep, startRecording, writePreview } from '../../_shared/gallery-e2e.mjs';
 
 const c = checklist('water gallery e2e');
 // the uniform block the water writes (its grid) and its field (the pebbles of the taps), read where the page writes them
@@ -124,25 +123,6 @@ try {
     await sleep(1800);
     const frames = await stop();
     writePreview(frames, 'water', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
-    if (process.argv.includes('--hero')) {
-      // the README's hero (docs/media/hero.webp): rain, the pointer stirs, a click through the ripples focuses the name field and the typing shows in the drawn form
-      // the frame cap at the display rate (the slider at its max): the click checks before may have moved it, and the hero must not show a capped effect
-      await page.evaluate(`(() => { const r = document.getElementById('fps-cap'); r.value = r.max; r.dispatchEvent(new Event('input')); document.getElementById('name').value = 'Ada'; document.activeElement && document.activeElement.blur(); })()`);
-      await idle(page, 400, 8000);
-      const stopHero = await startRecording(page);
-      await page.evaluate(`window.__gallery.handle.trigger('demo'); 0`);
-      await sleep(1400);
-      await sweep(50, 30);
-      await clickOn(page, '#name');
-      await sleep(300);
-      await page.typeText(' Lovelace', { intervalMs: 90 });
-      await sleep(300);
-      await sweep(30, 30);
-      await sleep(900);
-      const heroFrames = await stopHero();
-      const hero = writeWebp(heroFrames, join(ROOT, 'docs/media/hero.webp'), { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, { width: 1000, fps: 20, quality: 84 });
-      c.check('recording: docs/media/hero.webp under 6 MB', hero < 6 * 1024 * 1024, { screencastFrames: heroFrames.length, bytes: hero });
-    }
   }
   const errors = [...page.errors({ includeWarnings: false }).map((/** @type {any} */ e) => e.text), ...(await page.evaluate('window.__e2e.errors'))];
   c.check('no console error, page exception or effecterror', errors.length === 0, errors.slice(0, 3));
