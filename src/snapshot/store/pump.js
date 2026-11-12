@@ -127,6 +127,8 @@ const LAND_DEVS = 2;
  * @property {Geometry} geo
  * @property {string[]} causes
  * @property {number} batch       builds started by one pump round of one canvas share a batch (coherentPaint)
+ * @property {number} dmgSeq      the number of the first mark of the damage it took (DamageTracker.seq)
+ * @property {number} startSeq    DamageTracker.seq when it started: damage marked up to it belongs to its change or an older one (coherentPaint)
  * @property {number} startedAt
  * @property {number} syncMs
  * @property {number} estCost     cost charged to the budget at start
@@ -504,7 +506,7 @@ function startBuild(env, deps, entry, now, batch) {
   const est = entry.costEma ?? DEFAULT_TILE_COST_MS;
   deps.state.bucket.spend(est);
   /** @type {Job} */
-  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null, scSeq: null };
+  const job = { entry, incarnation: entry.incarnation, epoch: taken.epoch, generation: taken.generation, rect: taken.rect, geo, causes: taken.causes, batch, dmgSeq: taken.seq, startSeq: deps.damage.seq, startedAt: now, syncMs: 0, estCost: est, first: entry.costEma === null, translation: null, ovSeq: entry.ovSeq, scTops: null, scSeq: null };
   const scrollers = host.scrollers?.(entry) ?? [];
   if (scrollers.length) { job.scTops = new Map(scrollers.map((s) => [s, /** @type {HTMLElement} */ (s).scrollTop])); job.scSeq = host.scrollSeq?.() ?? null; }
   const t0 = env.now();

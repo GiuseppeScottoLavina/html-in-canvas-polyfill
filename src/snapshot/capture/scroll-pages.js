@@ -336,7 +336,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
   /** @type {Element[]} the drawable's elements outside the scroller, its ancestors left out: read at admission (an element added later is a first
    * sighting, whole-drawable damage, which drops the plan) */
   const outside = outsideOf(doc, drawable, s);
-  if (outside.length > MAX_SCAN || !(yield* unblended(win, s, portView, vr.width / frame.width || 1, outside, now, now(), still))) return null;
+  if (outside.length > MAX_SCAN || !(yield* unblended(win, s, portView, vr.width / frame.width || 1, outside, now, now(), still, paintsBackdrop(engine)))) return null;
   let bar = null;
   if (gutterX > 0.5) {
     // a classic bar is composed where the thumb's geometry is the one the clone paints and moves by whole surface pixels: Chromium's bars (chromiumVerticalBar /
@@ -362,7 +362,7 @@ export function* planSteps(doc, layer, scroller, drawable, engine = currentEngin
     port, frame, pinned, bar, maxTop: s.scrollHeight - s.clientHeight, scrollHeight: s.scrollHeight, client: { width: s.clientWidth, height: s.clientHeight }, round,
     ...(grid ? { grid, softCorners: true } : {}), ...(gecko ? { whole: true } : {}), opaque: (parseColor(cs.backgroundColor)?.[3] ?? 0) >= 1, cover: COVERS,
     pinnable: (el) => el.isConnected && pinnable(el, win.getComputedStyle(el)),
-    clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, outside),
+    clear: (rects) => clearOver(doc, layer, s, port, rects) && quietOutside(win, s, port, rects, layer, outside, paintsBackdrop(engine)),
     ...(lowPin ? { unlayered: (/** @type {Rect[]} */ rects) => unlayered(win, s, rects, layer, (inside ??= insideOf(s, pinned))) } : {}),
   };
 }
@@ -456,15 +456,25 @@ function unlayered(win, s, rects, layer, inside) {
 /** @param {StyleOf} style @param {Element} e @returns {string[]} its ::before and ::after that generate a box */
 const generated = (style, e) => ['::before', '::after'].filter((p) => !/^(none|normal)$/.test(style(e, p).content));
 
-/** @param {CSSStyleDeclaration} cs @returns {boolean} composited with what lies under it by a blend mode other than normal */
-const blending = (cs) => (cs.mixBlendMode ?? 'normal') !== 'normal' || (cs.backdropFilter ?? 'none') !== 'none';
+/**
+ * @param {CSSStyleDeclaration} cs @param {boolean} bd  the snapshot paints a backdrop-filter (paintsBackdrop)
+ * @returns {boolean} composited with what lies under it: a blend mode other than normal, or a backdrop-filter the snapshot paints
+ */
+const blending = (cs, bd) => (cs.mixBlendMode ?? 'normal') !== 'normal' || (bd && (cs.backdropFilter ?? 'none') !== 'none');
+
+/**
+ * @param {string} engine @returns {boolean} the snapshot paints a backdrop-filter inside the drawable: Chromium 157 does (for an element that paints something, which
+ *   the clone ensures); WebKit paints none inside an SVG image (measured, iPadOS Safari 27.2), so there a backdrop-filter changes nothing the compositor reproduces;
+ *   Gecko is not measured, so it counts
+ */
+const paintsBackdrop = (engine) => engine !== 'webkit';
 
 /**
  * One check of the elements outside the scroller `s` (unblended, quietOutside): every computed style is read once in it, an element's own and its generated boxes',
  * and so are the answers of faded and blended for its ancestors. Nothing of it outlives the check: the next one reads the styles of its own time.
- * @param {Window} win @param {Element} s
+ * @param {Window} win @param {Element} s @param {boolean} bd  the snapshot paints a backdrop-filter (paintsBackdrop)
  */
-function outsideCheck(win, s) {
+function outsideCheck(win, s, bd) {
   /** @type {Map<Element, Record<string, CSSStyleDeclaration>>} */
   const styles = new Map();
   /** @type {StyleOf} */
@@ -472,8 +482,8 @@ function outsideCheck(win, s) {
   /** @type {Map<Element, boolean>} */
   const fade = new Map(), blend = new Map();
   /** `e` or one of its ancestors below the first one it shares with `s` has a blend mode other than normal @param {Element|null} e @returns {boolean} */
-  const blended = (e) => !!e && !e.contains(s) && (blend.get(e) ?? (blend.set(e, blending(style(e)) || blended(e.parentElement)).get(e) ?? false));
-  return { style, blended, faded: (/** @type {Element} */ e) => faded(style, e, s, fade) };
+  const blended = (e) => !!e && !e.contains(s) && (blend.get(e) ?? (blend.set(e, blending(style(e), bd) || blended(e.parentElement)).get(e) ?? false));
+  return { style, blended, bd, faded: (/** @type {Element} */ e) => faded(style, e, s, fade) };
 }
 
 /** @param {string} v a computed shadow list @returns {number} css px it may reach beyond the box: every length of it added up (offsets, blur and spread), twice */
@@ -489,20 +499,20 @@ const inkReach = (cs) => (cs.filter !== 'none' || (/** @type {any} */ (cs).borde
 /**
  * What `e` (outside the scroller) may paint: `self` inside its border box (its descendants are judged on their own; unknown: yes), and how far beyond it, css px per
  * side (`x`, `y`: ink, content that overflows a box that does not clip it, a generated box; one positioned out of the box: anywhere); `mix`: a generated box of it
- * has a blend mode other than normal.
- * @param {StyleOf} style @param {Element} e @returns {{self: boolean, x: number, y: number, mix: boolean}}
+ * has a blend mode other than normal. A backdrop-filter the snapshot paints (`bd`) is paint of its own box.
+ * @param {StyleOf} style @param {Element} e @param {boolean} bd @returns {{self: boolean, x: number, y: number, mix: boolean}}
  */
-function painting(style, e) {
+function painting(style, e, bd) {
   const h = /** @type {HTMLElement} */ (e), cs = style(e);
   const shown = cs.visibility === 'visible';
   let self = !!e.shadowRoot || e.localName.includes('-') || e.namespaceURI !== 'http://www.w3.org/1999/xhtml' || (shown && (PAINTERS.test(e.localName)
-    || (parseColor(cs.backgroundColor)?.[3] ?? 1) > 0 || cs.backgroundImage !== 'none' || (cs.backdropFilter ?? 'none') !== 'none' || cs.display === 'list-item'
+    || (parseColor(cs.backgroundColor)?.[3] ?? 1) > 0 || cs.backgroundImage !== 'none' || (bd && (cs.backdropFilter ?? 'none') !== 'none') || cs.display === 'list-item'
     || px(cs.borderTopWidth) + px(cs.borderRightWidth) + px(cs.borderBottomWidth) + px(cs.borderLeftWidth) > 0 || [...e.childNodes].some((n) => n.nodeType === 3 && /\S/.test(/** @type {Text} */ (n).data))));
   let r = shown ? inkReach(cs) : cs.filter !== 'none' ? Infinity : 0, mix = false;
   for (const p of generated(style, e)) {
     const pc = style(e, p);
     self = true;
-    mix ||= blending(pc);
+    mix ||= blending(pc, bd);
     r = Math.max(r, /^(absolute|fixed|sticky)$/.test(pc.position) ? Infinity : inkReach(pc));
   }
   // overflowing content is a child's (judged on its own) or text and generated boxes of this one (scrollWidth / scrollHeight reach right and down)
@@ -538,10 +548,10 @@ const topLayer = (e) => { try { return e.matches(':modal, :popover-open, :fullsc
  * whose box touches a damage rect is checked: whatever it paints inside its box where that box lies over the damaged part of the port, and its ink where that reaches
  * it; one of an effective opacity of 0 paints nothing (faded). One that blends (blended, ScrollPlan.cover) may not paint over any part of the port. Frame css px are
  * mapped to the viewport through the scroller's own box, as clearOver does.
- * @param {Window} win @param {HTMLElement} s @param {Rect} port @param {Rect[]} rects @param {LiveLayer} layer @param {Element[]} outside
+ * @param {Window} win @param {HTMLElement} s @param {Rect} port @param {Rect[]} rects @param {LiveLayer} layer @param {Element[]} outside @param {boolean} bd paintsBackdrop
  * @returns {boolean}
  */
-function quietOutside(win, s, port, rects, layer, outside) {
+function quietOutside(win, s, port, rects, layer, outside, bd) {
   const fr = layer.frameRect(s);
   if (!fr || !(fr.width > 0) || !(fr.height > 0)) return false;
   const vr = s.getBoundingClientRect();
@@ -551,7 +561,7 @@ function quietOutside(win, s, port, rects, layer, outside) {
   const near = /** @type {Array<[Rect, Rect]>} */ (rects.map(view).map((r) => [r, intersectRect(r, pv)]).filter(([, p]) => p));
   if (!near.length) return true;
   if (outside.length > MAX_OUTSIDE) return false;
-  const c = outsideCheck(win, s);
+  const c = outsideCheck(win, s, bd);
   for (const e of outside) {
     if (!e.isConnected) continue;
     const b = e.getBoundingClientRect();
@@ -576,7 +586,7 @@ const over = (/** @type {ReturnType<typeof painting>} */ g, /** @type {DOMRect} 
  * generated box), or one of an effective opacity of 0 (faded).
  * @param {ReturnType<typeof outsideCheck>} c @param {Element} e
  */
-const paints = (c, e) => ((!e.getClientRects().length && !generated(c.style, e).length) || c.faded(e) ? null : painting(c.style, e));
+const paints = (c, e) => ((!e.getClientRects().length && !generated(c.style, e).length) || c.faded(e) ? null : painting(c.style, e, c.bd));
 
 /**
  * The admission side of ScrollPlan.cover: no element of the drawable outside the scroller (its ancestors aside) that blends with what lies under it paints over the
@@ -585,18 +595,18 @@ const paints = (c, e) => ((!e.getClientRects().length && !generated(c.style, e).
  * saturated row (15,878 of 104,000 pixels, up to 72 levels in the first composed step; Chrome 156 and iPad Safari 27.2). No set of colours tells that for every
  * blend mode, so an element painted over the port with a blend mode other than normal, on itself, on an ancestor below the first one it shares with the scroller or
  * on its ::before or ::after, refuses the plan. Nothing else outside is refused here (the covers see a normal overlay; one of opacity 0, of visibility: hidden or
- * with nothing to paint passes). A backdrop-filter refuses it as a blend does: the snapshot paints it where the SVG image renderer does (Chrome 157, clone.js), and a
- * blur leaves a uniform colour as it was while it changes the content under it. In steps, as the scan.
+ * with nothing to paint passes). A backdrop-filter refuses it as a blend does where the snapshot paints it (paintsBackdrop: Chrome 157, clone.js), as a blur leaves
+ * a uniform colour as it was while it changes the content under it. In steps, as the scan.
  * @param {Window} win @param {Element} s @param {DOMRect} port viewport rect @param {number} k css px to viewport px @param {Element[]} outside
- * @param {() => number} now @param {number} t0 @param {() => boolean} still
+ * @param {() => number} now @param {number} t0 @param {() => boolean} still @param {boolean} bd paintsBackdrop
  * @returns {Generator<void, boolean, void>}
  */
-function* unblended(win, s, port, k, outside, now, t0, still) {
-  const c = outsideCheck(win, s);
+function* unblended(win, s, port, k, outside, now, t0, still, bd) {
+  const c = outsideCheck(win, s, bd);
   for (let i = 0; i < outside.length; i++) {
     if (i && i % SCAN_CLOCK === 0 && now() - t0 > STEP_MS) { yield; if (!still()) return false; t0 = now(); }
     const e = outside[i];
-    if (!c.blended(e) && !generated(c.style, e).some((p) => blending(c.style(e, p)))) continue;
+    if (!c.blended(e) && !generated(c.style, e).some((p) => blending(c.style(e, p), bd))) continue;
     const g = paints(c, e), b = e.getBoundingClientRect();
     if (g && over(g, b, port, k, k) && !clippedAway(c, e, g, b, s, k)) return false;
   }

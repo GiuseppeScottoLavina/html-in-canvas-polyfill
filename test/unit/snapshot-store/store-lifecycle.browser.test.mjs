@@ -259,6 +259,40 @@ test('isPaintReady: coherence while a build of the same pump round is still deco
   assert.deepEqual(rig.store.commitLanded().changed, [a, b]);
 });
 
+test('isPaintReady: coherence across rounds while damage of the same change waits for a build (more drawables than maxInFlight; WPT privacy/filtered-outside-subtree-ignored); control: coherentPaint off paints the first round alone', async (t) => {
+  const rig = await makeRig(t);
+  const a = rig.add('a', 60, 40), b = rig.add('b', 60, 40), c = rig.add('c', 60, 40);
+  for (const el of [a, b, c]) await rig.build(el);
+  rig.deferDecode = true;
+  for (const el of [a, b, c]) rig.store.markDamage(el, null, 'mutation');
+  assert.equal(rig.pump().started, 2, 'maxInFlight 2: the third waits for the next round');
+  await rig.release(0);
+  await rig.release(0);
+  assert.deepEqual(rig.store.isPaintReady(rig.record), { ready: false, reason: 'coherence' }, 'c changed with a and b and has not been built');
+  rig.options.coherentPaint = false;
+  assert.equal(rig.store.isPaintReady(rig.record).ready, true, 'control: without coherentPaint the round paints alone');
+  rig.options.coherentPaint = true;
+  assert.equal(rig.pump().started, 1);
+  assert.deepEqual(rig.store.isPaintReady(rig.record), { ready: false, reason: 'coherence' }, 'c is decoding');
+  await rig.release(0);
+  assert.deepEqual(rig.store.isPaintReady(rig.record), { ready: true, reason: 'ready' });
+  assert.deepEqual(rig.store.commitLanded().changed, [a, b, c], 'one paint shows the whole change');
+});
+
+test('isPaintReady: damage marked after the landed build started does not hold its paint (two drawables that change in every frame never wait for each other)', async (t) => {
+  const rig = await makeRig(t);
+  const a = rig.add('a', 60, 40), b = rig.add('b', 60, 40);
+  await rig.build(a);
+  await rig.build(b);
+  rig.deferDecode = true;
+  rig.store.markDamage(a, null, 'input');
+  assert.equal(rig.pump().started, 1);
+  rig.store.markDamage(b, null, 'input');
+  await rig.release(0);
+  assert.deepEqual(rig.store.isPaintReady(rig.record), { ready: true, reason: 'ready' }, 'b changed after a\'s build started: a later change');
+  assert.deepEqual(rig.store.commitLanded().changed, [a]);
+});
+
 test('the first tile waits for fonts/images (complete:false) up to paintGateMaxWaitMs, then commits anyway', async (t) => {
   const rig = await makeRig(t, { options: { paintGateMaxWaitMs: 150 } });
   const a = rig.add('a', 100, 60);

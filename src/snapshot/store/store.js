@@ -1073,12 +1073,24 @@ export function createSnapshotStore(env, capture, extras = {}) {
     env.bus.on(BUS.CANVAS_UNMOUNTING, (/** @type {{record: CanvasRecord}} */ e) => forget(e.record)),
   ];
 
-  /** A build of the same pump round as an already landed one is still decoding. @param {CanvasRecord} record @returns {boolean} */
+  /**
+   * A landed build would be painted while its change is not complete in the canvas: a build of the same pump round is still decoding, or damage marked before the
+   * oldest landed build started (its change, or an older one) is still in flight or waits (more drawables changed than maxInFlight starts in one round: WPT
+   * privacy/filtered-outside-subtree-ignored moves five, and the first paint showed three of them old). The oldest, not the newest: a drawable damaged in every frame
+   * marks after it, so two animations never hold each other. A drawable that cannot build (refused, lost, without a box, in the top layer) holds nothing.
+   * @param {CanvasRecord} record @returns {boolean}
+   */
   function coherenceOpen(record) {
     const batches = new Set();
-    for (const l of landed) if (l.entry.record === record) batches.add(l.batch);
+    let since = Infinity;
+    for (const l of landed) if (l.entry.record === record) { batches.add(l.batch); since = Math.min(since, l.startSeq); }
     if (!batches.size) return false;
-    for (const j of jobs) if (j.entry.record === record && batches.has(j.batch)) return true;
+    for (const j of jobs) if (j.entry.record === record && (batches.has(j.batch) || j.dmgSeq <= since)) return true;
+    for (const e of entriesOf(record)) {
+      if (e.refused || e.lost || e.unboxed || e.topLayer) continue;
+      const s = damage.pendingSeq(e.el);
+      if (s !== null && s <= since) return true;
+    }
     return false;
   }
 
