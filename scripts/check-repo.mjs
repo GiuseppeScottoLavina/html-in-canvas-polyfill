@@ -227,7 +227,9 @@ if (!docsOnly) {
   // openPicker, src/effects/interposer.js); before it a select drawn elsewhere than the live one (under a curved or tilted effect) could not be opened
   // 17758 -> 17836 (2026-11-11, measured 17,836): the effects host's option `under`, a second live page beneath the source (+78: src/effects/effect-host.js
   // its provider, upload, fill geometry and inert handling; gpu-presenter.js its texture; input-mapper.js and interposer.js a point on it; the feature row)
-  if (total > 17836) problems.push(`G-size: core is ${total} code lines (> 17836)`);
+  // 17836 -> 17864 (2026-11-12, measured 17,864): a drawable without a CSS box is watched by a ResizeObserver instead of being checked every frame (+28:
+  // src/snapshot/store/store.js watchBox, src/snapshot/store/pump.js, the bus event and its listener)
+  if (total > 17864) problems.push(`G-size: core is ${total} code lines (> 17864)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
