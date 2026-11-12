@@ -16,13 +16,15 @@ const BASE = {
   borderLeftWidth: '0px', borderRightWidth: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', borderTopLeftRadius: '0px', borderTopRightRadius: '0px',
   borderBottomLeftRadius: '0px', borderBottomRightRadius: '0px', zIndex: 'auto', backgroundColor: 'rgba(0, 0, 0, 0)', outlineStyle: 'none', outlineWidth: '0px',
   outlineOffset: '0px', visibility: 'visible', display: 'block', opacity: '1', content: 'none',
+  // read by Gecko's clip check of the scroller's content (clipInvariant)
+  borderTopStyle: 'none', borderRightStyle: 'none', borderBottomStyle: 'none', borderLeftStyle: 'none', listStyleImage: 'none', textDecorationLine: 'none',
 };
 
 /**
  * A scroller 400 x 400 at 20,20 of a drawable, and one box outside it (`own`: its style; `wrap`: the style of an element around it, below the drawable; `pseudo`: the
  * style of its ::before), over the whole port or beside it (`at`); the wrapper's rect is `wrapAt` (default `at`), `host` makes it a shadow host, `top` puts
  * the box in the top layer. Counts the computed styles read of the box and its wrapper.
- * @param {{own?: object, wrap?: object, pseudo?: object, at?: Rect, wrapAt?: Rect, host?: boolean, top?: boolean}} [o]
+ * @param {{own?: object, wrap?: object, pseudo?: object, at?: Rect, wrapAt?: Rect, host?: boolean, top?: boolean, engine?: string}} [o]
  */
 function scene(o = {}) {
   const port = new Rect(20, 20, 400, 400), at = o.at ?? port;
@@ -54,7 +56,7 @@ function scene(o = {}) {
   const kids = o.wrap ? [wrap, box] : [box];
   doc.createTreeWalker = () => { let i = 0; return { nextNode: () => kids[i++] ?? null }; };
   const layer = /** @type {any} */ ({ nearestDrawable: () => root, drawableElements: () => [root], frameRect: () => ({ x: 0, y: 0, width: 400, height: 400 }) });
-  const it = planSteps(doc, layer, /** @type {any} */ (s), /** @type {any} */ (root), 'chromium');
+  const it = planSteps(doc, layer, /** @type {any} */ (s), /** @type {any} */ (root), o.engine ?? 'chromium');
   let r;
   while (!(r = it.next()).done);
   return { plan: r.value, reads };
@@ -94,6 +96,14 @@ test('admission: an outside box over the port that blends (itself, an element ar
   assert.equal(scene({ pseudo: { content: '""', position: 'absolute', backdropFilter: 'blur(8px)' } }).plan, null, 'a backdrop-filter on its ::before');
   assert.ok(scene({ own: { backdropFilter: 'blur(8px)', opacity: '0' } }).plan, 'control: a backdrop-filter of opacity 0');
   assert.ok(scene({ own: { backdropFilter: 'blur(8px)' }, at: new Rect(20, 430, 400, 30) }).plan, 'control: a backdrop-filter below the port');
+  // WebKit paints no backdrop-filter inside an SVG image (measured, iPadOS Safari 27.2): the snapshot has none, so composing reproduces it; a blend still refuses
+  assert.ok(scene({ engine: 'webkit', own: { backdropFilter: 'blur(8px)' } }).plan, 'WebKit: a backdrop-filter over the port is planned');
+  assert.ok(scene({ engine: 'webkit', own: fill, wrap: { backdropFilter: 'blur(8px)' } }).plan, 'WebKit: on an element around it');
+  assert.equal(scene({ engine: 'webkit', own: { ...fill, mixBlendMode: 'saturation' } }).plan, null, 'WebKit control: a blend over the port still refuses');
+  // nor does Gecko (measured, Firefox 160)
+  assert.ok(scene({ engine: 'gecko', own: { backdropFilter: 'blur(8px)' } }).plan, 'Gecko: a backdrop-filter over the port is planned');
+  assert.ok(scene({ engine: 'gecko', own: fill, wrap: { backdropFilter: 'blur(8px)' } }).plan, 'Gecko: on an element around it');
+  assert.equal(scene({ engine: 'gecko', own: { ...fill, mixBlendMode: 'saturation' } }).plan, null, 'Gecko control: a blend over the port still refuses');
 });
 
 test('admission: a blended box over the port clipped whole by a wrapper of no size (overflow hidden or clip) is planned; anything not proven refuses', () => {

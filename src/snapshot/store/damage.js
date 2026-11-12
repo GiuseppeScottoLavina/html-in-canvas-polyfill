@@ -31,7 +31,7 @@ export const WHOLE_RECT = Object.freeze({ x: -1e9, y: -1e9, width: 2e9, height: 
  * @property {number} gen          last generation handed out
  * @property {number} lastCommitted
  * @property {boolean} takenSinceBump  an epoch bump only matters to builds taken before it
- * @property {{whole: boolean, rect: Rect|null, causes: Set<string>, since: number, scroll: Rect|null, others: Rect|null}|null} pending  `scroll` / `others`: the union of the 'scroll' rects and of every other cause's rects
+ * @property {{whole: boolean, rect: Rect|null, causes: Set<string>, since: number, seq: number, scroll: Rect|null, others: Rect|null}|null} pending  `scroll` / `others`: the union of the 'scroll' rects and of every other cause's rects
  * @property {Map<number, Tile>} inflight  taken, not yet committed or reclaimed
  * @property {Array<Tile & {gen: number}>} committedTiles  kept only while an older generation is still unresolved
  */
@@ -65,6 +65,8 @@ export class DamageTracker {
   constructor() {
     /** @type {WeakMap<object, ElState>} */
     this.states = new WeakMap();
+    /** every mark so far, in order: damage of one change has a lower number than a build started after it (coherentPaint) */
+    this.seq = 0;
   }
 
   /** @param {object} el @returns {ElState} */
@@ -79,7 +81,8 @@ export class DamageTracker {
 
   /** @param {ElState} s @param {Rect|null} rect null = whole @param {Iterable<string>} causes @param {number} now */
   #addPending(s, rect, causes, now) {
-    const p = s.pending ?? (s.pending = { whole: false, rect: null, causes: new Set(), since: now, scroll: null, others: null });
+    const n = ++this.seq;
+    const p = s.pending ?? (s.pending = { whole: false, rect: null, causes: new Set(), since: now, seq: n, scroll: null, others: null });
     if (rect === null) { p.whole = true; p.rect = null; } else if (!p.whole) p.rect = unionRect(p.rect, rect);
     const list = [...causes];
     for (const c of list) p.causes.add(c);
@@ -100,7 +103,7 @@ export class DamageTracker {
    * the SHAPED rect is what is recorded as in flight, because that is what the tile will cover.
    * @param {Element} el
    * @param {(rect: Rect|null) => Rect|null} [shape]
-   * @returns {{rect: Rect|null, epoch: number, generation: number, causes: string[]}|null}
+   * @returns {{rect: Rect|null, epoch: number, generation: number, causes: string[], seq: number}|null}  `seq`: the number of the first mark of the damage taken
    */
   take(el, shape) {
     const s = this.states.get(el);
@@ -109,10 +112,11 @@ export class DamageTracker {
     const rect = shape ? shape(raw) : raw;
     const generation = ++s.gen;
     const causes = [...s.pending.causes];
+    const seq = s.pending.seq;
     s.inflight.set(generation, { rect, epoch: s.epoch, causes });
     s.pending = null;
     s.takenSinceBump = true;
-    return { rect, epoch: s.epoch, generation, causes };
+    return { rect, epoch: s.epoch, generation, causes, seq };
   }
 
   /** @param {object} el @param {string} cause @returns {boolean} the pending damage includes `cause` */
@@ -197,6 +201,11 @@ export class DamageTracker {
   /** `now` of the first damage in the pending record, or null. @param {Element} el @returns {number|null} */
   pendingSince(el) {
     return this.states.get(el)?.pending?.since ?? null;
+  }
+
+  /** @param {object} el @returns {number|null} the number of the first mark of the pending damage (this.seq), null without pending damage */
+  pendingSeq(el) {
+    return this.states.get(el)?.pending?.seq ?? null;
   }
 
   /** @param {Element} el */

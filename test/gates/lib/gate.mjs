@@ -202,7 +202,11 @@ export async function runGate(id, run, { dpr, chrome = 'stable', nativeDrawEleme
     console.log(`${result.verdict} ${id}  (real: ${outcomes.real ? outcomes.real.checks.filter((c) => c.ok).length + '/' + outcomes.real.checks.length : 'skipped'}; control detected: ${cl.ran ? cl.detected : 'skipped'} classes red [${cl.failedClasses.join(',')}] missing [${cl.missingClasses.join(',')}]${result.degraded.length ? '; DEGRADED: ' + result.degraded.join(',') : ''})  -> ${file}`);
     console.log(rows.join('\n'));
     if (result.failed.length) console.log('first violated: ' + result.failed[0]);
-    process.exit(result.pass ? 0 : 1);
+    // stdout to a pipe is written asynchronously on macOS: exiting at once cut every output at 64 KB, and G-scroll-cadence's result line (77 KB) reached the
+    // runner cut ("malformed result line", NOT RUN; 2026-11-12, Node 24). Exit once stdout has taken everything written before
+    const code = result.pass ? 0 : 1;
+    process.exitCode = code;
+    process.stdout.write('', () => process.exit(code));
   };
   // a gate takes 3 min at most (G-scroll-cadence, 2.6 min); one that hangs is reported, with what it waited for, well before a runner's own timeout kills it silently
   const watchdogMin = +(arg('watchdog-min') ?? 10);

@@ -313,6 +313,9 @@ runGate('G-scroll-cadence', async (ctx) => {
   // A blended box clipped whole by a wrapper of 0 x 0 (position: absolute; overflow: hidden) paints nothing, and 0.1.0-preview.26 refused its plan (0 composed
   // steps, refusedBy.plan 1; headless Chrome 156, 2026-11-06): composed now (scroll-pages.js clippedAway), and still refused where it can show (clip-partial,
   // clip-fixed, clip-abs-above, clip-escape at admission; clip-grow, clip-shown by ScrollPlan.clear after the plan)
+  // backdrop-blur: a transparent box with backdrop-filter: blur(6px) over the port. Chrome 157 paints it in the snapshot, so a composed step shows the rows unblurred
+  // under it: refused since 2026-11-12 (control with the refusal removed: composed, 14,689 of 96,000 pixels wrong, up to 224 levels; Chrome 157, DPR 2). It was a
+  // composed control while Chrome up to 156 painted no backdrop-filter in an SVG image
   if (!only || only.includes('covers')) {
     // composes: true = the step must be composed; false = it must equal the settled canvas; 0 = also not composed (a composition could not be exact, or its error
     // is under the pixel tolerance: opacity 0.02)
@@ -321,7 +324,7 @@ runGate('G-scroll-cadence', async (ctx) => {
       ['head-auto-layer', false], ['head-auto-late', false], ['sentinel', 0], ['sentinel-alpha', 0], ['sentinel-near', 0], ['sentinel-second', 0], ['round', true],
       ['sentinel-round', 0], ['hidden-row', true], ['hidden-parent-row', true], ['hidden-shown', 0], ['hidden-faint', 0], ['hidden-parent-shown', 0],
       ['blend-none', true], ['blend-saturation', 0], ['blend-multiply', 0], ['blend-difference', 0], ['blend-luminosity', 0], ['blend-parent', 0], ['blend-pseudo', 0],
-      ['blend-partial', 0], ['blend-off', true], ['blend-hidden', true], ['blend-invisible', true], ['blend-transparent', true], ['blend-late', 0], ['backdrop-blur', true],
+      ['blend-partial', 0], ['blend-off', true], ['blend-hidden', true], ['blend-invisible', true], ['blend-transparent', true], ['blend-late', 0], ['backdrop-blur', 0],
       ['clip-blend', true], ['clip-blend-clip', true], ['clip-normal', true], ['clip-partial', 0], ['clip-grow', 0], ['clip-shown', 0], ['clip-fixed', 0], ['clip-abs-above', 0],
       ['clip-escape', 0]];
     const pick = process.argv.find((a) => a.startsWith('--covers='))?.slice(9).split(',');

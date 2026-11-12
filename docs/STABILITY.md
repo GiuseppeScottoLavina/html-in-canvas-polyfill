@@ -111,9 +111,9 @@ From `1.0.0` the package follows [Semantic Versioning](https://semver.org/) for 
 
 ## 3. Known gaps against the native implementation
 
-On the WPT revision of 2026-10-28, 34 subtests pass natively and fail with the polyfill. Each has a written reason in [CONFORMANCE.md, "Native passes, polyfill fails"](CONFORMANCE.md#native-passes-polyfill-fails-subtest-level), and no polyfill bug is open:
+On the WPT revision of 2026-10-28, 33 subtests pass natively and fail with the polyfill. Each has a written reason in [CONFORMANCE.md, "Native passes, polyfill fails"](CONFORMANCE.md#native-passes-polyfill-fails-subtest-level), and no polyfill bug is open:
 
-- **Paint timing (22):** the picture is taken after the DOM change and decoded asynchronously, so `paint` fires one frame or more later than natively and some invalidations across frames are not seen in the same frame (`paint-timing`, `paint-dom-write-timing`).
+- **Paint timing (21):** the picture is taken after the DOM change and decoded asynchronously, so `paint` fires one frame or more later than natively and some invalidations across frames are not seen in the same frame (`paint-timing`, `paint-dom-write-timing`).
 - **Nested geometry (5):** `getBoundingClientRect()` after `updateElementGeometry` does not reflect the canvas transform of a nested or inline drawable, or the one a descendant inherits (`nested-geometry`, `inline-drawable-geometry`).
 - **A canvas inside a drawable (3):** a nested canvas drawn with `object-fit`, under a filter or scaled is drawn from the bitmap of its last snapshot (`drawable-canvas-element`).
 - **Selections (2), layout (1), colour (1):** two privacy reftests of how a selection is painted, a `display` change between flex and contents, and the pixel values read back after a draw (`caret-selection`, `children-layout`, `color-space`).

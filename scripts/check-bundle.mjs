@@ -240,7 +240,9 @@ const LIMITS = {
   // 375 -> 375.25 KB, gzip 128 -> 128.25 KB (+182 / +87 bytes, 2026-11-12, measured 375,126 / 128,013): an element with a backdrop-filter that paints nothing of its
   // own gets a transparent background layer in the clone, without which Chrome 157's SVG image renderer skips its backdrop-filter (clone.js; four WPT tests pass),
   // and such an element outside a scroller over its port refuses a scroll plan as a blend does (scroll-pages.js blending)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 375.25 * KB, gzip: 128.25 * KB },
+  // 375.25 -> 375.75 KB (+388 bytes over 375,126, 2026-11-12, measured 375,514 / 128,157): the paint gate holds a change of more drawables than one round builds
+  // (DamageTracker.seq, Job.startSeq, store.js coherenceOpen), and the scroll compositor's backdrop-filter refusal applies where the snapshot paints one (paintsBackdrop)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 375.75 * KB, gzip: 128.25 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -493,7 +495,8 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // geckoWebkit 156 -> 156.25 KB (2026-11-10, measured 139,178 / 156,022): the engines bundle it loads grew by the percentage width of a pinned control (+267 gzip in this bundling)
   // chromium 139.25 -> 139.5 KB, geckoWebkit 156.25 -> 156.5 KB (2026-11-12, measured 139,426 / 156,267): the core it loads grew by the box watch of a drawable
   //   without a CSS box (store.js watchBox)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 139.5 * KB, geckoWebkit: 156.5 * KB };
+  // chromium 139.5 -> 139.75 KB (2026-11-12, measured 139,629 / 156,470): the core it loads grew by the backdrop-filter fix and the coherent paint of a change
+  const LOADER_APP = { start: 8.1 * KB, chromium: 139.75 * KB, geckoWebkit: 156.5 * KB };
   const bundlesDoc = readFileSync(join(root, 'docs/BUNDLES.md'), 'utf8');
   for (const d of budgetDrift(bundlesDoc, LIMITS, PLUGIN_LIMITS, LOADER_APP)) problems.push(`G-bundle: docs/BUNDLES.md does not state the enforced ceiling ${d}`);
   if (!budgetDrift(bundlesDoc.replace(/gzip level 9: core [0-9.]+ KB/, 'gzip level 9: core 1 KB'), LIMITS, PLUGIN_LIMITS, LOADER_APP).length) problems.push('G-bundle: the ceiling check of docs/BUNDLES.md failed its control (a changed gzip ceiling of the core passed)');

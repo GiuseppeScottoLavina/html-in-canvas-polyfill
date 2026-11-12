@@ -36,7 +36,7 @@
   //   blend-off     (control) the blended box below the port, outside it: composed
   //   blend-hidden / blend-invisible / blend-transparent  (controls) the blended box of opacity: 0, of visibility: hidden, with no background: composed
   //   blend-late    the blended box transparent while the list is planned, of the first cover colour after: not composed
-  //   backdrop-blur (control) a transparent box with backdrop-filter: blur(6px) over the port, which the snapshot does not paint: composed
+  //   backdrop-blur        a transparent box with backdrop-filter: blur(6px) over the port, which the snapshot paints (Chrome 157): not composed
   // A blended box clipped by a wrapper of no size (position: absolute; width: 0; height: 0) outside the list paints nothing (scroll-pages.js clippedAway):
   //   clip-blend    (control) the box of the first cover colour in saturation inside a wrapper of overflow: hidden: composed
   //   clip-blend-clip  (control) the same with overflow: clip: composed
