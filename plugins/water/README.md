@@ -6,7 +6,7 @@ An **example** effect plugin of this library, not part of the polyfill: nothing 
 
 ![The gallery form under the water plugin: a short rain, then the pointer leaves a wake and a click through the ripples focuses the email field](media/water.webp)
 
-Recorded in headless Chrome from the plugin gallery (`node plugins/water/test/gallery.e2e.mjs --record`; with `--hero` it also writes the README's hero, `docs/media/hero.webp`).
+Recorded in headless Chrome from the plugin gallery (`node plugins/water/test/gallery.e2e.mjs --record`).
 
 ## What it does
 

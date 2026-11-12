@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- README: the hero is the cloth plugin instead of the water plugin. In under 7 s a hand lifts the cloth by its hem, the name field is clicked where the cloth draws it, a gust billows the cloth while a name is typed into the real `<input>`, and the cloth settles flat with the typed name (`plugins/cloth/test/gallery.e2e.mjs --record --hero`; the water e2e no longer writes it). 1000 px at 20 fps, quality 92 (at 88 the dark gradients of a cloth near rest showed 8 px blocks): 5.4 MB, from 6.2. The media are not in the npm package.
+
 ## [1.0.0-rc.9] - 2026-11-12
 
 The ninth release candidate of 1.0.0. No change to the stable API. The core no longer keeps the frame loop running for a drawable without a CSS box. The effects extension, experimental, gains a second live page beneath the source (`under`), which the page-curl plugin shows under the sheet; the `ink` and `shatter` plugins were reworked, and the WGSL inlined in the plugin bundles is minified (18.5 KB less over the ten).
