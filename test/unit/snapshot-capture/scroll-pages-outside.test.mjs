@@ -16,6 +16,8 @@ const BASE = {
   borderLeftWidth: '0px', borderRightWidth: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', borderTopLeftRadius: '0px', borderTopRightRadius: '0px',
   borderBottomLeftRadius: '0px', borderBottomRightRadius: '0px', zIndex: 'auto', backgroundColor: 'rgba(0, 0, 0, 0)', outlineStyle: 'none', outlineWidth: '0px',
   outlineOffset: '0px', visibility: 'visible', display: 'block', opacity: '1', content: 'none',
+  // read by Gecko's clip check of the scroller's content (clipInvariant)
+  borderTopStyle: 'none', borderRightStyle: 'none', borderBottomStyle: 'none', borderLeftStyle: 'none', listStyleImage: 'none', textDecorationLine: 'none',
 };
 
 /**
@@ -98,6 +100,10 @@ test('admission: an outside box over the port that blends (itself, an element ar
   assert.ok(scene({ engine: 'webkit', own: { backdropFilter: 'blur(8px)' } }).plan, 'WebKit: a backdrop-filter over the port is planned');
   assert.ok(scene({ engine: 'webkit', own: fill, wrap: { backdropFilter: 'blur(8px)' } }).plan, 'WebKit: on an element around it');
   assert.equal(scene({ engine: 'webkit', own: { ...fill, mixBlendMode: 'saturation' } }).plan, null, 'WebKit control: a blend over the port still refuses');
+  // nor does Gecko (measured, Firefox 160)
+  assert.ok(scene({ engine: 'gecko', own: { backdropFilter: 'blur(8px)' } }).plan, 'Gecko: a backdrop-filter over the port is planned');
+  assert.ok(scene({ engine: 'gecko', own: fill, wrap: { backdropFilter: 'blur(8px)' } }).plan, 'Gecko: on an element around it');
+  assert.equal(scene({ engine: 'gecko', own: { ...fill, mixBlendMode: 'saturation' } }).plan, null, 'Gecko control: a blend over the port still refuses');
 });
 
 test('admission: a blended box over the port clipped whole by a wrapper of no size (overflow hidden or clip) is planned; anything not proven refuses', () => {

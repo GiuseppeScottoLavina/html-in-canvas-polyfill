@@ -464,10 +464,10 @@ const blending = (cs, bd) => (cs.mixBlendMode ?? 'normal') !== 'normal' || (bd &
 
 /**
  * @param {string} engine @returns {boolean} the snapshot paints a backdrop-filter inside the drawable: Chromium 157 does (for an element that paints something, which
- *   the clone ensures); WebKit paints none inside an SVG image (measured, iPadOS Safari 27.2), so there a backdrop-filter changes nothing the compositor reproduces;
- *   Gecko is not measured, so it counts
+ *   the clone ensures); WebKit and Gecko paint none inside an SVG image (measured, iPadOS Safari 27.2 and Firefox 160, with and without the clone's layer), so
+ *   there a backdrop-filter changes nothing the compositor reproduces; an engine not known counts it
  */
-const paintsBackdrop = (engine) => engine !== 'webkit';
+const paintsBackdrop = (engine) => engine !== 'webkit' && engine !== 'gecko';
 
 /**
  * One check of the elements outside the scroller `s` (unblended, quietOutside): every computed style is read once in it, an element's own and its generated boxes',

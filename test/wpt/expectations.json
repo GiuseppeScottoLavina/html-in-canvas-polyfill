@@ -108,7 +108,7 @@
   "privacy/filtered-outside-subtree-ignored.tentative.html": {
    "category": "deviation",
    "reason": "paint-timing",
-   "note": "every assertion before the move passes since 2026-11-12 (a descendant's backdrop-filter is painted: clone.js gives an element that paints nothing a transparent background layer, without which Chrome 157's SVG image renderer skips its backdrop-filter). The first failing one is the first after the move: the test moves two drawables into the canvas and the filter out of it, then waits for one paint. The polyfill rebuilds the five drawables that change in rounds (at most 2 builds in flight per canvas; coherentPaint holds a paint for the builds of one round only), so that paint shows the two drawables moved in and the three others still filtered; the second paint shows div-internal and the backdrop unfiltered, the third the SVG (measured on Chrome 157 with a copy of the page that logs every paint). Native paints all five in the rendering update of the move"
+   "note": "passes since 2026-11-12. A descendant's backdrop-filter is painted (clone.js gives an element that paints nothing a transparent background layer, without which Chrome 157's SVG image renderer skips its backdrop-filter). After the move the test waits for one paint; the polyfill rebuilds the five drawables that change in rounds (at most 2 builds in flight per canvas), and coherentPaint now holds the paint while damage marked before the oldest landed build started is still in flight, so the first paint shows all five (before: three paints, the first with three drawables still filtered). Kept for the paint-timing deviation should a slower machine take longer than coherenceMaxWaitMs (50 ms) for the change: then the paint fires with a drawable still old, as on one cold iPad run of two"
   },
   "privacy/selection-alone-with-decorations-painted.tentative.html": {
    "category": "deviation",
@@ -281,6 +281,7 @@
   "privacy/filtered-div-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
   "privacy/filtered-div-ref-svg-mixed-ignored.tentative.https.sub.html",
   "privacy/filtered-div-removed-contain-paint.tentative.https.sub.html",
+  "privacy/filtered-outside-subtree-ignored.tentative.html",
   "privacy/filtered-svg-ref-svg-feimage-ignored.tentative.https.sub.html",
   "privacy/filtered-svg-ref-svg-feimage-svg-ignored.tentative.https.sub.html",
   "privacy/fragment-mask-png-ignored.tentative.https.sub.html",
