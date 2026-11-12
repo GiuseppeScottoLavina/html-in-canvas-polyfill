@@ -8,7 +8,7 @@ nothing is promised there). The statuses of the generated tables say how well a 
 experimental, and [STABILITY.md](STABILITY.md) gives the stability of every API, bundle and platform.
 
 The conformance status against the official WPT tests is generated in `docs/CONFORMANCE.md`; the browser gates and what they assert are in `docs/TEST-PLAN.md`.
-"Measured" in the hand-written rows means Chrome 154 and 155, Chrome 157 (native; Chrome for Testing 157.0.8103.39), Canary 157, 158 and 159 (native), Firefox 155, 157 and 159 and Safari 27, on macOS with an Apple M1 Max, and Chrome 155, 156 and 157 (its native feature switched off) headless in CI on Linux and Windows, and Chrome 156 and 157 (the same) and Firefox 155 and 159 headed in CI on GitHub-hosted macOS runners (mobile rows: the iOS Simulator and the Android Emulator on that Mac, and two physical Android phones over USB, a Pixel 7 Pro and a Huawei Mate 10 Pro, both with Chrome 156); some content rows were measured
+"Measured" in the hand-written rows means Chrome 154 and 155, Chrome 157 (native; Chrome for Testing 157.0.8103.39), Canary 157, 158 and 159 (native), Firefox 155, 157, 159 and 160 and Safari 27, on macOS with an Apple M1 Max, and Chrome 155, 156 and 157 (its native feature switched off) headless in CI on Linux and Windows, and Chrome 156 and 157 (the same) and Firefox 155 and 159 headed in CI on GitHub-hosted macOS runners (mobile rows: the iOS Simulator and the Android Emulator on that Mac, and two physical Android phones over USB, a Pixel 7 Pro and a Huawei Mate 10 Pro, both with Chrome 156); some content rows were measured
 on the prototype that preceded this implementation and say so. Layout, hit-test, ordering and accessibility-tree rows are facts from probes, not timings.
 
 ## Browsers

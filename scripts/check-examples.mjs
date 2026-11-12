@@ -377,9 +377,12 @@ const SCENARIOS = {
       return H.until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
     };
     await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title (its description as the chip\'s tooltip)', async () => {
-      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, tip: b.title, disabled: b.disabled }))`);
-      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.tip === p.description));
-      return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name) };
+      // the effect chips carry data-effect; the strip also holds the Stack toggle (#stack-toggle), which is not an effect (until 2026-11-12 this check counted it as one)
+      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button[data-effect]')].map((b) => ({ name: b.dataset.effect, text: b.textContent, tip: b.title, disabled: b.disabled }))`);
+      const others = await page.evaluate(`[...document.querySelectorAll('#picker button:not([data-effect])')].map((b) => b.id)`);
+      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.tip === p.description))
+        && others.length === 1 && others[0] === 'stack-toggle';
+      return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name), others };
     });
     if (mode === 'effect') {
       for (const p of manifest) {
@@ -407,8 +410,9 @@ const SCENARIOS = {
       });
     } else {
       await run.step('install', 'without WebGPU the page says so above the canvas and the effects are disabled ("Effect off" stays)', async () => {
-        const st = await page.evaluate(`({ notice: document.getElementById('notice').textContent, shown: getComputedStyle(document.getElementById('notice')).display !== 'none', disabled: [...document.querySelectorAll('#picker button')].filter((b) => b.disabled).map((b) => b.dataset.effect), active: window.__gallery.active })`);
-        return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && st.active === 'off', ...st };
+        const st = await page.evaluate(`({ notice: document.getElementById('notice').textContent, shown: getComputedStyle(document.getElementById('notice')).display !== 'none', disabled: [...document.querySelectorAll('#picker button[data-effect]')].filter((b) => b.disabled).map((b) => b.dataset.effect), stackDisabled: document.getElementById('stack-toggle')?.disabled, active: window.__gallery.active })`);
+        // every effect chip but "Effect off" is disabled, and so is the Stack toggle (a chain of effects needs the host)
+        return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && !st.disabled.includes('off') && st.stackDisabled === true && st.active === 'off', ...st };
       });
     }
     // bug report: a double click on a word of the static text showed no selection on the canvas until the effect changed; nor did the deselection

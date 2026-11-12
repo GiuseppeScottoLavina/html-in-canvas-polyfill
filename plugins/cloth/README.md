@@ -6,7 +6,7 @@ An **example** effect plugin of this library, not part of the polyfill: nothing 
 
 ![cloth in the plugin gallery: a gust billows the live form and it settles, a drag lifts the cloth by its hem while text is typed into it, released it swings back, the pins let go and the cloth falls away, and it is hung again](media/cloth.webp)
 
-Recorded in headless Chrome from the plugin gallery (`node plugins/cloth/test/gallery.e2e.mjs --record-only`).
+Recorded in headless Chrome from the plugin gallery (`node plugins/cloth/test/gallery.e2e.mjs --record-only`). The same test writes the README's hero with `--hero` and the still picture of the examples' landing page with `--landing`.
 
 ## What it does
 

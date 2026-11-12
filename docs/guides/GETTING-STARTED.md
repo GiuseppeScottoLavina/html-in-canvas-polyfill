@@ -81,7 +81,7 @@ Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in
 
 ### Loading the polyfill only where it runs
 
-Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (375 KB minified, 128 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run (over an earlier native build that the native bridge completes, the bridge and the core):
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (376 KB minified, 128 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run (over an earlier native build that the native bridge completes, the bridge and the core):
 
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->

@@ -49,7 +49,9 @@ export function triage({ A, B, C }, expectations, baseline = null) {
     counts.files.total++; counts.subtests.total += Math.max(ak.size, 1);
     if (a.pass) counts.files.A++; if (b?.pass) counts.files.B++; if (c?.pass) counts.files.C++;
     const names = new Set([...ak.keys(), ...bk.keys()]);
-    let worst = null; let pinnedFilePass = drift ? a.result.status === 'OK' || a.pass : a.pass;
+    // At the pinned build the file passes when every subtest passes there (the drifted ones from the baseline). A testharness file must also have run to the
+    // end (status OK); a reftest whose comparison fails has status FAIL, and its one subtest is then the baseline's.
+    let worst = null; let pinnedFilePass = drift ? a.result.status === 'OK' || a.pass || (a.type === 'reftest' && a.result.status === 'FAIL') : a.pass;
     for (const name of names) {
       const sb = bk.get(name); const sc = ck.get(name);
       let sa = ak.get(name);
@@ -105,6 +107,7 @@ export function gateFailures({ A, B, C }, expectations, result) {
     if (s.np < min) fails.push(`(iii) regression: ${id} passes ${s.np}/${s.n} subtests, expected at least ${min}`);
   }
   for (const id of expectations?.stable ?? []) if (B.tests[id] && !B.tests[id].stable) fails.push(`(iii) unstable between repetitions: ${id}`);
+  for (const id of expectations?.stable ?? []) if (expectations?.tests?.[id]?.unstableByDesign) fails.push(`expectations.json lists ${id} as stable and declares it unstableByDesign`);
   for (const [id, e] of Object.entries(expectations?.tests ?? {})) {
     if (!A.tests[id]) fails.push(`expectations.json names a test that does not exist: ${id}`);
     for (const x of [e, ...Object.values(e.subtests ?? {})]) {
@@ -115,6 +118,24 @@ export function gateFailures({ A, B, C }, expectations, result) {
   }
   return fails;
 }
+
+/**
+ * The `pass`, `partial` and `stable` lists of expectations.json from a subject run (`gate.mjs --update-expectations`). A test whose entry declares
+ * `unstableByDesign` (a race the polyfill cannot win every time, said in its note) is never listed as stable, whatever this run did.
+ * @param {any} exp @param {any} B @returns {any}
+ */
+export function updateExpectations(exp, B) {
+  const pass = []; const partial = {}; const stable = [];
+  for (const [id, t] of Object.entries(B.tests)) {
+    const np = t.result.subtests.filter((/** @type {any} */ s) => s.status === 'PASS').length;
+    if (t.pass) pass.push(id); else if (np) partial[id] = np;
+    if (t.stable && !exp.tests?.[id]?.unstableByDesign) stable.push(id);
+  }
+  return { ...exp, pass: pass.sort(), partial, stable: stable.sort() };
+}
+
+/** `n subtest(s) ... fail(s)`: the count of drifted subtests in a sentence. @param {number} n @param {string} middle */
+export const driftCount = (n, middle) => `${n} subtest${n === 1 ? '' : 's'} ${middle} fail${n === 1 ? 's' : ''}`;
 
 export function loadJson(file) { return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; }
 

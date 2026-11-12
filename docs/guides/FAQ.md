@@ -123,7 +123,7 @@ The polyfill follows the read-back rules of the proposal, so the canvas stays or
 
 - Cross-origin images, fonts and CSS without CORS are not drawn, and neither are cross-origin or sandboxed iframes, `<object>` and `<embed>`: the element's box is drawn without its content, as natively, and one console message reports it. Same-origin iframes are drawn.
 - `:visited` styles are dropped, and system colours resolve to defaults.
-- Of the 104 WPT privacy tests, the polyfill passes 100 and native Chrome 103. By the triage, none of the other four fails by drawing excluded content: one because the paint that follows a filter moved out of the canvas still shows the old picture of some drawables (they are rebuilt over the next two paints), two because a selection decoration ends at a slightly different pixel, and one fails natively too.
+- Of the 104 WPT privacy tests, the polyfill passes 101 and native Chrome 103. By the triage, none of the other three fails by drawing excluded content: two because a selection decoration ends at a slightly different pixel, and one fails natively too.
 - Snapshots are `data:` URLs, never `blob:`, so a strict CSP must allow `img-src data:`. The bundles make no network request when they load; snapshots fetch only same-origin or CORS resources the page could fetch itself, to inline them.
 - The online playground runs your code in a sandboxed iframe with an opaque origin (`sandbox="allow-scripts"`).
 

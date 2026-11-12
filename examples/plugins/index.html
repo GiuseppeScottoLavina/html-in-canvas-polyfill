@@ -700,12 +700,14 @@
       // brighter than the page's white. The host uses it only where the browser takes the configuration (host.stats().hdr)
       const wantHdr = new URL(location.href).searchParams.get('hdr');
       const hostOptions = { maxDpr: 2.5, interposer: true, hdr: wantHdr === '1' || (wantHdr !== '0' && matchMedia('(dynamic-range: high)').matches) };
-      // the page under the page where the host takes one (the polyfill; over a native implementation createHost refuses `under`: the host then has none)
-      try { host = await HTMLInCanvasEffects.createHost(canvas, form, { ...hostOptions, under: underPage }); state.underHost = true; } catch (error) {
-        if (!error || error.feature !== 'effects-under') throw error;
-        underPage.remove();
-        host = await HTMLInCanvasEffects.createHost(canvas, form, hostOptions);
+      // the page under the page where the host takes one: mode 'polyfill'. Over a native implementation createHost refuses `under` and reports the refusal
+      // (a console error on every load in a browser with its own implementation, until 2026-11-12), so it is not asked there; the catch is for a host that refuses it anyway
+      if (mode === 'polyfill') {
+        try { host = await HTMLInCanvasEffects.createHost(canvas, form, { ...hostOptions, under: underPage }); state.underHost = true; } catch (error) {
+          if (!error || error.feature !== 'effects-under') throw error;
+        }
       }
+      if (!host) { underPage.remove(); host = await HTMLInCanvasEffects.createHost(canvas, form, hostOptions); }
       canvas.addEventListener('effecterror', (event) => console.warn('effect error:', event.detail && event.detail.error));
       canvas.addEventListener('effectframe', onEffectFrame);
     } catch (error) {
