@@ -6,10 +6,14 @@
 // (nothing of the gesture reaches the form: no click, no selection), a press on a slider drags the slider, a click on the button clicks;
 // the actions from the gallery's buttons (handle.trigger), superseding, settled(); the frame cap; reduced motion; touch (the hem is
 // grabbed, a sideways drag anywhere on the cloth grabs it, a vertical drag elsewhere scrolls the page); the cloth under and over another effect. `--record` also writes media/cloth.webp;
-// with `--hero` it also writes the README's hero, docs/media/hero.webp.
+// with `--hero` it also writes the README's hero, docs/media/hero.webp, and with `--landing` the still picture of the examples' landing page,
+// examples/assets/gallery-cloth-chrome-capture.webp.
 //
 //   npm run build   (the bundles; `npm run test:plugins` runs every gallery e2e)
-//   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only] [--hero]
+//   node plugins/cloth/test/gallery.e2e.mjs [--record | --record-only] [--hero] [--landing]
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PREVIEW, ROOT, actionChecks, changed, checklist, clickOn, drag, framesDuring, idle, openGallery, rectOf, scrollRoom, shot, sleep, startRecording, writePreview, writeWebp } from '../../_shared/gallery-e2e.mjs';
 
@@ -75,9 +79,48 @@ async function recording() {
     const frames = await stop();
     writePreview(frames, 'cloth', { x: stage.x, y: stage.y, w: stage.w, h: stage.h }, c.check);
     if (process.argv.includes('--hero')) await heroRecording(page, stage);
+    if (process.argv.includes('--landing')) await landingCapture(page, stage);
   } finally {
     await rec.close();
   }
+}
+
+/**
+ * The still picture of the examples' landing page (examples/assets/gallery-cloth-chrome-capture.webp): the form with a typed name in a gust from the right
+ * (strength 2), 0.48 s into it. A gust is uneven by design, so the same instant differs between gusts: of five, the one whose drawn page lies farthest from its
+ * place (the plugin's mapper over the presented frame, on a grid) is kept. The stage at one CSS px per pixel (1100 x 640), WebP quality 85.
+ * @param {any} page @param {{x: number, y: number, w: number, h: number}} stage
+ */
+async function landingCapture(page, stage) {
+  // how far the drawn page lies from its place, on average over a grid: the plugin's mapper over the presented frame (a point of the wall counts as 40 px)
+  const BILLOW = `(() => {
+    const P = window.HicLivePlugins.cloth, canvas = document.getElementById('stage'), state = P.presentedState(canvas), W = canvas.clientWidth, H = canvas.clientHeight;
+    let sum = 0, n = 0;
+    for (let y = H / 24; y < H; y += H / 12) for (let x = W / 40; x < W; x += W / 20) {
+      const m = P.mapClothPoint(state, { x, y, width: W, height: H });
+      sum += P.isNoTarget(m) ? 40 : Math.hypot(m.x - x, m.y - y); n += 1;
+    }
+    return sum / n;
+  })()`;
+  let best = { billow: -1, png: /** @type {any} */ (null) };
+  for (let k = 0; k < 5; k += 1) {
+    await page.evaluate(`(() => { document.getElementById('name').value = 'Ada Lovelace'; document.activeElement && document.activeElement.blur(); })()`);
+    await page.mouseMove(stage.x + stage.w + 5, stage.y + 5);
+    await settled(page);
+    await idle(page);
+    await page.evaluate(`window.__gallery.handle.trigger('gust', { direction: 180, strength: 2 }); true`);
+    await sleep(480);
+    const billow = await page.evaluate(BILLOW), { png } = await shot(page);
+    if (billow > best.billow) best = { billow, png };
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'hic-landing-'));
+  const out = join(ROOT, 'examples/assets/gallery-cloth-chrome-capture.webp');
+  try {
+    writeFileSync(join(dir, 'still.png'), best.png);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', join(dir, 'still.png'), '-c:v', 'libwebp', '-lossless', '0', '-q:v', '85', '-compression_level', '6', out], { stdio: 'pipe' });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const bytes = statSync(out).size;
+  c.check('landing: examples/assets/gallery-cloth-chrome-capture.webp written, under 150 KB, the cloth came to rest after the gust', bytes < 150 * 1024 && (await settled(page)) === 'hanging', { bytes, size: [stage.w, stage.h], billowPx: Math.round(best.billow * 10) / 10 });
 }
 
 /**

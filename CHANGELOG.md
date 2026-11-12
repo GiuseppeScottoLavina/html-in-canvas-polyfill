@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Changed
+- Examples: the landing page's picture is the cloth plugin in a gust (`examples/assets/gallery-cloth-chrome-capture.webp`, 1100 x 640, 46 KB; it replaces the water capture of 0.1.0-preview.26 in the page and in the npm package), and it links to the gallery's cloth. `plugins/cloth/test/gallery.e2e.mjs --record --landing` takes it: five gusts from the right, one shot each 0.48 s in, the one whose drawn page lies farthest from its place by the plugin's mapper is kept (a gust is uneven by design).
 - README: the hero is the cloth plugin instead of the water plugin. In under 7 s a hand lifts the cloth by its hem, the name field is clicked where the cloth draws it, a gust billows the cloth while a name is typed into the real `<input>`, and the cloth settles flat with the typed name (`plugins/cloth/test/gallery.e2e.mjs --record --hero`; the water e2e no longer writes it). 1000 px at 20 fps, quality 92 (at 88 the dark gradients of a cloth near rest showed 8 px blocks): 5.4 MB, from 6.2. The media are not in the npm package.
 
 ## [1.0.0-rc.9] - 2026-11-12
