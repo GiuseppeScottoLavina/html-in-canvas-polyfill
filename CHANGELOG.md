@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.10] - 2026-11-12
+
+The tenth release candidate of 1.0.0. No change to the stable API. A descendant's `backdrop-filter` is drawn in Chrome 157 and later, and a change of more drawables of one canvas than one round of builds is painted whole: with both, the polyfill passes 221 of 248 WPT files and 340 of 381 subtests (216 and 335 in 1.0.0-rc.9). The scroll compositor refuses a backdrop-filter over a list only where the snapshot paints it: Chromium, not Safari or Firefox (measured). The README and the examples' landing page show the cloth plugin.
+
+- The core bundle is 375,528 bytes minified, 128,159 gzipped: 584 and 233 bytes more than 1.0.0-rc.9.
+
 ### Changed
 - Examples: the landing page's picture is the cloth plugin in a gust (`examples/assets/gallery-cloth-chrome-capture.webp`, 1100 x 640, 46 KB; it replaces the water capture of 0.1.0-preview.26 in the page and in the npm package), and it links to the gallery's cloth. `plugins/cloth/test/gallery.e2e.mjs --record --landing` takes it: five gusts from the right, one shot each 0.48 s in, the one whose drawn page lies farthest from its place by the plugin's mapper is kept (a gust is uneven by design).
 - README: the hero is the cloth plugin instead of the water plugin. In under 7 s a hand lifts the cloth by its hem, the name field is clicked where the cloth draws it, a gust billows the cloth while a name is typed into the real `<input>`, and the cloth settles flat with the typed name (`plugins/cloth/test/gallery.e2e.mjs --record --hero`; the water e2e no longer writes it). 1000 px at 20 fps, quality 92 (at 88 the dark gradients of a cloth near rest showed 8 px blocks): 5.4 MB, from 6.2. The media are not in the npm package.
@@ -13,7 +19,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - Scroll compositor: an element outside a scroller whose backdrop-filter lies over its port now refuses the plan where the snapshot paints that filter (Chromium), as one with a blend mode does (above), and a blur leaves the cover check's uniform colours as they were while it blurs the content under it, so composed steps would have shown the content unblurred. On WebKit and Gecko, whose snapshots have no such filter (measured), it composes as before. The filter counts as paint inside the element's border box only (it is clipped to it), where it reached anywhere before in the check of damage beside the port. `test/unit/snapshot-capture/scroll-pages-outside.test.mjs` has the cases, with controls. G-scroll-cadence: its case `backdrop-blur`, a composed control while Chrome up to 156 painted no backdrop-filter, is now refused; with the refusal removed the composed step has 14,689 of 96,000 pixels wrong, up to 224 levels (Chrome 157, DPR 2).
 - A change of more drawables of one canvas than the polyfill builds in one round is painted whole. The paint gate held a paint only for the builds of the same round (`coherentPaint`), and at most two builds are in flight per canvas, so a change of five drawables was painted in three steps, the first one showing three of them as they were (WPT `privacy/filtered-outside-subtree-ignored` moves a filter out of the canvas and two drawables into it, then waits for one paint). The gate now also holds while damage marked before the oldest landed build started is in flight or waits for a build, up to `coherenceMaxWaitMs` (50 ms) as before. Damage marked after that build started holds nothing, so drawables that change in every frame do not wait for each other; typing changes one drawable and is not affected. Measured with a copy of the test's page: in headless Chrome 157 the first paint after the move shows all five drawables in 5 runs of 5 (45 to 64 ms after the move); on an iPad (Safari 27.2) in one cold run of two the change took longer than the 50 ms and the paint fired with one drawable still old, as the bound allows. The WPT test now passes with Chrome 157 as the subject: 221 of 248 files and 340 of 381 subtests in all; its triage is kept, as paint-timing, for a machine slower than the bound. `store-lifecycle.browser.test.mjs` has the case, with `coherentPaint` off as the control, and the case of later damage.
 - Test harness: a gate run by `test/gates/run-all.mjs` or the mutant suite on macOS lost the end of a result line longer than 64 KB, as the gate exited before a pipe had taken its output, and was reported NOT RUN ("malformed result line"). G-scroll-cadence's line, 77 KB, was cut so (2026-11-12). The gate now exits once stdout is written.
-- With these fixes the core bundle is 375,527 bytes minified, 128,159 gzipped: 583 and 233 bytes more than 1.0.0-rc.9.
 
 ## [1.0.0-rc.9] - 2026-11-12
 
@@ -839,7 +844,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.9...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.10...HEAD
+[1.0.0-rc.10]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.9...v1.0.0-rc.10
 [1.0.0-rc.9]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.8...v1.0.0-rc.9
 [1.0.0-rc.8]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.7...v1.0.0-rc.8
 [1.0.0-rc.7]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.6...v1.0.0-rc.7
