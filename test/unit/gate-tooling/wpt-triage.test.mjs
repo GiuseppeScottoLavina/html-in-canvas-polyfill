@@ -44,6 +44,15 @@ test('--update-expectations never lists a test that declares unstableByDesign as
   assert.ok(updateExpectations({ tests: {} }, B).stable.includes('ref.html'), 'control: without the declaration the same run lists it');
 });
 
+test('--update-expectations refuses a subset run (--only, --filter, also reused), which would drop every test it did not run from the lists', () => {
+  const exp = { tests: {}, pass: ['ref.html', 'th.html'], partial: {}, stable: ['ref.html', 'th.html'] };
+  const B = { selection: 'subset', tests: { 'ref.html': { type: 'reftest', pass: true, stable: true, result: { status: 'PASS', subtests: [sub('', 'PASS')] } } } };
+  assert.throws(() => updateExpectations(exp, B), /needs a run of every test/);
+  const full = updateExpectations(exp, { ...B, selection: 'full' });
+  assert.deepEqual(full.pass, ['ref.html'], 'control: a full run rebuilds the lists from what it ran');
+  assert.deepEqual(exp.pass, ['ref.html', 'th.html'], 'the expectations passed in are not changed');
+});
+
 test('the gate: a stable test that changed between repetitions fails it; a stable list that names a test declared unstableByDesign is refused', () => {
   const subject = doc('Chrome/157', { ...B.tests, 'ok.html': { ...B.tests['ok.html'], stable: false } });
   const exp = { tests: {}, stable: ['ok.html'] };

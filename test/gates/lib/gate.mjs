@@ -20,7 +20,7 @@
 // `--bundle-file` serves another core bundle (a mutant, see test/gates/mutants) under the normal bundle URL; `--effects-file` / `--water-file` / `--bridge-file` do the same for the optional
 // effects, water and native-bridge bundles (docs/BUNDLES.md). Bundles are snapshotted at start, so a concurrent rebuild of dist/ cannot change a run in flight.
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import * as H from '../../harness/index.mjs';
@@ -100,7 +100,7 @@ function prepareBundles(id, bundleFile, kinds, optional = {}) {
     files[CONTROL_BUNDLE] = control;
     tmp.push(control);
   }
-  return { files, tmp, info: { file: bundleFile, sha256: sha(text), bytes: text.length, ...extra } };
+  return { files, tmp, info: { file: bundleFile, sha256: sha(text), bytes: statSync(real).size, ...extra } };   // bytes of the file (text.length counted UTF-16 units)
 }
 
 /**

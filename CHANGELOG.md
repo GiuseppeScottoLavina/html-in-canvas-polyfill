@@ -9,6 +9,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - Cloth plugin: in idle moments after `create` it steps a blown cloth of its own, 40 steps at most 3 ms at a time, as the ink plugin does, so that the first gust runs on warmed code. On an iPad Pro (Safari 27.2) the frame after the first one of the gallery's first demo came 35-36 ms later in 3 loads, 36-52 ms (median 41) before; the first steps of a cold cloth took 13-24 ms of the main thread.
 
 ### Fixed
+- WPT gate: `--update-expectations` with `--only` or `--filter` rebuilt the `pass`, `partial` and `stable` lists from the tests it ran, so every other test left them (a tool fault since the option came; the CI runs never passed it). It is now refused before any browser runs, and `updateExpectations` refuses a subject run saved as a subset, also when it is reused (`test/unit/gate-tooling/wpt-triage.test.mjs`).
+- Gate results: `bundle.bytes` counted the bundle's UTF-16 code units (740,420 for 740,439 bytes); it is the size of the file now.
+- docs/API-CONTRACT.md kept one sentence saying that a descendant's backdrop-filter is never drawn; it is drawn in Chrome 157 and later (`backdrop-isolation`).
 - Cloth plugin: its render targets were made again whenever the CSS size changed, even by a fraction that left the textures and the blur steps as they were (the host over a native implementation reports fractional CSS sizes). They are now keyed by what they are made of.
 
 ## [1.0.0-rc.10] - 2026-11-12
