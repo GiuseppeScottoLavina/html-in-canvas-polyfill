@@ -94,7 +94,9 @@ async function device(label, launch, plan, { optional = false } = {}) {
   let s;
   try { s = await launch(); } catch (e) {
     if (optional && e instanceof EngineUnavailable) { report.devices[label] = { verdict: 'SKIPPED', reason: e.message }; console.log(`[${label}] SKIPPED (optional device): ${e.message}`); return; }
-    report.devices[label] = { verdict: 'NOT RUN', reason: e.message }; report.pass = false; console.log(`[${label}] NOT RUN: ${e.message}`); return;
+    // a rejection that is no Error (a bare ErrorEvent) has no message: name its type rather than print an empty reason
+    const reason = e?.message || `${e?.constructor?.name ?? typeof e} without a message (${e?.type ?? String(e)})`;
+    report.devices[label] = { verdict: 'NOT RUN', reason }; report.pass = false; console.log(`[${label}] NOT RUN: ${reason}`); return;
   }
   const D = report.devices[label] = { version: s.version, standIn: !!s.standIn, optional };
   console.log(`[${label}] ${s.version}`);

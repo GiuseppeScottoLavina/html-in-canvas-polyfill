@@ -1,7 +1,8 @@
 # Phones and tablets
 
 The polyfill runs on Chrome for Android 130+ and on Safari for iOS and iPadOS 26+ (Safari on the iPhone is unqualified: [STABILITY.md](../STABILITY.md)). **Android was verified on two physical phones, a Pixel 7 Pro (Android 17,
-Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156), on 2026-10-30, where every applicable scenario passed with its control red, and on the Android Emulator.
+Chrome 156) and a Huawei Mate 10 Pro (Android 10, Chrome 156), on 2026-10-30, where every applicable scenario passed with its control red, and on the Android Emulator. On 2026-11-13 the Pixel, now on Chrome 157, which implements
+HTML-in-Canvas (the polyfill steps aside), ran it again with the polyfill's path forced: everything passed but the scrolling listbox of `controls` (below).
 iPadOS was verified on a physical iPad Pro (iPadOS 27.2, the scenarios WebDriver can drive), iOS 26 on the iOS Simulator only; a physical iPhone XR (iOS 18.7) ran the refusal.** The numbers
 are in `docs/SUPPORT-MATRIX.md` (section "Mobile"); the gate that produces them is `npm run test:mobile` (`docs/TEST-PLAN.md`).
 
@@ -94,8 +95,11 @@ right element (checked once by hand on the Android Emulator with a 2.2x pinch; n
   the same engine with `install({ forcePolyfill: true })` (a test-only option). The refusal of an older Chrome ran on the emulator image's own Chrome 124.
 - On the iOS Simulator, WebDriver cannot drag a finger (the session hangs), type text, show the virtual keyboard, rotate the device or long-press: those scenarios are
   skipped there and documented; they ran on Android.
-- iOS 27 on an iPhone: not run (iPadOS 27.2 ran on the physical iPad above). The iOS 27.0 simulator runtime is installed, but no `safaridriver` offers it as a session host: neither Safari 27.0.1's nor Safari Technology
-  Preview 254's (Xcode 27 ships none). With `safari:deviceUDID` the driver answers "Could not find any session hosts" at once, without contacting the device; without it the
+- The scrolling listbox of `controls` on Chrome for Android with the polyfill's path forced (2026-11-13; 1.0.0-rc.9 alike): 17.2 % and 16 % of the light and dark listbox's
+  pixels over 16 levels on the Pixel 7 Pro, 16.2 % for the light one on the emulator, against a bound of 15 %. Chromium's raster of the snapshot draws it soft for one exact
+  layout of the fixture; the CHANGELOG of 1.0.0-rc.10 (Known limitations) has the measurements. Users of Chrome 157 and later on Android get the native implementation.
+- iOS 27 on an iPhone: not run (iPadOS 27.2 ran on the physical iPad above). The iOS 27.0 and 27.2 simulator runtimes are installed, but no `safaridriver` offers them as a session host: neither Safari 27.0.1's nor Safari Technology
+  Preview 254's (iOS 27.0, 2026-10-16), nor Safari 27.2's nor Safari Technology Preview 255's on macOS 27.2.1 (iOS 27.2, 2026-11-13); Xcode 27 ships none. With `safari:deviceUDID` the driver answers "Could not find any session hosts" at once, without contacting the device; without it the
   driver boots an iOS 26.4 simulator instead. Inside the simulator everything was in place: remote automation and the developer extras on (`com.apple.WebInspector` and
   `com.apple.mobilesafari`), the system Automation Mode on, Mobile Safari running and connected to the simulator's `webinspectord`. It needs a `safaridriver` that lists iOS 27
   simulators (a later Safari or macOS update).
