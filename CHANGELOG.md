@@ -4,7 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0-rc.11] - 2026-11-14
+
+The eleventh release candidate of 1.0.0, the candidate for 1.0.0. No change to the stable API, and none in `src/` but the version: the cloth plugin releases the render targets of the moving cloth 5 s after it comes to rest and rehearses its simulation after `create`; the WPT gate refuses `--update-expectations` on a subset of the tests; the documentation was checked against the code before 1.0.0.
+
+- The core bundle is 375,528 bytes minified, as in 1.0.0-rc.10. `plugins/cloth.iife.min.js` is 47,332 bytes (19,063 gzip), 524 and 217 bytes more.
+
 ### Changed
+- Documentation, checked against the code before 1.0.0: Chrome 157 and later for Android implement the API and the polyfill steps aside (a Pixel 7 Pro, 2026-11-13), in README, GETTING-STARTED, FAQ and STABILITY; the counts (864 Node unit tests, 12 G-xbrowser scenarios, 64 control regions of F6, the core at 376 KB); the VoiceOver sessions as recorded (none for rc.8 and rc.9; 13 of 13 on 2026-11-13); the recovery after a context loss within 3 frames is a target no gate measures yet; the frameworks are measured (React 19, Vue 3, Svelte 5, Lit 3); the cloth and ink actions in EFFECTS-PLUGINS.
 - Cloth plugin: the render targets of the moving cloth (the 4x MSAA colour and depth at the backing size, four shadow maps) are released 5 s after the cloth comes to rest (`RELEASE_AFTER_MS`), and made again by its next moving frame. They were kept until the plugin was removed, although the flat page needs none of them: at the gallery's size on an iPad Pro the colour target alone is 44.8 MB by its descriptor. Making them again costs that frame about 5 ms of GPU time there (Safari 27.2: 30-33 ms instead of 24-27). Not at once, since a passing pointer wakes the cloth.
 - Cloth plugin: in idle moments after `create` it steps a blown cloth of its own, 40 steps at most 3 ms at a time, as the ink plugin does, so that the first gust runs on warmed code. On an iPad Pro (Safari 27.2) the frame after the first one of the gallery's first demo came 35-36 ms later in 3 loads, 36-52 ms (median 41) before; the first steps of a cold cloth took 13-24 ms of the main thread.
 
@@ -865,7 +872,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.10...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.11...HEAD
+[1.0.0-rc.11]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.10...v1.0.0-rc.11
 [1.0.0-rc.10]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.9...v1.0.0-rc.10
 [1.0.0-rc.9]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.8...v1.0.0-rc.9
 [1.0.0-rc.8]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.7...v1.0.0-rc.8

@@ -80,7 +80,7 @@
 <h1>HTML-in-Canvas Polyfill</h1>
 <p class="lead">Render live HTML inside canvas.</p>
 <p>Use the proposed <a href="https://github.com/WICG/html-in-canvas">HTML-in-Canvas API</a> (<code>&lt;canvas content="drawable"&gt;</code>, <code>drawElementImage</code>, the <code>paint</code> event) in modern Safari and Firefox, with native support used automatically where available: in a browser that implements the API, such as Chrome 157, the polyfill steps aside and the browser draws natively. The HTML stays real and live: forms keep their focus, typing, scrolling and hit testing, and stay in the accessibility tree. Explore interactive forms, Canvas 2D rendering and optional WebGPU effects.</p>
-<p class="status"><strong>Release candidate.</strong> <code>1.0.0-rc.10</code> follows a proposed standard, which may still change. Until <code>1.0.0</code> its stable rows change only by fixes; experimental rows may change in any minor release, and unqualified rows promise nothing. Check the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>, the <a href="#browsers">browser support</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#known-limitations">known limitations</a> before integrating.</p>
+<p class="status"><strong>Release candidate.</strong> <code>1.0.0-rc.11</code> follows a proposed standard, which may still change. Until <code>1.0.0</code> its stable rows change only by fixes; experimental rows may change in any minor release, and unqualified rows promise nothing. Check the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/blob/main/docs/STABILITY.md">stability table</a>, the <a href="#browsers">browser support</a> and the <a href="https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill#known-limitations">known limitations</a> before integrating.</p>
 
 <ul class="actions" aria-label="Start here">
   <li><a class="primary" href="plugins/">Try the demo</a></li>
@@ -99,7 +99,7 @@
 <pre tabindex="0"><code>import { install } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill';
 install(); // synchronous: call it before your code uses the API</code></pre>
 <p>To download nothing in a browser that implements the API, use the loader instead: it makes the same decision first, and fetches the core (and, on Firefox and Safari, the engines bundle) only where the polyfill runs, and the native bridge with the core over an earlier native build that the bridge completes. With a bundler, <code>import { load } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/loader'</code>; from a CDN, one script tag:</p>
-<pre tabindex="0"><code>&lt;script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@1.0.0-rc.10/dist/hic-live-loader.iife.min.js"&gt;&lt;/script&gt;
+<pre tabindex="0"><code>&lt;script src="https://cdn.jsdelivr.net/npm/@giuseppe-scotto-lavina/html-in-canvas-polyfill@1.0.0-rc.11/dist/hic-live-loader.iife.min.js"&gt;&lt;/script&gt;
 &lt;script type="module"&gt;
   const { status, installed } = await HicLiveLoader.load();   // 'native' | 'native-bridged' | 'polyfill' | 'refused' | 'error'
   // then use the standard API: canvas.onpaint = () =&gt; ctx.drawElementImage(form, 0, 0);
