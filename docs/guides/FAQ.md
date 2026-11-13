@@ -6,7 +6,7 @@ Short answers to the questions people ask first, with links to the evidence. Whe
 
 [HTML-in-Canvas](https://github.com/WICG/html-in-canvas) is a WICG proposal, with a draft pull request to the HTML Standard ([whatwg/html#11588](https://github.com/whatwg/html/pull/11588)), that lets a `<canvas>` draw its own live HTML children: you mark the canvas `content="drawable"`, mark children `drawable`, and draw them with `ctx.drawElementImage()` in a `paint` event (or upload them as WebGL / WebGPU textures). The elements stay real DOM, so they keep focus, typing, hit testing and accessibility. Chrome 157 ships the API enabled by default, and Chrome Canary exposes it too; the proposal is still changing.
 
-This package implements that API in JavaScript for browsers that do not have it yet: desktop Chrome, Firefox 155+ and Safari 27+, Chrome for Android 130+ and Safari on iPadOS 26+ (Safari on the iPhone, iOS 26+, is admitted but unqualified: no physical iPhone has run the suites). Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
+This package implements that API in JavaScript for browsers that do not have it yet: Chrome 130 to 156 on desktop and Android, Firefox 155+ and Safari 27+, and Safari on iPadOS 26+ (Safari on the iPhone, iOS 26+, is admitted but unqualified: no physical iPhone has run the suites). Where the browser implements the API itself, the package steps aside. It also ships two extensions that are not part of the proposal: a frame cap and a WebGPU effect host for plugins.
 
 ## How does it work?
 
@@ -30,7 +30,7 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
-## Why is the core about 375 KB minified (128 KB gzipped)?
+## Why is the core about 376 KB minified (128 KB gzipped)?
 
 In the current build, 375,528 bytes minified and 128,159 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
@@ -62,13 +62,13 @@ Partly, and less verified than the rest.
 - The live elements stay in the document and in the accessibility tree: the layer is invisible (`opacity: 0`), not hidden from assistive technology. Focus, the tab order, keyboard input and IME work on the real elements.
 - Natively, the children of the canvas are its accessibility children. To keep that structure after the move, the layer has `role="presentation"` and the canvas `aria-owns` its top-level children ([ARCHITECTURE.md, ADR-M](../ARCHITECTURE.md#adr-m-accessibility-link)).
 - The gate G-a11y reads Chrome's real accessibility tree ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8). On a list canvas and a form canvas, and on the water-form page, the subtree of the canvas node equals the one Chrome builds for the same HTML as a plain page, line by line: roles, names, values and order. Tab reaches every control in DOM order and the focused node is under the canvas; typed text, a slider key and a script text change show in the tree; a polite live region keeps its text and politeness; and the tree is the same after `uninstall()` and a new `install()`. Its control drops the `aria-owns` link and must fail. On the same fixture, Chrome's native implementation (Canary 159) builds the same tree.
-- One real screen reader was run: VoiceOver in Safari 27.0.1 on macOS 27.0.1, by hand, on the fixture of G-a11y (2026-11-06). The page was read in order, the rotor listed the same headings and controls, Tab reached the seven controls in order, typing, a checkbox, a slider, a button's status message and a live update were announced, and after `uninstall()` and a new `install()` the page read the same: all 13 steps sounded as on the same HTML as a plain page ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8).
+- One real screen reader was run: VoiceOver in Safari 27.0.1 on macOS 27.0.1, by hand, on the fixture of G-a11y (2026-11-06; repeated on the candidates of 1.0.0-rc.2 to rc.7, and on 2026-11-13, in Safari 27.2 on macOS 27.2.1, on the code of 1.0.0-rc.10). The page was read in order, the rotor listed the same headings and controls, Tab reached the seven controls in order, typing, a checkbox, a slider, a button's status message and a live update were announced, and after `uninstall()` and a new `install()` the page read the same: all 13 steps sounded as on the same HTML as a plain page ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8).
 - Not verified: NVDA, JAWS, TalkBack, VoiceOver on iOS and iPadOS, and the accessibility trees of Firefox and Safari. An accessibility tree is what a screen reader reads; the gate does not show what one announces, and one manual session covers one browser and one fixture.
 - A drawable that is never drawn still exposes its layout position to assistive technology, where native exposes no geometry until it is drawn (deviation `a11y-geometry`). Mark unused views `aria-hidden`.
 
 ## What happens in a browser with the native API (Chrome 157)?
 
-The polyfill steps aside. `install()` detects the API by behaviour, not by browser version: if the core of the API is there (`content="drawable"` or the earlier `layoutsubtree`, `onpaint`, and a 2D `drawElementImage` that behaves like a platform method), it patches nothing of the standard surface, and it never throws because a native build lacks, renames or adds a secondary member ([API-CONTRACT.md, section 2](../API-CONTRACT.md#2-feature-detection-and-the-native-first-policy)). Chrome 157 ships the API enabled by default, and there the polyfill steps aside (mode `native`, kind `complete`, measured on 157.0.8103.39 on 2026-11-04). It was also checked on Chrome Canary 157, 158 and 159, and on a Chromium 158 build for Android. Safari, Firefox and Chrome before 157 use the polyfill's own path.
+The polyfill steps aside. `install()` detects the API by behaviour, not by browser version: if the core of the API is there (`content="drawable"` or the earlier `layoutsubtree`, `onpaint`, and a 2D `drawElementImage` that behaves like a platform method), it patches nothing of the standard surface, and it never throws because a native build lacks, renames or adds a secondary member ([API-CONTRACT.md, section 2](../API-CONTRACT.md#2-feature-detection-and-the-native-first-policy)). Chrome 157 ships the API enabled by default, and there the polyfill steps aside (mode `native`, kind `complete`, measured on 157.0.8103.39 on 2026-11-04). It was also checked on Chrome Canary 157, 158 and 159, on Chromium 158 and 160 builds for Android, and on Chrome 157 for Android (a physical Pixel 7 Pro, 2026-11-13). Safari, Firefox and Chrome before 157 use the polyfill's own path.
 
 Two caveats:
 
@@ -84,7 +84,7 @@ With the core's script tag, yes: 375,528 bytes (128,159 gzipped), and then the c
 "Verified" below means an automated suite ran there with positive controls: deliberately broken variants that must make the checks fail. Most suites compare the canvas with the same HTML rendered as a plain page in the same browser.
 
 - **Desktop:** Chrome 154 and 155 on macOS (headed browser gates), Chrome 156 and 157 (its native feature switched off) in CI (headless on Linux and Windows, headed on macOS). Firefox 155 and 157 and Safari 27.0.1 on macOS, and Firefox 159 in CI on macOS, through WebDriver. Chrome 157 (Chrome for Testing 157.0.8103.39) and Chrome Canary 157 to 159 for the native path.
-- **Physical devices, 2026-10-30:** a Pixel 7 Pro (Android 17, Chrome 156), a Huawei Mate 10 Pro (Android 10, Chrome 156) and an iPad Pro 11-inch (iPadOS 27.2). An iPhone XR on iOS 18.7 checked that unsupported versions are refused cleanly.
+- **Physical devices, 2026-10-30:** a Pixel 7 Pro (Android 17, Chrome 156), a Huawei Mate 10 Pro (Android 10, Chrome 156) and an iPad Pro 11-inch (iPadOS 27.2). On 2026-11-13 the Pixel again, with Chrome 157: the polyfill steps aside for its native API. An iPhone XR on iOS 18.7 checked that unsupported versions are refused cleanly.
 - **Simulators:** the iOS Simulator (iPhone 17 and iPad Air, iOS 26.4) and the Android Emulator (Chromium 158).
 - **Not verified:** a physical iPhone on iOS 26 or later (Safari on the iPhone is unqualified); a physical Windows or Linux machine (CI only, headless, no GPU); Edge, Opera, Brave and other Chromium browsers; memory and canvas limits pushed to their edge on a phone (the phone budgets come from WebKit's limits, not from a measurement); frame timing on a phone GPU; battery use; WebGPU effects under a real finger (the plugins' touch rules are checked with emulated touch in headless Chrome, `npm run test:gallery`).
 
@@ -139,7 +139,7 @@ It is a release candidate of a proposed standard (`1.0.0-rc.10` on npm; a new re
 
 What is tested:
 
-- 853 unit tests in Node and 1,302 in headless Chrome, with type, module-boundary and bundle-size checks;
+- 864 unit tests in Node and 1,302 in headless Chrome, with type, module-boundary and bundle-size checks;
 - 17 browser gates in headed Chrome that compare the canvas with the plain page or with native Chrome (pixels, hit testing, typing, resizing, scrolling and its cadence, the accessibility tree), each with a positive control;
 - a gate that runs mode `native-bridged` end to end over the earlier draft of Chrome 154 and 155 (G-bridged-translation);
 - a mutation suite of 94 seeded bugs, every one of which must be caught;

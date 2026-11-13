@@ -446,7 +446,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     then refuses it once part of it shows), and between it and the clipper nothing escapes the clip: no element in the top layer, of `position: fixed`, transformed,
     filtered or slotted into a shadow tree, and an absolute element's containing block is the clipper or lies inside it. A clipper with an area, `clip-path` and
     `contain: paint` are not proven and still refuse. The scan reads every element outside the scroller once per plan, in the plan's steps (headless Chrome 156: 2.1 ms with 1,000
-    such elements, 9.4 ms with 5,000, 36 ms with 19,000; more than 20,000 refuse the plan). Where the snapshot paints a backdrop-filter (Chromium 157 and later; `paintsBackdrop`),
+    such elements, 9.4 ms with 5,000, 36 ms with 19,000; more than 20,000 refuse the plan). Where the snapshot paints a backdrop-filter (Chromium: it does from 157, and earlier versions refuse alike; `paintsBackdrop`),
     an outside element with one refuses the plan as a blend does: a blur leaves both cover colours as they are while it blurs the content under it (G-scroll-cadence
     `backdrop-blur`: with the refusal removed, 14,689 of 96,000 pixels wrong, up to 224 levels). WebKit and Gecko paint none inside an SVG image (measured), so there
     it needs no refusal. In the check of damage beside the port such a filter counts as paint inside its border box only (`painting`). Each check of the elements outside reads an element's computed style once (`outsideCheck`),
