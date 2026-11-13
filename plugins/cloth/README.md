@@ -21,7 +21,7 @@ It applies to any drawable, with no change to the HTML.
 - **Text that does not flicker.** The source has no mip levels. The page is filtered over the footprint of each pixel (up to 6 x 2 taps along the footprint's axes where the cloth is seen at a slant), and every tap is bilinear in linear light: a thin bright line keeps its energy wherever it falls between two texels, instead of dimming by half in between as a filter over sRGB-encoded values makes it. 4x MSAA with a depth buffer antialiases the silhouette and the folds that lie over each other.
 - **Two sides.** The back of the cloth is linen with the print soaked through, lit by the dimmer room behind it and by the lamp's light that comes through the weave.
 - **Live.** The cloth samples the live page every frame: typing into a field shows on the cloth while it is held or hangs in folds.
-- **Zero work at rest.** Once the motion has died out the cloth is drawn onto the flat pose over the last 0.4 px and snapped to it below 0.012 px; from then on the pass is one full-screen copy of the page, only when the page changes: no frame, no timer, no animation frame of its own. Held by two corners (`pins: 'corners'`) it comes to rest in its folds and is drawn again only when the page changes.
+- **Zero work at rest.** Once the motion has died out the cloth is drawn onto the flat pose over the last 0.4 px and snapped to it below 0.012 px; from then on the pass is one full-screen copy of the page, only when the page changes: no frame and no animation frame of its own; one timer, `RELEASE_AFTER_MS` (5 s) after it comes to rest, releases the render targets of the moving cloth. Held by two corners (`pins: 'corners'`) it comes to rest in its folds and is drawn again only when the page changes.
 
 ## Usage
 
@@ -115,7 +115,7 @@ With the host's `hdr` option the cloth writes nothing above white: it adds no li
 - The hand's force is bounded (120 times the cloth's gravity): a flick faster than the cloth can follow leaves it behind the pointer for a moment.
 - The source texture has no mip levels, so where the cloth is seen nearly edge on (more than 6 texels per pixel along the footprint) the page aliases; a cloth that hangs or billows does not come near it.
 - Texels are filtered bilinearly: on a cloth that rests in folds (`pins: 'corners'`) text is as sharp as a bilinear resampling leaves it.
-- The 4x multisampled colour and depth targets are held from the first motion on (about 8 bytes per backing pixel times 4 samples).
+- The 4x multisampled colour and depth targets (about 8 bytes per backing pixel times 4 samples) exist while the cloth moves and for `RELEASE_AFTER_MS` (5 s) after it comes to rest.
 - After a GPU device loss the cloth hangs flat again; a gesture in progress is dropped and a pending action resolves `null`.
 - WebGPU only (without an adapter `createHost` rejects with a `NotSupportedError`). Runs over the polyfill and over a browser's own HTML-in-Canvas implementation ([what differs there](../../docs/guides/EFFECTS-PLUGINS.md#on-a-native-implementation)); not run there by the test suites; expected to behave the same, as the plugin uses only the plugin interface.
 

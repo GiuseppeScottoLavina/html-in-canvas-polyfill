@@ -562,7 +562,7 @@ In the modes `native` and `native-bridged` there is no live layer and no snapsho
   WebKit and Gecko compose only at a whole-number raster scale (their snapshot image snaps box edges and offsets to whole css px or to device pixels): at a fractional
   scale (a fractional `maxDpr`, a surface reduced for its budget, a canvas backing store that is not the device-pixel size of its box) every step is a snapshot, exact
   but slower, counted in `stats.snapshot.scroll.refusedBy.scale` (`docs/guides/TROUBLESHOOTING.md`, section 6).
-- "No blank frame" is claimed only AFTER the first non-blank paint, across resize, scroll, typing and DPR change. It cannot hold before the first commit (draws throw by spec; the paint gate), after a 2D context loss or GPU device loss until recovery (<= 3 frames), or on a hidden-to-visible transition (measured separately).
+- "No blank frame" is claimed only AFTER the first non-blank paint, across resize, scroll, typing and DPR change. It cannot hold before the first commit (draws throw by spec; the paint gate), after a 2D context loss or GPU device loss until recovery (the target is 3 frames; no gate measures it yet), or on a hidden-to-visible transition (measured separately).
   During a resize drag the canvas shows pixels from 1 to 3 frames earlier stretched into the new box (no blank, but not current) while the live layer is already at the new size, so a click can land on the new layout while the pixels show the old one.
 
 ## 9. Out of scope and how it fails (loudly)

@@ -14,7 +14,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - docs/API-CONTRACT.md kept one sentence saying that a descendant's backdrop-filter is never drawn; it is drawn in Chrome 157 and later (`backdrop-isolation`).
 - Cloth plugin: its render targets were made again whenever the CSS size changed, even by a fraction that left the textures and the blur steps as they were (the host over a native implementation reports fractional CSS sizes). They are now keyed by what they are made of.
 
-## [1.0.0-rc.10] - 2026-11-12
+## [1.0.0-rc.10] - 2026-11-13
 
 The tenth release candidate of 1.0.0. No change to the stable API. A descendant's `backdrop-filter` is drawn in Chrome 157 and later, and a change of more drawables of one canvas than one round of builds is painted whole: with both, the polyfill passes 221 of 248 WPT files and 340 of 381 subtests (216 and 335 in 1.0.0-rc.9). The scroll compositor refuses a backdrop-filter over a list only where the snapshot paints it: Chromium, not Safari or Firefox (measured). The README and the examples' landing page show the cloth plugin.
 
