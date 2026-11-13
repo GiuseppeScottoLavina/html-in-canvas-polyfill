@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { contractTest } from '../../_shared/contract-test.mjs';
 import { nodeHandle } from '../../_shared/node-host.mjs';
-import { ACTIONS, FADE_MS, GRAB_SLOP, HEM, LIFT, LIFT_TRAVEL, fabric, gustDirection, isNoTarget, meta, parseColor, plugin, stateOf } from '../index.js';
+import { ACTIONS, FADE_MS, GRAB_SLOP, RELEASE_AFTER_MS, HEM, LIFT, LIFT_TRAVEL, fabric, gustDirection, isNoTarget, meta, parseColor, plugin, stateOf } from '../index.js';
 import { ASSIST_PX, GRAVITY, STEP_HZ, STEP_MS, STEP_S, WALL_GAP, createCloth, drop, gridOf, gust, hangFrom, heldPoint, holdAt, letGo, lowerSeconds, push, setPins, step, stretch, take, wake } from '../sim.js';
 import { CAMERA, CLOTH, FLAT, GONE, HEAD, S, SUB, castCloth, mapClothPoint, stateLength, surfacePoint, writeControlPoints } from '../surface.js';
 import { drawnSurface, selfCrossings } from './self-crossing.mjs';
@@ -552,6 +552,82 @@ test('at rest the frame is the page: one full-screen pass, the identity mapper, 
   assert.ok(isNoTarget(far) || Math.hypot(far.x - 400, far.y - 480) > 0.5, 'the hem has moved');
   k.handle.remove();
   assert.equal(await blown, null);
+});
+
+test('the render targets of the moving cloth: kept while it moves and for RELEASE_AFTER_MS at rest, then released once; the next frame of the cloth makes them again (control: no frame at rest is requested for it)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const k = await rig(t);
+  k.run(1000, 1100);
+  const flat = k.gpu.log.textures;
+  void k.handle.trigger('gust');
+  k.run(1200, 1600);
+  const made = k.gpu.log.textures - flat;
+  assert.equal(made, 6, 'the 4-sample colour and depth and the four shadow maps');
+  const settled = k.handle.settled();
+  let now = 1600;
+  while (k.inst.continuous && now < 12000) { now += 1000 / 60; k.inst.render(k.frame(now)); k.inst.captureInputMapper(k.frame(now)); }
+  assert.equal(k.inst.continuous, false, 'the cloth came to rest');
+  await tick();
+  assert.equal(await settled, 'hanging');
+  const destroyed = k.gpu.log.destroyed, requests = k.requests();
+  t.mock.timers.tick(RELEASE_AFTER_MS - 1);
+  assert.equal(k.gpu.log.destroyed, destroyed, 'control: kept before the delay');
+  t.mock.timers.tick(1);
+  assert.equal(k.gpu.log.destroyed - destroyed, 6, 'released after the delay');
+  assert.equal(k.requests(), requests, 'the release asks for no frame');
+  t.mock.timers.tick(10 * RELEASE_AFTER_MS);
+  assert.equal(k.gpu.log.destroyed - destroyed, 6, 'once');
+  k.run(now + 100, now + 200);
+  assert.equal(k.gpu.log.textures - flat, made, 'a frame of the flat page makes none');
+  void k.handle.trigger('gust');
+  k.run(now + 300, now + 600);
+  assert.equal(k.gpu.log.textures - flat, 2 * made, 'the next frames of the cloth make them again');
+  assert.ok(k.gpu.log.draws.some(([, b]) => b > 1), 'and draw the mesh');
+  // a gust that starts before the delay is over keeps them: the timer is cleared by the first frame that moves
+  while (k.inst.continuous && now < 30000) { now += 1000 / 60; k.inst.render(k.frame(now + 600)); k.inst.captureInputMapper(k.frame(now + 600)); }
+  const kept = k.gpu.log.destroyed;
+  t.mock.timers.tick(RELEASE_AFTER_MS - 100);
+  void k.handle.trigger('gust');
+  k.run(now + 700, now + 900);
+  t.mock.timers.tick(200);
+  assert.equal(k.gpu.log.destroyed, kept, 'a wake before the delay keeps them');
+  assert.equal(k.gpu.log.textures - flat, 2 * made, 'and makes none');
+  k.handle.remove();
+  assert.equal(k.gpu.log.destroyed - kept, 6 + 1 + 5, 'removal destroys them once, with the points texture and the five uniform buffers');
+  t.mock.timers.tick(10 * RELEASE_AFTER_MS);
+  assert.equal(k.gpu.log.destroyed - kept, 12, 'and no timer is left to release them again');
+});
+
+test('the render targets are keyed by what they are made of: a css size that moves by a hair with the same backing store makes nothing again; a resize does', async (t) => {
+  const k = await rig(t, {}, { w: 801, h: 500 });
+  void k.handle.trigger('gust');
+  k.run(1000, 1300);
+  const made = k.gpu.log.textures;
+  for (let i = 0; i < 8; i += 1) {
+    const now = 1300 + 16 * (i + 1);
+    const f = { ...k.frame(now), cssWidth: 801 + (i % 2 ? 0.005 : 0) };
+    k.inst.render(f); k.inst.captureInputMapper(f);
+  }
+  assert.equal(k.gpu.log.textures, made, 'no texture made again for a css width that moves by 0.005 px');
+  const bigger = { ...k.frame(1500), width: 900, cssWidth: 900 };
+  k.inst.render(bigger); k.inst.captureInputMapper(bigger);
+  assert.ok(k.gpu.log.textures > made, 'control: a resize makes them again');
+  k.handle.remove();
+});
+
+test('the rehearsal after create runs on a cloth of its own: the plugin\'s cloth stays at rest, nothing is drawn or requested', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const k = await rig(t);
+  k.run(1000, 1050);
+  const draws = k.gpu.log.draws.length, writes = k.gpu.log.pointWrites, requests = k.requests();
+  for (let i = 0; i < 100; i += 1) t.mock.timers.tick(50);
+  assert.equal(k.inst.continuous, false);
+  assert.equal(k.requests(), requests, 'nothing requested');
+  assert.equal(k.gpu.log.pointWrites, writes, 'nothing written to the GPU');
+  assert.equal(k.gpu.log.draws.length, draws, 'nothing drawn');
+  const mapper = k.run(6000, 6050);
+  assert.equal(stateOf(mapper)?.[S.MODE], FLAT, 'the page, flat');
+  k.handle.remove();
 });
 
 test('the same motion at 30, 60 and 120 frames per second: the cloth of a gust is the same at the same instants (control: a frame later it is elsewhere)', async (t) => {

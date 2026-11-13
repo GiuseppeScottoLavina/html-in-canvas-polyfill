@@ -86,6 +86,19 @@ const RISE_ANGLE = 0.42;
 const FALL_LIMIT_S = 4;
 /** ms of the crossfade that stands for drop and in with reduced motion */
 export const FADE_MS = 260;
+/**
+ * ms at rest after which the render targets of the moving cloth (the 4-sample colour and depth, the shadow maps) are released: on an
+ * iPad they are about 45 MB each at the gallery's size, and the flat page needs none of them. The next frame of the moving cloth makes them
+ * again (measured on an iPad Pro, Safari 27.2: its first frame took 30-33 ms of GPU time instead of 24-27). Not at once: a pointer that
+ * passes wakes the cloth, and each wake would make them again.
+ */
+export const RELEASE_AFTER_MS = 5000;
+/**
+ * steps of a cloth of the canvas's size that are run in idle moments after create, at most 3 ms at a time (as the ink plugin does): the
+ * first gust then runs on warmed code. Measured on an iPad Pro, Safari 27.2: the first frames of the first gust stepped 25-31 ms of the
+ * cloth in 13-24 ms of the main thread, and the same span in 3-5 ms once warm.
+ */
+const REHEARSAL_STEPS = 40;
 /** controls that are dragged themselves: a press on one of them never becomes the cloth's gesture */
 const DRAGGED = 'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]),textarea,select,[contenteditable]:not([contenteditable=false]),[draggable=true],video[controls],audio[controls]';
 
@@ -360,12 +373,14 @@ export const plugin = Object.freeze({
     const blurData = new Float32Array(UNIFORM_FLOATS);
     /** @param {number} w @param {number} h  backing px @param {number} cw @param {number} ch  css px */
     function resources(w, h, cw, ch) {
-      if (sized && sized.w === w && sized.h === h && sized.cw === cw && sized.ch === ch) return sized;
-      if (sized) for (const t of sized.textures) t.destroy?.();
-      const color = device.createTexture({ label: 'hic-cloth-msaa', size: [w, h], format, sampleCount: 4, usage: TU.RENDER_ATTACHMENT });
-      const depth = device.createTexture({ label: 'hic-cloth-depth', size: [w, h], format: 'depth24plus', sampleCount: 4, usage: TU.RENDER_ATTACHMENT });
       const margin = Math.ceil(SHADOW_MARGIN * Math.max(cw, ch));
       const sw = Math.max(1, Math.ceil((cw + 2 * margin) / SHADOW_PX)), sh = Math.max(1, Math.ceil((ch + 2 * margin) / SHADOW_PX));
+      // keyed by what the textures and the blur steps are made of: a css size that moves by a fraction (the host over a native
+      // implementation reports fractional css sizes) and leaves these as they were makes nothing again
+      if (sized && sized.w === w && sized.h === h && sized.margin === margin && sized.sw === sw && sized.sh === sh) return sized;
+      releaseTargets();
+      const color = device.createTexture({ label: 'hic-cloth-msaa', size: [w, h], format, sampleCount: 4, usage: TU.RENDER_ATTACHMENT });
+      const depth = device.createTexture({ label: 'hic-cloth-depth', size: [w, h], format: 'depth24plus', sampleCount: 4, usage: TU.RENDER_ATTACHMENT });
       const map = () => device.createTexture({ label: 'hic-cloth-shadow', size: [sw, sh], format: 'rg16float', usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING });
       const sharp = map(), tmp = map(), near = map(), wide = map();
       const views = { sharp: sharp.createView(), tmp: tmp.createView(), near: near.createView(), wide: wide.createView() };
@@ -376,9 +391,17 @@ export const plugin = Object.freeze({
         device.queue.writeBuffer(blurUniforms[i], 0, blurData);
         return { dst, group: device.createBindGroup({ layout: blurLayout, entries: [{ binding: 0, resource: { buffer: blurUniforms[i] } }, { binding: 3, resource: sampler }, { binding: 6, resource: src }] }) };
       });
-      sized = { w, h, cw, ch, margin, textures: [color, depth, sharp, tmp, near, wide], colorView: color.createView(), depthView: depth.createView(), views, blurs, groups: new WeakMap() };
+      sized = { w, h, sw, sh, margin, textures: [color, depth, sharp, tmp, near, wide], colorView: color.createView(), depthView: depth.createView(), views, blurs, groups: new WeakMap() };
       return sized;
     }
+    /** the render targets of the moving cloth are released (the next frame that draws it makes them again) */
+    function releaseTargets() {
+      if (sized) for (const t of sized.textures) t.destroy?.();
+      sized = null;
+    }
+    // RELEASE_AFTER_MS at rest: one timer, armed by the frame that ends at rest, cleared by the next frame that does not
+    let releaseTimer = /** @type {ReturnType<typeof setTimeout>|null} */ (null);
+    const releaseAtRest = () => { releaseTimer = null; if (still()) releaseTargets(); };
     const flatGroups = new WeakMap();
     // reused pass descriptors: a frame writes their views, it allocates nothing of its own
     const flatAttachment = { view: /** @type {any} */ (null), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } };
@@ -615,6 +638,22 @@ export const plugin = Object.freeze({
       };
     }
     let shownState = stateName();
+
+    // the rehearsal: REHEARSAL_STEPS steps of a blown cloth of the canvas's size, on a cloth of its own, in idle moments
+    let rehearsing = reducedMotion ? 0 : REHEARSAL_STEPS;
+    if (rehearsing > 0) {
+      const idle = win.requestIdleCallback?.bind(win) ?? ((/** @type {() => void} */ fn) => setTimeout(fn, 50));
+      /** @type {Cloth|null} */ let r = null;
+      /** @type {Float32Array|null} */ let points = null;
+      const some = () => {
+        if (rehearsing <= 0) return;
+        const t0 = performance.now();
+        if (!r) { r = createCloth(canvas.clientWidth || 1, canvas.clientHeight || 1); gust(r, 0, 1, 0.35, 1); points = new Float32Array(stateLength(r.cols, r.rows)); }
+        while (rehearsing > 0 && performance.now() - t0 < 3) { step(r); writeControlPoints(/** @type {Float32Array} */ (points), r, 0.5); rehearsing -= 1; }
+        if (rehearsing > 0) idle(some); else r = points = null;
+      };
+      idle(some);
+    }
     const syncUi = () => { shownState = stateName(); for (const sync of uiSyncs) sync(); };
 
     return {
@@ -758,6 +797,8 @@ export const plugin = Object.freeze({
           pass.end();
           mainAttachment.view = null; mainAttachment.resolveTarget = null; depthAttachment.view = null;
         }
+        if (!still()) { if (releaseTimer !== null) { clearTimeout(releaseTimer); releaseTimer = null; } }
+        else if (sized && releaseTimer === null) releaseTimer = setTimeout(releaseAtRest, RELEASE_AFTER_MS);
         if (shownState !== stateName()) syncUi();
         if (waiters.length && still()) { const state = stateName(); for (const resolve of waiters.splice(0)) resolve(state); }
       },
@@ -775,7 +816,9 @@ export const plugin = Object.freeze({
         for (const [type, fn] of documentListeners) doc.removeEventListener?.(type, fn, true);
         if (press.held) { try { captureEl.releasePointerCapture(press.id); } catch { /* gone */ } }
         grabCursor(false);
-        if (sized) for (const t of sized.textures) t.destroy?.();
+        rehearsing = 0;
+        if (releaseTimer !== null) clearTimeout(releaseTimer);
+        releaseTargets();
         pointsTexture?.destroy?.();
         for (const b of [uniforms, ...blurUniforms]) b.destroy?.();
       },
