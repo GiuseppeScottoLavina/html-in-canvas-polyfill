@@ -122,9 +122,12 @@ export function gateFailures({ A, B, C }, expectations, result) {
 /**
  * The `pass`, `partial` and `stable` lists of expectations.json from a subject run (`gate.mjs --update-expectations`). A test whose entry declares
  * `unstableByDesign` (a race the polyfill cannot win every time, said in its note) is never listed as stable, whatever this run did.
+ * A subset run (`--only`, `--filter`, saved as `selection: 'subset'`, also when it is reused) is refused: the lists are rebuilt from the
+ * run, so every test it did not run would leave them.
  * @param {any} exp @param {any} B @returns {any}
  */
 export function updateExpectations(exp, B) {
+  if (B.selection === 'subset') throw new Error('--update-expectations needs a run of every test: this subject run was a subset (--only or --filter), and the pass, partial and stable lists would lose every test it did not run');
   const pass = []; const partial = {}; const stable = [];
   for (const [id, t] of Object.entries(B.tests)) {
     const np = t.result.subtests.filter((/** @type {any} */ s) => s.status === 'PASS').length;

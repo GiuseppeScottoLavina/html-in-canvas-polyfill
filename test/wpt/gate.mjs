@@ -18,6 +18,12 @@ const args = new Set(process.argv.slice(2));
 const reps = Number(arg('reps') ?? 3);
 const latest = n => loadJson(`${RESULTS_DIR}/wpt-${n}-latest.json`);
 
+// the lists are rebuilt from the subject run: refused before any browser runs when that run is a subset (updateExpectations refuses a reused one)
+if (args.has('--update-expectations') && (arg('only') || arg('filter'))) {
+  console.error('G-wpt-subset: --update-expectations needs a run of every test; it is refused with --only or --filter (the lists would lose every test not run)');
+  process.exit(2);
+}
+
 async function collect() {
   const tests = selectTests({ only: arg('only'), filter: arg('filter') });
   const out = {};
