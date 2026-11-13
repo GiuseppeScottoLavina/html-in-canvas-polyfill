@@ -48,7 +48,8 @@
   "ink-overflow.tentative.html": {
    "category": "impossible",
    "reason": "paint-timing",
-   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root). A race by construction, so the file is not in the stable list: the result depends on whether all five first snapshots (each superseded once by the color-grid custom element) have landed when the page draws, about 100 ms after load. Until 2026-10-16 the polyfill always lost it (TIMEOUT in every rep); since its first snapshot is one round it wins it on a warm load (fresh-browser loop: first load TIMEOUT 7 of 7, later loads PASS 8 of 8) and in full runs lost, half won (FAIL) or won (PASS) rep 1 while reps 0 and 2 timed out. The worst repetition is reported, so it never reads as a pass"
+   "note": "needs synchronous rasterisation: a userland snapshot is an SVG image decoded asynchronously (the first lands frames after a change; native paints in the rendering update of the change). The test draws outside any paint event right after load. the test draws right after a ResizeObserver + setTimeout, outside any paint event; the polyfill's first snapshot is asynchronous and not there yet (before X-13 it failed earlier, on its shadow root). A race by construction, so the file is not in the stable list (`unstableByDesign`, which `--update-expectations` respects; until 2026-11-12 the tool put it back whenever a run happened to be stable, and a run that won one repetition failed the gate): the result depends on whether all five first snapshots (each superseded once by the color-grid custom element) have landed when the page draws, about 100 ms after load. Until 2026-10-16 the polyfill always lost it (TIMEOUT in every rep); since its first snapshot is one round it wins it on a warm load (fresh-browser loop: first load TIMEOUT 7 of 7, later loads PASS 8 of 8) and in full runs lost, half won (FAIL) or won (PASS) rep 1 while reps 0 and 2 timed out. The worst repetition is reported, so it never reads as a pass",
+   "unstableByDesign": true
   },
   "invalidation-during-onpaint.tentative.html": {
    "category": "impossible",
@@ -461,7 +462,6 @@
   "hit-test/z-index.tentative.html",
   "iframe-local.tentative.html",
   "iframe.tentative.html",
-  "ink-overflow.tentative.html",
   "inline-drawable.tentative.html",
   "inline-fixed-containment.tentative.html",
   "inline-fragments-drawable.tentative.html",

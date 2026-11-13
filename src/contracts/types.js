@@ -446,7 +446,7 @@ export {};
  * @property {(drawable: Element, scroller: Element) => boolean} scrollCompose  a scroll event of `scroller`: true when the next commit shows its live offset by composing cached pages (the caller then asks for the exact tile only once the scrolling stops); false = damage it as usual
  * @property {(drawable: Element, control: Element|null) => void} caretNow  the focus moved: the next commit shows the caret of `control` measured from the live field (null: the drawable loses its caret), before the tile with the focus styles lands
  * @property {(drawable: Element, control: Element) => boolean} overlayText  optimistic text overlay: the next commit paints the live value of the focused field `control` into `drawable`'s surface (no-op without StoreExtras.textOverlay). true: the field's last overlay worked, so its snapshot may wait for the typing to pause (if this one fails, the store damages the field itself)
- * @property {(record: CanvasRecord) => PaintReadiness} isPaintReady  paint gate input (ADR-C): is every eligible drawable with a CSS box committed (or a placeholder), and are builds of the same damage epoch still in flight
+ * @property {(record: CanvasRecord) => PaintReadiness} isPaintReady  paint gate input (ADR-C): is every eligible drawable with a CSS box committed (or a placeholder), and (coherentPaint) is a build of the same round as a landed one still in flight, or damage marked before the oldest landed build started still in flight or waiting
  * @property {() => SnapshotStats} stats
  * @property {() => void} dispose
  */

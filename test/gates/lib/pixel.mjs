@@ -5,6 +5,7 @@
 //   2. assertLayerHidden the layer's computed opacity is 0 (a visible layer is a bug on its own)
 //   3. compositorShot   a screenshot taken with the layer forced invisible (for WebGPU surfaces, where readback is unreliable)
 import { H } from './gate.mjs';
+import { decodePng } from '../../harness/lib/png.mjs';
 import { contentBox, boxEdgeDistance } from '../../harness/lib/pixels.mjs';
 
 export { contentBox, boxEdgeDistance };
@@ -42,9 +43,15 @@ export async function canvasShot(page, selector = '#hic-surface') {
  * the capture reads inherited styles from the layer, so those would blank the snapshot itself. `filter` is not inherited, does not move or focus-blur anything, and
  * hides the layer even when its own opacity leaked to 1.
  */
-export async function compositorShot(page, selector = '#hic-surface') {
+export async function compositorShot(page, selector = '#hic-surface', { clip } = {}) {
   await page.evaluate(`(() => { for (const e of ${FIND_LAYERS}) e.style.setProperty('filter', 'opacity(0)', 'important'); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); })()`);
-  try { return await H.screenshotElement(page, selector); } finally { await page.evaluate(`(() => { for (const e of ${FIND_LAYERS}) e.style.removeProperty('filter'); })()`); }
+  try {
+    if (!clip) return await H.screenshotElement(page, selector);
+    // a part of the page only (viewport css px): the capture time grows with the area (the whole F1 canvas, 2356 x 1516 device px, takes ~0.9 s on a loaded Mac)
+    const s = await page.evaluate('({ x: scrollX, y: scrollY })');
+    const buf = await page.screenshot({ clip: { x: clip.x + s.x, y: clip.y + s.y, width: clip.width, height: clip.height, scale: 1 } });
+    return { img: decodePng(buf), geo: clip };
+  } finally { await page.evaluate(`(() => { for (const e of ${FIND_LAYERS}) e.style.removeProperty('filter'); })()`); }
 }
 
 /** css rect (viewport coordinates of `origin`) -> device-pixel box inside an image of `w` x `h`. */

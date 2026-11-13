@@ -33,12 +33,23 @@ const freePort = () => new Promise((ok, bad) => { const s = createServer(); s.on
 
 export class AndroidUnavailable extends Error {}
 
+/**
+ * A CDP WebSocket, once open. A failure rejects with an Error that names the endpoint: a bare ErrorEvent has no message, so the gate printed "NOT RUN: " with no reason.
+ * @param {string} url @returns {Promise<WebSocket>}
+ */
+export function openSocket(url) {
+  const ws = new WebSocket(url);
+  return new Promise((ok, bad) => {
+    ws.addEventListener('open', () => ok(ws), { once: true });
+    ws.addEventListener('error', (e) => bad(new Error(`the CDP WebSocket ${url} did not open${e?.message ? ` (${e.message})` : ''}`)), { once: true });
+  });
+}
+
 /** One CDP call on the browser endpoint. @param {number} cdpPort @param {string} method @param {object} params */
 async function browserCall(cdpPort, method, params) {
   const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).json();
-  const ws = new WebSocket(webSocketDebuggerUrl);
+  const ws = await openSocket(webSocketDebuggerUrl);
   try {
-    await new Promise((ok, bad) => { ws.addEventListener('open', ok); ws.addEventListener('error', bad); });
     return await new Promise((ok, bad) => {
       const t = setTimeout(() => bad(new Error(`CDP ${method} timed out`)), 15000);
       ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id === 1) { clearTimeout(t); if (m.error) bad(new Error(`CDP ${method}: ${m.error.message}`)); else ok(m.result); } });
@@ -327,9 +338,21 @@ async function openBrowser({ serial, pkg, serverPorts, standIn = false, physical
   if (!target?.webSocketDebuggerUrl) throw new Error(`${pkg}: Chrome DevTools did not answer over adb forward (top activity ${topActivity(serial)})`);
   await sleep(1500);
   for (let i = 0; i < 4 && !physical && dismissFirstRun(serial); i++) await sleep(1500); // the notification prompt over the first tab would take the OS taps
+  // the tab's socket can refuse the first connection although /json answered (the emulator, 2026-11-13: test:local reported the device NOT RUN); a new tab is tried, at
+  // most 3 in all, and every retry is printed, so a run that needed one says so
+  let ws = null;
+  for (let attempt = 1; !ws; attempt++) {
+    try { ws = await openSocket(target.webSocketDebuggerUrl); } catch (e) {
+      if (attempt === 3) throw e;
+      console.log(`[${pkg}] ${e.message}; a new tab (attempt ${attempt + 1} of 3)`);
+      await closeTab(cdpPort, target.id);
+      await sleep(2000);
+      adb(serial, 'forward', `tcp:${cdpPort}`, 'localabstract:chrome_devtools_remote');
+      target = await newTab(cdpPort);
+    }
+  }
   const s = new AndroidSession({ serial, pkg, ownEmulator: false, physical, chromeVersion, chromeMajor: major, standIn, cdpPort, targetId: target.id });
-  s.ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((ok, bad) => { s.ws.addEventListener('open', ok); s.ws.addEventListener('error', bad); });
+  s.ws = ws;
   s.ws.addEventListener('message', (e) => {
     const m = JSON.parse(e.data);
     if (m.id && s.pending.has(m.id)) { s.pending.get(m.id)(m); s.pending.delete(m.id); } else if (m.method === 'Page.loadEventFired') s.events.push('load');
@@ -394,8 +417,7 @@ export async function attachDevice({ serial, serverPorts, pkg }) {
 export async function plainTab(s) {
   const target = await newTab(s.cdpPort);
   const t = new AndroidSession({ serial: s.serial, pkg: s.pkg, ownEmulator: false, chromeVersion: s.chromeVersion, chromeMajor: s.chromeMajor, standIn: false, cdpPort: s.cdpPort, targetId: target.id });
-  t.ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((ok, bad) => { t.ws.addEventListener('open', ok); t.ws.addEventListener('error', bad); });
+  t.ws = await openSocket(target.webSocketDebuggerUrl);
   t.ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && t.pending.has(m.id)) { t.pending.get(m.id)(m); t.pending.delete(m.id); } else if (m.method === 'Page.loadEventFired') t.events.push('load'); });
   await t.send('Page.enable'); await t.send('Runtime.enable');
   t.close = async () => { try { t.ws.close(); } catch { /* gone */ } await closeTab(s.cdpPort, target.id); };

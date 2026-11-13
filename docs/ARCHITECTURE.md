@@ -437,7 +437,7 @@ Tick RUN(now), for each canvas record in reverse tree order:
     under it can leave a uniform colour as it is and still change the content (an overlay of rgb(1, 254, 3) with `mix-blend-mode: saturation` keeps both cover
     colours, whose saturation is its own, and changed 15,878 of 104,000 pixels by up to 72 levels in the first composed step up to 0.1.0-preview.25; Chrome 156 and
     iPad Safari 27.2). So the planner refuses (`refusedBy.plan`) a plan where an element outside the scroller (its ancestors aside) paints over the port with a
-    `mix-blend-mode` other than normal on itself, on an ancestor below the one it shares with the scroller, or on its `::before` / `::after` (`unblended`); one of
+    `mix-blend-mode` other than normal on itself, on an ancestor below the one it shares with the scroller, or on its `::before` / `::after` (`unblended`), where the snapshot paints one a `backdrop-filter` counting as a blend; one of
     opacity 0, of `visibility: hidden` or with nothing to paint does not count, and a later change beside such an element drops the plan when it paints over any part
     of the port (`ScrollPlan.clear`). Nor does one clipped whole (`clippedAway`, `emptyClip`): an ancestor below the shared one, an HTML block, flex or grid container
     with `overflow` hidden or clip on both axes, no `overflow-clip-margin` and no transform, whose padding box has no area (a wrapper of 0 x 0 that keeps a blended
@@ -446,8 +446,10 @@ Tick RUN(now), for each canvas record in reverse tree order:
     then refuses it once part of it shows), and between it and the clipper nothing escapes the clip: no element in the top layer, of `position: fixed`, transformed,
     filtered or slotted into a shadow tree, and an absolute element's containing block is the clipper or lies inside it. A clipper with an area, `clip-path` and
     `contain: paint` are not proven and still refuse. The scan reads every element outside the scroller once per plan, in the plan's steps (headless Chrome 156: 2.1 ms with 1,000
-    such elements, 9.4 ms with 5,000, 36 ms with 19,000; more than 20,000 refuse the plan). An outside `backdrop-filter` needs no refusal: the snapshot does not
-    paint it (a blur over the port composes equal to the settled tile). Each check of the elements outside reads an element's computed style once (`outsideCheck`),
+    such elements, 9.4 ms with 5,000, 36 ms with 19,000; more than 20,000 refuse the plan). Where the snapshot paints a backdrop-filter (Chromium 157 and later; `paintsBackdrop`),
+    an outside element with one refuses the plan as a blend does: a blur leaves both cover colours as they are while it blurs the content under it (G-scroll-cadence
+    `backdrop-blur`: with the refusal removed, 14,689 of 96,000 pixels wrong, up to 224 levels). WebKit and Gecko paint none inside an SVG image (measured), so there
+    it needs no refusal. In the check of damage beside the port such a filter counts as paint inside its border box only (`painting`). Each check of the elements outside reads an element's computed style once (`outsideCheck`),
     never across checks. The tiles are side builds like the pages, each counted in the plan's surface budget until it is read.
     Both cover tiles come from one capture: the second is the same clone with only the scroller's background colour set to the second colour, in place, so it is
     the tile a capture of its own makes, byte for byte; their decodes run side by side. A tile's first band of 262,144 pixels is read when it lands, the rest one

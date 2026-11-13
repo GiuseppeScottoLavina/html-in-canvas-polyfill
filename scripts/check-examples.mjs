@@ -151,7 +151,7 @@ async function staticSelectionShows(page, selector, kind, word, { effect = false
   await page.evaluate(`(() => { const layer = document.querySelector('hic-layer') ?? document.querySelector(${q(selector)}); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
     while ((t = tw.nextNode())) if (t.data.includes(${q(word)})) { t.parentElement.scrollIntoView({ block: 'center' }); break; }
     getSelection().removeAllRanges();
-    window.__selSource = null; if (!window.__selSourceListener) { window.__selSourceListener = true; document.querySelector(${q(selector)}).addEventListener('effectframe', (e) => { window.__selSource = e.detail.sourceVersion; }); } })()`);
+    window.__selSource = null; if (!window.__selSourceListener) { window.__selSourceListener = true; document.querySelector(${q(selector)}).addEventListener('effectframe', (e) => { window.__selSource = e.detail.sourceVersion; window.__selFrameAt = performance.now(); }); } })()`);
   await sleep(400);
   const target = await page.evaluate(`(() => { const layer = document.querySelector('hic-layer') ?? document.querySelector(${q(selector)}); const tw = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT); let t;
     while ((t = tw.nextNode())) { const i = t.data.indexOf(${q(word)}); if (i < 0) continue;
@@ -160,7 +160,20 @@ async function staticSelectionShows(page, selector, kind, word, { effect = false
     return null; })()`);
   if (!target) return { ok: false, reason: `no text "${word}" in the layer` };
   const source = () => page.evaluate('window.__selSource');
-  const before = await canvasImage(page, selector, kind);
+  // with an effect, the picture before the double click is taken while the effect is still (no effect frame for 250 ms, none during the read): an effect that plays
+  // on its own (glitch in mode 'ambient': a short event every ~1.4 s) otherwise leaves its frame in it, and the selection never reads as gone (until 2026-11-12,
+  // a third of the runs: 480 px of the word's 7,680 left)
+  let before = null;
+  for (let i = 0; i < 40 && !before; i++) {
+    const quiet = await page.evaluate(`!window.__selFrameAt || performance.now() - window.__selFrameAt >= 250`);
+    if (!effect || quiet) {
+      const t0 = await page.evaluate('performance.now()');
+      const img = await canvasImage(page, selector, kind);
+      if (!effect || (await page.evaluate(`!window.__selFrameAt || window.__selFrameAt < ${t0}`))) before = img;
+    }
+    if (!before) await sleep(50);
+  }
+  if (!before) return { ok: false, reason: 'the effect never stayed still for 250 ms (2 s)' };
   const sx = before.width / target.canvas.w, sy = before.height / target.canvas.h;
   const x0 = Math.max(0, Math.floor(target.box.x * sx)), y0 = Math.max(0, Math.floor(target.box.y * sy));
   const x1 = Math.min(before.width, Math.ceil((target.box.x + target.box.w) * sx)), y1 = Math.min(before.height, Math.ceil((target.box.y + target.box.h) * sy));
@@ -377,9 +390,12 @@ const SCENARIOS = {
       return H.until(() => page.evaluate(`window.__gallery.active === ${q(name)} ? true : null`), 8000);
     };
     await run.step('install', 'the picker lists "Effect off" and every plugin of dist/plugins/manifest.json, with its title (its description as the chip\'s tooltip)', async () => {
-      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button')].map((b) => ({ name: b.dataset.effect, text: b.textContent, tip: b.title, disabled: b.disabled }))`);
-      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.tip === p.description));
-      return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name) };
+      // the effect chips carry data-effect; the strip also holds the Stack toggle (#stack-toggle), which is not an effect (until 2026-11-12 this check counted it as one)
+      const listed = await page.evaluate(`[...document.querySelectorAll('#picker button[data-effect]')].map((b) => ({ name: b.dataset.effect, text: b.textContent, tip: b.title, disabled: b.disabled }))`);
+      const others = await page.evaluate(`[...document.querySelectorAll('#picker button:not([data-effect])')].map((b) => b.id)`);
+      const ok = listed.length === manifest.length + 1 && listed[0].name === 'off' && manifest.every((p) => listed.some((l) => l.name === p.name && l.text.includes(p.title) && l.tip === p.description))
+        && others.length === 1 && others[0] === 'stack-toggle';
+      return { ok, listed: listed.map((l) => l.name), manifest: manifest.map((p) => p.name), others };
     });
     if (mode === 'effect') {
       for (const p of manifest) {
@@ -407,8 +423,9 @@ const SCENARIOS = {
       });
     } else {
       await run.step('install', 'without WebGPU the page says so above the canvas and the effects are disabled ("Effect off" stays)', async () => {
-        const st = await page.evaluate(`({ notice: document.getElementById('notice').textContent, shown: getComputedStyle(document.getElementById('notice')).display !== 'none', disabled: [...document.querySelectorAll('#picker button')].filter((b) => b.disabled).map((b) => b.dataset.effect), active: window.__gallery.active })`);
-        return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && st.active === 'off', ...st };
+        const st = await page.evaluate(`({ notice: document.getElementById('notice').textContent, shown: getComputedStyle(document.getElementById('notice')).display !== 'none', disabled: [...document.querySelectorAll('#picker button[data-effect]')].filter((b) => b.disabled).map((b) => b.dataset.effect), stackDisabled: document.getElementById('stack-toggle')?.disabled, active: window.__gallery.active })`);
+        // every effect chip but "Effect off" is disabled, and so is the Stack toggle (a chain of effects needs the host)
+        return { ok: st.shown && /WebGPU|effects host/.test(st.notice) && st.disabled.length === manifest.length && !st.disabled.includes('off') && st.stackDisabled === true && st.active === 'off', ...st };
       });
     }
     // bug report: a double click on a word of the static text showed no selection on the canvas until the effect changed; nor did the deselection

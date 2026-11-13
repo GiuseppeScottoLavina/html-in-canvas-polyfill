@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PROJECT_ROOT, arg } from '../harness/lib/util.mjs';
 import { RESULTS_DIR, runConfig, saveResults, selectTests } from './run.mjs';
-import { gateFailures, formatTable, loadJson, triage } from './triage.mjs';
+import { driftCount, gateFailures, formatTable, loadJson, triage, updateExpectations } from './triage.mjs';
 import { writeConformance } from './report.mjs';
 import { missingResources } from './lib/inventory.mjs';
 
@@ -31,16 +31,6 @@ async function collect() {
   return out;
 }
 
-function updateExpectations(exp, B) {
-  const pass = []; const partial = {}; const stable = [];
-  for (const [id, t] of Object.entries(B.tests)) {
-    const np = t.result.subtests.filter(s => s.status === 'PASS').length;
-    if (t.pass) pass.push(id); else if (np) partial[id] = np;
-    if (t.stable) stable.push(id);
-  }
-  return { ...exp, pass: pass.sort(), partial, stable: stable.sort() };
-}
-
 const docs = await collect();
 let expectations = loadJson(EXPECTATIONS) ?? { tests: {}, controlPass: {} };
 if (args.has('--update-expectations')) {
@@ -59,7 +49,7 @@ const f = result.counts.files; const s = result.counts.subtests;
 console.log(`\nWPT HTML-in-Canvas (${docs.A.config.version} native / ${docs.B.config.version} + polyfill / ${docs.C.config.version} control)`);
 console.log(`files:    oracle ${f.A}/${f.total}   subject ${f.B}/${f.total}   control ${f.C}/${f.total}`);
 console.log(`subtests: oracle ${s.A}/${s.total}   subject ${s.B}/${s.total}   control ${s.C}/${s.total}`);
-if (result.drift) console.log(`ORACLE DRIFT: the oracle is ${result.drift.oracle}, the pinned WPT revision matches ${result.drift.build}; ${result.drift.subtests.length} subtests that passed at the pinned build fail now and are triaged as native passes (test/wpt/oracle-baseline.json).\n          oracle at the pinned build: files ${f.P}/${f.total}, subtests ${s.P}/${s.total}`);
+if (result.drift) console.log(`ORACLE DRIFT: the oracle is ${result.drift.oracle}, the pinned WPT revision matches ${result.drift.build}; ${driftCount(result.drift.subtests.length, 'that passed at the pinned build')} now, counted as passing natively (test/wpt/oracle-baseline.json).\n          oracle at the pinned build: files ${f.P}/${f.total}, subtests ${s.P}/${s.total}`);
 console.log('subtests by category:', JSON.stringify(result.cat));
 console.log('files by category:   ', JSON.stringify(result.catFiles));
 if (!args.has('--no-docs') && docs.A.selection !== 'subset' && docs.B.selection !== 'subset') console.log(`wrote ${writeConformance({ docs, result, expectations, failures })}`);

@@ -143,7 +143,7 @@ export function createNextTask(win, onError) {
 /**
  * Implements SnapshotStore. Subscribes to BUS.DRAWABLES_CHANGED, RESIZE, DPR, CANVAS_UNMOUNTING; emits BUS.COMMIT and BUS.SOURCE_VERSION from commitLanded, BUS.LANDED for a tile decoded at once, BUS.SURFACE_RESTORED after a context loss.
  * commitLanded: every tile goes through drawTileAtomic; a result rejected by DamageTracker.accepts is reclaimed (re-damaged), never silently dropped; 'caret' damage is served by caret-patch.js without a build; versions carry layoutOffset from the CaptureResult.
- * isPaintReady(record): not ready ('first-commit') while any eligible drawable that has a CSS box has neither a version nor a placeholder; not ready ('coherence', coherentPaint only) while a build that started from the same damage epoch as a landed one is still in flight.
+ * isPaintReady(record): not ready ('first-commit') while any eligible drawable that has a CSS box has neither a version nor a placeholder; not ready ('coherence', coherentPaint only) while a build of the same pump round as a landed one is still in flight, or damage marked before the oldest landed build started is in flight or waits for a build (coherenceOpen; the paint gate stops holding after coherenceMaxWaitMs).
  * @param {HicEnv} env
  * @param {CaptureFn} capture
  * @param {StoreExtras} [extras]
