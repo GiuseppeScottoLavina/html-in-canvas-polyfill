@@ -2,7 +2,8 @@
 // Run the vendored official WPT HTML-in-Canvas tests in ONE configuration and write the raw per-run results.
 //   node test/wpt/run.mjs --config=A|B|C [--reps=3] [--filter=text] [--only=id,id] [--no-privacy] [--out=file.json]
 // A = oracle (Canary native), B = subject (Chrome stable + dist/hic-live-polyfill.iife.js), C = control (stable alone).
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { PROJECT_ROOT, sleep } from '../harness/lib/util.mjs';
@@ -39,7 +40,19 @@ export function selectTests(args) {
   return tests;
 }
 
-/** Run `tests` in `config`; returns the result document. */
+/** The sha256 (hex) of a file, or null when it does not exist. @param {string} file */
+export const sha256File = file => (existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : null);
+
+/** 'full' when `tests` are every test of the vendored inventory, 'subset' otherwise (--only, --filter, --no-privacy). */
+export function selectionOf(tests) {
+  const all = listTests().map(t => t.id); const ids = new Set(tests.map(t => t.id));
+  return ids.size === all.length && all.every(id => ids.has(id)) ? 'full' : 'subset';
+}
+
+/**
+ * Run `tests` in `config`; returns the result document. It records its own provenance, whatever writes it: `selection` (`selectionOf`), the size
+ * of the inventory, and `polyfillSha256s`, the sha256 of every polyfill source injected (one when the bundle did not change during the run).
+ */
 export async function runConfig(configId, tests, { reps = 3, log = console.log, polyfillFile, shotRoot, relaxed = false } = {}) {
   const config = CONFIGS[configId]; if (!config) throw new Error('unknown config ' + configId);
   const load = await waitForLoad();
@@ -47,9 +60,10 @@ export async function runConfig(configId, tests, { reps = 3, log = console.log, 
   const server = await startWptServer();
   // one browser at a time: a test that needs the other scrollbar mode (inventory `scrollbars`) stops this browser and starts one in that mode
   let mode = 'hidden';
-  const open = () => new Session(config, { ...(polyfillFile ? { polyfillFile } : {}), scrollbars: mode }).start();
+  const injected = new Set();
+  const open = () => new Session(config, { ...(polyfillFile ? { polyfillFile } : {}), scrollbars: mode, injected }).start();
   let session = await open();
-  const doc = { runnerVersion: RUNNER_VERSION, config: session.info(), startedAt: new Date().toISOString(), loadAtStart: load, reps, tests: {} };
+  const doc = { runnerVersion: RUNNER_VERSION, config: session.info(), selection: selectionOf(tests), inventory: listTests().length, startedAt: new Date().toISOString(), loadAtStart: load, reps, tests: {}, polyfillSha256s: /** @type {string[]} */ ([]) };
   const restart = async () => { await session.stop(); session = await open(); };
   try {
     let i = 0;
@@ -73,7 +87,7 @@ export async function runConfig(configId, tests, { reps = 3, log = console.log, 
       const r = worst; const np = r.subtests.filter(s => s.status === 'PASS').length;
       log(`[${configId}] ${String(i).padStart(3)}/${tests.length} ${doc.tests[test.id].pass ? 'PASS' : r.status.padEnd(4)} ${np}/${r.subtests.length} ${sigs.size > 1 ? 'UNSTABLE ' : ''}${test.id} ${r.ms}ms`);
     }
-  } finally { clearTimeout(watchdog); doc.stop = await session.stop(); await server.close(); }
+  } finally { clearTimeout(watchdog); doc.stop = await session.stop(); await server.close(); doc.polyfillSha256s = [...injected]; }
   doc.finishedAt = new Date().toISOString();
   return doc;
 }

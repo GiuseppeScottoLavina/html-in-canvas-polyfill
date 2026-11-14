@@ -120,14 +120,39 @@ export function gateFailures({ A, B, C }, expectations, result) {
 }
 
 /**
+ * Why a saved subject run cannot be the source of the `pass`, `partial` and `stable` lists, or null when it can. The lists are rebuilt from the
+ * run, so it must be a run of the subject configuration (B) over every test of the inventory, saved with its selection by `runConfig`
+ * (`selection: 'full'`; a run saved without one, by an older runner, is refused), and every document of it must have had the bundle that
+ * is in dist now injected (`polyfillSha256s`: one hash, that of the current file).
+ * @param {any} B @param {{inventory: string[], bundleSha256: string|null}} current the test ids of the vendored inventory and the sha256 of dist/hic-live-polyfill.iife.js
+ * @returns {string|null}
+ */
+export function subjectRunRefusal(B, { inventory, bundleSha256 }) {
+  if (B?.config?.role !== 'subject') return `the run is not one of the subject configuration B (it is ${B?.config?.id ?? 'unknown'}, role ${B?.config?.role ?? 'unknown'})`;
+  if (B.selection === 'subset') return 'this subject run was a subset (--only, --filter or --no-privacy), and the pass, partial and stable lists would lose every test it did not run';
+  if (B.selection !== 'full') return 'this subject run records no selection (it was saved by an older runner): run it again';
+  const ran = new Set(Object.keys(B.tests ?? {}));
+  const missing = inventory.filter((id) => !ran.has(id));
+  const known = new Set(inventory);
+  const unknown = [...ran].filter((id) => !known.has(id));
+  const some = (/** @type {string[]} */ ids) => ids.slice(0, 3).join(', ') + (ids.length > 3 ? ', ...' : '');
+  if (missing.length || unknown.length) return `this subject run does not match the vendored tests: ${missing.length} not run (${some(missing)}), ${unknown.length} not in the inventory (${some(unknown)})`;
+  if (!bundleSha256) return 'dist/hic-live-polyfill.iife.js is not built: the run cannot be matched to a bundle';
+  const hashes = B.polyfillSha256s ?? [];
+  if (hashes.length !== 1 || hashes[0] !== bundleSha256) return `this subject run did not inject the bundle that is in dist now (sha256 ${bundleSha256.slice(0, 16)}; the run injected ${hashes.length ? hashes.map((/** @type {string} */ h) => h.slice(0, 16)).join(', ') : 'none it recorded'}): run it again on this build`;
+  return null;
+}
+
+/**
  * The `pass`, `partial` and `stable` lists of expectations.json from a subject run (`gate.mjs --update-expectations`). A test whose entry declares
  * `unstableByDesign` (a race the polyfill cannot win every time, said in its note) is never listed as stable, whatever this run did.
- * A subset run (`--only`, `--filter`, saved as `selection: 'subset'`, also when it is reused) is refused: the lists are rebuilt from the
- * run, so every test it did not run would leave them.
- * @param {any} exp @param {any} B @returns {any}
+ * The run is refused when `subjectRunRefusal` gives a reason: a subset (`--only`, `--filter`, `--no-privacy`, also when it is reused), a run
+ * saved without its selection, one that does not cover the inventory, or one of another bundle.
+ * @param {any} exp @param {any} B @param {{inventory: string[], bundleSha256: string|null}} current @returns {any}
  */
-export function updateExpectations(exp, B) {
-  if (B.selection === 'subset') throw new Error('--update-expectations needs a run of every test: this subject run was a subset (--only or --filter), and the pass, partial and stable lists would lose every test it did not run');
+export function updateExpectations(exp, B, current) {
+  const refusal = subjectRunRefusal(B, current);
+  if (refusal) throw new Error(`--update-expectations needs a full run of the subject on this build: ${refusal}`);
   const pass = []; const partial = {}; const stable = [];
   for (const [id, t] of Object.entries(B.tests)) {
     const np = t.result.subtests.filter((/** @type {any} */ s) => s.status === 'PASS').length;

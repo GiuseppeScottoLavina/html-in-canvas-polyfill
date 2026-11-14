@@ -316,7 +316,7 @@ export const plugin = Object.freeze({
     // prefers-reduced-motion (read now, and by the host at every trigger): nothing flows, the page never moves, a press leaves a tint
     const reducedMotion = !!win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-    // and, in idle moments after that, 30 steps of a fluid of the canvas's size (the loops of the full grid), at most 3 ms at a time
+    // and, in idle moments after that, 30 steps of a fluid of the canvas's size (the loops of the full grid), in slices that step until 3 ms have passed (checked between steps)
     let rehearsing = 30;
     {
       const idle = win.requestIdleCallback?.bind(win) ?? ((/** @type {() => void} */ fn) => setTimeout(fn, 50));
