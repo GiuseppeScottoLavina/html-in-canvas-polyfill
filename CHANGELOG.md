@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- Mutant suite: a mutant whose case the gate did not run was reported MISSED. With macOS showing overlay bars, G-xbrowser `scrollCompose` records Safari's system bars as not applicable, and `webkit-system-knob-round` was MISSED on 2026-11-14 for that reason alone (caught 3 of 3 with "Show scroll bars: Always"). G-xbrowser now marks such checks `na` on its result line, a mutant can name the checks it needs (`needs`), and one whose gate ran none of them is `NOT APPLICABLE`, which still fails the suite and names the check that was not applicable (`test/unit/gate-tooling/mutant-verdict.test.mjs`).
+
 ## [1.0.0-rc.11] - 2026-11-14
 
 The eleventh release candidate of 1.0.0, the candidate for 1.0.0. No change to the stable API, and none in `src/` but the version: the cloth plugin releases the render targets of the moving cloth 5 s after it comes to rest and rehearses its simulation after `create`; the WPT gate refuses `--update-expectations` on a subset of the tests; the documentation was checked against the code before 1.0.0.

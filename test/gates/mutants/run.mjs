@@ -12,6 +12,8 @@
 //   ANCHOR DRIFT  the anchor no longer occurs exactly once (the bundle was rebuilt): fix the mutant definition; fails
 //   NOT USABLE    a gate run was dropped (focus lost), of the mutant or of the clean bundle: rerun; fails
 //   UNCERTAIN     the only checks the mutant turned red were also red on one of the two clean runs (flaky): rerun; fails
+//   NOT APPLICABLE  the gate ran none of the checks the mutant is for (its `needs`; e.g. Safari's system bars while macOS shows overlay bars): set the case up
+//                 as the check that was not applicable says, and rerun; fails
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
@@ -116,12 +118,12 @@ for (const m of selected.flatMap((x) => Array.from({ length: repeat }, () => x))
   for (const gate of m.gates) {
     const base = baseline(gate, m.args);
     const res = runGate(gate, file, m.bundle ?? 'core', m.args);
-    const v = gateVerdict(base, asRun(res));
+    const v = gateVerdict(base, asRun(res), m.needs);
     perGate[gate] = { ...v, newlyRed: v.newlyRed.slice(0, 4), flakyRed: v.flakyRed.slice(0, 4), baselineRed: base.failed.size, baselineFlaky: base.flaky.size, highLoad: res.highLoad, focus: res.focus?.mode };
   }
   const status = mutantStatus(Object.values(perGate), m);
   rows.push({ mutant: m.name, status, pendingFix: m.pendingFix ?? null, expect: m.expect ?? 'any', perGate });
-  console.log(`${status.padEnd(12)} ${m.name.padEnd(32)} ${Object.entries(perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'GREEN'}${e.caught ? ' (' + e.newlyRed.join(' | ').slice(0, 160) + ')' : e.uncertain ? ' (only checks also red on a clean run: ' + e.flakyRed.join(' | ').slice(0, 120) + ')' : e.usable ? '' : ' (' + e.detail + ')'}`).join(' ')}`);
+  console.log(`${status.padEnd(12)} ${m.name.padEnd(32)} ${Object.entries(perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'GREEN'}${e.caught ? ' (' + e.newlyRed.join(' | ').slice(0, 160) + ')' : e.uncertain ? ' (only checks also red on a clean run: ' + e.flakyRed.join(' | ').slice(0, 120) + ')' : e.notApplicable ? ' (not applicable: ' + (e.detail ?? '').slice(0, 200) + ')' : e.usable ? '' : ' (' + e.detail + ')'}`).join(' ')}`);
 }
 if (repeat > 1) for (const m of selected) {
   const mine = rows.filter((r) => r.mutant === m.name);
@@ -130,6 +132,6 @@ if (repeat > 1) for (const m of selected) {
 console.table(rows.map((r) => ({ mutant: r.mutant, status: r.status + (r.pendingFix ? ` (${r.pendingFix})` : ''), gates: Object.entries(r.perGate).map(([g, e]) => `${g.replace(/^g-/, '')}:${e.caught ? 'red' : 'green'}`).join(' ') || r.detail })));
 mkdirSync(resolve(root, '.scratch/results'), { recursive: true });
 writeFileSync(resolve(root, `.scratch/results/mutants-${new Date().toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify({ at: new Date().toISOString(), rows, baselines: Object.fromEntries([...baselines].map(([k, b]) => [k, { usable: b.usable, runs: b.runs, failed: [...b.failed], flaky: [...b.flaky], receipts: b.receipts }])) }, null, 1));
-const bad = rows.filter((r) => ['MISSED', 'ANCHOR DRIFT', 'NOT USABLE', 'UNCERTAIN'].includes(r.status));
+const bad = rows.filter((r) => ['MISSED', 'ANCHOR DRIFT', 'NOT USABLE', 'NOT APPLICABLE', 'UNCERTAIN'].includes(r.status));
 console.log(bad.length ? `FAIL: ${bad.map((r) => r.mutant + ':' + r.status).join(', ')}` : `OK: ${rows.length} mutants, ${rows.filter((r) => r.status === 'PENDING').length} pending`);
 process.exit(bad.length ? 1 : 0);
