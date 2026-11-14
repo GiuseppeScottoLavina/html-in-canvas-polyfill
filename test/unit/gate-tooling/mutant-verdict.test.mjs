@@ -72,3 +72,47 @@ test('a gate process that printed PASS and then exited 1 or was killed is not us
   assert.deepEqual([ok.usable, ok.failed.size], [true, 0]);
   assert.equal(asGateRun(gateRunOutcome({ stdout: '', status: 1 })).usable, false, 'no result line: not run');
 });
+
+test('a mutant whose case did not run is NOT APPLICABLE, not MISSED: the checks it needs all recorded their case as not applicable, or none of them ran', () => {
+  // webkit-system-knob-round, 2026-11-14: macOS showed overlay bars, so G-xbrowser scrollCompose recorded the system bars as not applicable and the mutant was MISSED
+  const needs = 'scrollCompose system bars:';
+  const na = '[safari] scrollCompose system bars: not applicable, the system shows overlay bars (gutters 0 / 0); set "Show scroll bars: Always" to run it';
+  const ran = '[safari] scrollCompose system bars: every composed frame equals the settled tile at its offset at DPR 2';
+  const styled = '[safari] scrollCompose styled bars: every composed frame equals the settled tile';
+  const base = baselineOf([run([])]);
+  const overlay = { usable: true, failed: new Set(), applicable: new Set([styled]), notApplicable: new Set([na]) };
+  const v = gateVerdict(base, overlay, needs);
+  assert.deepEqual([v.notApplicable, v.detail], [true, na], 'the not-applicable check is named');
+  assert.equal(mutantStatus([v], {}), 'NOT APPLICABLE');
+  assert.equal(mutantStatus([v], { pendingFix: 'x' }), 'NOT APPLICABLE', 'a pending fix does not excuse a case that never ran');
+  assert.equal(mutantStatus([gateVerdict(base, overlay)], {}), 'MISSED', 'without `needs` nothing changes');
+  const none = gateVerdict(base, { usable: true, failed: new Set(), applicable: new Set([styled]), notApplicable: new Set() }, needs);
+  assert.deepEqual([none.notApplicable, none.detail], [true, `no check of "${needs}" ran`]);
+  // the case ran: green is MISSED, red is CAUGHT
+  const classic = { usable: true, failed: new Set(), applicable: new Set([styled, ran]), notApplicable: new Set() };
+  assert.equal(mutantStatus([gateVerdict(base, classic, needs)], {}), 'MISSED');
+  assert.equal(mutantStatus([gateVerdict(base, { ...classic, failed: new Set([ran]) }, needs)], {}), 'CAUGHT');
+  // webkit-system-knob-look, same night: caught by the styled bars while the system case was not applicable; a catch stands
+  assert.equal(mutantStatus([gateVerdict(base, { ...overlay, failed: new Set([styled]) }, needs)], {}), 'CAUGHT');
+  assert.equal(mutantStatus([gateVerdict(base, overlay, needs), gateVerdict(base, { ...classic, failed: new Set([ran]) }, needs)], { expect: 'all' }), 'NOT APPLICABLE');
+});
+
+test('the result line carries `na`: asGateRun splits the checks that ran from those not applicable, and the knob mutants need a case G-xbrowser checks', async () => {
+  const { readFileSync } = await import('node:fs');
+  const line = JSON.stringify({ gate: 'G-xbrowser', verdict: 'FAIL', usable: true, assertions: [{ name: '[safari] a', ok: true }, { name: '[safari] b', ok: true, na: true }], failed: [] });
+  const r = asGateRun(gateRunOutcome({ stdout: line, status: 1 }));
+  assert.deepEqual([[...(r.applicable ?? [])], [...(r.notApplicable ?? [])]], [['[safari] a'], ['[safari] b']]);
+  const runner = readFileSync(new URL('../../xbrowser/run.mjs', import.meta.url), 'utf8');
+  assert.match(runner, /c\.cls === 'n\/a' \? \{ na: true \}/, 'G-xbrowser marks its n/a checks on the result line');
+  const scenarios = readFileSync(new URL('../../xbrowser/scenarios.mjs', import.meta.url), 'utf8');
+  const needing = MUTANTS.filter((m) => m.needs);
+  assert.deepEqual(needing.map((m) => m.name).sort(), ['webkit-system-knob-look', 'webkit-system-knob-round']);
+  // the checks of the case: `scrollCompose${label} ${name}: ...` with name 'system bars' and label '' in the real run (the names of the 2026-11-14 run with classic
+  // bars: "[safari] scrollCompose system bars: every composed frame equals the settled tile ..."), and the one that records the case as not applicable
+  assert.match(scenarios, /const name = bars === 'styled' \? 'styled bars' : 'system bars';/);
+  assert.match(scenarios, /ctx\.check\(`scrollCompose\$\{label\} \$\{name\}: /);
+  for (const m of needing) {
+    assert.equal(m.needs, 'scrollCompose system bars:', m.name);
+    assert.ok([...scenarios.matchAll(/ctx\.check\(`([^`]*)`/g)].some((x) => x[1].startsWith(`${m.needs} not applicable`)), `${m.name}: the not-applicable check starts with "${m.needs}"`);
+  }
+});

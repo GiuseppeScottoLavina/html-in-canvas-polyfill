@@ -206,8 +206,9 @@ for (const [engine, E] of Object.entries(report.engines)) {
 }
 console.table(table);
 writeFileSync(join(outRoot, `xbrowser-summary-${stamp}.json`), JSON.stringify({ ...report, table }, null, 1));
-// the result line of a gate (test/gates/lib/gate.mjs gateRunOutcome): the mutant runner compares the failed checks of a mutant core with those of the clean one
-const assertions = Object.entries(report.engines).flatMap(([engine, E]) => (E.real?.rows ?? []).flatMap((row) => row.checks.map((c) => ({ name: `[${engine}] ${c.label}`, ok: c.ok }))));
+// the result line of a gate (test/gates/lib/gate.mjs gateRunOutcome): the mutant runner compares the failed checks of a mutant core with those of the clean one;
+// `na` marks a check that recorded its case as not applicable, so a mutant that needs that case is NOT APPLICABLE there, not MISSED (mutants/verdict.mjs)
+const assertions = Object.entries(report.engines).flatMap(([engine, E]) => (E.real?.rows ?? []).flatMap((row) => row.checks.map((c) => ({ name: `[${engine}] ${c.label}`, ok: c.ok, ...(c.cls === 'n/a' ? { na: true } : {}) }))));
 const usable = Object.entries(report.engines).every(([engine, E]) => (E.verdict === 'SKIPPED' && OPTIONAL.has(engine)) || (E.scenarios && !Object.values(E.scenarios).some((r) => r.environment)));
 console.log(JSON.stringify({ gate: 'G-xbrowser', verdict: report.pass ? 'PASS' : 'FAIL', usable, assertions, failed: assertions.filter((a) => !a.ok).map((a) => a.name) }));
 console.log(report.pass ? 'G-xbrowser PASS' : 'G-xbrowser FAIL' + (noControl ? ' (--no-control never passes)' : ''));

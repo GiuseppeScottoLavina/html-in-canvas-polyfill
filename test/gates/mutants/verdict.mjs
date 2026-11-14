@@ -18,7 +18,8 @@ export function selectMutants(mutants, { only, gate }) {
 }
 
 /**
- * @typedef {{notRun?: string, usable: boolean, failed: Set<string>}} GateRun  one run of a gate: the names of its red checks
+ * @typedef {{notRun?: string, usable: boolean, failed: Set<string>, applicable?: Set<string>, notApplicable?: Set<string>}} GateRun  one run of a gate: the names of
+ *   its red checks, and of the checks that ran and those that recorded their case as not applicable (a G-xbrowser check of class n/a, `na` on the result line)
  * @typedef {{usable: boolean, failed: Set<string>, flaky: Set<string>, runs: number, notRun?: string}} Baseline
  */
 
@@ -28,10 +29,12 @@ export function selectMutants(mutants, { only, gate }) {
  * @param {any} res @returns {GateRun & {verdict?: string}}
  */
 export function asGateRun(res) {
-  if (res.notRun) return { notRun: res.notRun, usable: false, failed: new Set() };
+  if (res.notRun) return { notRun: res.notRun, usable: false, failed: new Set(), applicable: new Set(), notApplicable: new Set() };
   const failed = new Set(res.assertions.filter((/** @type {any} */ a) => !a.ok).map((/** @type {any} */ a) => a.name).concat(res.failed.filter((/** @type {string} */ f) => /^gate (ran|made|did not finish)/.test(f))));
   const brokenProcess = res.failed.some((/** @type {string} */ f) => /^gate process /.test(f));
-  return { usable: !!res.usable && !brokenProcess, failed, verdict: res.verdict };
+  const applicable = new Set(res.assertions.filter((/** @type {any} */ a) => !a.na).map((/** @type {any} */ a) => a.name));
+  const notApplicable = new Set(res.assertions.filter((/** @type {any} */ a) => a.na).map((/** @type {any} */ a) => a.name));
+  return { usable: !!res.usable && !brokenProcess, failed, applicable, notApplicable, verdict: res.verdict };
 }
 
 /**
@@ -50,30 +53,40 @@ export function baselineOf(runs) {
   return { usable, failed, flaky, runs: runs.length, ...(notRun ? { notRun } : {}) };
 }
 
+/** The case of a check: its name without the engine G-xbrowser puts first (`[safari] scrollCompose system bars: ...` is `scrollCompose system bars: ...`). */
+const caseOf = (/** @type {string} */ name) => name.replace(/^\[[^\]]+\] /, '');
+
 /**
  * What a mutant's run of a gate proves against the clean baseline: caught by a check that is red now and green on every clean run; uncertain when the only new
- * reds are checks that also went red on a clean run; not usable when either side has no usable run.
- * @param {Baseline} base @param {GateRun} res
- * @returns {{usable: boolean, caught: boolean, uncertain: boolean, newlyRed: string[], flakyRed: string[], detail?: string}}
+ * reds are checks that also went red on a clean run; not usable when either side has no usable run. `needs` is the start of the names of the checks the mutant
+ * is for (the mutant's `needs`): when none of them ran in the mutant's run (each recorded its case as not applicable, as G-xbrowser scrollCompose does for
+ * Safari's system bars while macOS shows overlay bars), the run is `notApplicable`: green there proves nothing (webkit-system-knob-round was reported MISSED on
+ * 2026-11-14 for that reason alone).
+ * @param {Baseline} base @param {GateRun} res @param {string} [needs]
+ * @returns {{usable: boolean, caught: boolean, uncertain: boolean, notApplicable: boolean, newlyRed: string[], flakyRed: string[], detail?: string}}
  */
-export function gateVerdict(base, res) {
-  if (res.notRun || !res.usable || !base.usable) return { usable: false, caught: false, uncertain: false, newlyRed: [], flakyRed: [], detail: res.notRun ?? base.notRun ?? (!res.usable ? 'the mutant run is not usable' : 'the clean baseline is not usable') };
+export function gateVerdict(base, res, needs) {
+  if (res.notRun || !res.usable || !base.usable) return { usable: false, caught: false, uncertain: false, notApplicable: false, newlyRed: [], flakyRed: [], detail: res.notRun ?? base.notRun ?? (!res.usable ? 'the mutant run is not usable' : 'the clean baseline is not usable') };
   const newly = [...res.failed].filter((n) => !base.failed.has(n));
   const newlyRed = newly.filter((n) => !base.flaky.has(n));
   const flakyRed = newly.filter((n) => base.flaky.has(n));
-  return { usable: true, caught: newlyRed.length > 0, uncertain: !newlyRed.length && flakyRed.length > 0, newlyRed, flakyRed };
+  const ran = needs === undefined || [...(res.applicable ?? [])].some((n) => caseOf(n).startsWith(needs));
+  const why = ran ? undefined : [...(res.notApplicable ?? [])].find((n) => caseOf(n).startsWith(needs ?? '')) ?? `no check of "${needs}" ran`;
+  return { usable: true, caught: newlyRed.length > 0, uncertain: !newlyRed.length && flakyRed.length > 0, notApplicable: !ran, newlyRed, flakyRed, ...(why ? { detail: why } : {}) };
 }
 
 /**
- * The status of a mutant from its gates. UNCERTAIN, like MISSED and NOT USABLE, fails the suite: rerun it. A mutant that any of its gates may catch (the default)
- * is CAUGHT by one usable gate that caught it, whatever happened to the others; one that every gate must catch (`expect: 'all'`) needs every gate usable.
- * @param {Array<{usable: boolean, caught: boolean, uncertain: boolean}>} gates @param {{expect?: 'all'|'any', pendingFix?: string}} m
- * @returns {'CAUGHT'|'MISSED'|'PENDING'|'NOT USABLE'|'UNCERTAIN'}
+ * The status of a mutant from its gates. UNCERTAIN, like MISSED, NOT USABLE and NOT APPLICABLE, fails the suite: rerun it. A mutant that any of its gates may
+ * catch (the default) is CAUGHT by one usable gate that caught it, whatever happened to the others; one that every gate must catch (`expect: 'all'`) needs every
+ * gate usable. NOT APPLICABLE: a gate that did not catch it ran none of the checks the mutant is for (gateVerdict `needs`); set up the case and rerun.
+ * @param {Array<{usable: boolean, caught: boolean, uncertain: boolean, notApplicable?: boolean}>} gates @param {{expect?: 'all'|'any', pendingFix?: string}} m
+ * @returns {'CAUGHT'|'MISSED'|'PENDING'|'NOT USABLE'|'NOT APPLICABLE'|'UNCERTAIN'}
  */
 export function mutantStatus(gates, m) {
   if (m.expect !== 'all' && gates.some((g) => g.usable && g.caught)) return 'CAUGHT';
   if (!gates.length || gates.some((g) => !g.usable)) return 'NOT USABLE';
   if (m.expect === 'all' && gates.every((g) => g.caught)) return 'CAUGHT';
+  if (gates.some((g) => g.notApplicable && !g.caught)) return 'NOT APPLICABLE';
   if (gates.some((g) => g.uncertain)) return 'UNCERTAIN';
   return m.pendingFix ? 'PENDING' : 'MISSED';
 }
