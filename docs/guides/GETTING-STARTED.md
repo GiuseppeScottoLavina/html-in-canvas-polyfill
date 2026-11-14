@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `1.0.0-rc.11`, a release candidate on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `1.0.0` on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 What is stable, experimental or unqualified (Safari on the iPhone is unqualified, the frame cap and the effects are experimental): [STABILITY.md](../STABILITY.md).
 

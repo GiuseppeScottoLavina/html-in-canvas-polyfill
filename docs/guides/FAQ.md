@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0-rc.11`) unless dated.
+Short answers to the questions people ask first, with links to the evidence. Where something was not measured, this page says so. Figures describe the current code (`1.0.0`) unless dated.
 
 ## What is this?
 
@@ -32,7 +32,7 @@ Yes, and this is the main structural difference from native. The children of the
 
 ## Why is the core about 376 KB minified (128 KB gzipped)?
 
-In the current build, 375,528 bytes minified and 128,159 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 375,522 bytes minified and 128,154 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
 
 Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 375 KB, so they are approximate.
 
@@ -62,7 +62,7 @@ Partly, and less verified than the rest.
 - The live elements stay in the document and in the accessibility tree: the layer is invisible (`opacity: 0`), not hidden from assistive technology. Focus, the tab order, keyboard input and IME work on the real elements.
 - Natively, the children of the canvas are its accessibility children. To keep that structure after the move, the layer has `role="presentation"` and the canvas `aria-owns` its top-level children ([ARCHITECTURE.md, ADR-M](../ARCHITECTURE.md#adr-m-accessibility-link)).
 - The gate G-a11y reads Chrome's real accessibility tree ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8). On a list canvas and a form canvas, and on the water-form page, the subtree of the canvas node equals the one Chrome builds for the same HTML as a plain page, line by line: roles, names, values and order. Tab reaches every control in DOM order and the focused node is under the canvas; typed text, a slider key and a script text change show in the tree; a polite live region keeps its text and politeness; and the tree is the same after `uninstall()` and a new `install()`. Its control drops the `aria-owns` link and must fail. On the same fixture, Chrome's native implementation (Canary 159) builds the same tree.
-- One real screen reader was run: VoiceOver in Safari 27.0.1 on macOS 27.0.1, by hand, on the fixture of G-a11y (2026-11-06; repeated on the candidates of 1.0.0-rc.2 to rc.7, and on 2026-11-13 and 2026-11-14, in Safari 27.2 on macOS 27.2.1, on the code of 1.0.0-rc.10 and of 1.0.0-rc.11). The page was read in order, the rotor listed the same headings and controls, Tab reached the seven controls in order, typing, a checkbox, a slider, a button's status message and a live update were announced, and after `uninstall()` and a new `install()` the page read the same: all 13 steps sounded as on the same HTML as a plain page ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8).
+- One real screen reader was run: VoiceOver in Safari 27.0.1 on macOS 27.0.1, by hand, on the fixture of G-a11y (2026-11-06; repeated on the candidates of 1.0.0-rc.2 to rc.7, and on 2026-11-13 and 2026-11-14, in Safari 27.2 on macOS 27.2.1, on the code of 1.0.0-rc.10, of 1.0.0-rc.11 and of 1.0.0). The page was read in order, the rotor listed the same headings and controls, Tab reached the seven controls in order, typing, a checkbox, a slider, a button's status message and a live update were announced, and after `uninstall()` and a new `install()` the page read the same: all 13 steps sounded as on the same HTML as a plain page ([TEST-PLAN.md](../TEST-PLAN.md), section 2.8).
 - Not verified: NVDA, JAWS, TalkBack, VoiceOver on iOS and iPadOS, and the accessibility trees of Firefox and Safari. An accessibility tree is what a screen reader reads; the gate does not show what one announces, and one manual session covers one browser and one fixture.
 - A drawable that is never drawn still exposes its layout position to assistive technology, where native exposes no geometry until it is drawn (deviation `a11y-geometry`). Mark unused views `aria-hidden`.
 
@@ -77,7 +77,7 @@ Two caveats:
 
 ## Does Chrome 157 download the polyfill?
 
-With the core's script tag, yes: 375,528 bytes (128,159 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,460 bytes, 6,325 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
+With the core's script tag, yes: 375,522 bytes (128,154 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,454 bytes, 6,320 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 
@@ -135,7 +135,7 @@ Yes, for what was tested. A real app in each of React 19, Vue 3, Svelte 5 and Li
 
 ## Is it production-ready?
 
-It is a release candidate of a proposed standard (`1.0.0-rc.11` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change; until `1.0.0` its stable rows change only by fixes, the two extensions are experimental, and a release before `1.0.0` gets no fixes of its own: a fix comes in the next release. What 1.0.0 will promise, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
+It is a stable release of a polyfill for a proposed standard (`1.0.0` on npm; a new release goes to the `next` tag first and to `latest` once checked). The API it implements may still change: its stable rows follow Semantic Versioning, so a change of the standard that a page can observe comes in a major version, and the two extensions are experimental. What 1.0.0 promises, row by row, and the versioning policy: [STABILITY.md](../STABILITY.md). Use it where a wrong frame or a missing feature is acceptable, and test your own pages on your own target devices.
 
 What is tested:
 
