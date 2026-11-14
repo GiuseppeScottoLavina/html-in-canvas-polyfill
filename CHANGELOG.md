@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format follows [Kee
 The first stable release. Its code is that of 1.0.0-rc.11: in `src/` only the version changes, and in the plugins only comments (the minified plugins are byte-identical to 1.0.0-rc.11's). From this release the promises of [docs/STABILITY.md](docs/STABILITY.md) apply: the stable rows follow Semantic Versioning, a change of the proposed standard that a page can observe comes in a major version, the rows marked experimental stay so (the frame cap, the effects host and its plugins among them), and Safari on the iPhone stays unqualified (no physical iPhone on iOS 26 or later was run). The release candidates and previews before it get no fixes.
 
 - The core bundle is 375,522 bytes minified (128,154 gzip), 6 bytes less than 1.0.0-rc.11: the version string.
+- VoiceOver in Safari 27.2 on macOS 27.2.1, on this candidate (229477e) on 2026-11-14: all 13 steps of TEST-PLAN 2.8 sounded as on the same HTML as a plain page.
 
 ### Changed
 - Documentation: the README, GETTING-STARTED, FAQ, STABILITY, SECURITY, CONTRIBUTING, the examples page and the issue template describe a stable release instead of a release candidate. The policy itself is unchanged: fixes go to the newest minor of a major line, the previous major line gets security fixes for six months after a new major, and every release is published under `next` first and moved to `latest` once checked.
