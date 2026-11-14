@@ -1,6 +1,7 @@
 // One Chrome per configuration, driven over CDP: launch with the WPT host rules, optional polyfill injection into every
 // new document, the `__wptDrive` input binding of testdriver-vendor.js, crash/dialog handling and a resilient test tab.
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { launchChrome } from '../../harness/lib/chrome.mjs';
 import { HOST_RULES } from '../server.mjs';
 import { PROJECT_ROOT, sleep } from '../../harness/lib/util.mjs';
@@ -28,7 +29,8 @@ async function handleBinding(page, p) {
 
 export class Session {
   /** `scrollbars`: 'hidden' (default, --hide-scrollbars: screenshots without scrollbars) or 'default' for the tests that render author-styled scrollbars (inventory `scrollbars`). */
-  constructor(config, { polyfillFile = resolveDist(), name, scrollbars = 'hidden' } = {}) { this.config = config; this.polyfillFile = polyfillFile; this.name = name ?? `wpt-${config.id}`; this.scrollbars = scrollbars; this.crashed = false; }
+  /** `injected`: the sha256 of every polyfill source injected, shared by the sessions of one run (a rebuild during the run adds a second one) */
+  constructor(config, { polyfillFile = resolveDist(), name, scrollbars = 'hidden', injected = new Set() } = {}) { this.config = config; this.polyfillFile = polyfillFile; this.name = name ?? `wpt-${config.id}`; this.scrollbars = scrollbars; this.crashed = false; this.injected = injected; }
 
   async start() {
     this.browser = await launchChrome({
@@ -65,6 +67,7 @@ export class Session {
    */
   async injectPolyfill(page) {
     const source = readFileSync(this.polyfillFile, 'utf8');
+    this.injected.add(createHash('sha256').update(source).digest('hex'));
     const workerFile = `${PROJECT_ROOT}/dist/hic-live-worker.iife.js`;
     const workerSource = existsSync(workerFile) ? readFileSync(workerFile, 'utf8') : null;
     await page.send('Page.addScriptToEvaluateOnNewDocument', { source });

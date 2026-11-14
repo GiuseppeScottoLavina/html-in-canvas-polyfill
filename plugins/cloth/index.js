@@ -94,8 +94,8 @@ export const FADE_MS = 260;
  */
 export const RELEASE_AFTER_MS = 5000;
 /**
- * steps of a cloth of the canvas's size that are run in idle moments after create, at most 3 ms at a time (as the ink plugin does): the
- * first gust then runs on warmed code. Measured on an iPad Pro, Safari 27.2: the first frames of the first gust stepped 25-31 ms of the
+ * steps of a cloth of the canvas's size that are run after create, in slices (idle callbacks, a 50 ms timer without requestIdleCallback) that step
+ * until 3 ms have passed, checked between steps (as the ink plugin does): a first gust that comes after them runs on warmed code. Measured on an iPad Pro, Safari 27.2: the first frames of the first gust stepped 25-31 ms of the
  * cloth in 13-24 ms of the main thread, and the same span in 3-5 ms once warm.
  */
 const REHEARSAL_STEPS = 40;
