@@ -96,7 +96,7 @@ Describe what the change proves and what it does not, list the commands you ran 
 
 ## Releases
 
-Releases are made by the maintainer. A release is one commit that sets `version` in `package.json` and `src/version.js` (the build checks they are equal) and turns `[Unreleased]` in `CHANGELOG.md` into a dated `[x.y.z] - YYYY-MM-DD` section, tagged `vx.y.z`. Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag names the package version and that the changelog section is dated, repeats the CI checks, publishes to npm with provenance (dist-tag from `publishConfig.tag`: `next` for previews and release candidates) and creates the GitHub release with that changelog section as its notes. The maintainer moves the `latest` dist-tag to a release once it has been checked ([STABILITY.md, section 2](docs/STABILITY.md#2-versioning), "Release channels").
+Releases are made by the maintainer. A release is one commit that sets `version` in `package.json` and `src/version.js` (the build checks they are equal) and turns `[Unreleased]` in `CHANGELOG.md` into a dated `[x.y.z] - YYYY-MM-DD` section, tagged `vx.y.z`. Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag names the package version and that the changelog section is dated, repeats the CI checks, publishes to npm with provenance (dist-tag from `publishConfig.tag`: `next`, for every release) and creates the GitHub release with that changelog section as its notes. The maintainer moves the `latest` dist-tag to a release once it has been checked ([STABILITY.md, section 2](docs/STABILITY.md#2-versioning), "Release channels").
 
 npm authentication, in this order of preference:
 

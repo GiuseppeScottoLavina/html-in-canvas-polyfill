@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-14
+
+The first stable release. Its code is that of 1.0.0-rc.11: in `src/` only the version changes, and in the plugins only comments (the minified plugins are byte-identical to 1.0.0-rc.11's). From this release the promises of [docs/STABILITY.md](docs/STABILITY.md) apply: the stable rows follow Semantic Versioning, a change of the proposed standard that a page can observe comes in a major version, the rows marked experimental stay so (the frame cap, the effects host and its plugins among them), and Safari on the iPhone stays unqualified (no physical iPhone on iOS 26 or later was run). The release candidates and previews before it get no fixes.
+
+- The core bundle is 375,522 bytes minified (128,154 gzip), 6 bytes less than 1.0.0-rc.11: the version string.
+
+### Changed
+- Documentation: the README, GETTING-STARTED, FAQ, STABILITY, SECURITY, CONTRIBUTING, the examples page and the issue template describe a stable release instead of a release candidate. The policy itself is unchanged: fixes go to the newest minor of a major line, the previous major line gets security fixes for six months after a new major, and every release is published under `next` first and moved to `latest` once checked.
+
 ### Fixed
 - Mutant suite: a mutant whose case the gate did not run was reported MISSED. With macOS showing overlay bars, G-xbrowser `scrollCompose` records Safari's system bars as not applicable, and `webkit-system-knob-round` was MISSED on 2026-11-14 for that reason alone (caught 3 of 3 with "Show scroll bars: Always"). G-xbrowser now marks such checks `na` on its result line, a mutant can name the checks it needs (`needs`), and one whose gate ran none of them is `NOT APPLICABLE`, which still fails the suite and names the check that was not applicable (`test/unit/gate-tooling/mutant-verdict.test.mjs`).
 - WPT gate: `--update-expectations` with `--reuse` accepted a subject run that `test/wpt/run.mjs` had saved for a subset of the tests (`--only`, `--filter`, `--no-privacy`), since only the gate recorded the selection, and the pass, partial and stable lists would have kept only the tests it ran; it also accepted the control saved under the name B, or a run of another bundle. Found by an outside review, from the code and with the real functions; `npm run test:wpt` and `npm run test:local` run the gate in full and without `--reuse`, so only a run by hand could take that path. The runner now records in every result its selection against the vendored inventory and the sha256 of every bundle it injected. The lists are rebuilt only from a run of the subject over every test of the inventory, with one bundle, the one in `dist` now; any other run is refused with its reason and `expectations.json` is left as it was. The file is written after the gate's checks, and not when they fail; neither is `docs/CONFORMANCE.md` then, which would be triaged with lists that were not written. The report gives the hash of the bundle the run injected, not of the file in `dist` when it is written, and is not written from a run that would be refused either (`test/unit/gate-tooling/wpt-triage.test.mjs`).
@@ -877,7 +886,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.11...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.11...v1.0.0
 [1.0.0-rc.11]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.10...v1.0.0-rc.11
 [1.0.0-rc.10]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.9...v1.0.0-rc.10
 [1.0.0-rc.9]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.8...v1.0.0-rc.9

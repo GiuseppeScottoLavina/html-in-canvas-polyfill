@@ -2,7 +2,7 @@
 
 What the package promises, row by row: every public API, option, export, bundle and platform, with its status and the evidence behind it.
 
-**Applies from:** `1.0.0-rc.1`. Between a release candidate and `1.0.0` the stable rows change only by fixes. The `0.1.0` previews carry no compatibility promise.
+**Applies from:** `1.0.0`. The release candidates before it (`1.0.0-rc.1` to `1.0.0-rc.11`) changed the stable rows only by fixes; the `0.1.0` previews carry no compatibility promise.
 
 Status words:
 
@@ -107,7 +107,7 @@ From `1.0.0` the package follows [Semantic Versioning](https://semver.org/) for 
 
 **Older lines.** Within a major line only the newest minor gets fixes. When a new major is released, the previous line gets security fixes and fixes for stable rows that break on a qualified platform for six months. Releases before `1.0.0` get no fixes.
 
-**Release channels.** `next` carries release candidates and previews, `latest` the newest release that has been checked.
+**Release channels.** Every release is published under `next` first (as the release candidates and previews were); `latest` is the newest release that has been checked.
 
 ## 3. Known gaps against the native implementation
 
