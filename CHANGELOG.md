@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Live demo: the six example pages besides the landing, the gallery and the playground (basic, form, effect-plugin, scroll-and-resize, webgl-texture, field-test) have a title that names the project, a description and an absolute canonical; G-pages checks them on every page of the sitemap, with a control for each (a missing description, a title without the project, a canonical naming another page).
+- README: the npm badge shows the `latest` version.
+
 ## [1.0.0] - 2026-11-14
 
 The first stable release. Its code is that of 1.0.0-rc.11: in `src/` only the version changes, and in the plugins only comments (the minified plugins are byte-identical to 1.0.0-rc.11's). From this release the promises of [docs/STABILITY.md](docs/STABILITY.md) apply: the stable rows follow Semantic Versioning, a change of the proposed standard that a page can observe comes in a major version, the rows marked experimental stay so (the frame cap, the effects host and its plugins among them), and Safari on the iPhone stays unqualified (no physical iPhone on iOS 26 or later was run). The release candidates and previews before it get no fixes.
