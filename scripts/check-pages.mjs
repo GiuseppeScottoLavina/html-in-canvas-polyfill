@@ -18,6 +18,7 @@
 //     the landing has its SoftwareSourceCode JSON-LD; the root names examples/ as its canonical; every canonical answers 200;
 //   - og-image: every og:image answers 200 as a PNG under 1 MB, 1280 x 640, as its og:image:width and og:image:height say;
 //   - sitemap: sitemap.xml lists absolute addresses under SITE, without query or duplicates, each answering 200, the three pages above included;
+//   - page-metadata: every page of the sitemap has one canonical, its own address, one title naming the project and one description;
 //   - noindex: no page of the site (the root, every example, every sitemap address) has a robots or googlebot meta tag or an X-Robots-Tag
 //     header with noindex or none;
 //   - redirect: the root reaches examples/ in at most 5 redirects, none of them back to an address already visited;
@@ -236,6 +237,24 @@ const SITE_CHECKS = {
     }
     return p;
   },
+  async 'page-metadata'(site) {
+    const p = [];
+    const locs = [...(await get(site, 'sitemap.xml')).text.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
+    if (!locs.length) return ['sitemap.xml lists no page'];
+    for (const loc of locs) {
+      const path = sitePath(loc);
+      if (path === null) continue;   // reported by the sitemap check
+      const r = await get(site, path);
+      if (r.status !== 200) { p.push(`${path}: HTTP ${r.status}`); continue; }
+      const canon = tags(r.text, 'link').filter((l) => l.rel === 'canonical').map((l) => l.href);
+      if (canon.length !== 1 || canon[0] !== loc) p.push(`${path}: canonical ${JSON.stringify(canon)}, expected exactly ${loc}`);
+      const titles = [...r.text.matchAll(/<title>([^<]*)<\/title>/g)].map((t) => t[1]);
+      if (titles.length !== 1 || !/HTML-in-Canvas Polyfill/.test(titles[0])) p.push(`${path}: title ${JSON.stringify(titles)} (one, naming the project)`);
+      const desc = metas(r.text, 'description');
+      if (desc.length !== 1 || !desc[0].trim()) p.push(`${path}: description ${JSON.stringify(desc)} (exactly one, not empty)`);
+    }
+    return p;
+  },
   async noindex(site) {
     const p = [];
     const sm = (await get(site, 'sitemap.xml')).text;
@@ -287,6 +306,9 @@ const CONTROLS = [
   { check: 'metadata', what: 'the playground has no og:image', path: 'examples/playground/index.html', edit: [`<meta property="og:image" content="${SITE}examples/assets/social-preview-chrome-capture.png">`, ''] },
   { check: 'og-image', what: 'the social image is 64 x 64', path: 'examples/assets/social-preview-chrome-capture.png', body: () => H.encodePng({ width: 64, height: 64, data: new Uint8Array(64 * 64 * 4).fill(200) }) },
   { check: 'sitemap', what: 'the sitemap lists a page that does not exist', path: 'sitemap.xml', edit: ['</urlset>', `  <url><loc>${SITE}examples/no-such-page/</loc></url>\n</urlset>`] },
+  { check: 'page-metadata', what: 'the basic example has no description', path: 'examples/basic/index.html', edit: ['<meta name="description" ', '<meta name="x-description" '] },
+  { check: 'page-metadata', what: 'the field test has a title that does not name the project', path: 'examples/field-test/index.html', edit: ['<title>Field test — HTML-in-Canvas Polyfill</title>', '<title>Field test</title>'] },
+  { check: 'page-metadata', what: 'the form example names the landing as its canonical', path: 'examples/form/index.html', edit: ['href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/form/"', 'href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/"'] },
   { check: 'noindex', what: 'the landing has a robots noindex meta tag', path: 'examples/index.html', edit: ['<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="robots" content="noindex">'] },
   { check: 'noindex', what: 'the gallery is served with X-Robots-Tag: noindex', path: 'examples/plugins/index.html', headers: { 'X-Robots-Tag': 'noindex' } },
   { check: 'redirect', what: 'the root redirects to itself', path: 'index.html', edit: ['content="0; url=examples/"', 'content="0; url=./"'] },

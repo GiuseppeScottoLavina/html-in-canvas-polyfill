@@ -1,7 +1,7 @@
 # html-in-canvas-polyfill
 
 [![CI](https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/actions/workflows/ci.yml/badge.svg)](https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@giuseppe-scotto-lavina/html-in-canvas-polyfill/next?label=npm%40next)](https://www.npmjs.com/package/@giuseppe-scotto-lavina/html-in-canvas-polyfill)
+[![npm](https://img.shields.io/npm/v/@giuseppe-scotto-lavina/html-in-canvas-polyfill?label=npm)](https://www.npmjs.com/package/@giuseppe-scotto-lavina/html-in-canvas-polyfill)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A polyfill for the proposed [HTML-in-Canvas API](https://github.com/WICG/html-in-canvas) that brings real, interactive HTML inside `<canvas content="drawable">` to modern Safari and Firefox (and to Chrome before 157), and steps aside wherever the browser implements the API natively, as Chrome 157 does. Draw the live HTML with `ctx.drawElementImage()` in desktop Chrome, Firefox and Safari, and on Chrome for Android and Safari on the iPad (verified on two physical Android phones and a physical iPad, and on the Android Emulator and the iOS Simulator; Safari on the iPhone is unqualified until a physical iPhone has run the suites).
