@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Live demo: the landing carries the Google Search Console verification tag (repeated in the site root page by the build).
 - Live demo: the six example pages besides the landing, the gallery and the playground (basic, form, effect-plugin, scroll-and-resize, webgl-texture, field-test) have a title that names the project, a description and an absolute canonical; G-pages checks them on every page of the sitemap, with a control for each (a missing description, a title without the project, a canonical naming another page).
 - README: the npm badge shows the `latest` version.
 
