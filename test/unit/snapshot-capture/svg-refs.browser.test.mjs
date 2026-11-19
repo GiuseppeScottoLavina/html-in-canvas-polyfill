@@ -2,6 +2,17 @@
 import { test, assert } from '/test/unit/lib/t.js';
 import { mount, rasterize } from './_support.mjs';
 
+/**
+ * The capture once the external documents have loaded (complete), polled every 50 ms for at most 3 s (within the 5 s timeout of a test); a capture that is still loading then is
+ * returned as it is, for the test's own checks. A fixed 400 ms wait was too short on the Windows runner (2026-11-19: complete was still false).
+ */
+async function settled(m, el, ms = 3000) {
+  const end = performance.now() + ms;
+  let r = m.capture(m.request(el));
+  while (!r.complete && performance.now() < end) { await new Promise((ok) => setTimeout(ok, 50)); r = m.capture(m.request(el)); }
+  return r;
+}
+
 test('a <use> whose target (a chain of <use>) is outside the drawable is drawn, with the author rule that styles the target; an outside pattern is not', async (t) => {
   const outside = document.createElement('div');
   outside.innerHTML = '<style>#u-target{fill:rgb(0,128,0)}</style><svg width="0" height="0"><defs><rect id="u-target" width="40" height="20"/><g id="u-chain"><use href="#u-target"/></g>'
@@ -23,8 +34,7 @@ test('a <use> of an external SVG document draws a same-origin one (its root, or 
   const el = m.layerEl.firstElementChild;
   const first = m.capture(m.request(el));
   assert.equal(first.complete, false, 'the same-origin documents are still loading');
-  await new Promise((ok) => setTimeout(ok, 400));
-  const r = m.capture(m.request(el));
+  const r = await settled(m, el);
   assert.equal(r.complete, true);
   const svg = decodeURIComponent(r.url.slice(r.url.indexOf(',') + 1));
   assert.ok(!svg.includes('localhost:') && !svg.includes('/assets/'), 'no external URL reaches the snapshot');
@@ -44,9 +54,7 @@ test('a <use> of a same-origin URL that redirects to another origin draws nothin
   const viaSame = `${asset}?redirect=${encodeURIComponent(asset)}`;
   const m = mount(`<svg drawable width="40" height="40" style="display:block"><use href="${viaCross}"/><use y="20" href="${viaSame}"/></svg>`);
   const el = m.layerEl.firstElementChild;
-  m.capture(m.request(el));
-  await new Promise((ok) => setTimeout(ok, 400));
-  const r = m.capture(m.request(el));
+  const r = await settled(m, el);
   const got = await rasterize(r);
   const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data);
   assert.deepEqual(px(20, 30), [224, 0, 0, 255], 'control: a same-origin redirect is followed and drawn');
@@ -60,9 +68,7 @@ test('a <use> inside an external document refers to that document: `#blue` there
   t.cleanup(() => outside.remove());
   const m = mount('<svg drawable width="40" height="40" style="display:block"><use href="/test/unit/snapshot-capture/assets/sprite-chain.svg#chain"/><use y="20" href="#blue"/></svg>');
   const el = m.layerEl.firstElementChild;
-  m.capture(m.request(el));
-  await new Promise((ok) => setTimeout(ok, 400));
-  const r = m.capture(m.request(el));
+  const r = await settled(m, el);
   assert.equal(r.complete, true);
   const got = await rasterize(r);
   const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data);
@@ -109,9 +115,7 @@ test('the references inside an external SVG document resolve against that docume
   t.cleanup(() => outside.remove());
   const m = mount(refsDrawable('drawable'), { css: '.cls-1{fill:rgb(250,0,250)} .page-cls{fill:rgb(255,0,0)}' });
   const el = m.layerEl.firstElementChild;
-  m.capture(m.request(el));
-  await new Promise((ok) => setTimeout(ok, 400));
-  const r = m.capture(m.request(el));
+  const r = await settled(m, el);
   assert.equal(r.complete, true);
   const got = await rasterize(r);
   const bad = [];
@@ -216,9 +220,7 @@ test('in a mask copied from outside the drawable, an element whose filter is ign
     + '<rect width="20" height="20" fill="rgb(0,0,255)" mask="url(#tn-m)"/><svg x="20" width="20" height="20"><rect width="20" height="20" fill="rgb(0,0,255)" mask="url(#tn-im)"/></svg>'
     + '<svg x="40" width="20" height="20"><rect width="20" height="20" fill="rgb(0,0,255)" mask="url(#tn-s)"/></svg></svg>');
   const el = m.layerEl.querySelector('[drawable]');
-  m.capture(m.request(el));
-  await new Promise((ok) => setTimeout(ok, 400));
-  const got = await rasterize(m.capture(m.request(el)));
+  const got = await rasterize(await settled(m, el));
   const px = (x, y) => Array.from(got.getImageData(x, y, 1, 1).data).join();
   assert.equal(px(10, 10), '0,0,0,0', 'the copied mask: the inner flood is stripped with the cross-origin filter, the element is masked away');
   assert.equal(px(30, 10), '0,0,255,255', 'control: the same mask inside the drawable keeps the inner flood');
