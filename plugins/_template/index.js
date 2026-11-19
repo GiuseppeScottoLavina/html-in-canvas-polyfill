@@ -13,6 +13,7 @@
  */
 
 import { wgsl } from './wgsl.js';
+import { renderPipeline } from '../_lib/gpu.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputPoint} InputPoint */
@@ -73,7 +74,8 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('offset.wgsl'), label: 'template-plugin' });
-    const pipeline = device.createRenderPipeline({
+    // compiled before the first frame: Safari would otherwise compile it at its first use, freezing the page (renderPipeline says why)
+    const pipeline = await renderPipeline(device, {
       layout: 'auto', label: 'template-plugin',
       vertex: { module, entryPoint: 'vs' },
       fragment: { module, entryPoint: 'fs', targets: [{ format }] },

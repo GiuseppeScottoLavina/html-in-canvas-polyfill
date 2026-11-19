@@ -526,7 +526,9 @@ A complete ABI v2 plugin as one classic script, with an input mapper and one act
     async create(context, options) {
       const { device, format } = context;
       const module = device.createShaderModule({ code: WGSL });
-      const pipeline = device.createRenderPipeline({
+      // compiled now, off the main thread: Safari compiles a pipeline it has not seen in about half a second, and with the
+      // synchronous createRenderPipeline it does so at the first frame, on the main thread, freezing the page
+      const pipeline = await device.createRenderPipelineAsync({
         layout: 'auto',
         vertex: { module, entryPoint: 'vs' },
         fragment: { module, entryPoint: 'fs', targets: [{ format }] },
@@ -631,6 +633,7 @@ The smoke test also runs its action: `handle.trigger('pulse')` resolves `'calm'`
 - A plugin whose look depends on input has a `demo` action of at most about 4 s that ends at rest and gives way to user input.
 - At rest, 3 s after it settled, the canvas presents 0 effect frames, unless `meta.continuous` says what runs by design.
 - With extended range (`context.hdr`, section 12.1): the page stays under white and only added light goes above it, through a shoulder; nothing is above white at rest; every value written is finite and 0 or more; a source above 1 does not break the maths; the standard-range picture is unchanged.
+- Every pipeline is made in `create` with `createRenderPipelineAsync` (or `createComputePipelineAsync`) and awaited. Safari compiles a pipeline it has not seen in about half a second on an iPad, one after the other; with the synchronous call it does so at the pipeline's first use, on the main thread, and the page freezes for that long. Awaited in `create`, the compilation is part of `addPlugin` and the page keeps running.
 - You did not call `getContext` on the canvas.
 - A 2D fallback exists for browsers without WebGPU, and for a native implementation without the members the host needs (`createHost` rejects there, see the top of this guide).
 - You measured the cost on your own page: `docs/guides/PERFORMANCE.md` says which numbers exist and which do not.

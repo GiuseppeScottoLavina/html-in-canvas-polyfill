@@ -100,6 +100,12 @@ export async function createPresenter(canvas, options, hooks = {}) {
     if (hdr) format = 'rgba16float';
   }
   if (!hdr) context.configure({ ...config, format });
+  // the passthrough (the frame without a plugin) is compiled now, off the main thread where the browser can: Safari compiles a pipeline it has not
+  // seen in about half a second, and one made with the synchronous call is compiled at its first use, on the main thread, freezing the page
+  const passModule = device.createShaderModule({ label: 'hic-passthrough', code: PASSTHROUGH_WGSL });
+  const passDesc = { label: 'hic-passthrough', layout: 'auto', vertex: { module: passModule, entryPoint: 'vs' }, fragment: { module: passModule, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
+  const passPipeline = await Promise.resolve(device.createRenderPipelineAsync ? device.createRenderPipelineAsync(passDesc) : device.createRenderPipeline(passDesc))
+    .catch((/** @type {any} */ error) => { context.unconfigure?.(); device.destroy(); throw error; });
 
   let disposed = false;
   /** @type {EffectViewport} */
@@ -138,11 +144,6 @@ export async function createPresenter(canvas, options, hooks = {}) {
 
   function passthroughStage() {
     if (pass) return pass.stage;
-    const module = device.createShaderModule({ label: 'hic-passthrough', code: PASSTHROUGH_WGSL });
-    const pipeline = device.createRenderPipeline({
-      label: 'hic-passthrough', layout: 'auto',
-      vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' },
-    });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const groups = new WeakMap();
     /** @type {EffectPluginInstance} */
@@ -150,15 +151,15 @@ export async function createPresenter(canvas, options, hooks = {}) {
       render(frame) {
         let group = groups.get(frame.sourceView);
         if (!group) {
-          group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: frame.sourceView }] });
+          group = device.createBindGroup({ layout: passPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: frame.sourceView }] });
           groups.set(frame.sourceView, group);
         }
         const p = frame.encoder.beginRenderPass({ colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store', clearValue: CLEAR }] });
-        p.setPipeline(pipeline); p.setBindGroup(0, group); p.draw(3); p.end();
+        p.setPipeline(passPipeline); p.setBindGroup(0, group); p.draw(3); p.end();
       },
     };
     const def = /** @type {EffectPluginDefinition} */ ({ type: 'passthrough', apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true }, create: () => instance });
-    pass = { stage: { instance, def }, pipeline, sampler, groups };
+    pass = { stage: { instance, def }, pipeline: passPipeline, sampler, groups };
     return pass.stage;
   }
 
