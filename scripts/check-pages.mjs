@@ -6,23 +6,25 @@
 //
 // The site is assembled into a temporary directory and served ONLY under `base` (any other path is a 404, so an absolute link that
 // would break on https://<user>.github.io/html-in-canvas-polyfill/ fails here too). Every page is opened in one headless Chrome:
-//   - the site root (it redirects to examples/), the examples index, every example page of the site;
+//   - the site root (the landing), the examples index (the same landing), every example page of the site;
 //   - the plugin gallery with "Effect off" and with each plugin of dist/plugins/manifest.json (?effect=<name>): the effect is active, on
 //     the WebGPU path, and the presented canvas is not blank.
 // Per page: no console error, page exception or failed request (the server log is checked for 4xx too), and its largest canvas is not
 // blank (compositor screenshot); on the playground, whose canvas is in a sandboxed frame, the status line must report the install and the canvas in the frame (an element screenshot of the frame, cropped) must not be blank. Controls: the same site with the core bundle missing must fail, and a flat image must be blank.
 //
 // Before the browser, over HTTP on the same server (the public address SITE mapped onto it), the search and sharing metadata of the built site:
-//   - metadata: the landing (examples/), the gallery (also as ?effect=water) and the playground have one absolute canonical, the page's own public
-//     address (a query variant of the gallery names the gallery), a title and a description, Open Graph and twitter:card summary_large_image;
-//     the landing has its SoftwareSourceCode JSON-LD; the root names examples/ as its canonical; every canonical answers 200;
+//   - metadata: the landing (the root, and its copy at examples/), the gallery (also as ?effect=water) and the playground have one absolute
+//     canonical, the page's public address (the root for both copies of the landing; a query variant of the gallery names the gallery), a
+//     title and a description, Open Graph and twitter:card summary_large_image; the landing has its SoftwareSourceCode JSON-LD; every
+//     canonical answers 200;
 //   - og-image: every og:image answers 200 as a PNG under 1 MB, 1280 x 640, as its og:image:width and og:image:height say;
 //   - sitemap: sitemap.xml lists absolute addresses under SITE, without query or duplicates, each answering 200, the three pages above included;
 //   - page-metadata: every page of the sitemap has one canonical, its own address, one title naming the project and one description;
 //   - noindex: no page of the site (the root, every example, every sitemap address) has a robots or googlebot meta tag or an X-Robots-Tag
 //     header with noindex or none;
-//   - redirect: the root reaches examples/ in at most 5 redirects, none of them back to an address already visited;
-//   - snippet-version: the landing's CDN snippet names the package version; verification: a google-site-verification meta tag of the landing
+//   - root-landing: the root and examples/ answer 200 with no redirect (no Location, no meta refresh), and every relative address of the
+//     root page (href, src) answers 200: the root's copy of the landing loads the files of examples/;
+//   - snippet-version: the CDN snippet of both copies of the landing names the package version; verification: a google-site-verification meta tag of the landing
 //     is also in the root page.
 // Each of these checks has a control: the same site with one file edited so that the check must fail (CONTROLS below).
 import { createServer } from 'node:http';
@@ -135,7 +137,8 @@ const PKG_VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const NPM_PAGE = 'https://www.npmjs.com/package/@giuseppe-scotto-lavina/html-in-canvas-polyfill';
 /** The pages with their own search metadata: path on the site, and the canonical (relative to SITE) it must name. */
 const MAIN = [
-  { path: 'examples/', canonical: 'examples/', jsonLd: true },
+  { path: '', canonical: '', jsonLd: true },
+  { path: 'examples/', canonical: '', jsonLd: true },
   { path: 'examples/plugins/', canonical: 'examples/plugins/' },
   { path: 'examples/plugins/?effect=water', canonical: 'examples/plugins/' },
   { path: 'examples/playground/', canonical: 'examples/playground/' },
@@ -190,9 +193,6 @@ const SITE_CHECKS = {
         }
       }
     }
-    const root = await get(site, '');
-    const rootCanon = tags(root.text, 'link').filter((l) => l.rel === 'canonical').map((l) => l.href);
-    if (rootCanon.length !== 1 || rootCanon[0] !== SITE + 'examples/') p.push(`site root: canonical ${JSON.stringify(rootCanon)}, expected ${SITE}examples/`);
     for (const c of new Set(MAIN.map((m) => m.canonical))) { const r = await get(site, c); if (r.status !== 200) p.push(`canonical ${c}: HTTP ${r.status}`); }
     return p;
   },
@@ -269,25 +269,32 @@ const SITE_CHECKS = {
     }
     return p;
   },
-  async redirect(site) {
-    let url = site.url;
-    const seen = [url];
-    for (let hop = 0; hop <= 5; hop++) {
-      const r = await fetch(url, { redirect: 'manual' });
-      const text = await r.text();
-      let next = r.status >= 300 && r.status < 400 ? r.headers.get('location') : null;
-      if (!next) next = tags(text, 'meta').find((m) => (m['http-equiv'] ?? '').toLowerCase() === 'refresh')?.content?.match(/url=(.*)$/i)?.[1]?.trim() ?? null;
-      if (!next) return r.status === 200 && new URL(url).pathname === `${BASE}examples/` ? [] : [`the redirects from the root end at ${url} (HTTP ${r.status}), not at ${BASE}examples/`];
-      url = new URL(next, url).href;
-      if (seen.includes(url)) return [`redirect loop: ${[...seen, url].join(' -> ')}`];
-      seen.push(url);
+  async 'root-landing'(site) {
+    const p = [];
+    for (const path of ['', 'examples/']) {
+      const r = await get(site, path);
+      const label = path || 'site root';
+      if (r.status !== 200) p.push(`${label}: HTTP ${r.status}${r.headers.get('location') ? ' to ' + r.headers.get('location') : ''}`);
+      if (tags(r.text, 'meta').some((m) => (m['http-equiv'] ?? '').toLowerCase() === 'refresh')) p.push(`${label}: a meta refresh`);
     }
-    return [`more than 5 redirects from the root: ${seen.join(' -> ')}`];
+    // the root's own addresses (not the text of its code samples): every relative one must answer 200 from the root
+    const root = (await get(site, '')).text.replace(/<pre\b[\s\S]*?<\/pre>/gi, '');
+    const rel = [...root.matchAll(/\b(?:href|src)="([^"]*)"/gi)].map((m) => m[1]).filter((u) => !/^(?:[a-z][a-z0-9+.-]*:|#|\/)/i.test(u));
+    if (!rel.length) p.push('the site root has no relative address');
+    for (const u of new Set(rel)) {
+      const r = await get(site, new URL(u, site.url).href.slice(site.url.length));
+      if (r.status !== 200) p.push(`site root: ${u} answers HTTP ${r.status}`);
+    }
+    return p;
   },
   async 'snippet-version'(site) {
-    const versions = [...(await get(site, 'examples/')).text.matchAll(/html-in-canvas-polyfill@([0-9A-Za-z.-]+)\//g)].map((m) => m[1]);
-    if (!versions.length) return ['the landing names no package version in its CDN snippet'];
-    return versions.filter((v) => v !== PKG_VERSION).map((v) => `the landing's CDN snippet names ${v}, the package is ${PKG_VERSION}`);
+    const p = [];
+    for (const path of ['', 'examples/']) {
+      const versions = [...(await get(site, path)).text.matchAll(/html-in-canvas-polyfill@([0-9A-Za-z.-]+)\//g)].map((m) => m[1]);
+      if (!versions.length) p.push(`${path || 'site root'}: the landing names no package version in its CDN snippet`);
+      for (const v of versions) if (v !== PKG_VERSION) p.push(`${path || 'site root'}: the landing's CDN snippet names ${v}, the package is ${PKG_VERSION}`);
+    }
+    return p;
   },
   async verification(site) {
     const root = (await get(site, '')).text;
@@ -311,7 +318,9 @@ const CONTROLS = [
   { check: 'page-metadata', what: 'the form example names the landing as its canonical', path: 'examples/form/index.html', edit: ['href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/form/"', 'href="https://giuseppescottolavina.github.io/html-in-canvas-polyfill/examples/"'] },
   { check: 'noindex', what: 'the landing has a robots noindex meta tag', path: 'examples/index.html', edit: ['<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="robots" content="noindex">'] },
   { check: 'noindex', what: 'the gallery is served with X-Robots-Tag: noindex', path: 'examples/plugins/index.html', headers: { 'X-Robots-Tag': 'noindex' } },
-  { check: 'redirect', what: 'the root redirects to itself', path: 'index.html', edit: ['content="0; url=examples/"', 'content="0; url=./"'] },
+  { check: 'metadata', what: 'the root names examples/ as its canonical', path: 'index.html', edit: [`<link rel="canonical" href="${SITE}">`, `<link rel="canonical" href="${SITE}examples/">`] },
+  { check: 'root-landing', what: 'the root redirects to examples/ again', path: 'index.html', edit: ['<meta charset="utf-8">', '<meta charset="utf-8">\n<meta http-equiv="refresh" content="0; url=examples/">'] },
+  { check: 'root-landing', what: 'a link of the root not prefixed with examples/', path: 'index.html', edit: ['href="examples/basic/"', 'href="basic/"'] },
   { check: 'snippet-version', what: 'the landing names an older version', path: 'examples/index.html', edit: [`html-in-canvas-polyfill@${PKG_VERSION}/`, 'html-in-canvas-polyfill@0.1.0-preview.1/'] },
   { check: 'verification', what: 'the landing has a verification tag that the root lacks', path: 'examples/index.html', edit: ['<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="google-site-verification" content="control-token">'] },
 ];
@@ -360,14 +369,14 @@ try {
     await page.send('Emulation.setDeviceMetricsOverride', { width: VIEW.width, height: VIEW.height, deviceScaleFactor: 1, mobile: false });
     console.log(`Chrome ${browser.version?.Browser} (headless), site ${site.url}`);
     const pages = [
-      { path: '', label: 'site root (redirects to examples/)' },
+      { path: '', label: 'site root (the landing)' },
       { path: 'examples/', label: 'examples index' },
       ...examples.filter((n) => n !== 'plugins').map((n) => ({ path: `examples/${n}/`, label: n })),
       ...['off', ...plugins.map((/** @type {any} */ p) => p.name)].map((name) => ({ path: `examples/plugins/?effect=${name}`, label: `gallery: ${name}`, gallery: name })),
     ];
     for (const p of pages) {
       const problems = await visit(page, site, p.path, { gallery: p.gallery });
-      if (p.path === '' && !(await page.evaluate('location.pathname')).endsWith('/examples/')) problems.push('the site root did not redirect to examples/');
+      if (p.path === '' && (await page.evaluate('location.pathname')) !== BASE) problems.push(`the site root moved to ${await page.evaluate('location.pathname')}`);
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${p.label}${problems.length ? '  ' + problems.join(' | ') : ''}`);
       if (problems.length) failed += 1;
     }

@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Assembles the GitHub Pages site (the live demo) from the built bundles and the examples:
 //   npm run build && node scripts/build-pages.mjs [--out=_site]
-// Layout: <out>/index.html (redirects to examples/), <out>/examples/index.html (the landing page), <out>/examples/<name>/,
+// Layout: <out>/index.html (the landing page, the address search engines index), <out>/examples/index.html (the same landing, the page a local
+// server opens; its canonical names the root), <out>/examples/<name>/,
 // <out>/examples/assets/ (the landing's screenshot and the social preview image), <out>/sitemap.xml (the canonical public pages),
 // <out>/dist/*.iife(.min).js and <out>/dist/plugins/ (the plugin bundles and manifest.json, read by the plugin gallery). The examples load
 // ../../dist/*, so the site works under any base path; the canonical links, the Open Graph image and the sitemap name the public site, SITE.
-// Files in examples/assets/site-root/ (a search engine's verification file, for example) are copied to the site root instead, and a
-// google-site-verification meta tag of examples/index.html is repeated in the generated root page, so both survive every deploy.
+// The root's copy of the landing has every relative address of examples/index.html (href, src) prefixed with examples/, so it loads the
+// same files; an address that is absolute, a fragment or a data URL is kept. Files in examples/assets/site-root/ (a search engine's
+// verification file, for example) are copied to the site root, so they survive every deploy.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,24 +41,11 @@ for (const name of EXAMPLES) cpSync(join(root, 'examples', name), join(out, 'exa
 if (existsSync(ASSETS)) cpSync(ASSETS, join(out, 'examples/assets'), { recursive: true, filter: (src) => src !== SITE_ROOT_FILES });
 const rootFiles = existsSync(SITE_ROOT_FILES) ? readdirSync(SITE_ROOT_FILES).filter((f) => !f.startsWith('.')) : [];
 for (const f of rootFiles) cpSync(join(SITE_ROOT_FILES, f), join(out, f));
-const verification = landing.match(/<meta name="google-site-verification" content="[^"<>]*">/g) ?? [];
-writeFileSync(join(out, 'index.html'), `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
-<meta http-equiv="refresh" content="0; url=examples/">
-<link rel="canonical" href="${SITE}examples/">
-${verification.map((m) => m + '\n').join('')}<title>HTML-in-Canvas Polyfill</title>
-</head>
-<body>
-<p><a href="examples/">HTML-in-Canvas Polyfill: introduction and demos</a></p>
-</body>
-</html>
-`);
-// the canonical public pages: the landing first, then each example (no lastmod: the build does not know when a page last changed)
-const pages = ['examples/', ...['plugins', 'playground', ...EXAMPLES.filter((n) => n !== 'plugins' && n !== 'playground')].map((n) => `examples/${n}/`)];
+// the root: the landing itself (a redirect to examples/ was indexed by Google as a page with redirect, under the address every link names)
+const rootLanding = landing.replace(/\b(href|src)="(?![a-z][a-z0-9+.-]*:|#|\/)([^"]*)"/gi, (_, attr, url) => `${attr}="examples/${url}"`);
+writeFileSync(join(out, 'index.html'), rootLanding);
+// the canonical public pages: the landing (the root) first, then each example (no lastmod: the build does not know when a page last changed)
+const pages = ['', ...['plugins', 'playground', ...EXAMPLES.filter((n) => n !== 'plugins' && n !== 'playground')].map((n) => `examples/${n}/`)];
 writeFileSync(join(out, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${pages.map((p) => `  <url><loc>${SITE}${p}</loc></url>\n`).join('')}</urlset>
