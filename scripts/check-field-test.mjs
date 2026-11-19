@@ -35,7 +35,10 @@ import * as H from '../test/harness/index.mjs';
 import { startServer } from '../examples/serve.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const TITLE = 'HTML-in-Canvas field test';
+// the tab that --auto-select-tab-capture-source-by-title picks, read from the page so a new page title cannot leave the capture dialog
+// unanswered; only the ASCII start of the title: with the em dash of "Field test — HTML-in-Canvas Polyfill" Chrome picked no tab
+const TITLE = readFileSync(join(ROOT, 'examples/field-test/index.html'), 'utf8').match(/<title>([^<]+)<\/title>/)?.[1].split(/[^\x20-\x7e]/)[0].trim();
+if (!TITLE || TITLE.length < 6) { console.error(`examples/field-test/index.html: no title that starts with at least 6 ASCII characters (${TITLE}).`); process.exit(2); }
 const only = H.arg('only')?.split(',');
 const headed = process.argv.includes('--headed');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
