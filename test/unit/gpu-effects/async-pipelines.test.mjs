@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computePipeline, fullscreenPass, renderPipeline } from '../../../plugins/_lib/gpu.js';
 import { createPresenter } from '../../../src/effects/gpu-presenter.js';
@@ -41,8 +41,9 @@ test('the scan finds a synchronous pipeline, and accepts the async call and its 
 
 test('no file of the effects, the plugins or the guide\'s plugin makes a pipeline with the synchronous call', () => {
   const files = [...jsFiles(join(ROOT, 'src')), ...jsFiles(join(ROOT, 'plugins')), join(ROOT, 'test/examples-smoke/wobble-plugin/wobble-plugin.js')];
-  assert.ok(files.some((f) => f.endsWith('plugins/disintegrate/index.js')) && files.some((f) => f.endsWith('src/effects/gpu-presenter.js')), 'the scan reaches the plugins and the presenter');
-  const found = files.flatMap((f) => syncPipelineCalls(readFileSync(f, 'utf8')).map((line) => `${relative(ROOT, f)}:${line}`));
+  const rel = (/** @type {string} */ f) => relative(ROOT, f).split(sep).join('/');   // the same on Windows
+  assert.ok(files.some((f) => rel(f) === 'plugins/disintegrate/index.js') && files.some((f) => rel(f) === 'src/effects/gpu-presenter.js'), 'the scan reaches the plugins and the presenter');
+  const found = files.flatMap((f) => syncPipelineCalls(readFileSync(f, 'utf8')).map((line) => `${rel(f)}:${line}`));
   assert.deepEqual(found, []);
 });
 
