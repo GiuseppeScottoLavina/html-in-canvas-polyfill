@@ -29,6 +29,7 @@ import { stateMapper } from '../_lib/mapper.js';
 import { clampNum } from '../_lib/number.js';
 import { injectStyle } from '../_lib/ui.js';
 import { hdrConstants } from '../_lib/hdr.js';
+import { renderPipeline } from '../_lib/gpu.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -501,21 +502,24 @@ export const plugin = Object.freeze({
     ] });
     const msaa = { count: 4 };
     const flatDepth = { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'always' };
-    const pipe = (/** @type {any} */ o) => device.createRenderPipeline({ primitive: { topology: 'triangle-list' }, ...o });
+    const pipe = (/** @type {any} */ o) => renderPipeline(device, { primitive: { topology: 'triangle-list' }, ...o });
     // extended range (context.hdr): the shaders of the page underneath and of the sheet read HDR_PEAK (page-curl.wgsl); 1 on a standard target
     const constants = hdrConstants(context);
     const mainPL = device.createPipelineLayout({ bindGroupLayouts: [mainLayout] });
-    const passPipe = pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_pass', targets: [{ format }] }, multisample: msaa, depthStencil: flatDepth });
-    const underPipe = pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_under', targets: [{ format }], constants }, multisample: msaa, depthStencil: flatDepth });
     // the sheet is a triangle strip in the fold's frame (no vertex buffer); its cut edges are antialiased by alpha to coverage
     const strip = { topology: 'triangle-strip' };
-    const leafPipe = pipe({ layout: mainPL, primitive: strip, vertex: { module, entryPoint: 'vs_mesh' }, fragment: { module, entryPoint: 'fs_leaf', targets: [{ format, blend: { color: { srcFactor: 'one', dstFactor: 'zero' }, alpha: { srcFactor: 'zero', dstFactor: 'one' } } }], constants },
-      multisample: { count: 4, alphaToCoverageEnabled: true }, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less-equal' } });
     const max = { operation: 'max', srcFactor: 'one', dstFactor: 'one' };
-    const occPipe = pipe({ layout: device.createPipelineLayout({ bindGroupLayouts: [occLayout] }), primitive: strip, vertex: { module, entryPoint: 'vs_occ' },
-      fragment: { module, entryPoint: 'fs_occ', targets: [{ format: 'rgba8unorm', blend: { color: max, alpha: max } }] } });
-    const blurPipe = pipe({ layout: device.createPipelineLayout({ bindGroupLayouts: [blurLayout] }), vertex: { module: blurModule, entryPoint: 'vs_full' },
-      fragment: { module: blurModule, entryPoint: 'fs_blur', targets: [{ format: 'rgba8unorm' }] } });
+    // compiled before the first frame (renderPipeline of plugins/_lib/gpu.js says why)
+    const [passPipe, underPipe, leafPipe, occPipe, blurPipe] = await Promise.all([
+      pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_pass', targets: [{ format }] }, multisample: msaa, depthStencil: flatDepth }),
+      pipe({ layout: mainPL, vertex: { module, entryPoint: 'vs_full' }, fragment: { module, entryPoint: 'fs_under', targets: [{ format }], constants }, multisample: msaa, depthStencil: flatDepth }),
+      pipe({ layout: mainPL, primitive: strip, vertex: { module, entryPoint: 'vs_mesh' }, fragment: { module, entryPoint: 'fs_leaf', targets: [{ format, blend: { color: { srcFactor: 'one', dstFactor: 'zero' }, alpha: { srcFactor: 'zero', dstFactor: 'one' } } }], constants },
+        multisample: { count: 4, alphaToCoverageEnabled: true }, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less-equal' } }),
+      pipe({ layout: device.createPipelineLayout({ bindGroupLayouts: [occLayout] }), primitive: strip, vertex: { module, entryPoint: 'vs_occ' },
+        fragment: { module, entryPoint: 'fs_occ', targets: [{ format: 'rgba8unorm', blend: { color: max, alpha: max } }] } }),
+      pipe({ layout: device.createPipelineLayout({ bindGroupLayouts: [blurLayout] }), vertex: { module: blurModule, entryPoint: 'vs_full' },
+        fragment: { module: blurModule, entryPoint: 'fs_blur', targets: [{ format: 'rgba8unorm' }] } }),
+    ]);
 
     const uniforms = device.createBuffer({ label: 'hic-page-curl', size: UNIFORM_FLOATS * 4, usage: BU.UNIFORM | BU.COPY_DST });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });

@@ -26,6 +26,7 @@ import { wgsl } from './wgsl.js';
 import { stateMapper } from '../_lib/mapper.js';
 import { clampNum } from '../_lib/number.js';
 import { injectStyle } from '../_lib/ui.js';
+import { renderPipeline } from '../_lib/gpu.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').InputMapper} InputMapper */
@@ -388,7 +389,7 @@ async function createPipeline(device, code, format) {
   const info = await module.getCompilationInfo?.();
   const error = info?.messages?.find((/** @type {any} */ m) => m.type === 'error');
   if (error) throw new Error(`glitch.wgsl:${error.lineNum}: ${error.message}`);
-  return device.createRenderPipeline({
+  return renderPipeline(device, {
     label: 'hic-glitch', layout: 'auto',
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },

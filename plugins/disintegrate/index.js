@@ -25,6 +25,7 @@ import { wgsl } from './wgsl.js';
 import { blockedMapper, clampNumber, createTimeline, DEFAULT_INVALID_SELECTOR, findInvalid, identityMapper, parseColor } from '../_lib/transition.js';
 import { injectStyle } from '../_lib/ui.js';
 import { hdrConstants } from '../_lib/hdr.js';
+import { computePipeline, renderPipeline } from '../_lib/gpu.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectRenderFrame} EffectRenderFrame */
@@ -214,26 +215,30 @@ export const plugin = Object.freeze({
     // read HDR_PEAK and clamp what they write, and one more draw clamps the sum of the grains (`whiten`, made only with extended range)
     const constants = hdrConstants(context);
     /** @param {string} vs @param {string} fs @param {string} target @param {any} [withBlend] @param {string} [topology] @param {any[]} [buffers] @param {boolean} [clamps]  the fragment shader reads HDR_PEAK */
-    const pipeline = (vs, fs, target, withBlend, topology = 'triangle-list', buffers = [], clamps = false) => device.createRenderPipeline({
+    const pipeline = (vs, fs, target, withBlend, topology = 'triangle-list', buffers = [], clamps = false) => renderPipeline(device, {
       layout: pipelineLayout,
       vertex: { module, entryPoint: vs, buffers },
       fragment: { module, entryPoint: fs, targets: [{ format: target, ...(withBlend ? { blend: withBlend } : {}) }], ...(clamps ? { constants } : {}) },
       primitive: { topology },
     });
-    const full = pipeline('vs_full', 'fs_full', format);
-    const base = pipeline('vs_full', 'fs_base', format, undefined, 'triangle-list', [], true);
-    const dust = pipeline('vs_dust', 'fs_dust', format, blend, 'triangle-strip', [{
+    const grainBuffers = [{
       arrayStride: GRAIN_BYTES, stepMode: 'instance',
       attributes: [{ shaderLocation: 0, offset: 0, format: 'uint32x4' }, { shaderLocation: 1, offset: 16, format: 'uint32x2' }],
-    }], true);
+    }];
     const atMost = { operation: 'min', srcFactor: 'one', dstFactor: 'one' };
-    const whiten = constants.HDR_PEAK > 1 ? pipeline('vs_full', 'fs_white', format, { color: atMost, alpha: atMost }) : null;
-    const grainsPipeline = device.createComputePipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [layout, grainLayout] }),
-      compute: { module, entryPoint: 'cs_grains' },
-    });
-    const down = pipeline('vs_full', 'fs_down', 'rgba8unorm');
-    const estimate = pipeline('vs_full', 'fs_bg', 'rgba8unorm');
+    // compiled before the first frame (renderPipeline says why)
+    const [full, base, dust, whiten, grainsPipeline, down, estimate] = await Promise.all([
+      pipeline('vs_full', 'fs_full', format),
+      pipeline('vs_full', 'fs_base', format, undefined, 'triangle-list', [], true),
+      pipeline('vs_dust', 'fs_dust', format, blend, 'triangle-strip', grainBuffers, true),
+      constants.HDR_PEAK > 1 ? pipeline('vs_full', 'fs_white', format, { color: atMost, alpha: atMost }) : null,
+      computePipeline(device, {
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout, grainLayout] }),
+        compute: { module, entryPoint: 'cs_grains' },
+      }),
+      pipeline('vs_full', 'fs_down', 'rgba8unorm'),
+      pipeline('vs_full', 'fs_bg', 'rgba8unorm'),
+    ]);
     const uniforms = device.createBuffer({ size: UNIFORM_FLOATS * 4, usage: BU.UNIFORM | BU.COPY_DST });
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     const data = new Float32Array(UNIFORM_FLOATS);

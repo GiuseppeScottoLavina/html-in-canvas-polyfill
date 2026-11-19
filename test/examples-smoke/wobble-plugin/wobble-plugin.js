@@ -39,7 +39,9 @@
     async create(context, options) {
       const { device, format } = context;
       const module = device.createShaderModule({ code: WGSL });
-      const pipeline = device.createRenderPipeline({
+      // compiled now, off the main thread: Safari compiles a pipeline it has not seen in about half a second, and with the
+      // synchronous createRenderPipeline it does so at the first frame, on the main thread, freezing the page
+      const pipeline = await device.createRenderPipelineAsync({
         layout: 'auto',
         vertex: { module, entryPoint: 'vs' },
         fragment: { module, entryPoint: 'fs', targets: [{ format }] },

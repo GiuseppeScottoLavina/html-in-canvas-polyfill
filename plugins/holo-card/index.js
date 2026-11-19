@@ -163,7 +163,7 @@ export const plugin = Object.freeze({
   async create(context, options) {
     const { device, format } = context;
     const module = device.createShaderModule({ code: await wgsl('holo-card.wgsl'), label: 'holo-card' });
-    const gpu = fullscreenPass(device, format, module, 'holo-card', UNIFORM_FLOATS, hdrConstants(context));
+    const gpu = await fullscreenPass(device, format, module, 'holo-card', UNIFORM_FLOATS, hdrConstants(context));
     const u = new Float32Array(UNIFORM_FLOATS);
     const states = Array.from({ length: MAPPER_SLOTS }, () => new Float32Array(UNIFORM_FLOATS));
     const mappers = states.map((s) => stateMapper(s, mapCardPoint));

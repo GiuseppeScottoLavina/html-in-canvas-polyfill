@@ -24,6 +24,7 @@ import { injectStyle } from '../_lib/ui.js';
 import { pointerIn } from '../_lib/pointer.js';
 import { actionPoint } from '../_lib/action.js';
 import { hdrConstants } from '../_lib/hdr.js';
+import { renderPipeline } from '../_lib/gpu.js';
 
 /** @typedef {import('../../src/contracts/types.js').EffectPluginDefinition} EffectPluginDefinition */
 /** @typedef {import('../../src/contracts/types.js').EffectRenderFrame} EffectRenderFrame */
@@ -170,7 +171,7 @@ export const plugin = Object.freeze({
     // extended range (context.hdr): the fragment shaders that add light read HDR_PEAK (shatter.wgsl); 1 on a standard target
     const constants = hdrConstants(context);
     /** @param {string} vs @param {string} fs @param {string} target @param {any} [extra]  `lit`: the fragment shader reads HDR_PEAK */
-    const pipeline = (vs, fs, target, extra = {}) => device.createRenderPipeline({
+    const pipeline = (vs, fs, target, extra = {}) => renderPipeline(device, {
       layout: pipelineLayout,
       vertex: { module, entryPoint: vs, buffers: extra.buffers ?? [] },
       fragment: { module, entryPoint: fs, targets: [{ format: target, ...(extra.blend ? { blend: extra.blend } : {}) }], ...(extra.lit ? { constants } : {}) },
@@ -181,17 +182,20 @@ export const plugin = Object.freeze({
     const vertexLayout = [{ arrayStride: VERTEX_FLOATS * 4, attributes: [
       { shaderLocation: 0, offset: 0, format: 'float32x2' }, { shaderLocation: 1, offset: 8, format: 'float32x2' }, { shaderLocation: 2, offset: 16, format: 'float32x4' },
     ] }];
-    const full = pipeline('vs_full', 'fs_full', format);
-    // the pane (cracks running, cracked and still): one sample, no depth, exactly what the input mapper inverts
-    const glass = pipeline('vs_shard', 'fs_shard', format, { buffers: vertexLayout, blend, lit: true });
-    const chips = pipeline('vs_debris', 'fs_debris', format, { blend, lit: true });
-    const copy = pipeline('vs_full', 'fs_copy', 'rgba8unorm');
-    // the fall: the backdrop and the shadows on it first (no depth), then the faces and the walls of the slabs (depth), then the chips (tested, not written)
-    const backdrop3d = pipeline('vs_full', 'fs_backdrop', format, { depth: [false, 'always'], lit: true });
-    const shadow3d = pipeline('vs_shadow', 'fs_shadow', format, { buffers: vertexLayout, blend, depth: [false, 'always'] });
-    const glass3d = pipeline('vs_shard', 'fs_shard', format, { buffers: vertexLayout, blend, depth: [true, 'less-equal'], lit: true });
-    const walls3d = pipeline('vs_wall', 'fs_wall', format, { buffers: vertexLayout, blend, depth: [true, 'less-equal'], lit: true });
-    const chips3d = pipeline('vs_debris', 'fs_debris', format, { blend, depth: [false, 'less-equal'], lit: true });
+    // compiled before the first frame (renderPipeline says why)
+    const [full, glass, chips, copy, backdrop3d, shadow3d, glass3d, walls3d, chips3d] = await Promise.all([
+      pipeline('vs_full', 'fs_full', format),
+      // the pane (cracks running, cracked and still): one sample, no depth, exactly what the input mapper inverts
+      pipeline('vs_shard', 'fs_shard', format, { buffers: vertexLayout, blend, lit: true }),
+      pipeline('vs_debris', 'fs_debris', format, { blend, lit: true }),
+      pipeline('vs_full', 'fs_copy', 'rgba8unorm'),
+      // the fall: the backdrop and the shadows on it first (no depth), then the faces and the walls of the slabs (depth), then the chips (tested, not written)
+      pipeline('vs_full', 'fs_backdrop', format, { depth: [false, 'always'], lit: true }),
+      pipeline('vs_shadow', 'fs_shadow', format, { buffers: vertexLayout, blend, depth: [false, 'always'] }),
+      pipeline('vs_shard', 'fs_shard', format, { buffers: vertexLayout, blend, depth: [true, 'less-equal'], lit: true }),
+      pipeline('vs_wall', 'fs_wall', format, { buffers: vertexLayout, blend, depth: [true, 'less-equal'], lit: true }),
+      pipeline('vs_debris', 'fs_debris', format, { blend, depth: [false, 'less-equal'], lit: true }),
+    ]);
     const B = g.GPUBufferUsage;
     const uniforms = device.createBuffer({ size: (HEADER_FLOATS + MAX_SHARDS * SHARD_FLOATS) * 4, usage: B.UNIFORM | B.COPY_DST });
     const vertexBuffer = device.createBuffer({ size: MAX_VERTICES * VERTEX_FLOATS * 4, usage: B.VERTEX | B.COPY_DST });

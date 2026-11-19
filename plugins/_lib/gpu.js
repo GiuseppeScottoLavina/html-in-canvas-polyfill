@@ -3,14 +3,29 @@
  */
 
 /**
+ * A render pipeline, compiled off the main thread where the browser can (createRenderPipelineAsync); the synchronous call otherwise.
+ * Safari compiles a pipeline it has not seen in about half a second, and with the synchronous call it does so at the pipeline's first
+ * use, on the main thread, freezing the page; awaited in create(), the compilation is part of addPlugin and the page keeps running.
+ * @param {any} device @param {any} descriptor @returns {Promise<any>}
+ */
+export function renderPipeline(device, descriptor) {
+  return device.createRenderPipelineAsync ? device.createRenderPipelineAsync(descriptor) : Promise.resolve(device.createRenderPipeline(descriptor));
+}
+
+/** A compute pipeline, as renderPipeline does: createComputePipelineAsync where the browser has it. @param {any} device @param {any} descriptor @returns {Promise<any>} */
+export function computePipeline(device, descriptor) {
+  return device.createComputePipelineAsync ? device.createComputePipelineAsync(descriptor) : Promise.resolve(device.createComputePipeline(descriptor));
+}
+
+/**
  * One full-screen triangle (`vs` / `fs` of `module`) over the source: binding 0 a uniform block of `floats` floats, 1 a linear clamp
  * sampler, 2 the source view; it draws into the frame's destination, cleared to black. Bind groups are cached per source view and the
  * pass descriptor is reused, so a frame allocates nothing. `constants`: the pipeline-overridable constants of the fragment shader (hdrConstants of
- * ./hdr.js for a shader that declares `override HDR_PEAK`).
+ * ./hdr.js for a shader that declares `override HDR_PEAK`). Its pipeline is compiled with renderPipeline: await it in create().
  * @param {any} device @param {string} format @param {any} module @param {string} label @param {number} floats @param {Record<string, number>} [constants]
  */
-export function fullscreenPass(device, format, module, label, floats, constants) {
-  const pipeline = device.createRenderPipeline({
+export async function fullscreenPass(device, format, module, label, floats, constants) {
+  const pipeline = await renderPipeline(device, {
     layout: 'auto', label,
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }], ...(constants ? { constants } : {}) },
