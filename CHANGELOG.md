@@ -13,6 +13,7 @@ A fix release of 1.0.0. In `src/` only the effects change (every pipeline is com
 - Live demo: the landing carries the Google Search Console verification tag (repeated in the site root page by the build).
 - Live demo: the six example pages besides the landing, the gallery and the playground (basic, form, effect-plugin, scroll-and-resize, webgl-texture, field-test) have a title that names the project, a description and an absolute canonical; G-pages checks them on every page of the sitemap, with a control for each (a missing description, a title without the project, a canonical naming another page).
 - README: the npm badge shows the `latest` version.
+- Live demo: the site root is the landing page itself, no longer a redirect to `examples/`. Google Search Console reported the root, the address every link names (the repository's homepage, npm's, the README), as not indexed: a page with redirect. The build writes the landing at the root with its relative addresses prefixed with `examples/`; `examples/` keeps the same page (a local server opens it there, and old links work) with the root as its canonical, like `og:url`, the JSON-LD `url`, the package `homepage` and the README's demo link, and the sitemap lists the root first. G-pages checks the root and `examples/` answer 200 without a redirect or a meta refresh and every relative address of the root answers 200, with a control for each (a root with the meta refresh back, a root link without the prefix, a root naming `examples/` as its canonical).
 
 ### Fixed
 
