@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- `checkVisibility()` with the opacity check (`opacityProperty: true` or `checkOpacity: true`) gave wrong answers for the children of a managed canvas. In Chrome and Safari every child was reported hidden, because the live layer that holds the children has opacity 0. In Firefox the children of a canvas with opacity 0 were reported visible. The check now reads the opacity of the child, its ancestors up to the layer, the canvas and the canvas ancestors, as natively, so libraries that skip the elements `checkVisibility` reports hidden see the drawn content. In Chrome, Firefox and Safari the answers now equal those of Chrome 157 with its native implementation.
+
 ## [1.0.1] - 2026-11-19
 
 A fix release of 1.0.0. In `src/` only the effects change (every pipeline is compiled off the main thread, below) and the version; the core bundle is the same size as 1.0.0's (375,522 bytes minified, 128,154 gzip), the effects bundle 136 bytes larger (44,620). `npm run test:local` on main f01b224 (2026-11-19), with the reruns on this candidate: every stage passes but G-mobile's known Android listbox row. The first run's other reds were not the code: the field test gate (fixed below, PR #145), Safari's Allow Remote Automation found off (the Safari stages and the 7 mutants that need Safari then passed, the mutants caught 7 of 7), and the Android Emulator, whose Play Store updated Chrome (124 to 157, which ships the native implementation) and Gboard during the run (restored to the image's versions, the refusal and keyboard scenarios pass again).
