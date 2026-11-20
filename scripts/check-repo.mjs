@@ -234,7 +234,9 @@ if (!docsOnly) {
   // coherenceOpen) and the backdrop-filter refusal of the scroll compositor applies where the snapshot paints one (+5: scroll-pages.js paintsBackdrop)
   // 17878 -> 17924 (2026-11-20, measured 17,924): checkVisibility with the opacity check reads the native chain instead of the transparent layer (+46:
   // src/live/visibility-bridge.js and its wiring in src/api/compose.js)
-  if (total > 17924) problems.push(`G-size: core is ${total} code lines (> 17924)`);
+  // 17924 -> 17959 (2026-11-20, measured 17,959): changedElements lists what Chromium repaints after a width / height write and a new canvas transform or clip (+35:
+  // src/api/canvas-patch.js, src/api/geometry.js, src/schedule/scheduler.js markChanged; issue #150)
+  if (total > 17959) problems.push(`G-size: core is ${total} code lines (> 17959)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

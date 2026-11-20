@@ -37,9 +37,7 @@ const EXAMPLES = [
 const PLACE_RATIO = 0.85;
 /** `${file}@${dpr}` -> why it is red; see the header */
 const KNOWN = {
-  'webGL.html@1': 'issue #150: the example attaches its paint handler in onload, after the first paint event that lists the five drawables, and uploads a texture only for '
-    + 'the elements a later event lists as changed; Chrome lists all five again in the paint after load, the polyfill lists none, so no texture is ever uploaded and the '
-    + 'scene stays empty at DPR 1 (at DPR 2 the canvas resize makes the polyfill list them again)',
+  // webGL.html@1 left the list with the fix of issue #150 (changedElements after a size write and a geometry change, as Chromium lists them)
 };
 const SETUP = 'Math.random = () => 0.5;';
 

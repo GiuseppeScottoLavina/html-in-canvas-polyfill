@@ -33,6 +33,7 @@ import { shadowIncludingOrder } from '../util/tree-order.js';
  * @property {boolean} due  the cap allowed a frame in the current tick
  * @property {boolean} committed  commitLanded ran for this canvas in the current tick
  * @property {Set<Element>} changed  committed since the last paint event
+ * @property {Set<Element>} marked  listed by markChanged since the last paint event: they join the next paint event's changedElements but never fire one
  * @property {Set<Element>} removed
  * @property {number} batches  commits merged into `changed` (more than one: the order is no longer the store's)
  * @property {boolean} afterNested  a canvas nested in its drawables fired a paint (its handler may have drawn into the bitmap the snapshot shows): the next paint waits for a fresh snapshot
@@ -74,7 +75,7 @@ const FRAME_TICK = Symbol.for('hic.frame-tick');
 function createEntry(record) {
   return {
     record, registered: false, hooks: new Set(), dirty: false, interaction: false, hookKeep: false, wake: false,
-    dispatching: false, due: false, committed: false, changed: new Set(), removed: new Set(), batches: 0, afterNested: false, resized: false, firedFrame: -1, firstSince: null,
+    dispatching: false, due: false, committed: false, changed: new Set(), marked: new Set(), removed: new Set(), batches: 0, afterNested: false, resized: false, firedFrame: -1, firstSince: null,
   };
 }
 
@@ -267,8 +268,9 @@ export function createScheduler(env, store, hooks) {
    */
   function changedElements(entry) {
     const layer = entry.record.layer;
-    const current = entry.changed.size && layer ? new Set(layer.drawableElements()) : null;
-    const out = new Set(current ? [...entry.changed].filter((el) => current.has(el)) : entry.changed);
+    const listed = entry.marked.size ? new Set([...entry.changed, ...entry.marked]) : entry.changed;
+    const current = listed.size && layer ? new Set(layer.drawableElements()) : null;
+    const out = new Set(current ? [...listed].filter((el) => current.has(el)) : listed);
     let added = false;
     for (const el of entry.removed) {
       const parent = el.parentNode;
@@ -279,7 +281,7 @@ export function createScheduler(env, store, hooks) {
       }
     }
     const list = [...out];
-    if ((added || entry.batches > 1) && list.length > 1) list.sort(shadowIncludingOrder);
+    if ((added || entry.batches > 1 || entry.marked.size) && list.length > 1) list.sort(shadowIncludingOrder);
     return list;
   }
 
@@ -289,6 +291,7 @@ export function createScheduler(env, store, hooks) {
     const paint = record.paint;
     const list = changedElements(entry);
     entry.changed.clear();
+    entry.marked.clear();
     entry.removed.clear();
     entry.batches = 0;
     paint.force = false;
@@ -782,6 +785,14 @@ export function createScheduler(env, store, hooks) {
       record.paint.force = true;
       entry.dirty = true;
       armTick();
+    },
+
+    markChanged(record, elements) {
+      const entry = entries.get(record);
+      if (!entry?.registered) return;
+      // listed by the next paint event of this canvas, whatever fires it; never a reason to fire one (native: an invalidation alone schedules no frame, and the
+      // polyfill's own follow-up ticks have no native counterpart)
+      for (const el of elements) entry.marked.add(el);
     },
 
     paintNow(record) {

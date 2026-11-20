@@ -213,7 +213,13 @@ Calling it inside a `paint` handler schedules the NEXT frame, never a re-entrant
 - `onpaint` is a real event-handler IDL attribute (`null` by default; non-callable values coerce to `null`) and the `onpaint="..."`
   content attribute is compiled lazily with `new Function('event', code)` (a CSP that forbids it produces a reported error, not a silent no-op).
 - `changedElements` = the drawables whose committed snapshot version advanced since the previous paint, in tree order, nested
-  drawables included as their own entries. Drawables removed or no longer eligible are NOT listed (WICG issue 85 is open; the
+  drawables included as their own entries. Chromium lists every drawable it REPAINTED in the frame, also with unchanged pixels
+  (`LocalFrameView::DidPaintCanvasDrawable`), and two of its invalidations are reproduced: after a `width` / `height` write (property
+  or attribute) every laid-out drawable, except on a canvas with a 2D context written with its own size, which Chromium ignores
+  (`HTMLCanvasElement::OnWidthOrHeightAssigned`); and a drawable whose canvas transform or clip was set to a new value or cleared
+  (`updateElementGeometry`, `drawElementImage`, `clearElementGeometry`; `Element::SetCanvasTransform`). These are listed by the next
+  paint event and fire none of their own (Chromium may list a newly drawn drawable in a paint event of the next frame while frames
+  are running during load; here it waits for the next paint). A write inside a paint handler lists nothing more (issue #150). Drawables removed or no longer eligible are NOT listed (WICG issue 85 is open; the
   scheduler fires a paint for the removal with their absence visible through `getElementTransform` / errors).
 - **Paint gate.** `paint` is dispatched only when every eligible drawable that has a CSS box has a committed snapshot (or a placeholder), because native creates all snapshots BEFORE firing `paint` and the explainer's own pattern (`onpaint = () => ctx.drawElementImage(form, ...)` plus `requestPaint()`)
   and the WPT helper `waitForCanvasPaint` draw unconditionally. With `coherentPaint` (default) it also holds up to `coherenceMaxWaitMs` (50 ms) while builds that started from the same DOM state as a landed one are in flight, or while damage marked before the oldest landed build started is still in flight or waits for a build (more drawables changed at once than the polyfill builds in one round), so all drawables show one state. `force` stays set while the gate is closed;

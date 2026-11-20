@@ -64,16 +64,21 @@ function attributeChanged(env, el, name, present) {
 }
 
 /**
- * Element.prototype.setAttribute / removeAttribute / toggleAttribute observe the two names that (un)manage a canvas. The length test keeps the hot path
- * (every attribute write of the page) to one string-length comparison.
+ * Element.prototype.setAttribute / removeAttribute / toggleAttribute observe the two names that (un)manage a canvas, and the width and height of a canvas (the
+ * same size write as the IDL setters, as in Chromium: see installSizeSetters). The length tests keep the hot path (every attribute write of the page) to string-length comparisons.
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
+ * @param {SizeWrites} size
  */
-function installAttributeHooks(env, ledger) {
+function installAttributeHooks(env, ledger, size) {
   const proto = globalsOf(env).Element.prototype;
   for (const method of /** @type {const} */ (['setAttribute', 'removeAttribute', 'toggleAttribute'])) {
     ledger.wrap(proto, method, (original) => /** @this {Element} */ function (/** @type {unknown} */ name) {
+      const sized = typeof name === 'string' && (name.length === 5 || name.length === 6) && /^(width|height)$/i.test(name) && this instanceof globalsOf(env).HTMLCanvasElement
+        ? /** @type {HTMLCanvasElement} */ (this) : null;
+      const before = sized ? size.before(sized) : '';
       const result = Reflect.apply(original, this, arguments);
+      if (sized) size.written(sized, before);
       if (typeof name === 'string' && (name.length === 7 || name.length === 13)) {
         attributeChanged(env, this, name, method === 'toggleAttribute' ? Boolean(result) : method === 'setAttribute');
       }
@@ -222,13 +227,30 @@ export function elementImageDefaultSize(env, canvas, bitmap, element) {
 /**
  * Writing canvas.width/height clears the bitmap. The README's ResizeObserver example does it inside the observer callback, so the grid scale is refreshed from the layer at once
  * (the polyfill's own ResizeObserver may run later) and ONE microtask repaints in the SAME frame: a microtask checkpoint follows every ResizeObserver callback.
+ * changedElements after a size write, as Chromium decides it (HTMLCanvasElement::OnWidthOrHeightAssigned): a canvas with a 2D context whose size does not change is left alone;
+ * any other write (a new size, no context yet, a WebGL / WebGPU / bitmaprenderer context) invalidates the paint properties of every descendant, so the next paint event
+ * lists every drawable that is laid out, whether its pixels changed or not. The official WICG webGL example relies on it: it attaches its paint handler after the first
+ * paint event and uploads only the drawables a later event lists; its ResizeObserver writes the size (unchanged at DPR 1) before it has a context (issue #150).
+ * The context kind is what getContext() returned on this canvas (wrapped here); a canvas whose context was created before install counts as not 2D (every drawable listed).
+ * A write inside a paint handler lists nothing more (the handler is drawing the change itself).
  * @param {HicEnv} env
  * @param {PatchLedger} ledger
  * @param {object} proto
+ * @returns {SizeWrites} the same handling for width / height attribute writes (installAttributeHooks)
  */
 function installSizeSetters(env, ledger, proto) {
   /** @type {WeakSet<CanvasRecord>} */
   const queued = new WeakSet();
+  /** @type {WeakMap<HTMLCanvasElement, '2d'|'other'>} the kind of the context getContext() returned on the canvas */
+  const kinds = new WeakMap();
+  ledger.wrap(proto, 'getContext', (original) => /** @this {HTMLCanvasElement} */ function getContext(/** @type {unknown[]} */ ...args) {
+    const context = Reflect.apply(original, this, args);
+    if (context && !kinds.has(this)) kinds.set(this, context instanceof globalsOf(env).CanvasRenderingContext2D ? '2d' : 'other');
+    return context;
+  });
+  const sizeGetters = ['width', 'height'].map((name) => Object.getOwnPropertyDescriptor(proto, name)?.get);
+  /** @param {HTMLCanvasElement} canvas @returns {string} */
+  const sizeOf = (canvas) => sizeGetters.map((get) => (get ? Reflect.apply(get, canvas, []) : '')).join('x');
 
   /** @param {CanvasRecord} record */
   const repaint = (record) => {
@@ -241,14 +263,22 @@ function installSizeSetters(env, ledger, proto) {
     }
   };
 
-  /** @param {HTMLCanvasElement} canvas */
-  const resized = (canvas) => {
+  /** @param {HTMLCanvasElement} canvas @param {string} before the size before the write */
+  const resized = (canvas, before) => {
     const record = env.registry.get(canvas);
     if (!record || record.state !== 'active' || !record.layer) return;
     try {
       record.layer.syncPresentation();
     } catch (err) {
       env.reporter.caught(err, 'canvas-size-sync');
+    }
+    if (!isPaintDispatching(record) && !(kinds.get(canvas) === '2d' && sizeOf(canvas) === before)) {
+      const layer = record.layer;
+      try {
+        env.scheduler.markChanged?.(record, layer.drawableElements().filter((el) => layer.isLaidOut(el)));
+      } catch (err) {
+        env.reporter.caught(err, 'canvas-size-changed');
+      }
     }
     // Inside a paint handler the app clears the bitmap in order to redraw it right after (native does not repaint on a size write): a repaint here would loop forever.
     if (isPaintDispatching(record) || queued.has(record)) return;
@@ -261,11 +291,19 @@ function installSizeSetters(env, ledger, proto) {
     if (!original?.set || !original.get) continue;
     const { get, set } = original;
     defineAccessor(ledger, proto, name, get, /** @this {HTMLCanvasElement} */ function (v) {
+      const before = sizeOf(this);
       Reflect.apply(set, this, [v]);
-      resized(this);
+      resized(this, before);
     });
   }
+  return { before: sizeOf, written: resized };
 }
+
+/**
+ * @typedef {Object} SizeWrites
+ * @property {(canvas: HTMLCanvasElement) => string} before  the canvas size before a write
+ * @property {(canvas: HTMLCanvasElement, before: string) => void} written  after a width / height write: changedElements and the repaint of installSizeSetters
+ */
 
 /**
  * All through the ledger. `content` reflects only fallback|drawable. The `content` setter and Element.prototype.setAttribute/removeAttribute/toggleAttribute for a canvas's content/layoutsubtree mount/unmount SYNCHRONOUSLY (env.adopt),
@@ -280,9 +318,9 @@ function installSizeSetters(env, ledger, proto) {
  */
 export function installCanvasPatches(env, ledger, geometry) {
   const proto = globalsOf(env).HTMLCanvasElement.prototype;
-  installAttributeHooks(env, ledger);
+  const size = installSizeSetters(env, ledger, proto);
+  installAttributeHooks(env, ledger, size);
   installContentAndHandlers(env, ledger, proto);
   installExtensions(env, ledger, proto);
   installMethods(env, ledger, proto, geometry);
-  installSizeSetters(env, ledger, proto);
 }

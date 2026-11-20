@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Fixed
 
 - `checkVisibility()` with the opacity check (`opacityProperty: true` or `checkOpacity: true`) gave wrong answers for the children of a managed canvas. In Chrome and Safari every child was reported hidden, because the live layer that holds the children has opacity 0. In Firefox the children of a canvas with opacity 0 were reported visible. The check now reads the opacity of the child, its ancestors up to the layer, the canvas and the canvas ancestors, as natively, so libraries that skip the elements `checkVisibility` reports hidden see the drawn content. In Chrome, Firefox and Safari the answers now equal those of Chrome 157 with its native implementation.
+- `changedElements` now lists the drawables that Chrome's own implementation lists after two kinds of change, even when their pixels did not change:
+  - **A `width` or `height` write (property or attribute).** Every laid-out drawable is listed, except on a canvas with a 2D context written with its own size, which Chrome ignores.
+  - **A canvas transform or clip set to a new value or cleared** (`drawElementImage`, `updateElementGeometry`, `clearElementGeometry`). The drawable is listed by the next paint event.
+
+  Chrome lists every drawable it repaints in a frame, and these are two of its repaints. The official WICG webGL example depends on this: it attaches its paint handler after the first paint event and uploads only the drawables a later event lists. Through the polyfill it drew an empty scene at DPR 1, and now draws the same picture as Chrome (#150).
 
 ## [1.0.1] - 2026-11-19
 
