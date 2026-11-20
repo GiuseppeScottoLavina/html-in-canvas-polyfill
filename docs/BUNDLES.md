@@ -83,7 +83,7 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `esm/effects.js` | 78,415 | 20,822 |
 | `esm/native-bridge.js` | 23,215 | 6,078 |
 | `esm/worker.js` | 6,977 | 2,403 |
-| `esm/loader.js` | 4,931 | 1,817 |
+| `esm/loader.js` | 4,931 | 1,815 |
 | `plugins/cloth.iife.js` | 86,417 | 24,707 |
 | `plugins/cloth.iife.min.js` | 47,332 | 19,063 |
 | `plugins/cloth.esm.js` | 81,649 | 24,097 |
