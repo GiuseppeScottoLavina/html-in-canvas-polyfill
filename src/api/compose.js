@@ -19,6 +19,7 @@ import { BUS } from '../contracts/events.js';
 import { createLiveLayer } from '../live/live-layer.js';
 import { createRootScope } from '../live/root-scope.js';
 import { installSelectorBridge } from '../live/selector-bridge.js';
+import { installVisibilityBridge } from '../live/visibility-bridge.js';
 import { createCapture } from '../snapshot/capture/capture.js';
 import { createSnapshotStore } from '../snapshot/store/store.js';
 import { createScheduler } from '../schedule/scheduler.js';
@@ -96,14 +97,14 @@ function disposeAll(env, parts) {
  */
 export function compose(env, services, hooks, ledger) {
   // Everything created so far, so that a throwing factory unwinds the part that already runs (observers, intervals, listeners) instead of leaking it.
-  /** @type {Partial<{roots: unknown, registry: CoreRegistry, animatedImages: unknown, store: unknown, scheduler: unknown, effects: unknown, stopObservers: unknown, stopBridge: unknown, offResources: (() => void)|undefined, offs: Array<() => void>}>} */
+  /** @type {Partial<{roots: unknown, registry: CoreRegistry, animatedImages: unknown, store: unknown, scheduler: unknown, effects: unknown, stopObservers: unknown, stopBridge: unknown, stopVisibility: unknown, offResources: (() => void)|undefined, offs: Array<() => void>}>} */
   const made = {};
   const teardown = () => {
     // Records first: unmounting restores the children while scheduler and store still exist to be told.
     try { made.registry?.dispose(); } catch (err) { env.reporter.caught(err, 'dispose.registry'); }
     for (const off of made.offs ?? []) off();
     made.offResources?.();
-    for (const [name, stop] of /** @type {Array<[string, unknown]>} */ ([['selector-bridge', made.stopBridge], ['observers', made.stopObservers]])) {
+    for (const [name, stop] of /** @type {Array<[string, unknown]>} */ ([['selector-bridge', made.stopBridge], ['visibility-bridge', made.stopVisibility], ['observers', made.stopObservers]])) {
       if (typeof stop !== 'function') continue;
       try { stop(); } catch (err) { env.reporter.caught(err, `dispose.${name}`); }
     }
@@ -144,6 +145,7 @@ function wire(env, services, hooks, ledger, made, dispose) {
   env.scheduler = scheduler;
   made.stopObservers = services.startObservers(env, tracker, ledger);
   made.stopBridge = services.installSelectorBridge(env, ledger);
+  made.stopVisibility = installVisibilityBridge(env, ledger);
   const geometry = createGeometryApi(env);
   const effects = (made.effects = services.createEffects(env, { store, scheduler, geometry, tracker }));
 
