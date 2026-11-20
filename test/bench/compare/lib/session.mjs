@@ -14,6 +14,11 @@ export const OURS_URL = '/dist/hic-live-polyfill.iife.min.js';
 export const OURS_DEBUG_URL = '/dist/hic-live-polyfill.iife.js';
 export const COMPETITOR_URL = '/bench/competitor-adapted.iife.js';
 export const COMPETITOR_FILE = resolve(ROOT, '.scratch/competitor/competitor-adapted.iife.js');
+export const UNDERGLASS_URL = '/bench/underglass.iife.js';
+/** written by test/bench/compare/underglass/build.mjs */
+export const UNDERGLASS_FILE = resolve(ROOT, '.scratch/underglass/html-in-canvas-polyfill.iife.js');
+/** URL path -> file of every subject bundle that is not served from the repository */
+export const BUNDLE_FILES = { [COMPETITOR_URL]: COMPETITOR_FILE, [UNDERGLASS_URL]: UNDERGLASS_FILE };
 
 /**
  * Subject = which renderer draws the page. Ours and the competitor run on Chrome stable (no native feature), native on Chrome Canary with
@@ -22,6 +27,7 @@ export const COMPETITOR_FILE = resolve(ROOT, '.scratch/competitor/competitor-ada
 export const SUBJECTS = {
   ours: { id: 'ours', label: 'ours (hic-live-polyfill)', chrome: 'stable', native: false, bundle: OURS_URL },
   competitor: { id: 'competitor', label: 'competitor (html-in-canvas-polyfill 1.0.1, adapted)', chrome: 'stable', native: false, bundle: COMPETITOR_URL },
+  underglass: { id: 'underglass', label: 'underglass (@underglass/html-in-canvas-polyfill 0.5.0)', chrome: 'stable', native: false, bundle: UNDERGLASS_URL },
   native: { id: 'native', label: 'native (Canary + CanvasDrawElement)', chrome: 'canary', native: true, bundle: null },
 };
 
@@ -59,7 +65,7 @@ export class Session {
   constructor(subject, opts = {}) { this.subject = subject; this.opts = opts; this.loads = []; }
 
   async open() {
-    this.srv = await H.startServer({ files: { [COMPETITOR_URL]: COMPETITOR_FILE } });
+    this.srv = await H.startServer({ files: BUNDLE_FILES });
     this.browser = await H.launchChrome({ name: `cmp-${this.subject.id}`, chrome: this.subject.chrome, dpr: 2, nativeDrawElement: this.subject.native, windowSize: [1440, 960] });
     this.page = await this.browser.newPage();
     await this.page.requireForeground('session start');

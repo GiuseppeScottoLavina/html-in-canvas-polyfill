@@ -53,7 +53,7 @@ export function selectionOf(tests) {
  * Run `tests` in `config`; returns the result document. It records its own provenance, whatever writes it: `selection` (`selectionOf`), the size
  * of the inventory, and `polyfillSha256s`, the sha256 of every polyfill source injected (one when the bundle did not change during the run).
  */
-export async function runConfig(configId, tests, { reps = 3, log = console.log, polyfillFile, shotRoot, relaxed = false } = {}) {
+export async function runConfig(configId, tests, { reps = 3, log = console.log, polyfillFile, workerFile, shotRoot, relaxed = false } = {}) {
   const config = CONFIGS[configId]; if (!config) throw new Error('unknown config ' + configId);
   const load = await waitForLoad();
   const watchdog = setTimeout(() => { console.error(`WATCHDOG: configuration ${configId} ran longer than ${WATCHDOG_MS / 60000} min`); process.exit(3); }, WATCHDOG_MS);
@@ -61,7 +61,7 @@ export async function runConfig(configId, tests, { reps = 3, log = console.log, 
   // one browser at a time: a test that needs the other scrollbar mode (inventory `scrollbars`) stops this browser and starts one in that mode
   let mode = 'hidden';
   const injected = new Set();
-  const open = () => new Session(config, { ...(polyfillFile ? { polyfillFile } : {}), scrollbars: mode, injected }).start();
+  const open = () => new Session(config, { ...(polyfillFile ? { polyfillFile } : {}), ...(workerFile ? { workerFile } : {}), scrollbars: mode, injected }).start();
   let session = await open();
   const doc = { runnerVersion: RUNNER_VERSION, config: session.info(), selection: selectionOf(tests), inventory: listTests().length, startedAt: new Date().toISOString(), loadAtStart: load, reps, tests: {}, polyfillSha256s: /** @type {string[]} */ ([]) };
   const restart = async () => { await session.stop(); session = await open(); };

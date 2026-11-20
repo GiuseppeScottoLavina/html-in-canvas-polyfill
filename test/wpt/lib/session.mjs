@@ -30,7 +30,8 @@ async function handleBinding(page, p) {
 export class Session {
   /** `scrollbars`: 'hidden' (default, --hide-scrollbars: screenshots without scrollbars) or 'default' for the tests that render author-styled scrollbars (inventory `scrollbars`). */
   /** `injected`: the sha256 of every polyfill source injected, shared by the sessions of one run (a rebuild during the run adds a second one) */
-  constructor(config, { polyfillFile = resolveDist(), name, scrollbars = 'hidden', injected = new Set() } = {}) { this.config = config; this.polyfillFile = polyfillFile; this.name = name ?? `wpt-${config.id}`; this.scrollbars = scrollbars; this.crashed = false; this.injected = injected; }
+  /** `workerFile`: the script run first in every dedicated worker (default: this polyfill's worker build; another subject passes its own) */
+  constructor(config, { polyfillFile = resolveDist(), workerFile = `${PROJECT_ROOT}/dist/hic-live-worker.iife.js`, name, scrollbars = 'hidden', injected = new Set() } = {}) { this.config = config; this.polyfillFile = polyfillFile; this.workerFile = workerFile; this.name = name ?? `wpt-${config.id}`; this.scrollbars = scrollbars; this.crashed = false; this.injected = injected; }
 
   async start() {
     this.browser = await launchChrome({
@@ -68,7 +69,7 @@ export class Session {
   async injectPolyfill(page) {
     const source = readFileSync(this.polyfillFile, 'utf8');
     this.injected.add(createHash('sha256').update(source).digest('hex'));
-    const workerFile = `${PROJECT_ROOT}/dist/hic-live-worker.iife.js`;
+    const workerFile = this.workerFile;
     const workerSource = existsSync(workerFile) ? readFileSync(workerFile, 'utf8') : null;
     await page.send('Page.addScriptToEvaluateOnNewDocument', { source });
     const conn = page.conn;
