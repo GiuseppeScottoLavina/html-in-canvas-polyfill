@@ -242,7 +242,7 @@ const LIMITS = {
   // and such an element outside a scroller over its port refuses a scroll plan as a blend does (scroll-pages.js blending)
   // 375.25 -> 375.75 KB (+388 bytes over 375,126, 2026-11-12, measured 375,514 / 128,157): the paint gate holds a change of more drawables than one round builds
   // (DamageTracker.seq, Job.startSeq, store.js coherenceOpen), and the scroll compositor's backdrop-filter refusal applies where the snapshot paints one (paintsBackdrop)
-  // 375.75 -> 376.75 KB, gzip 128.25 -> 128.75 KB (+1,022 / +353 bytes over 1.0.1, 2026-11-20, measured 376,544 / 128,507): changedElements lists what Chromium repaints after a
+  // 375.75 -> 376.75 KB, gzip 128.25 -> 128.75 KB (+1,028 / +355 bytes over 1.0.1, 2026-11-20, measured 376,550 / 128,509): changedElements lists what Chromium repaints after a
   // width / height write (the context kind recorded by a getContext wrapper) and after a new canvas transform or clip (Scheduler.markChanged; issue #150)
   'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 376.75 * KB, gzip: 128.75 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
