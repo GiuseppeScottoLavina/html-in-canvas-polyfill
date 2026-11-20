@@ -30,11 +30,11 @@ What that means, measured on Chromium ([API-CONTRACT.md, section 8](../API-CONTR
 
 Yes, and this is the main structural difference from native. The children of the canvas are moved into the layer, a sibling of the canvas. `children`, `parentNode`, `firstChild` and similar properties answer as if nothing had moved, and `canvas.querySelector()` and similar queries search the layer. CSS `:last-child`, `:nth-child`, the `+` combinator, live collections and `MutationObserver`s on the canvas can still see the layer. The polyfill also writes `data-hic-canvas` on the canvas, a merged `aria-owns`, and an `id` on a top-level drawable that has none. See [Known limitations](../../README.md#known-limitations) and [FRAMEWORKS.md, section 2](FRAMEWORKS.md#2-what-a-framework-sees).
 
-## Why is the core about 376 KB minified (128 KB gzipped)?
+## Why is the core about 378 KB minified (129 KB gzipped)?
 
-In the current build, 375,522 bytes minified and 128,154 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The other package on npm (`html-in-canvas-polyfill`) is about 30 KB minified and passes fewer of the WPT tests (66 of 230 files, at an older revision; [COMPARISON.md](../COMPARISON.md)).
+In the current build, 377,653 bytes minified and 128,793 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The two other packages on npm are smaller and pass fewer of the WPT tests: `@underglass/html-in-canvas-polyfill` 0.5.0 is about 65 KB minified (93 of 248 files), `html-in-canvas-polyfill` 1.0.1 about 33 KB (77 of 248 files; [README](../../README.md#compared-with-the-alternatives)).
 
-Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 375 KB, so they are approximate.
+Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 378 KB, so they are approximate.
 
 | part | share | about |
 |---|---|---|
@@ -77,7 +77,7 @@ Two caveats:
 
 ## Does Chrome 157 download the polyfill?
 
-With the core's script tag, yes: 375,522 bytes (128,154 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,454 bytes, 6,320 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
+With the core's script tag, yes: 377,653 bytes (128,793 gzipped), and then the core steps aside. With the loader, no: `hic-live-loader.iife.min.js` (17,454 bytes, 6,320 gzipped) makes the same decision as `install()` and, on Chrome 157, settles `status: 'native'` without requesting the core, the engines bundle or the bridge (measured on Chrome 157.0.8103.39, `test/native-effects/g-native-loader.mjs`). Where the polyfill runs, the loader then fetches the core, which costs one extra request before it (+10 ms to the first paint from a local server, +45 ms with 40 ms of latency per request, measured headless). The page's own code waits for `await HicLiveLoader.load()` (or `load()` from `.../loader` with a bundler). On Chrome 157 there is no `HicInstalled`, so `whenPainted` is not available: draw from the `paint` event of the browser's own API ([GETTING-STARTED](GETTING-STARTED.md#loading-the-polyfill-only-where-it-runs), [API-CONTRACT section 2.4](../API-CONTRACT.md#24-the-loader-loadoptions---promiseloadresult)).
 
 ## Which browsers and devices are verified, and how?
 

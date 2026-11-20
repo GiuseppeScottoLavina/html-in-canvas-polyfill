@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Performance comparison bench: our polyfill vs the competitor (html-in-canvas-polyfill 1.0.1 + attribute adapter) vs native (Canary flag).
+// Performance comparison bench: our polyfill vs html-in-canvas-polyfill 1.0.1 (+ attribute adapter, subject `competitor`) vs @underglass/html-in-canvas-polyfill 0.5.0
+// (subject `underglass`, test/bench/compare/underglass/build.mjs) vs native (Canary flag).
 //
 //   npm run bench:compare                                     all subjects, all scenarios, then the report
 //   node test/bench/compare/run.mjs --subjects=ours,native --scenarios=typing,slider [--no-report] [--quick]
@@ -13,7 +14,7 @@ import { Session, SUBJECTS, RESULTS_DIR, H } from './lib/session.mjs';
 import { SCENARIOS } from './scenarios/index.mjs';
 
 const has = (k) => process.argv.includes(`--${k}`);
-const subjects = H.arg('subjects', 'ours,competitor,native').split(',');
+const subjects = H.arg('subjects', 'ours,competitor,underglass,native').split(',');
 const scenarios = H.arg('scenarios', Object.keys(SCENARIOS).join(',')).split(',');
 const quick = has('quick');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');

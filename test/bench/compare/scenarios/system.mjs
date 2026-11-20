@@ -1,7 +1,7 @@
 // Metrics 5-10: real window resize drag, idle cost, first paint, memory, large-DOM update cost, bundle parse/compile + install.
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { H, pageUrl, refUrl, OUT_DIR } from '../lib/session.mjs';
+import { H, pageUrl, refUrl, OUT_DIR, BUNDLE_FILES } from '../lib/session.mjs';
 import { startProbe, stopProbe, waitFrames } from '../lib/probe.mjs';
 import { stat, canvasGeo, toRegion, compareRegion, readSurface, nonce } from '../lib/common.mjs';
 
@@ -219,7 +219,7 @@ export async function runBundle(sess, { samples = 30 } = {}) {
   const bundle = sess.subject.bundle;
   const file = resolve(dir, `bundle-${sess.subject.id}.html`); writeFileSync(file, BUNDLE_PAGE(bundle));
   // serve through the harness server's `files` map is fixed at start: use a data-free route instead (a second server with the page)
-  const srv = await H.startServer({ files: { '/bench/bundle.html': file, ...(sess.subject.id === 'competitor' ? { [bundle]: resolve(H.PROJECT_ROOT, '.scratch/competitor/competitor-adapted.iife.js') } : {}) } });
+  const srv = await H.startServer({ files: { '/bench/bundle.html': file, ...(bundle && BUNDLE_FILES[bundle] ? { [bundle]: BUNDLE_FILES[bundle] } : {}) } });
   const page = sess.page; const rows = [];
   try {
     for (let i = 0; i < samples; i++) {
