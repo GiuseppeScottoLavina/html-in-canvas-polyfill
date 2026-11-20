@@ -15,6 +15,8 @@
 //   halfpaint every second paint event of a canvas is dropped (no handler runs, nothing is drawn): a renderer that paints in every other frame, the old scroll cadence
 //   noaxlink  every aria-owns write on a canvas is dropped: the canvas loses the accessibility link to its relocated children (ADR-M)
 //   inertlayer the live layer is made inert: its controls leave the tab order and the accessibility tree
+//   shift1  every drawElementImage lands one device pixel to the right of where it was asked (in canvas pixels, whatever the current transform): a renderer that
+//           places the picture a pixel off
 export const SABOTAGE_JS = {
   blank: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (...a) { try { o.apply(this, a); } finally { this.save(); this.setTransform(1,0,0,1,0,0); this.globalCompositeOperation='copy'; this.fillStyle='#000'; this.fillRect(0,0,this.canvas.width,this.canvas.height); this.restore(); } }; return 'blank'; })()`,
   stale: `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; let n = 0; p.drawElementImage = function (...a) { if (n++ === 0) return o.apply(this, a); }; window.__sabotageStale = () => n; return 'stale'; })()`,
@@ -32,6 +34,9 @@ SABOTAGE_JS.halfpaint = `(() => { const d = EventTarget.prototype.dispatchEvent;
 
 SABOTAGE_JS.noaxlink = `(() => { const set = Element.prototype.setAttribute; Element.prototype.setAttribute = function (n, v) { if (n === 'aria-owns' && this.localName === 'canvas') return; return set.call(this, n, v); }; return 'noaxlink'; })()`;
 SABOTAGE_JS.inertlayer = `(() => { const mark = () => { for (const l of document.querySelectorAll('hic-layer')) if (!l.inert) l.inert = true; }; new MutationObserver(mark).observe(document, { childList: true, subtree: true }); mark(); return 'inertlayer'; })()`;
+
+SABOTAGE_JS.shift1 = `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (...a) { const m = this.getTransform(); this.save();
+  try { this.setTransform(new DOMMatrix([1, 0, 0, 1, 1, 0]).multiply(m)); return o.apply(this, a); } finally { this.restore(); } }; return 'shift1'; })()`;
 
 /** The bundle text with the sabotage of every kind in `kinds` appended (each wrapped so a failure is visible, not silent). */
 export function controlBundleText(bundleText, kinds) {
