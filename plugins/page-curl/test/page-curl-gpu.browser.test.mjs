@@ -3,7 +3,7 @@
 // through, mirrored), the dog-ear at rest, the spring back to the plain source, the actions 'peek' and 'demo' through the effect handle, a device loss
 // mid-drag, and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, spyMappers, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, untilRecreated, markerScene, presentOnce, runActionOnGpu, spyMappers, until } from '/plugins/_shared/gpu-check.mjs';
 import { UNIFORM_FLOATS, foldOf, foldPoint, heldCorner, isNoTarget, mapCurlPoint, meta, plugin, poseState, project, stateOf } from '/plugins/page-curl/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -216,8 +216,9 @@ gpuTest('device loss mid-drag: the host re-creates the plugin on a new device, t
   const { rig, mappers } = await presentOnce(t, spy, { ...DARK, dogEar: 0 }, { scene, before: dragged(POSE), offsetMs: 400 });
   assert.ok(isNoTarget(/** @type {any} */ (mappers.at(-1))({ x: 470, y: 310, width: W, height: H })), 'curled before the loss');
   log.devices[0].destroy();
-  await until(() => log.devices.length >= 2, 3000);
+  await untilRecreated(log);
   assert.equal(log.devices.length, 2, 'create() ran again');
+  assert.equal(log.created, 2, 'and the new instance is ready');
   assert.notEqual(log.devices[1], log.devices[0]);
   assert.equal(log.destroyed, 1, 'the old instance (and its document listeners) was destroyed');
   pointer(rig, 'pointerup', POSE);   // the gesture of the lost instance ends; the new instance never saw it

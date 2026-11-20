@@ -193,16 +193,29 @@ export async function runActionOnGpu(t, plugin, options, action, actionOptions, 
 
 /** The definition, wrapped to record the device of every create() and to count destroy() of its instances (device-loss tests). @param {any} def */
 export function lossSpy(def) {
-  const log = { devices: /** @type {any[]} */ ([]), destroyed: 0 };
+  // devices: pushed when create() starts; created: counted when it resolved (the instance is ready: its pipelines are compiled, which can take a while under load)
+  const log = { devices: /** @type {any[]} */ ([]), created: 0, destroyed: 0 };
   const spy = Object.freeze({
     ...def,
     async create(/** @type {any} */ ctx, /** @type {any} */ o) {
       log.devices.push(ctx.device);
       const inst = await def.create(ctx, o);
+      log.created += 1;
       return { ...inst, destroy() { log.destroyed += 1; inst.destroy?.(); } };
     },
   });
   return { spy, log };
+}
+
+/**
+ * Waits until the plugin re-created after a device loss is ready (its create() resolved) and the host has taken it (one task later), at most `ms`.
+ * Waiting for the second create() to START is not enough: a frame driven before its pipelines are compiled presents nothing (the device-loss tests read
+ * a blank frame in full runs under load, 2026-11-20).
+ * @param {{created: number}} log  of lossSpy
+ */
+export async function untilRecreated(log, ms = 3000) {
+  await until(() => log.created >= 2, ms);
+  await new Promise((r) => setTimeout(r, 0));
 }
 
 /** Polls `done` every 10 ms until it holds or `ms` passed. @param {() => boolean} done */
