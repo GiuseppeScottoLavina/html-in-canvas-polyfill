@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-20
+
+A fix release of 1.0.1: two answers of the core now equal those of Chrome's own implementation (`checkVisibility` with the opacity check, and `changedElements`), and a new gate runs the official WICG examples, unmodified, against Chrome's own rendering. In `src/` only the core changes; the core bundle is 377,653 bytes minified (128,793 gzip), 2,131 and 639 bytes more than 1.0.1's, and the effects are unchanged. `npm run test:local` on this candidate (2026-11-20): every stage passes but two. In the mutants stage, 57 of 59 were caught and the two Safari scroll bar knob mutants were not applicable, because macOS showed overlay bars during the run (the same cause as on 2026-11-14). G-mobile failed on its known Android listbox row (`L-lb`, open since 1.0.0-rc.8).
+
+### Added
+
+- G-wicg-examples: the official examples of the WICG HTML-in-Canvas repository (complex-text, nested-sparkles, pie-chart, webGL), served unmodified from `test/vendor/wicg-examples` with their licence and revision, run through the polyfill at DPR 1 and 2 and compared with Chrome 157 and its native implementation. The gate checks the pixels and the position of the picture, and that no request leaves the test server: the matrix library the webGL example loads from a CDN is answered with the vendored copy, checked against its integrity hash. Its positive control (every 2D draw moved one pixel to the right) turns the pixel and position checks red. It found the webGL bug fixed below (#150).
+- README and docs/PERFORMANCE-COMPARISON.md: @underglass/html-in-canvas-polyfill 0.5.0 is a fourth column of the comparison, every row measured again on 2026-11-20 with the scripts in `test/bench/compare` (the official WPT tests included).
+
 ### Fixed
 
 - `checkVisibility()` with the opacity check (`opacityProperty: true` or `checkOpacity: true`) gave wrong answers for the children of a managed canvas. In Chrome and Safari every child was reported hidden, because the live layer that holds the children has opacity 0. In Firefox the children of a canvas with opacity 0 were reported visible. The check now reads the opacity of the child, its ancestors up to the layer, the canvas and the canvas ancestors, as natively, so libraries that skip the elements `checkVisibility` reports hidden see the drawn content. In Chrome, Firefox and Safari the answers now equal those of Chrome 157 with its native implementation.
@@ -12,6 +21,7 @@ All notable changes to this project are documented here. The format follows [Kee
   - **A canvas transform or clip set to a new value or cleared** (`drawElementImage`, `updateElementGeometry`, `clearElementGeometry`). The drawable is listed by the next paint event.
 
   Chrome lists every drawable it repaints in a frame, and these are two of its repaints. The official WICG webGL example depends on this: it attaches its paint handler after the first paint event and uploads only the drawables a later event lists. Through the polyfill it drew an empty scene at DPR 1, and now draws the same picture as Chrome (#150).
+- Tests: the unit test of external SVG references waited 400 ms for the referenced documents, and now waits for them to load (#148). The device-loss tests of the cloth, glitch and page-curl plugins went on as soon as the plugin began to be made again, and now wait until it is ready (with the creation slowed on purpose, the old tests failed 3 of 3 and the new ones passed 3 of 3, #154).
 
 ## [1.0.1] - 2026-11-19
 
@@ -912,7 +922,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.11...v1.0.0
 [1.0.0-rc.11]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.10...v1.0.0-rc.11
