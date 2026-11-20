@@ -1,0 +1,8 @@
+{
+  "source": "https://github.com/WICG/html-in-canvas",
+  "sha": "5d9d970ebc06d1903aa0f4b99ac78655b9922804",
+  "date": "2026-10-30",
+  "files": "Examples/complex-text.html, Examples/nested-sparkles.html, Examples/pie-chart.html, Examples/webGL.html, Examples/webGLSetup.js, Examples/wolf.jpg (unmodified); LICENSE.md is the repository's",
+  "notVendored": "Examples/webgpu-jelly-slider (a Vite and TypeGPU project that needs an npm build)",
+  "thirdParty": "gl-matrix-min.js: gl-matrix 2.8.1 (MIT, its license in the file header), the bytes https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js served on 2026-11-20, equal to the sha512 integrity attribute of webGL.html; the gate answers that CDN request with this copy"
+}
