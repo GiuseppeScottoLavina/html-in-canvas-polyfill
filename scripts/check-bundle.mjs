@@ -242,9 +242,11 @@ const LIMITS = {
   // and such an element outside a scroller over its port refuses a scroll plan as a blend does (scroll-pages.js blending)
   // 375.25 -> 375.75 KB (+388 bytes over 375,126, 2026-11-12, measured 375,514 / 128,157): the paint gate holds a change of more drawables than one round builds
   // (DamageTracker.seq, Job.startSeq, store.js coherenceOpen), and the scroll compositor's backdrop-filter refusal applies where the snapshot paints one (paintsBackdrop)
-  // 375.75 -> 376.75 KB, gzip 128.25 -> 128.75 KB (+1,028 / +355 bytes over 1.0.1, 2026-11-20, measured 376,550 / 128,509): changedElements lists what Chromium repaints after a
-  // width / height write (the context kind recorded by a getContext wrapper) and after a new canvas transform or clip (Scheduler.markChanged; issue #150)
-  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 376.75 * KB, gzip: 128.75 * KB },
+  // 375.75 -> 376.75 KB, gzip 128.25 -> 128.5 KB (+1,103 / +454 bytes over 1.0.1, 2026-11-20, measured 376,625 / 128,484): checkVisibility with the opacity check
+  // reads the native chain (the child, its ancestors up to the layer, the canvas and its ancestors) instead of the transparent layer (live/visibility-bridge.js)
+  // 376.75 -> 377.75 KB, gzip 128.5 -> 129 KB (+1,028 / +309 bytes, 2026-11-20, measured 377,653 / 128,793): changedElements lists what Chromium repaints after a width / height
+  // write (the context kind recorded by a getContext wrapper) and after a new canvas transform or clip (Scheduler.markChanged; issue #150)
+  'hic-live-polyfill.iife.min.js': { target: 150 * KB, ceiling: 377.75 * KB, gzip: 129 * KB },
   // 27 -> 27.5 KB (+432 bytes, 2026-10-14): NO_TARGET of the effects ABI (mapper chain and interposer); 27.5 -> 27.25 KB (-347 bytes): plugin ABI 1 removed (measured 27,037 / 10,540)
   // 27.25 -> 30.25 KB, gzip 10.75 -> 11.75 KB (+3,054 / +985 bytes, 2026-10-16, measured 30,091 / 11,525): plugin actions (the declared `actions` of ABI v2, handle.trigger and
   //   handle.settled with their validation messages, superseding, and the pending promises across removal, disable, failure and device loss)
@@ -500,8 +502,9 @@ if (moduleParses || !dynamicImport("const m = import('./x.js');") || dynamicImpo
   // chromium 139.25 -> 139.5 KB, geckoWebkit 156.25 -> 156.5 KB (2026-11-12, measured 139,426 / 156,267): the core it loads grew by the box watch of a drawable
   //   without a CSS box (store.js watchBox)
   // chromium 139.5 -> 139.75 KB (2026-11-12, measured 139,629 / 156,470): the core it loads grew by the backdrop-filter fix and the coherent paint of a change
-  // chromium 139.75 -> 140.25 KB, geckoWebkit 156.5 -> 157 KB (2026-11-20, measured 140,007 / 156,848): the core it loads grew by the changedElements invalidations (issue #150)
-  const LOADER_APP = { start: 8.1 * KB, chromium: 140.25 * KB, geckoWebkit: 157 * KB };
+  // chromium 139.75 -> 140 KB, geckoWebkit 156.5 -> 157 KB (2026-11-20, measured 139,964 / 156,805): the core it loads grew by the checkVisibility bridge
+  // chromium 140 -> 140.5 KB, geckoWebkit 157 -> 157.25 KB (2026-11-20, measured 140,343 / 157,184): the core it loads grew by the changedElements invalidations (issue #150)
+  const LOADER_APP = { start: 8.1 * KB, chromium: 140.5 * KB, geckoWebkit: 157.25 * KB };
   const bundlesDoc = readFileSync(join(root, 'docs/BUNDLES.md'), 'utf8');
   for (const d of budgetDrift(bundlesDoc, LIMITS, PLUGIN_LIMITS, LOADER_APP)) problems.push(`G-bundle: docs/BUNDLES.md does not state the enforced ceiling ${d}`);
   if (!budgetDrift(bundlesDoc.replace(/gzip level 9: core [0-9.]+ KB/, 'gzip level 9: core 1 KB'), LIMITS, PLUGIN_LIMITS, LOADER_APP).length) problems.push('G-bundle: the ceiling check of docs/BUNDLES.md failed its control (a changed gzip ceiling of the core passed)');

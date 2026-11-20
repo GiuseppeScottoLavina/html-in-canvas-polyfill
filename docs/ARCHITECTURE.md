@@ -178,6 +178,10 @@ The design needs them real: laid out, focusable, scrollable, hit-testable, IME-n
   (cached per stylesheet epoch, re-evaluated when the canvas's class/id/data-*/lang/dir change). The replacement PRESERVES SPECIFICITY (`:not(.hic-pad)` padding, `padReplacement` in `util/selector-rewrite.js`): a per-canvas rewrite, not a `:is(canvas, [data-hic-layer])` form, because that form would make every class-only author rule restyle the layer.
   The SAME pure rewriter produces the clone's CSS (replacement `[data-hic-root]`). Not bridged: `canvas + x`, `canvas ~ x` (siblings after the canvas),
   `:has()` crossing the boundary, author MutationObserver records on the canvas (the polyfill does not synthesize them; rows `tree-identity`, `selector-bridge`).
+- **Visibility bridge** (`live/visibility-bridge.js`): `Element.prototype.checkVisibility` is wrapped. For an element in a managed layer and a call with the opacity
+  check (`opacityProperty` or `checkOpacity`), the platform answers every other check, and the opacity of the element and its flat-tree ancestors up to the layer, then of
+  the canvas and its ancestors, decides the opacity part, as natively; the layer's own opacity (0 on Chromium and WebKit) is not counted. Other calls are the platform's.
+  `test/unit/live/visibility.browser.test.mjs` holds the answers of Chrome 157 with its native implementation (row `tree-identity`).
 - focus/scroll/IME: native, because the elements are real. Tab order follows layer position (after the canvas in DOM order = where the canvas
   fallback content would be). `overflow:clip` stops the layer itself scrolling when focus reveals an element; inner scrollers inside the
   drawable scroll natively; scrollers of the CANVAS's own ancestors are revealed by the polyfill (ADR-L). A drawable that is partly outside the canvas box is captured whole (the clip only restricts hit testing).
