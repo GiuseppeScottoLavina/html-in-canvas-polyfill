@@ -3,7 +3,7 @@
 // a wrong-mapper control (the next pattern of the same burst); the ambient mode; the action 'burst' through the effect handle; the GPU
 // time of the pass.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, untilRecreated, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { HEADER_FLOATS, PATTERN_MS, UNIFORM_FLOATS, fillGlitchFrame, mapGlitchPoint, meta, plugin } from '/plugins/glitch/index.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
 import { plugin as template } from '/plugins/_template/index.js';
@@ -94,8 +94,9 @@ gpuTest('device loss mid-burst: the host re-creates the plugin on a new device, 
   const { spy, log } = lossSpy(plugin);
   const { rig, mappers } = await presentOnce(t, spy, { ...BURST, split: false, sort: false, noise: false }, { scene, before: invalid });
   log.devices[0].destroy();
-  await until(() => log.devices.length >= 2, 3000);
+  await untilRecreated(log);
   assert.equal(log.devices.length, 2, 'create() ran again');
+  assert.equal(log.created, 2, 'and the new instance is ready');
   assert.equal(log.destroyed, 1, 'the old instance (observer, listeners) was destroyed');
   rig.source.dispatchEvent(new Event('invalid'));   // the validation hook of the new instance works (a burst on its next frame)
   rig.tick(performance.now() + 300);

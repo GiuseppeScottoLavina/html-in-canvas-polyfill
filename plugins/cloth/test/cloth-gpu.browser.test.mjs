@@ -2,7 +2,7 @@
 // (plugins/_shared/gpu-check.mjs), with the identity and the mapper of a frame a few steps earlier as controls; the cloth at rest is the
 // page, pixel for pixel; each action through the effect handle; a device loss while the cloth is held; and the GPU time.
 import { assert } from '/test/unit/lib/t.js';
-import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
+import { agreement, changedPixels, checkMapperAgainstGpu, gpuAvailable, gpuTest, identity, lossSpy, untilRecreated, markerScene, presentOnce, runActionOnGpu, until } from '/plugins/_shared/gpu-check.mjs';
 import { isNoTarget, meta, plugin, stateOf } from '/plugins/cloth/index.js';
 import { CLOTH, FLAT, S } from '/plugins/cloth/surface.js';
 import { measurePassGpuTime } from '/plugins/_shared/gpu-time.mjs';
@@ -185,8 +185,9 @@ gpuTest('device loss while the cloth is held: the host re-creates the plugin on 
   const { rig, mappers } = await presentOnce(t, spy, PLAIN, { scene, before: pull(CORNER, LIFTED) });
   assert.ok(isNoTarget(/** @type {any} */ (mappers.at(-1))({ x: W - 3, y: H - 3, width: W, height: H })), 'held before the loss');
   log.devices[0].destroy();
-  await until(() => log.devices.length >= 2, 3000);
+  await untilRecreated(log);
   assert.equal(log.devices.length, 2, 'create() ran again');
+  assert.equal(log.created, 2, 'and the new instance is ready');
   assert.notEqual(log.devices[1], log.devices[0]);
   assert.equal(log.destroyed, 1, 'the old instance (and its document listeners) was destroyed');
   pointer(rig, 'pointerup', LIFTED, 0);   // the gesture of the lost instance ends; the new instance never saw it
