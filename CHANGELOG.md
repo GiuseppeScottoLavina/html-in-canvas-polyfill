@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- `changedElements` now lists the drawables that Chrome's own implementation lists after two kinds of change, even when their pixels did not change:
+  - **A `width` or `height` write (property or attribute).** Every laid-out drawable is listed, except on a canvas with a 2D context written with its own size, which Chrome ignores.
+  - **A canvas transform or clip set to a new value or cleared** (`drawElementImage`, `updateElementGeometry`, `clearElementGeometry`). The drawable is listed by the next paint event.
+
+  Chrome lists every drawable it repaints in a frame, and these are two of its repaints. The official WICG webGL example depends on this: it attaches its paint handler after the first paint event and uploads only the drawables a later event lists. Through the polyfill it drew an empty scene at DPR 1, and now draws the same picture as Chrome (#150).
+
 ## [1.0.1] - 2026-11-19
 
 A fix release of 1.0.0. In `src/` only the effects change (every pipeline is compiled off the main thread, below) and the version; the core bundle is the same size as 1.0.0's (375,522 bytes minified, 128,154 gzip), the effects bundle 136 bytes larger (44,620). `npm run test:local` on main f01b224 (2026-11-19), with the reruns on this candidate: every stage passes but G-mobile's known Android listbox row. The first run's other reds were not the code: the field test gate (fixed below, PR #145), Safari's Allow Remote Automation found off (the Safari stages and the 7 mutants that need Safari then passed, the mutants caught 7 of 7), and the Android Emulator, whose Play Store updated Chrome (124 to 157, which ships the native implementation) and Gboard during the run (restored to the image's versions, the refusal and keyboard scenarios pass again).

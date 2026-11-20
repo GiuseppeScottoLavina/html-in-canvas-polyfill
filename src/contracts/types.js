@@ -643,6 +643,7 @@ export {};
  * @property {(record: CanvasRecord) => void} wake          arm one tick for the canvas WITHOUT damage and without a paint event (the effect host's frame hook after addPlugin/setOptions/resize/device recovery)
  * @property {(record: CanvasRecord) => void} unregister
  * @property {(record: CanvasRecord) => void} requestPaint  spec requestPaint(): sets record.paint.force, schedules the next opportunity
+ * @property {(record: CanvasRecord, elements: Element[]) => void} markChanged  list `elements` in the changedElements of this canvas's next paint event, whatever fires it (they join what the commits report; native lists every drawable it repainted, also with unchanged pixels). It requests no frame: an invalidation alone does not schedule one in Chromium
  * @property {(record: CanvasRecord) => boolean} paintNow  fire the paint of this canvas immediately (called from a microtask queued by the canvas width/height setters, so a ResizeObserver-driven resize redraws in the SAME frame). At most once per frame, never re-entrant (inside a dispatch it falls back to requestPaint); returns whether it fired
  * @property {(record: CanvasRecord, fps: number) => void} setFrameCap
  * @property {(record: CanvasRecord, hook: FrameHook) => () => void} addFrameHook  returns remove()

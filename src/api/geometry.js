@@ -50,6 +50,9 @@ export function createGeometryApi(env) {
       const o = geometryOptionsValues(opts);
       const { byElement, order } = record.geometry;
       let changed = false;
+      // Chromium invalidates the element when its canvas transform or clip is set to a new value (Element::SetCanvasTransform / SetCanvasClip): the next frame repaints it and
+      // lists it in that frame's paint event (the invalidation requests no frame of its own); the same values, or options without them, invalidate nothing
+      let repaint = false;
       let geometry = byElement.get(el);
       /** @type {Signature|undefined} */
       let sig = geometry && signatures.get(geometry);
@@ -65,6 +68,7 @@ export function createGeometryApi(env) {
         sig.values = o.transform.values;
         sig.is2D = o.transform.is2D;
         changed = true;
+        repaint = true;
       }
       if (o.clip) {
         const c = [o.clip.x, o.clip.y, o.clip.width, o.clip.height];
@@ -72,6 +76,7 @@ export function createGeometryApi(env) {
           geometry.clip = new DOMRect(c[0], c[1], c[2], c[3]);
           sig.clip = c;
           changed = true;
+          repaint = true;
         }
       }
       const index = order.indexOf(el);
@@ -80,13 +85,17 @@ export function createGeometryApi(env) {
         if (index >= 0) order.splice(index, 1);
         order.push(el);
       }
+      if (repaint) env.scheduler?.markChanged?.(record, [el]);
       if (!changed && !orderChanged) return;
       if (changed) record.layer?.applyGeometry(el, geometry, env.store.version(el)?.layoutOffset ?? null);
       if (orderChanged) record.layer?.setHitTestOrder(order.slice());
     },
 
     clear(record, el) {
+      const had = record.geometry.byElement.get(el);
       resetGeometry(record, el);
+      // Chromium invalidates an element whose canvas transform or clip is cleared (Element::ClearCanvasTransform / ClearCanvasClip)
+      if (had && (had.transform || had.clip)) env.scheduler?.markChanged?.(record, [el]);
     },
 
     get(record, el) {

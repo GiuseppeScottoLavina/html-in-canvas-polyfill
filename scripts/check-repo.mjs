@@ -232,7 +232,9 @@ if (!docsOnly) {
   // 17864 -> 17865 (2026-11-12, measured 17,865): a descendant's backdrop-filter gets a transparent background layer in the clone (+1: src/snapshot/capture/clone.js)
   // 17865 -> 17878 (2026-11-12, measured 17,878): the paint gate holds a change of more drawables than one round builds (+8: damage.js seq, pump.js, store.js
   // coherenceOpen) and the backdrop-filter refusal of the scroll compositor applies where the snapshot paints one (+5: scroll-pages.js paintsBackdrop)
-  if (total > 17878) problems.push(`G-size: core is ${total} code lines (> 17878)`);
+  // 17878 -> 17912 (2026-11-20, measured 17,912): changedElements lists what Chromium repaints after a width / height write and a new canvas transform or clip (+34:
+  // src/api/canvas-patch.js, src/api/geometry.js, src/schedule/scheduler.js markChanged; issue #150)
+  if (total > 17912) problems.push(`G-size: core is ${total} code lines (> 17912)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md
