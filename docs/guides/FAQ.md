@@ -145,7 +145,7 @@ What is tested:
 - a mutation suite of 95 seeded bugs, every one of which must be caught;
 - the official WPT tests, the four framework apps, and Firefox and Safari through WebDriver.
 
-CI runs the unit tests on Linux and Windows, G-bridged-translation on Linux, and 13 of the 19 gates, 36 of the 95 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
+CI runs the unit tests on Linux and Windows, G-bridged-translation on Linux, and 15 of the 21 gates, 38 of the 97 mutants, the framework apps and Firefox on macOS. What needs a 120 Hz display, a fast machine, continuous WebGPU frames, Safari 27, Chrome Canary (the WPT oracle) or the phone simulators runs on the maintainer's machine ([CONTRIBUTING.md](../../CONTRIBUTING.md#where-the-suites-run), [TEST-PLAN.md](../TEST-PLAN.md)).
 
 ## How was it developed?
 

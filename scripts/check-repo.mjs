@@ -236,7 +236,11 @@ if (!docsOnly) {
   // src/live/visibility-bridge.js and its wiring in src/api/compose.js)
   // 17924 -> 17959 (2026-11-20, measured 17,959): changedElements lists what Chromium repaints after a width / height write and a new canvas transform or clip (+35:
   // src/api/canvas-patch.js, src/api/geometry.js, src/schedule/scheduler.js markChanged; issue #150)
-  if (total > 17959) problems.push(`G-size: core is ${total} code lines (> 17959)`);
+  // 17959 -> 18061 (2026-11-21, measured 18,061, +102): the clicks of a re-targeted gesture (src/effects/click-guard.js and the two interposers) and the lossless
+  //   copy of a var() shorthand that the CSSOM serialises with empty declarations (src/snapshot/capture/css-collector.js sourceRules)
+  // 18061 -> 18096 (2026-11-21, measured 18,096, +35): the effect host's options `device` (the page's GPUDevice, or a function that returns it) and `alphaMode`
+  //   ('premultiplied': a transparent canvas) in src/effects/gpu-presenter.js, effect-host.js, effect-plugins.js, source-provider.js and index.js
+  if (total > 18096) problems.push(`G-size: core is ${total} code lines (> 18096)`);
   console.log(`checked ${files.length} files, ${total} code lines (comments and blanks not counted)`);
 
   // G-plugins: every folder of plugins/ (the template included, the shared test kit excluded) satisfies the folder contract of plugins/README.md

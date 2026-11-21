@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>G-interposer-clicks: rows in flight</title>
+<!-- G-interposer-clicks (test/gates/g-interposer-clicks.mjs), the rows-in-flight case: the pointer rests over row B, then __fly() moves the picture 42 css px down
+     in 300 ms (rows flying to their place after a sort), so row A is drawn under the resting pointer while row B lives there. ?interposer=0 creates the host without
+     the interposer (the positive control). The gate injects the core and the effects bundle before this page runs. -->
+<style>body{margin:0} #c{width:600px;height:400px;display:block} #src{width:600px;height:400px;background:#fff;font:16px sans-serif}
+table{border-collapse:collapse;margin:40px} td{height:40px;width:200px;padding:0 8px;border:1px solid #ccc} button{width:120px;height:30px}</style>
+<canvas id="c" content="drawable" width="600" height="400"><div id="src" drawable><table>
+<tr id="rowA"><td id="A">row A</td><td id="Acell"><button id="Abtn">A button</button></td></tr>
+<tr id="rowB"><td id="B">row B</td><td id="Bcell"><button id="Bbtn">B button</button></td></tr>
+</table></div></canvas>
+<script>
+window.__log = [];
+for (const type of ['pointerdown', 'pointerup', 'click'])
+  document.addEventListener(type, (e) => { const t = e.target; window.__log.push(type + ':' + (t.id || t.localName) + (e.isTrusted ? '' : '*')); }, true);
+const WGSL = `@group(0) @binding(0) var samp : sampler; @group(0) @binding(1) var source : texture_2d<f32>;
+@vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> { var p = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0)); return vec4<f32>(p[i], 0.0, 1.0); }
+@fragment fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> { return textureSample(source, samp, pos.xy / vec2<f32>(textureDimensions(source))); }`;
+// rows in flight: after __fly() everything flies 42 css px down in 300 ms (row A ends drawn over row B's place)
+const Flight = HTMLInCanvasEffects.definePlugin({ type: 'flight', apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true },
+  async create(context) {
+    const { device, format } = context;
+    const module = device.createShaderModule({ code: WGSL });
+    const pipeline = await device.createRenderPipelineAsync({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
+    const sampler = device.createSampler();
+    let dy = 0; let t0 = null; window.__fly = () => { t0 = performance.now(); };
+    return { spatial: true, continuous: true,
+      captureInputMapper() { const d = dy; return (p) => ({ x: p.x, y: p.y - d }); },
+      render(frame) {
+        dy = t0 === null ? 0 : 42 * Math.min(1, (performance.now() - t0) / 300);
+        const pass = frame.encoder.beginRenderPass({ colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+        if (frame.sourceReady) { const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: frame.sourceView }] }); pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); }
+        pass.end();
+      },
+      destroy() {} };
+  } });
+(async () => {
+  try {
+    const host = await HTMLInCanvasEffects.createHost(document.getElementById('c'), document.getElementById('src'), { interposer: new URLSearchParams(location.search).get('interposer') !== '0' });
+    window.__host = host;
+    await host.addPlugin(Flight, {});
+    await new Promise((r) => setTimeout(r, 800));
+    window.__ready = true;
+  } catch (e) { window.__err = String(e && e.stack || e); }
+})();
+</script>

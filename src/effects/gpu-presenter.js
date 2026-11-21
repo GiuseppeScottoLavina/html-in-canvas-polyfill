@@ -28,6 +28,8 @@ import { HicUnsupportedError, invalidState } from '../contracts/errors.js';
  * @typedef {Object} Presenter
  * @property {any} adapter @property {any} device @property {string} format  the canvas format: every target of the chain has it (`rgba16float` with `hdr`)
  * @property {boolean} hdr  extended range is in use (EffectHostOptions.hdr, where the browser takes the configuration)
+ * @property {'opaque'|'premultiplied'} alphaMode  EffectHostOptions.alphaMode: the canvas configuration and the alpha of every uploaded source
+ * @property {boolean} ownDevice  the host requested the device (false: options.device, which dispose() does not destroy)
  * @property {any} context  the GPUCanvasContext
  * @property {() => EffectViewport} viewport
  * @property {() => boolean} syncSize  apply css size * min(dpr, maxDpr) to the canvas backing store; true when it changed (the bitmap was cleared: render now)
@@ -54,6 +56,10 @@ struct V { @builtin(position) pos : vec4<f32>, @location(0) uv : vec2<f32> }
 @fragment fn fs(v : V) -> @location(0) vec4<f32> {
   let c = textureSample(tx, s, v.uv);
   return vec4<f32>(mix(vec3<f32>(${CLEAR.r}, ${CLEAR.g}, ${CLEAR.b}), c.rgb, c.a), 1.0);
+}
+// alphaMode 'premultiplied': the source is already premultiplied and its transparent parts stay transparent (no dark background)
+@fragment fn fsp(v : V) -> @location(0) vec4<f32> {
+  return textureSample(tx, s, v.uv);
 }`;
 
 /**
@@ -65,7 +71,22 @@ function noWebGpu(message) {
 }
 
 /**
- * Acquire adapter/device (options.powerPreference), then claim and configure canvas.getContext("webgpu") (never before: without an adapter or a device the canvas stays free for a 2D context) (InvalidStateError on a conflicting context), size the canvas to css*min(dpr,maxDpr). Rejects HicUnsupportedError("effect-plugins") without WebGPU.
+ * The device of `options.device`: a GPUDevice, or what a function returns (called at creation and again after a device loss). TypeError for anything else.
+ * @param {EffectHostOptions} options @returns {Promise<any>}
+ */
+async function givenDevice(options) {
+  const given = options.device;
+  const device = typeof given === 'function' ? await given() : given;
+  if (!device || typeof device !== 'object' || typeof device.createTexture !== 'function' || !device.queue || !device.lost) {
+    throw new TypeError(`createHost: options.device ${typeof given === 'function' ? 'returned something that is not a GPUDevice' : 'must be a GPUDevice, or a function that returns one'}`);
+  }
+  return device;
+}
+
+/**
+ * Acquire adapter/device (options.powerPreference), or take the page's (options.device: the host never destroys it), then claim and configure canvas.getContext("webgpu") (never before: without an adapter or a device the canvas stays free for a 2D context) (InvalidStateError on a conflicting context), size the canvas to css*min(dpr,maxDpr). Rejects HicUnsupportedError("effect-plugins") without WebGPU.
+ * options.alphaMode 'premultiplied': the canvas is configured premultiplied and the source is uploaded premultiplied, so every texture of the chain holds premultiplied
+ * colours and what the plugins leave transparent shows the page behind the canvas; 'opaque' (the default) shows black there.
  * @param {HTMLCanvasElement} canvas
  * @param {EffectHostOptions} options
  * @param {PresenterHooks} [hooks]
@@ -77,16 +98,26 @@ export async function createPresenter(canvas, options, hooks = {}) {
   if (!gpu) throw noWebGpu('WebGPU is not available in this browser, so effect plugins cannot run');
   // The canvas is claimed LAST: a canvas keeps its first context type for life, so claiming 'webgpu' before the adapter and the device exist
   // would leave a canvas that can no longer give the documented 2D fallback a context when either of them is missing.
-  const adapter = await gpu.requestAdapter(options.powerPreference ? { powerPreference: options.powerPreference } : undefined);
-  if (!adapter) throw noWebGpu('WebGPU is present but no adapter was returned');
-  const device = await adapter.requestDevice();
+  // a device the page gave (options.device) stays the page's: the host destroys only what it created on it
+  const own = options.device === undefined;
+  /** @type {any} */
+  let adapter = null;
+  /** @type {any} */
+  let device;
+  if (own) {
+    adapter = await gpu.requestAdapter(options.powerPreference ? { powerPreference: options.powerPreference } : undefined);
+    if (!adapter) throw noWebGpu('WebGPU is present but no adapter was returned');
+    device = await adapter.requestDevice();
+  } else device = await givenDevice(options);
+  const release = () => { if (own) device.destroy(); };
   const context = /** @type {any} */ (canvas.getContext('webgpu'));
   if (!context) {
-    device.destroy();
+    release();
     throw invalidState('canvas-context-conflict: the canvas already has another context type; effects need a canvas without a 2D/WebGL context');
   }
   const USAGE = win.GPUTextureUsage;
-  const config = { device, alphaMode: 'opaque', usage: USAGE.RENDER_ATTACHMENT | USAGE.COPY_DST | (hooks.extraCanvasUsage ?? 0) };
+  const alphaMode = options.alphaMode === 'premultiplied' ? 'premultiplied' : 'opaque';
+  const config = { device, alphaMode, usage: USAGE.RENDER_ATTACHMENT | USAGE.COPY_DST | (hooks.extraCanvasUsage ?? 0) };
   let format = gpu.getPreferredCanvasFormat();
   // Extended range (options.hdr): a float canvas with the `extended` tone mapping, where a value above 1 is shown brighter than white as far as the display can
   // (on a display without the headroom it is white, as in an 8-bit canvas). Used only where the browser reports the configuration back: one that does not know
@@ -103,9 +134,9 @@ export async function createPresenter(canvas, options, hooks = {}) {
   // the passthrough (the frame without a plugin) is compiled now, off the main thread where the browser can: Safari compiles a pipeline it has not
   // seen in about half a second, and one made with the synchronous call is compiled at its first use, on the main thread, freezing the page
   const passModule = device.createShaderModule({ label: 'hic-passthrough', code: PASSTHROUGH_WGSL });
-  const passDesc = { label: 'hic-passthrough', layout: 'auto', vertex: { module: passModule, entryPoint: 'vs' }, fragment: { module: passModule, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
+  const passDesc = { label: 'hic-passthrough', layout: 'auto', vertex: { module: passModule, entryPoint: 'vs' }, fragment: { module: passModule, entryPoint: alphaMode === 'premultiplied' ? 'fsp' : 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
   const passPipeline = await Promise.resolve(device.createRenderPipelineAsync ? device.createRenderPipelineAsync(passDesc) : device.createRenderPipeline(passDesc))
-    .catch((/** @type {any} */ error) => { context.unconfigure?.(); device.destroy(); throw error; });
+    .catch((/** @type {any} */ error) => { context.unconfigure?.(); release(); throw error; });
 
   let disposed = false;
   /** @type {EffectViewport} */
@@ -121,7 +152,10 @@ export async function createPresenter(canvas, options, hooks = {}) {
   let pass = null;
 
   device.lost.then((/** @type {{reason: string, message: string}} */ info) => { if (!disposed) hooks.onLost?.(info); });
-  device.addEventListener('uncapturederror', (/** @type {any} */ e) => { if (!disposed) hooks.onError?.(e.error); });
+  // removed at dispose: a device the page gave outlives the host (and may serve other hosts)
+  const onUncaptured = (/** @type {any} */ e) => { if (!disposed) hooks.onError?.(e.error); };
+  device.addEventListener('uncapturederror', onUncaptured);
+  const premultiplied = alphaMode === 'premultiplied';
 
   /** @param {number} w @param {number} h @param {string} [label] */
   function makeSource(w, h, label = 'hic-source') {
@@ -165,7 +199,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
 
   /** @type {Presenter} */
   const presenter = {
-    adapter, device, format, hdr, context,
+    adapter, device, format, hdr, alphaMode, ownDevice: own, context,
     viewport: () => vp,
     syncSize() {
       const css = hooks.cssSize?.() ?? { width: canvas.clientWidth, height: canvas.clientHeight };
@@ -187,7 +221,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
         src.texture.destroy();
         src = makeSource(size.width, size.height);
       }
-      const version = provider.upload(device, src.texture, true);
+      const version = provider.upload(device, src.texture, true, premultiplied);
       ready = version !== 0;
       return version;
     },
@@ -198,7 +232,7 @@ export async function createPresenter(canvas, options, hooks = {}) {
         under.texture.destroy();
         under = makeSource(size.width, size.height, 'hic-under');
       }
-      const version = provider.upload(device, under.texture, true);
+      const version = provider.upload(device, under.texture, true, premultiplied);
       underReady = version !== 0;
       return version;
     },
@@ -246,7 +280,8 @@ export async function createPresenter(canvas, options, hooks = {}) {
       src.texture.destroy();
       under?.texture.destroy();
       if (!keepContext) { try { context.unconfigure(); } catch { /* context already gone */ } }
-      device.destroy();
+      device.removeEventListener?.('uncapturederror', onUncaptured);
+      release();
     },
   };
   presenter.syncSize();

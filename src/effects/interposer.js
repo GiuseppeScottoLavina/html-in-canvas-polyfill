@@ -3,7 +3,10 @@
  * Module: gpu-effects (src/effects/**).
  *
  * Verified fact (Chrome 154): preventDefault on pointerdown suppresses mousedown, focus and caret placement on the natively hit element
- * but `click` still fires and a checkbox still toggles, so a re-targeted gesture must also swallow the click that follows its pointerup.
+ * but `click` still fires and a checkbox still toggles, so a re-targeted gesture must also swallow the click that follows its pointerup
+ * (and the `dblclick` after a second one): click-guard.js, which gives the element drawn under the release its own click.
+ * A press is re-targeted when the element the user sees is not the one the browser hit, compared by click unit (click-guard.js): the
+ * control around each, or the element itself where there is none (a drawn paragraph over a form must not click the form).
  * Pointer events themselves are NOT stopped: plugin listeners (water ripples) and page code keep seeing them, with the native target.
  * A mapper that returns NO_TARGET (no element is shown at that point) gets a swallowed gesture: no focus change, no activation, no click,
  * and nothing of the page is hovered.
@@ -15,7 +18,8 @@
  */
 
 import { invalidState } from '../contracts/errors.js';
-import { activate, controlOf, focusControl, isActivatable, isRange, openPicker, startRangeDrag } from './interposer-controls.js';
+import { clickUnit, commonAncestor, createClickGuard } from './click-guard.js';
+import { controlOf, focusControl, isRange, openPicker, startRangeDrag } from './interposer-controls.js';
 import { isNoTarget } from './no-target.js';
 
 /** @typedef {import('../contracts/types.js').CanvasRecord} CanvasRecord */
@@ -24,12 +28,12 @@ import { isNoTarget } from './no-target.js';
 /** @typedef {import('../contracts/types.js').InputPoint} InputPoint */
 /** @typedef {(p: InputPoint) => {x: number, y: number}} Mapper */
 /** @typedef {{left: number, top: number, sx: number, sy: number, width: number, height: number}} LayerFrame */
-/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, drag: ReturnType<typeof startRangeDrag>|null, tap?: {x: number, y: number, point: {x: number, y: number}}|null, finger?: {x: number, y: number, moved: boolean}}} Gesture */
+/** @typedef {{pointerId: number, map: Mapper, retargeted: boolean, control: Element|null, element?: Element|null, unit?: Element|null, drag: ReturnType<typeof startRangeDrag>|null, tap?: {x: number, y: number, point: {x: number, y: number}}|null, finger?: {x: number, y: number, moved: boolean}}} Gesture */
 
 /** css px a finger may travel and still tap: beyond it the press is a drag (a scroll, or a plugin's own gesture) and focuses or activates nothing */
 const TAP_SLOP = 10;
 
-const TYPES = /** @type {const} */ (['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'click']);
+const TYPES = /** @type {const} */ (['pointermove', 'pointerdown', 'pointerup', 'pointercancel']);
 
 /**
  * Capture listeners for pointermove/down/up/click; map through chain.captureGesture(); intended element = layer.elementAtPoint(mapped); hover/active follow it through tracker.setMappedTarget, the layer cursor is set from its computed cursor;
@@ -49,7 +53,7 @@ export function createInterposer(env, record, chain, tracker, under = null) {
   const counts = { remapped: 0, passedThrough: 0 };
   /** @type {Gesture|null} */
   let gesture = null;
-  let swallowClick = false;
+  const clicks = createClickGuard(win, layerEl);
   /** @type {Element|null} */
   let shown = null;
   let cursor = '';
@@ -136,9 +140,8 @@ export function createInterposer(env, record, chain, tracker, under = null) {
 
   /** @param {PointerEvent} e */
   function onDown(e) {
-    swallowClick = false;
-    if (!e.isPrimary || e.button !== 0) return;
-    if (!chain.active()) { counts.passedThrough += 1; follow(null); return; }
+    if (!e.isPrimary || e.button !== 0) { clicks.press(true); return; }
+    if (!chain.active()) { clicks.press(false); counts.passedThrough += 1; follow(null); return; }
     const map = chain.captureGesture();
     const { point, element, under: onUnder } = resolve(e, map);
     const finger = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, moved: false } : undefined;
@@ -150,18 +153,22 @@ export function createInterposer(env, record, chain, tracker, under = null) {
       // selection on the natively hit element, no activation on pointerup, no click; the focused element keeps the focus.
       counts.remapped += 1;
       e.preventDefault();
+      clicks.press(true);
       gesture = { pointerId: e.pointerId, map, retargeted: true, control: null, drag: null, finger };
       return;
     }
     const intended = controlOf(layerEl, element);
+    const unit = clickUnit(layerEl, element);
     const first = e.composedPath()[0];
     const range = isRange(intended);
     // a point on the under page is always re-targeted: what the browser hit natively there is the page above it
-    if (!onUnder && intended === controlOf(layerEl, first instanceof Element ? first : null) && !range) {
+    if (!onUnder && unit === clickUnit(layerEl, first instanceof Element ? first : null) && !range) {
+      clicks.press(false);
       counts.passedThrough += 1;
       gesture = { pointerId: e.pointerId, map, retargeted: false, control: intended, drag: null, finger };
       return;
     }
+    clicks.press(true);
     counts.remapped += 1;
     e.preventDefault();
     // a finger moves the focus when it lifts without having travelled, as on a page without effects: a press that becomes a scroll or a plugin's
@@ -173,7 +180,7 @@ export function createInterposer(env, record, chain, tracker, under = null) {
       try { layerEl.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
       drag.move(point.x);
     }
-    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, drag, tap, finger };
+    gesture = { pointerId: e.pointerId, map, retargeted: true, control: intended, element, unit, drag, tap, finger };
   }
 
   /** @param {Element|null} intended @param {{x: number, y: number}} point */
@@ -199,32 +206,24 @@ export function createInterposer(env, record, chain, tracker, under = null) {
     }
     // a finger: a tap (it did not travel) focuses, then activates; a drag does neither
     const touch = g.tap !== undefined && e.pointerType === 'touch' && !g.drag;
-    if (touch && !g.tap) { swallowClick = true; return; }
+    if (touch && !g.tap) { clicks.release(null); return; }
     if (g.tap) focusAt(g.control, g.tap.point);
-    // Click semantics: the release must land on the control the press started on.
-    if (g.control && !g.drag && isActivatable(g.control) && controlOf(layerEl, element) === g.control) activate(g.control);
-    else if (g.control && !g.drag && controlOf(layerEl, element) === g.control) openPicker(g.control);
-    swallowClick = true;
+    // Click semantics: the release must land on the click unit the press started on; the click goes to the element both hit, as natively
+    const target = !g.drag && point && g.unit && clickUnit(layerEl, element) === g.unit ? commonAncestor(g.element ?? null, element) : null;
+    if (target && g.control) openPicker(g.control);
+    clicks.release(target, point, e);
   }
 
   /** @param {PointerEvent} e */
   function onCancel(e) {
     if (gesture?.pointerId !== e.pointerId) return;
     gesture = null;
-    swallowClick = false;
+    clicks.cancel();
     try { layerEl.releasePointerCapture(e.pointerId); } catch { /* capture already released */ }
   }
 
-  /** A native click detail > 0 comes from a pointer; keyboard and script clicks (including our own activation) have detail 0 and pass. @param {MouseEvent} e */
-  function onClick(e) {
-    if (!swallowClick || e.detail === 0) return;
-    swallowClick = false;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }
-
   /** @type {Record<string, (e: any) => void>} */
-  const handlers = { pointermove: onMove, pointerdown: onDown, pointerup: onUp, pointercancel: onCancel, click: onClick };
+  const handlers = { pointermove: onMove, pointerdown: onDown, pointerup: onUp, pointercancel: onCancel };
   for (const type of TYPES) layerEl.addEventListener(type, handlers[type], { capture: true });
   // a finger's pointerleave follows its pointerup: the hover of its tap stays
   const onLeave = (/** @type {PointerEvent} */ e) => { if (!gesture && e.pointerType !== 'touch') follow(null); };
@@ -234,6 +233,7 @@ export function createInterposer(env, record, chain, tracker, under = null) {
     dispose() {
       for (const type of TYPES) layerEl.removeEventListener(type, handlers[type], { capture: true });
       layerEl.removeEventListener('pointerleave', onLeave);
+      clicks.dispose();
       gesture = null;
       follow(null);
     },

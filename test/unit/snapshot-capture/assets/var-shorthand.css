@@ -1,0 +1,2 @@
+/* test/unit/snapshot-capture/css.browser.test.mjs: a linked sheet whose rule the CSSOM serialises with empty declarations */
+.linked{border:solid var(--c);border-width:0 2px 2px 0}

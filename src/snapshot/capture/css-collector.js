@@ -75,6 +75,42 @@ function flattenNestedMedia(css, matches) {
   return serializeRules(walk(parseRules(css)));
 }
 
+/**
+ * A declaration the CSSOM serialises with an empty value. A shorthand whose value has a `var()` sets its longhands to a pending substitution, and when a later
+ * declaration of the same rule sets one of those longhands (`border: solid var(--c); border-width: 0 1.5px`) the shorthand cannot be serialised: the other
+ * longhands serialise as empty (CSSOM, "serialize a CSS declaration block"; Chrome 157, the same in `styleMap`), and the rule copied from `cssText` loses the
+ * whole shorthand (no style and no colour, so no border). Such a rule is copied as written in the sheet's own text instead (sourceRules).
+ */
+const LOSSY = /:\s*;/;
+
+/**
+ * The style rules of a sheet's own text that have a `var()`, as written, keyed by the `cssText` the browser makes of each: a rule of the CSSOM whose `cssText`
+ * has that key was written that way (a rule changed through the CSSOM since has another, and keeps its own).
+ * @param {string} text  @returns {Map<string, string>}  cssText -> the declarations as written
+ */
+function sourceRules(text) {
+  /** @type {Map<string, string>} */
+  const map = new Map();
+  /** @type {CSSStyleSheet} */
+  let scratch;
+  try { scratch = new CSSStyleSheet(); } catch { return map; }
+  /** @param {RuleNode[]} nodes */
+  const visit = (nodes) => {
+    for (const n of nodes) {
+      if (n.k === 'group') visit(n.kids ?? []);
+      else if (n.k === 'style' && n.body.includes('var(')) {
+        try {
+          scratch.replaceSync(`${n.pre}{${n.body}}`);
+          const r = scratch.cssRules[0];
+          if (r instanceof CSSStyleRule && !map.has(r.cssText)) map.set(r.cssText, n.body);
+        } catch { /* not a rule this browser parses */ }
+      }
+    }
+  };
+  visit(parseRules(text));
+  return map;
+}
+
 /** @param {CssBundle['pseudo']} pseudo @param {string} css @returns {CssBundle['pseudo']} with the neutral :hover selectors (computed once per bundle, i.e. per stylesheet change) */
 const withHoverScope = (pseudo, css) => {
   const scope = pseudo.hover ? hoverScope(css) : [];
@@ -111,23 +147,65 @@ export function createCssCollector(env) {
     try { return /hic-layer|\[data-hic/.test(sheet.cssRules[0]?.cssText ?? ''); } catch { return false; }
   };
 
+  /** sourceRules of the texts seen in the last bundle builds (a sheet's text is parsed again only when it changed) @type {Map<string, Map<string, string>>} */
+  const sources = new Map();
+  /** @param {string} text */
+  const sourceRulesOf = (text) => {
+    let map = sources.get(text);
+    if (!map) {
+      if (sources.size >= 32) sources.clear();
+      sources.set(text, (map = sourceRules(text)));
+    }
+    return map;
+  };
+
+  /**
+   * The text `sheet` was written with: a <style> element's own text, else the sheet's file (fetched through the resource cache: a sheet still loading is
+   * `pending`, and its lossy rules are copied as the CSSOM gives them until it is ready); null for a sheet without a text (a constructed one).
+   * @param {CSSStyleSheet} sheet @param {ResourceCache} resources @param {string[]} pending @returns {string|null}
+   */
+  const textWrittenOf = (sheet, resources, pending) => {
+    const owner = /** @type {Element|null} */ (sheet.ownerNode);
+    if (owner && owner.localName === 'style') return owner.textContent ?? '';
+    if (!sheet.href) return null;
+    const r = resolveResource(resources, sheet.href, 'css');
+    if (r.state === 'pending') { pending.push(sheet.href); return null; }
+    return r.state === 'ready' ? textOfDataUrl(r.url) : null;
+  };
+
+  /**
+   * @typedef {{sheet: CSSStyleSheet|null, text: string|null, resources: ResourceCache|null, pending: string[], map?: Map<string, string>|null}} Written
+   *   where the lossy rules of the sheet being walked find their text: `text` when the caller has it, else read from `sheet` at the first lossy rule
+   */
+  /** @param {CSSStyleRule} r @param {Written|undefined} written @returns {string} */
+  const ruleText = (r, written) => {
+    const css = r.cssText;
+    if (!written || !LOSSY.test(css)) return css;
+    if (written.map === undefined) {
+      const text = written.text ?? (written.sheet && written.resources ? textWrittenOf(written.sheet, written.resources, written.pending) : null);
+      written.map = text && text.includes('var(') ? sourceRulesOf(text) : null;
+    }
+    const body = written.map?.get(css);
+    return body === undefined ? css : `${r.selectorText}{${body}}`;
+  };
+
   /**
    * @param {CSSRuleList} rules
    * @param {string[]} out
+   * @param {Written} [written]
    */
-  const walk = (rules, out) => {
+  const walk = (rules, out, written) => {
     for (const r of Array.from(rules)) {
-      if (r instanceof CSSStyleRule) out.push(r.cssText.includes('@media') ? flattenNestedMedia(r.cssText, matches) : r.cssText);
-      else if (r instanceof CSSMediaRule) { if (matches(r.media.mediaText)) walk(r.cssRules, out); } else if (r instanceof CSSSupportsRule) { if (CSS.supports(r.conditionText)) walk(r.cssRules, out); } else if (r instanceof CSSImportRule) {
+      if (r instanceof CSSStyleRule) { const css = ruleText(r, written); out.push(css.includes('@media') ? flattenNestedMedia(css, matches) : css); } else if (r instanceof CSSMediaRule) { if (matches(r.media.mediaText)) walk(r.cssRules, out, written); } else if (r instanceof CSSSupportsRule) { if (CSS.supports(r.conditionText)) walk(r.cssRules, out, written); } else if (r instanceof CSSImportRule) {
         if (!r.styleSheet || !matches(r.media.mediaText) || (r.supportsText && !CSS.supports(r.supportsText))) continue;
         const inner = /** @type {string[]} */ ([]);
-        try { walk(r.styleSheet.cssRules, inner); } catch { continue; }
+        try { walk(r.styleSheet.cssRules, inner, written && { sheet: r.styleSheet, text: null, resources: written.resources, pending: written.pending }); } catch { continue; }
         const layer = r.layerName;
         out.push(layer === null ? inner.join('\n') : `@layer${layer ? ' ' + layer : ''}{${inner.join('\n')}}`);
       } else if (r instanceof CSSPageRule || r instanceof CSSNamespaceRule) continue;
       else if (r instanceof CSSGroupingRule) {
         out.push(r.cssText.slice(0, r.cssText.indexOf('{')) + '{');
-        walk(r.cssRules, out);
+        walk(r.cssRules, out, written);
         out.push('}');
       } else out.push(r.cssText);
     }
@@ -151,7 +229,7 @@ export function createCssCollector(env) {
     const base = sheet.href ?? doc.baseURI;
     let inlined;
     try {
-      walk(sheet.cssRules, parts);
+      walk(sheet.cssRules, parts, { sheet, text: null, resources, pending });
       inlined = inlineCssUrls(parts.join('\n'), base, resources);
     } catch {
       const r = resolveResource(resources, sheet.href ?? '', 'css');
@@ -161,9 +239,10 @@ export function createCssCollector(env) {
         return null;
       }
       const constructed = new CSSStyleSheet();
-      constructed.replaceSync(inlineCssUrls(textOfDataUrl(r.url), base, resources).css);
+      const text = inlineCssUrls(textOfDataUrl(r.url), base, resources).css;
+      constructed.replaceSync(text);
       parts.length = 0;
-      walk(constructed.cssRules, parts);
+      walk(constructed.cssRules, parts, { sheet: null, text, resources: null, pending });
       inlined = inlineCssUrls(parts.join('\n'), base, resources);
     }
     pending.push(...inlined.pending);

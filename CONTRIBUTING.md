@@ -51,8 +51,8 @@ The `CI macOS` workflow runs on GitHub's hosted `macos-15` runner: an Apple M1 v
 
 | suite | where | why |
 | --- | --- | --- |
-| 13 of the 19 Chrome gates (`npm run test:gates`: all but the six below), real + control | CI macOS: every pull request, nightly on main, release tags | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
-| mutation suite, the 35 mutants whose gates all run in CI | CI macOS: 9 of them on pull requests (each CI gate is targeted by one), all 35 nightly and on release tags (4 machines) | |
+| 15 of the 21 Chrome gates (`npm run test:gates`: all but the six below), real + control | CI macOS: every pull request, nightly on main, release tags | pixels, hit testing, typing, resize, DOM identity and listeners do not depend on the refresh rate |
+| mutation suite, the 38 mutants whose gates all run in CI | CI macOS: 12 of them on pull requests (each CI gate is targeted by one), all 38 nightly and on release tags (4 machines) | |
 | `test:examples` without WebGPU (basic, form, scroll-and-resize, webgl-texture, playground and the documentation smoke pages but wobble-plugin), `test:pages`, `test:frameworks`, `test:stress`, the platform probe | CI macOS: every pull request, nightly on main, release tags | headless Chrome with macOS fonts, controls and a GPU |
 | `test:xbrowser` on Firefox, all scenarios but scroll | CI macOS: every pull request, nightly on main, release tags | the runner image's Firefox and geckodriver, with WebGL forced on (`HIC_FIREFOX_PREFS`) |
 | the listener matrix (`test/xbrowser/listener-matrix.mjs`) on Firefox | CI macOS: every pull request, nightly on main, release tags | Chrome runs it in the browser unit tests; Safari locally (`npm run test:local`), for the reason of `test:xbrowser` on Safari |

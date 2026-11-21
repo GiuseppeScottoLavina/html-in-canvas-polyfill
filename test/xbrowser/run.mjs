@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // G-xbrowser: the most important scenarios on desktop Firefox, Safari and (optional) Safari Technology Preview through W3C WebDriver (test/harness/lib/webdriver.mjs), each judged against the
 // plain-DOM twin in the SAME engine, each with a positive control (a sabotaged run that must turn every declared check class red).
-//   node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=explainer,form,clickEffect,controls,resize,scroll,scrollCompose,unsupported,uninstall,decodeTiming] [--no-control] [--bundle-file=/abs/x.js]
+//   node test/xbrowser/run.mjs [--engine=firefox,safari,stp] [--only=explainer,form,clickEffect,controls,resize,scroll,scrollCompose,unsupported,uninstall,decodeTiming,cssVar] [--no-control] [--bundle-file=/abs/x.js]
 // One browser at a time. Safari is skipped (and reported NOT RUN, which fails the gate) when remote automation is not enabled on the machine.
 // Safari Technology Preview ('stp') is OPTIONAL: SKIPPED (the gate still passes) when it is not installed or its remote automation is not allowed. Its native surface
 // is read first: absent -> the polyfill scenarios, as on Safari, and the native-flag scenarios are reported SKIPPED with the reason; usable (its HTML-in-Canvas

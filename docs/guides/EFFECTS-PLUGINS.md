@@ -61,6 +61,8 @@ const host = await HTMLInCanvasEffects.createHost(canvas, source, { maxDpr: 2.5,
 | `interposer` | `true` | remap pointer input through the spatial plugins (section 14); `false` leaves input to the browser |
 | `hdr` | `false` | ask for extended range: the canvas and every target of the chain are `rgba16float` with the `extended` tone mapping, so a value above 1 that a plugin writes is shown brighter than white as far as the display can (white on a display without the headroom). In use only where the browser takes that configuration (`host.stats().hdr`); decided when the host is created. What the example plugins do with it: section 12.1 |
 | `under` | none | experimental, over the polyfill only: a second live page beneath the source, another drawable of the same canvas (section 12.2) |
+| `device` | none | experimental: the page's `GPUDevice`, shared by several hosts and your own WebGPU work instead of one device per host; the host never destroys it. Or a function that returns the current device, which the host calls again after a device loss (with a plain device the host stops on its last frame and fires `effecterror`) |
+| `alphaMode` | `'opaque'` | experimental: `'premultiplied'` makes the canvas transparent where the source and the plugins leave it so (every texture holds premultiplied colours; read it as `context.alphaMode`) |
 
 `createHost` rejects with:
 
@@ -306,7 +308,8 @@ Each plugin reads `frame.sourceView` (the source for the first plugin, the previ
 |---|---|
 | `apiVersion` | `2` |
 | `canvas`, `source` | the canvas and the drawable element the host samples |
-| `adapter`, `device`, `format` | the host's WebGPU adapter and device (a new one after a device loss: `create` runs again) and the canvas format (`rgba16float` with extended range) |
+| `adapter`, `device`, `format` | the host's WebGPU adapter and device (a new one after a device loss: `create` runs again; `adapter` is `null` when the page gave the device) and the canvas format (`rgba16float` with extended range) |
+| `alphaMode` | `'opaque'`, or `'premultiplied'` when the host was created with it: the source texture and every target hold premultiplied colours, and what you write with an alpha below 1 shows the page; clear to `{ r: 0, g: 0, b: 0, a: 0 }` to leave the background transparent |
 | `hdr` | `true` when the host uses extended range: every target is a float texture and a value above 1 is shown brighter than white (section 12.1) |
 | `under` | `true` when the host has an under page, a second live page beneath the source (section 12.2) |
 | `requestRender()` | asks for a frame (the host renders only when the source changed, on request, or every frame for a `continuous` instance) |
@@ -392,7 +395,7 @@ When a plugin moves pixels, the element under the pointer is not the element the
 - Several spatial plugins: the host composes their mappers, last plugin first.
 - Not every plugin moves pixels. A plugin that only tints or blurs is not `spatial` and has no mapper.
 
-What the host does with a mapper (the interposer, on by default; over a native implementation it moves the hit-test geometry instead, see the top of this guide): for `pointermove`, `pointerdown`, `pointerup` and `click` on the live layer it maps the pointer, finds the element at the mapped point, and when the native hit control differs it re-implements the activation (focus, button, link, checkbox, radio and label click on `pointerup`, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). End to end with trusted input, the interposer is checked through the example plugins in the gallery (`npm run test:plugins`); for other plugins only the mapper against the GPU pixels is checked (section 17).
+What the host does with a mapper (the interposer, on by default; over a native implementation it moves the hit-test geometry instead, see the top of this guide): for `pointermove`, `pointerdown` and `pointerup` on the live layer it maps the pointer, finds the element at the mapped point, and when it is not the one the browser hit (compared by control, or by element where there is no control) it re-implements the activation: focus, the click on `pointerup` at the element drawn there (it bubbles, so a button, link, checkbox, radio, label or summary activates) and a `dblclick` after a double click, `input[type=range]` value and `input`/`change` events during the gesture, text caret placement. The browser's own `click` and `dblclick` at the element it hit are swallowed before any listener of the page sees them; the pointer events stay there (your plugin's listeners read them). It does NOT re-target select popups, drag selection or contenteditable (`interposer-retarget` in `docs/SUPPORT-MATRIX.md`). End to end with trusted input, the interposer is checked through the example plugins in the gallery (`npm run test:plugins`); for other plugins only the mapper against the GPU pixels is checked (section 17).
 
 #### `NO_TARGET`: no element here
 

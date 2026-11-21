@@ -1,0 +1,2 @@
+/* G-css-var-shorthand: a sheet reached through @import */
+.v16 summary::before { content: ''; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 2px 2px 0; transform: rotate(-45deg); }

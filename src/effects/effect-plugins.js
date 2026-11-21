@@ -42,7 +42,7 @@ import { buildPluginContext, definePlugin, validateInstance } from './plugin-abi
 /**
  * What the plugin set needs from its host.
  * @typedef {Object} PluginHostIo
- * @property {() => {adapter: any, device: any, format: string, hdr?: boolean}} gpu  the CURRENT device (changes after a device loss)
+ * @property {() => {adapter: any, device: any, format: string, hdr?: boolean, alphaMode?: string}} gpu  the CURRENT device (changes after a device loss)
  * @property {() => EffectViewport} viewport
  * @property {() => void} requestRender
  * @property {() => boolean} reducedMotion  prefers-reduced-motion: reduce, now
@@ -70,9 +70,9 @@ export function createPluginSet(env, canvas, source, io) {
 
   /** @param {Slot} slot */
   function makeContext(slot) {
-    const { adapter, device, format, hdr } = io.gpu();
+    const { adapter, device, format, hdr, alphaMode } = io.gpu();
     return buildPluginContext(slot.def, {
-      canvas, source, adapter, device, format, hdr: hdr === true, under: io.under === true,
+      canvas, source, adapter, device, format, hdr: hdr === true, alphaMode: alphaMode === 'premultiplied' ? 'premultiplied' : 'opaque', under: io.under === true,
       requestRender: io.requestRender,
       trigger: (action, options) => ownTrigger(slot, action, options),
       viewport: io.viewport,

@@ -652,6 +652,29 @@ export async function decodeTiming(ctx) {
 }
 
 
+/** each var() case of the fixture and the case that has the same look without var() (a hex colour, the shorthand's literal value) */
+const CSS_VAR_PAIRS = [['v1', 'v3'], ['v5', 'v3'], ['v6', 'v3'], ['v7', 'v3'], ['v8', 'v9'], ['v11', 'v9'], ['v15', 'v3'], ['v13', 'v13b'], ['v14', 'v14b']];
+/**
+ * A shorthand with var() that a later longhand of the same rule partly overrides (`border: solid var(--c); border-width: 0 1.5px 1.5px 0`): Firefox 160 and Safari 27.2
+ * serialise such a rule with the shorthand's other longhands empty, as Chrome does, and on 1.0.2 the snapshot drew no border (16-34 px), moved a margin box (800 px)
+ * and changed a font (375-411 px). The oracle is the same engine: each var() case through the polyfill equals the same look written without var(), both drawn
+ * (test/gates/fixtures/css-var-shorthand, which G-css-var-shorthand compares with Chrome's own implementation).
+ */
+export async function cssVar(ctx) {
+  const { s } = ctx;
+  await s.navigate(url(ctx, '/test/gates/fixtures/css-var-shorthand/index.html', { bundle: ctx.bundle }));
+  await until(s, `typeof __painted === 'function' && __painted() >= document.querySelectorAll('canvas').length`, 15000);
+  await sleep(1500);
+  const r = await s.evaluate(`(() => { const px = __px(), ink = __ink(); const d = (a, b) => { let n = 0; for (let i = 0; i < a.length; i += 4) if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 16) n++; return n; };
+    return { mode: window.__HIC__?.installed?.mode ?? null, labels: __V, pairs: ${JSON.stringify(CSS_VAR_PAIRS)}.map(([a, b]) => ({ a, b, apart: d(px[a], px[b]), inkA: ink[a], inkB: ink[b] })) }; })()`, { timeoutMs: 20000 });
+  ctx.numbers.cssVar = r;
+  ctx.check('cssVar: the polyfill drew the page (mode polyfill)', r.mode === 'polyfill', r.mode, 'surface');
+  for (const p of r.pairs) {
+    ctx.check(`cssVar ${p.a} (${r.labels[p.a]}) equals ${p.b} (${r.labels[p.b]}), the same look without var(): ${p.apart} <= 2 px apart, both drawn`, p.apart <= 2 && p.inkA > 0 && p.inkB > 0, p, 'css-var');
+  }
+  await noErrors(ctx, 'cssVar');
+}
+
 /** Pixels with a channel delta > tol OUTSIDE `ex` (device px rect), and the image size; a, b same size. */
 function outsideDiff(a, b, ex, tol = 16) {
   if (a.width !== b.width || a.height !== b.height) return { count: -1, fraction: 1 };
@@ -1015,7 +1038,7 @@ export async function nativeExamples(ctx) {
 /** Run instead of SCENARIOS on an engine whose native implementation is usable. */
 export const NATIVE_SCENARIOS = { nativeSurface, nativeExplainer, nativeForm, nativeUninstall, nativeExamples };
 
-export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, scrollCompose, unsupported, uninstall, decodeTiming };
+export const SCENARIOS = { explainer, form, clickEffect, controls, interaction, inactive, resize, scroll, scrollCompose, unsupported, uninstall, decodeTiming, cssVar };
 /** classes each scenario's control must turn red; scrollCompose: on Safari (styled bars, a `share` check) the composed frames, the composed share and the cover check under an overlay (`cover`), with the system's classic bars also the knob against the twin (`bar-look`), on Firefox the composition classes only where the real run composed (DPR 1, overlay bars), else the refusal */
-export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share', 'cover', ...(row.checks.some((c) => c.cls === 'bar-look') ? ['bar-look'] : [])] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
+export const CONTROL_CLASSES = { explainer: ['pixel', 'hit', 'typing'], form: ['pixel', 'hit', 'typing'], clickEffect: ['hit', 'misplaced'], controls: ['control-look'], interaction: ['interaction-look'], inactive: ['inactive-look'], resize: ['pixel', 'blank', 'hit'], scroll: ['pixel', 'scroll'], scrollCompose: (row) => (row.checks.some((c) => c.cls === 'share') ? ['grid', 'share', 'cover', ...(row.checks.some((c) => c.cls === 'bar-look') ? ['bar-look'] : [])] : row.checks.some((c) => c.cls === 'grid') ? ['grid', 'refusal'] : ['refusal']), unsupported: ['report'], uninstall: ['identity'], decodeTiming: [], cssVar: ['css-var'], nativeSurface: [], nativeExplainer: ['pixel', 'typing'], nativeForm: ['pixel', 'hit', 'typing'], nativeUninstall: ['identity'], nativeExamples: ['pixel'] };
 export { KEYS };
