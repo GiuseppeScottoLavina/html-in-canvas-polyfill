@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>effects on a native implementation without the core</title>
+<!-- test/native-effects/g-native-loader.mjs: the module loader and the module effects entry, as a page that uses the effects only where the browser ships
+     HTML-in-Canvas would: `const r = await load(); if (r.status === 'native') installEffects().createHost(...)` (with the native API disabled, the loader installs the
+     polyfill and the effects run over it). window.__fx is the promise of {status, created, frames, error}. -->
+<canvas id="fx" content="drawable" width="300" height="150" style="width:300px;height:150px;display:block"><div id="src" drawable style="width:300px;height:150px;background:rgb(0,128,0);color:#fff;font:20px sans-serif">effects</div></canvas>
+<script type="module">
+  const canvas = document.getElementById('fx');
+  window.__fx = (async () => {
+    const { load } = await import('/dist/esm/loader.js');
+    const { installEffects } = await import('/dist/esm/effects.js');
+    const r = await load();
+    try {
+      const host = await installEffects().createHost(canvas, document.getElementById('src'));
+      for (let i = 0; i < 60 && host.stats().frames === 0; i += 1) await new Promise((ok) => setTimeout(ok, 50));
+      const frames = host.stats().frames;
+      host.destroy();
+      return { status: r.status, created: true, frames, error: null };
+    } catch (e) {
+      return { status: r.status, created: false, frames: 0, error: String(e && e.message || e) };
+    }
+  })();
+</script>

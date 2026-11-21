@@ -6,6 +6,9 @@
 // browser with the loader and with a plain <script> tag of the core (Resource Timing; the harness server does not compress).
 // With a plain <script> tag the core installs in mode native over the browser's implementation: HicInstalled.whenPainted is checked there against the
 // native paint events (test/gates/lib/when-painted.mjs: at once after a paint, also in an adopted shadow root; at the first paint; TimeoutError).
+// The effects without the core (test/fixtures/loader/native-effects.html: the module loader and the module effects entry): over the native implementation load()
+// answers 'native', installEffects().createHost() resolves and presents frames, and the page requests neither the core nor the native bridge (asked for by a library
+// built on the polyfill: the core was a 367 KB chunk of its bundle there). Control: with the native API disabled the core is downloaded.
 //   npm run build && node test/native-effects/g-native-loader.mjs --chrome=<Chrome 157+ or canary> [--no-control]
 import * as H from '../harness/index.mjs';
 import { whenPaintedChecks, whenPaintedProbe } from '../gates/lib/when-painted.mjs';
@@ -13,6 +16,7 @@ import { whenPaintedChecks, whenPaintedProbe } from '../gates/lib/when-painted.m
 const chrome = process.argv.find((a) => a.startsWith('--chrome='))?.slice(9) ?? 'canary';
 const control = !process.argv.includes('--no-control');
 const PAGE = '/test/fixtures/loader/native.html';
+const FX_PAGE = '/test/fixtures/loader/native-effects.html';
 // the module loader's core module and engines are chunks of dist/esm (chunks/loader-core-<hash>.js, chunks/engines-<hash>.js); the package entry must never be imported
 const BUNDLES = /\/dist\/(hic-live-polyfill|hic-live-engines|hic-live-native-bridge)\.iife(\.min)?\.js$|\/dist\/esm\/(index|native-bridge)\.js$|\/dist\/esm\/chunks\/(loader-core|engines)-\w+\.js$/;
 const CASES = [['classic', 'script=/dist/hic-live-loader.iife.js'], ['classic min', 'script=/dist/hic-live-loader.iife.min.js'], ['module', 'module=/dist/esm/loader.js']];
@@ -27,13 +31,13 @@ const MARKED = `(() => {
   return out;
 })()`;
 
-/** @param {any} browser @param {any} srv @param {string} query */
-async function visit(browser, srv, query) {
+/** @param {any} browser @param {any} srv @param {string} query @param {string} [path] @param {string} [result] */
+async function visit(browser, srv, query, path = PAGE, result = 'window.__load') {
   const page = await browser.newPage({ reuseFirst: false });
   srv.requests.length = 0;
   try {
-    await page.navigate(`${srv.url}${PAGE}?${query}`);
-    const r = await page.evaluate('window.__load');
+    await page.navigate(`${srv.url}${path}?${query}`);
+    const r = await page.evaluate(result);
     await H.sleep(300);
     const resources = await page.evaluate('performance.getEntriesByType("resource").map((e) => ({ path: new URL(e.name).pathname, bytes: e.encodedBodySize }))');
     const marked = await page.evaluate(MARKED);
@@ -63,6 +67,18 @@ try {
       console.log(`${bad.length ? 'FAIL' : 'ok  '} native, ${label}: status ${v.r?.status}, ${v.requests.length} requests (${v.requests.join(', ')}), ${bytes[label]} bytes of scripts, decided in ${v.r?.ms?.toFixed(1)} ms${bad.length ? ' :: ' + bad.join(' | ') : ''}`);
       problems.push(...bad.map((b) => `native, ${label}: ${b}`));
     }
+    {
+      const v = await visit(browser, srv, '', FX_PAGE, 'window.__fx');
+      const bad = [];
+      if (v.r?.status !== 'native') bad.push(`load() answered ${v.r?.status}`);
+      if (!v.r?.created || !(v.r?.frames > 0)) bad.push(`createHost: ${v.r?.created ? `no frame presented (${v.r?.frames})` : v.r?.error}`);
+      if (v.bundles.length) bad.push(`requested ${v.bundles.join(', ')}`);
+      if (v.marked.length) bad.push(`patched by the polyfill: ${v.marked.join(', ')}`);
+      if (v.installedSlot || v.coreGlobal) bad.push('the core is on the page');
+      bytes['module loader + effects'] = v.resources.reduce((n, e) => n + e.bytes, 0);
+      console.log(`${bad.length ? 'FAIL' : 'ok  '} native, module loader + effects without the core: status ${v.r?.status}, host created ${v.r?.created}, ${v.r?.frames} frames, ${v.requests.length} requests, ${bytes['module loader + effects']} bytes of scripts${bad.length ? ' :: ' + bad.join('; ') : ''}`);
+      problems.push(...bad.map((b) => `native, module loader + effects: ${b}`));
+    }
     for (const [label, query] of [['plain core script tag', 'script=/dist/hic-live-polyfill.iife.js'], ['plain core script tag, min', 'script=/dist/hic-live-polyfill.iife.min.js']]) {
       const v = await visit(browser, srv, query);
       bytes[label] = v.resources.reduce((n, e) => n + e.bytes, 0);
@@ -91,6 +107,10 @@ try {
         console.log(`${caught ? 'ok  ' : 'FAIL'} CONTROL native disabled, ${label}: status ${v.r?.status}, bundles ${v.bundles.join(', ')}, ${v.marked.length} marked members`);
         if (!caught) problems.push(`CONTROL ${label}: with the native API disabled the checks must see a download and an install`);
       }
+      const v = await visit(off, srv, '', FX_PAGE, 'window.__fx');
+      const caught = v.r?.status === 'polyfill' && v.bundles.length > 0;
+      console.log(`${caught ? 'ok  ' : 'FAIL'} CONTROL native disabled, module loader + effects: status ${v.r?.status}, bundles ${v.bundles.join(', ')}, host created ${v.r?.created}`);
+      if (!caught) problems.push('CONTROL module loader + effects: with the native API disabled the checks must see the core downloaded');
     } finally { await off.close().catch(() => {}); }
   }
 } finally { await srv.close().catch(() => {}); }

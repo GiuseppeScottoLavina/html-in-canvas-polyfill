@@ -62,12 +62,23 @@ export function createEffects(env, deps) {
 /**
  * The EffectsApi of a window, bound late: every call looks the installed core up (EXT.INSTALLED_KEY -> EXT.EFFECTS_SEAM_KEY), so the effects bundle can load before
  * install() ran, and after uninstall() createHost rejects instead of touching a dead install. Hosts are destroyed by the core's uninstall (seam.cleanups).
+ * Without an installed core, `fallback` may give a seam of its own (src/effects.js nativeSeam: over a browser's own HTML-in-Canvas, where the core would step
+ * aside); it is asked again until it gives one, and an installed core always comes first.
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
  * @param {Window} win
+ * @param {(win: Window) => EffectsSeam|null} [fallback]
  * @returns {EffectsApi}
  */
-export function createLateEffects(win) {
-  const seamOf = () => /** @type {EffectsSeam|undefined} */ (/** @type {any} */ (win)[EXT.INSTALLED_KEY]?.[EXT.EFFECTS_SEAM_KEY]);
+export function createLateEffects(win, fallback) {
+  /** @type {EffectsSeam|null} */
+  let own = null;
+  /** @returns {EffectsSeam|undefined} */
+  const seamOf = () => {
+    const core = /** @type {EffectsSeam|undefined} */ (/** @type {any} */ (win)[EXT.INSTALLED_KEY]?.[EXT.EFFECTS_SEAM_KEY]);
+    if (core) return core;
+    if (!own && fallback) own = fallback(win);
+    return own || undefined;
+  };
   return Object.freeze({
     version: /** @type {const} */ (2),
     definePlugin,
@@ -75,14 +86,14 @@ export function createLateEffects(win) {
     isNoTarget,
     async createHost(canvas, source, options) {
       const seam = seamOf();
-      if (!seam) throw invalidState('HTMLInCanvasEffects needs the installed polyfill: load the core bundle first and let it install (or call install())');
+      if (!seam) throw invalidState('HTMLInCanvasEffects needs the installed polyfill: load the core bundle first and let it install (or call install()); over a browser\'s own HTML-in-Canvas the effects run without it');
       if (!seam.effects) {
         const effects = (seam.effects = createEffects(seam.env, seam.deps));
         seam.cleanups.add(() => effects.dispose());
       }
       return seam.effects.createHost(canvas, source, options);
     },
-    dispose() { seamOf()?.effects?.dispose(); },
+    dispose() { seamOf()?.effects?.dispose(); own?.dispose(); },
   });
 }
 
