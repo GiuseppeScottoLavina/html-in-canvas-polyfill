@@ -1,7 +1,13 @@
 <!doctype html><meta charset="utf-8"><title>G-css-var-shorthand</title>
 <!-- G-css-var-shorthand (test/gates/g-css-var-shorthand.mjs): one canvas per case, each drawing its drawable at (0, 0) in every paint event. A shorthand with
      var() that a later longhand of the same rule partly overrides (v1, the case reported: a summary::before chevron), against the same look written without
-     var() or with longhands (v3, v4, v7, v9, v12: the baselines). The gate compares every canvas with Chrome's own implementation of the page. -->
+     var() or with longhands (v3, v4, v7, v9, v12, v13b, v14b: the baselines). The gate compares every canvas with Chrome's own implementation of the page, and it
+     injects the core itself; G-xbrowser's cssVar scenario (Firefox, Safari: no native implementation) loads it through ?bundle= and compares each var() case with
+     its baseline in the same engine. -->
+<script>
+  // ?bundle=a.js,b.js: classic scripts loaded before the page script, as the shared fixtures do (test/fixtures/shared/boot.js)
+  for (const src of (new URLSearchParams(location.search).get('bundle') || '').split(',').filter(Boolean)) document.write('<script src="' + src + '"><\/script>');
+</script>
 <link rel="stylesheet" href="ext.css">
 <style>
 :root { --loom-holo: #e0218a; }
@@ -22,17 +28,19 @@ summary { list-style: none; padding: 20px; }
 .v10 summary::before { content: ''; display: inline-block; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 2px 2px 0; transform: rotate(-45deg); }
 .v13 .m { --mm: 30px; margin: var(--mm); margin-left: 60px; }
 .v14 .f { --ff: bold 30px serif; font: var(--ff); font-size: 30px; color: #e0218a; padding: 10px; }
+.v13b .m { margin: 30px; margin-left: 60px; }
+.v14b .f { font: bold 30px serif; font-size: 30px; color: #e0218a; padding: 10px; }
 .v11 .box { display: inline-block; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
 </style>
 <div id="wrap"></div>
 <script>
-const V = { v1: 'var 1.5 rot', v2: 'var 2 rot', v3: 'hex 1.5 rot', v4: 'red 2 rot', v5: 'var 1.5 norot', v6: 'var(local) 1.5 rot', v7: 'longhand var 1.5 rot', v8: 'ib var 1.5 rot', v9: 'ib hex 1.5 rot', v10: 'ib var 2 rot', v11: 'element ib var 1.5 rot', v12: 'inline attr var 1.5', v13: 'margin var + override', v14: 'font var + override', v15: 'link + @media', v16: '@import' };
+const V = { v1: 'var 1.5 rot', v2: 'var 2 rot', v3: 'hex 1.5 rot', v4: 'red 2 rot', v5: 'var 1.5 norot', v6: 'var(local) 1.5 rot', v7: 'longhand var 1.5 rot', v8: 'ib var 1.5 rot', v9: 'ib hex 1.5 rot', v10: 'ib var 2 rot', v11: 'element ib var 1.5 rot', v12: 'inline attr var 1.5', v13: 'margin var + override', v14: 'font var + override', v15: 'link + @media', v16: '@import', v13b: 'margin literal + override', v14b: 'font literal + override' };
 const wrap = document.getElementById('wrap');
 for (const [k] of Object.entries(V)) {
   const inner = k === 'v11' ? '<div style="padding:20px"><span class="box"></span></div>'
     : k === 'v12' ? '<div style="padding:20px"><span style="display:inline-block;width:7px;height:7px;border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0"></span></div>'
-    : k === 'v13' ? '<div class="m"><span style="display:inline-block;width:20px;height:20px;background:#e0218a"></span></div>'
-    : k === 'v14' ? '<div class="f">Ag</div>'
+    : k === 'v13' || k === 'v13b' ? '<div class="m"><span style="display:inline-block;width:20px;height:20px;background:#e0218a"></span></div>'
+    : k === 'v14' || k === 'v14b' ? '<div class="f">Ag</div>'
     : '<details><summary></summary></details>';
   wrap.insertAdjacentHTML('beforeend', `<canvas id="${k}" width="120" height="60" content="drawable"><div class="src ${k}${k === 'v6' ? ' local' : ''}" drawable>${inner}</div></canvas>`);
 }

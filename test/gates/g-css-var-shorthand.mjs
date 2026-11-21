@@ -4,7 +4,7 @@
 // the polyfill (a summary::before chevron, 1.5 px or 2 px alike); the same loss moved a `margin: var()` box and changed a `font: var()` text.
 //   pixel     every case's canvas equals native's: delta > 16 on at most LIMIT pixels, and native draws something there. The cases: the chevron of the report
 //             (v1) and its variants (2 px, not rotated, the variable on the element, inline-block, a real element instead of the pseudo-element), margin and font,
-//             a linked sheet inside @media and a sheet reached through @import; the same look without var() or with longhands is the baseline (v3, v4, v7, v9, v12).
+//             a linked sheet inside @media and a sheet reached through @import; the same look without var() or with longhands is the baseline (v3, v4, v7, v9, v12, v13b, v14b).
 //   surface   both pages paint every canvas, no page error.
 // DPR 1: at DPR 2 a 1.5 px border on these 1x canvases differs from native with or without var() (the baselines too, the same before the fix): another matter.
 // Positive control (sabotage lossycss: the sheet's own text cannot be parsed): the var() cases go red, the baselines stay green.
