@@ -37,6 +37,11 @@ export function createEffects(env, deps) {
       if (!(canvas instanceof win.HTMLCanvasElement)) throw typeError('createHost: `canvas` must be an HTMLCanvasElement');
       if (!(source instanceof win.Element)) throw typeError('createHost: `source` must be an Element');
       if (options !== undefined && (options === null || typeof options !== 'object')) throw typeError('createHost: `options` must be an object');
+      const given = options?.device;
+      if (given !== undefined && typeof given !== 'function' && (given === null || typeof given !== 'object' || typeof given.createTexture !== 'function')) {
+        throw typeError('createHost: options.device must be a GPUDevice, or a function that returns one');
+      }
+      if (options?.alphaMode !== undefined && options.alphaMode !== 'opaque' && options.alphaMode !== 'premultiplied') throw typeError("createHost: options.alphaMode must be 'opaque' or 'premultiplied'");
       const host = await createEffectHost(env, deps, canvas, source, options);
       hosts.add(host);
       return Object.freeze({

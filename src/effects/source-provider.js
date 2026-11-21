@@ -63,7 +63,7 @@ export function createStoreSourceProvider(env, record, source) {
       if (!v || !r) return null;
       return { width: Math.max(1, Math.round(r.sw)), height: Math.max(1, Math.round(r.sh)), cssWidth: v.width, cssHeight: v.height };
     },
-    upload(device, texture, onlyDirty) {
+    upload(device, texture, onlyDirty, premultiplied = false) {
       const v = env.store.version(source);
       const full = v && fullRaster(v);
       if (!v || !full) return 0;
@@ -81,7 +81,7 @@ export function createStoreSourceProvider(env, record, source) {
       if (copy.w > 0 && copy.h > 0) {
         device.queue.copyExternalImageToTexture(
           { source: full.source, origin: { x: fx + copy.x, y: fy + copy.y } },
-          { texture, origin: { x: copy.x, y: copy.y } },
+          { texture, origin: { x: copy.x, y: copy.y }, premultipliedAlpha: premultiplied },
           [copy.w, copy.h],
         );
       }
@@ -182,9 +182,9 @@ export function createNativeSourceProvider(env, canvas, source) {
       if (version === null || !g || css.width <= 0 || css.height <= 0) return null;
       return { width: g.width, height: g.height, cssWidth: css.width, cssHeight: css.height };
     },
-    upload(device, texture) {
+    upload(device, texture, _onlyDirty, premultiplied = false) {
       try {
-        device.queue.drawElementImageToTexture({ source }, { texture, size: { width: texture.width, height: texture.height } });
+        device.queue.drawElementImageToTexture({ source }, { texture, size: { width: texture.width, height: texture.height }, premultipliedAlpha: premultiplied });
       } catch (error) {
         // no element image yet (InvalidStateError before the first paint, or the source left the canvas): nothing uploaded
         if (/** @type {any} */ (error)?.name === 'InvalidStateError') return 0;

@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Effects (experimental): `createHost(canvas, source, { device })` uses a `GPUDevice` the page owns instead of requesting one per host, so several hosts and the page's own WebGPU work share one device; the host never destroys it (`destroy()` releases only what the host made on it). It can also be a function that returns the current device, which the host calls again after a device loss: a plain `GPUDevice` cannot come back, and on its loss the host fires `effecterror` (phase `recover`) and stays on its last frame. A plugin's `context.adapter` is `null` on such a host. Asked for by a library built on the polyfill. Unit tests `test/unit/gpu-effects/host-device-alpha.browser.test.mjs`, with controls: a host that destroys the given device, and one that tries to recover a lost one, each fail a test.
+- Effects (experimental): `createHost(canvas, source, { alphaMode: 'premultiplied' })` makes the canvas transparent where the source and the plugins leave it so, instead of an opaque rectangle (a dialog or a popover with rounded corners drawn through an effect). The source is uploaded premultiplied and every texture of the chain holds premultiplied colours; plugins read it as `context.alphaMode`. The default stays `'opaque'`. Measured with a page screenshot, the page's green showing at the transparent corner and the colours unchanged inside: Chrome 157 over the polyfill and over its own implementation, Firefox 160 and Safari 27.2. The example plugins clear their targets to an opaque colour, which then shows there. Control: without the premultiplied upload, the half-transparent test colour comes out wrong.
+
 ### Fixed
 
 - Effects, the interposer: a click that an effect sends to another element than the one under the pointer clicked both. Found by a library built on the polyfill: with a spatial plugin that draws an element A where the page has an element B, a click over B gave A its click and B the browser's own trusted click as well; B can be a button. Measured with trusted input on Chrome 157, against Chrome's own implementation of the same page (one trusted click, at A, in every case):

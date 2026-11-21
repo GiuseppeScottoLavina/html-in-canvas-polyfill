@@ -406,15 +406,15 @@ unique names matching `/^[a-z][a-z0-9-]{0,31}$/` (frozen copy), else `TypeError`
 turn true; `revealsUnder`, a boolean, is read after every presented frame on a host with an under page: 7.3). Any other `apiVersion` (including the pre-release ABI 1) is a `TypeError`. A `spatial` plugin MUST provide
 `captureInputMapper`; a plugin whose definition declares `actions` MUST provide `runAction(action, options, info)` and `settled()`, and
 one without `actions` must not provide `runAction` (`addPlugin` rejects with `TypeError` otherwise, and destroys the instance). The context
-is `{apiVersion, canvas, source, adapter, device, format, hdr, under, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
-trigger(action, options?)}` (`under`: the host has an under page, 7.3) (`localPoint`: a point of the canvas, in canvas-relative CSS pixels of the content box, through the input mappers
+is `{apiVersion, canvas, source, adapter, device, format, hdr, alphaMode, under, requestRender(), viewport(), listen(type, listener, options), localPoint(point),
+trigger(action, options?)}` (`under`: the host has an under page, 7.3; `alphaMode`: the host's, 7.3; `adapter`: `null` on a host that uses the page's device, 7.3) (`localPoint`: a point of the canvas, in canvas-relative CSS pixels of the content box, through the input mappers
 of the plugins added after this one in the newest presented frame, so where that point is in the picture this plugin rendered; `null` where a
 later plugin shows nothing of it; `{x, y, under: true}` where a later plugin shows the under page there; the point itself for the last plugin); the `ui` of `mountUI(root, ui)` is `{canvas, getOptions(), setOptions(patch), requestRender(), trigger(action, options?)}`.
 Types: `EffectPluginDefinition`, `EffectPluginContext`, `EffectRenderFrame`, `EffectPluginInstance`, `EffectActionState`,
 `EffectActionInfo` in `contracts/types.js`.
 
 ### 7.3 Effect host
-`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer, hdr, under})` -> `EffectHost`
+`await HTMLInCanvasEffects.createHost(canvas, source, {maxDpr, powerPreference, interposer, hdr, under, device, alphaMode})` -> `EffectHost`
 `{pluginCount, addPlugin(def, options) -> Promise<EffectHandle>, stats(), mapPoint(point), destroy()}` (`mapPoint`: a point of the canvas, in
 canvas-relative CSS pixels of the content box, through every plugin's input mapper in the newest presented frame: the point in the source, or `null`
 where the plugins show nothing of it; `{x, y, under: true}` where they show the under page).
@@ -431,7 +431,19 @@ where the plugins show nothing of it; `{x, y, under: true}` where they show the 
   value above 1 that a plugin writes is shown brighter than white as far as the display can. It is used only where the browser reports that configuration
   back (`stats().hdr`, `context.hdr` of a plugin); elsewhere, and by default, the canvas has the browser's preferred 8-bit format and clamps at white.
   Decided when the host is created and again after a device loss.
-- Acquires an adapter/device, configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
+- `device` (experimental): a `GPUDevice` the page owns, used instead of one the host requests (`powerPreference` is then ignored), so that several hosts and the
+  page's own WebGPU work share one device; or a function that returns the current `GPUDevice` (or a promise of it), called when the host is created and again
+  after a device loss. The page keeps it: `destroy()` and a failed `createHost` release only what the host made on it, and its `uncapturederror` listener.
+  A plain `GPUDevice` cannot come back after its loss: the host fires `effecterror` (`type: 'host'`, `phase: 'recover'`) and stays on its last frame. With a
+  function the host recovers as with its own device; a function that returns the lost device again gets the same `effecterror`. A plugin's `context.adapter` is
+  `null` on such a host. Anything else than a `GPUDevice` or a function is a `TypeError` (also a function that returns something else).
+- `alphaMode` (experimental): `'opaque'` (default) or `'premultiplied'`. With `'premultiplied'` the canvas is configured premultiplied and the source (and the
+  under page) is uploaded premultiplied (`premultipliedAlpha: true` of `copyExternalImageToTexture`, or of `drawElementImageToTexture` over a native
+  implementation), so every texture of the chain holds premultiplied colours: what the source leaves transparent, and what a plugin writes with an alpha below 1,
+  shows the page behind the canvas, so a dialog or a popover drawn through an effect need not be a rectangle. The host without a plugin writes the source as it
+  is (with `'opaque'` it paints a dark background where the source is transparent). A plugin reads it as `context.alphaMode`; one that clears its target to
+  an opaque colour shows that colour there (the plugins of this repository do). Any other value is a `TypeError`.
+- Acquires an adapter/device (or takes `device`), configures `canvas.getContext('webgpu')`. If the canvas already has another context type the promise
   rejects with `InvalidStateError` (`canvas-context-conflict`); no WebGPU -> rejects with `HicUnsupportedError('effect-plugins')`.
 - `source` must be an eligible drawable (else `InvalidStateError`). The host reads source pixels through a `SourceProvider` (the
   `SnapshotStore` in polyfill mode, `GPUQueue.drawElementImageToTexture` in the native modes: section 7.6), uploads only when `version()` advanced, renders the

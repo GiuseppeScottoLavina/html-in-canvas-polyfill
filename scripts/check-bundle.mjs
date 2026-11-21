@@ -282,7 +282,9 @@ const LIMITS = {
   //   (Safari froze the page at a synchronous pipeline's first use)
   // 44.75 -> 46 KB, gzip 15.75 -> 16.25 KB (+1,277 / +475 bytes over 1.0.2, 2026-11-21, measured 45,897 / 16,091): the clicks of a re-targeted gesture (click-guard.js):
   //   the native click and dblclick swallowed at the window, the drawn element's own click at the mapped point, the click unit of a press without a control
-  'hic-live-effects.iife.min.js': { target: 46 * KB, ceiling: 46 * KB, gzip: 16.25 * KB },
+  // 46 -> 47.75 KB, gzip 16.25 -> 16.75 KB (+1,722 / +493 bytes, 2026-11-21, measured 47,619 / 16,584): the host options `device` (the page's GPUDevice or a function
+  //   that returns it, its loss reported with what to do) and `alphaMode` ('premultiplied': premultiplied uploads and passthrough)
+  'hic-live-effects.iife.min.js': { target: 47.75 * KB, ceiling: 47.75 * KB, gzip: 16.75 * KB },
   // 11 -> 11.5 KB (2026-10-14): getElementImageDefaultSize over the earlier ElementImage.width/height (measured 11,132 / 4,295)
   // 11.5 -> 14 KB, gzip 4.5 -> 5.5 KB (+2,581 / +957 bytes, 2026-10-16, measured 13,857 / 5,307): Safari Technology Preview's HTML-in-Canvas internal feature, measured
   //   live (paint requests for a build that fires paint only from requestPaint(), the standard size of a sizeless draw, no transform rule on a build without geometry methods)

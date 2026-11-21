@@ -522,6 +522,7 @@ class HostRuntime {
     this.recovering = true;
     this.counters.deviceLosses += 1;
     const t = this.env.now();
+    const lost = this.presenter?.device;
     this.lossTimes = this.lossTimes.filter((x) => t - x < LOSS_WINDOW_MS);
     this.lossTimes.push(t);
     this.env.reporter.caught(new Error(`GPUDevice lost (${info.reason}): ${info.message}`), 'effects:device-lost');
@@ -529,9 +530,18 @@ class HostRuntime {
       this.giveUp(new Error(`GPUDevice lost ${this.lossTimes.length} times within ${LOSS_WINDOW_MS} ms; the effect stays on its last frame`));
       return;
     }
+    // a device the page gave is the page's to make again: a GPUDevice cannot come back, a function is asked for the current one
+    if (this.opts.device !== undefined && typeof this.opts.device !== 'function') {
+      this.giveUp(new Error(`the GPUDevice of options.device was lost (${info.reason}); the effect stays on its last frame. Create the host again with a new device, or pass options.device as a function that returns the current one`));
+      return;
+    }
     try {
       const next = await this.openPresenter();
       if (this.destroyed) { next.dispose(); return; }
+      if (next.device === lost) {
+        next.dispose();
+        throw new Error('options.device returned the GPUDevice that was lost; it must return a new one');
+      }
       const old = this.presenter;
       this.presenter = next;
       old.dispose(true);

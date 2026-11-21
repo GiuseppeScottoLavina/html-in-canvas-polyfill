@@ -707,8 +707,10 @@ export {};
  * @property {2} apiVersion
  * @property {HTMLCanvasElement} canvas
  * @property {Element} source   the drawable the host samples
- * @property {any} adapter
+ * @property {any} adapter  null when the host uses a device the page gave (EffectHostOptions.device)
  * @property {any} device
+ * @property {'opaque'|'premultiplied'} alphaMode  EffectHostOptions.alphaMode: with 'premultiplied' the source and every target hold premultiplied colours,
+ *   and what the plugin writes with alpha below 1 shows the page behind the canvas (clear to `{r: 0, g: 0, b: 0, a: 0}` to leave it transparent)
  * @property {string} format   the format of every target the plugin renders into (the canvas format; `rgba16float` with `hdr`)
  * @property {boolean} hdr   extended range is in use: the targets are float, what a plugin writes is not clamped, and a value above 1 is shown brighter than
  *   white where the display can. A plugin writes finite values of 0 or more, and reads its source the same way (the plugin before it may have written above 1)
@@ -778,7 +780,7 @@ export {};
  * @property {'store'|'native'} kind
  * @property {() => number|null} version   id of the newest source version (null before the first); changes whenever pixels changed
  * @property {() => {width:number, height:number, cssWidth:number, cssHeight:number}|null} size  source size (grid px of the draw, css px of the drawable)
- * @property {(device: any, texture: any, onlyDirty: boolean) => number} upload  copy the source into `texture` (GPUTexture), return the version id uploaded
+ * @property {(device: any, texture: any, onlyDirty: boolean, premultiplied?: boolean) => number} upload  copy the source into `texture` (GPUTexture; premultiplied colours with `premultiplied`), return the version id uploaded
  * @property {() => void} dispose
  */
 
@@ -815,6 +817,14 @@ export {};
  * @property {Element} [under]  a second live page beneath the source (experimental): another eligible drawable of the same canvas, neither the source nor
  *   inside it nor around it. Its texture is `frame.under`; a mapper's `{x, y, under: true}` sends the pointer to it. Polyfill mode only (HicUnsupportedError
  *   'effects-under' over a native implementation)
+ * @property {any} [device]  a GPUDevice the page owns, used instead of one the host requests (`powerPreference` is then ignored): several hosts, and the page's
+ *   own WebGPU work, share one device. The host never destroys it; `destroy()` releases only what the host made on it. Or a function that returns the current
+ *   GPUDevice (or a promise of it), called at creation and again after a device loss: with a GPUDevice the host cannot recover from its loss and fires
+ *   `effecterror` (phase `recover`), staying on its last frame. TypeError for anything else
+ * @property {'opaque'|'premultiplied'} [alphaMode]  how the canvas composites with the page (default 'opaque': what no plugin covers is black).
+ *   'premultiplied': the source is uploaded and every target holds premultiplied colours, so the transparent parts of the source, and whatever a plugin leaves
+ *   transparent, show the page behind the canvas (a dialog or a popover need not be a rectangle). A plugin reads it as `context.alphaMode`; the plugins of this
+ *   repository that clear to an opaque colour show that colour there. TypeError for another value
  */
 /**
  * @experimental the effects, an extension of this library, not part of the HTML-in-Canvas standard (docs/STABILITY.md)
