@@ -36,8 +36,12 @@ const enginesFile = arg('engines-file');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const outRoot = resolve(PROJECT_ROOT, '.scratch/results'); const pngDir = join(outRoot, `xbrowser-${stamp}`);
 mkdirSync(pngDir, { recursive: true });
-const WATCHDOG_MS = 15 * 60000;
-const watchdog = setTimeout(() => { console.error('G-xbrowser WATCHDOG: run exceeded 15 min, killing our browsers'); process.exit(3); }, WATCHDOG_MS);
+// 15 -> 30 min (2026-11-21): Safari with the system's classic bars (a mouse in use, or "Show scroll bars: Always") runs scrollCompose's control with all its
+// 8 bar mutants, 11 min alone (2.5 min for its real run); the whole Safari run took about 20 min and was killed at 15 with every real scenario green. With
+// overlay bars the 4 system-bar mutants do not apply and the run takes about 10 min
+const WATCHDOG_MIN = 30;
+const WATCHDOG_MS = WATCHDOG_MIN * 60000;
+const watchdog = setTimeout(() => { console.error(`G-xbrowser WATCHDOG: run exceeded ${WATCHDOG_MIN} min, killing our browsers`); process.exit(3); }, WATCHDOG_MS);
 
 /** macOS: is the login session's screen locked? (the window server key is present only while locked) */
 const screenLocked = () => /CGSSessionScreenIsLocked/.test(spawnSync('ioreg', ['-n', 'Root', '-d1'], { encoding: 'utf8' }).stdout ?? '');
