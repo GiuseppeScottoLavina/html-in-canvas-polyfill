@@ -1,0 +1,53 @@
+<!doctype html><meta charset="utf-8"><title>G-css-var-shorthand</title>
+<!-- G-css-var-shorthand (test/gates/g-css-var-shorthand.mjs): one canvas per case, each drawing its drawable at (0, 0) in every paint event. A shorthand with
+     var() that a later longhand of the same rule partly overrides (v1, the case reported: a summary::before chevron), against the same look written without
+     var() or with longhands (v3, v4, v7, v9, v12: the baselines). The gate compares every canvas with Chrome's own implementation of the page. -->
+<link rel="stylesheet" href="ext.css">
+<style>
+:root { --loom-holo: #e0218a; }
+body { margin: 0; background: #fff; }
+canvas { display: inline-block; width: 120px; height: 60px; margin: 4px; }
+.src { width: 120px; height: 60px; background: #fff; font: 14px sans-serif; }
+summary { list-style: none; padding: 20px; }
+.local { --loom-holo: #e0218a; }
+.v1 summary::before { content: ''; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.v2 summary::before { content: ''; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 2px 2px 0; transform: rotate(-45deg); }
+.v3 summary::before { content: ''; width: 7px; height: 7px; border: solid #e0218a; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.v4 summary::before { content: ''; width: 7px; height: 7px; border: solid red; border-width: 0 2px 2px 0; transform: rotate(-45deg); }
+.v5 summary::before { content: ''; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; }
+.v6 summary::before { content: ''; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.v7 summary::before { content: ''; width: 7px; height: 7px; border-style: solid; border-color: var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.v8 summary::before { content: ''; display: inline-block; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.v9 summary::before { content: ''; display: inline-block; width: 7px; height: 7px; border: solid #e0218a; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.v10 summary::before { content: ''; display: inline-block; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 2px 2px 0; transform: rotate(-45deg); }
+.v13 .m { --mm: 30px; margin: var(--mm); margin-left: 60px; }
+.v14 .f { --ff: bold 30px serif; font: var(--ff); font-size: 30px; color: #e0218a; padding: 10px; }
+.v11 .box { display: inline-block; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+</style>
+<div id="wrap"></div>
+<script>
+const V = { v1: 'var 1.5 rot', v2: 'var 2 rot', v3: 'hex 1.5 rot', v4: 'red 2 rot', v5: 'var 1.5 norot', v6: 'var(local) 1.5 rot', v7: 'longhand var 1.5 rot', v8: 'ib var 1.5 rot', v9: 'ib hex 1.5 rot', v10: 'ib var 2 rot', v11: 'element ib var 1.5 rot', v12: 'inline attr var 1.5', v13: 'margin var + override', v14: 'font var + override', v15: 'link + @media', v16: '@import' };
+const wrap = document.getElementById('wrap');
+for (const [k] of Object.entries(V)) {
+  const inner = k === 'v11' ? '<div style="padding:20px"><span class="box"></span></div>'
+    : k === 'v12' ? '<div style="padding:20px"><span style="display:inline-block;width:7px;height:7px;border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0"></span></div>'
+    : k === 'v13' ? '<div class="m"><span style="display:inline-block;width:20px;height:20px;background:#e0218a"></span></div>'
+    : k === 'v14' ? '<div class="f">Ag</div>'
+    : '<details><summary></summary></details>';
+  wrap.insertAdjacentHTML('beforeend', `<canvas id="${k}" width="120" height="60" content="drawable"><div class="src ${k}${k === 'v6' ? ' local' : ''}" drawable>${inner}</div></canvas>`);
+}
+let painted = 0;
+for (const c of document.querySelectorAll('canvas')) {
+  const ctx = c.getContext('2d');
+  c.onpaint = () => { ctx.reset(); ctx.drawElementImage(c.firstElementChild, 0, 0); painted++; };
+  c.requestPaint();
+}
+window.__V = V;
+window.__ink = () => Object.fromEntries([...document.querySelectorAll('canvas')].map((c) => {
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235)) n++;
+  return [c.id, n];
+}));
+window.__painted = () => painted;
+window.__px = () => Object.fromEntries([...document.querySelectorAll('canvas')].map((c) => [c.id, Array.from(c.getContext('2d').getImageData(0, 0, c.width, c.height).data)]));
+</script>

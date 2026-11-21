@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8"><title>G-interposer-clicks</title>
+<!-- G-interposer-clicks (test/gates/g-interposer-clicks.mjs): a spatial plugin whose mapper sends every point to (410, 300), where A is drawn, over a
+     source whose B lies under the pointer (110, 80). ?l= picks the layout, ?interposer=0 creates the host without the interposer (the positive control).
+     The gate injects the core and the effects bundle before this page runs. -->
+<style>body{margin:0} #c{width:600px;height:400px;display:block} #src{position:relative;width:600px;height:400px;background:#fff;font:16px sans-serif}
+#src > *{position:absolute;margin:0;box-sizing:border-box}</style>
+<canvas id="c" content="drawable" width="600" height="400"><div id="src" drawable></div></canvas>
+<script>
+const LAYOUTS = {
+  'button-button': `<button id="A" style="left:360px;top:280px;width:100px;height:40px">A</button><button id="B" style="left:60px;top:60px;width:100px;height:40px">B</button>`,
+  'div-p': `<div id="A" style="left:360px;top:280px;width:100px;height:40px;background:#cfc">A</div><p id="B" style="left:60px;top:60px;width:100px;height:40px">B paragraph</p>`,
+  'button-p': `<button id="A" style="left:360px;top:280px;width:100px;height:40px">A</button><p id="B" style="left:60px;top:60px;width:100px;height:40px">B paragraph</p>`,
+  'button-form': `<button id="A" type="button" style="left:360px;top:280px;width:100px;height:40px">A</button><form id="B" style="left:60px;top:60px;width:100px;height:40px;background:#eef">B form</form>`,
+  'p-button': `<p id="A" style="left:360px;top:280px;width:100px;height:40px">A paragraph</p><button id="B" style="left:60px;top:60px;width:100px;height:40px">B</button>`,
+  'summary-p': `<details id="D" style="left:360px;top:280px;width:200px"><summary id="A" style="height:40px">A summary</summary>body</details><p id="B" style="left:60px;top:60px;width:100px;height:40px">B paragraph</p>`,
+  'label-p': `<label id="A" for="K" style="left:360px;top:280px;width:100px;height:40px">A label</label><input id="K" type="checkbox" style="left:500px;top:10px"><p id="B" style="left:60px;top:60px;width:100px;height:40px">B paragraph</p>`,
+  'span-in-button-p': `<button id="AB" style="left:360px;top:280px;width:100px;height:40px"><span id="A">A span</span></button><p id="B" style="left:60px;top:60px;width:100px;height:40px">B paragraph</p>`,
+};
+const params = new URLSearchParams(location.search);
+const layout = params.get('l');
+document.getElementById('src').innerHTML = LAYOUTS[layout];
+window.__log = [];
+for (const id of ['A', 'B', 'AB', 'K', 'D']) for (const ty of ['click', 'dblclick']) { const el = document.getElementById(id); if (el) el.addEventListener(ty, (e) => window.__log.push({ type: ty + '-at-' + id, target: e.target.id || e.target.localName, trusted: e.isTrusted, detail: e.detail, prevented: e.defaultPrevented })); }
+document.addEventListener('click', (e) => window.__log.push({ type: 'doc-bubble', target: e.target.id || e.target.localName, trusted: e.isTrusted, detail: e.detail, prevented: e.defaultPrevented }));
+for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'toggle', 'change'])
+  document.addEventListener(type, (e) => { const t = e.target; window.__log.push({ type, target: t.id || t.localName, trusted: e.isTrusted, detail: e.detail, prevented: e.defaultPrevented }); }, true);
+const WGSL = `@group(0) @binding(0) var samp : sampler; @group(0) @binding(1) var source : texture_2d<f32>;
+@vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4<f32> { var p = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0)); return vec4<f32>(p[i], 0.0, 1.0); }
+@fragment fn fs(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> { return textureSample(source, samp, pos.xy / vec2<f32>(textureDimensions(source))); }`;
+const Const = HTMLInCanvasEffects.definePlugin({ type: 'const-map', apiVersion: 2, version: 1, outputCapabilities: { directCanvasRenderAttachment: true },
+  async create(context) {
+    const { device, format } = context;
+    const module = device.createShaderModule({ code: WGSL });
+    const pipeline = await device.createRenderPipelineAsync({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
+    const sampler = device.createSampler();
+    return { spatial: true,
+      captureInputMapper() { return () => ({ x: 410, y: 300 }); },
+      render(frame) {
+        const pass = frame.encoder.beginRenderPass({ colorAttachments: [{ view: frame.destinationView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+        if (frame.sourceReady) { const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: frame.sourceView }] }); pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); }
+        pass.end();
+      },
+      destroy() {} };
+  } });
+(async () => {
+  try {
+    const canvas = document.getElementById('c');
+    const host = await HTMLInCanvasEffects.createHost(canvas, document.getElementById('src'), { interposer: params.get('interposer') !== '0' });
+    window.__host = host;
+    await host.addPlugin(Const, {});
+    await new Promise((r) => setTimeout(r, 800));
+    window.__ready = true;
+  } catch (e) { window.__err = String(e && e.stack || e); }
+})();
+</script>

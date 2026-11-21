@@ -1,0 +1,3 @@
+/* G-css-var-shorthand: a linked sheet (inside @media) that @imports another */
+@import url("imp.css");
+@media (min-width: 1px) { .v15 summary::before { content: ''; width: 7px; height: 7px; border: solid var(--loom-holo); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); } }

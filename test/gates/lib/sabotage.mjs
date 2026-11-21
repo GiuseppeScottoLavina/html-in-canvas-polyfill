@@ -12,6 +12,7 @@
 //   nopagescroll the polyfill's window scroll listener (the page-scroll watch of sticky / fixed drawables) is never added: the build before that watch existed
 //   nosync  the scroll synchronisation attribute (data-hic-scroll) is never set on a live scroller: the compositor draws a precise scroll without waiting for the main frame
 //   nocompose an empty position:fixed element is put into every scroller the pointer reaches (nothing visible): the scroll compositor has no plan for it, every step is built
+//   lossycss the snapshot cannot parse a sheet's own text (CSSStyleSheet.replaceSync throws when called from css-collector's sourceRules): a rule the CSSOM serialises with empty declarations is copied lossy
 //   halfpaint every second paint event of a canvas is dropped (no handler runs, nothing is drawn): a renderer that paints in every other frame, the old scroll cadence
 //   noaxlink  every aria-owns write on a canvas is dropped: the canvas loses the accessibility link to its relocated children (ADR-M)
 //   inertlayer the live layer is made inert: its controls leave the tab order and the accessibility tree
@@ -28,6 +29,7 @@ SABOTAGE_JS.nohit = SABOTAGE_JS.nogeom;
 SABOTAGE_JS.originshift = `(() => { const p = CanvasRenderingContext2D.prototype; const o = p.drawElementImage; p.drawElementImage = function (el, ...a) { const f = (this.canvas.getBoundingClientRect().left * devicePixelRatio) % 1; if (f > 1e-3 && typeof a[0] === 'number') a[0] += 1; return o.call(this, el, ...a); }; return 'originshift'; })()`;
 SABOTAGE_JS.nopagescroll = `(() => { const add = EventTarget.prototype.addEventListener; EventTarget.prototype.addEventListener = function (type, fn, o) { if (this === window && type === 'scroll' && o && o.capture && /hic-live-polyfill/.test(new Error().stack || '')) return; return add.call(this, type, fn, o); }; return 'nopagescroll'; })()`;
 
+SABOTAGE_JS.lossycss = `(() => { const p = CSSStyleSheet.prototype; const o = p.replaceSync; p.replaceSync = function (...a) { if (/sourceRules/.test(new Error().stack || '')) throw new DOMException('sabotaged', 'NotAllowedError'); return o.apply(this, a); }; return 'lossycss'; })()`;
 SABOTAGE_JS.nosync = `(() => { const set = Element.prototype.setAttribute; Element.prototype.setAttribute = function (n, v) { if (n === 'data-hic-scroll') return; return set.call(this, n, v); }; return 'nosync'; })()`;
 SABOTAGE_JS.nocompose = `(() => { addEventListener('pointerover', (e) => { for (let el = e.target; el && el.nodeType === 1; el = el.parentElement) { if (el.scrollHeight > el.clientHeight + 1 && !el.__gateFixed) { el.__gateFixed = true; const d = document.createElement('div'); d.style.cssText = 'position:fixed;width:0;height:0'; el.prepend(d); } } }, { capture: true, passive: true }); return 'nocompose'; })()`;
 SABOTAGE_JS.halfpaint = `(() => { const d = EventTarget.prototype.dispatchEvent; const n = new WeakMap(); EventTarget.prototype.dispatchEvent = function (e) { if (e.type === 'paint' && this instanceof HTMLCanvasElement) { const k = (n.get(this) ?? 0) + 1; n.set(this, k); if (k % 2 === 0) return true; } return d.call(this, e); }; return 'halfpaint'; })()`;

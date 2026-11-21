@@ -501,17 +501,22 @@ A mapper may return `{x, y, under: true}` where the presented pixel shows the ho
 pixels of the content box, as the source). It ends the composition too (the under page is drawn from its own texture, not from the picture of the earlier
 plugins); on a host without an under page it counts as `NO_TARGET`. The interposer hit-tests such a point inside the under element only (`elementAtPoint(point,
 under)`: the under page lies below the source, where the native hit test lands on the source) and always re-targets the press.
-Interposer (`options.interposer`, default true): capture-phase listeners on the live layer. For `pointermove/down/up/click`, it maps the
+Interposer (`options.interposer`, default true): capture-phase listeners on the live layer. For `pointermove/down/up`, it maps the
 pointer through the gesture mapper and, because live elements sit where the source pixels are drawn, finds the intended element with the
-layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `pointerdown`, if the mapped element's control differs from
-the native hit control it prevents the native handling and re-implements the activation: focus, button/link/checkbox/radio/label click
-on `pointerup`, `input[type=range]` value + `input`/`change` events during the gesture, text caret placement. For a finger (`pointerType` `touch`) the focus
+layer's `elementAtPoint`. Hover/active mirrors follow the mapped target. At `pointerdown`, if the mapped element's click unit (its control, or the element
+itself where there is none: a drawn paragraph over a form) differs from the one the browser hit, it prevents the native handling and re-implements the
+activation: focus; on `pointerup` the click, at the element drawn under the pointer (a `MouseEvent` at the mapped point, not trusted; it bubbles, so a
+button, link, checkbox, radio, label or summary runs its activation; none for a disabled control), and a `dblclick` there after the second click of a double
+click; `input[type=range]` value + `input`/`change` events during the gesture; text caret placement. The native `click` and `dblclick` that the browser fires at
+the element it hit are swallowed in the capture phase of the window, so no listener of the page sees them (only a window capture listener added before the
+host was created runs first). Its `mousedown` and `mouseup` do not fire (the press is cancelled) and are not re-created at the drawn element, and the pointer
+events stay at the element the browser hit (plugins and the page read them there). For a finger (`pointerType` `touch`) the focus
 and the click wait for `pointerup` and happen only on a tap, a touch that lifts within 10 CSS px of where it landed, as on a page without effects: a touch that
 travels (a scroll, a plugin's drag across a field) focuses and activates nothing; a range is dragged from the press. A finger also hovers as on a page without effects: its press
 activates the element drawn under it (`:active`) and hovers nothing, a pan or a drag moves no `:hover` across what it passes, and a tap leaves the element drawn where it
 landed under `:hover` until the next tap (a tap outside the canvas ends it). Mouse and pen focus at `pointerdown` and hover what is drawn under them at every move. Not re-targeted: select
 popups, drag selection, contenteditable (row `interposer-retarget`). Validated against GPU pixels, not against the mapper itself
-(gates G-f1-form-effect and G-interposer-strong; G-native-interposer over a native implementation). In the native modes the interposer works on the browser's own hit testing instead (section 7.6).
+(gates G-f1-form-effect and G-interposer-strong; G-native-interposer over a native implementation); the clicks against Chrome's own implementation of the same page with trusted input (G-interposer-clicks). In the native modes the interposer works on the browser's own hit testing instead (section 7.6).
 
 ### 7.5 Polyfill events and handles
 `hicunsupported` (CustomEvent<UnsupportedEntry> on the canvas), `effectframe`, `effecterror` (above). `window.__HIC__` = debug handle of the classic core's
