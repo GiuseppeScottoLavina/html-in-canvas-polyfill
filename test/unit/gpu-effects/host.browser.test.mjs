@@ -575,3 +575,34 @@ test('createLateEffects binds to the installed core late: no install rejects, a 
   win[EXT.INSTALLED_KEY] = undefined;
   await assert.rejects(api.createHost(rig.canvas, rig.source), /needs the installed polyfill/);
 });
+
+test('createLateEffects with a fallback (the module entry over a native implementation): used without a core, asked again until it gives a seam, never before an installed core', async () => {
+  const rig = makeRig({ paint });
+  const win = /** @type {any} */ ({});
+  let asked = 0;
+  /** @type {any} */
+  let give = null;
+  const own = { env: rig.env, deps: rig.deps, effects: null, cleanups: new Set(), dispose() { this.disposed = true; } };
+  const api = createLateEffects(win, () => { asked += 1; return give; });
+  await assert.rejects(api.createHost(rig.canvas, rig.source), /needs the installed polyfill.*without it/);
+  assert.equal(asked, 1, 'asked when no core is installed');
+  give = own;
+  await assert.rejects(api.createHost(/** @type {any} */ ({}), rig.source), TypeError);
+  assert.ok(own.effects, 'the fallback seam serves the call');
+  assert.equal(asked, 2, 'asked again: the first answer was null');
+  await assert.rejects(api.createHost(/** @type {any} */ ({}), rig.source), TypeError);
+  assert.equal(asked, 2, 'kept once given');
+  const core = { env: rig.env, deps: rig.deps, effects: null, cleanups: new Set() };
+  win[EXT.INSTALLED_KEY] = { [EXT.EFFECTS_SEAM_KEY]: core };
+  await assert.rejects(api.createHost(/** @type {any} */ ({}), rig.source), TypeError);
+  assert.ok(core.effects, 'an installed core comes first');
+  api.dispose();
+  assert.equal(own.disposed, true, 'dispose() also disposes the fallback seam');
+});
+
+test('installEffects of the module entry, where the browser has no native implementation and no core is installed: rejects as before (the polyfill would run, so the effects need it)', async () => {
+  const { installEffects } = await import('/src/effects.js');
+  const rig = makeRig({ paint });
+  const api = installEffects(/** @type {any} */ ({ ...window, navigator: window.navigator, document, performance, CustomEvent, console }));
+  await assert.rejects(api.createHost(rig.canvas, rig.source), /needs the installed polyfill/);
+});

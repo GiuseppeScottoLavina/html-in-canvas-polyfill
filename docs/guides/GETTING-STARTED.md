@@ -2,7 +2,7 @@
 
 Goal: the explainer demo, a form and the water demo running in five minutes, and a clear picture of what you are running.
 
-Status: `1.0.2` on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
+Status: `1.0.3` on npm (`npm install @giuseppe-scotto-lavina/html-in-canvas-polyfill`; a new release is published under `next` first and moved to `latest` once checked), for desktop Chrome, Firefox 155+ and Safari 27+, and Chrome for Android 130+ and Safari on iPadOS 26+ (verified on two physical Android phones and a physical iPad, and on the emulator and the iPhone simulator; Safari on the iPhone, iOS 26+, is admitted but unqualified). Read [README.md](../../README.md) for what the polyfill does and does not do.
 
 What is stable, experimental or unqualified (Safari on the iPhone is unqualified, the frame cap and the effects are experimental): [STABILITY.md](../STABILITY.md).
 
@@ -77,11 +77,11 @@ console.log(hic.mode);                            // 'polyfill' | 'native' | 'na
 
 `install()` throws a `HicUnsupportedError` (`feature: 'browser'`, or `'partial-native'` for a native implementation without its core) in a browser the polyfill refuses; it never throws where the browser's own API is usable. Catch it, or pass `{ onUnsupportedBrowser: 'warn' }` to log once and install nothing. The classic script never throws on refusal: it logs one `console.warn` and sets `window.__HIC__ = { error }`.
 
-Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`, needs the installed core), `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'` (an example plugin, `plugins/README.md`), `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-155 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
+Optional parts: `import { installEffects } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/effects'` (defines `window.HTMLInCanvasEffects`; it needs the installed core, except over a browser's own HTML-in-Canvas: there, with `load()` from `/loader` answering `'native'`, the effects run without the core, which is then never downloaded), `import { plugin } from '@giuseppe-scotto-lavina/html-in-canvas-polyfill/plugins/water'` (an example plugin, `plugins/README.md`), `import '@giuseppe-scotto-lavina/html-in-canvas-polyfill/native-bridge'` (before `install()`, only for Chrome 154-155 behind a flag). `docs/BUNDLES.md` has the table of files, sizes and load order. The ESM quick start above is exercised by `npm run test:examples` (`test/examples-smoke/esm-quickstart/`), importing `dist/esm/index.js` by path.
 
 ### Loading the polyfill only where it runs
 
-Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (378 KB minified, 129 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run (over an earlier native build that the native bridge completes, the bridge and the core):
+Chrome 157 implements the API, so the core steps aside there, but a page that lists its tag still downloads it (379 KB minified, 129 KB gzipped). The loader (17 KB, 6 KB gzipped) makes `install()`'s decision first and downloads the core, and the engines bundle on Firefox and Safari, only when the polyfill will run (over an earlier native build that the native bridge completes, the bridge and the core):
 
 ```html
 <script src="dist/hic-live-loader.iife.min.js"></script>   <!-- the other dist/ files beside it are its default URLs -->

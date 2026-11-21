@@ -4,8 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-21
+
+A fix release of 1.0.2, with three new experimental options of the effects host; every change was asked for by a library built on the polyfill. The fixes are a click through an effect, which reached the element the browser hit as well as the element drawn there, and a `var()` shorthand partly overridden by a longhand, which the snapshot dropped (Chrome, Firefox and Safari alike). The new options: `createHost` options `device` and `alphaMode`, and the module effects running over a browser's own HTML-in-Canvas without the core. The core bundle is 378,705 bytes minified (129,133 gzip), 1,052 and 340 bytes more than 1.0.2's; the classic effects bundle 47,619 (16,584), 2,999 and 968 more. `npm run test:local` on this candidate (2026-11-21, without the mutant stage):
+- **Passing:** the gates, WPT (221/248 files, 0 bug), the field test, the plugins, the gallery, the WebGPU examples, the effects on Canary's own implementation, Firefox scroll, and the Safari listener and ancestor-move matrices.
+- **Mobile:** its known Android listbox row (`L-lb`) failed.
+- **Safari's G-xbrowser:** passed, with the system's classic bars and every control red, in 16 min. Two earlier runs were killed by its 15 min watchdog with every real scenario green: with the classic bars, scrollCompose's control runs all its 8 bar mutants and takes 8 to 11 min. The watchdog is now 30 min. A third run with the classic bars stopped beyond those 30 min, with its real scenarios green again, and did not recur.
+- **Mutant stage:** not run in full (2 h). The 5 local mutants on the effects and the interposer, which changed, were run and are all caught (`hover-scope-off`, `hover-state-kept`, `finger-hover-follows`, `interposer-off`, `cap-ignored`); every anchor of the suite still matches once (`npm test`), and the 2 new mutants run in CI.
+
 ### Added
 
+- Effects (experimental): over a browser's own HTML-in-Canvas (Chrome 157 and later), the module entry `/effects` no longer needs the core. With no core installed, where `install()` would step aside in mode `native` (what `load()` from `/loader` answers with status `'native'`), `installEffects()` builds what the effects use of an install itself: the options' defaults, a reporter, and no canvas of the polyfill's. `const r = await load(); if (r.status === 'native') installEffects().createHost(...)` then works without downloading the core, which in a library's bundle built on the polyfill was a 367 KB chunk (130 KB gzipped). An installed core always comes first. The classic effects bundle keeps needing the core: carrying the detection there would add 16 KB minified to every page that loads it with the core; in the module build the loader and the effects share that code. G-native-loader runs such a page: status `'native'`, a host that presents frames, no request for the core or the native bridge, no patched prototype; control: with the native API disabled the core is downloaded. Asked for by a library built on the polyfill.
 - Effects (experimental): `createHost(canvas, source, { device })` uses a `GPUDevice` the page owns instead of requesting one per host, so several hosts and the page's own WebGPU work share one device; the host never destroys it (`destroy()` releases only what the host made on it). It can also be a function that returns the current device, which the host calls again after a device loss: a plain `GPUDevice` cannot come back, and on its loss the host fires `effecterror` (phase `recover`) and stays on its last frame. A plugin's `context.adapter` is `null` on such a host. Asked for by a library built on the polyfill. Unit tests `test/unit/gpu-effects/host-device-alpha.browser.test.mjs`, with controls: a host that destroys the given device, and one that tries to recover a lost one, each fail a test.
 - Effects (experimental): `createHost(canvas, source, { alphaMode: 'premultiplied' })` makes the canvas transparent where the source and the plugins leave it so, instead of an opaque rectangle (a dialog or a popover with rounded corners drawn through an effect). The source is uploaded premultiplied and every texture of the chain holds premultiplied colours; plugins read it as `context.alphaMode`. The default stays `'opaque'`. Measured with a page screenshot, the page's green showing at the transparent corner and the colours unchanged inside: Chrome 157 over the polyfill and over its own implementation, Firefox 160 and Safari 27.2. The example plugins clear their targets to an opaque colour, which then shows there. Control: without the premultiplied upload, the half-transparent test colour comes out wrong.
 
@@ -938,7 +947,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0-rc.11...v1.0.0

@@ -28,6 +28,7 @@ import { createInteractionTracker } from '../schedule/observers/interaction-trac
 import { createAnimatedImages } from '../schedule/observers/animated-images.js';
 import { createGeometryApi } from './geometry.js';
 import { createCanvasRegistry } from './canvas-registry.js';
+import { NO_CANVASES, NO_INTERACTION, unavailable } from '../util/stand-ins.js';
 
 /**
  * The hand-over point between the core and the optional effects bundle (dist/hic-live-effects.iife.js): the core only publishes the internals the effects need
@@ -54,23 +55,6 @@ function createEffectsSeam(env, deps) {
  */
 export function defaultServices() {
   return { createLiveLayer, createRootScope, installSelectorBridge, createCapture, createSnapshotStore, createScheduler, startObservers, createEffects: createEffectsSeam, createInteractionTracker };
-}
-
-/**
- * An object that throws a clear error on any property access or call (the services a native-mode install does not have).
- * @param {string} name
- * @param {string} cause
- * @returns {any}
- */
-export function unavailable(name, cause) {
-  const fail = () => {
-    throw new Error(`[hic-live-polyfill] service "${name}" is not available: ${cause}`);
-  };
-  return new Proxy(function standIn() {}, {
-    get: (_target, prop) => (typeof prop === 'symbol' || prop === 'then' ? undefined : fail()),
-    set: fail,
-    apply: fail,
-  });
 }
 
 /**
@@ -160,21 +144,6 @@ function wire(env, services, hooks, ledger, made, dispose) {
   ];
   return { effects, geometry, registry, dispose };
 }
-
-/** @type {CanvasRegistryView} */
-const NO_CANVASES = Object.freeze({
-  get: () => undefined,
-  all: () => [],
-  ownerOfDrawable: () => undefined,
-  logicalCanvasAncestor: () => null,
-});
-
-/** @type {InteractionTracker} */
-const NO_INTERACTION = Object.freeze({
-  snapshot: () => ({ hover: new Set(), active: new Set(), focus: null, focusVisible: false, caretVisible: false }),
-  setMappedTarget: () => {},
-  onChange: () => () => {},
-});
 
 /**
  * Modes native and native-bridged: no layer, no snapshots, no scheduler. Only the effects seam is built; the effects bundle then reads the native implementation
