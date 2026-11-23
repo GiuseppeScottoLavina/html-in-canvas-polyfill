@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation: what an app built with a bundler downloads on each path, measured on 1.0.3 (docs/BUNDLES.md, "What the loader costs and saves"): 8 KB gzipped on a browser with its own HTML-in-Canvas, 27.5 KB with the effects there (they need no core since 1.0.3), 141 KB on the polyfill path in Chromium and 158 KB in Safari and Firefox. A last Terser pass over the app's output saves about 6.5 KB of the polyfill path. GETTING-STARTED and EFFECTS-PLUGINS now say that the module effects run without the core over a native implementation; EFFECTS-PLUGINS still described the effects over a native implementation as needing the installed core.
+
 ## [1.0.3] - 2026-11-21
 
 A fix release of 1.0.2, with three new experimental options of the effects host; every change was asked for by a library built on the polyfill. The fixes are a click through an effect, which reached the element the browser hit as well as the element drawn there, and a `var()` shorthand partly overridden by a longhand, which the snapshot dropped (Chrome, Firefox and Safari alike). The new options: `createHost` options `device` and `alphaMode`, and the module effects running over a browser's own HTML-in-Canvas without the core. The core bundle is 378,705 bytes minified (129,132 gzip), 1,052 and 339 bytes more than 1.0.2's; the classic effects bundle 47,711 (16,607), 3,091 and 991 more. `npm run test:local` on this candidate (2026-11-21, without the mutant stage):
