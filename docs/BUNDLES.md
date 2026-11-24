@@ -79,11 +79,11 @@ Sizes of the last build. This block is rewritten by `npm run build` from `dist/s
 | `hic-live-worker.iife.min.js` | 9,098 | 3,646 |
 | `hic-live-loader.iife.js` | 30,417 | 9,102 |
 | `hic-live-loader.iife.min.js` | 17,454 | 6,320 |
-| `esm/index.js` | 42,162 | 14,559 |
+| `esm/index.js` | 42,162 | 14,561 |
 | `esm/effects.js` | 85,513 | 22,806 |
 | `esm/native-bridge.js` | 23,215 | 6,078 |
 | `esm/worker.js` | 7,014 | 2,418 |
-| `esm/loader.js` | 4,976 | 1,830 |
+| `esm/loader.js` | 4,976 | 1,831 |
 | `plugins/cloth.iife.js` | 86,417 | 24,707 |
 | `plugins/cloth.iife.min.js` | 47,332 | 19,063 |
 | `plugins/cloth.esm.js` | 81,649 | 24,097 |
