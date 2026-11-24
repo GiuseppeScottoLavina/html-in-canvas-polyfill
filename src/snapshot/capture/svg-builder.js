@@ -3,6 +3,7 @@
  * Module: snapshot-capture (src/snapshot/capture/*). The string parts are pure.
  */
 
+import { simpleFontMarkup } from './font-subsets.js';
 import { currentEngine } from '../../util/engine.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
@@ -28,6 +29,22 @@ export function cropPixels(crop, scale) {
 }
 
 /**
+ * The page root's font, as the image document's root element must have it: root-relative units (rem, rlh, rex, rch, rcap, ric) resolve against the root element of
+ * the document they are in, which for a snapshot is the <svg> (16 px and line-height normal by default), not the page's html. A `:root { font-size: 24px }` drew a
+ * 1rem line at 16 px. Only those units read it: the clone root carries the page's inherited font properties inline (clone.js inheritedStyle), so nothing inherits
+ * from the <svg>. Important, so that an author `svg {}` rule cannot change it.
+ */
+const ROOT_FONT = ['font-family', 'font-size', 'font-style', 'font-weight', 'font-stretch', 'line-height'];
+
+/** @param {CSSStyleDeclaration} cs the computed style of the page's root element @returns {string} the declarations for the snapshot's <svg> root */
+export function rootFontStyle(cs) {
+  return ROOT_FONT.map((p) => `${p}:${cs.getPropertyValue(p)}!important`).join(';');
+}
+
+/** @param {string} s @returns {string} escaped for a double-quoted XML attribute */
+const xmlAttr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+/**
  * The SVG document text. `crop` is in css px with its origin at the top-left of the laid-out frame; the viewBox is the crop at physical-pixel scale
  * (layout happens at that scale through `zoom` on the root, because viewBox up-scaling drifted line metrics).
  * @param {string} rootHtml  serialised div.hic-root
@@ -36,9 +53,10 @@ export function cropPixels(crop, scale) {
  * @param {Size} frame
  * @param {number} scale
  * @param {ScaleMode} [mode]  'zoom' (layout at device scale, Chromium), 'transform' (layout at css scale, a CSS scale on the root: WebKit) or 'viewBox' (layout at css scale, the image scales it: Gecko); see scaleMode
+ * @param {string} [rootFont]  declarations for the <svg> root (rootFontStyle): the page root's font, for root-relative units
  * @returns {string}
  */
-export function buildSvgMarkup(rootHtml, css, crop, frame, scale, mode = 'zoom') {
+export function buildSvgMarkup(rootHtml, css, crop, frame, scale, mode = 'zoom', rootFont = '') {
   const { widthPx, heightPx } = cropPixels(crop, scale);
   // An SVG <style> (a child of the <svg> root) styles the foreignObject HTML exactly like an XHTML one inside it, but Chromium loads the image at once with it
   // (complete one microtask after `src` is set) while an XHTML <style> delays the load to a later task: that is what lets a tile land, and its paint fire, in the task that built it.
@@ -48,7 +66,7 @@ export function buildSvgMarkup(rootHtml, css, crop, frame, scale, mode = 'zoom')
   // 'transform' (WebKit): the viewBox ORIGIN is ignored for HTML with its own layer too, so a damage-cropped tile showed the frame's top-left and was pasted at the crop
   // position (pieces of the page in the wrong place on focus/caret/typing). The crop offset travels in the root's CSS transform instead (rootTransform) and the viewBox starts at 0 0.
   const origin = mode === 'transform' ? '0 0' : `${num(crop.x * k)} ${num(crop.y * k)}`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}" viewBox="${origin} ${box}">`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}" viewBox="${origin} ${box}"${rootFont ? ` style="${xmlAttr(rootFont)}"` : ''}>`
     + `${style}<foreignObject x="0" y="0" width="${num(frame.width * k)}" height="${num(frame.height * k)}">${rootHtml}</foreignObject></svg>`;
   return HAS_INVALID_XML.test(svg) ? svg.replace(INVALID_XML, '') : svg;
 }
@@ -103,9 +121,12 @@ export function encodeSvgDataUrl(svg) {
  * @param {Rect} crop
  * @param {Size} frame
  * @param {number} scale
+ * @param {string|null} [simpleCss] sheet restricted to simple text
+ * @param {string} [extraCss] capture-specific rules appended to either sheet
+ * @param {string} [rootFont] the page root's font for the <svg> root (rootFontStyle)
  * @returns {{url: string, bytes: number}}
  */
-export function buildSvgDataUrl(root, css, crop, frame, scale) {
+export function buildSvgDataUrl(root, css, crop, frame, scale, simpleCss = null, extraCss = '', rootFont = '') {
   const mode = scaleMode();
   // always written, also at scale 1, and important: the page's own `zoom` on html / body is rewritten onto the root by the collected CSS (selector-rewrite), and a tile planned in the
   // canvas's css px at `scale` must not be zoomed again by it (a 200 % body zoom drew the drawable twice too large in a scale-1 tile)
@@ -115,6 +136,8 @@ export function buildSvgDataUrl(root, css, crop, frame, scale) {
     /** @type {HTMLElement} */ (root).style.setProperty('transform', transform, 'important');
     /** @type {HTMLElement} */ (root).style.setProperty('transform-origin', '0 0', 'important');
   }
-  const url = encodeSvgDataUrl(buildSvgMarkup(new XMLSerializer().serializeToString(root), css, crop, frame, scale, mode));
+  const markup = new XMLSerializer().serializeToString(root);
+  const usedCss = simpleCss !== null && simpleFontMarkup(markup, extraCss) ? simpleCss + extraCss : css;
+  const url = encodeSvgDataUrl(buildSvgMarkup(markup, usedCss, crop, frame, scale, mode, rootFont));
   return { url, bytes: url.length };
 }
