@@ -330,6 +330,12 @@ Tick RUN(now), for each canvas record in reverse tree order:
    `peek` is the hot path; a miss starts a load, marks `complete:false`, and a `resource` damage is published when it arrives. Failures are LOUD (`cross-origin-resource` / `resource-fetch-failed`: placeholder
    or, for fonts, a fallback face + entry). Fonts: a first tile whose fonts or images are still loading is held for up to `paintGateMaxWaitMs` (ADR-B), and `document.fonts` `loadingdone` publishes `stylesheet` damage.
 5. **SVG build** (`svg-builder.js`): `<svg width=cw*s height=ch*s viewBox=crop*s><foreignObject width=... height=...>` + the `div.hic-root` markup serialised with `XMLSerializer`, CSS in one `<style>`; layout at
+   The `<svg>` root carries the page root's font (`rootFontStyle`: family, size, style, weight, stretch, line-height, important): root-relative units (rem, rlh, rex, rch,
+   rcap, ric) resolve against the root element of the image document, which is that `<svg>`, not the page's html; the clone root carries the inherited font properties
+   inline, so only those units read it. A tile whose serialised markup and per-capture rules hold only simple English or Italian text uses the shaken sheet without the
+   `@font-face` rules whose `unicode-range` is disjoint from that repertoire and that have a sibling face with the same descriptors in the same scope
+   (`font-subsets.js`, precomputed once per shaken sheet; any other character, a generator of text such as counters, quotes, list markers or `content` other than a
+   plain string, a localised control or another language keeps the full sheet): the subset files of a split web font are not inlined into a tile that cannot use them.
    physical-pixel scale through `zoom:s` inside the image on Chromium (not viewBox up-scaling: it drifted line metrics [E5 notes]); the viewBox crops the damage rect. Gecko and WebKit lay
    the image out at css scale instead (they pick the font optical size from the zoomed size): Gecko scales through the viewBox, WebKit through a CSS `transform` on the root, which also carries
    the crop offset (`scaleMode`, ADR-E "Engines"). Encoded as a **percent-encoded `data:` URL** (base64 measured no better), never `blob:`.

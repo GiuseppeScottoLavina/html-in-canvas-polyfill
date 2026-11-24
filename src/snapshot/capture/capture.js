@@ -9,12 +9,13 @@ import { evaluateBudget } from './budget.js';
 import { BudgetExceeded, cloneDrawable } from './clone.js';
 import { createCssCollector } from './css-collector.js';
 import { hasStructuralSelectors, shakeCss, structureOf } from './css-shake.js';
+import { simpleFontSheet } from './font-subsets.js';
 import { setInlineStyle } from './inline-style.js';
 import { placeholderElement } from './placeholder.js';
 import { collectVarNames, inheritCustomProperties } from './custom-props.js';
 import { createResourceCache } from './inline-resources.js';
 import { addReferencedResources, settleFilterImages } from './svg-refs.js';
-import { buildSvgDataUrl, cropPixels } from './svg-builder.js';
+import { buildSvgDataUrl, cropPixels, rootFontStyle } from './svg-builder.js';
 import { engineSkins } from './engine-skins.js';
 import { planTextOverlay } from './text-overlay.js';
 import { measureCaret } from './caret-overlay.js';
@@ -63,7 +64,7 @@ export function createCapture(env) {
     skinsSeen = skins;
     skins.onSkinReady(() => resources.settle?.('native-control-skin'));
   };
-  /** @type {Map<string, {css: string, vars: Set<string>}>} */
+  /** @type {Map<string, {css: string, vars: Set<string>, simpleCss: string|null}>} */
   const shaken = new Map();
   /**
    * @type {WeakMap<object, {fold: boolean, local: import('./css-shake.js').Structure|null}>} per bundle: may pruned spacer runs be merged at all, and, when its CSS
@@ -73,7 +74,7 @@ export function createCapture(env) {
   /** @type {WeakMap<object, Set<string>>} bundle keys whose @container usage was already checked */
   const containerChecked = new WeakMap();
 
-  /** @param {string} key @param {() => string} make @returns {{css: string, vars: Set<string>}} the shaken sheet and the custom properties it refers to */
+  /** @param {string} key @param {() => string} make @returns {{css: string, vars: Set<string>, simpleCss: string|null}} the shaken sheet and the custom properties it refers to */
   const memoShake = (key, make) => {
     const hit = shaken.get(key);
     if (hit !== undefined) return hit;
@@ -81,7 +82,7 @@ export function createCapture(env) {
     /** @type {Set<string>} */
     const vars = new Set();
     collectVarNames(css, vars);
-    const made = { css, vars };
+    const made = { css, vars, simpleCss: simpleFontSheet(css) };
     shaken.set(key, made);
     if (shaken.size > SHAKE_CACHE_SIZE) shaken.delete(/** @type {string} */ (shaken.keys().next().value));
     return made;
@@ -145,11 +146,14 @@ export function createCapture(env) {
     // colour again (setCoverFill)
     const fills = req.scroll?.shape === 'cover' ? req.scroll.fills ?? [] : [];
     if (fills.length && clone.cover) setCoverFill(clone.cover, fills[0]);
-    const { url, bytes } = buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale);
+    const simpleCss = shakenCss.simpleCss;
+    // the page root's font, for root-relative units (svg-builder.js rootFontStyle)
+    const rootFont = rootFontStyle(env.window.getComputedStyle(env.document.documentElement));
+    const { url, bytes } = buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale, simpleCss, clone.extraCss, rootFont);
     const urls = [url];
     for (let i = 1; i < fills.length && clone.cover; i++) {
       setCoverFill(clone.cover, fills[i]);
-      urls.push(buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale).url);
+      urls.push(buildSvgDataUrl(clone.root, css, cropRel, { width: f.width, height: f.height }, req.scale, simpleCss, clone.extraCss, rootFont).url);
     }
     const t4 = env.now();
     const { widthPx, heightPx } = cropPixels(cropRel, req.scale);
