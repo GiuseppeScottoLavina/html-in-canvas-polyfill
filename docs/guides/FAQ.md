@@ -34,17 +34,17 @@ Yes, and this is the main structural difference from native. The children of the
 
 In the current build, 381,445 bytes minified and 130,299 gzipped ([BUNDLES.md](../BUNDLES.md)). That is large for a polyfill. The two other packages on npm are smaller and pass fewer of the WPT tests: `@underglass/html-in-canvas-polyfill` 0.5.0 is about 65 KB minified (93 of 248 files), `html-in-canvas-polyfill` 1.0.1 about 33 KB (77 of 248 files; [README](../../README.md#compared-with-the-alternatives)).
 
-Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 378 KB, so they are approximate.
+Where the bytes go: the bytes esbuild attributes to each source module of the minified core (`node scripts/build.mjs --analyze`), grouped by function. The shares were measured on 0.1.0-preview.15 (341,671 bytes); the kilobytes apply each share to the current 381 KB, so they are approximate.
 
 | part | share | about |
 |---|---|---|
-| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 85 KB |
-| API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 63 KB |
-| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 50 KB |
+| snapshot capture: the clone with its live state, CSS collection and rewriting, resource inlining, SVG building | 22.6 % | 86 KB |
+| API surface: the canvas, 2D, OffscreenCanvas and worker patches, argument checks, `ElementImage`, the `paint` event, options, `report()` | 16.8 % | 64 KB |
+| live layer: relocation, DOM facades, geometry and hit testing, event bridging, the accessibility link | 13.4 % | 51 KB |
 | scrolling: scroll offsets and classic scrollbars in snapshots, the scroll compositor and its planner | 12.7 % | 48 KB |
-| change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 42 KB |
+| change detection: mutation, input, style sheet, animation, image and video observers | 11.3 % | 43 KB |
 | snapshot store: retained surfaces, versions, damage, the decode pump, the runaway guard | 9.8 % | 37 KB |
-| caret, text selection and typed text | 5.4 % | 20 KB |
+| caret, text selection and typed text | 5.4 % | 21 KB |
 | scheduler and frame cap | 3.5 % | 13 KB |
 | native detection | 2.4 % | 9 KB |
 | utilities | 2.1 % | 8 KB |

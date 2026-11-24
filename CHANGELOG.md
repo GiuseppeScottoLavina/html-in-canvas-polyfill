@@ -4,17 +4,22 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-24
+
+A release of two snapshot changes asked for by a library built on the polyfill: a tile of plain text no longer carries a web font's unused `unicode-range` subsets, and root-relative units (`rem`, `rlh`, `rch`, `rex`) read the page's root again. The core bundle is 381,445 bytes minified (130,299 gzip), 2,740 and 1,167 bytes more than 1.0.3's; every other bundle is unchanged. `npm run test:local` on this candidate (2026-11-24, without the mutant stage):
+- **Passing:** WPT (221/248 files, as in 1.0.3, 0 bug), the field test, the plugins, the gallery, the WebGPU examples, the effects on Canary's own implementation, Firefox scroll, the Safari listener and ancestor-move matrices, and Safari's G-xbrowser (every scenario, every control red, with the system's classic bars).
+- **Gates:** every gate passed but one row. `G-scroll-cadence` at DPR 2 failed once, at 64 % of frames moved against 70 %, on a loaded machine. It passed in two later runs, both flagged as run under high load, so neither counts as a verdict. Neither change touches scrolling.
+- **Mobile:** its known Android listbox row (`L-lb`) failed, as on 1.0.3.
+- **Safari Technology Preview:** every real scenario passed. Its controls were cut by the 30 min watchdog in a run of both engines: with the system bars changing during the run, then with the classic bars, which make scrollCompose's control run 8 to 11 min per engine.
+
 ### Changed
 
 - Snapshots: a tile of plain English or Italian text no longer carries the unused subsets of a web font split by `unicode-range` (as Google Fonts and Fontsource serve them: latin, latin-ext, Vietnamese, Thai, …). A `@font-face` rule is left out when its range is disjoint from the characters such text can use and a face with the same descriptors stays in the same scope. The check is made per tile, on the serialised markup and its own rules. Any other character, a generator of text (counters, quotes, list markers, `content` other than a plain string, `hyphens: auto`), a localised control or another language keeps the full sheet. Contributed by a library built on the polyfill, which measured snapshots 15-20 % smaller on its demo with no slower decode. Measured here on a page with one Fontsource family in its four subsets (Chakra Petch 400, Chrome 157): the snapshot went from 104,683 to 37,869 characters (−64 %), with not one pixel different from 1.0.3. The update latency of a 200- and an 800-row page was not slower (p50 5.6-6.8 ms against 4.6-9.7 ms, and 8.5-11.5 ms against 11.7-12.9 ms, interleaved). A Thai tile keeps the full sheet (the same bytes). Tests: `font-subsets.test.mjs` (4) and `font-subsets.browser.test.mjs` (3, among them a reduced tile drawing the same pixels as one that keeps the full sheet). The core grows by 2,740 bytes minified (1,167 gzip) with the fix below.
+- Documentation: what an app built with a bundler downloads on each path, measured on 1.0.3 (docs/BUNDLES.md, "What the loader costs and saves"): 8 KB gzipped on a browser with its own HTML-in-Canvas, 27.5 KB with the effects there (they need no core since 1.0.3), 141 KB on the polyfill path in Chromium and 158 KB in Safari and Firefox. A last Terser pass over the app's output saves about 6.5 KB of the polyfill path. GETTING-STARTED and EFFECTS-PLUGINS now say that the module effects run without the core over a native implementation; EFFECTS-PLUGINS still described the effects over a native implementation as needing the installed core. The README and the loader row of BUNDLES.md now give the current core, where they still gave 1.0.0's (375,522 bytes, 128,154 gzip), and the kilobytes of the FAQ's breakdown, computed on 1.0.0's core, are now computed on the current one.
 
 ### Fixed
 
 - Snapshots: root-relative units resolved against the snapshot's own root instead of the page's: with `:root { font-size: 24px }` (set by a media query) a `1rem` line was drawn at 16 px, while `px`, `em` and `vw` were right and Chrome's own implementation is exact; `rlh`, `rch` and `rex` were wrong too. Every rem-based page (Pico, Tailwind, Bootstrap) was drawn away from its hit areas. In an SVG image these units read the image document's root element, the `<svg>`. It now carries the page root's computed font: family, size, style, weight, stretch and line-height, marked important so that an author `svg {}` rule cannot change it. Measured on Chrome 157 (also at DPR 2), Firefox 160 and Safari 27.2: the `1rem` line equals the `24px` one (97 × 23 px of ink, where 1.0.3 drew 64 × 16), and `1rlh` and `10rch` equal the root's line height and ten of its zeros. On Chrome the picture equals the native one, with 0 pixels apart at DPR 1. Test `root-units.browser.test.mjs`, whose control draws the same image without the root font: the `1rem` line is narrower again. On 1.0.3 both of its tests fail. Reported by a library built on the polyfill.
-
-### Changed
-
-- Documentation: what an app built with a bundler downloads on each path, measured on 1.0.3 (docs/BUNDLES.md, "What the loader costs and saves"): 8 KB gzipped on a browser with its own HTML-in-Canvas, 27.5 KB with the effects there (they need no core since 1.0.3), 141 KB on the polyfill path in Chromium and 158 KB in Safari and Firefox. A last Terser pass over the app's output saves about 6.5 KB of the polyfill path. GETTING-STARTED and EFFECTS-PLUGINS now say that the module effects run without the core over a native implementation; EFFECTS-PLUGINS still described the effects over a native implementation as needing the installed core.
 
 ## [1.0.3] - 2026-11-21
 
@@ -959,7 +964,8 @@ First preview, published as `@giuseppe-scotto-lavina/html-in-canvas-polyfill` un
 
 See the README and `docs/SUPPORT-MATRIX.md` for the full list.
 
-[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/GiuseppeScottoLavina/html-in-canvas-polyfill/compare/v1.0.0...v1.0.1
