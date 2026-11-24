@@ -3,7 +3,6 @@
  * Module: snapshot-capture (src/snapshot/capture/*). The string parts are pure.
  */
 
-import { simpleFontMarkup } from './font-subsets.js';
 import { currentEngine } from '../../util/engine.js';
 
 /** @typedef {import('../../contracts/types.js').Rect} Rect */
@@ -104,11 +103,9 @@ export function encodeSvgDataUrl(svg) {
  * @param {Rect} crop
  * @param {Size} frame
  * @param {number} scale
- * @param {string|null} [simpleCss] sheet restricted to simple text
- * @param {string} [extraCss] capture-specific rules appended to either sheet
  * @returns {{url: string, bytes: number}}
  */
-export function buildSvgDataUrl(root, css, crop, frame, scale, simpleCss = null, extraCss = '') {
+export function buildSvgDataUrl(root, css, crop, frame, scale) {
   const mode = scaleMode();
   // always written, also at scale 1, and important: the page's own `zoom` on html / body is rewritten onto the root by the collected CSS (selector-rewrite), and a tile planned in the
   // canvas's css px at `scale` must not be zoomed again by it (a 200 % body zoom drew the drawable twice too large in a scale-1 tile)
@@ -118,8 +115,6 @@ export function buildSvgDataUrl(root, css, crop, frame, scale, simpleCss = null,
     /** @type {HTMLElement} */ (root).style.setProperty('transform', transform, 'important');
     /** @type {HTMLElement} */ (root).style.setProperty('transform-origin', '0 0', 'important');
   }
-  const markup = new XMLSerializer().serializeToString(root);
-  const usedCss = simpleCss !== null && simpleFontMarkup(markup, extraCss) ? simpleCss + extraCss : css;
-  const url = encodeSvgDataUrl(buildSvgMarkup(markup, usedCss, crop, frame, scale, mode));
+  const url = encodeSvgDataUrl(buildSvgMarkup(new XMLSerializer().serializeToString(root), css, crop, frame, scale, mode));
   return { url, bytes: url.length };
 }
