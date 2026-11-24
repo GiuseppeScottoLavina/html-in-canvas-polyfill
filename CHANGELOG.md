@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 A release of two snapshot changes asked for by a library built on the polyfill: a tile of plain text no longer carries a web font's unused `unicode-range` subsets, and root-relative units (`rem`, `rlh`, `rch`, `rex`) read the page's root again. The core bundle is 381,445 bytes minified (130,299 gzip), 2,740 and 1,167 bytes more than 1.0.3's; every other bundle is unchanged. `npm run test:local` on this candidate (2026-11-24, without the mutant stage):
 - **Passing:** WPT (221/248 files, as in 1.0.3, 0 bug), the field test, the plugins, the gallery, the WebGPU examples, the effects on Canary's own implementation, Firefox scroll, the Safari listener and ancestor-move matrices, and Safari's G-xbrowser (every scenario, every control red, with the system's classic bars).
-- **Gates:** every gate passed but one row. `G-scroll-cadence` at DPR 2 failed once, at 64 % of frames moved against 70 %, on a loaded machine. It passed in two later runs, both flagged as run under high load, so neither counts as a verdict. Neither change touches scrolling.
+- **Gates:** every gate passed but one row. `G-scroll-cadence` at DPR 2 failed once, at 64 % of frames moved against 70 %, on a loaded machine. It passed in three later runs; the last one, with nothing degraded, counts for its thresholds. Neither change touches scrolling.
 - **Mobile:** its known Android listbox row (`L-lb`) failed, as on 1.0.3.
 - **Safari Technology Preview:** every real scenario passed. Its controls were cut by the 30 min watchdog in a run of both engines: with the system bars changing during the run, then with the classic bars, which make scrollCompose's control run 8 to 11 min per engine.
 
